@@ -1,0 +1,36 @@
+services:
+  vla_dev:
+    # --- [Option 1] PC 2 (Dev) & PC 1 (Data/Eval) Setup ---
+    # GUI Support + Single/Full GPU
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all          # Use all available GPUs
+              capabilities: [gpu]
+    
+    environment:
+      - DISPLAY=${DISPLAY}        # Forward Host Display
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVIDIA_VISIBLE_DEVICES=all
+      - QT_X11_NO_MITSHM=1
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw  # X11 Socket for GUI
+
+    # --- [Option 2] Server (Training) Setup ---
+    # Headless + Specific GPU Selection
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           # device_ids: ['0', '1']  # Specify GPUs to use (e.g., Use GPU 0 and 1)
+    #           count: all              # Or use all GPUs
+    #           capabilities: [gpu]
+    
+    # environment:
+    #   - NVIDIA_VISIBLE_DEVICES=all
+    #   - WANDB_API_KEY=${WANDB_API_KEY} # Example: Pass WandB key for training
+

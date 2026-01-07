@@ -1,0 +1,24 @@
+services:
+  vla_dev:
+    container_name: vla_container
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USER_NAME: ${USER_NAME}
+        USER_ID: ${USER_ID}
+        GROUP_ID: ${GROUP_ID}
+    
+    # Mount Workspace (Common for all PCs)
+    volumes:
+      - .:/workspace/vla_tset:rw
+      # Model cache persistence (Optional - uncomment if needed)
+      # - ~/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface
+
+    # Network (Host mode is generally good for Sim/ROS)
+    network_mode: host
+
+    # Keep container running
+    tty: true
+    stdin_open: true
+    command: /bin/bash
