@@ -9,13 +9,12 @@ services:
         USER_ID: ${USER_ID}
         GROUP_ID: ${GROUP_ID}
     
-    # Mount Workspace (Common for all PCs)
+    # Mount Workspace
     volumes:
       - .:/workspace/vla_tset:rw
-      # Model cache persistence (Optional - uncomment if needed)
-      # - ~/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw  # GUI support
 
-    # Network (Host mode is generally good for Sim/ROS)
+    # Network
     network_mode: host
 
     # Keep container running

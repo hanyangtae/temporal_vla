@@ -1,4 +1,4 @@
-# Cursor Rules for "Time & Uncertainty Aware OpenVLA" Project
+# Cursor Rules for "Time & Uncertainty Aware X-VLA" Project
 
 You are an expert AI assistant specialized in Robotics, Computer Vision, and Large Language Models.
 You are working on a multi-machine project with specific hardware constraints.
@@ -8,34 +8,60 @@ At the start of every session or when context is unclear, check the current user
 
 ### 1. **PC 2 (User: `bluebottle`)** - Development & Debug
 - **Hardware**: RTX 3060 (12GB VRAM).
-- **Constraints**: **EXTREME VRAM LIMIT**. 
-  - ALWAYS use **4-bit Quantization** (`bitsandbytes`) for OpenVLA.
-  - ALWAYS configure OmniGibson with **Low Quality** settings.
+- **Constraints**: **EXTREME VRAM LIMIT**. Use 4-bit Quantization if OOM occurs.
 - **Goal**: Code logic verification, Visual debugging (NoVNC/Monitor).
 
 ### 2. **PC 1 (User: `rudxo`)** - Data Factory & Eval
 - **Hardware**: RTX 4090 (24GB VRAM).
-- **Goal**: Massive data generation (High-Quality Sim), Final quantitative evaluation.
+- **Goal**: Massive data generation, Final quantitative evaluation.
 - **Action**: Use `scp` to transfer generated datasets to the Server.
 
 ### 3. **Server (User: `sangwoo`)** - Training Center
 - **Hardware**: A100 (80GB VRAM).
 - **Constraints**: **Headless Only** (No GUI).
-- **Goal**: Full Fine-tuning / LoRA.
+- **Goal**: Full Fine-tuning / Soft Prompt Training.
 - **Action**: Save checkpoints and `scp` them back to PC 1/2.
 
 ---
 
-## 🧠 Project Goal: Time & Uncertainty Aware VLA
+## 🧠 Project Goal: Time & Uncertainty Aware X-VLA
 - **Objective**: Predict [Action] + [Duration] + [Variance].
-- **Model**: OpenVLA (7B).
-- **Dataset**: BEHAVIOR-1K (OmniGibson).
+- **Model**: **X-VLA** (via **LeRobot** library).
+- **Environment**: **LIBERO** (via **LeRobot** integration).
+- **Base Library**: `lerobot` (HuggingFace). Do NOT use legacy `xvla_repo` or raw `LIBERO` repo.
 
-## 📝 Coding Guidelines
-1. **Path Awareness**: Use absolute paths or check `pwd` before suggesting commands.
-2. **Environment Awareness**: Before suggesting `model.load()`, CHECK which PC we are on. If `bluebottle`, FORCE 4-bit loading code.
+## 📝 Coding & Setup Guidelines
+1. **LeRobot First**: Use `lerobot` for everything (Sim, Train, Eval).
+   - Install: `pip install -e ".[xvla, libero]"` inside `lerobot` folder.
+   - Run: `lerobot-eval`, `lerobot-train`.
+2. **Environment Awareness**: Before suggesting `model.load()`, CHECK which PC we are on.
 3. **Language**: Always respond in **Korean (한국어)** as per user preference.
 
-## 🔄 Workflow Status
-1. **Dev (PC2)**: Code valid? -> 2. **Data (PC1)**: Generate TFRecords -> 3. **Train (Server)**: Fine-tune -> 4. **Sanity Check (PC2)** -> 5. **Eval (PC1)**.
+## 🔄 Project Master Plan & Status
+*(Check off completed tasks with [x])*
 
+### Phase 1: Environment & Base Policy (Current Focus)
+- [x] **Docker Setup**: Base image (CUDA 12.1), `ffmpeg`, `libopengl0` installed.
+- [x] **LeRobot Setup**: Cloned & installed with `[xvla, libero]` extras.
+- [x] **Compatibility Fix**: Patched `requirements.txt` (torch 2.5.1) & `pyproject.toml` (torchvision).
+- [x] **Base Policy Test**: Verified `lerobot-eval` with `xvla-libero` policy (Success).
+- [x] **Visual Verification**: Saved simulation video (`outputs/eval/...`).
+
+### Phase 2: Data Pipeline (Next Step)
+- [ ] **Data Collection**: Use LeRobot's `lerobot-record` or custom script to save LIBERO episodes.
+- [ ] **Labeling**: Add `Time-to-Go` labels to the dataset.
+- [ ] **Validation**: Visualize dataset with `lerobot-dataset-viz`.
+
+### Phase 3: Model Modification (PC 2)
+- [ ] **Architecture**: Modify `lerobot/common/policies/xvla/modeling_xvla.py` to add Time/Var heads.
+- [ ] **Loss Function**: Update loss computation.
+
+### Phase 4: Training & Eval (Server & PC 1)
+- [ ] **Training**: Run `lerobot-train` with modified policy.
+- [ ] **Evaluation**: Measure Action/Time/Var prediction accuracy.
+
+## 💻 Machine-Specific Setup (Reproducibility)
+1. **Clone Repo**: Clone this project (`vla_tset`).
+2. **Clone LeRobot**: Clone `huggingface/lerobot` into `vla_tset/lerobot` (Host).
+3. **Docker**: `docker compose up -d --build`.
+4. **Install**: Inside container (`docker compose exec vla_dev bash`), run `pip install --no-build-isolation -e "lerobot/[xvla,libero]"`.
