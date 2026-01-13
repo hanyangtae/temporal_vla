@@ -37,31 +37,103 @@ At the start of every session or when context is unclear, check the current user
 2. **Environment Awareness**: Before suggesting `model.load()`, CHECK which PC we are on.
 3. **Language**: Always respond in **Korean (한국어)** as per user preference.
 
+---
+
 ## 🔄 Project Master Plan & Status
 *(Check off completed tasks with [x])*
 
-### Phase 1: Environment & Base Policy (Current Focus)
-- [x] **Docker Setup**: Base image (CUDA 12.1), `ffmpeg`, `libopengl0` installed.
-- [x] **LeRobot Setup**: Cloned & installed with `[xvla, libero]` extras.
-- [x] **Compatibility Fix**: Patched `requirements.txt` (torch 2.5.1) & `pyproject.toml` (torchvision).
-- [x] **Base Policy Test**: Verified `lerobot-eval` with `xvla-libero` policy (Success).
-- [x] **Visual Verification**: Saved simulation video (`outputs/eval/...`).
+### Phase 1: Environment & Base Policy (Completed)
+- [x] **Docker Setup**: Base image, GPU/GUI config, `setup_env.sh` created.
+- [x] **Simulator Setup**: LIBERO installed & `test_libero.py` verified (Headless).
+- [x] **Model Loading**: X-VLA(`lerobot/xvla-libero`) downloaded & loaded (Config patched).
+- [x] **Base Policy Test**: LIBERO + X-VLA Loop verified (`test_policy.py` runs).
+- [x] **Visual Verification**: Simulation video (`simulation_video.mp4`) saved.
 
-### Phase 2: Data Pipeline (Next Step)
-- [ ] **Data Collection**: Use LeRobot's `lerobot-record` or custom script to save LIBERO episodes.
-- [ ] **Labeling**: Add `Time-to-Go` labels to the dataset.
-- [ ] **Validation**: Visualize dataset with `lerobot-dataset-viz`.
+### Phase 2: Data Pipeline (Completed)
+- [x] **Dataset Download**: `lerobot/libero_goal_image` downloaded (`scripts/download_dataset.py`).
+- [x] **Labeling**: `Time-to-Go` labels added (`scripts/process_dataset_with_time.py`).
+- [x] **Validation**: Verified `time_to_go` values in `libero_goal_time_aware` dataset.
 
-### Phase 3: Model Modification (PC 2)
-- [ ] **Architecture**: Modify `lerobot/common/policies/xvla/modeling_xvla.py` to add Time/Var heads.
-- [ ] **Loss Function**: Update loss computation.
+### Phase 3: Model Modification (Completed - PC 2)
+- [x] **Architecture (`lerobot/src/lerobot/policies/xvla/soft_transformer.py`)**: 
+    - Add `self.time_decoder = DomainAwareLinear(hidden, 1)`.
+    - Add `self.var_decoder = DomainAwareLinear(hidden, 1)`.
+    - Add `time_use_global_feat` config option for ablation study.
+    - Update `forward` to return tuple: `(pred_action, pred_time, pred_var)`.
+- [x] **Model Wrapper (`lerobot/src/lerobot/policies/xvla/modeling_xvla.py`)**:
+    - **`XVLAModel.forward`**: Accept `time_to_go`, compute Gaussian NLL Loss.
+    - **`XVLAPolicy`**: Add `predict_action_with_time()` for eval.
+    - **`from_pretrained`**: `strict=False` to support baseline checkpoint loading.
+- [x] **Config (`configuration_xvla.py`)**: Add `time_use_global_feat: bool = False`.
+- [x] **Eval Script (`scripts/eval_time_aware.py`)**: Baseline/Fine-tuned comparison.
 
-### Phase 4: Training & Eval (Server & PC 1)
-- [ ] **Training**: Run `lerobot-train` with modified policy.
-- [ ] **Evaluation**: Measure Action/Time/Var prediction accuracy.
+### Phase 4: Training & Eval (Current Focus - PC 1 & Server)
+- [ ] **Baseline Eval (PC 1)**: Run `eval_time_aware.py --baseline` on `lerobot/xvla-libero`.
+- [ ] **Training (Server)**: Fine-tune X-VLA on `libero_goal_time_aware`.
+- [ ] **Fine-tuned Eval (PC 1)**: Run `eval_time_aware.py` on trained checkpoint.
+- [ ] **Results Comparison**: Compare Success Rate, Time MAE, Variance Calibration.
 
-## 💻 Machine-Specific Setup (Reproducibility)
-1. **Clone Repo**: Clone this project (`vla_tset`).
-2. **Clone LeRobot**: Clone `huggingface/lerobot` into `vla_tset/lerobot` (Host).
-3. **Docker**: `docker compose up -d --build`.
-4. **Install**: Inside container (`docker compose exec vla_dev bash`), run `pip install --no-build-isolation -e "lerobot/[xvla,libero]"`.
+---
+
+## 📊 Evaluation Metrics
+
+| Metric | Baseline | Fine-tuned | Description |
+|:---|:---:|:---:|:---|
+| **Success Rate** | ✅ | ✅ | Episode success (%) |
+| **Actual Time Mean** | ✅ | ✅ | Time to complete (sec) |
+| **Actual Time Std** | ✅ | ✅ | Variance of completion time |
+| **Predicted Time** | ❌ | ✅ | First-step time prediction |
+| **Predicted Std** | ❌ | ✅ | First-step uncertainty |
+
+---
+
+## 💻 Machine-Specific Workflows
+
+### 🛠️ PC 2 (Dev) Workflow - COMPLETED
+1. ~~Docker Setup~~
+2. ~~Sim Test~~
+3. ~~Code Mod: Time/Var heads~~
+4. ~~Eval Script~~
+
+### 🏭 PC 1 (Eval) Workflow - CURRENT
+1. **Sync Code**: `git pull` or `scp` modified files from PC 2.
+2. **Baseline Test**: 
+   ```bash
+   python scripts/eval_time_aware.py \
+       --checkpoint lerobot/xvla-libero \
+       --env libero_goal \
+       --n_episodes 50 \
+       --baseline
+   ```
+3. **Wait for Training**: Server에서 학습 완료 후 checkpoint 받기.
+4. **Fine-tuned Test**:
+   ```bash
+   python scripts/eval_time_aware.py \
+       --checkpoint outputs/train/xvla_time_aware/best \
+       --env libero_goal \
+       --n_episodes 50
+   ```
+
+### 🚀 Server (Train) Workflow - PENDING
+1. **Sync Code**: `scp` from PC 2.
+2. **Train**: 
+   ```bash
+   lerobot-train \
+       --policy.path=lerobot/xvla-libero \
+       --dataset.repo_id=libero_goal_time_aware \
+       --output_dir=outputs/train/xvla_time_aware
+   ```
+3. **Monitor**: Check WandB for `action_loss` and `time_loss`.
+4. **Export**: `scp` best checkpoint to PC 1 for eval.
+
+---
+
+## 📁 Key Files Modified
+
+| File | Purpose |
+|:---|:---|
+| `lerobot/.../soft_transformer.py` | Time/Var Decoder heads |
+| `lerobot/.../modeling_xvla.py` | Gaussian NLL Loss, predict_action_with_time() |
+| `lerobot/.../configuration_xvla.py` | `time_use_global_feat` option |
+| `scripts/eval_time_aware.py` | Baseline vs Fine-tuned evaluation |
+| `scripts/process_dataset_with_time.py` | Add `time_to_go` labels |
