@@ -100,6 +100,7 @@ class XVLAModel(nn.Module):
             dim_time=config.dim_time,
             max_len_seq=config.max_len_seq,
             use_hetero_proj=config.use_hetero_proj,
+            time_use_global_feat=config.time_use_global_feat,
         )
 
         # Apply freezing based on config
@@ -199,9 +200,13 @@ class XVLAModel(nn.Module):
         domain_id: torch.LongTensor,
         proprio: torch.Tensor,
         action: torch.Tensor,
+        time_to_go: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """
         Forward pass for the XVLA model.
+        
+        Args:
+            time_to_go: [B] or [B, 1] tensor of ground truth remaining time (in seconds)
         """
         target_dtype = self._get_target_dtype()
         image_input = image_input.to(dtype=target_dtype)
@@ -219,14 +224,30 @@ class XVLAModel(nn.Module):
         action_noisy = torch.randn_like(action) * t.view(-1, 1, 1) + action * (1 - t).view(-1, 1, 1)
         proprio_m, action_noisy_m = self.action_space.preprocess(proprio, action_noisy)
 
-        pred_action = self.transformer(
+        pred_action, pred_time, pred_var = self.transformer(
             domain_id=domain_id,
             action_with_noise=action_noisy_m,
             t=t,
             proprio=proprio_m,
             **enc,
         )
-        return self.action_space.compute_loss(pred_action, action)
+        
+        # Compute action loss
+        losses = self.action_space.compute_loss(pred_action, action)
+        
+        # Compute time loss (Gaussian NLL) if time_to_go is provided
+        if time_to_go is not None:
+            time_to_go = time_to_go.to(dtype=target_dtype, device=pred_time.device)
+            if time_to_go.dim() == 1:
+                time_to_go = time_to_go.unsqueeze(-1)  # [B] -> [B, 1]
+            
+            # Gaussian NLL Loss: 0.5 * exp(-log_var) * (pred - target)^2 + 0.5 * log_var
+            # Use log_var for numerical stability
+            log_var = pred_var  # Decoder outputs log(variance)
+            time_loss = 0.5 * torch.exp(-log_var) * (pred_time - time_to_go) ** 2 + 0.5 * log_var
+            losses["time_loss"] = time_loss.mean()
+        
+        return losses
 
     @torch.no_grad()
     def generate_actions(
@@ -237,7 +258,15 @@ class XVLAModel(nn.Module):
         domain_id: torch.LongTensor,
         proprio: torch.Tensor,
         steps: int,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Generate actions with time and variance predictions.
+        
+        Returns:
+            tuple: (actions [B, chunk_size, action_dim], 
+                    pred_time [B, 1], 
+                    pred_var [B, 1])
+        """
         self.eval()
 
         target_dtype = self._get_target_dtype()
@@ -251,20 +280,26 @@ class XVLAModel(nn.Module):
 
         x1 = torch.randn(batch_size, self.chunk_size, action_dim, device=proprio.device, dtype=target_dtype)
         action = torch.zeros_like(x1)
+        
+        # Store time/var from last denoising step
+        pred_time = None
+        pred_var = None
 
         steps = max(1, int(steps))
         for i in range(steps, 0, -1):
             t = torch.full((batch_size,), i / steps, device=proprio.device, dtype=target_dtype)
             x_t = x1 * t.view(-1, 1, 1) + action * (1 - t).view(-1, 1, 1)
             proprio_m, x_t_m = self.action_space.preprocess(proprio, x_t)
-            action = self.transformer(
+            action, pred_time, pred_var = self.transformer(
                 domain_id=domain_id,
                 action_with_noise=x_t_m,
                 proprio=proprio_m,
                 t=t,
                 **enc,
             )
-        return self.action_space.postprocess(action)
+        
+        action_postprocessed = self.action_space.postprocess(action)
+        return action_postprocessed, pred_time, pred_var
 
 
 class XVLAPolicy(PreTrainedPolicy):
@@ -386,7 +421,11 @@ class XVLAPolicy(PreTrainedPolicy):
     def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, dict]:
         inputs = self._build_model_inputs(batch)
         targets = self._prepare_action_targets(batch)
-        losses = self.model(action=targets, **inputs)
+        
+        # Extract time_to_go if present
+        time_to_go = batch.get("time_to_go", None)
+        
+        losses = self.model(action=targets, time_to_go=time_to_go, **inputs)
         total_loss = sum(losses.values())
 
         log_dict = {k: v.detach().item() for k, v in losses.items()}
@@ -395,14 +434,47 @@ class XVLAPolicy(PreTrainedPolicy):
 
     def _get_action_chunk(self, batch: dict[str, Tensor]) -> Tensor:
         inputs = self._build_model_inputs(batch)
-        actions = self.model.generate_actions(**inputs, steps=self.config.num_denoising_steps)
+        actions, pred_time, pred_var = self.model.generate_actions(**inputs, steps=self.config.num_denoising_steps)
+        # Store latest time/var predictions for optional retrieval
+        self._last_pred_time = pred_time
+        self._last_pred_var = pred_var
         return actions
+    
+    def _get_action_chunk_with_time(self, batch: dict[str, Tensor]) -> tuple[Tensor, Tensor, Tensor]:
+        """Generate actions with time and variance predictions.
+        
+        Returns:
+            tuple: (actions [B, chunk_size, action_dim], 
+                    pred_time [B, 1], 
+                    pred_var [B, 1] as log_variance)
+        """
+        inputs = self._build_model_inputs(batch)
+        actions, pred_time, pred_var = self.model.generate_actions(**inputs, steps=self.config.num_denoising_steps)
+        return actions, pred_time, pred_var
 
     @torch.no_grad()
     def predict_action_chunk(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:  # noqa: ARG002
         self.eval()
         self._queues = populate_queues(self._queues, batch, exclude_keys=[ACTION])
         return self._get_action_chunk(batch)
+    
+    @torch.no_grad()
+    def predict_action_with_time(self, batch: dict[str, Tensor]) -> tuple[Tensor, Tensor, Tensor]:
+        """Predict action chunk with time and variance estimates.
+        
+        Use this method for evaluation to get time predictions alongside actions.
+        
+        Returns:
+            tuple: (actions [B, chunk_size, action_dim],
+                    pred_time [B, 1] predicted remaining time in seconds,
+                    pred_std [B, 1] predicted standard deviation (sqrt of exp(log_var)))
+        """
+        self.eval()
+        self._queues = populate_queues(self._queues, batch, exclude_keys=[ACTION])
+        actions, pred_time, pred_log_var = self._get_action_chunk_with_time(batch)
+        # Convert log_var to std for easier interpretation
+        pred_std = torch.exp(0.5 * pred_log_var)  # std = sqrt(var) = sqrt(exp(log_var)) = exp(0.5 * log_var)
+        return actions, pred_time, pred_std
 
     @torch.no_grad()
     def select_action(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:  # noqa: ARG002
@@ -414,6 +486,19 @@ class XVLAPolicy(PreTrainedPolicy):
             self._queues[ACTION].extend(actions.transpose(0, 1)[: self.config.n_action_steps])
 
         return self._queues[ACTION].popleft()
+    
+    def get_last_time_prediction(self) -> tuple[Tensor | None, Tensor | None]:
+        """Get the most recent time and variance predictions from select_action().
+        
+        Returns:
+            tuple: (pred_time, pred_std) or (None, None) if not available
+        """
+        pred_time = getattr(self, '_last_pred_time', None)
+        pred_var = getattr(self, '_last_pred_var', None)
+        if pred_time is not None and pred_var is not None:
+            pred_std = torch.exp(0.5 * pred_var)
+            return pred_time, pred_std
+        return None, None
 
     @classmethod
     def from_pretrained(
@@ -486,8 +571,23 @@ class XVLAPolicy(PreTrainedPolicy):
         if encoder_key in state_dict:
             state_dict[shared_key] = state_dict[encoder_key]
             # or deepcopy
-        # step 4: load into instance
-        instance.load_state_dict(state_dict, strict=True)
+        
+        # step 4: load into instance (allow missing keys for newly added layers)
+        # time_decoder and var_decoder may not exist in older checkpoints
+        missing_keys, unexpected_keys = instance.load_state_dict(state_dict, strict=False)
+        
+        # Log missing/unexpected keys for debugging
+        new_layer_prefixes = ("model.transformer.time_decoder", "model.transformer.var_decoder")
+        truly_missing = [k for k in missing_keys if not k.startswith(new_layer_prefixes)]
+        expected_missing = [k for k in missing_keys if k.startswith(new_layer_prefixes)]
+        
+        if expected_missing:
+            logging.warning(f"Time/Var decoders not found in checkpoint (will be randomly initialized): {len(expected_missing)} keys")
+        if truly_missing:
+            logging.warning(f"Unexpected missing keys: {truly_missing}")
+        if unexpected_keys:
+            logging.warning(f"Unexpected keys in checkpoint: {unexpected_keys}")
+        
         logging.info("Loaded XVLA checkpoint")
         # step 5: finalize
         # Reapply dtype after loading state dict
