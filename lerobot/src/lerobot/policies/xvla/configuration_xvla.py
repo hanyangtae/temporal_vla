@@ -78,6 +78,9 @@ class XVLAConfig(PreTrainedConfig):
     dim_time: int = 32
     max_len_seq: int = 512
     use_hetero_proj: bool = False
+    
+    # Time prediction options
+    time_use_global_feat: bool = False  # If True, use all tokens for time prediction. If False, use only action tokens.
 
     # Action & proprioception
     action_mode: str = "ee6d"
