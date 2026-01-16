@@ -67,11 +67,18 @@ At the start of every session or when context is unclear, check the current user
 - [x] **Config (`configuration_xvla.py`)**: Add `time_use_global_feat: bool = False`.
 - [x] **Eval Script (`scripts/eval_time_aware.py`)**: Baseline/Fine-tuned comparison.
 
-### Phase 4: Training & Eval (Current Focus - PC 1 & Server)
-- [ ] **Baseline Eval (PC 1)**: Run `eval_time_aware.py --baseline` on `lerobot/xvla-libero`.
-- [ ] **Training (Server)**: Fine-tune X-VLA on `libero_goal_time_aware`.
-- [ ] **Fine-tuned Eval (PC 1)**: Run `eval_time_aware.py` on trained checkpoint.
-- [ ] **Results Comparison**: Compare Success Rate, Time MAE, Variance Calibration.
+### Phase 4: PC2 테스트 완료 (✅)
+- [x] **HDF5 → LeRobot 변환**: `scripts/convert_hdf5_to_lerobot.py` 작성
+- [x] **HuggingFace Dataset 변환**: `scripts/convert_to_hf_dataset.py` 작성
+- [x] **Fine-tuning 테스트 (PC2)**: `open_the_middle_drawer` 1 태스크로 테스트 성공
+- [x] **Fine-tuned 모델 평가**: 100% 성공률 확인 (libero_goal 전체)
+
+### Phase 5: 본격 실험 (Current Focus - PC 1 & Server)
+- [ ] **데이터 선정 (PC 1)**: 학습용 태스크 선정 및 HDF5 → HuggingFace 변환
+- [ ] **Baseline 평가 (PC 1)**: 선정된 테스트 환경에서 baseline 성공률/시간 측정
+- [ ] **Fine-tuning (Server)**: 선정된 데이터로 전체 모델 학습
+- [ ] **모델 전송**: Server → PC 1으로 checkpoint 전송
+- [ ] **Fine-tuned 평가 (PC 1)**: 시간 예측 정확도 + 성공률 + 실제 시간 비교
 
 ---
 
@@ -83,57 +90,127 @@ At the start of every session or when context is unclear, check the current user
 | **Actual Time Mean** | ✅ | ✅ | Time to complete (sec) |
 | **Actual Time Std** | ✅ | ✅ | Variance of completion time |
 | **Predicted Time** | ❌ | ✅ | First-step time prediction |
-| **Predicted Std** | ❌ | ✅ | First-step uncertainty |
+| **Predicted Var** | ❌ | ✅ | First-step uncertainty (log_var) |
+| **Time MAE** | ❌ | ✅ | |predicted - actual| 평균 |
+| **Time Correlation** | ❌ | ✅ | 예측-실제 상관계수 |
 
 ---
 
 ## 💻 Machine-Specific Workflows
 
-### 🛠️ PC 2 (Dev) Workflow - COMPLETED
+### 🛠️ PC 2 (Dev) Workflow - COMPLETED ✅
 1. ~~Docker Setup~~
 2. ~~Sim Test~~
 3. ~~Code Mod: Time/Var heads~~
-4. ~~Eval Script~~
+4. ~~Data Pipeline 테스트~~
+5. ~~Fine-tuning 테스트 (time_decoder만)~~
+6. ~~Fine-tuned 모델 평가~~
 
 ### 🏭 PC 1 (Eval) Workflow - CURRENT
-1. **Sync Code**: `git pull` or `scp` modified files from PC 2.
-2. **Baseline Test**: 
+1. **코드 동기화**: `git pull` from PC 2
+2. **데이터 준비**:
    ```bash
-   python scripts/eval_time_aware.py \
-       --checkpoint lerobot/xvla-libero \
-       --env libero_goal \
-       --n_episodes 50 \
-       --baseline
+   # LIBERO HDF5 데이터 압축 해제
+   unzip libero_goal.zip -d data/datasets/
+   
+   # LeRobot 포맷 + time_to_go 변환
+   python scripts/convert_hdf5_to_lerobot.py \
+       --input data/datasets/libero_goal/libero_goal/<TASK_NAME>_demo.hdf5 \
+       --output data/datasets/lerobot_<TASK_NAME> \
+       --task_name "<TASK_DESCRIPTION>"
+   
+   # HuggingFace Dataset 변환
+   python scripts/convert_to_hf_dataset.py
    ```
-3. **Wait for Training**: Server에서 학습 완료 후 checkpoint 받기.
-4. **Fine-tuned Test**:
+3. **Baseline 평가**:
    ```bash
-   python scripts/eval_time_aware.py \
-       --checkpoint outputs/train/xvla_time_aware/best \
-       --env libero_goal \
-       --n_episodes 50
+   # baseline 모델로 성공률 + 시간 측정
+   python scripts/collect_time_data.py \
+       --task libero_goal \
+       --n_episodes 10 \
+       --output data/time_data/baseline_libero_goal.json
+   
+   # 또는 lerobot-eval 직접 사용
+   lerobot-eval \
+       --policy.path=lerobot/xvla-libero \
+       --env.type=libero \
+       --env.task=libero_goal \
+       --env.control_mode=absolute \
+       --eval.batch_size=1 \
+       --eval.n_episodes=10 \
+       --output_dir=outputs/eval/baseline_libero_goal
+   ```
+4. **Server로 데이터 전송**:
+   ```bash
+   scp -r data/datasets/hf_<TASK_NAME> sangwoo@SERVER_IP:/path/to/data/
+   ```
+5. **Fine-tuned 모델 받기**:
+   ```bash
+   scp -r sangwoo@SERVER_IP:/path/to/outputs/train/xvla_time_aware/final ./outputs/train/
+   ```
+6. **Fine-tuned 평가**:
+   ```bash
+   lerobot-eval \
+       --policy.path=outputs/train/xvla_time_aware/final \
+       --env.type=libero \
+       --env.task=libero_goal \
+       --env.control_mode=absolute \
+       --eval.batch_size=1 \
+       --eval.n_episodes=10 \
+       --output_dir=outputs/eval/finetuned_libero_goal
    ```
 
 ### 🚀 Server (Train) Workflow - PENDING
-1. **Sync Code**: `scp` from PC 2.
-2. **Train**: 
+1. **코드 동기화**: `scp` from PC 2 or `git pull`
+2. **데이터 받기**: PC 1에서 변환된 HuggingFace Dataset 받기
+3. **Fine-tuning 실행**:
    ```bash
-   lerobot-train \
-       --policy.path=lerobot/xvla-libero \
-       --dataset.repo_id=libero_goal_time_aware \
-       --output_dir=outputs/train/xvla_time_aware
+   python scripts/finetune_xvla_time.py \
+       --dataset_path data/datasets/hf_<TASK_NAME> \
+       --output_dir outputs/train/xvla_time_aware \
+       --num_epochs 10 \
+       --batch_size 4 \
+       --gradient_accumulation 8 \
+       --learning_rate 1e-5
    ```
-3. **Monitor**: Check WandB for `action_loss` and `time_loss`.
-4. **Export**: `scp` best checkpoint to PC 1 for eval.
+4. **체크포인트 전송**: PC 1으로 best checkpoint 전송
+   ```bash
+   scp -r outputs/train/xvla_time_aware/final rudxo@PC1_IP:/path/to/outputs/train/
+   ```
 
 ---
 
-## 📁 Key Files Modified
+## 📁 Key Files
 
+### 모델 수정 파일
 | File | Purpose |
 |:---|:---|
-| `lerobot/.../soft_transformer.py` | Time/Var Decoder heads |
-| `lerobot/.../modeling_xvla.py` | Gaussian NLL Loss, predict_action_with_time() |
-| `lerobot/.../configuration_xvla.py` | `time_use_global_feat` option |
-| `scripts/eval_time_aware.py` | Baseline vs Fine-tuned evaluation |
-| `scripts/process_dataset_with_time.py` | Add `time_to_go` labels |
+| `lerobot/.../soft_transformer.py` | Time/Var Decoder heads 추가 |
+| `lerobot/.../modeling_xvla.py` | Gaussian NLL Loss, time_to_go 처리 |
+| `lerobot/.../configuration_xvla.py` | `time_use_global_feat` 옵션 |
+
+### 스크립트 파일
+| File | Purpose |
+|:---|:---|
+| `scripts/convert_hdf5_to_lerobot.py` | LIBERO HDF5 → LeRobot 로컬 포맷 |
+| `scripts/convert_to_hf_dataset.py` | LeRobot → HuggingFace Dataset |
+| `scripts/finetune_xvla_time.py` | Time-aware Fine-tuning |
+| `scripts/collect_time_data.py` | Baseline/Fine-tuned 시간 데이터 수집 |
+
+---
+
+## 🎯 실험 설계 (Recommended)
+
+### 학습 데이터 (Training)
+- **Option A**: `libero_goal` 전체 (10 tasks × 50 demos = 500 demos)
+- **Option B**: 선별된 3-5 tasks
+
+### 테스트 데이터 (Evaluation)
+- **In-distribution**: 학습에 사용한 tasks
+- **Out-of-distribution**: 학습에 사용하지 않은 tasks (일반화 테스트)
+
+### 비교 지표
+1. **성공률**: Baseline vs Fine-tuned
+2. **실제 시간**: 작업 완료까지 걸린 시간
+3. **시간 예측 정확도**: MAE, RMSE, Correlation (Fine-tuned만)
+4. **불확실성 품질**: 예측 분산 vs 실제 오차 (Calibration)
