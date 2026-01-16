@@ -92,9 +92,6 @@ class XVLAConfig(PreTrainedConfig):
     num_image_views: int | None = None
     empty_cameras: int = 0
 
-    # Time prediction options
-    time_use_global_feat: bool = False  # If True, use all tokens for time prediction; else use action tokens only
-
     # Freezing options for VLM components
     # By default, VLM encoders are frozen and only policy transformer + soft prompts train
     freeze_vision_encoder: bool = False  # Freeze VLM vision encoder weights

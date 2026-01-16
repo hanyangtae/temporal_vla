@@ -310,7 +310,6 @@ class SoftPromptedTransformer(nn.Module):
         len_soft_prompts: int = 32,
         max_len_seq: int = 512,
         use_hetero_proj: bool = False,
-        time_use_global_feat: bool = False,
     ) -> None:
         super().__init__()
         self.hidden_size = hidden_size
@@ -318,7 +317,6 @@ class SoftPromptedTransformer(nn.Module):
         self.dim_time = dim_time
         self.len_soft_prompts = len_soft_prompts
         self.use_hetero_proj = use_hetero_proj
-        self.time_use_global_feat = time_use_global_feat
 
         self.blocks = nn.ModuleList(
             [TransformerBlock(hidden_size, num_heads, mlp_ratio=mlp_ratio) for _ in range(depth)]
@@ -341,10 +339,6 @@ class SoftPromptedTransformer(nn.Module):
             dim_action + dim_time + dim_propio, hidden_size, num_domains=num_domains
         )
         self.action_decoder = DomainAwareLinear(hidden_size, dim_action, num_domains=num_domains)
-        
-        # Time & Variance prediction heads (for Time-Aware XVLA)
-        self.time_decoder = DomainAwareLinear(hidden_size, 1, num_domains=num_domains)
-        self.var_decoder = DomainAwareLinear(hidden_size, 1, num_domains=num_domains)
 
         if len_soft_prompts > 0:
             self.soft_prompt_hub = nn.Embedding(num_domains, len_soft_prompts * hidden_size)
@@ -417,19 +411,5 @@ class SoftPromptedTransformer(nn.Module):
         for block in self.blocks:
             x = block(x)
 
-        # Decode action segment
-        x_normed = self.norm(x)
-        pred_action = self.action_decoder(x_normed[:, :num_actions], domain_id)
-        
-        # Decode time and variance predictions
-        if self.time_use_global_feat:
-            # Use all tokens (Global Average Pooling)
-            time_feat = x_normed.mean(dim=1)
-        else:
-            # Use only action tokens (Action Pooling) - Default
-            time_feat = x_normed[:, :num_actions].mean(dim=1)
-        
-        pred_time = self.time_decoder(time_feat, domain_id)  # [B, 1]
-        pred_var = self.var_decoder(time_feat, domain_id)    # [B, 1] (log variance)
-        
-        return pred_action, pred_time, pred_var
+        # Decode only the action segment
+        return self.action_decoder(self.norm(x[:, :num_actions]), domain_id)
