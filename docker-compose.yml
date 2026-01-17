@@ -20,4 +20,7 @@ services:
     # Keep container running
     tty: true
     stdin_open: true
-    command: /bin/bash
+    
+    # Auto-setup environment on startup
+    entrypoint: ["/bin/bash", "/workspace/vla_tset/scripts/setup_env.sh"]
+    command: ["/bin/bash"]
