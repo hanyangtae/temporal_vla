@@ -10,8 +10,7 @@ LIBERO 데이터셋을 Subtask 단위로 분해
 Usage:
     python scripts/decompose_subtasks.py \
         --input data/datasets/libero_goal \
-        --output data/datasets/libero_goal_subtasks \
-        --api_key YOUR_OPENAI_API_KEY
+        --output data/datasets/libero_goal_subtasks
 """
 
 import argparse
@@ -23,6 +22,7 @@ from typing import Dict, List, Tuple, Optional
 import h5py
 import numpy as np
 from tqdm import tqdm
+from dotenv import load_dotenv
 
 # OpenAI API (or use Anthropic Claude)
 try:
@@ -190,27 +190,27 @@ def extract_move_primitive(action: np.ndarray, prev_action: np.ndarray = None,
     return "stop"
 
 
-def detect_gripper_events(gripper_states: np.ndarray, threshold: float = 0.5) -> List[Tuple[int, str]]:
-    """
-    Detect gripper open/close events from gripper state sequence.
+# def detect_gripper_events(gripper_states: np.ndarray, threshold: float = 0.5) -> List[Tuple[int, str]]:
+#     """
+#     Detect gripper open/close events from gripper state sequence.
     
-    Returns list of (step_idx, event_type) where event_type is "open" or "close"
+#     Returns list of (step_idx, event_type) where event_type is "open" or "close"
     
-    CycleVLA Appendix B.2: Gripper state changes are the most reliable cue for subtask boundaries
-    """
-    events = []
+#     CycleVLA Appendix B.2: Gripper state changes are the most reliable cue for subtask boundaries
+#     """
+#     events = []
     
-    # Detect transitions
-    for i in range(1, len(gripper_states)):
-        prev_open = gripper_states[i-1] > threshold
-        curr_open = gripper_states[i] > threshold
+#     # Detect transitions
+#     for i in range(1, len(gripper_states)):
+#         prev_open = gripper_states[i-1] > threshold
+#         curr_open = gripper_states[i] > threshold
         
-        if not prev_open and curr_open:
-            events.append((i, "gripper_open"))
-        elif prev_open and not curr_open:
-            events.append((i, "gripper_close"))
+#         if not prev_open and curr_open:
+#             events.append((i, "gripper_open"))
+#         elif prev_open and not curr_open:
+#             events.append((i, "gripper_close"))
     
-    return events
+#     return events
 
 
 def extract_trajectory_features(actions: np.ndarray, 
@@ -270,7 +270,7 @@ def simplify_trajectory_features(features: Dict[int, str], window_size: int = 5)
 # LLM API Calls
 # ============================================================================
 
-def call_openai(prompt: str, api_key: str, model: str = "gpt-4o") -> str:
+def call_openai(prompt: str, api_key: str, model: str = "gpt-5.1") -> str:
     """Call OpenAI API
     
     Available models (2026):
@@ -280,27 +280,43 @@ def call_openai(prompt: str, api_key: str, model: str = "gpt-4o") -> str:
     """
     client = openai.OpenAI(api_key=api_key)
     
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.1,  # Lower for more consistent outputs
-        max_tokens=2000,
-    )
+    # Configure parameters based on model type
+    kwargs = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+
+    # Handle model-specific parameters (o1, gpt-5.1 etc need max_completion_tokens)
+    if model.startswith("o1") or model == "gpt-5.1":
+        kwargs["max_completion_tokens"] = 2000
+        # o1 models might have strict temperature requirements (often 1.0)
+        if model.startswith("o1"):
+            kwargs["temperature"] = 1.0
+        else:
+            kwargs["temperature"] = 0.1
+    else:
+        # Legacy/Standard models (gpt-4o, gpt-3.5)
+        kwargs["max_tokens"] = 2000
+        kwargs["temperature"] = 0.1
+
+    try:
+        response = client.chat.completions.create(**kwargs)
+    except openai.BadRequestError as e:
+        # Fallback if parameter mismatch occurs
+        if "max_completion_tokens" in str(e) and "max_tokens" in kwargs:
+            kwargs.pop("max_tokens")
+            kwargs["max_completion_tokens"] = 2000
+            response = client.chat.completions.create(**kwargs)
+        elif "max_tokens" in str(e) and "max_completion_tokens" in kwargs:
+            kwargs.pop("max_completion_tokens")
+            kwargs["max_tokens"] = 2000
+            response = client.chat.completions.create(**kwargs)
+        else:
+            raise e
     
     return response.choices[0].message.content
 
 
-def call_anthropic(prompt: str, api_key: str, model: str = "claude-3-5-sonnet-20241022") -> str:
-    """Call Anthropic API"""
-    client = anthropic.Anthropic(api_key=api_key)
-    
-    response = client.messages.create(
-        model=model,
-        max_tokens=2000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    
-    return response.content[0].text
 
 
 def call_llm(prompt: str, api_key: str, provider: str = "openai", model: str = None) -> str:
@@ -310,11 +326,7 @@ def call_llm(prompt: str, api_key: str, provider: str = "openai", model: str = N
             raise ImportError("openai package not installed. Run: pip install openai")
         model = model or "gpt-4o"
         return call_openai(prompt, api_key, model=model)
-    elif provider == "anthropic":
-        if not HAS_ANTHROPIC:
-            raise ImportError("anthropic package not installed. Run: pip install anthropic")
-        model = model or "claude-3-5-sonnet-20241022"
-        return call_anthropic(prompt, api_key, model=model)
+
     else:
         raise ValueError(f"Unknown provider: {provider}")
 
@@ -527,7 +539,6 @@ def process_hdf5_file(hdf5_path: Path, output_dir: Path, task_name: str,
             demo = f['data'][demo_name]
             actions = demo['actions'][:]
             n_steps = actions.shape[0]
-            
             # Get gripper states from observations (more reliable than action commands)
             gripper_states = None
             if 'obs' in demo and 'gripper_states' in demo['obs']:
@@ -537,11 +548,11 @@ def process_hdf5_file(hdf5_path: Path, output_dir: Path, task_name: str,
             traj_features = extract_trajectory_features(actions, gripper_states)
             
             # Detect gripper events for better boundary detection
-            gripper_events = []
-            if gripper_states is not None:
-                gripper_events = detect_gripper_events(
-                    gripper_states[:, 0] if len(gripper_states.shape) > 1 else gripper_states
-                )
+            # gripper_events = []
+            # if gripper_states is not None:
+            #     gripper_events = detect_gripper_events(
+            #         gripper_states[:, 0] if len(gripper_states.shape) > 1 else gripper_states
+            #     )
             
             # Get subtask boundaries from LLM
             try:
@@ -712,17 +723,20 @@ def save_analysis_to_excel(analysis: List[dict], output_path: Path):
 
 
 def main():
+    # Load environment variables from .env file
+    load_dotenv()
+    
     parser = argparse.ArgumentParser(description="Decompose LIBERO data into subtasks")
-    parser.add_argument("--input", type=str, required=True, 
+    parser.add_argument("--input", type=str, 
+                        default="data/datasets/libero_goal",
                         help="Input directory containing HDF5 files")
-    parser.add_argument("--output", type=str, required=True,
+    parser.add_argument("--output", type=str, 
+                        default="data/datasets/libero_goal_subtasks",
                         help="Output directory for subtask data")
-    parser.add_argument("--api_key", type=str, default=None,
-                        help="LLM API key (or set OPENAI_API_KEY/ANTHROPIC_API_KEY env var)")
     parser.add_argument("--provider", type=str, default="openai",
                         choices=["openai", "anthropic"],
                         help="LLM provider")
-    parser.add_argument("--model", type=str, default="gpt-4o",
+    parser.add_argument("--model", type=str, default="gpt-5.1",
                         help="LLM model (gpt-4o, gpt-4o-mini, gpt-5.1, claude-3-5-sonnet)")
     parser.add_argument("--fps", type=float, default=10.0,
                         help="FPS for time calculation")
@@ -744,16 +758,14 @@ def main():
         save_analysis_to_excel(analysis, output_dir / "analysis_results.xlsx")
         return
     
-    # Get API key
-    api_key = args.api_key
-    if api_key is None:
-        if args.provider == "openai":
-            api_key = os.environ.get("OPENAI_API_KEY")
-        else:
-            api_key = os.environ.get("ANTHROPIC_API_KEY")
+    # Get API key from environment variables
+    if args.provider == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY")
+    else:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
     
     if api_key is None:
-        raise ValueError(f"API key not provided. Set --api_key or {args.provider.upper()}_API_KEY env var")
+        raise ValueError(f"API key not found in environment variables. Please set {args.provider.upper()}_API_KEY in your .env file.")
     
     input_dir = Path(args.input)
     
