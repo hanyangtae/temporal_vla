@@ -3,4 +3,5 @@ docker-compose.override.yml
 *.mp4
 data/*
 outputs/
-logs/
+logs/*
+*.log

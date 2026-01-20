@@ -50,6 +50,7 @@ openpyxl  # For Excel export
 # LLM API (for subtask decomposition)
 # -----------------------------------------------------------------------------
 openai>=1.0.0
+python-dotenv
 
 # -----------------------------------------------------------------------------
 # LIBERO Simulator
