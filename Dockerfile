@@ -68,4 +68,5 @@ RUN pip3 install flash-attn --no-build-isolation
 # Pre-install tricky dependencies with system CMake (avoids conflict with pip cmake)
 RUN pip3 install "egl_probe>=1.0.1" "hf-egl-probe>=1.0.2"
 
+ENTRYPOINT ["/workspace/vla_tset/scripts/setup_env.sh"]
 CMD ["/bin/bash"]
