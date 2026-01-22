@@ -25,7 +25,7 @@ cd "$WORKSPACE"
 # 1. Install requirements.txt (skip if already installed)
 # -----------------------------------------------------------------------------
 echo ""
-echo "📦 [1/3] Installing requirements..."
+echo "📦 [1/4] Installing requirements..."
 pip install -q -r requirements.txt 2>/dev/null || pip install -r requirements.txt
 
 # -----------------------------------------------------------------------------

@@ -184,8 +184,39 @@ scp -P 11111 C:\Users\<USER>\Downloads\final.tar.gz rudxo@218.152.144.220:/home/
 
 ---
 
-## 📁 Key Files
+## 📁 Key Files & LeRobot Reference
 
+### Custom Evaluation
+| File | Purpose |
+|:-----|:--------|
+| `scripts/eval_subtask_based.py` | Subtask 기반 평가 (Main Script) |
+| `scripts/run_evaluation.sh` | 평가 실행 스크립트 |
+
+### LeRobot Reference (MANDATORY)
+평가 코드 작성 및 수정 시 다음 파일들을 반드시 참고할 것:
+
+1. **Evaluation Entry Point**: `lerobot/src/lerobot/scripts/lerobot_eval.py`
+   - Config 구조 (`EvalPipelineConfig`)
+   - 데코레이터 (`@parser.wrap()`) 사용 방식
+   - 주요 평가 루프 로직
+
+2. **Environment Factory**: `lerobot/src/lerobot/envs/factory.py`
+   - `make_env()` 함수 사용법
+   - `EnvConfig` 처리 방식
+
+3. **Policy Factory**: `lerobot/src/lerobot/policies/factory.py`
+   - `make_policy()` 함수 사용법
+   - `make_pre_post_processors()` 사용법
+   - `PreTrainedConfig` 처리
+
+4. **Environment Configs**:
+   - `lerobot/src/lerobot/envs/configs.py`: `LiberoEnv` 등 Config 클래스 정의
+   - `lerobot/src/lerobot/envs/libero.py`: `create_libero_envs` 실제 구현
+
+5. **Config Parser**: `lerobot/src/lerobot/configs/parser.py`
+   - CLI 인자 파싱 및 `draccus` 래핑 로직
+
+### Other Key Files
 | File | Purpose |
 |:-----|:--------|
 | `lerobot/.../soft_transformer.py` | Time/Var Decoder heads |
@@ -193,5 +224,4 @@ scp -P 11111 C:\Users\<USER>\Downloads\final.tar.gz rudxo@218.152.144.220:/home/
 | `scripts/decompose_subtasks.py` | LLM Subtask 분해 |
 | `scripts/convert_subtask_to_hf.py` | HuggingFace Dataset 변환 |
 | `scripts/finetune_xvla_time.py` | Time-aware Fine-tuning |
-| `scripts/eval_subtask_based.py` | Subtask 기반 평가 |
 | `requirements.txt` | Python dependencies |
