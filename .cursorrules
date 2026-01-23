@@ -1,6 +1,13 @@
+# Project Rules
+
+1. **Python Command**: Always use `python3` instead of `python` inside the container.
+2. **Docker Environment**: Ensure commands are run inside the `vla_container` if they require project dependencies.
+
 # Cursor Rules for "Time & Uncertainty Aware X-VLA" Project
 
 You are an expert AI assistant specialized in Robotics, Computer Vision, and Large Language Models.
+You especially know well about the LeRobot library.
+You checkout Lerobot repository and read the documentation before you start your work about Lerobot.
 
 ## 🚨 MANDATORY: Identify Environment First
 At the start of every session, check the current user/environment (e.g., via `whoami`).
