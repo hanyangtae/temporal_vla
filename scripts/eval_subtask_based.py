@@ -1,1026 +1,487 @@
 #!/usr/bin/env python3
 """
-X-VLA Evaluation Script (Baseline & Subtask & Task-Level 모드 지원)
+X-VLA Evaluation Script (Baseline & Subtask & Task-Level Support)
 
-== Baseline 모드 (--baseline) ==
-- Full task instruction 사용
-- Subtask 전환 없이 전체 에피소드 실행
-- 기존 X-VLA 모델 평가에 적합
-
-== Subtask 모드 (기본) ==
-- Subtask instruction 순차 실행
-- Fine-tuned 모델 평가에 적합
-- Subtask 단위 시간 예측 평가 포함
-
-== Task-Level 모드 (--task_level_time) ==
-- Full task instruction 사용하면서 Task-level 시간 예측 평가
-- time_to_go_full로 학습된 모델 평가에 적합
+기능:
+1. Baseline 평가: Full task instruction, 전체 에피소드 실행.
+2. Subtask 평가: Subtask instruction 순차 실행 (Time/Uncertainty 활용 가능).
+3. Task-Level Time 평가: Full task instruction + Task-level 시간 예측.
 
 Usage:
-    # Baseline 평가 (full task instruction)
-    python scripts/eval_subtask_based.py --task open_the_middle_drawer_of_the_cabinet --baseline --n_episodes 10
-    
-    # Subtask 기반 평가 (fine-tuned 모델)
     python scripts/eval_subtask_based.py --task open_the_middle_drawer_of_the_cabinet --n_episodes 10
-    
-    # Task-Level 시간 예측 평가
-    python scripts/eval_subtask_based.py --task open_the_middle_drawer_of_the_cabinet --task_level_time --n_episodes 10
 """
 
 import argparse
 import json
+from re import T
 import time
+import sys
 import os
-import numpy as np
+import logging
+import warnings
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Optional, List, Tuple
-import logging
-
-# Suppress warnings
-import warnings
-warnings.filterwarnings("ignore")
-
-import torch
-from transformers import AutoTokenizer
-
-# === LIBERO import with input() mocking ===
-# LIBERO 초기화 시 input() 호출을 막기 위한 처리
+from typing import Optional, List, Tuple, Dict, Any, Union
 from unittest.mock import patch
 
-# 환경 변수로 LIBERO 데이터 경로 설정 (input 호출 방지)
-if "LIBERO_DATA_DIR" not in os.environ:
-    os.environ["LIBERO_DATA_DIR"] = "/workspace/vla_tset/data/libero"
-    # 디렉토리가 없으면 생성
-    os.makedirs(os.environ["LIBERO_DATA_DIR"], exist_ok=True)
+import torch
+import numpy as np
+import cv2
+from transformers import AutoTokenizer
 
-# input()을 mocking하여 'N' 반환 (기본 경로 사용)
+from lerobot.configs import parser
+from lerobot.configs.policies import PreTrainedConfig
+
+# LeRobot & Libero Imports
+# LIBERO import 시 불필요한 input() 호출 방지
 with patch('builtins.input', return_value='N'):
     try:
         from libero.libero import benchmark
-        from libero.libero.envs import OffScreenRenderEnv
         HAS_LIBERO = True
-    except ImportError as e:
+    except ImportError:
         HAS_LIBERO = False
-        print(f"⚠️ LIBERO not available: {e}")
+import gymnasium as gym
+from lerobot.policies.xvla.modeling_xvla import XVLAPolicy
+from lerobot.policies.xvla.utils import rotate6d_to_axis_angle
+from lerobot.policies.factory import make_policy, make_pre_post_processors
+from lerobot.envs.factory import make_env, make_env_pre_post_processors
+from lerobot.envs.configs import LiberoEnv
+from lerobot.envs.libero import create_libero_envs
+from gymnasium.vector import SyncVectorEnv
 
-# LeRobot X-VLA imports
-try:
-    from lerobot.policies.xvla.modeling_xvla import XVLAPolicy
-    HAS_XVLA = True
-except ImportError:
-    HAS_XVLA = False
-    print("⚠️ X-VLA not available")
-
+# === Logging Setup ===
 logging.basicConfig(
-    level=logging.INFO, 
+    level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
+    handlers=[logging.StreamHandler(sys.stdout)],
+    force=True
 )
-# Force flush on every log
-for handler in logging.root.handlers:
-    handler.flush = lambda: None
-    
 logger = logging.getLogger(__name__)
 
-# Force stdout/stderr flush
-import sys
-sys.stdout.reconfigure(line_buffering=True)
-sys.stderr.reconfigure(line_buffering=True)
-
-# ImageNet stats for normalization
+# === Constants ===
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
 
-
 @dataclass
-class SubtaskResult:
-    """단일 Subtask 실행 결과"""
-    subtask_name: str
-    subtask_idx: int
-    start_step: int
-    end_step: int
-    steps_taken: int
-    predicted_time: Optional[float] = None  # 예측된 평균 시간
-    predicted_var: Optional[float] = None   # 예측된 평균 불확실성
-    actual_time: Optional[float] = None     # 실제 소요 시간 (초)
-    completed: bool = False                  # Subtask 완료 여부
-    time_predictions: List[float] = field(default_factory=list)  # 모든 예측값
-
-
-@dataclass
-class InstructionResult:
-    """단일 Instruction 실행 결과"""
-    task_name: str
-    episode_idx: int
-    success: bool
-    total_steps: int
-    total_time: float                    # 총 소요 시간 (초)
-    initial_predicted_time: Optional[float] = None  # 첫 step의 시간 예측 (Task-level용)
-    initial_predicted_var: Optional[float] = None   # 첫 step의 불확실성 예측
-    subtask_results: List[SubtaskResult] = field(default_factory=list)
-
+class SubtaskConfig:
+    max_steps_per_subtask: int = 100
+    switch_mode: str = "time_prediction"
+    fixed_steps_per_subtask: int = 50
+    baseline: bool = False
+    eval_subtask: bool = False
+    task_level_time: bool = False
 
 @dataclass
 class EvalConfig:
-    """평가 설정"""
-    task_suite: str = "libero_goal"
+    # 1. LeRobot Standard Sections
+    env: LiberoEnv = field(default_factory=lambda: LiberoEnv(
+        task="libero_goal",
+        storage_path="data/libero_goal",
+        gym_kwargs={"obs_type": "pixels_agent_pos", "render_mode": "rgb_array"}
+    ))
+    policy: Optional[PreTrainedConfig] = None
+    eval: LeRobotStandardEvalConfig = field(default_factory=LeRobotStandardEvalConfig)
+    
+    # 2. Custom/Top-level Fields
+    subtask: SubtaskConfig = field(default_factory=SubtaskConfig)
+    
+    # CLI 편의성을 위한 필드
     task_name: str = "open_the_middle_drawer_of_the_cabinet"
-    model_path: str = "lerobot/xvla-libero"
-    n_episodes: int = 10
-    max_steps_per_episode: int = 300
-    max_steps_per_subtask: int = 100     # Subtask당 최대 step
-    subtask_switch_mode: str = "fixed_steps"  # "fixed_steps", "gripper_change", "time_prediction"
-    fixed_steps_per_subtask: int = 50    # fixed_steps 모드에서 사용
     output_dir: str = "outputs/eval"
     save_video: bool = False
     seed: int = 42
-    baseline: bool = False               # Full task instruction, 시간 예측 없음
-    task_level_time: bool = False        # Full task instruction + Task-level 시간 예측 평가
 
+    def __post_init__(self):
+        # Ensure env config is consistent
+        if self.env:
+             if self.env.gym_kwargs is None:
+                self.env.gym_kwargs = {}
+             # obs_type 등 강제 설정
+             self.env.gym_kwargs["obs_type"] = "pixels_agent_pos"
+             self.env.gym_kwargs["render_mode"] = "rgb_array"
+class SubtaskResult:
+    name: str
+    steps: int
+    actual_time: float
+    predicted_time: Optional[float] = None
+    predicted_var: Optional[float] = None
+    completed: bool = False
+    time_predictions: List[float] = field(default_factory=list)
 
-class SubtaskBasedEvaluator:
-    """Subtask 기반 평가기"""
-    
+@dataclass
+class EpisodeResult:
+    episode_idx: int
+    success: bool
+    total_steps: int
+    total_time: float
+    initial_predicted_time: Optional[float] = None
+    subtask_results: List[SubtaskResult] = field(default_factory=list)
+
+class SubtaskEvaluator:
     def __init__(self, config: EvalConfig):
         self.config = config
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._setup_env_and_model()
+        self._load_subtasks()
+
+    def _setup_env_and_model(self):
+        """환경 및 모델 초기화"""
+        logger.info(f"🔧 Setting up evaluator for task: {self.config.task_name}")
         
-        # 결과 저장
-        self.results: List[InstructionResult] = []
-        
-        # 모델 및 환경 초기화
-        self._setup()
-    
-    def _setup(self):
-        """모델과 환경 초기화"""
-        logger.info("🔧 Setting up evaluator...")
-        
-        # Tokenizer 로드
-        logger.info("📝 Loading tokenizer...")
+        # 1. Load Tokenizer & Model
         self.tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large")
         
-        # X-VLA 모델 로드
-        logger.info(f"🤖 Loading X-VLA from {self.config.model_path}...")
-        self.policy = XVLAPolicy.from_pretrained(self.config.model_path)
-        self.policy.eval()
-        if self.device == "cuda":
-            self.policy = self.policy.cuda()
-        logger.info(f"   Using device: {self.device}")
+        logger.info(f"🤖 Loading Policy via make_policy from {self.config.policy.pretrained_path if self.config.policy else 'scratch'}")
         
-        # Subtask 메타데이터 로드 (baseline/task_level 모드가 아닐 때만)
-        if not self.config.baseline and not self.config.task_level_time:
-            self._load_subtask_metadata()
-        else:
-            # Baseline/Task-level 모드에서는 subtask 없음
-            self.subtasks = None
-            self.metadata = None
-        
-        # LIBERO 환경 설정
-        self._setup_libero_env()
-    
-    def _load_subtask_metadata(self):
-        """Subtask 메타데이터 로드"""
-        # 스크립트 위치 기준으로 상대 경로 계산
-        script_dir = Path(__file__).parent.parent  # vla_tset 루트
-        subtask_dir = script_dir / f"data/datasets/libero_goal_subtasks/{self.config.task_name}"
-        metadata_file = subtask_dir / "subtask_metadata.json"
-        
-        if metadata_file.exists():
-            with open(metadata_file) as f:
-                self.metadata = json.load(f)
-            self.subtasks = self.metadata["subtasks"]
-            logger.info(f"📋 Loaded {len(self.subtasks)} subtasks:")
-            for i, st in enumerate(self.subtasks):
-                logger.info(f"   {i+1}. {st}")
-        else:
-            logger.warning(f"⚠️ Subtask metadata not found: {metadata_file}")
-            logger.warning(f"   Falling back to full task instruction (like baseline mode)")
-            # subtask 없으면 full task로 진행
-            self.subtasks = None
-            self.metadata = None
-    
-    def _get_task_description(self) -> str:
-        """Task description 가져오기"""
-        return self.config.task_name.replace("_", " ")
-    
-    def _setup_libero_env(self):
-        """LIBERO 환경 설정"""
-        if not HAS_LIBERO:
-            raise RuntimeError("LIBERO is required for evaluation")
-        
-        benchmark_dict = benchmark.get_benchmark_dict()
-        task_suite = benchmark_dict[self.config.task_suite]()
-        
-        # Task 찾기
-        task_id = None
-        for i in range(task_suite.n_tasks):
-            task = task_suite.get_task(i)
-            if task.name == self.config.task_name:
-                task_id = i
-                break
-        
-        if task_id is None:
-            raise ValueError(f"Task '{self.config.task_name}' not found in {self.config.task_suite}")
-        
-        self.task = task_suite.get_task(task_id)
-        self.task_description = self.task.language
-        
-        logger.info(f"📋 Task: {self.task.name}")
-        logger.info(f"📝 Description: {self.task_description}")
-        
-        # BDDL 파일 전체 경로 구성
-        import libero
-        libero_path = Path(libero.__file__).parent
-        bddl_dir = libero_path / "libero" / "bddl_files" / self.config.task_suite
-        bddl_file = bddl_dir / f"{self.config.task_name}.bddl"
-        
-        if not bddl_file.exists():
-            raise FileNotFoundError(f"BDDL file not found: {bddl_file}")
-        
-        logger.info(f"📄 BDDL file: {bddl_file}")
-        
-        # 환경 생성
-        env_args = {
-            "bddl_file_name": str(bddl_file),
-            "camera_heights": 128,
-            "camera_widths": 128,
-        }
-        
-        self.env = OffScreenRenderEnv(**env_args)
-        logger.info("✅ Environment initialized")
-    
-    def _tokenize(self, instruction: str) -> torch.Tensor:
-        """언어 인스트럭션 토큰화"""
-        tokens = self.tokenizer(
-            instruction,
-            return_tensors="pt",
-            max_length=64,
-            padding="max_length",
-            truncation=True,
+        # Use make_policy factory
+        self.policy = make_policy(
+            cfg=self.config.policy,
+            ds_meta=None,
+            env_cfg=self.config.env,
+            rename_map={}
         )
-        return tokens.input_ids
-    
-    def _preprocess_image(self, img: np.ndarray) -> torch.Tensor:
-        """이미지 전처리"""
-        # HWC -> CHW
-        img = torch.from_numpy(img.copy()).permute(2, 0, 1).float()
-        # [0, 255] -> [0, 1]
-        img = img / 255.0
-        # ImageNet normalization
-        mean = torch.tensor(IMAGENET_MEAN).view(3, 1, 1)
-        std = torch.tensor(IMAGENET_STD).view(3, 1, 1)
-        img = (img - mean) / std
-        return img
-    
-    def _parse_observation(self, obs: dict) -> dict:
-        """환경에서 관찰 데이터 추출"""
+        self.policy.eval()
+        self.policy.to(self.device)
+
+        # 2. Load Processors
+        self.preprocessor, self.postprocessor = make_pre_post_processors(
+            self.policy.config,
+            pretrained_path=self.config.policy.pretrained_path if self.config.policy else None,
+            preprocessor_overrides={"device_processor": {"device": self.device}},
+            postprocessor_overrides={"device_processor": {"device": self.device}},
+        )
+
+        # 3. Setup LIBERO Environment
+        if not HAS_LIBERO:
+            raise RuntimeError("LIBERO library not found.")
+            
+        benchmark_dict = benchmark.get_benchmark_dict()
+        task_suite = benchmark_dict[self.config.env.task]() # Use env.task (e.g. libero_goal)
+        # Find task ID
+        task_id = next((i for i in range(task_suite.n_tasks) 
+                       if task_suite.get_task(i).name == self.config.task_name), None)
+        if task_id is None:
+            raise ValueError(f"Task {self.config.task_name} not found in {self.config.env.task}")
+            
+        self.task = task_suite.get_task(task_id)
+        self.full_task_description = self.task.language
+        logger.info(f"📝 Full Task Description: {self.full_task_description}")
+
+        # Create EnvConfig for make_env (already in self.config.env, just need to update gym_kwargs)
+        # Update gym_kwargs with specific task_id
+        if self.config.env.gym_kwargs is None:
+            self.config.env.gym_kwargs = {}
+        self.config.env.gym_kwargs["task_ids"] = [task_id]
+        
+        # Create Vector Env (LeRobot Style)
+        env_map = make_env(
+            self.config.env,
+            n_envs=1
+        )
+        self.env = env_map[self.config.env.task][task_id]
+        self.env.reset(seed=self.config.seed) 
+
+    def _load_subtasks(self):
+        """Subtask 메타데이터 로드"""
+        if self.config.subtask.baseline or self.config.subtask.eval_subtask:
+            self.subtasks = [self.full_task_description]
+            self.mode = "baseline" if self.config.subtask.baseline else "task"
+            return
+
+        # Subtask 모드
+        self.mode = "subtask"
+        script_dir = Path(__file__).parent.parent
+        metadata_path = script_dir / f"data/datasets/libero_goal_subtasks/{self.config.task_name}/subtask_metadata.json"
+        
+        if metadata_path.exists():
+            with open(metadata_path) as f:
+                self.subtasks = json.load(f)["subtasks"]
+            logger.info(f"📋 Loaded {len(self.subtasks)} subtasks")
+        else:
+            logger.warning(f"⚠️ Subtask metadata not found at {metadata_path}. Fallback to full task.")
+            self.subtasks = [self.full_task_description]
+            self.mode = "baseline_fallback"
+
+    def _process_obs(self, obs: Dict) -> Dict:
+        """환경 관측값을 모델 입력 형식으로 변환"""
+        # SyncVectorEnv의 배치 차원(0) 제거 및 Tensor 변환
+        def process_img(img):
+            
+            if isinstance(img, np.ndarray):
+                img = torch.from_numpy(img)
+            if img.ndim == 4: img = img[0] # remove batch
+            if img.shape[-1] == 3: img = img.permute(2, 0, 1) # HWC -> CHW
+            if img.dtype == torch.uint8: img = img.float() / 255.0
+            return img.unsqueeze(0).to(self.device) # Add batch dim back for model
+
+        def process_state(state_dict):
+            # Flatten robot state to vector (EEF Pos(3) + Quat(4) + Gripper(2) + Joint Pos(7) + Joint Vel(7))
+            
+            def get_t(x):
+                if isinstance(x, np.ndarray): x = torch.from_numpy(x)
+                if x.ndim > 1: x = x[0] # Remove batch
+                return x.to(self.device).float()
+
+            eef_pos = get_t(state_dict["eef"]["pos"])
+            eef_quat = get_t(state_dict["eef"]["quat"])
+            gripper_qpos = get_t(state_dict["gripper"]["qpos"])
+            joint_pos = get_t(state_dict["joints"]["pos"])
+            joint_vel = get_t(state_dict["joints"]["vel"])
+
+            # Concatenate all state elements
+            # Shape: [3+4+2+7+7] = [23]
+            state_vec = torch.cat([eef_pos, eef_quat, gripper_qpos, joint_pos, joint_vel], dim=-1)
+            return state_vec.unsqueeze(0) # Add batch dim [1, D]
+
         return {
-            "agentview": obs["agentview_image"],
-            "eye_in_hand": obs["robot0_eye_in_hand_image"],
-            "ee_pos": obs["robot0_eef_pos"],
-            "ee_quat": obs["robot0_eef_quat"],
-            "gripper": obs["robot0_gripper_qpos"],
+            "observation.images.image": process_img(obs["pixels"]["image"]),
+            "observation.images.image2": process_img(obs["pixels"]["image2"]),
+            "observation.state": process_state(obs["robot_state"]),
         }
-    
-    def _predict_action(self, obs: dict, instruction: str) -> Tuple[np.ndarray, Optional[float], Optional[float]]:
-        """X-VLA로 action + time + variance 예측
+
+    def _predict(self, batch: Dict, instruction: str) -> Tuple[np.ndarray, Optional[float], Optional[float]]:
+        """Action 및 Time/Variance 예측"""
+        # 1. Add task instruction for preprocessor (it handles tokenization)
+        # Check if batch has batch dim, create list of instructions accordingly
+        batch_size = batch["observation.images.image"].shape[0]
+        batch["task"] = [instruction] * batch_size
+
+        # 2. Preprocess
+        batch = self.preprocessor(batch)
+
+        # 3. Tokenize if preprocessor didn't (Safety net)
+        if "observation.language.tokens" not in batch:
+            tokens = self.tokenizer(
+                instruction, return_tensors="pt", max_length=64, 
+                padding="max_length", truncation=True
+            ).input_ids.to(self.device)
+            # Expand to batch size if needed
+            if tokens.shape[0] != batch_size:
+                tokens = tokens.expand(batch_size, -1)
+            batch["observation.language.tokens"] = tokens
+
+        # 4. Model Inference
+        predicted_time, predicted_var = None, None
         
-        Returns:
-            tuple: (action [7D], predicted_time [float or None], predicted_var [float or None])
-        """
-        # 이미지 전처리
-        agentview = self._preprocess_image(obs["agentview"]).unsqueeze(0)
-        eye_in_hand = self._preprocess_image(obs["eye_in_hand"]).unsqueeze(0)
-        
-        # 로봇 상태 (7D -> 20D 패딩)
-        state_7d = np.concatenate([
-            obs["ee_pos"],
-            obs["ee_quat"][:3],
-            obs["gripper"][:1]
-        ])
-        state_20d = np.zeros(20)
-        state_20d[:7] = state_7d
-        state = torch.from_numpy(state_20d).float().unsqueeze(0)
-        
-        # 토큰화
-        input_ids = self._tokenize(instruction)
-        
-        # Device로 이동
-        agentview = agentview.to(self.device)
-        eye_in_hand = eye_in_hand.to(self.device)
-        state = state.to(self.device)
-        input_ids = input_ids.to(self.device)
-        
-        # Inference - generate_actions 사용 (time/var 예측 포함)
-        predicted_time = None
-        predicted_var = None
-        
-        with torch.no_grad():
-            # 먼저 generate_actions로 시도 (Fine-tuned 모델)
-            try:
-                # 이미지를 [B, 1, C, H, W] 형태로 변환
-                image_input = agentview.unsqueeze(1)  # [1, 1, C, H, W]
-                image_mask = torch.ones(1, 1, dtype=torch.bool, device=self.device)
-                domain_id = torch.zeros(1, dtype=torch.long, device=self.device)
+        try:
+            # Time/Var 예측을 위해 generate_actions 직접 호출 시도
+            # (X-VLA 모델이 Time/Var를 반환하도록 수정된 경우)
+            with torch.no_grad():
+                # generate_actions 호출을 위한 인자 준비
+                img_agent = batch["observation.images.image"]
+                proprio = batch["observation.state"]
+                input_ids = batch["observation.language.tokens"]
                 
-                actions, pred_time, pred_var = self.policy.model.generate_actions(
+                # Standard generate_actions inputs
+                image_input = img_agent.unsqueeze(1) # [B, 1, C, H, W]
+                image_mask = torch.ones(image_input.shape[0], 1, dtype=torch.bool, device=self.device)
+                domain_id = torch.zeros(image_input.shape[0], dtype=torch.long, device=self.device)
+                steps = getattr(self.policy.config, "num_denoising_steps", 10)
+
+                # 호출
+                outputs = self.policy.model.generate_actions(
                     input_ids=input_ids,
                     image_input=image_input,
                     image_mask=image_mask,
                     domain_id=domain_id,
-                    proprio=state,
-                    steps=10,  # diffusion steps
+                    proprio=proprio,
+                    steps=steps
                 )
                 
-                # Time/Var 추출
-                if pred_time is not None:
-                    predicted_time = pred_time[0, 0].item()  # [B, 1] -> scalar
-                if pred_var is not None:
-                    # log_var -> std (uncertainty)
-                    predicted_var = np.exp(0.5 * pred_var[0, 0].item())
-                
-                action_raw = actions[0, 0].cpu().numpy()  # [B, chunk, action_dim] -> [action_dim]
-                
-            except Exception as e:
-                # Fallback: 기존 select_action 사용 (Baseline 모델)
-                logger.debug(f"Using fallback select_action: {e}")
-                batch = {
-                    "observation.images.image": agentview,
-                    "observation.images.image2": eye_in_hand,
-                    "observation.state": state,
-                    "observation.language.tokens": input_ids,
-                }
-                action_raw = self.policy.select_action(batch)
-                action_raw = action_raw.cpu().numpy()[0]
-        
-        # Action 변환: X-VLA (20D) -> X-VLA (10D) -> 환경 (7D)
-        # generate_actions는 [B, Chunk, 20]을 반환 (Action Space Postprocess 후)
-        # 하지만 XVLAModel.generate_actions는 이미 postprocess를 호출해서 반환하므로
-        # action_space에 따라 차원이 다를 수 있음.
-        # XVLA config가 'ee6d'라면 20D, 'auto'라면 20D.
-        # 여기서 필요한 것은 앞의 10차원 (pos(3) + rot6d(6) + gripper(1))
-        
-        # [B, Chunk, Dim] -> [Dim] (첫번째 배치의 첫번째 스텝)
-        # Chunking: 현재 스텝의 액션만 사용 (Chunk의 첫번째 요소)
-        action_raw = actions[0, 0].cpu().numpy()
-        
-        return self._convert_action_to_env(action_raw), predicted_time, predicted_var
-    
-    def _convert_action_to_env(self, action_raw: np.ndarray) -> np.ndarray:
-        """X-VLA action (20D/10D) -> 환경 action (7D) 변환
-        
-        X-VLA output (Pretrained): [pos (3), rot_6d (6), gripper (1), ...padding...]
-        Environment: [pos (3), rot_axis_angle (3), gripper (1)] = 7D
-        """
-        # 1. Position (3D)
-        pos = action_raw[:3]
-        
-        # 2. 6D rotation -> axis-angle (3D)
-        # Indices 3:9 are 6D rotation
-        rot_6d = action_raw[3:9]
-        rot_axis_angle = self._rot6d_to_axis_angle(rot_6d)
-        
-        # 3. Gripper (1D)
-        # Index 9 is gripper
-        gripper = action_raw[9:10]
-        # XVLA Gripper is usually [0, 1] (sigmoid applied)
-        # LIBERO expects [-1, 1]
-        # 0.5 threshold로 binary 변환 또는 선형 변환
-        # 여기서는 threshold 사용 (-1: open/close?, 1: open/close?)
-        # LIBERO: -1 is open, 1 is closed (usually) -> Check LIBERO convention
-        # XVLA: 0 is open, 1 is closed
-        # Let's map [0, 1] -> [-1, 1] linearly first: 2*x - 1
-        gripper = 2.0 * gripper - 1.0
-        
-        # 7D action
-        action = np.concatenate([pos, rot_axis_angle, gripper])
-        return action
-    
-    def _rot6d_to_axis_angle(self, rot_6d: np.ndarray) -> np.ndarray:
-        """6D rotation representation -> axis-angle
-        
-        6D: [col1 (3), col2 (3)] of rotation matrix
-        """
-        # 6D -> rotation matrix
-        col1 = rot_6d[:3]
-        col2 = rot_6d[3:6]
-        
-        # Gram-Schmidt orthogonalization
-        col1 = col1 / (np.linalg.norm(col1) + 1e-8)
-        col2 = col2 - np.dot(col2, col1) * col1
-        col2 = col2 / (np.linalg.norm(col2) + 1e-8)
-        col3 = np.cross(col1, col2)
-        
-        rot_mat = np.stack([col1, col2, col3], axis=1)  # (3, 3)
-        
-        # Rotation matrix -> axis-angle
-        # Using Rodrigues' formula inverse
-        angle = np.arccos(np.clip((np.trace(rot_mat) - 1) / 2, -1, 1))
-        
-        if angle < 1e-6:
-            return np.zeros(3)
-        
-        axis = np.array([
-            rot_mat[2, 1] - rot_mat[1, 2],
-            rot_mat[0, 2] - rot_mat[2, 0],
-            rot_mat[1, 0] - rot_mat[0, 1],
-        ])
-        axis = axis / (2 * np.sin(angle) + 1e-8)
-        
-        return axis * angle
-    
-    def _should_switch_subtask(
-        self,
-        subtask_idx: int,
-        steps_in_subtask: int,
-        obs: dict,
-        prev_gripper: Optional[float],
-        predicted_time: Optional[float] = None,
-    ) -> bool:
-        """Subtask 전환 여부 판단"""
-        mode = self.config.subtask_switch_mode
-        
+                # 결과 언패킹 (Time Aware 모델인지 확인)
+                if isinstance(outputs, tuple) and len(outputs) == 3:
+                    actions, pred_time, pred_var = outputs
+                    predicted_time = pred_time.item()
+                    predicted_var = np.exp(0.5 * pred_var.item()) # log_var -> std
+                    action_raw = actions[0, 0] # [Chunk, Dim] -> [Dim] (첫번째 청크)
+                else:
+                    # Standard Model (Action only)
+                    actions = outputs
+                    action_raw = actions[0, 0] if actions.ndim == 3 else actions[0]
+
+        except Exception as e:
+            # Fallback: Standard select_action
+            # logger.debug(f"Fallback to select_action due to: {e}")
+            action_raw = self.policy.select_action(batch)
+
+        # 4. Postprocess
+        # Ensure input to postprocessor is [B, D]
+        if action_raw.ndim == 1:
+            action_raw = action_raw.unsqueeze(0)
+            
+        action = self.postprocessor(action_raw)
+        action = action.cpu().numpy()[0]
+
+        # 5. Format Action (20D -> 7D conversion if needed)
+        if action.shape[-1] == 20:
+            pos = action[:3]
+            rot6d = action[3:9]
+            gripper = action[9:10]
+            
+            axis_angle = rotate6d_to_axis_angle(rot6d)
+            gripper = np.where(gripper > 0.0, 1.0, -1.0)
+            action = np.concatenate([pos, axis_angle, gripper])
+
+        return action, predicted_time, predicted_var
+
+    def _check_switch_condition(self, steps: int, obs: Dict, prev_gripper: float, pred_time: float) -> bool:
+        """Subtask 전환 조건 확인"""
+        mode = self.config.subtask.switch_mode
         if mode == "fixed_steps":
-            return steps_in_subtask >= self.config.fixed_steps_per_subtask
-        
+            return steps >= self.config.subtask.fixed_steps
         elif mode == "gripper_change":
-            if prev_gripper is None:
-                return False
-            current_gripper = obs["gripper"][0]
-            gripper_changed = abs(current_gripper - prev_gripper) > 0.5
-            return gripper_changed and steps_in_subtask >= 10
+            if prev_gripper is None: return False
+            curr = obs["gripper"][0] if "gripper" in obs else obs["robot_state"]["gripper"]["qpos"][0][0]
+            return abs(curr - prev_gripper) > 0.5 and steps >= 10
+        elif mode == "time_prediction" and pred_time is not None:
+            return pred_time < 0.5 and steps >= 5
+        return steps >= self.config.subtask.max_steps_per_subtask
+
+    def evaluate(self):
+        results = []
+        logger.info(f"🚀 Starting Evaluation: {self.mode.upper()} Mode")
         
-        elif mode == "time_prediction":
-            # 시간 예측 기반 (Fine-tuned 모델 필요)
-            if predicted_time is not None:
-                time_threshold = 0.5  # 0.5초 미만이면 완료로 간주
-                if predicted_time < time_threshold and steps_in_subtask >= 5:
-                    return True
-            return steps_in_subtask >= self.config.max_steps_per_subtask
-        
-        else:
-            return steps_in_subtask >= self.config.fixed_steps_per_subtask
-    
-    def run_episode(self, episode_idx: int) -> InstructionResult:
-        """한 에피소드(Instruction) 실행"""
-        logger.info(f"\n{'='*60}")
-        logger.info(f"🎮 Episode {episode_idx + 1}/{self.config.n_episodes}")
-        logger.info(f"{'='*60}")
-        
-        # 환경 초기화
-        self.env.seed(self.config.seed + episode_idx)
-        raw_obs = self.env.reset()
-        
-        episode_start_time = time.time()
-        
-        # === Baseline 모드 또는 Task-Level 모드 ===
-        if self.config.baseline or self.config.task_level_time:
-            return self._run_full_task_episode(
-                episode_idx, raw_obs, episode_start_time,
-                track_time=self.config.task_level_time
-            )
-        
-        # === Subtask 모드 (subtask가 없으면 full task로 fallback) ===
-        if self.subtasks is None:
-            logger.warning("No subtask metadata, falling back to full task mode")
-            return self._run_full_task_episode(
-                episode_idx, raw_obs, episode_start_time,
-                track_time=False
-            )
-        
-        return self._run_subtask_episode(episode_idx, raw_obs, episode_start_time)
-    
-    def _run_full_task_episode(
-        self, 
-        episode_idx: int, 
-        raw_obs, 
-        episode_start_time: float,
-        track_time: bool = False
-    ) -> InstructionResult:
-        """Full task instruction으로 전체 에피소드 실행
-        
-        Args:
-            track_time: True면 시간 예측 추적 (Task-level 모드)
-        """
-        mode_name = "Task-Level Time" if track_time else "Baseline"
-        logger.info(f"📋 {mode_name} Mode: Using full task instruction")
-        logger.info(f"   Instruction: {self.task_description}")
-        
-        total_steps = 0
-        done = False
-        info = {}
-        
-        initial_predicted_time = None
-        initial_predicted_var = None
-        all_time_predictions = []
-        all_var_predictions = []
-        
-        while total_steps < self.config.max_steps_per_episode:
-            obs = self._parse_observation(raw_obs)
+        for ep_idx in range(self.config.eval.n_episodes):
+            res = self.run_episode(ep_idx)
+            results.append(res)
             
-            # Action + Time 예측
-            action, predicted_time, predicted_var = self._predict_action(obs, self.task_description)
-            
-            # 첫 step의 시간 예측 저장 (Task-level 평가용)
-            if total_steps == 0:
-                initial_predicted_time = predicted_time
-                initial_predicted_var = predicted_var
-                if track_time and predicted_time is not None:
-                    logger.info(f"   📊 Initial time prediction: {predicted_time:.2f}s (±{predicted_var:.2f}s)" if predicted_var else f"   📊 Initial time prediction: {predicted_time:.2f}s")
-            
-            # 모든 시간 예측 저장
-            if predicted_time is not None:
-                all_time_predictions.append(predicted_time)
-            if predicted_var is not None:
-                all_var_predictions.append(predicted_var)
-            
-            # 환경 step
-            raw_obs, reward, done, info = self.env.step(action)
-            total_steps += 1
-            
-            # 로깅 (매 20 step)
-            if total_steps % 20 == 0:
-                time_str = f", pred_time={predicted_time:.2f}s" if predicted_time else ""
-                logger.info(f"   Step {total_steps}: action[:3]={action[:3].round(3)}{time_str}")
-            
-            if done or info.get("success", False):
-                logger.info(f"   ✅ Episode done at step {total_steps}")
-                break
+        self._save_results(results)
+        self._print_summary(results)
+
+    def run_episode(self, ep_idx: int) -> EpisodeResult:
+        logger.info(f"🎮 Episode {ep_idx + 1}/{self.config.eval.n_episodes}")
+        obs_raw, _ = self.env.reset(seed=self.config.seed + ep_idx)
         
-        # 결과 생성
-        episode_end_time = time.time()
-        success = info.get("success", False)
-        actual_total_time = episode_end_time - episode_start_time
-        
-        # Full task를 단일 subtask로 기록
-        avg_predicted_time = np.mean(all_time_predictions) if all_time_predictions else None
-        avg_predicted_var = np.mean(all_var_predictions) if all_var_predictions else None
-        
-        subtask_result = SubtaskResult(
-            subtask_name=self.task_description,
-            subtask_idx=0,
-            start_step=0,
-            end_step=total_steps,
-            steps_taken=total_steps,
-            predicted_time=avg_predicted_time,
-            predicted_var=avg_predicted_var,
-            actual_time=actual_total_time,
-            completed=success,
-            time_predictions=all_time_predictions,
-        )
-        
-        result = InstructionResult(
-            task_name=self.config.task_name,
-            episode_idx=episode_idx,
-            success=success,
-            total_steps=total_steps,
-            total_time=actual_total_time,
-            initial_predicted_time=initial_predicted_time,
-            initial_predicted_var=initial_predicted_var,
-            subtask_results=[subtask_result],
-        )
-        
-        status = "✅ SUCCESS" if success else "❌ FAILED"
-        time_info = ""
-        if track_time and initial_predicted_time is not None:
-            time_error = abs(initial_predicted_time - actual_total_time)
-            time_info = f" | Pred: {initial_predicted_time:.2f}s, Actual: {actual_total_time:.2f}s, Error: {time_error:.2f}s"
-        
-        logger.info(f"\n{status} - Total: {total_steps} steps, {actual_total_time:.2f}s{time_info}")
-        
-        return result
-    
-    def _run_subtask_episode(
-        self, 
-        episode_idx: int, 
-        raw_obs, 
-        episode_start_time: float
-    ) -> InstructionResult:
-        """Subtask 순차 실행 모드"""
-        logger.info(f"📋 Subtask Mode: {len(self.subtasks)} subtasks")
-        
+        frames = []
         subtask_results = []
         total_steps = 0
-        done = False
-        info = {}
         
-        for subtask_idx, subtask_instruction in enumerate(self.subtasks):
-            logger.info(f"\n📌 Subtask {subtask_idx + 1}/{len(self.subtasks)}: {subtask_instruction}")
-            
-            subtask_start_step = total_steps
-            subtask_start_time = time.time()
-            steps_in_subtask = 0
+        start_time = time.time()
+        initial_pred_time = None
+        
+        # Subtask Loop
+        for st_idx, instruction in enumerate(self.subtasks):
+            logger.info(f"   📌 Subtask {st_idx+1}: {instruction}")
+            st_start_time = time.time()
+            st_steps = 0
+            st_preds = []
             prev_gripper = None
-            subtask_completed = False
-            time_predictions = []
-            var_predictions = []
+            if self.mode == "subtask":
+                max_steps = self.config.subtask.max_steps_per_subtask
+            else:
+                max_steps = self.config.env.episode_length
             
-            while steps_in_subtask < self.config.max_steps_per_subtask:
-                obs = self._parse_observation(raw_obs)
+            while st_steps < max_steps:
+                if total_steps >= self.config.env.episode_length: break
                 
-                # Action + Time 예측 (현재 subtask instruction 사용)
-                action, predicted_time, predicted_var = self._predict_action(obs, subtask_instruction)
+                # Prediction
+                batch = self._process_obs(obs_raw)
+                action, p_time, p_var = self._predict(batch, instruction)
                 
-                if predicted_time is not None:
-                    time_predictions.append(predicted_time)
-                if predicted_var is not None:
-                    var_predictions.append(predicted_var)
+                # Record predictions
+                if p_time: st_preds.append(p_time)
+                if total_steps == 0: initial_pred_time = p_time
                 
-                # 환경 step
-                raw_obs, reward, done, info = self.env.step(action)
+                # Step Env
+                obs_raw, _, terminated, truncated, info = self.env.step(np.expand_dims(action, 0))
+                done = bool(terminated[0] or truncated[0])
+                success = bool(info.get("is_success", [False])[0])
                 
+                # Video Frame
+                if self.config.save_video:
+                    frames.append(obs_raw["pixels"]["image"][0])
+
                 total_steps += 1
-                steps_in_subtask += 1
+                st_steps += 1
                 
-                # 로깅
-                if steps_in_subtask % 10 == 0:
-                    time_str = f", pred_time={predicted_time:.2f}s" if predicted_time else ""
-                    var_str = f", std={predicted_var:.2f}" if predicted_var else ""
-                    logger.info(f"   Step {steps_in_subtask}: action[:3]={action[:3].round(3)}{time_str}{var_str}")
+                # Logging
+                if total_steps % 20 == 0:
+                     logger.info(f"Step {total_steps}: Act={action[:3].round(2)} T={p_time if p_time else 'N/A'}")
+
+                # Check Completion/Switch
+                if done or success: break
                 
-                # 전체 에피소드 완료 체크
-                if done or info.get("success", False):
-                    subtask_completed = True
-                    logger.info(f"   ✅ Episode done at step {total_steps}")
-                    break
-                
-                # Subtask 전환 체크
-                if self._should_switch_subtask(subtask_idx, steps_in_subtask, obs, prev_gripper, predicted_time):
-                    subtask_completed = True
-                    time_info = f" (pred_time={predicted_time:.2f}s)" if predicted_time else ""
-                    logger.info(f"   → Switching to next subtask after {steps_in_subtask} steps{time_info}")
-                    break
-                
-                prev_gripper = obs["gripper"][0]
-                
-                if total_steps >= self.config.max_steps_per_episode:
-                    logger.warning(f"   ⚠️ Max steps reached: {total_steps}")
-                    break
+                # Subtask Switching Logic (only in subtask mode)
+                if self.mode == "subtask":
+                    # Get gripper for switch logic
+                    curr_gripper = obs_raw["robot_state"]["gripper"]["qpos"][0][0]
+                    if self._check_switch_condition(st_steps, None, prev_gripper, p_time):
+                        logger.info(f"      → Switching subtask after {st_steps} steps")
+                        break
+                    prev_gripper = curr_gripper
             
-            # Subtask 결과 기록
-            subtask_end_time = time.time()
-            avg_predicted_time = np.mean(time_predictions) if time_predictions else None
-            avg_predicted_var = np.mean(var_predictions) if var_predictions else None
+            # Subtask Result
+            subtask_results.append(SubtaskResult(
+                name=instruction,
+                steps=st_steps,
+                actual_time=time.time() - st_start_time,
+                predicted_time=float(np.mean(st_preds)) if st_preds else None,
+                completed=bool(success if (st_idx == len(self.subtasks)-1) else True) # Approximation
+            ))
             
-            subtask_result = SubtaskResult(
-                subtask_name=subtask_instruction,
-                subtask_idx=subtask_idx,
-                start_step=subtask_start_step,
-                end_step=total_steps,
-                steps_taken=steps_in_subtask,
-                predicted_time=avg_predicted_time,
-                predicted_var=avg_predicted_var,
-                actual_time=subtask_end_time - subtask_start_time,
-                completed=subtask_completed,
-                time_predictions=time_predictions,
-            )
-            subtask_results.append(subtask_result)
+            if done or success: break
             
-            pred_info = f", avg_pred={avg_predicted_time:.2f}s" if avg_predicted_time else ""
-            logger.info(f"   Subtask {subtask_idx + 1}: {steps_in_subtask} steps, actual={subtask_result.actual_time:.2f}s{pred_info}")
+        # End Episode
+        total_time = time.time() - start_time
+        success = bool(info.get("is_success", [False])[0])
+        
+        if self.config.save_video:
+            self._save_video(ep_idx, frames, success)
             
-            if done or info.get("success", False) or total_steps >= self.config.max_steps_per_episode:
-                break
+        return EpisodeResult(ep_idx, success, total_steps, total_time, initial_pred_time, subtask_results)
+
+    def _save_video(self, idx, frames, success):
+        if not frames: return
+        path = Path(self.config.output_dir) / self.config.task_name / "videos"
+        path.mkdir(parents=True, exist_ok=True)
+        status = "success" if success else "failed"
         
-        # Instruction 결과
-        episode_end_time = time.time()
-        success = info.get("success", False)
+        # Convert frames: RGB -> BGR & Flip
+        h, w, _ = frames[0].shape
+        out = cv2.VideoWriter(str(path / f"ep{idx:03d}_{status}.mp4"), 
+                             cv2.VideoWriter_fourcc(*'mp4v'), 20.0, (w, h))
+        for f in frames:
+            out.write(cv2.flip(cv2.cvtColor(f, cv2.COLOR_RGB2BGR), 0))
+        out.release()
+
+    def _save_results(self, results: List[EpisodeResult]):
+        out_path = Path(self.config.output_dir) / self.config.task_name
+        out_path.mkdir(parents=True, exist_ok=True)
         
-        result = InstructionResult(
-            task_name=self.config.task_name,
-            episode_idx=episode_idx,
-            success=success,
-            total_steps=total_steps,
-            total_time=episode_end_time - episode_start_time,
-            initial_predicted_time=None,  # Subtask 모드에서는 사용 안함
-            initial_predicted_var=None,
-            subtask_results=subtask_results,
-        )
-        
-        status = "✅ SUCCESS" if success else "❌ FAILED"
-        logger.info(f"\n{status} - Total: {total_steps} steps, {result.total_time:.2f}s")
-        
-        return result
-    
-    def evaluate(self) -> dict:
-        """전체 평가 실행"""
-        logger.info("\n" + "=" * 70)
-        
-        if self.config.baseline:
-            mode_str = "Baseline"
-        elif self.config.task_level_time:
-            mode_str = "Task-Level Time"
-        else:
-            mode_str = "Subtask-based"
-        
-        logger.info(f"🧪 Starting {mode_str} Evaluation")
-        logger.info("=" * 70)
-        logger.info(f"Task: {self.config.task_name}")
-        logger.info(f"Mode: {mode_str}")
-        logger.info(f"Model: {self.config.model_path}")
-        
-        if not self.config.baseline and not self.config.task_level_time and self.subtasks:
-            logger.info(f"Subtasks: {len(self.subtasks)}")
-            logger.info(f"Switch mode: {self.config.subtask_switch_mode}")
-        
-        logger.info(f"Episodes: {self.config.n_episodes}")
-        
-        self.results = []
-        
-        for episode_idx in range(self.config.n_episodes):
-            result = self.run_episode(episode_idx)
-            self.results.append(result)
-        
-        # 결과 집계
-        summary = self._compute_summary()
-        
-        # 결과 출력
-        self._print_summary(summary)
-        
-        # 결과 저장
-        self._save_results(summary)
-        
-        return summary
-    
-    def _compute_summary(self) -> dict:
-        """결과 집계"""
-        # === Instruction 단위 통계 ===
-        successes = [r.success for r in self.results]
-        success_rate = np.mean(successes)
-        
-        total_times = [r.total_time for r in self.results]
-        total_steps_list = [r.total_steps for r in self.results]
-        
-        # === Task-Level 시간 예측 통계 (initial_predicted_time vs actual_time) ===
-        task_level_time_stats = {}
-        initial_predictions = [(r.initial_predicted_time, r.total_time) for r in self.results 
-                               if r.initial_predicted_time is not None]
-        
-        if initial_predictions:
-            pred_times, actual_times = zip(*initial_predictions)
-            errors = [abs(p - a) for p, a in zip(pred_times, actual_times)]
-            
-            task_level_time_stats = {
-                "n_predictions": len(initial_predictions),
-                "mean_predicted_time": float(np.mean(pred_times)),
-                "mean_actual_time": float(np.mean(actual_times)),
-                "mae": float(np.mean(errors)),
-                "rmse": float(np.sqrt(np.mean(np.array(errors)**2))),
-                "correlation": float(np.corrcoef(pred_times, actual_times)[0, 1]) if len(pred_times) > 1 else None,
-            }
-        
-        # === Subtask 단위 통계 ===
-        subtask_times = {}
-        for result in self.results:
-            for st_result in result.subtask_results:
-                name = st_result.subtask_name
-                if name not in subtask_times:
-                    subtask_times[name] = []
-                subtask_times[name].append({
-                    "steps": st_result.steps_taken,
-                    "predicted_time": st_result.predicted_time,
-                    "actual_time": st_result.actual_time,
-                    "completed": st_result.completed,
-                })
-        
-        # Subtask별 통계 계산
-        subtask_stats = {}
-        all_subtask_time_errors = []
-        
-        for name, times in subtask_times.items():
-            steps = [t["steps"] for t in times]
-            actual_times = [t["actual_time"] for t in times]
-            predicted_times = [t["predicted_time"] for t in times if t["predicted_time"] is not None]
-            completed = [t["completed"] for t in times]
-            
-            stats = {
-                "mean_steps": float(np.mean(steps)),
-                "std_steps": float(np.std(steps)),
-                "mean_actual_time": float(np.mean(actual_times)),
-                "std_actual_time": float(np.std(actual_times)),
-                "completion_rate": float(np.mean(completed)),
-            }
-            
-            # 시간 예측 통계
-            if predicted_times:
-                stats["mean_predicted_time"] = float(np.mean(predicted_times))
-                stats["std_predicted_time"] = float(np.std(predicted_times))
-                
-                paired_errors = []
-                for t in times:
-                    if t["predicted_time"] is not None:
-                        error = abs(t["predicted_time"] - t["actual_time"])
-                        paired_errors.append(error)
-                        all_subtask_time_errors.append(error)
-                
-                if paired_errors:
-                    stats["time_mae"] = float(np.mean(paired_errors))
-                    stats["time_rmse"] = float(np.sqrt(np.mean(np.array(paired_errors)**2)))
-            
-            subtask_stats[name] = stats
-        
-        # 전체 Subtask 시간 예측 통계
-        subtask_time_prediction_stats = {}
-        if all_subtask_time_errors:
-            subtask_time_prediction_stats = {
-                "overall_mae": float(np.mean(all_subtask_time_errors)),
-                "overall_rmse": float(np.sqrt(np.mean(np.array(all_subtask_time_errors)**2))),
-                "n_predictions": len(all_subtask_time_errors),
-            }
-        
-        # 평가 모드 결정
-        if self.config.baseline:
-            mode = "baseline"
-        elif self.config.task_level_time:
-            mode = "task_level_time"
-        else:
-            mode = "subtask"
-        
-        return {
-            "task_name": self.config.task_name,
-            "model_path": self.config.model_path,
-            "n_episodes": self.config.n_episodes,
-            "mode": mode,
-            "subtask_switch_mode": self.config.subtask_switch_mode if mode == "subtask" else None,
-            
-            # Instruction 단위 통계
-            "instruction_stats": {
-                "success_rate": float(success_rate),
-                "mean_total_time": float(np.mean(total_times)),
-                "std_total_time": float(np.std(total_times)),
-                "mean_total_steps": float(np.mean(total_steps_list)),
-                "std_total_steps": float(np.std(total_steps_list)),
-            },
-            
-            # Task-Level 시간 예측 통계 (Exp 4용)
-            "task_level_time_stats": task_level_time_stats,
-            
-            # Subtask 단위 통계
-            "subtask_stats": subtask_stats,
-            
-            # Subtask 시간 예측 통계
-            "subtask_time_prediction_stats": subtask_time_prediction_stats,
-            
-            # Raw results
-            "raw_results": [
+        data = {
+            "config": self.config.__dict__,
+            "results": [
                 {
-                    "episode_idx": r.episode_idx,
+                    "episode": r.episode_idx,
                     "success": r.success,
-                    "total_steps": r.total_steps,
                     "total_time": r.total_time,
-                    "initial_predicted_time": r.initial_predicted_time,
-                    "initial_predicted_var": r.initial_predicted_var,
-                    "subtasks": [
-                        {
-                            "name": st.subtask_name,
-                            "steps": st.steps_taken,
-                            "predicted_time": st.predicted_time,
-                            "predicted_var": st.predicted_var,
-                            "actual_time": st.actual_time,
-                            "completed": st.completed,
-                        }
-                        for st in r.subtask_results
-                    ]
-                }
-                for r in self.results
-            ]
+                    "initial_pred_time": r.initial_predicted_time,
+                    "subtasks": [s.__dict__ for s in r.subtask_results]
+                } for r in results
+            ],
+            "summary": {
+                "success_rate": float(np.mean([r.success for r in results])),
+                "avg_time": float(np.mean([r.total_time for r in results])),
+            }
         }
-    
-    def _print_summary(self, summary: dict):
-        """결과 출력"""
-        print("\n" + "=" * 70)
-        print("📊 EVALUATION SUMMARY")
-        print("=" * 70)
         
-        inst_stats = summary["instruction_stats"]
-        print(f"\n📋 Task: {summary['task_name']}")
-        print(f"   Model: {summary['model_path']}")
-        print(f"   Mode: {summary['mode'].upper()}")
-        print(f"   Episodes: {summary['n_episodes']}")
-        if summary['subtask_switch_mode']:
-            print(f"   Switch mode: {summary['subtask_switch_mode']}")
-        
-        print(f"\n🎯 Instruction-Level Results:")
-        print(f"   Success Rate: {inst_stats['success_rate']*100:.1f}%")
-        print(f"   Avg Steps: {inst_stats['mean_total_steps']:.1f} ± {inst_stats['std_total_steps']:.1f}")
-        print(f"   Avg Time: {inst_stats['mean_total_time']:.2f}s ± {inst_stats['std_total_time']:.2f}s")
-        
-        # Task-Level 시간 예측 결과 (Exp 4 또는 task_level_time 모드)
-        task_time_stats = summary.get("task_level_time_stats", {})
-        if task_time_stats:
-            print(f"\n⏱️ Task-Level Time Prediction:")
-            print(f"   N predictions: {task_time_stats['n_predictions']}")
-            print(f"   Avg Predicted: {task_time_stats['mean_predicted_time']:.2f}s")
-            print(f"   Avg Actual: {task_time_stats['mean_actual_time']:.2f}s")
-            print(f"   MAE: {task_time_stats['mae']:.2f}s")
-            print(f"   RMSE: {task_time_stats['rmse']:.2f}s")
-            if task_time_stats.get('correlation') is not None:
-                print(f"   Correlation: {task_time_stats['correlation']:.3f}")
-        
-        # Subtask 단위 결과 (subtask 모드일 때만)
-        if summary['mode'] == 'subtask' and summary.get('subtask_stats'):
-            print(f"\n⏱️ Subtask-Level Results:")
-            for name, stats in summary["subtask_stats"].items():
-                # 이름이 너무 길면 줄임
-                display_name = name[:50] + "..." if len(name) > 50 else name
-                print(f"\n   📌 {display_name}")
-                print(f"      Completion Rate: {stats['completion_rate']*100:.1f}%")
-                print(f"      Avg Steps: {stats['mean_steps']:.1f} ± {stats['std_steps']:.1f}")
-                print(f"      Avg Actual Time: {stats['mean_actual_time']:.2f}s ± {stats['std_actual_time']:.2f}s")
-                
-                if "mean_predicted_time" in stats:
-                    print(f"      Avg Predicted Time: {stats['mean_predicted_time']:.2f}s ± {stats['std_predicted_time']:.2f}s")
-                    if "time_mae" in stats:
-                        print(f"      Time MAE: {stats['time_mae']:.2f}s, RMSE: {stats['time_rmse']:.2f}s")
-            
-            # Subtask 전체 시간 예측 통계
-            subtask_time_stats = summary.get("subtask_time_prediction_stats", {})
-            if subtask_time_stats:
-                print(f"\n   🎯 Subtask Time Prediction Overall:")
-                print(f"      MAE: {subtask_time_stats['overall_mae']:.2f}s")
-                print(f"      RMSE: {subtask_time_stats['overall_rmse']:.2f}s")
-                print(f"      N predictions: {subtask_time_stats['n_predictions']}")
-        
-        print("\n" + "=" * 70)
-    
-    def _save_results(self, summary: dict):
-        """결과 저장"""
-        output_dir = Path(self.config.output_dir) / self.config.task_name
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # 파일명 결정
-        if self.config.baseline:
-            filename = "eval_results_baseline.json"
-        elif self.config.task_level_time:
-            filename = "eval_results_task_level_time.json"
-        else:
-            filename = f"eval_results_{self.config.subtask_switch_mode}.json"
-        
-        output_file = output_dir / filename
-        
-        with open(output_file, "w") as f:
-            json.dump(summary, f, indent=2)
-        
-        logger.info(f"\n💾 Results saved to: {output_file}")
-    
-    def close(self):
-        """리소스 정리"""
-        if hasattr(self, "env"):
-            self.env.close()
+        fname = f"results_{self.mode}.json"
+        with open(out_path / fname, "w") as f:
+            json.dump(data, f, indent=2)
+        logger.info(f"💾 Results saved to {out_path / fname}")
 
+    def _print_summary(self, results):
+        success_rate = np.mean([r.success for r in results])
+        logger.info("\n" + "="*50)
+        logger.info(f"📊 Summary ({self.mode})")
+        logger.info(f"   Success Rate: {success_rate*100:.1f}%")
+        logger.info(f"   Avg Time: {np.mean([r.total_time for r in results]):.2f}s")
+        logger.info("="*50)
 
-def main():
-    parser = argparse.ArgumentParser(description="X-VLA Evaluation (Baseline, Subtask, Task-Level modes)")
-    parser.add_argument("--task_suite", type=str, default="libero_goal")
-    parser.add_argument("--task", type=str, default="open_the_middle_drawer_of_the_cabinet")
-    parser.add_argument("--model_path", type=str, default="lerobot/xvla-libero")
-    parser.add_argument("--n_episodes", type=int, default=10)
-    parser.add_argument("--max_steps_per_episode", type=int, default=300)
-    parser.add_argument("--switch_mode", type=str, default="fixed_steps",
-                       choices=["fixed_steps", "gripper_change", "time_prediction"])
-    parser.add_argument("--fixed_steps", type=int, default=50)
-    parser.add_argument("--output_dir", type=str, default="outputs/eval")
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--baseline", action="store_true",
-                       help="Baseline mode: full task instruction, no time prediction tracking")
-    parser.add_argument("--task_level_time", action="store_true",
-                       help="Task-level time mode: full task instruction with time prediction tracking")
-    
-    args = parser.parse_args()
-    
-    # baseline과 task_level_time은 동시 사용 불가
-    if args.baseline and args.task_level_time:
-        print("❌ Cannot use --baseline and --task_level_time together")
-        return
-    
-    config = EvalConfig(
-        task_suite=args.task_suite,
-        task_name=args.task,
-        model_path=args.model_path,
-        n_episodes=args.n_episodes,
-        max_steps_per_episode=args.max_steps_per_episode,
-        subtask_switch_mode=args.switch_mode,
-        fixed_steps_per_subtask=args.fixed_steps,
-        output_dir=args.output_dir,
-        seed=args.seed,
-        baseline=args.baseline,
-        task_level_time=args.task_level_time,
-    )
-    
-    if not HAS_LIBERO or not HAS_XVLA:
-        print("❌ Required packages not available")
-        print(f"   HAS_LIBERO: {HAS_LIBERO}")
-        print(f"   HAS_XVLA: {HAS_XVLA}")
-        return
-    
-    evaluator = SubtaskBasedEvaluator(config)
-    
-    try:
-        summary = evaluator.evaluate()
-    finally:
-        evaluator.close()
-
+@parser.wrap()
+def main(config: EvalConfig):
+    evaluator = SubtaskEvaluator(config)
+    evaluator.evaluate()
 
 if __name__ == "__main__":
     main()
