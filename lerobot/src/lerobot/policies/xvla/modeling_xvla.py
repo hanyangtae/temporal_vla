@@ -147,7 +147,8 @@ class XVLAModel(nn.Module):
         # Freeze or unfreeze policy transformer
         if not self.config.train_policy_transformer:
             for name, param in self.transformer.named_parameters():
-                if "soft_prompts" not in name:
+                # Keep soft prompts and output decoders (heads) trainable
+                if "soft_prompts" not in name and "decoder" not in name:
                     param.requires_grad = False
 
         # Freeze or unfreeze soft prompts
@@ -258,6 +259,7 @@ class XVLAModel(nn.Module):
         domain_id: torch.LongTensor,
         proprio: torch.Tensor,
         steps: int,
+        time_to_go: torch.Tensor | None = None,  # Ignored during inference
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Generate actions with time and variance predictions.
@@ -410,12 +412,21 @@ class XVLAPolicy(PreTrainedPolicy):
         images, image_mask = self._prepare_images(batch)
         domain_id = self._get_domain_id(batch, batch_size, images.device)
         proprio = self._prepare_state(batch, batch_size, images.device)
+        
+        time_to_go = None
+        if self.config.time_feature_key and self.config.time_feature_key in batch:
+            time_to_go = batch[self.config.time_feature_key]
+            # Ensure proper shape [B] or [B, 1]
+            if time_to_go.ndim > 1:
+                time_to_go = time_to_go.view(batch_size, -1)[:, 0]
+        
         return {
             "input_ids": input_ids,
             "image_input": images,
             "image_mask": image_mask,
             "domain_id": domain_id,
             "proprio": proprio,
+            "time_to_go": time_to_go,
         }
 
     def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, dict]:
