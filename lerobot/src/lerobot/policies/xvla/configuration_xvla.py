@@ -94,6 +94,7 @@ class XVLAConfig(PreTrainedConfig):
 
     # Time prediction options
     time_use_global_feat: bool = False  # If True, use all tokens for time prediction; else use action tokens only
+    time_feature_key: str | None = None  # Key in the batch to use as ground truth for time prediction (e.g. "time_to_go")
 
     # Freezing options for VLM components
     # By default, VLM encoders are frozen and only policy transformer + soft prompts train
