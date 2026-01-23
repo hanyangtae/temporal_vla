@@ -4,15 +4,17 @@
 # mode: head_only | soft_prompt | full
 
 MODE=$1
-DATASET_PATH="data/datasets/libero_time_task"
+DATASET_PATH="data/lerobot_libero_goal_time"
 POLICY_PATH="models/xvla-libero"
 OUTPUT_BASE="outputs/finetuned"
 TIME_KEY="time_to_go_task"
+DATASET_REPO_ID="lerobot_libero_goal_time"
+DATASET_ROOT="/workspace/vla_tset/data/lerobot_libero_goal_time"
 
 # 공통 파라미터
-COMMON_ARGS="--policy.type=xvla \
-  --policy.path=$POLICY_PATH \
-  --dataset.repo_id=$DATASET_PATH \
+COMMON_ARGS="--policy.path=$POLICY_PATH \
+  --dataset.repo_id=$DATASET_REPO_ID \
+  --dataset.root=$DATASET_ROOT \
   --env.type=libero \
   --env.task=libero_goal \
   --policy.chunk_size=32 \
@@ -22,7 +24,8 @@ COMMON_ARGS="--policy.type=xvla \
   --save_freq=5000 \
   --eval_freq=5000 \
   --eval.batch_size=1 \
-  --eval.n_episodes=5"
+  --eval.n_episodes=5 \
+  --policy.push_to_hub=false" 
 
 if [ "$MODE" == "head_only" ]; then
     echo "🚀 [1/3] Running Head Only Tuning..."

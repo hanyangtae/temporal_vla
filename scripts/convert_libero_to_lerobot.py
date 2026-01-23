@@ -11,6 +11,7 @@ import h5py
 import numpy as np
 import torch
 from tqdm import tqdm
+from scipy.spatial.transform import Rotation as R
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.utils.utils import init_logging
@@ -20,6 +21,14 @@ def get_task_name_from_filename(filename):
     basename = os.path.basename(filename)
     task_name = basename.replace("_demo.hdf5", "").replace("_", " ")
     return task_name
+
+def mat_to_rot6d(rot_mats):
+    """
+    Convert rotation matrices (..., 3, 3) to 6D rotation representation (..., 6).
+    """
+    col1 = rot_mats[..., :3, 0]
+    col2 = rot_mats[..., :3, 1]
+    return np.concatenate([col1, col2], axis=-1)
 
 def convert_libero_to_lerobot(
     input_dir: Path,
@@ -49,7 +58,7 @@ def convert_libero_to_lerobot(
         },
         "observation.state": {
             "dtype": "float32",
-            "shape": (9,),  # 7 joints + 2 gripper
+            "shape": (20,),  # X-VLA expects 20-dim state (Pos(3) + Rot6D(6) + Padding)
             "names": ["state"],
         },
         "action": {
@@ -97,25 +106,35 @@ def convert_libero_to_lerobot(
                     agentview = demo['obs']['agentview_rgb'][:]
                     eye_in_hand = demo['obs']['eye_in_hand_rgb'][:]
                     
-                    # State: joint_states (7) + gripper_states (2)
-                    joint_states = demo['obs']['joint_states'][:]
-                    gripper_states = demo['obs']['gripper_states'][:]
-                    robot_states = np.concatenate([joint_states, gripper_states], axis=1)
+                    # State: X-VLA expects EEF state (Pos + Rot6D)
+                    # Libero provides 'ee_pos' (3) and 'ee_ori' (3, axis-angle)
+                    ee_pos = demo['obs']['ee_pos'][:]  # (N, 3)
+                    ee_ori = demo['obs']['ee_ori'][:]  # (N, 3) - Axis Angle
+                    
+                    # Convert Axis-Angle to Rotation Matrix -> 6D Rotation
+                    # Note: scipy Rotation handles batch conversion
+                    rot = R.from_rotvec(ee_ori)
+                    rot_mats = rot.as_matrix()  # (N, 3, 3)
+                    ee_rot6d = mat_to_rot6d(rot_mats)  # (N, 6)
+                    
+                    # Construct 20-dim state vector
+                    # [Pos(3), Rot6D(6), Zero(1), Padding(10)]
+                    # The 'Zero(1)' is 'extra' in processor_xvla.py
+                    # The 'Padding(10)' is because processor_xvla.py concatenates (proprio_state, zeros_like(proprio_state))
+                    # proprio_state is (10,) -> total (20,)
+                    
+                    num_frames = len(ee_pos)
+                    extra = np.zeros((num_frames, 1), dtype=np.float32)
+                    proprio_state = np.concatenate([ee_pos, ee_rot6d, extra], axis=-1)  # (N, 10)
+                    padding = np.zeros_like(proprio_state)
+                    
+                    robot_states = np.concatenate([proprio_state, padding], axis=-1)  # (N, 20)
                     
                     actions = demo['actions'][:]
                     dones = demo['dones'][:]
                     
-                    num_frames = len(actions)
-                    
                     # Add frames
                     for i in range(num_frames):
-                        # Flip images if necessary (Libero images are sometimes upside down, but usually correct in hdf5)
-                        # Based on inspection, they seem correct. 
-                        # Note: LeRobot expects (C, H, W) for images in add_frame if using pytorch, 
-                        # or (H, W, C) if using numpy/PIL? 
-                        # LeRobotDataset.add_frame saves images using PIL or image_writer.
-                        # It expects numpy arrays to be (H, W, C) for images.
-                        
                         frame = {
                             "observation.images.agentview": agentview[i], # (128, 128, 3)
                             "observation.images.wrist": eye_in_hand[i],   # (128, 128, 3)
@@ -132,6 +151,8 @@ def convert_libero_to_lerobot(
                     
         except Exception as e:
             print(f"Error processing {hdf5_path}: {e}")
+            import traceback
+            traceback.print_exc()
             continue
 
     dataset.finalize()

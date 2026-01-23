@@ -2,7 +2,7 @@
 
 1. **Python Command**: Always use `python3` instead of `python` inside the container.
 2. **Docker Environment**: Ensure commands are run inside the `vla_container` if they require project dependencies.
-
+3. **Execution recommendation**: Always use `docker exec vla_container python3` to execute python commands inside the container.
 # Cursor Rules for "Time & Uncertainty Aware X-VLA" Project
 
 You are an expert AI assistant specialized in Robotics, Computer Vision, and Large Language Models.
