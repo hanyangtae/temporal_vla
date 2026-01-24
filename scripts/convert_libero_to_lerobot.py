@@ -45,13 +45,16 @@ def convert_libero_to_lerobot(
             return
 
     # Define features
+    # Use "image" and "image2" to match LIBERO env camera_name_mapping:
+    #   agentview_image -> image
+    #   robot0_eye_in_hand_image -> image2
     features = {
-        "observation.images.agentview": {
+        "observation.images.image": {
             "dtype": "video",
             "shape": (128, 128, 3),
             "names": ["height", "width", "channel"],
         },
-        "observation.images.wrist": {
+        "observation.images.image2": {
             "dtype": "video",
             "shape": (128, 128, 3),
             "names": ["height", "width", "channel"],
@@ -106,6 +109,14 @@ def convert_libero_to_lerobot(
                     agentview = demo['obs']['agentview_rgb'][:]
                     eye_in_hand = demo['obs']['eye_in_hand_rgb'][:]
                     
+                    # IMPORTANT: Flip main camera (agentview) 180° to match HuggingFaceVLA/libero convention
+                    # X-VLA pretrained model expects flipped images for main camera
+                    # This is equivalent to torch.flip(img, dims=[H, W])
+                    # NOTE: Only flip 'image' (agentview), NOT 'image2' (wrist)
+                    #       to match processor_xvla.py's LiberoProcessorStep behavior
+                    agentview = agentview[:, ::-1, ::-1, :].copy()  # Flip H and W
+                    # eye_in_hand is NOT flipped (matches eval env_preprocessor)
+                    
                     # State: X-VLA expects EEF state (Pos + Rot6D)
                     # Libero provides 'ee_pos' (3) and 'ee_ori' (3, axis-angle)
                     ee_pos = demo['obs']['ee_pos'][:]  # (N, 3)
@@ -136,8 +147,8 @@ def convert_libero_to_lerobot(
                     # Add frames
                     for i in range(num_frames):
                         frame = {
-                            "observation.images.agentview": agentview[i], # (128, 128, 3)
-                            "observation.images.wrist": eye_in_hand[i],   # (128, 128, 3)
+                            "observation.images.image": agentview[i],    # (128, 128, 3) - main camera
+                            "observation.images.image2": eye_in_hand[i], # (128, 128, 3) - wrist camera
                             "observation.state": robot_states[i].astype(np.float32),
                             "action": actions[i].astype(np.float32),
                             "next.done": np.array([dones[i]], dtype=bool),
