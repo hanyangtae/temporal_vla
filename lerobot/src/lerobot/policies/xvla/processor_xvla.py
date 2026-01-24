@@ -531,19 +531,31 @@ class XVLARotation6DToAxisAngleProcessorStep(ProcessorStep):
         }
 
 
-def make_xvla_libero_pre_post_processors() -> tuple[
+def make_xvla_libero_pre_post_processors(
+    skip_rotation_conversion: bool = False,
+) -> tuple[
     PolicyProcessorPipeline[dict[str, Any], dict[str, Any]],
     PolicyProcessorPipeline[PolicyAction, PolicyAction],
 ]:
     """
     Build the LeRobot processor pipelines for XVLA with LIBERO environment.
+    
+    Args:
+        skip_rotation_conversion: If True, skip the rot6d→axis-angle conversion in postprocessor.
+            Set to True when using action_mode="auto" which outputs 7D actions directly.
+            Set to False (default) for action_mode="ee6d" which outputs 10D actions.
     """
     pre_processor_steps: list[ProcessorStep] = []
     post_processor_steps: list[ProcessorStep] = []
     pre_processor_steps.extend(
         [LiberoProcessorStep(), XVLAImageNetNormalizeProcessorStep(), XVLAAddDomainIdProcessorStep()]
     )
-    post_processor_steps.extend([XVLARotation6DToAxisAngleProcessorStep()])
+    
+    # Only add rotation conversion for ee6d mode (10D → 7D)
+    # For auto mode, model outputs 7D directly, no conversion needed
+    if not skip_rotation_conversion:
+        post_processor_steps.extend([XVLARotation6DToAxisAngleProcessorStep()])
+    
     return (
         PolicyProcessorPipeline[dict[str, Any], dict[str, Any]](
             steps=pre_processor_steps,
