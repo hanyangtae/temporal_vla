@@ -55,10 +55,6 @@ from lerobot.utils.utils import (
 from lerobot.envs.libero import create_libero_envs
 import gymnasium as gym
 
-# Import XVLA config to register it with draccus
-# This must be imported before any config parsing happens
-from lerobot.policies.xvla.configuration_xvla import XVLAConfig  # noqa: F401
-
 # Import custom eval function
 from eval_xvla_libero import eval_policy_all_custom
 
@@ -297,12 +293,14 @@ def train(cfg: CustomTrainPipelineConfig, accelerator: Accelerator | None = None
     if is_main_process:
         logging.info("Creating policy")
     
-    # NOTE: No rename_map needed for Libero dataset converted via convert_libero_to_lerobot.py
-    # The dataset already uses "observation.images.image" and "observation.images.image2" keys
-    # which match X-VLA's expected input feature names
+    # HACK: Force rename map for Libero dataset compatibility if not provided
+    # This handles the mismatch between Policy Config (image/image2) and Dataset (agentview/wrist)
     if not cfg.rename_map:
-        cfg.rename_map = {}
-        logging.info("No rename_map needed - dataset already uses image/image2 keys")
+        cfg.rename_map = {
+            "observation.images.agentview": "observation.images.image",
+            "observation.images.wrist": "observation.images.image2"
+        }
+        logging.info(f"Applying default rename_map for Libero: {cfg.rename_map}")
 
     policy = make_policy(
         cfg=cfg.policy,

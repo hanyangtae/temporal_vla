@@ -30,14 +30,6 @@ def mat_to_rot6d(rot_mats):
     col2 = rot_mats[..., :3, 1]
     return np.concatenate([col1, col2], axis=-1)
 
-def axis_angle_to_rot6d(axis_angle):
-    """
-    Convert axis-angle rotation (..., 3) to 6D rotation representation (..., 6).
-    """
-    rot = R.from_rotvec(axis_angle)
-    rot_mats = rot.as_matrix()  # (..., 3, 3)
-    return mat_to_rot6d(rot_mats)
-
 def convert_libero_to_lerobot(
     input_dir: Path,
     output_dir: Path,
@@ -74,7 +66,7 @@ def convert_libero_to_lerobot(
         },
         "action": {
             "dtype": "float32",
-            "shape": (20,),  # X-VLA ee6d format: [Pos(3), Rot6D(6), Gripper(1), Padding(10)]
+            "shape": (7,),
             "names": ["action"],
         },
         "next.done": {
@@ -149,23 +141,7 @@ def convert_libero_to_lerobot(
                     
                     robot_states = np.concatenate([proprio_state, padding], axis=-1)  # (N, 20)
                     
-                    # Actions: Convert 7D (pos3 + axis-angle3 + gripper1) to 20D ee6d format
-                    # ee6d format: [Pos(3), Rot6D(6), Gripper(1), Padding(10)]
-                    # Note: xvla-libero uses ee6d action mode with this layout
-                    raw_actions = demo['actions'][:]  # (N, 7): [pos3, axis-angle3, gripper1]
-                    
-                    action_pos = raw_actions[:, :3]  # (N, 3)
-                    action_axis_angle = raw_actions[:, 3:6]  # (N, 3)
-                    action_gripper = raw_actions[:, 6:7]  # (N, 1)
-                    
-                    # Convert axis-angle to 6D rotation
-                    action_rot6d = axis_angle_to_rot6d(action_axis_angle)  # (N, 6)
-                    
-                    # Construct 20D action: [pos3, rot6d6, gripper1, padding10]
-                    action_first10 = np.concatenate([action_pos, action_rot6d, action_gripper], axis=-1)  # (N, 10)
-                    action_padding = np.zeros_like(action_first10)  # (N, 10)
-                    actions = np.concatenate([action_first10, action_padding], axis=-1)  # (N, 20)
-                    
+                    actions = demo['actions'][:]
                     dones = demo['dones'][:]
                     
                     # Add frames
@@ -195,9 +171,9 @@ def convert_libero_to_lerobot(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_dir", type=Path, required=True, help="Directory containing Libero HDF5 files", default="data/datasets/libero_goal")
-    parser.add_argument("--output_dir", type=Path, required=True, help="Output directory for LeRobot dataset", default="data/lerobot_libero_goal_flipped")
-    parser.add_argument("--repo_id", type=str, default="lerobot_libero_goal_flipped", help="Repository ID for the dataset")
+    parser.add_argument("--input_dir", type=Path, required=True, help="Directory containing Libero HDF5 files")
+    parser.add_argument("--output_dir", type=Path, required=True, help="Output directory for LeRobot dataset")
+    parser.add_argument("--repo_id", type=str, default="lerobot/libero_goal", help="Repository ID for the dataset")
     parser.add_argument("--fps", type=int, default=10, help="FPS of the dataset")
     parser.add_argument("--force_override", action="store_true", help="Overwrite output directory if exists")
     
