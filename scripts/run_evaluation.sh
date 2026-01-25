@@ -6,7 +6,7 @@
 # Default arguments
 CHECKPOINT_PATH="models/xvla-libero"
 TASK_NAME=${1:-"open_the_middle_drawer_of_the_cabinet"}
-EVAL_EPISODES=1
+EVAL_EPISODES=5
 BATCH_SIZE=1
 SEED=142
 

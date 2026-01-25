@@ -69,9 +69,8 @@ def make_env_pre_post_processors(
 
         # ee6d mode: Model outputs 10D (pos3 + rot6d6 + gripper1), needs conversion to 7D axis-angle
         # auto mode: Model outputs 7D directly, no conversion needed
-        # skip_rotation_conversion = getattr(policy_cfg, 'action_mode', 'ee6d').lower() == 'auto'
-        # return make_xvla_libero_pre_post_processors(skip_rotation_conversion=skip_rotation_conversion)
-        return make_xvla_libero_pre_post_processors()
+        skip_rotation_conversion = getattr(policy_cfg, 'action_mode', 'ee6d').lower() == 'auto'
+        return make_xvla_libero_pre_post_processors(skip_rotation_conversion=skip_rotation_conversion)
 
     # For LIBERO environments, add the LiberoProcessorStep to preprocessor
     if isinstance(env_cfg, LiberoEnv) or "libero" in env_cfg.type:

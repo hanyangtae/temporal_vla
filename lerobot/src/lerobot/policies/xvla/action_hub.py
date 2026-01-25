@@ -150,7 +150,7 @@ class EE6DActionSpace(BaseActionSpace):
             self.mse(pred[:, :, self.ROT_IDX_1], target[:, :, self.ROT_IDX_1])
             + self.mse(pred[:, :, self.ROT_IDX_2], target[:, :, self.ROT_IDX_2])
         ) * self.ROT_SCALE
-        
+
         return {
             "position_loss": pos_loss,
             "rotate6D_loss": rot_loss,
@@ -425,126 +425,6 @@ class AutoActionSpace(BaseActionSpace):
         return self._trim_to_real_dim(action)
 
 
-@register_action("ee6d_10d")
-class EE6D10DActionSpace(BaseActionSpace):
-    """
-    10D End-effector layout with proper loss weighting.
-    
-    Layout: [pos(3), rot6d(6), gripper(1)] = 10D
-    Model-facing dim: 20 (padded with zeros for pretrained VLA compatibility)
-    
-    This is the correct action space for 10D EE6D data, with:
-    - Position loss: MSE * 500 (high weight for precise positioning)
-    - Rotation loss: MSE * 10 (medium weight for orientation)
-    - Gripper loss: BCE * 1 (binary cross-entropy for open/close)
-    """
-
-    dim_action = 20  # Model-facing dimension
-    REAL_DIM = 10    # Actual data dimension
-    
-    # Loss scales (same as EE6DActionSpace)
-    XYZ_SCALE = 500.0
-    ROT_SCALE = 10.0
-    GRIPPER_SCALE = 1.0
-    
-    # Indices in 10D layout
-    POS_IDX = (0, 1, 2)       # Position: indices 0-2
-    ROT_IDX = (3, 4, 5, 6, 7, 8)  # Rotation 6D: indices 3-8
-    GRIPPER_IDX = (9,)        # Gripper: index 9
-
-    def __init__(self):
-        super().__init__()
-        self.mse = nn.MSELoss()
-        self.bce = nn.BCEWithLogitsLoss()
-
-    def _pad_to_model_dim(self, x: torch.Tensor) -> torch.Tensor:
-        """Pad 10D → 20D (zeros for the dummy channels)."""
-        if x is None:
-            return None
-        if x.size(-1) == self.dim_action:
-            return x
-        if x.size(-1) != self.REAL_DIM:
-            raise ValueError(
-                f"Expected last dim to be {self.REAL_DIM} or {self.dim_action}, got {x.size(-1)}"
-            )
-        pad_shape = list(x.shape[:-1]) + [self.dim_action - self.REAL_DIM]
-        pad = x.new_zeros(pad_shape)
-        return torch.cat([x, pad], dim=-1)
-
-    def _trim_to_real_dim(self, x: torch.Tensor) -> torch.Tensor:
-        """Trim model output 20D → 10D."""
-        return x[..., : self.REAL_DIM]
-
-    def compute_loss(self, pred: torch.Tensor, target: torch.Tensor) -> dict[str, torch.Tensor]:
-        """
-        Compute loss with proper weighting for EE6D structure.
-        
-        pred:   [B, T, 20] from the model
-        target: [B, T, 10] or [B, T, 20]
-        
-        Loss components:
-        - Position (0:3): MSE * 500
-        - Rotation (3:9): MSE * 10
-        - Gripper (9): BCE * 1
-        """
-        pred = self._pad_to_model_dim(pred)
-        target = self._pad_to_model_dim(target)
-        assert pred.shape == target.shape, f"Shape mismatch: pred {pred.shape} vs target {target.shape}"
-
-        # Position loss (indices 0-2)
-        pos_loss = self.mse(
-            pred[:, :, self.POS_IDX],
-            target[:, :, self.POS_IDX]
-        ) * self.XYZ_SCALE
-
-        # Rotation 6D loss (indices 3-8)
-        rot_loss = self.mse(
-            pred[:, :, self.ROT_IDX],
-            target[:, :, self.ROT_IDX]
-        ) * self.ROT_SCALE
-
-        # Gripper loss (index 9) - BCE for binary classification
-        gripper_loss = self.bce(
-            pred[:, :, 9],
-            target[:, :, 9]
-        ) * self.GRIPPER_SCALE
-
-        return {
-            "position_loss": pos_loss,
-            "rotate6D_loss": rot_loss,
-            "gripper_loss": gripper_loss,
-        }
-
-    def preprocess(self, proprio: torch.Tensor, action: torch.Tensor, mode: str = "train"):
-        """
-        Pad action from 10D to 20D for the model.
-        Zero-out gripper in proprio/action for training stability.
-        """
-        proprio_m = proprio.clone()
-        action_m = self._pad_to_model_dim(action.clone()) if action is not None else None
-        
-        # Zero-out gripper channel (index 9) like EE6DActionSpace
-        proprio_m[..., self.GRIPPER_IDX] = 0.0
-        if action_m is not None:
-            action_m[..., self.GRIPPER_IDX] = 0.0
-        
-        return proprio_m, action_m
-
-    def postprocess(self, action: torch.Tensor) -> torch.Tensor:
-        """
-        Post-process model output:
-        - Apply sigmoid to gripper logits
-        - Trim 20D → 10D for downstream processing
-        """
-        # Apply sigmoid to gripper (index 9)
-        if action.size(-1) > 9:
-            action = action.clone()
-            action[..., 9] = torch.sigmoid(action[..., 9])
-        
-        # Trim to 10D
-        return self._trim_to_real_dim(action)
-
-
 @register_action("so101_bimanual")
 class BimanualSO101ActionSpace(BaseActionSpace):
     """
@@ -699,7 +579,6 @@ __all__ = [
     "build_action_space",
     "register_action",
     "EE6DActionSpace",
-    "EE6D10DActionSpace",
     "JointActionSpace",
     "AGIBOTEE6DActionSpace",
     "FrankaJoint7ActionSpace",

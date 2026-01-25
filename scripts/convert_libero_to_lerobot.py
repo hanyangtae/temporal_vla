@@ -11,6 +11,7 @@ import h5py
 import numpy as np
 import torch
 from tqdm import tqdm
+from scipy.spatial.transform import Rotation as R
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.utils.utils import init_logging
@@ -21,6 +22,22 @@ def get_task_name_from_filename(filename):
     task_name = basename.replace("_demo.hdf5", "").replace("_", " ")
     return task_name
 
+def mat_to_rot6d(rot_mats):
+    """
+    Convert rotation matrices (..., 3, 3) to 6D rotation representation (..., 6).
+    """
+    col1 = rot_mats[..., :3, 0]
+    col2 = rot_mats[..., :3, 1]
+    return np.concatenate([col1, col2], axis=-1)
+
+def axis_angle_to_rot6d(axis_angle):
+    """
+    Convert axis-angle rotation (..., 3) to 6D rotation representation (..., 6).
+    """
+    rot = R.from_rotvec(axis_angle)
+    rot_mats = rot.as_matrix()  # (..., 3, 3)
+    return mat_to_rot6d(rot_mats)
+
 def convert_libero_to_lerobot(
     input_dir: Path,
     output_dir: Path,
@@ -28,23 +45,12 @@ def convert_libero_to_lerobot(
     fps: int = 10,
     force_override: bool = False,
 ):
-    """
-    Convert LIBERO HDF5 dataset to LeRobot format.
-    
-    Data format:
-    - observation.state: 7D [pos(3), axis-angle(3), extra(1)]
-    - action: 7D [pos(3), axis-angle(3), gripper(1)]
-    
-    This matches the native LIBERO action format directly without conversion.
-    """
     if output_dir.exists():
         if force_override:
             shutil.rmtree(output_dir)
         else:
             print(f"Output directory {output_dir} already exists. Use --force_override to overwrite.")
             return
-
-    print(f"Using 7D format: [pos(3), axis-angle(3), gripper(1)]")
 
     # Define features
     # Use "image" and "image2" to match LIBERO env camera_name_mapping:
@@ -63,12 +69,12 @@ def convert_libero_to_lerobot(
         },
         "observation.state": {
             "dtype": "float32",
-            "shape": (7,),  # 7D: [Pos(3), AxisAngle(3), Extra(1)]
+            "shape": (20,),  # X-VLA expects 20-dim state (Pos(3) + Rot6D(6) + Padding)
             "names": ["state"],
         },
         "action": {
             "dtype": "float32",
-            "shape": (7,),  # 7D: [Pos(3), AxisAngle(3), Gripper(1)]
+            "shape": (20,),  # X-VLA ee6d format: [Pos(3), Rot6D(6), Gripper(1), Padding(10)]
             "names": ["action"],
         },
         "next.done": {
@@ -119,20 +125,46 @@ def convert_libero_to_lerobot(
                     agentview = agentview[:, ::-1, ::-1, :].copy()  # Flip H and W
                     # eye_in_hand is NOT flipped (matches eval env_preprocessor)
                     
-                    # State: 7D [pos(3), axis-angle(3), extra(1)]
+                    # State: X-VLA expects EEF state (Pos + Rot6D)
                     # Libero provides 'ee_pos' (3) and 'ee_ori' (3, axis-angle)
                     ee_pos = demo['obs']['ee_pos'][:]  # (N, 3)
                     ee_ori = demo['obs']['ee_ori'][:]  # (N, 3) - Axis Angle
                     
+                    # Convert Axis-Angle to Rotation Matrix -> 6D Rotation
+                    # Note: scipy Rotation handles batch conversion
+                    rot = R.from_rotvec(ee_ori)
+                    rot_mats = rot.as_matrix()  # (N, 3, 3)
+                    ee_rot6d = mat_to_rot6d(rot_mats)  # (N, 6)
+                    
+                    # Construct 20-dim state vector
+                    # [Pos(3), Rot6D(6), Zero(1), Padding(10)]
+                    # The 'Zero(1)' is 'extra' in processor_xvla.py
+                    # The 'Padding(10)' is because processor_xvla.py concatenates (proprio_state, zeros_like(proprio_state))
+                    # proprio_state is (10,) -> total (20,)
+                    
                     num_frames = len(ee_pos)
                     extra = np.zeros((num_frames, 1), dtype=np.float32)
+                    proprio_state = np.concatenate([ee_pos, ee_rot6d, extra], axis=-1)  # (N, 10)
+                    padding = np.zeros_like(proprio_state)
                     
-                    # Construct state vector: [pos3, axis-angle3, extra1] = 7D
-                    robot_states = np.concatenate([ee_pos, ee_ori, extra], axis=-1)  # (N, 7)
+                    robot_states = np.concatenate([proprio_state, padding], axis=-1)  # (N, 20)
                     
-                    # Actions: Keep native 7D format [pos3, axis-angle3, gripper1]
-                    # No conversion needed - LIBERO already uses this format
-                    actions = demo['actions'][:]  # (N, 7): [pos3, axis-angle3, gripper1]
+                    # Actions: Convert 7D (pos3 + axis-angle3 + gripper1) to 20D ee6d format
+                    # ee6d format: [Pos(3), Rot6D(6), Gripper(1), Padding(10)]
+                    # Note: xvla-libero uses ee6d action mode with this layout
+                    raw_actions = demo['actions'][:]  # (N, 7): [pos3, axis-angle3, gripper1]
+                    
+                    action_pos = raw_actions[:, :3]  # (N, 3)
+                    action_axis_angle = raw_actions[:, 3:6]  # (N, 3)
+                    action_gripper = raw_actions[:, 6:7]  # (N, 1)
+                    
+                    # Convert axis-angle to 6D rotation
+                    action_rot6d = axis_angle_to_rot6d(action_axis_angle)  # (N, 6)
+                    
+                    # Construct 20D action: [pos3, rot6d6, gripper1, padding10]
+                    action_first10 = np.concatenate([action_pos, action_rot6d, action_gripper], axis=-1)  # (N, 10)
+                    action_padding = np.zeros_like(action_first10)  # (N, 10)
+                    actions = np.concatenate([action_first10, action_padding], axis=-1)  # (N, 20)
                     
                     dones = demo['dones'][:]
                     
@@ -164,8 +196,8 @@ def convert_libero_to_lerobot(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--input_dir", type=Path, required=True, help="Directory containing Libero HDF5 files", default="data/datasets/libero_goal")
-    parser.add_argument("--output_dir", type=Path, required=True, help="Output directory for LeRobot dataset", default="data/lerobot_libero_goal_7d")
-    parser.add_argument("--repo_id", type=str, default="lerobot_libero_goal_7d", help="Repository ID for the dataset")
+    parser.add_argument("--output_dir", type=Path, required=True, help="Output directory for LeRobot dataset", default="data/lerobot_libero_goal_flipped")
+    parser.add_argument("--repo_id", type=str, default="lerobot_libero_goal_flipped", help="Repository ID for the dataset")
     parser.add_argument("--fps", type=int, default=10, help="FPS of the dataset")
     parser.add_argument("--force_override", action="store_true", help="Overwrite output directory if exists")
     
@@ -177,5 +209,5 @@ if __name__ == "__main__":
         args.output_dir,
         args.repo_id,
         args.fps,
-        args.force_override,
+        args.force_override
     )
