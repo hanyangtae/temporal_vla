@@ -1,17 +1,17 @@
 #!/bin/bash
 
-# PC1 (Evaluation Machine) Script
-# Usage: ./scripts/run_evaluation.sh [optional: task_name]
+# Debug script to inspect data flow between LIBERO env and X-VLA policy
+# Usage: ./scripts/run_debug_data_flow.sh [optional: task_name]
 
 # Default arguments
 CHECKPOINT_PATH="models/xvla-libero"
 TASK_NAME=${1:-"open_the_middle_drawer_of_the_cabinet"}
-EVAL_EPISODES=1
-BATCH_SIZE=1
 SEED=142
 
-echo "Starting evaluation for task: $TASK_NAME"
+echo "=========================================="
+echo "🔍 Debugging data flow for task: $TASK_NAME"
 echo "Using checkpoint: $CHECKPOINT_PATH"
+echo "=========================================="
 
 # Ensure the checkpoint exists
 if [ ! -d "$CHECKPOINT_PATH" ]; then
@@ -20,18 +20,17 @@ if [ ! -d "$CHECKPOINT_PATH" ]; then
     exit 1
 fi
 
-# Run evaluation script
-# Note: Use --policy.path instead of --policy to properly load local checkpoints with overrides
-python3 scripts/eval_xvla_libero.py \
+# Run debug script
+python3 scripts/debug_data_flow.py \
     --policy.path="$CHECKPOINT_PATH" \
     --env.type=libero \
     --env.task=libero_goal \
     --env.control_mode=absolute \
-    --eval.batch_size=$BATCH_SIZE \
-    --eval.n_episodes=$EVAL_EPISODES \
     --env.episode_length=800 \
     --seed=$SEED \
-    --eval.use_async_envs=false \
     --target_task_name="$TASK_NAME"
 
-echo "Evaluation complete. Results saved to outputs/eval_results/"
+echo ""
+echo "=========================================="
+echo "✅ Debug complete!"
+echo "=========================================="

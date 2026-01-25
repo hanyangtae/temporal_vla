@@ -18,7 +18,7 @@ MODE=$1
 # =============================================================================
 WORKSPACE="/workspace/vla_tset"
 POLICY_PATH="${WORKSPACE}/models/xvla-libero"
-OUTPUT_BASE="${WORKSPACE}/outputs/finetuned"
+OUTPUT_BASE="${WORKSPACE}/outputs/finetuned/test"
 # NOTE: 데이터셋은 10D action 형식으로 변환된 버전 사용
 # 변환 스크립트: scripts/convert_libero_to_lerobot.py
 # 시간 정보 추가: scripts/add_time_features.py
@@ -49,9 +49,9 @@ LR_FULL=4e-4                 # batch 32 / 8 = 4x → LR 4x (1e-4 * 4)
 # =============================================================================
 # Evaluation 설정
 # =============================================================================
-EVAL_FREQ=2000               # 2500 steps마다 eval (0이면 비활성화)
-EVAL_BATCH_SIZE=1            # eval 시 병렬 환경 수 (메모리 고려)
-EVAL_N_EPISODES=5         # eval 시 에피소드 수
+EVAL_FREQ=1              # 2500 steps마다 eval (0이면 비활성화)
+EVAL_BATCH_SIZE=1       # eval 시 병렬 환경 수 (메모리 고려)
+EVAL_N_EPISODES=1       # eval 시 에피소드 수
 
 # =============================================================================
 # 공통 파라미터
@@ -72,14 +72,14 @@ COMMON_ARGS="--policy.path=${POLICY_PATH} \
   --env.episode_length=800 \
   --policy.chunk_size=32 \
   --policy.n_action_steps=32 \
-  --policy.action_mode=ee6d_10d \
+  --policy.action_mode=auto \
   --policy.time_feature_key=${TIME_KEY} \
-  --steps=20000 \
-  --save_freq=2000 \
+  --steps=1 \
+  --save_freq=1 \
   --eval_freq=${EVAL_FREQ} \
   --eval.batch_size=${EVAL_BATCH_SIZE} \
   --eval.n_episodes=${EVAL_N_EPISODES} \
-  --log_freq=100 \
+  --log_freq=10 \
   --policy.push_to_hub=false" 
 
 # =============================================================================

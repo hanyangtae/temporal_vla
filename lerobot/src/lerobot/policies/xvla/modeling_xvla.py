@@ -235,6 +235,7 @@ class XVLAModel(nn.Module):
         )
         
         # Compute action loss
+
         losses = self.action_space.compute_loss(pred_action, action)
         
         # Compute time loss (Gaussian NLL) if time_to_go is provided

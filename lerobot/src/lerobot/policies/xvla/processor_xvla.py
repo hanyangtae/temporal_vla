@@ -531,9 +531,7 @@ class XVLARotation6DToAxisAngleProcessorStep(ProcessorStep):
         }
 
 
-def make_xvla_libero_pre_post_processors(
-    skip_rotation_conversion: bool = False,
-) -> tuple[
+def make_xvla_libero_pre_post_processors() -> tuple[
     PolicyProcessorPipeline[dict[str, Any], dict[str, Any]],
     PolicyProcessorPipeline[PolicyAction, PolicyAction],
 ]:
@@ -553,9 +551,9 @@ def make_xvla_libero_pre_post_processors(
     
     # Only add rotation conversion for ee6d mode (10D → 7D)
     # For auto mode, model outputs 7D directly, no conversion needed
-    if not skip_rotation_conversion:
-        post_processor_steps.extend([XVLARotation6DToAxisAngleProcessorStep()])
-    
+    # if not skip_rotation_conversion:
+    #     post_processor_steps.extend([XVLARotation6DToAxisAngleProcessorStep()])
+    post_processor_steps.extend([XVLARotation6DToAxisAngleProcessorStep()])
     return (
         PolicyProcessorPipeline[dict[str, Any], dict[str, Any]](
             steps=pre_processor_steps,
