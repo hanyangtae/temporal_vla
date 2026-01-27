@@ -48,7 +48,7 @@ RUN groupadd -g ${GROUP_ID} ${USER_NAME} && \
 
 # 3. Environment Setup
 USER ${USER_NAME}
-WORKDIR /workspace/vla_tset
+WORKDIR /temporal_vla
 
 # Add local bin to PATH
 ENV PATH="/home/${USER_NAME}/.local/bin:${PATH}"
@@ -68,5 +68,5 @@ RUN pip3 install flash-attn --no-build-isolation
 # Pre-install tricky dependencies with system CMake (avoids conflict with pip cmake)
 RUN pip3 install "egl_probe>=1.0.1" "hf-egl-probe>=1.0.2"
 
-ENTRYPOINT ["/workspace/vla_tset/scripts/setup_env.sh"]
+ENTRYPOINT ["/temporal_vla/scripts/setup_env.sh"]
 CMD ["/bin/bash"]

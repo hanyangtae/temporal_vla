@@ -18,7 +18,7 @@ At the start of every session, check the current user/environment (e.g., via `wh
 | **PC 1** | `rudxo` | RTX 4090 (24GB) | Data & Eval | 11111 |
 | **Server** | `sangwoo` | A100 (80GB) | Training Center | 22 |
 
-- **Server IP**: `166.104.35.50`, **Path**: `~/pkt_ws/vla_tset`
+- **Server IP**: `166.104.35.50`
 - **PC 1 IP**: `218.152.144.220`
 
 ### 🌐 Network Topology
@@ -103,7 +103,6 @@ chmod +x scripts/run_evaluation.sh
 
 ### Step 1: 환경 설정
 ```bash
-cd ~/pkt_ws/vla_tset
 
 # 데이터 압축 해제
 tar -xzf data/datasets.tar.gz -C data/
@@ -138,16 +137,7 @@ python scripts/finetune_xvla_time.py \
     --learning_rate 1e-5
 ```
 
-### Step 4: 체크포인트 전송 (Laptop 경유)
-```bash
-# Server → Laptop (Laptop에서 실행)
-scp sangwoo@166.104.35.50:~/pkt_ws/vla_tset/outputs/train/xvla_time_subtask/final.tar.gz C:\Users\<USER>\Downloads\
 
-# Laptop → PC1 (Laptop에서 실행)
-scp -P 11111 C:\Users\<USER>\Downloads\final.tar.gz rudxo@218.152.144.220:/home/rudxo/workspace/vla_tset/outputs/train/
-```
-
----
 
 ## 🎯 실험 설계
 

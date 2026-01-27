@@ -9,7 +9,7 @@ POLICY_PATH="models/xvla-libero"
 OUTPUT_BASE="outputs/finetuned"
 TIME_KEY="time_to_go_task"
 DATASET_REPO_ID="lerobot_libero_goal_flipped_time"
-DATASET_ROOT="/workspace/vla_tset/data/lerobot_libero_goal_flipped_time"
+DATASET_ROOT="/temporal_vla/data/lerobot_libero_goal_flipped_time"
 
 # ============================================================================
 # Episode Filtering for OOD Evaluation

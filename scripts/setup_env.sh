@@ -10,7 +10,7 @@ echo "=========================================="
 echo "🔧 Setting up VLA development environment"
 echo "=========================================="
 
-WORKSPACE="/workspace/vla_tset"
+WORKSPACE="/temporal_vla"
 MARKER_FILE="/tmp/.vla_env_setup_done"
 
 # Check if setup was already done in this container session
