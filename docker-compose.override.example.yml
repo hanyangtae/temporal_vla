@@ -15,8 +15,8 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=all
       - NVIDIA_VISIBLE_DEVICES=all
       - QT_X11_NO_MITSHM=1
-      - HF_HOME=/workspace/vla_tset/data/huggingface  # HF 모델/데이터 캐시 경로 변경
-      - LIBERO_DATA_DIR=/workspace/vla_tset/data/libero # LIBERO 데이터 경로
+      - HF_HOME=/temporal_vla/data/huggingface  # HF 모델/데이터 캐시 경로 변경
+      - LIBERO_DATA_DIR=/temporal_vla/data/libero # LIBERO 데이터 경로
 
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw  # X11 Socket for GUI

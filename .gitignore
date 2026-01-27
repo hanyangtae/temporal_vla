@@ -8,3 +8,4 @@ logs/*
 *.tar
 *.gz
 models/*
+lerobot/tests/**

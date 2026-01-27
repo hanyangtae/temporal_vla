@@ -14,7 +14,7 @@ def download_libero_dataset(output_dir: str = "data/libero_hf"):
     
     Args:
         output_dir: 데이터셋을 저장할 경로
-        subset: 특정 subset만 다운로드 (None이면 전체)
+
     """
     from datasets import load_dataset
     
