@@ -9,3 +9,4 @@ logs/*
 *.gz
 models/*
 lerobot/tests/**
+temp/**
