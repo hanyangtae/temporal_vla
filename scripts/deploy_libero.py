@@ -120,6 +120,7 @@ def replay_episode(
     episode_id: int = 0,
     output_dir: str = "outputs/replay_videos",
     save_video: bool = True,
+    use_absolute_action: bool = False,
 ):
     """
     데이터셋에서 특정 에피소드의 action을 LIBERO 환경에서 replay
@@ -130,6 +131,7 @@ def replay_episode(
         episode_id: replay할 에피소드 ID
         output_dir: 비디오 저장 경로
         save_video: 비디오 저장 여부
+        use_absolute_action: 절대 좌표 모드 사용 여부 (controller.use_delta=False)
     """
     from libero.libero import benchmark
     
@@ -233,7 +235,18 @@ def replay_episode(
         render_mode="rgb_array",
         init_states=True,
         episode_index=episode_id,
+        control_mode="absolute" if use_absolute_action else "relative",
     )
+    
+    if use_absolute_action:
+        logger.info(f"🔧 Controller set to ABSOLUTE action mode (use_delta=False)")
+        try:
+            # Access internal robosuite controller
+            # LiberoEnv -> OffScreenRenderEnv -> MujocoEnv -> robots -> controller
+            controller = env._env.robots[0].controller
+            controller.use_delta = False
+        except Exception as e:
+            logger.error(f"❌ Failed to set absolute mode: {e}")
     
     logger.info(f"  - 환경 생성 완료!")
     
@@ -499,6 +512,12 @@ def main():
         help="Device (cuda/cpu)"
     )
     
+    parser.add_argument(
+        "--use_absolute_action",
+        action="store_true",
+        help="Treat actions as absolute coordinates (sets controller.use_delta=False)"
+    )
+    
     args = parser.parse_args()
     
     if args.explore_only:
@@ -510,6 +529,7 @@ def main():
             episode_id=args.episode_id,
             output_dir=args.output_dir,
             save_video=True,
+            use_absolute_action=args.use_absolute_action,
         )
     else:
         deploy_on_libero(
