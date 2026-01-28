@@ -1,3 +1,5 @@
+# Original path: /home/rudxo/.local/lib/python3.10/site-packages/robosuite/controllers
+
 import math
 
 import numpy as np
