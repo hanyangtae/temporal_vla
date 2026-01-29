@@ -11,9 +11,14 @@ import logging
 import numpy as np
 import torch
 from pathlib import Path
-from datasets import load_from_disk, Dataset, Features, Sequence, Value, Array2D, Array3D
+from datasets import load_from_disk, Dataset, Features, Sequence, Value, Array2D, Array3D, concatenate_datasets
 from tqdm import tqdm
 import copy
+from lerobot.envs.libero import LiberoEnv
+from dotenv import load_dotenv
+from collections import defaultdict
+
+load_dotenv()
 
 # Add workspace root to path to import temp modules
 sys.path.append(os.getcwd())
@@ -184,28 +189,6 @@ def convert_episode(env, actions, controller_config):
         
     return np.array(abs_actions)
 
-def main():
-    parser = argparse.ArgumentParser(description="Convert LIBERO dataset from relative to absolute actions")
-    parser.add_argument("--dataset_path", type=str, default="data/libero_hf/dataset", help="Input dataset path")
-    parser.add_argument("--output_dir", type=str, default="data/libero_hf_abs", help="Output dataset path")
-    parser.add_argument("--max_episodes", type=int, default=None, help="Max episodes per task to convert (for testing)")
-    args = parser.parse_args()
-    
-    # Load dataset
-    logger.info(f"📂 Loading dataset from {args.dataset_path}")
-    ds = load_from_disk(args.dataset_path)
-    if hasattr(ds, 'keys'):
-        ds = ds['train']
-    
-    # Group by task
-    task_indices = sorted(list(set(ds['task_index'])))
-    logger.info(f"Found {len(task_indices)} tasks")
-    
-    # Test only the first task
-    if args.max_episodes:
-        logger.info(f"🧪 Testing mode: Processing only the first task (Task {task_indices[0]})")
-        task_indices = [task_indices[0]]
-
 def process_task(task_idx, dataset_path, output_dir, max_episodes=None):
     """
     단일 Task 처리를 위한 함수 (멀티프로세싱용)
@@ -225,11 +208,49 @@ def process_task(task_idx, dataset_path, output_dir, max_episodes=None):
         suite_name, libero_task_id, suite, task = find_libero_task_by_language(task_language)
         
         if suite_name is None:
-            logger.error(f"❌ Task {task_idx} ({task_language}) not found in Libero suites. Skipping.")
+            logger.error(f"❌ Tas# breakpoint(){task_language}) not found in Libero suites. Skipping.")
             return None, None
             
         logger.info(f"🔄 Processing Task {task_idx}: {task_language} ({suite_name})")
         
+        # libero_goal에 대해서만 처리
+        if suite_name != "libero_goal":
+            logger.info(f"⏩ Skipping {suite_name} (Only processing libero_goal)")
+            return None, None
+
+        # libero_goal Task ID Remapping (Dataset ID -> Real ID)
+        # Dataset (tasks.parquet) - Libero Goal 관련
+        # 10: put the bowl on the plate -> 8
+        # 11: put the wine bottle on the rack -> 9
+        # 12: open the top drawer and put the bowl inside -> 3
+        # 13: put the cream cheese in the bowl -> 6
+        # 14: put the wine bottle on top of the cabinet -> 2
+        # 15: push the plate to the front of the stove -> 5
+        # 16: turn on the stove -> 7
+        # 17: put the bowl on the stove -> 1
+        # 18: put the bowl on top of the cabinet -> 4
+        # 19: open the middle drawer of the cabinet -> 0
+        
+        goal_task_map = {
+            10: 8, 11: 9, 12: 3, 13: 6, 14: 2,
+            15: 5, 16: 7, 17: 1, 18: 4, 19: 0
+        }
+        
+        # 실제 libero_task_id를 매핑된 값으로 교체
+        if suite_name == "libero_goal":
+            # find_libero_task_by_language가 반환한 libero_task_id는 suite 내의 ID (0~9)
+            # 하지만 원본 데이터셋의 task_index는 10~19임.
+            # process_task 함수 인자로 들어오는 task_idx는 원본 데이터셋의 index (10~19)
+            
+            # 여기서 task_idx를 바로 사용해야 함.
+            original_dataset_id = task_idx
+            
+            if original_dataset_id in goal_task_map:
+                libero_task_id = goal_task_map[original_dataset_id]
+                logger.info(f"🔀 Remapped Task ID: {original_dataset_id} -> {libero_task_id}")
+            else:
+                logger.warning(f"⚠️ Task ID {original_dataset_id} not in map, keeping as is.")
+
         # Filter data for this task
         task_data = ds.filter(lambda x: x['task_index'] == task_idx)
         unique_episodes = sorted(list(set(task_data['episode_index'])))
@@ -250,7 +271,7 @@ def process_task(task_idx, dataset_path, output_dir, max_episodes=None):
                 task_suite=suite,
                 task_id=libero_task_id,
                 task_suite_name=suite_name,
-                obs_type="pixels",
+                obs_type="pixels_agent_pos",
                 render_mode=None, # 렌더링 끄기 (속도 향상)
                 init_states=True,
                 episode_index=ep_idx % 50
@@ -273,7 +294,8 @@ def process_task(task_idx, dataset_path, output_dir, max_episodes=None):
                     new_sample = copy.deepcopy(sample)
                     new_sample['action'] = abs_actions[i]
                     new_sample['episode_index'] = ep_idx % 50
-                    new_sample['task_index'] = task_idx % 10
+                    # Use the remapped libero_task_id
+                    new_sample['task_index'] = libero_task_id
                     converted_samples.append(new_sample)
                     
             except Exception as e:
@@ -281,7 +303,24 @@ def process_task(task_idx, dataset_path, output_dir, max_episodes=None):
             finally:
                 env.close()
                 
-        return suite_name, converted_samples
+        # Save task data immediately to avoid OOM
+        # Include mapped ID in folder name for clarity
+        temp_dir_name = f"task_orig{task_idx}_mapped{libero_task_id}"
+        temp_save_dir = Path(output_dir) / "temp" / suite_name / temp_dir_name
+        temp_save_dir.mkdir(parents=True, exist_ok=True)
+        
+        data_dict = defaultdict(list)
+        for item in converted_samples:
+            for k, v in item.items():
+                data_dict[k].append(v)
+        
+        task_ds = Dataset.from_dict(data_dict)
+        task_ds.save_to_disk(str(temp_save_dir))
+        
+        logger.info(f"💾 Saved temporary task data to {temp_save_dir}")
+        
+        # Return path instead of data
+        return suite_name, str(temp_save_dir)
         
     except Exception as e:
         logger.error(f"❌ Task {task_idx} failed: {e}")
@@ -292,7 +331,7 @@ def main():
     parser.add_argument("--dataset_path", type=str, default="data/libero_hf/dataset", help="Input dataset path")
     parser.add_argument("--output_dir", type=str, default="data/libero_hf_abs", help="Output dataset path")
     parser.add_argument("--max_episodes", type=int, default=None, help="Max episodes per task to convert (for testing)")
-    parser.add_argument("--num_workers", type=int, default=8, help="Number of parallel workers")
+    parser.add_argument("--num_workers", type=int, default=12, help="Number of parallel workers")
     args = parser.parse_args()
     
     # Load dataset just to get task indices
@@ -301,6 +340,7 @@ def main():
     if hasattr(ds, 'keys'):
         ds = ds['train']
     
+    # Group by task
     task_indices = sorted(list(set(ds['task_index'])))
     logger.info(f"Found {len(task_indices)} tasks")
     
@@ -315,33 +355,45 @@ def main():
     
     process_func = partial(process_task, dataset_path=args.dataset_path, output_dir=args.output_dir, max_episodes=args.max_episodes)
     
-    suite_data = defaultdict(list)
+    suite_paths = defaultdict(list)
     
     logger.info(f"🚀 Starting parallel processing with {args.num_workers} workers...")
     
     with Pool(args.num_workers) as pool:
         results = list(tqdm(pool.imap(process_func, task_indices), total=len(task_indices)))
         
-    # Aggregate results
-    for suite_name, samples in results:
-        if suite_name and samples:
-            suite_data[suite_name].extend(samples)
+    # Collect paths
+    for suite_name, path in results:
+        if suite_name and path:
+            suite_paths[suite_name].append(path)
 
-    # Save datasets by suite
-    for suite_name, data_list in suite_data.items():
+    # Merge and Save datasets by suite
+    for suite_name, paths in suite_paths.items():
+        if not paths:
+            continue
+            
         suite_output_dir = os.path.join(args.output_dir, suite_name)
-        logger.info(f"💾 Saving {suite_name} dataset to {suite_output_dir} ({len(data_list)} frames)")
+        logger.info(f"📦 Merging {len(paths)} tasks for {suite_name}...")
         
-        data_dict = defaultdict(list)
-        for item in data_list:
-            for k, v in item.items():
-                data_dict[k].append(v)
-                
-        new_ds = Dataset.from_dict(data_dict)
-        new_ds.save_to_disk(suite_output_dir)
+        try:
+            # Load all task datasets
+            datasets = [load_from_disk(p) for p in paths]
+            
+            # Concatenate
+            merged_ds = concatenate_datasets(datasets)
+            
+            # Save final suite dataset
+            logger.info(f"💾 Saving {suite_name} dataset to {suite_output_dir} ({len(merged_ds)} frames)")
+            merged_ds.save_to_disk(suite_output_dir)
+            
+            # Cleanup temp files (Optional)
+            # import shutil
+            # shutil.rmtree(os.path.join(args.output_dir, "temp", suite_name))
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to merge suite {suite_name}: {e}")
         
     logger.info("✅ Done!")
 
 if __name__ == "__main__":
-    from collections import defaultdict
     main()
