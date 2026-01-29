@@ -1,5 +1,5 @@
 services:
-  vla_dev:
+  temporal_vla_dev:
     # --- [Option 1] PC 2 (Dev) & PC 1 (Data/Eval) Setup ---
     # GUI Support + Single/Full GPU
     deploy:
