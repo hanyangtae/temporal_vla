@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 LIBERO 데이터셋의 상대 좌표 Action을 절대 좌표 Action으로 변환하는 스크립트.
-temp/osc.py 및 temp/control_utils.py의 로직을 따릅니다.
+src/utils/control_utils.py의 로직을 따릅니다.
 """
 
 import os
@@ -20,15 +20,15 @@ from collections import defaultdict
 
 load_dotenv()
 
-# Add workspace root to path to import temp modules
+# Add workspace root to path to import src modules
 sys.path.append(os.getcwd())
 
 try:
-    from temp.control_utils import set_goal_position, set_goal_orientation
+    from src.utils.control_utils import set_goal_position, set_goal_orientation
     import robosuite.utils.transform_utils as T
 except ImportError:
-    print("❌ temp/control_utils.py 또는 robosuite를 찾을 수 없습니다.")
-    print("   먼저 temp/control_utils.py가 존재하는지 확인해주세요.")
+    print("❌ src/utils/control_utils.py 또는 robosuite를 찾을 수 없습니다.")
+    print("   먼저 src/utils/control_utils.py가 존재하는지 확인해주세요.")
     sys.exit(1)
 
 # 로깅 설정
@@ -57,23 +57,24 @@ def get_task_language(dataset_path: str, task_index: int) -> str:
     
     raise ValueError(f"task_index {task_index} not found in dataset")
 
-def find_libero_task_by_language(language: str):
-    """language instruction으로 libero task를 찾아 (suite_name, task_id) 반환 (deploy_libero.py 참조)"""
-    from libero.libero import benchmark
+# deprecated
+# def find_libero_task_by_language(language: str):
+#     """language instruction으로 libero task를 찾아 (suite_name, task_id) 반환 (deploy_libero.py 참조)"""
+#     from libero.libero import benchmark
     
-    bench = benchmark.get_benchmark_dict()
-    suites_to_search = ['libero_10', 'libero_goal', 'libero_object', 'libero_spatial']
+#     bench = benchmark.get_benchmark_dict()
+#     suites_to_search = ['libero_10', 'libero_goal', 'libero_object', 'libero_spatial']
     
-    for suite_name in suites_to_search:
-        if suite_name not in bench:
-            continue
-        suite = bench[suite_name]()
-        for task_id in range(len(suite.tasks)):
-            task = suite.get_task(task_id)
-            if task.language.lower().strip() == language.lower().strip():
-                return suite_name, task_id, suite, task
+#     for suite_name in suites_to_search:
+#         if suite_name not in bench:
+#             continue
+#         suite = bench[suite_name]()
+#         for task_id in range(len(suite.tasks)):
+#             task = suite.get_task(task_id)
+#             if task.language.lower().strip() == language.lower().strip():
+#                 return suite_name, task_id, suite, task
     
-    return None, None, None, None
+#     return None, None, None, None
 
 def scale_action(action, input_min, input_max, output_min, output_max):
     """
@@ -189,7 +190,7 @@ def convert_episode(env, actions, controller_config):
         
     return np.array(abs_actions)
 
-def process_task(task_idx, dataset_path, output_dir, max_episodes=None):
+def process_task(task_idx, dataset_path, output_dir, suite_name_arg="libero_goal", max_episodes=None):
     """
     단일 Task 처리를 위한 함수 (멀티프로세싱용)
     """
@@ -204,53 +205,30 @@ def process_task(task_idx, dataset_path, output_dir, max_episodes=None):
         if hasattr(ds, 'keys'):
             ds = ds['train']
             
-        task_language = get_task_language(dataset_path, task_idx)
-        suite_name, libero_task_id, suite, task = find_libero_task_by_language(task_language)
+        # 언어 기반 검색 로직 제거하고 인자로 받은 suite_name 사용
+        suite_name = suite_name_arg
+        libero_task_id = task_idx
         
-        if suite_name is None:
-            logger.error(f"❌ Tas# breakpoint(){task_language}) not found in Libero suites. Skipping.")
+        # LiberoEnv 생성을 위해 suite 객체 로드
+        from libero.libero import benchmark
+        bench = benchmark.get_benchmark_dict()
+        
+        if suite_name not in bench:
+            logger.error(f"❌ Suite '{suite_name}' not found in Libero benchmark.")
             return None, None
             
+        suite = bench[suite_name]()
+        
+        # Task 정보 로깅 (옵션)
+        task_language = "unknown"
+        if libero_task_id < len(suite.tasks):
+            task = suite.get_task(libero_task_id)
+            task_language = task.language
+        else:
+            logger.warning(f"⚠️ Task ID {libero_task_id} out of range for {suite_name}")
+        
         logger.info(f"🔄 Processing Task {task_idx}: {task_language} ({suite_name})")
         
-        # libero_goal에 대해서만 처리
-        if suite_name != "libero_goal":
-            logger.info(f"⏩ Skipping {suite_name} (Only processing libero_goal)")
-            return None, None
-
-        # libero_goal Task ID Remapping (Dataset ID -> Real ID)
-        # Dataset (tasks.parquet) - Libero Goal 관련
-        # 10: put the bowl on the plate -> 8
-        # 11: put the wine bottle on the rack -> 9
-        # 12: open the top drawer and put the bowl inside -> 3
-        # 13: put the cream cheese in the bowl -> 6
-        # 14: put the wine bottle on top of the cabinet -> 2
-        # 15: push the plate to the front of the stove -> 5
-        # 16: turn on the stove -> 7
-        # 17: put the bowl on the stove -> 1
-        # 18: put the bowl on top of the cabinet -> 4
-        # 19: open the middle drawer of the cabinet -> 0
-        
-        goal_task_map = {
-            10: 8, 11: 9, 12: 3, 13: 6, 14: 2,
-            15: 5, 16: 7, 17: 1, 18: 4, 19: 0
-        }
-        
-        # 실제 libero_task_id를 매핑된 값으로 교체
-        if suite_name == "libero_goal":
-            # find_libero_task_by_language가 반환한 libero_task_id는 suite 내의 ID (0~9)
-            # 하지만 원본 데이터셋의 task_index는 10~19임.
-            # process_task 함수 인자로 들어오는 task_idx는 원본 데이터셋의 index (10~19)
-            
-            # 여기서 task_idx를 바로 사용해야 함.
-            original_dataset_id = task_idx
-            
-            if original_dataset_id in goal_task_map:
-                libero_task_id = goal_task_map[original_dataset_id]
-                logger.info(f"🔀 Remapped Task ID: {original_dataset_id} -> {libero_task_id}")
-            else:
-                logger.warning(f"⚠️ Task ID {original_dataset_id} not in map, keeping as is.")
-
         # Filter data for this task
         task_data = ds.filter(lambda x: x['task_index'] == task_idx)
         unique_episodes = sorted(list(set(task_data['episode_index'])))
@@ -330,6 +308,7 @@ def main():
     parser = argparse.ArgumentParser(description="Convert LIBERO dataset from relative to absolute actions")
     parser.add_argument("--dataset_path", type=str, default="data/libero_hf/dataset", help="Input dataset path")
     parser.add_argument("--output_dir", type=str, default="data/libero_hf_abs", help="Output dataset path")
+    parser.add_argument("--suite_name", type=str, default="libero_goal", help="Libero suite name (e.g., libero_goal, libero_10)")
     parser.add_argument("--max_episodes", type=int, default=None, help="Max episodes per task to convert (for testing)")
     parser.add_argument("--num_workers", type=int, default=12, help="Number of parallel workers")
     args = parser.parse_args()
@@ -353,7 +332,7 @@ def main():
     from multiprocessing import Pool
     from functools import partial
     
-    process_func = partial(process_task, dataset_path=args.dataset_path, output_dir=args.output_dir, max_episodes=args.max_episodes)
+    process_func = partial(process_task, dataset_path=args.dataset_path, output_dir=args.output_dir, suite_name_arg=args.suite_name, max_episodes=args.max_episodes)
     
     suite_paths = defaultdict(list)
     
