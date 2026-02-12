@@ -1,6 +1,6 @@
 services:
-  temporal_vla_dev:
-    container_name: temporal_vla_dev
+  temporal_vla:
+    container_name: temporal_vla
     build:
       context: .
       dockerfile: Dockerfile
@@ -19,7 +19,8 @@ services:
 
     # Network
     network_mode: host
-
+    ports:
+      - "9990-9999:9990-9999"
     # Keep container running
     tty: true
     stdin_open: true
