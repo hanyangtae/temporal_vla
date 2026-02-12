@@ -43,6 +43,8 @@ RUN apt update && apt install -y --no-install-recommends \
     ffmpeg \
     xvfb \
     x11vnc \
+    websockify \
+    novnc\
     && rm -rf /var/lib/apt/lists/*
 
 # 2. User Setup
