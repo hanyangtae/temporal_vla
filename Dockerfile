@@ -13,7 +13,7 @@ ENV TZ=Asia/Seoul
 # 1. Install System Dependencies (LeRobot requirements)
 # - ffmpeg libs: Required for LeRobot video processing
 # - libgl1: For OpenGL rendering (Simulators)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt update && apt install -y --no-install-recommends \
     git \
     wget \
     curl \
@@ -39,6 +39,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libswscale-dev \
     libswresample-dev \
     libavfilter-dev \
+    libglu1-mesa \
+    ffmpeg \
+    xvfb \
+    x11vnc \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. User Setup
