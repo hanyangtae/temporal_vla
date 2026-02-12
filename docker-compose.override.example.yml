@@ -1,22 +1,17 @@
 services:
-  temporal_vla_dev:
-    # --- [Option 1] PC 2 (Dev) & PC 1 (Data/Eval) Setup ---
-    # GUI Support + Single/Full GPU
+  temporal_vla:
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: all          # Use all available GPUs
+              device_ids: ['1']           
               capabilities: [gpu]
     
+    # Shared Memory 제한 해제 (Host 메모리 공유)
+    ipc: host
+    
     environment:
-      - DISPLAY=${DISPLAY}        # Forward Host Display
       - NVIDIA_DRIVER_CAPABILITIES=all
-      - NVIDIA_VISIBLE_DEVICES=all
-      - QT_X11_NO_MITSHM=1
-      - HF_HOME=/temporal_vla/data/huggingface  # HF 모델/데이터 캐시 경로 변경
-      - LIBERO_DATA_DIR=/temporal_vla/data/libero # LIBERO 데이터 경로
-
-    volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw  # X11 Socket for GUI
+      - NVIDIA_VISIBLE_DEVICES=3          # GPU 3번만 노출
+      # - WANDB_API_KEY=${WANDB_API_KEY}  # WandB 사용시 활성화
