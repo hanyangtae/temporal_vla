@@ -1,10 +1,12 @@
 # ================================================================
-# [SSH 원격 접속 사용자용] docker-compose.override.yml 템플릿
+# [로컬 우분투 PC 직접 사용자용] docker-compose.override.yml 템플릿
 # ================================================================
-# 사용법: cp docker-compose.override.example.yml docker-compose.override.yml
+# 사용법: cp docker-compose.override.local.example.yml docker-compose.override.yml
 #
-# VNC 웹 브라우저 접속: https://<서버IP>:8444
-# 컨테이너 시작 후 VNC가 자동으로 실행됩니다.
+# 컨테이너 내 GUI 앱이 호스트 화면에 바로 표시됩니다.
+#
+# 사전 준비 (호스트에서 한 번만 실행):
+#   xhost +local:docker
 # ================================================================
 
 services:
@@ -20,17 +22,13 @@ services:
     # Shared Memory 제한 해제 (Host 메모리 공유)
     ipc: host
 
-    # KasmVNC 웹 접속 포트
-    ports:
-      - "8444:8444"
+    # 호스트 X11 소켓 마운트 → GUI 앱이 호스트 화면에 직접 출력
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
 
     environment:
       - NVIDIA_DRIVER_CAPABILITIES=all
       - NVIDIA_VISIBLE_DEVICES=0
       # - WANDB_API_KEY=${WANDB_API_KEY}
       - PYTHONPATH=/temporal_vla/robocasa:/temporal_vla/robosuite
-      - DISPLAY=:1              # VNC 내부 가상 디스플레이
-      - VNC_PW=${VNC_PW}        # .env 파일에서 설정
-
-    # 컨테이너 시작 시 VNC 서버 자동 실행
-    command: ["/bin/bash", "/temporal_vla/scripts/start_vnc.sh"]
+      - DISPLAY=${DISPLAY}      # .env 파일에서 설정 (보통 :0 또는 :1)

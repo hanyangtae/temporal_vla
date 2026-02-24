@@ -12,7 +12,9 @@ services:
     # Mount Workspace
     volumes:
       - .:/temporal_vla:rw
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw  # GUI support
+      # GUI 디스플레이 설정은 docker-compose.override.yml에서 환경에 맞게 구성
+      # - 로컬 사용자: /tmp/.X11-unix 마운트 추가
+      # - SSH 사용자: VNC 포트 노출
     environment:
       - HF_HOME=/temporal_vla/data/huggingface  # HF 모델/데이터 캐시 경로 변경
       - LIBERO_DATA_DIR=/temporal_vla/data/libero # LIBERO 데이터 경로
