@@ -8,7 +8,7 @@
 # ================================================================
 
 services:
-  temporal_vla:
+  robocasa:
     deploy:
       resources:
         reservations:
@@ -34,3 +34,29 @@ services:
 
     # 컨테이너 시작 시 VNC 서버 자동 실행
     command: ["/bin/bash", "/temporal_vla/scripts/start_vnc.sh"]
+
+  xvla:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    ipc: host
+    environment:
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVIDIA_VISIBLE_DEVICES=0
+
+  dreamvla:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    ipc: host
+    environment:
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVIDIA_VISIBLE_DEVICES=0

@@ -10,7 +10,7 @@
 # ================================================================
 
 services:
-  temporal_vla:
+  robocasa:
     deploy:
       resources:
         reservations:
@@ -32,3 +32,29 @@ services:
       # - WANDB_API_KEY=${WANDB_API_KEY}
       - PYTHONPATH=/temporal_vla/robocasa:/temporal_vla/robosuite
       - DISPLAY=${DISPLAY}      # .env 파일에서 설정 (보통 :0 또는 :1)
+
+  xvla:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    ipc: host
+    environment:
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVIDIA_VISIBLE_DEVICES=0
+
+  dreamvla:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    ipc: host
+    environment:
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVIDIA_VISIBLE_DEVICES=0
