@@ -1,0 +1,17 @@
+# X-VLA via LeRobot (native integration, lerobot v3.0 dataset support)
+lerobot[xvla]
+
+# Inference server
+fastapi
+uvicorn
+json_numpy
+
+# Utilities
+pyyaml
+tqdm
+pillow
+opencv-python
+pandas
+termcolor
+tensorboard
+colorlog
