@@ -5,7 +5,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ['1']           
+              device_ids: ['0']           
               capabilities: [gpu]
     
     # Shared Memory 제한 해제 (Host 메모리 공유)
@@ -13,5 +13,6 @@ services:
     
     environment:
       - NVIDIA_DRIVER_CAPABILITIES=all
-      - NVIDIA_VISIBLE_DEVICES=3          # GPU 3번만 노출
+      - NVIDIA_VISIBLE_DEVICES=0          # GPU 3번만 노출
       # - WANDB_API_KEY=${WANDB_API_KEY}  # WandB 사용시 활성화
+      - PYTHONPATH=/temporal_vla/robocasa:/temporal_vla/robosuite

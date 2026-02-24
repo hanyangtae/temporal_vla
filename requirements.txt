@@ -4,7 +4,7 @@
 
 # -----------------------------------------------------------------------------
 # Core PyTorch (CUDA 12.1)
-# Install separately with: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# Install separately: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 # -----------------------------------------------------------------------------
 # torch==2.5.1
 # torchvision==0.20.1
@@ -12,12 +12,12 @@
 
 # -----------------------------------------------------------------------------
 # Flash Attention (for X-VLA acceleration)
-# Install with: pip install flash-attn --no-build-isolation
+# Install separately: pip install flash-attn --no-build-isolation
 # -----------------------------------------------------------------------------
 # flash-attn
 
 # -----------------------------------------------------------------------------
-# Build tools (for Flash Attention)
+# Build tools
 # -----------------------------------------------------------------------------
 psutil
 packaging
@@ -25,12 +25,33 @@ ninja
 
 # -----------------------------------------------------------------------------
 # EGL Support (for headless rendering)
+# Install separately: needs system CMake
 # -----------------------------------------------------------------------------
-egl_probe>=1.0.1
-hf-egl-probe>=1.0.2
+# egl_probe>=1.0.1
+# hf-egl-probe>=1.0.2
 
 # -----------------------------------------------------------------------------
-# LeRobot dependencies (auto-installed with lerobot)
+# RoboCasa / RoboSuite dependencies
+# -----------------------------------------------------------------------------
+numpy==2.2.5
+numba==0.61.2
+scipy==1.15.3
+mujoco==3.3.1
+mink
+qpsolvers[quadprog]>=4.3.1
+gymnasium
+pygame
+pynput
+termcolor
+imageio
+h5py
+lxml
+hidapi
+tianshou==0.4.10
+lerobot==0.3.3
+
+# -----------------------------------------------------------------------------
+# General ML / Data
 # -----------------------------------------------------------------------------
 transformers>=4.40.0
 accelerate
@@ -41,18 +62,11 @@ pyyaml
 tqdm
 pillow
 opencv-python
-numpy
-scipy
 pandas
-openpyxl  # For Excel export
+openpyxl
 
 # -----------------------------------------------------------------------------
-# LLM API (for subtask decomposition)
+# LLM API
 # -----------------------------------------------------------------------------
 openai>=1.0.0
 python-dotenv
-
-# -----------------------------------------------------------------------------
-# LIBERO Simulator
-# -----------------------------------------------------------------------------
-# Installed via: pip install libero (or from source)

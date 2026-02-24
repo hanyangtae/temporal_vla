@@ -19,12 +19,12 @@ services:
 
     # Network
     network_mode: host
-    ports:
-      - "9990-9999:9990-9999"
+    # ports:
+    #   - "9990-9999:9990-9999"
     # Keep container running
     tty: true
     stdin_open: true
     
     # Auto-setup environment on startup
-    entrypoint: ["/bin/bash", "/temporal_vla/scripts/setup_env.sh"]
+    # entrypoint: ["/bin/bash", "/temporal_vla/scripts/setup_env.sh"]
     command: ["/bin/bash"]

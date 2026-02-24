@@ -10,19 +10,19 @@ ARG GROUP_ID
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Seoul
 
-# 1. Install System Dependencies (LeRobot requirements)
-# - ffmpeg libs: Required for LeRobot video processing
-# - libgl1: For OpenGL rendering (Simulators)
-RUN apt update && apt install -y --no-install-recommends \
+# 1. Install Python 3.11 via deadsnakes PPA + System Dependencies
+RUN apt update && apt install -y --no-install-recommends software-properties-common && \
+    add-apt-repository -y ppa:deadsnakes/ppa && \
+    apt update && apt install -y --no-install-recommends \
     git \
     wget \
     curl \
     vim \
     build-essential \
-    python3 \
-    python3-pip \
-    python3-dev \
-    python3-venv \
+    python3.11 \
+    python3.11-dev \
+    python3.11-venv \
+    python3.11-distutils \
     sudo \
     cmake \
     pkg-config \
@@ -40,39 +40,65 @@ RUN apt update && apt install -y --no-install-recommends \
     libswresample-dev \
     libavfilter-dev \
     libglu1-mesa \
-    ffmpeg \
-    xvfb \
-    x11vnc \
-    websockify \
-    novnc\
-    && rm -rf /var/lib/apt/lists/*
+    xfce4 \
+    xfce4-goodies \
+    libx11-dev \
+    libxkbfile-dev \
+    libsecret-1-dev \
+    libgbm-dev \
+    libnotify4 \
+    libnss3 \
+    libxss1 \
+    libasound2 \
+    xfonts-base \
+    xfonts-100dpi \
+    xfonts-75dpi \
+    xfonts-cyrillic \
+    && rm -rf /var/lib/apt/lists/* && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 && \
+    curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
 
-# 2. User Setup
+# 2. Install KasmVNC (Ubuntu 22.04 Jammy)
+RUN curl -L -O https://github.com/kasmtech/KasmVNC/releases/download/v1.3.1/kasmvncserver_jammy_1.3.1_amd64.deb && \
+    apt update && \
+    apt install -y ./kasmvncserver_jammy_1.3.1_amd64.deb && \
+    rm kasmvncserver_jammy_1.3.1_amd64.deb && \
+    rm -rf /var/lib/apt/lists/*
+
+# 3. User Setup
 RUN groupadd -g ${GROUP_ID} ${USER_NAME} && \
     useradd -m -u ${USER_ID} -g ${GROUP_ID} -s /bin/bash ${USER_NAME} && \
     echo "${USER_NAME} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# 3. Environment Setup
+# 4. Environment Setup
 USER ${USER_NAME}
 WORKDIR /temporal_vla
 
 # Add local bin to PATH
 ENV PATH="/home/${USER_NAME}/.local/bin:${PATH}"
 
-# 4. Python Setup
-RUN pip3 install --upgrade pip setuptools wheel
+# 5. Python Setup
+RUN pip install --upgrade pip setuptools wheel
 
-# Install PyTorch (CUDA 12.1) - Pin version to avoid conflicts
-RUN pip3 install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+# Install PyTorch (CUDA 12.1) - custom index url, cannot go in requirements.txt
+RUN pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
 
-# Pre-install Flash Attention build dependencies
-RUN pip3 install psutil packaging ninja
+# Install Flash Attention 2 - requires --no-build-isolation, cannot go in requirements.txt
+# psutil/packaging/ninja must be installed first as flash-attn needs them at build time
+RUN pip install psutil packaging ninja
+RUN pip install flash-attn --no-build-isolation
 
-# Install Flash Attention 2 (Optional but recommended for X-VLA)
-RUN pip3 install flash-attn --no-build-isolation
+# Install EGL dependencies - requires system CMake, must come before requirements.txt
+RUN pip install "egl_probe>=1.0.1" "hf-egl-probe>=1.0.2"
 
-# Pre-install tricky dependencies with system CMake (avoids conflict with pip cmake)
-RUN pip3 install "egl_probe>=1.0.1" "hf-egl-probe>=1.0.2"
+# Install all remaining dependencies
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt
 
-ENTRYPOINT ["/temporal_vla/scripts/setup_env.sh"]
-CMD ["/bin/bash"]
+# Copy start script (if not mounted) - but we will mount it via docker-compose usually.
+# But for safety, let's assume it's mounted or copied.
+# Since we created scripts/start_vnc.sh locally, we rely on volume mount or user to rebuild.
+# The entrypoint will be the new script.
+
+ENTRYPOINT ["/temporal_vla/scripts/start_vnc.sh"]
