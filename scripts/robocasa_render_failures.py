@@ -2,9 +2,14 @@
 평가 결과 JSON에서 실패한 에피소드만 영상으로 렌더링하는 스크립트
 
 사용법:
-  # 평가 결과 JSON에서 실패 에피소드 렌더링
+  # 평가 결과 디렉터리에서 실패 에피소드 렌더링 (태스크별 JSON 자동 탐색)
   python scripts/robocasa_render_failures.py \
-    --result /temporal_vla/outputs/eval_result.json \
+    --result /temporal_vla/outputs/robocasa/eval \
+    --output-dir /temporal_vla/outputs/failures
+
+  # 단일 태스크 결과 JSON에서 실패 에피소드 렌더링
+  python scripts/robocasa_render_failures.py \
+    --result /temporal_vla/outputs/robocasa/eval/CloseBlenderLid.json \
     --output-dir /temporal_vla/outputs/failures
 
   # 데이터셋 직접 지정 + 에피소드 번호 수동 지정
@@ -13,14 +18,14 @@
     --episodes 3,7,12,25 \
     --output-dir /temporal_vla/outputs/failures
 
-  # 카메라 변경 (기본: agentview, robot0_eye_in_hand)
+  # 카메라 변경 (기본: robot0_agentview_center, robot0_eye_in_hand)
   python scripts/robocasa_render_failures.py \
-    --result outputs/eval.json \
+    --result /temporal_vla/outputs/robocasa/eval \
     --cameras agentview robot0_eye_in_hand frontview
 
   # 에피소드 수 제한 (실패가 많을 때 앞에서 N개만)
   python scripts/robocasa_render_failures.py \
-    --result outputs/eval.json \
+    --result /temporal_vla/outputs/robocasa/eval \
     --max-episodes 10
 """
 
@@ -31,13 +36,9 @@ import argparse
 import json
 
 import imageio
-import numpy as np
 import robocasa.utils.lerobot_utils as LU
 import robosuite
-from robocasa.scripts.dataset_scripts.playback_dataset import (
-    playback_trajectory_with_env,
-    reset_to,
-)
+from robocasa.scripts.dataset_scripts.playback_dataset import playback_trajectory_with_env
 from tqdm import tqdm
 
 from src.utils.common.logger import create_module_logger
@@ -56,6 +57,28 @@ def _make_env_kwargs(dataset_path: Path) -> dict:
         use_camera_obs=False,
     )
     return kwargs
+
+
+def load_summaries(result_path: Path) -> list[dict]:
+    """결과 파일 또는 디렉터리에서 에피소드 정보가 포함된 summary 목록을 로드."""
+    if result_path.is_dir():
+        summaries = []
+        for f in sorted(result_path.glob("*.json")):
+            if f.name.lower().endswith("summary.json"):
+                continue
+            with open(f) as fp:
+                data = json.load(fp)
+            if "episodes" in data:
+                summaries.append(data)
+        if not summaries:
+            logger.error("디렉터리에 에피소드 정보가 포함된 JSON 파일 없음: %s", result_path)
+            sys.exit(1)
+        return summaries
+    else:
+        with open(result_path) as f:
+            data = json.load(f)
+        # 구 형식 (summaries 배열) 또는 단일 태스크 JSON
+        return data.get("summaries") or [data]
 
 
 def render_episode(
@@ -92,15 +115,13 @@ def render_episode(
         )
 
 
-def render_failures_from_result(
-    result: dict,
+def render_failures_from_summaries(
+    summaries: list[dict],
     output_dir: Path,
     camera_names: list[str],
     max_episodes: int = None,
 ):
-    """평가 결과 dict에서 실패 에피소드들을 렌더링."""
-    summaries = result.get("summaries") or [result]
-
+    """summary 목록에서 실패 에피소드들을 렌더링."""
     for summary in summaries:
         dataset_path = Path(summary["dataset"])
         task_name = summary["task"]
@@ -137,7 +158,7 @@ def render_failures_from_result(
         env.close()
 
 
-def render_failures_from_episodes(
+def render_from_episodes(
     dataset_path: Path,
     episodes: list[int],
     output_dir: Path,
@@ -166,7 +187,7 @@ def main():
 
     src = parser.add_mutually_exclusive_group(required=True)
     src.add_argument("--result", type=str,
-                     help="robocasa_playback_eval.py --output 으로 저장한 JSON 경로")
+                     help="평가 결과 JSON 파일 또는 태스크별 JSON이 있는 디렉터리 경로")
     src.add_argument("--dataset", type=str,
                      help="lerobot 데이터셋 경로 (--episodes와 함께 사용)")
 
@@ -190,12 +211,12 @@ def main():
     if args.result:
         result_path = Path(args.result)
         if not result_path.exists():
-            logger.error("결과 파일 없음: %s", result_path)
+            logger.error("결과 경로 없음: %s", result_path)
             sys.exit(1)
-        with open(result_path) as f:
-            result = json.load(f)
-        render_failures_from_result(
-            result, output_dir, args.cameras, args.max_episodes
+        summaries = load_summaries(result_path)
+        logger.info("로드된 태스크 수: %d", len(summaries))
+        render_failures_from_summaries(
+            summaries, output_dir, args.cameras, args.max_episodes
         )
 
     else:
@@ -207,7 +228,7 @@ def main():
             logger.error("--dataset 모드에서는 --episodes 가 필요합니다.")
             sys.exit(1)
         episodes = [int(e.strip()) for e in args.episodes.split(",")]
-        render_failures_from_episodes(dataset_path, episodes, output_dir, args.cameras)
+        render_from_episodes(dataset_path, episodes, output_dir, args.cameras)
 
     logger.info("완료. 저장 위치: %s", output_dir)
 
