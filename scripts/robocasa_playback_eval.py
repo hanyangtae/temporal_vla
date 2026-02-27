@@ -9,15 +9,11 @@ RoboCasa 데이터셋 재생 + 성공률 평가 스크립트
   # 액션 재생 모드 (open-loop, 궤적 발산 확인용)
   python scripts/robocasa_playback_eval.py --dataset <path> --use-actions
 
-  # 전체 atomic 태스크 병렬 평가 + 결과 저장
-  python scripts/robocasa_playback_eval.py \
-    --all --split pretrain --task-type atomic --workers 4 \
-    --output-dir /temporal_vla/outputs/robocasa/eval
+  # 전체 atomic 태스크 병렬 평가
+  python scripts/robocasa_playback_eval.py --all --split pretrain --task-type atomic --workers 4
 
-출력 구조 (--output-dir 지정 시):
-  {output_dir}/
-    {TaskName}.json   ← 태스크 완료마다 즉시 저장
-    summary.json      ← 전체 완료 후 종합 요약
+  # 결과를 JSON으로 저장
+  python scripts/robocasa_playback_eval.py --all --split pretrain --output /temporal_vla/outputs/eval.json
 """
 
 import sys
@@ -59,8 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--task-type", default=None, choices=["atomic", "composite"])
     p.add_argument("--n", type=int, default=None, help="태스크당 평가 에피소드 수 (기본: 전체)")
     p.add_argument("--use-actions", action="store_true", help="open-loop 액션 재생 모드")
-    p.add_argument("--output-dir", type=str, default=None,
-                   help="결과 저장 디렉터리 (태스크별 JSON + summary.json 생성)")
+    p.add_argument("--output", type=str, default=None, help="결과 JSON 저장 경로")
     p.add_argument("--workers", type=int, default=1,
                    help="병렬 워커 수 (0=CPU 코어 수 자동, --all: 데이터셋 단위, 단일: 에피소드 단위)")
     p.add_argument("--reserve-gb", type=float, default=4.0,
@@ -70,44 +65,28 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def save_task_result(summary: dict, output_dir: Path):
-    """태스크 하나의 결과를 {output_dir}/{TaskName}.json 으로 저장."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / f"{summary['task']}.json"
-    with open(path, "w") as f:
-        json.dump(summary, f, indent=2, ensure_ascii=False)
-    logger.info("태스크 결과 저장: %s", path)
-
-
-def save_summary(all_summaries: list[dict], output_dir: Path):
-    """전체 요약을 {output_dir}/summary.json 으로 저장."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    total_eps = sum(s["total_episodes"] for s in all_summaries)
-    total_ok = sum(s["n_success"] for s in all_summaries)
-    result = {
-        "total_episodes": total_eps,
-        "total_success": total_ok,
-        "overall_success_rate": total_ok / max(total_eps, 1),
-        "tasks": [
-            {
-                "task": s["task"],
-                "dataset": s["dataset"],
-                "total_episodes": s["total_episodes"],
-                "n_success": s["n_success"],
-                "success_rate": s["success_rate"],
-            }
-            for s in all_summaries
-        ],
-    }
-    path = output_dir / "summary.json"
+def save_results(all_summaries: list[dict], output_path: str):
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    result = (
+        all_summaries[0] if len(all_summaries) == 1
+        else {
+            "summaries": all_summaries,
+            "total_episodes": sum(s["total_episodes"] for s in all_summaries),
+            "total_success": sum(s["n_success"] for s in all_summaries),
+            "overall_success_rate": (
+                sum(s["n_success"] for s in all_summaries)
+                / max(sum(s["total_episodes"] for s in all_summaries), 1)
+            ),
+        }
+    )
     with open(path, "w") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
-    logger.info("전체 요약 저장: %s", path)
+    logger.info("결과 저장됨: %s", path)
 
 
 def main():
     args = build_parser().parse_args()
-    output_dir = Path(args.output_dir) if args.output_dir else None
 
     workers = safe_worker_count(
         args.workers if args.workers > 0 else os.cpu_count(),
@@ -134,9 +113,6 @@ def main():
         log_summary(summary)
         all_summaries = [summary]
 
-        if output_dir:
-            save_task_result(summary, output_dir)
-
     else:
         base = Path(args.base_path) / args.split
         if not base.exists():
@@ -147,21 +123,9 @@ def main():
             logger.error("데이터셋 없음: %s", base)
             sys.exit(1)
 
-        total = len(datasets)
-        logger.info("총 %d개 데이터셋 평가 시작 (워커: %d)", total, workers)
-
-        def on_task_done(summary: dict, completed: list[dict]):
-            if output_dir is None:
-                return
-            save_task_result(summary, output_dir)
-            logger.info("진행 [%d/%d]", len(completed), total)
-
+        logger.info("총 %d개 데이터셋 평가 시작 (워커: %d)", len(datasets), workers)
         all_summaries, failed = run_all_datasets(
-            datasets,
-            n=args.n,
-            use_actions=args.use_actions,
-            workers=workers,
-            task_callback=on_task_done,
+            datasets, n=args.n, use_actions=args.use_actions, workers=workers
         )
 
         if len(all_summaries) > 1:
@@ -171,8 +135,8 @@ def main():
             for f in failed:
                 logger.error("  %s", f["dataset"])
 
-    if output_dir and len(all_summaries) > 1:
-        save_summary(all_summaries, output_dir)
+    if args.output and all_summaries:
+        save_results(all_summaries, args.output)
 
 
 if __name__ == "__main__":

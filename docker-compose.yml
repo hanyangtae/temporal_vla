@@ -38,6 +38,7 @@ services:
 
   xvla:
     container_name: xvla
+    profiles: ["xvla"]
     build:
       context: ./docker/xvla
       dockerfile: Dockerfile
@@ -56,6 +57,7 @@ services:
 
   dreamvla:
     container_name: dreamvla
+    profiles: ["dreamvla"]
     build:
       context: ./docker/dreamvla
       dockerfile: Dockerfile

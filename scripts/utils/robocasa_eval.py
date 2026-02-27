@@ -5,12 +5,10 @@
 
 from __future__ import annotations
 
-import faulthandler
 import json
 import logging
 import os
 import signal
-import sys
 import traceback
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -66,9 +64,8 @@ _worker_env = None
 
 
 def _sigint_ignore():
-    """워커 프로세스에서 SIGINT 무시 + faulthandler 활성화."""
+    """워커 프로세스에서 SIGINT 무시 — 부모가 terminate()로 정리한다."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)
-    faulthandler.enable(file=sys.stderr)
 
 
 def _init_episode_worker(env_kwargs: dict):
@@ -147,13 +144,7 @@ def _eval_episode_worker(args: tuple) -> dict:
 
 def _evaluate_dataset_worker(args: tuple) -> dict:
     dataset_path_str, n, use_actions = args
-    faulthandler.enable(file=sys.stderr)
-    try:
-        return evaluate_dataset(Path(dataset_path_str), n=n, use_actions=use_actions, silent=True)
-    except Exception:
-        # 워커 내에서 잡히는 예외는 로그로 남기고 re-raise
-        traceback.print_exc(file=sys.stderr)
-        raise
+    return evaluate_dataset(Path(dataset_path_str), n=n, use_actions=use_actions, silent=True)
 
 
 # ── 단일 데이터셋 평가 ────────────────────────────────────────────────────
@@ -275,24 +266,19 @@ def run_all_datasets(
     n: int = None,
     use_actions: bool = False,
     workers: int = 1,
-    task_callback=None,
 ) -> tuple[list[dict], list[dict]]:
-    """여러 데이터셋 평가. (summaries, failed) 반환.
-
-    task_callback: 태스크 하나가 완료될 때마다 호출되는 콜백.
-                   signature: callback(summary: dict, completed: list[dict])
-    """
+    """여러 데이터셋 평가. (summaries, failed) 반환."""
     if workers > 1:
-        all_summaries, failed = _run_parallel_datasets(datasets, n, use_actions, workers, task_callback)
+        all_summaries, failed = _run_parallel_datasets(datasets, n, use_actions, workers)
     else:
-        all_summaries, failed = _run_sequential_datasets(datasets, n, use_actions, task_callback)
+        all_summaries, failed = _run_sequential_datasets(datasets, n, use_actions)
 
     ds_order = {str(p): i for i, p in enumerate(datasets)}
     all_summaries.sort(key=lambda s: ds_order.get(s["dataset"], 9999))
     return all_summaries, failed
 
 
-def _run_parallel_datasets(datasets, n, use_actions, workers, task_callback=None) -> tuple[list, list]:
+def _run_parallel_datasets(datasets, n, use_actions, workers) -> tuple[list, list]:
     all_summaries, failed = [], []
     futures_map = {}
     executor = ProcessPoolExecutor(
@@ -313,8 +299,6 @@ def _run_parallel_datasets(datasets, n, use_actions, workers, task_callback=None
                 logger.info("[%d/%d] %s 완료", i, len(datasets), task_name)
                 log_summary(summary)
                 all_summaries.append(summary)
-                if task_callback:
-                    task_callback(summary, list(all_summaries))
             except Exception:
                 tb = traceback.format_exc()
                 logger.error("[%d/%d] %s 실패:\n%s", i, len(datasets), task_name, tb)
@@ -332,7 +316,7 @@ def _run_parallel_datasets(datasets, n, use_actions, workers, task_callback=None
     return all_summaries, failed
 
 
-def _run_sequential_datasets(datasets, n, use_actions, task_callback=None) -> tuple[list, list]:
+def _run_sequential_datasets(datasets, n, use_actions) -> tuple[list, list]:
     all_summaries, failed = [], []
     for i, ds_path in enumerate(datasets):
         task_name = ds_path.parts[-3]
@@ -341,8 +325,6 @@ def _run_sequential_datasets(datasets, n, use_actions, task_callback=None) -> tu
             summary = evaluate_dataset(ds_path, n=n, use_actions=use_actions)
             log_summary(summary)
             all_summaries.append(summary)
-            if task_callback:
-                task_callback(summary, list(all_summaries))
         except KeyboardInterrupt:
             logger.warning("평가 중단됨.")
             break
