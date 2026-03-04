@@ -4,3 +4,6 @@
 [submodule "robocasa"]
 	path = robocasa
 	url = https://github.com/robocasa/robocasa
+[submodule "calvin"]
+	path = calvin
+	url = https://github.com/mees/calvin.git
