@@ -8,7 +8,7 @@ services:
         USER_NAME: ${USER_NAME}
         USER_ID: ${USER_ID}
         GROUP_ID: ${GROUP_ID}
-    
+
     # Mount Workspace
     volumes:
       - .:/temporal_vla:rw
@@ -16,9 +16,16 @@ services:
       # - 로컬 사용자: /tmp/.X11-unix 마운트 추가
       # - SSH 사용자: VNC 포트 노출
     environment:
-      - HF_HOME=/temporal_vla/data/huggingface  # HF 모델/데이터 캐시 경로 변경
+      - HF_HOME=/temporal_vla/data/huggingface # HF 모델/데이터 캐시 경로 변경
       - LIBERO_DATA_DIR=/temporal_vla/data/libero # LIBERO 데이터 경로
       - PYTHONPATH=/temporal_vla:/temporal_vla/robocasa:/temporal_vla/robosuite:/temporal_vla/scripts/utils
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
     # Network
     network_mode: host
@@ -27,7 +34,7 @@ services:
     # Keep container running
     tty: true
     stdin_open: true
-    
+
     # Auto-setup environment on startup
     # entrypoint: ["/bin/bash", "/temporal_vla/scripts/setup_env.sh"]
     command: ["/bin/bash"]
@@ -87,6 +94,13 @@ services:
     environment:
       - HF_HOME=/temporal_vla/data/huggingface
       - PYTHONPATH=/temporal_vla/upvla
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     network_mode: host
     tty: true
     stdin_open: true

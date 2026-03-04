@@ -1,4 +1,5 @@
 docker-compose.override.yml
+
 .env
 *.mp4
 data/*
@@ -8,12 +9,14 @@ logs/*
 *.tar
 *.gz
 models/*
+*.pyc
 
 upvla/showlab/
 lerobot/tests/**
 
 temp/**
 
+# AI Assistant
 CLAUDE.md
 .claude/
 .cursor/
