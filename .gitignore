@@ -8,6 +8,8 @@ logs/*
 *.tar
 *.gz
 models/*
+
+upvla/showlab/
 lerobot/tests/**
 
 temp/**
