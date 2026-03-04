@@ -72,3 +72,22 @@ services:
     tty: true
     stdin_open: true
     command: ["/bin/bash"]
+
+  upvla:
+    container_name: upvla
+    build:
+      context: ./docker/upvla
+      dockerfile: Dockerfile
+      args:
+        USER_NAME: ${USER_NAME}
+        USER_ID: ${USER_ID}
+        GROUP_ID: ${GROUP_ID}
+    volumes:
+      - .:/temporal_vla:rw
+    environment:
+      - HF_HOME=/temporal_vla/data/huggingface
+      - PYTHONPATH=/temporal_vla/upvla
+    network_mode: host
+    tty: true
+    stdin_open: true
+    command: ["/bin/bash"]
