@@ -10,3 +10,6 @@ logs/*
 models/*
 lerobot/tests/**
 temp/**
+CLAUDE.md
+.claude/
+.cursor/
