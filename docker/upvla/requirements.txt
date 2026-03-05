@@ -90,6 +90,7 @@ MarkupSafe==2.1.5
 matplotlib==3.5.3
 matplotlib-inline==0.1.7
 miscreant==0.3.0
+moviepy==1.0.3
 mpmath==1.3.0
 msgpack==1.0.8
 multidict==6.0.5
@@ -105,7 +106,7 @@ open-clip-torch==2.24.0
 openai-clip
 opencv-python==4.9.0.80
 opencv-python-headless==3.4.18.65
-packaging==22.0
+packaging==24.0
 pandas==1.5.3
 parquet==1.3.1
 parso==0.8.4
