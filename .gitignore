@@ -11,7 +11,7 @@ logs/*
 models/*
 *.pyc
 
-upvla/showlab/
+src/policies/upvla/showlab/
 lerobot/tests/**
 
 temp/**
