@@ -18,5 +18,6 @@ temp/**
 
 # AI Assistant
 CLAUDE.md
+GEMINI.md
 .claude/
 .cursor/
