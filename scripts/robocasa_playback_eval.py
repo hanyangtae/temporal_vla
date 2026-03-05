@@ -67,6 +67,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="OS용 예약 메모리 GB (기본: 4.0)")
     p.add_argument("--env-mem-gb", type=float, default=1.5,
                    help="env 1개당 예상 메모리 GB (기본: 1.5)")
+    p.add_argument("--resume", action="store_true",
+                   help="output-dir에 이미 결과 JSON이 있는 태스크는 건너뛰고 이어서 평가")
     return p
 
 
@@ -147,6 +149,38 @@ def main():
             logger.error("데이터셋 없음: %s", base)
             sys.exit(1)
 
+        # --resume: 이미 결과가 있는 태스크 건너뛰기
+        if args.resume and output_dir and output_dir.exists():
+            existing = {p.stem for p in output_dir.glob("*.json") if not p.stem.endswith("summary")}
+            before = len(datasets)
+            datasets = [d for d in datasets if d.parts[-3] not in existing]
+            skipped = before - len(datasets)
+            if skipped:
+                logger.info("--resume: 이미 완료된 %d개 태스크 건너뜀 (%d개 남음)", skipped, len(datasets))
+                # 기존 결과도 로드해서 최종 summary에 포함
+                for json_path in sorted(output_dir.glob("*.json")):
+                    if json_path.stem.endswith("summary"):
+                        continue
+                    if json_path.stem in existing:
+                        with open(json_path) as fp:
+                            existing_summary = json.load(fp)
+                        # episodes 필드 제거해서 메모리 절약
+                        existing_summary.pop("episodes", None)
+
+            if not datasets:
+                logger.info("모든 태스크가 이미 완료됨. summary만 갱신합니다.")
+                # 기존 결과 로드 후 summary 재생성
+                all_summaries = []
+                for json_path in sorted(output_dir.glob("*.json")):
+                    if json_path.stem.endswith("summary"):
+                        continue
+                    with open(json_path) as fp:
+                        all_summaries.append(json.load(fp))
+                if len(all_summaries) > 1:
+                    log_all_summary(all_summaries)
+                    save_summary(all_summaries, output_dir)
+                return
+
         total = len(datasets)
         logger.info("총 %d개 데이터셋 평가 시작 (워커: %d)", total, workers)
 
@@ -163,6 +197,19 @@ def main():
             workers=workers,
             task_callback=on_task_done,
         )
+
+        # --resume 시 기존 결과를 병합해서 summary 생성
+        if args.resume and output_dir and output_dir.exists():
+            existing_summaries = []
+            new_tasks = {s["task"] for s in all_summaries}
+            for json_path in sorted(output_dir.glob("*.json")):
+                if json_path.stem.endswith("summary") or json_path.stem in new_tasks:
+                    continue
+                with open(json_path) as fp:
+                    existing_summaries.append(json.load(fp))
+            if existing_summaries:
+                logger.info("기존 결과 %d개 병합", len(existing_summaries))
+                all_summaries = existing_summaries + all_summaries
 
         if len(all_summaries) > 1:
             log_all_summary(all_summaries)
