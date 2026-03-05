@@ -3,7 +3,7 @@ defaults:
   - annotations: new_playtable_validation
   - datamodule: calvin
 
-model_config: # direct path to policy_rollout/upvla_model.yaml
+model_config: /temporal_vla/upvla/policy_rollout/upvla_model.yaml # direct path to policy_rollout/upvla_model.yaml
 
 eval_cfg_overwrite:
   datamodule:
@@ -22,7 +22,7 @@ log_wandb: True
 wandb:
   entity: omeryagmurlu
 debug: False
-dataset_path: /localssd/zjk_data/calvin/task_ABC_D # path to calvin
+dataset_path: /temporal_vla/calvin/dataset/calvin_debug_dataset # path to calvin
 model_name: mdt_test
 device: 0
 sampler_type: ddim
@@ -53,8 +53,8 @@ rollout_lh_skip_epochs: 290
 window_sampling_strategy: 'geometric'
 num_workers: 12
 img_gen_frame_diff: 3
-benchmark_name: calvin_abcd # calvin_abcd
-root_data_dir: /localssd/zjk_data/calvin/task_ABC_D # path to calvin
+benchmark_name: calvin_debug_dataset # calvin_abcd
+root_data_dir: /temporal_vla/calvin/dataset/calvin_debug_dataset # path to calvin
 # sigma_min: null
 # sigma_max: null
 # noise_scheduler: null
