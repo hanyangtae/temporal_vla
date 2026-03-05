@@ -80,6 +80,35 @@ services:
     stdin_open: true
     command: ["/bin/bash"]
 
+  calvin:
+    container_name: calvin
+    build:
+      # context must be repo root to access calvin/ submodule during build
+      context: .
+      dockerfile: docker/calvin/Dockerfile
+      args:
+        USER_NAME: ${USER_NAME}
+        USER_ID: ${USER_ID}
+        GROUP_ID: ${GROUP_ID}
+    volumes:
+      - .:/temporal_vla:rw
+    environment:
+      - HF_HOME=/temporal_vla/data/huggingface
+      - PYTHONPATH=/temporal_vla:/temporal_vla/calvin
+      - PYOPENGL_PLATFORM=egl # headless PyBullet/pyrender via EGL
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    network_mode: host
+    tty: true
+    stdin_open: true
+    working_dir: /temporal_vla/calvin
+    command: ["/bin/bash"]
+
   upvla:
     container_name: upvla
     build:
@@ -104,4 +133,5 @@ services:
     network_mode: host
     tty: true
     stdin_open: true
+    working_dir: /temporal_vla/upvla
     command: ["/bin/bash"]
