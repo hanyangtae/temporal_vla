@@ -4,3 +4,6 @@
 [submodule "robocasa"]
 	path = robocasa
 	url = https://github.com/robocasa/robocasa
+[submodule "src/policies/dreamvla"]
+	path = src/policies/dreamvla
+	url = https://github.com/Zhangwenyao1/DreamVLA
