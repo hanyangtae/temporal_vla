@@ -27,9 +27,16 @@
   python scripts/robocasa_render_failures.py \
     --result /temporal_vla/outputs/robocasa/eval \
     --max-episodes 10
+
+  # 병렬 실행 (태스크 단위 병렬화, worker 수 지정)
+  python scripts/robocasa_render_failures.py \
+    --result /temporal_vla/outputs/robocasa/eval \
+    --output-dir /temporal_vla/outputs/failures \
+    --workers 4
 """
 
 import sys
+from multiprocessing import get_context
 from pathlib import Path
 
 import argparse
@@ -115,47 +122,90 @@ def render_episode(
         )
 
 
+def _render_task_worker(args: tuple):
+    """병렬 실행을 위한 태스크 단위 워커 함수."""
+    summary, output_dir, camera_names, max_episodes = args
+    dataset_path = Path(summary["dataset"])
+    task_name = summary["task"]
+    failed_eps = [
+        r["ep_num"] for r in summary.get("episodes", []) if not r["success"]
+    ]
+
+    if not failed_eps:
+        return task_name, 0, 0
+
+    if max_episodes:
+        failed_eps = failed_eps[:max_episodes]
+
+    env_kwargs = _make_env_kwargs(dataset_path)
+    env = robosuite.make(**env_kwargs)
+
+    task_dir = Path(output_dir) / task_name
+    task_dir.mkdir(parents=True, exist_ok=True)
+
+    rendered, errors = 0, 0
+    for ep_num in failed_eps:
+        output_path = task_dir / f"ep{ep_num:04d}.mp4"
+        try:
+            render_episode(env, dataset_path, ep_num, output_path, camera_names)
+            rendered += 1
+        except Exception as e:
+            logger.error("[%s] ep %d 렌더링 실패: %s", task_name, ep_num, e)
+            errors += 1
+
+    env.close()
+    logger.info("[%s] 완료: %d개 렌더링, %d개 에러", task_name, rendered, errors)
+    return task_name, rendered, errors
+
+
 def render_failures_from_summaries(
     summaries: list[dict],
     output_dir: Path,
     camera_names: list[str],
     max_episodes: int = None,
+    workers: int = 1,
 ):
     """summary 목록에서 실패 에피소드들을 렌더링."""
+    # 실패 에피소드가 있는 태스크만 필터링
+    tasks_to_render = []
     for summary in summaries:
-        dataset_path = Path(summary["dataset"])
-        task_name = summary["task"]
         failed_eps = [
             r["ep_num"] for r in summary.get("episodes", []) if not r["success"]
         ]
+        if failed_eps:
+            n = min(len(failed_eps), max_episodes) if max_episodes else len(failed_eps)
+            logger.info("[%s] 실패 에피소드 %d개 예정", summary["task"], n)
+            tasks_to_render.append(summary)
+        else:
+            logger.info("[%s] 실패 에피소드 없음, 건너뜀", summary["task"])
 
-        if not failed_eps:
-            logger.info("[%s] 실패 에피소드 없음, 건너뜀", task_name)
-            continue
+    if not tasks_to_render:
+        logger.info("렌더링할 실패 에피소드가 없습니다.")
+        return
 
-        if max_episodes:
-            failed_eps = failed_eps[:max_episodes]
+    logger.info("총 %d개 태스크, workers=%d", len(tasks_to_render), workers)
 
-        logger.info(
-            "[%s] 실패 에피소드 %d개 렌더링: %s",
-            task_name, len(failed_eps), failed_eps,
-        )
+    worker_args = [
+        (s, str(output_dir), camera_names, max_episodes) for s in tasks_to_render
+    ]
 
-        env_kwargs = _make_env_kwargs(dataset_path)
-        env = robosuite.make(**env_kwargs)
-
-        task_dir = output_dir / task_name
-        task_dir.mkdir(parents=True, exist_ok=True)
-
-        for ep_num in tqdm(failed_eps, desc=f"{task_name} 렌더링"):
-            output_path = task_dir / f"ep{ep_num:04d}.mp4"
-            try:
-                render_episode(env, dataset_path, ep_num, output_path, camera_names)
-                logger.info("  저장: %s", output_path)
-            except Exception as e:
-                logger.error("  ep %d 렌더링 실패: %s", ep_num, e)
-
-        env.close()
+    if workers <= 1:
+        for args in worker_args:
+            _render_task_worker(args)
+    else:
+        ctx = get_context("spawn")
+        total_rendered, total_errors = 0, 0
+        with ctx.Pool(processes=workers) as pool:
+            for task_name, rendered, errors in pool.imap_unordered(
+                _render_task_worker, worker_args
+            ):
+                total_rendered += rendered
+                total_errors += errors
+                logger.info(
+                    "[%s] 완료 (누적: %d개 렌더링, %d개 에러)",
+                    task_name, total_rendered, total_errors,
+                )
+        logger.info("전체 완료: %d개 렌더링, %d개 에러", total_rendered, total_errors)
 
 
 def render_from_episodes(
@@ -203,6 +253,8 @@ def main():
                         help="태스크당 렌더링할 실패 에피소드 최대 수 (--result 모드 전용)")
     parser.add_argument("--height", type=int, default=512, help="영상 높이 픽셀")
     parser.add_argument("--width", type=int, default=512, help="영상 너비 픽셀")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="병렬 워커 수 (태스크 단위 병렬화, 기본: 1)")
 
     args = parser.parse_args()
 
@@ -216,7 +268,7 @@ def main():
         summaries = load_summaries(result_path)
         logger.info("로드된 태스크 수: %d", len(summaries))
         render_failures_from_summaries(
-            summaries, output_dir, args.cameras, args.max_episodes
+            summaries, output_dir, args.cameras, args.max_episodes, args.workers
         )
 
     else:
