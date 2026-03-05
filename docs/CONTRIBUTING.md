@@ -52,6 +52,8 @@ git push origin feat/my-feature
 - refactor: 리팩토링
 - config: 설정 변경
 - script: 스크립트 추가/수정
+
+*커밋 메세지는 한글로 작성
 ```
 
 ## 실험 관리
