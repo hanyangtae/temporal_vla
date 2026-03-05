@@ -1,7 +1,7 @@
 import os
-from pathlib import Path
 import shutil
 import time
+from pathlib import Path
 from typing import Dict, List, Union
 
 import cv2
@@ -9,9 +9,9 @@ import git
 import hydra
 import numpy as np
 import pytorch_lightning
-from pytorch_lightning.utilities.cloud_io import load as pl_load
 import torch
 import tqdm
+from torch import load as pl_load
 
 
 def timeit(method):
@@ -30,7 +30,10 @@ def timeit(method):
 
 
 def initialize_pretrained_weights(model, cfg):
-    pretrain_chk = pl_load(format_sftp_path(Path(cfg.pretrain_chk)), map_location=lambda storage, loc: storage)
+    pretrain_chk = pl_load(
+        format_sftp_path(Path(cfg.pretrain_chk)),
+        map_location=lambda storage, loc: storage,
+    )
     # batch_size = model.plan_recognition.position_embeddings.weight.shape[0]
     # weight = "plan_recognition.position_embeddings.weight"
     # pretrain_chk["state_dict"][weight] = pretrain_chk["state_dict"][weight][:batch_size]
@@ -53,7 +56,9 @@ def get_git_commit_hash(repo_path: Path) -> str:
     return repo.head.object.hexsha
 
 
-def get_checkpoints_for_epochs(experiment_folder: Path, epochs: Union[List, str]) -> List:
+def get_checkpoints_for_epochs(
+    experiment_folder: Path, epochs: Union[List, str]
+) -> List:
     if isinstance(epochs, str):
         epochs = epochs.split(",")
         epochs = list(map(int, epochs))
@@ -65,7 +70,9 @@ def get_all_checkpoints(experiment_folder: Path) -> List:
     if experiment_folder.is_dir():
         checkpoint_folder = experiment_folder / "saved_models"
         if checkpoint_folder.is_dir():
-            checkpoints = sorted(Path(checkpoint_folder).iterdir(), key=lambda chk: chk.stat().st_mtime)
+            checkpoints = sorted(
+                Path(checkpoint_folder).iterdir(), key=lambda chk: chk.stat().st_mtime
+            )
             if len(checkpoints):
                 return [chk for chk in checkpoints if chk.suffix == ".pt"]
     return []
@@ -90,7 +97,9 @@ def save_executed_code() -> None:
 
 def info_cuda() -> Dict[str, Union[str, List[str]]]:
     return {
-        "GPU": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+        "GPU": [
+            torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())
+        ],
         # 'nvidia_driver': get_nvidia_driver_version(run_lambda),
         "available": str(torch.cuda.is_available()),
         "version": torch.version.cuda,
