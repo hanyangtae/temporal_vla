@@ -41,7 +41,7 @@ RUN pip install torch==2.2.1 torchvision==0.17.1 torchaudio==2.2.1 \
 # UP-VLA dependencies (xformers, deepspeed, diffusers, etc.)
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt && \
-    pip install --no-build-isolation pyhash && \
+    pip install pyhash && \
     pip install "hydra-core==1.1.1"
 
 CMD ["/bin/bash"]
