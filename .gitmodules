@@ -10,3 +10,9 @@
 [submodule "lerobot"]
 	path = lerobot
 	url = https://github.com/hanyangtae/lerobot
+[submodule "calvin"]
+	path = src/benchmarks/calvin
+	url = https://github.com/do-dong-park/calvin
+[submodule "upvla"]
+	path = src/policies/upvla
+	url = https://github.com/CladernyJorn/UP-VLA

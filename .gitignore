@@ -21,3 +21,11 @@ CLAUDE.md
 GEMINI.md
 .claude/
 .cursor/
+
+# Model checkpoints
+*.pth
+*.pt
+*.bin
+*.safetensors
+*.ckpt
+*.pkl
