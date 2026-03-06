@@ -71,6 +71,6 @@ RUN pip install tensorflow-cpu tensorflow-datasets
 
 # ── numpy<2 required by PyBullet (compiled against NumPy 1.x) ─────
 # tensorflow-datasets may pull numpy 2.x which breaks pybullet at runtime
-RUN pip install "numpy<2"
+RUN pip install "numpy>=1.20,<1.24"
 
 CMD ["/bin/bash"]
