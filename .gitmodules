@@ -14,5 +14,5 @@
 	path = src/benchmarks/calvin
 	url = https://github.com/mees/calvin
 [submodule "upvla"]
-	path = src/policies/upvla
+	path = src/policies/UP-VLA
 	url = https://github.com/CladernyJorn/UP-VLA
