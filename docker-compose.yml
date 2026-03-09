@@ -85,7 +85,7 @@ services:
     build:
       # context must be repo root to access calvin/ submodule during build
       context: .
-      dockerfile: docker/calvin/Dockerfile
+      dockerfile: ./docker/calvin/Dockerfile
       args:
         USER_NAME: ${USER_NAME}
         USER_ID: ${USER_ID}
@@ -94,7 +94,7 @@ services:
       - .:/temporal_vla:rw
     environment:
       - HF_HOME=/temporal_vla/data/huggingface
-      - PYTHONPATH=/temporal_vla:/temporal_vla/calvin
+      - PYTHONPATH=/temporal_vla:/temporal_vla/src/benchmarks/calvin
       - PYOPENGL_PLATFORM=egl # headless PyBullet/pyrender via EGL
     deploy:
       resources:
@@ -106,7 +106,7 @@ services:
     network_mode: host
     tty: true
     stdin_open: true
-    working_dir: /temporal_vla/calvin
+    working_dir: /temporal_vla/src/benchmarks/calvin
     command: ["/bin/bash"]
 
   upvla:
@@ -122,7 +122,7 @@ services:
       - .:/temporal_vla:rw
     environment:
       - HF_HOME=/temporal_vla/data/huggingface
-      - PYTHONPATH=/temporal_vla/upvla
+      - PYTHONPATH=/temporal_vla/src/policies/UP-VLA
     deploy:
       resources:
         reservations:
@@ -133,5 +133,5 @@ services:
     network_mode: host
     tty: true
     stdin_open: true
-    working_dir: /temporal_vla/upvla
+    working_dir: /temporal_vla/src/policies/UP-VLA
     command: ["/bin/bash"]

@@ -32,7 +32,7 @@ WORKDIR /temporal_vla
 
 ENV PATH="/home/${USER_NAME}/.local/bin:${PATH}"
 
-RUN pip install --upgrade pip wheel && pip install packaging==24.0 setuptools==57.5.0
+RUN pip install --upgrade pip "wheel<0.43" && pip install packaging==22.0 setuptools==57.5.0
 
 # PyTorch 2.2.1 (CUDA 12.1) — required by xformers 0.0.25
 RUN pip install torch==2.2.1 torchvision==0.17.1 torchaudio==2.2.1 \
@@ -40,8 +40,9 @@ RUN pip install torch==2.2.1 torchvision==0.17.1 torchaudio==2.2.1 \
 
 # UP-VLA dependencies (xformers, deepspeed, diffusers, etc.)
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install -r /tmp/requirements.txt && \
-    pip install --no-build-isolation pyhash && \
-    pip install "hydra-core==1.1.1"
+RUN pip install -r /tmp/requirements.txt 
+# 가벼운 추가 패키지 (바뀔 가능성 있음) → 빠르게 재빌드
+RUN pip install --no-build-isolation pyhash && \
+    pip install "hydra-core==1.1.1" uvicorn fastapi
 
 CMD ["/bin/bash"]

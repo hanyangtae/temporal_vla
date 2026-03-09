@@ -11,7 +11,7 @@ logs/*
 models/*
 *.pyc
 
-src/policies/upvla/showlab/
+src/policies/UP-VLA/showlab/
 lerobot/tests/**
 
 temp/**
@@ -21,3 +21,15 @@ CLAUDE.md
 GEMINI.md
 .claude/
 .cursor/
+
+# Model checkpoints
+*.pth
+*.pt
+*.bin
+*.safetensors
+*.ckpt
+*.pkl
+
+# 3D Assets
+*.obj 
+*.DAE
