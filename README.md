@@ -131,20 +131,19 @@ temporal_vla/
 │   ├── serve_dreamvla.py                     # DreamVLA 추론 서버 (:8200)
 │   ├── train_xvla.sh                         # X-VLA LoRA fine-tuning
 │   ├── train_dreamvla.sh                     # DreamVLA fine-tuning
-│   ├── robocasa_playback_eval.py             # 데이터셋 평가
+│   ├── robocasa_playback_eval.py             # 데이터셋 평가 (상태/액션/VLA 3가지 모드)
 │   ├── robocasa_render_failures.py           # 실패 에피소드 영상 렌더링
-│   ├── convert_v21_to_v30.py                 # LeRobot v2.1 → v3.0 변환
-│   ├── convert_robocasa_to_dreamvla.py       # LeRobot → DreamVLA npz 변환
+│   ├── convert_v21_to_v30.py                 # LeRobot v2.1 → v3.0 변환 (X-VLA용)
 │   ├── start_vnc.sh                          # KasmVNC 시작 스크립트
 │   └── utils/
-│       ├── vla_client.py                     # 모델 서버 HTTP 클라이언트
+│       ├── vla_client.py                     # 모델 서버 HTTP 클라이언트 (XVLAClient, DreamVLAClient)
 │       └── robocasa_eval.py                  # 평가 유틸리티
 ├── robosuite/                                # Git submodule (로봇 시뮬레이션)
 ├── robocasa/                                 # Git submodule (주방 벤치마크)
+├── lerobot/                                  # Git submodule (LeRobot)
 ├── data/
-│   ├── datasets/                             # RoboCasa 원본 데이터 (LeRobot v2.1)
-│   ├── datasets_v3/                          # X-VLA용 변환 데이터 (v3.0)
-│   ├── datasets_dreamvla/                    # DreamVLA용 변환 데이터 (npz)
+│   ├── datasets/                             # RoboCasa 데이터 (LeRobot v2.1, 원본)
+│   ├── datasets_v3/                          # X-VLA용 변환 데이터 (LeRobot v3.0)
 │   └── huggingface/                          # HuggingFace 모델 캐시
 ├── outputs/                                  # 로그, 평가 결과, 영상
 ├── src/utils/common/logger.py                # 공용 로깅 모듈
@@ -188,8 +187,13 @@ docker compose run --rm xvla \
   python /temporal_vla/scripts/serve_xvla.py --model-path lerobot/xvla-base
 
 # DreamVLA 서버 (port 8200)
+# --checkpoint: 학습된 체크포인트 경로 (필수)
+# --precision: bf16 권장 (GPU 메모리 절약)
+# 학습 시 사용한 모델 구조 args (--sequence-length 등)와 일치해야 함
 docker compose run --rm dreamvla \
-  python /temporal_vla/scripts/serve_dreamvla.py
+  python /temporal_vla/scripts/serve_dreamvla.py \
+    --checkpoint /temporal_vla/checkpoints/dreamvla/checkpoint.pt \
+    --precision bf16
 ```
 
 ### Data Conversion
@@ -198,22 +202,34 @@ docker compose run --rm dreamvla \
 # LeRobot v2.1 → v3.0 (X-VLA용)
 docker compose run --rm xvla \
   python /temporal_vla/scripts/convert_v21_to_v30.py
-
-# LeRobot → DreamVLA npz 형식
-docker compose run --rm dreamvla \
-  python /temporal_vla/scripts/convert_robocasa_to_dreamvla.py
 ```
 
 ### Evaluation
 
+RoboCasa 데이터셋을 3가지 모드로 평가합니다.
+
 ```bash
-# 단일 데이터셋 평가
+# 1. 최종 상태 체크 (빠름, 기본값)
 docker compose exec robocasa python /temporal_vla/scripts/robocasa_playback_eval.py \
   --dataset /temporal_vla/data/datasets/v1.0/pretrain/atomic/TurnOnToaster/20250820/lerobot
 
-# 전체 pretrain 데이터셋 평가
+# 2. open-loop 액션 재생 (궤적 발산 확인)
 docker compose exec robocasa python /temporal_vla/scripts/robocasa_playback_eval.py \
-  --all --split pretrain
+  --dataset <path> --use-actions
+
+# 3. closed-loop VLA 평가 (DreamVLA 서버 필요)
+#    먼저 dreamvla 컨테이너에서 서버 실행:
+docker compose run --rm dreamvla \
+  python /temporal_vla/scripts/serve_dreamvla.py \
+    --checkpoint /temporal_vla/checkpoints/dreamvla/checkpoint.pt \
+    --precision bf16
+#    그 다음 robocasa 컨테이너에서 평가:
+docker compose exec robocasa python /temporal_vla/scripts/robocasa_playback_eval.py \
+  --dataset <path> --vla-server http://localhost:8200
+
+# 전체 pretrain 데이터셋 평가 (결과 저장)
+docker compose exec robocasa python /temporal_vla/scripts/robocasa_playback_eval.py \
+  --all --split pretrain --output-dir /temporal_vla/outputs/eval
 
 # 실패 에피소드 영상 렌더링
 docker compose exec robocasa python /temporal_vla/scripts/robocasa_render_failures.py \

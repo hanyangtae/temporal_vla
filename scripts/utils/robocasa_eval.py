@@ -158,25 +158,89 @@ def _evaluate_dataset_worker(args: tuple) -> dict:
 
 # ── 단일 데이터셋 평가 ────────────────────────────────────────────────────
 
-def _make_env_kwargs(dataset_path: Path) -> dict:
+def _make_env_kwargs(dataset_path: Path, use_camera_obs: bool = False) -> dict:
     meta = LU.get_env_metadata(dataset_path)
     kwargs = meta["env_kwargs"]
     kwargs["env_name"] = meta["env_name"]
     kwargs.update(
         has_renderer=False,
         renderer="mjviewer",
-        has_offscreen_renderer=False,
-        use_camera_obs=False,
+        has_offscreen_renderer=use_camera_obs,
+        use_camera_obs=use_camera_obs,
     )
+    if use_camera_obs:
+        kwargs.update(
+            camera_names=["robot0_agentview_left", "robot0_eye_in_hand"],
+            camera_heights=224,
+            camera_widths=224,
+        )
     return kwargs
 
 
-def _eval_sequential(env_kwargs, dataset_path, total, use_actions, silent) -> list[dict]:
+def _get_episode_instruction(dataset_path: Path, ep_num: int) -> str:
+    """lerobot tasks.jsonl + episode parquet에서 language instruction 조회."""
+    import json
+    import pandas as pd
+
+    tasks_path = dataset_path / "meta" / "tasks.jsonl"
+    task_map = {}
+    for line in tasks_path.read_text().strip().split("\n"):
+        entry = json.loads(line)
+        task_map[entry["task_index"]] = entry["task"]
+
+    info = json.loads((dataset_path / "meta" / "info.json").read_text())
+    chunk = ep_num // info.get("chunks_size", 1000)
+    parquet = dataset_path / f"data/chunk-{chunk:03d}/episode_{ep_num:06d}.parquet"
+    df = pd.read_parquet(parquet, columns=["task_index"])
+    task_idx = int(df["task_index"].iloc[0])
+    return task_map.get(task_idx, "")
+
+
+def eval_episode_with_vla(env, dataset_path: Path, ep_num: int, vla_client, max_steps: int = 400) -> dict:
+    """closed-loop VLA 평가: 매 스텝 env obs → VLA server → action → env."""
+    instruction = _get_episode_instruction(dataset_path, ep_num)
+    vla_client.reset()
+    reset_to(env, _load_initial_state(dataset_path, ep_num))
+
+    obs = env.observation_spec()  # 첫 obs는 reset 후 env.reset()으로 받음
+    # robosuite env는 reset_to 후 별도 step 없이 obs 접근 가능
+    obs = env._get_observations()
+
+    latencies = []
+    first_success_step = None
+
+    for t in range(max_steps):
+        static_img = obs.get("robot0_agentview_left_image", np.zeros((224, 224, 3), dtype=np.uint8))
+        wrist_img = obs.get("robot0_eye_in_hand_image", np.zeros((224, 224, 3), dtype=np.uint8))
+        state = obs.get("robot0_proprio-state", np.zeros(32, dtype=np.float32))
+
+        action, latency_ms = vla_client.predict(static_img, wrist_img, state, instruction)
+        latencies.append(latency_ms)
+
+        obs, _reward, done, _info = env.step(action)
+
+        if _check_success(env) and first_success_step is None:
+            first_success_step = t
+        if done:
+            break
+
+    return {
+        "success": _check_success(env),
+        "first_success_step": first_success_step,
+        "steps": t + 1,
+        "mean_latency_ms": float(np.mean(latencies)),
+        "instruction": instruction,
+    }
+
+
+def _eval_sequential(env_kwargs, dataset_path, total, use_actions, silent, vla_client=None) -> list[dict]:
     env = robosuite.make(**env_kwargs)
     results = []
     for ep_num in tqdm(range(total), desc="에피소드 평가", disable=silent):
         try:
-            if use_actions:
+            if vla_client is not None:
+                r = eval_episode_with_vla(env, dataset_path, ep_num, vla_client)
+            elif use_actions:
                 r = eval_episode_with_actions(env, dataset_path, ep_num)
             else:
                 r = {"success": eval_episode_from_final_state(env, dataset_path, ep_num)}
@@ -221,9 +285,15 @@ def evaluate_dataset(
     use_actions: bool = False,
     workers: int = 1,
     silent: bool = False,
+    vla_client=None,
 ) -> dict:
-    """데이터셋 전체에 대한 성공률 평가."""
-    env_kwargs = _make_env_kwargs(dataset_path)
+    """데이터셋 전체에 대한 성공률 평가.
+
+    vla_client: DreamVLAClient 인스턴스를 넘기면 closed-loop VLA 평가.
+                VLA 평가는 서버가 stateful하므로 workers=1로 강제된다.
+    """
+    use_camera_obs = vla_client is not None
+    env_kwargs = _make_env_kwargs(dataset_path, use_camera_obs=use_camera_obs)
     if not silent:
         logger.info("태스크: %s", env_kwargs["env_name"])
 
@@ -232,16 +302,22 @@ def evaluate_dataset(
         episodes = episodes[:n]
     total = len(episodes)
 
-    if workers > 1:
+    if vla_client is not None:
+        # VLA는 서버 stateful → 반드시 sequential
+        results = _eval_sequential(env_kwargs, dataset_path, total, use_actions, silent, vla_client=vla_client)
+        mode = "vla"
+    elif workers > 1:
         results = _eval_parallel(env_kwargs, dataset_path, total, use_actions, silent, workers)
+        mode = "actions" if use_actions else "states"
     else:
         results = _eval_sequential(env_kwargs, dataset_path, total, use_actions, silent)
+        mode = "actions" if use_actions else "states"
 
     n_success = sum(r["success"] for r in results)
     summary = {
         "dataset": str(dataset_path),
         "task": env_kwargs["env_name"],
-        "mode": "actions" if use_actions else "states",
+        "mode": mode,
         "total_episodes": total,
         "n_success": n_success,
         "success_rate": n_success / total if total > 0 else 0.0,
@@ -250,6 +326,9 @@ def evaluate_dataset(
     if use_actions:
         divs = [r["mean_divergence"] for r in results if "mean_divergence" in r]
         summary["mean_divergence"] = float(np.mean(divs)) if divs else 0.0
+    if vla_client is not None:
+        lats = [r["mean_latency_ms"] for r in results if "mean_latency_ms" in r]
+        summary["mean_latency_ms"] = float(np.mean(lats)) if lats else 0.0
     return summary
 
 
@@ -276,16 +355,17 @@ def run_all_datasets(
     use_actions: bool = False,
     workers: int = 1,
     task_callback=None,
+    vla_client=None,
 ) -> tuple[list[dict], list[dict]]:
     """여러 데이터셋 평가. (summaries, failed) 반환.
 
     task_callback: 태스크 하나가 완료될 때마다 호출되는 콜백.
                    signature: callback(summary: dict, completed: list[dict])
     """
-    if workers > 1:
+    if workers > 1 and vla_client is None:
         all_summaries, failed = _run_parallel_datasets(datasets, n, use_actions, workers, task_callback)
     else:
-        all_summaries, failed = _run_sequential_datasets(datasets, n, use_actions, task_callback)
+        all_summaries, failed = _run_sequential_datasets(datasets, n, use_actions, task_callback, vla_client=vla_client)
 
     ds_order = {str(p): i for i, p in enumerate(datasets)}
     all_summaries.sort(key=lambda s: ds_order.get(s["dataset"], 9999))
@@ -332,13 +412,13 @@ def _run_parallel_datasets(datasets, n, use_actions, workers, task_callback=None
     return all_summaries, failed
 
 
-def _run_sequential_datasets(datasets, n, use_actions, task_callback=None) -> tuple[list, list]:
+def _run_sequential_datasets(datasets, n, use_actions, task_callback=None, vla_client=None) -> tuple[list, list]:
     all_summaries, failed = [], []
     for i, ds_path in enumerate(datasets):
         task_name = ds_path.parts[-3]
         logger.info("[%d/%d] %s", i + 1, len(datasets), task_name)
         try:
-            summary = evaluate_dataset(ds_path, n=n, use_actions=use_actions)
+            summary = evaluate_dataset(ds_path, n=n, use_actions=use_actions, vla_client=vla_client)
             log_summary(summary)
             all_summaries.append(summary)
             if task_callback:
