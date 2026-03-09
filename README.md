@@ -132,7 +132,7 @@ temporal_vla/
 │   ├── train_xvla.sh                         # X-VLA LoRA fine-tuning
 │   ├── train_dreamvla.sh                     # DreamVLA fine-tuning
 │   ├── robocasa_playback_eval.py             # 녹화 데이터 재생 평가 (상태 체크 / open-loop)
-│   ├── robocasa_vla_eval.py                  # DreamVLA closed-loop 평가
+│   ├── robocasa_vla_eval.py                  # DreamVLA closed-loop 평가 (robocasa 공식 eval)
 │   ├── robocasa_render_failures.py           # 실패 에피소드 영상 렌더링
 │   ├── convert_v21_to_v30.py                 # LeRobot v2.1 → v3.0 변환 (X-VLA용)
 │   ├── start_vnc.sh                          # KasmVNC 시작 스크립트
@@ -215,11 +215,16 @@ docker compose exec robocasa python /temporal_vla/scripts/robocasa_playback_eval
 docker compose exec robocasa python /temporal_vla/scripts/robocasa_playback_eval.py \
   --dataset <path> --use-actions
 
-# DreamVLA closed-loop 평가 (서버 먼저 실행 필요)
+# DreamVLA closed-loop 평가 (서버 먼저 실행 필요, robocasa 공식 eval 방식)
 docker compose exec robocasa python /temporal_vla/scripts/robocasa_vla_eval.py \
-  --dataset <path> --vla-server http://localhost:8200
+  --task TurnOnMicrowave --vla-server http://localhost:8200
 
-# 전체 pretrain 데이터셋 평가
+# DreamVLA 태스크셋 평가 (pretrain50, target50, all_tasks 등)
+docker compose exec robocasa python /temporal_vla/scripts/robocasa_vla_eval.py \
+  --task-set pretrain50 --vla-server http://localhost:8200 \
+  --output-dir /temporal_vla/outputs/vla_eval
+
+# 전체 pretrain 데이터셋 재생 평가 (데이터 품질 확인용)
 docker compose exec robocasa python /temporal_vla/scripts/robocasa_playback_eval.py \
   --all --split pretrain --output-dir /temporal_vla/outputs/eval
 
