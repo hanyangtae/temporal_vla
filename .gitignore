@@ -29,3 +29,7 @@ GEMINI.md
 *.safetensors
 *.ckpt
 *.pkl
+
+# 3D Assets
+*.obj 
+*.DAE
