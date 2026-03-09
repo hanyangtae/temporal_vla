@@ -58,6 +58,8 @@ def load_model():
     tokenizer = clip_lib
 
     model = DreamVLA(
+        finetune_type="",
+        clip_device="cpu",
         vit_checkpoint_path=args.vit_checkpoint,
         sequence_length=args.sequence_length,
         num_resampler_query=args.num_resampler_query,
@@ -106,6 +108,7 @@ def load_model():
         model = model.half()
 
     model = model.cuda().eval()
+    model._init_model_type()
     print("DreamVLA loaded.")
 
 
@@ -168,7 +171,7 @@ async def predict_action(payload: dict):
     image_x = _preprocess_image(static_np).cuda()
     gripper_x = _preprocess_image(wrist_np).cuda()
     state_x = _preprocess_state(state_list).cuda()
-    text_x = _preprocess_text(instruction)
+    text_x = _preprocess_text(instruction).cuda()
 
     img_queue.append(image_x)
     gripper_queue.append(gripper_x)
@@ -190,7 +193,7 @@ async def predict_action(payload: dict):
         image_wrist = torch.cat([image_wrist, image_wrist[:, -1:].expand(-1, pad, -1, -1, -1)], dim=1)
         state = torch.cat([state, state[:, -1:].expand(-1, pad, -1)], dim=1)
 
-    with torch.inference_mode():
+    with torch.inference_mode(), torch.cuda.amp.autocast(dtype=cast_dtype):
         arm_pred, gripper_pred, image_pred, *_ = model(
             image_primary=image_primary,
             image_wrist=image_wrist,
@@ -229,15 +232,15 @@ def main():
     parser.add_argument("--port", type=int, default=8200)
     parser.add_argument("--precision", type=str, default="fp32", choices=["fp32", "fp16", "bf16"])
     parser.add_argument("--sequence-length", type=int, default=10)
-    parser.add_argument("--action-pred-steps", type=int, default=1)
+    parser.add_argument("--action-pred-steps", type=int, default=3)
     parser.add_argument("--atten-goal", type=int, default=0)
-    parser.add_argument("--num-resampler-query", type=int, default=9)
+    parser.add_argument("--num-resampler-query", type=int, default=16)
     parser.add_argument("--num-obs-token-per-image", type=int, default=9)
     parser.add_argument("--image-size", type=int, default=224)
     parser.add_argument("--patch-size", type=int, default=16)
-    parser.add_argument("--transformer-layers", type=int, default=6)
-    parser.add_argument("--hidden-dim", type=int, default=768)
-    parser.add_argument("--transformer-heads", type=int, default=8)
+    parser.add_argument("--transformer-layers", type=int, default=24)
+    parser.add_argument("--hidden-dim", type=int, default=1024)
+    parser.add_argument("--transformer-heads", type=int, default=16)
     parser.add_argument("--obs-pred", action="store_true")
     parser.add_argument("--phase", type=str, default="pretrain")
     args = parser.parse_args()
