@@ -76,28 +76,50 @@ class XVLAClient(VLAClient):
 
 
 class DreamVLAClient(VLAClient):
-    """DreamVLA 서버 클라이언트."""
+    """DreamVLA 서버 클라이언트.
+
+    서버는 에피소드 단위 히스토리를 유지하므로,
+    에피소드 시작 시 반드시 reset()을 호출해야 한다.
+    """
 
     def __init__(self, url: str = "http://localhost:8200", timeout: float = 30.0):
         super().__init__(url, timeout)
 
+    def reset(self):
+        """에피소드 시작 시 서버 히스토리 초기화."""
+        r = requests.post(f"{self.url}/reset", timeout=self.timeout)
+        r.raise_for_status()
+
     def predict(
         self,
-        images: list[np.ndarray],
-        proprio: np.ndarray,
+        static_image: np.ndarray,
+        wrist_image: np.ndarray,
+        state: np.ndarray,
         instruction: str,
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, float]:
+        """
+        Args:
+            static_image: HxWx3 uint8, robot0_agentview_left
+            wrist_image:  HxWx3 uint8, robot0_eye_in_hand
+            state:        1-D float array (proprioceptive state)
+            instruction:  task language string
+        Returns:
+            (action [7], latency_ms)
+        """
         payload = {
-            "images": [img.tolist() for img in images],
-            "proprio": proprio.tolist(),
+            "images": {
+                "robot0_agentview_left": static_image.tolist(),
+                "robot0_eye_in_hand": wrist_image.tolist(),
+            },
+            "state": state.tolist(),
             "language_instruction": instruction,
         }
 
         t0 = time.time()
         r = requests.post(f"{self.url}/act", json=payload, timeout=self.timeout)
         r.raise_for_status()
-        latency = time.time() - t0
+        latency_ms = (time.time() - t0) * 1000
 
         result = r.json()
-        actions = np.array(result["action"], dtype=np.float32)
-        return actions, latency
+        action = np.array(result["action"], dtype=np.float32)
+        return action, latency_ms

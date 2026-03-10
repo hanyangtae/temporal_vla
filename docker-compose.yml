@@ -41,7 +41,6 @@ services:
 
   # ── VLA Model Services ──────────────────────────────────────────
   # 독립 환경에서 학습/추론. 평가는 robocasa 컨테이너에서 HTTP로 요청.
-  # 기본적으로 profiles를 사용해 수동 시작: docker compose --profile xvla up xvla
 
   xvla:
     container_name: xvla

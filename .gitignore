@@ -31,5 +31,8 @@ GEMINI.md
 *.pkl
 
 # 3D Assets
-*.obj 
+*.obj
 *.DAE
+
+# MuJoCo
+MUJOCO_LOG.TXT

@@ -2,14 +2,14 @@
 # DreamVLA Fine-tuning on RoboCasa (dreamvla 컨테이너 내에서 실행)
 #
 # 사전 준비:
-#   git clone https://github.com/Zhangwenyao1/DreamVLA /temporal_vla/dreamvla
+#   git submodule update --init src/policies/dreamvla
 #
 # 사용법:
 #   docker compose --profile dreamvla run --rm dreamvla bash /temporal_vla/scripts/train_dreamvla.sh
 
 set -e
 
-DREAMVLA_DIR="/temporal_vla/dreamvla"
+DREAMVLA_DIR="/temporal_vla/src/policies/dreamvla"
 DATA_DIR="${DATA_DIR:-/temporal_vla/data/datasets_dreamvla}"
 OUTPUT_DIR="${OUTPUT_DIR:-/temporal_vla/outputs/dreamvla_robocasa}"
 BATCH_SIZE="${BATCH_SIZE:-2}"
@@ -18,7 +18,7 @@ EPOCHS="${EPOCHS:-50}"
 
 if [ ! -d "${DREAMVLA_DIR}" ]; then
     echo "Error: DreamVLA repo not found at ${DREAMVLA_DIR}"
-    echo "Run: git clone https://github.com/Zhangwenyao1/DreamVLA ${DREAMVLA_DIR}"
+    echo "Run: git submodule update --init src/policies/dreamvla"
     exit 1
 fi
 
