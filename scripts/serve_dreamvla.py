@@ -1,5 +1,5 @@
 """
-DreamVLA 추론 서버.
+DreamVLA 추론 서버 (통일 API).
 
 dreamvla 컨테이너 내에서 실행:
   docker compose run --rm dreamvla \
@@ -7,12 +7,16 @@ dreamvla 컨테이너 내에서 실행:
       --checkpoint /temporal_vla/checkpoints/dreamvla/checkpoint.pt \
       --precision bf16
 
-robocasa 컨테이너에서 HTTP로 액션 요청:
-  POST http://localhost:8200/act
-  POST http://localhost:8200/reset  (에피소드 시작 시 히스토리 초기화)
+통일 API:
+  POST /act     ← {"images": {"static": b64png, "wrist": b64png}, "state": [...], "instruction": "..."}
+                → {"actions": [[7 floats]], "latency_ms": float}
+  POST /reset   ← 에피소드 시작 시 히스토리 초기화
+  GET  /health
 """
 
 import argparse
+import base64
+import io
 import sys
 import time
 from collections import deque
@@ -40,8 +44,9 @@ gripper_queue: deque = deque(maxlen=HISTORY_LEN)
 state_queue: deque = deque(maxlen=HISTORY_LEN)
 text_queue: deque = deque(maxlen=HISTORY_LEN)
 
-STATIC_CAM = "robot0_agentview_left"
-WRIST_CAM = "robot0_eye_in_hand"
+def _b64_to_numpy(b64_str: str) -> np.ndarray:
+    """base64 PNG → HxWx3 uint8 numpy."""
+    return np.array(Image.open(io.BytesIO(base64.b64decode(b64_str))).convert("RGB"))
 
 
 @app.on_event("startup")
@@ -148,14 +153,9 @@ async def reset():
 @app.post("/act")
 async def predict_action(payload: dict):
     """
-    Payload:
-      - images: dict  { "robot0_agentview_left": HxWx3, "robot0_eye_in_hand": HxWx3 }
-      - state:  list[float]
-      - language_instruction: str
-    Returns:
-      - action: list[float]  (7-DoF)
-      - world_pred: list | null
-      - latency_ms: float
+    통일 API:
+      요청: {"images": {"static": b64png, "wrist": b64png}, "state": [...], "instruction": "..."}
+      응답: {"actions": [[7 floats]], "latency_ms": float}
     """
     if model is None:
         return {"error": "model not loaded"}
@@ -163,10 +163,10 @@ async def predict_action(payload: dict):
     t0 = time.time()
 
     images = payload.get("images", {})
-    static_np = np.array(images.get(STATIC_CAM, np.zeros((224, 224, 3), dtype=np.uint8)), dtype=np.uint8)
-    wrist_np = np.array(images.get(WRIST_CAM, np.zeros((224, 224, 3), dtype=np.uint8)), dtype=np.uint8)
+    static_np = _b64_to_numpy(images["static"]) if "static" in images else np.zeros((224, 224, 3), dtype=np.uint8)
+    wrist_np = _b64_to_numpy(images["wrist"]) if "wrist" in images else np.zeros((224, 224, 3), dtype=np.uint8)
     state_list = payload.get("state", [0.0] * 7)
-    instruction = payload.get("language_instruction", "")
+    instruction = payload.get("instruction", "")
 
     image_x = _preprocess_image(static_np).cuda()
     gripper_x = _preprocess_image(wrist_np).cuda()
@@ -209,11 +209,8 @@ async def predict_action(payload: dict):
     gripper = (gripper - 0.5) * 2
     action = torch.cat([arm, gripper], dim=-1).cpu().float().numpy()
 
-    world_pred = image_pred[0, step_idx].cpu().float().numpy().tolist() if image_pred is not None else None
-
     return {
-        "action": action.tolist(),
-        "world_pred": world_pred,
+        "actions": [action.tolist()],
         "latency_ms": (time.time() - t0) * 1000,
     }
 

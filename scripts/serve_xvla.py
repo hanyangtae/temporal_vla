@@ -1,21 +1,32 @@
 """
-X-VLA 추론 서버 (LeRobot 내장 버전).
+X-VLA 추론 서버 (통일 API, LeRobot 내장 버전).
 
 xvla 컨테이너 내에서 실행:
   docker compose --profile xvla run --rm xvla \
     python /temporal_vla/scripts/serve_xvla.py --model-path lerobot/xvla-base
 
-robocasa 컨테이너에서 HTTP로 액션 요청:
-  POST http://localhost:8100/act
+통일 API:
+  POST /act     ← {"images": {"static": b64png, ...}, "state": [...], "instruction": "..."}
+                → {"actions": [[floats], ...], "latency_ms": float}
+  POST /reset   ← no-op (히스토리 없음)
+  GET  /health
 """
 
 import argparse
+import base64
+import io
 import time
 
 import numpy as np
 import torch
 import uvicorn
 from fastapi import FastAPI
+from PIL import Image
+
+
+def _b64_to_numpy(b64_str: str) -> np.ndarray:
+    """base64 PNG → HxWx3 uint8 numpy."""
+    return np.array(Image.open(io.BytesIO(base64.b64decode(b64_str))).convert("RGB"))
 
 app = FastAPI(title="X-VLA Inference Server")
 
@@ -43,19 +54,15 @@ def load_model():
 @app.post("/act")
 async def predict_action(payload: dict):
     """
-    Payload:
-      - images: dict of camera_name -> HxWx3 uint8 list
-      - state: list[float] (proprioceptive state)
-      - language_instruction: str
-    Returns:
-      - action: list[list[float]]
-      - latency_ms: float
+    통일 API:
+      요청: {"images": {"static": b64png, ...}, "state": [...], "instruction": "..."}
+      응답: {"actions": [[floats], ...], "latency_ms": float}
     """
     t0 = time.time()
 
     observation = {}
-    for cam_name, img_data in payload.get("images", {}).items():
-        img = np.array(img_data, dtype=np.uint8)
+    for cam_name, b64_str in payload.get("images", {}).items():
+        img = _b64_to_numpy(b64_str)
         img_tensor = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).float() / 255.0
         observation[f"observation.images.{cam_name}"] = img_tensor.cuda()
 
@@ -63,19 +70,27 @@ async def predict_action(payload: dict):
         state = torch.tensor(payload["state"], dtype=torch.float32).unsqueeze(0).cuda()
         observation["observation.state"] = state
 
-    if "language_instruction" in payload:
-        observation["task"] = payload["language_instruction"]
+    if "instruction" in payload:
+        observation["task"] = payload["instruction"]
 
     with torch.inference_mode():
         action = policy.select_action(observation)
 
     action_np = action.cpu().numpy()
+    if action_np.ndim == 1:
+        action_np = action_np[np.newaxis, :]
     latency_ms = (time.time() - t0) * 1000
 
     return {
-        "action": action_np.tolist(),
+        "actions": action_np.tolist(),
         "latency_ms": latency_ms,
     }
+
+
+@app.post("/reset")
+async def reset():
+    """통일 API: no-op (X-VLA는 히스토리 없음)."""
+    return {"status": "reset"}
 
 
 @app.get("/health")

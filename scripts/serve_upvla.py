@@ -1,14 +1,16 @@
 """
-UP-VLA 추론 서버 (port 8300).
+UP-VLA 추론 서버 (통일 API, port 8300).
 
 upvla 컨테이너에서 실행:
   docker compose run --rm upvla \
     python /temporal_vla/scripts/serve_upvla.py \
     --model-config /temporal_vla/src/policies/UP-VLA/policy_rollout/upvla_model.yaml
 
-calvin 컨테이너에서 HTTP로 액션 요청:
-  POST http://localhost:8300/act
-  GET  http://localhost:8300/health
+통일 API:
+  POST /act     ← {"images": {"static": b64png, "wrist": b64png}, "state": [...], "instruction": "..."}
+                → {"actions": [[7 floats] x act_step], "latency_ms": float}
+  POST /reset   ← no-op (히스토리 없음)
+  GET  /health
 """
 
 import argparse
@@ -127,18 +129,9 @@ def _tensor_to_b64png(t: torch.Tensor) -> str:
 @app.post("/act")
 async def predict_action(payload: dict):
     """
-    Request:
-      image_static:   base64 PNG (HxWx3 uint8)
-      image_gripper:  base64 PNG (optional, num_view=2일 때)
-      instruction:    str
-      return_images:  bool (optional, 기본 False)
-                      True면 VQ 재구성 이미지와 모델 예측 이미지도 반환
-
-    Response:
-      action:        [[7 floats] x act_step]
-      latency_ms:    float
-      recons_image:  base64 PNG (return_images=True일 때)
-      gen_image:     base64 PNG (return_images=True일 때)
+    통일 API:
+      요청: {"images": {"static": b64png, "wrist": b64png}, "state": [...], "instruction": "..."}
+      응답: {"actions": [[7 floats] x act_step], "latency_ms": float}
     """
     from training.prompting_utils import (
         create_attention_mask_predict_next_for_future_prediction,
@@ -149,25 +142,27 @@ async def predict_action(payload: dict):
     config = _config
     resolution = config.dataset.preprocessing.resolution
 
+    images = payload.get("images", {})
+
     # static view 처리
-    img_static = _b64_to_pil(payload["image_static"])
+    img_static = _b64_to_pil(images["static"])
     pv_static = (
         image_transform(img_static, resolution=resolution).to(_device).unsqueeze(0)
     )
     image_tokens = _vq_model.get_code(pv_static) + len(_uni_prompting.text_tokenizer)
 
-    # gripper view 처리 (num_view=2 && 클라이언트가 전송한 경우)
-    if config.model.vla.num_view == 2 and "image_gripper" in payload:
-        img_gripper = _b64_to_pil(payload["image_gripper"])
-        pv_gripper = (
-            image_transform(img_gripper, resolution=resolution).to(_device).unsqueeze(0)
+    # wrist view 처리 (num_view=2 && 클라이언트가 전송한 경우)
+    if config.model.vla.num_view == 2 and "wrist" in images:
+        img_wrist = _b64_to_pil(images["wrist"])
+        pv_wrist = (
+            image_transform(img_wrist, resolution=resolution).to(_device).unsqueeze(0)
         )
-        tokens_gripper = _vq_model.get_code(pv_gripper) + len(
+        tokens_wrist = _vq_model.get_code(pv_wrist) + len(
             _uni_prompting.text_tokenizer
         )
-        image_tokens = torch.cat([image_tokens, tokens_gripper], dim=1)
+        image_tokens = torch.cat([image_tokens, tokens_wrist], dim=1)
 
-    instruction = payload["instruction"]
+    instruction = payload.get("instruction", "")
     input_ids, _ = _uni_prompting(([instruction], image_tokens), "pre_gen")
     attention_mask = create_attention_mask_predict_next_for_future_prediction(
         input_ids,
@@ -196,24 +191,17 @@ async def predict_action(payload: dict):
 
     # actions shape: [1, act_step, 7] 또는 [act_step, 7]
     actions_np = actions.squeeze().detach().cpu().numpy()  # [act_step, 7]
+    if actions_np.ndim == 1:
+        actions_np = actions_np[np.newaxis, :]
     latency_ms = (time.time() - t0) * 1000
 
-    response = {"action": actions_np.tolist(), "latency_ms": latency_ms}
+    return {"actions": actions_np.tolist(), "latency_ms": latency_ms}
 
-    # return_images=True일 때: VQ 재구성 이미지 + 모델 예측 이미지 반환
-    if payload.get("return_images", False):
-        num_vq = config.model.showo.num_vq_tokens
-        codebook_size = config.model.showo.codebook_size
-        # static 뷰 토큰만 사용 (num_view=2이어도 첫 num_vq개만)
-        img_tok = image_tokens[:, :num_vq] - len(_uni_prompting.text_tokenizer)
-        gen_tok = torch.clamp(gen_token_ids[:, :num_vq], min=0, max=codebook_size - 1)
-        with torch.no_grad():
-            recons = _vq_model.decode_code(img_tok)
-            gen = _vq_model.decode_code(gen_tok)
-        response["recons_image"] = _tensor_to_b64png(recons)
-        response["gen_image"] = _tensor_to_b64png(gen)
 
-    return response
+@app.post("/reset")
+async def reset():
+    """통일 API: no-op (UP-VLA는 히스토리 없음)."""
+    return {"status": "reset"}
 
 
 @app.get("/health")
