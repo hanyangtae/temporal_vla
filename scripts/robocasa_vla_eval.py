@@ -1,16 +1,20 @@
 """
-DreamVLA closed-loop 평가 스크립트.
+VLA closed-loop 평가 스크립트 (RoboCasa, 모델 무관).
 
-robocasa 공식 평가 방식(create_eval_env + env.reset 랜덤 롤아웃)을 사용하여
-DreamVLA 서버의 성공률을 측정한다.
+통일 API를 따르는 어떤 VLA 서버든 --vla-server URL만 바꾸면 평가 가능.
 
 사용법:
-  # 단일 태스크 평가
+  # DreamVLA로 평가
   python scripts/robocasa_vla_eval.py \
     --task TurnOnMicrowave \
     --vla-server http://localhost:8200
 
-  # 태스크셋 평가 (pretrain50, target50, all_tasks 등)
+  # X-VLA로 평가 (같은 스크립트, URL만 변경)
+  python scripts/robocasa_vla_eval.py \
+    --task TurnOnMicrowave \
+    --vla-server http://localhost:8100
+
+  # 태스크셋 평가
   python scripts/robocasa_vla_eval.py \
     --task-set pretrain50 \
     --vla-server http://localhost:8200 \
@@ -129,11 +133,14 @@ def run_vla_rollouts(
             wrist_img = obs.get(f"{WRIST_CAM}_image", np.zeros((IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8))
             state = obs.get("robot0_proprio-state", np.zeros(32, dtype=np.float32))
 
-            raw_action, latency_ms = vla_client.predict(static_img, wrist_img, state, instruction)
+            images = {"static": static_img, "wrist": wrist_img}
+            actions, latency_ms = vla_client.predict(images, state, instruction)
+            raw_action = actions[0]  # 첫 번째 스텝만 사용
             latencies.append(latency_ms)
 
-            # DreamVLA outputs 7-dim (arm[6] + gripper[1])
-            # PandaMobile expects 12-dim: right[6] + right_gripper[2] + base[3] + torso[1]
+            # 모델 출력(가변 차원) → PandaMobile 12-dim 매핑
+            # 대부분의 VLA: arm[6] + gripper[1] = 7-dim
+            # PandaMobile expects: right[6] + right_gripper[2] + base[3] + torso[1]
             arm6 = raw_action[:6]
             grip1 = raw_action[6:7]
             action = np.concatenate([arm6, [grip1[0], grip1[0]], [0.0, 0.0, 0.0], [0.0]])
@@ -286,7 +293,7 @@ def save_summary(all_summaries: list[dict], output_dir: Path):
 # ── CLI ────────────────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="DreamVLA closed-loop 평가 (robocasa 공식 방식)")
+    p = argparse.ArgumentParser(description="VLA closed-loop 평가 (robocasa, 모델 무관)")
 
     mode = p.add_mutually_exclusive_group()
     mode.add_argument("--task", type=str, help="평가할 태스크 이름 (예: TurnOnMicrowave)")
@@ -326,11 +333,11 @@ def main():
     video_dir = Path(args.video_dir) if args.video_dir else None
 
     sys.path.insert(0, str(Path(__file__).resolve().parent / "utils"))
-    from vla_client import DreamVLAClient
-    vla_client = DreamVLAClient(url=args.vla_server)
-    logger.info("DreamVLA 서버 연결 대기 중: %s", args.vla_server)
-    vla_client.wait_until_ready()
-    logger.info("DreamVLA 서버 연결 완료.")
+    from vla_client import VLAClient
+    vla_client = VLAClient(url=args.vla_server)
+    logger.info("VLA 서버 연결 대기 중: %s", args.vla_server)
+    server_info = vla_client.wait_until_ready()
+    logger.info("VLA 서버 연결 완료: %s", server_info)
 
     if args.task:
         tasks = [args.task]
