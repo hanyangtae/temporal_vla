@@ -3,20 +3,21 @@
 벤치마크 환경(robocasa, calvin 등)에서 실행되며,
 모델 서버(DreamVLA, UP-VLA, X-VLA 등)에 관측값을 보내고 액션을 받는다.
 
-통일 API 규격:
+통일 API 규격 (LeRobot 컨벤션):
   POST /act
     요청: {
-      "images": {"static": base64png, "wrist": base64png, ...},
-      "state": [float...],
-      "instruction": "str"
+      "observation.images.static": base64png,
+      "observation.images.wrist": base64png,
+      "observation.state": [float...],
+      "task": "str"
     }
     응답: {
-      "actions": [[float...], ...],   ← 항상 2D
+      "action": [[float...], ...],   ← 항상 2D
       "latency_ms": float
     }
 
   POST /reset   ← 에피소드 시작 시 히스토리 초기화 (모델이 필요 없으면 no-op)
-  GET  /health  ← 서버 상태 확인
+  GET  /health  ← 서버 상태 확인 + feature 정보
 """
 
 from __future__ import annotations
@@ -88,15 +89,16 @@ class VLAClient:
             (actions [N, action_dim], latency_ms)
             N은 모델의 action prediction steps (1 이상).
         """
-        payload = {
-            "images": {k: encode_image(v) for k, v in images.items()},
-            "instruction": instruction,
-        }
+        # LeRobot 컨벤션: observation.images.<cam>, observation.state, task
+        payload = {}
+        for k, v in images.items():
+            payload[f"observation.images.{k}"] = encode_image(v)
+        payload["task"] = instruction
         if state is not None:
             if isinstance(state, np.ndarray):
-                payload["state"] = state.tolist()
+                payload["observation.state"] = state.tolist()
             else:
-                payload["state"] = state
+                payload["observation.state"] = state
 
         t0 = time.time()
         r = requests.post(f"{self.url}/act", json=payload, timeout=self.timeout)
@@ -104,7 +106,7 @@ class VLAClient:
         latency_ms = (time.time() - t0) * 1000
 
         result = r.json()
-        actions = np.array(result["actions"], dtype=np.float32)
+        actions = np.array(result["action"], dtype=np.float32)
         if actions.ndim == 1:
             actions = actions[np.newaxis, :]
         return actions, latency_ms

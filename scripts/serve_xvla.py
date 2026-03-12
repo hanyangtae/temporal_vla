@@ -5,11 +5,11 @@ xvla 컨테이너 내에서 실행:
   docker compose --profile xvla run --rm xvla \
     python /temporal_vla/scripts/serve_xvla.py --model-path lerobot/xvla-base
 
-통일 API:
-  POST /act     ← {"images": {"static": b64png, ...}, "state": [...], "instruction": "..."}
-                → {"actions": [[floats], ...], "latency_ms": float}
+통일 API (LeRobot 컨벤션):
+  POST /act     ← {"observation.images.static": b64png, ..., "observation.state": [...], "task": "..."}
+                → {"action": [[floats], ...], "latency_ms": float}
   POST /reset   ← no-op (히스토리 없음)
-  GET  /health
+  GET  /health  ← feature 정보 포함
 """
 
 import argparse
@@ -54,24 +54,26 @@ def load_model():
 @app.post("/act")
 async def predict_action(payload: dict):
     """
-    통일 API:
-      요청: {"images": {"static": b64png, ...}, "state": [...], "instruction": "..."}
-      응답: {"actions": [[floats], ...], "latency_ms": float}
+    통일 API (LeRobot 컨벤션):
+      요청: {"observation.images.static": b64png, ..., "observation.state": [...], "task": "..."}
+      응답: {"action": [[floats], ...], "latency_ms": float}
     """
     t0 = time.time()
 
     observation = {}
-    for cam_name, b64_str in payload.get("images", {}).items():
-        img = _b64_to_numpy(b64_str)
-        img_tensor = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).float() / 255.0
-        observation[f"observation.images.{cam_name}"] = img_tensor.cuda()
+    # observation.images.* 키에서 이미지 추출
+    for key, value in payload.items():
+        if key.startswith("observation.images."):
+            img = _b64_to_numpy(value)
+            img_tensor = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).float() / 255.0
+            observation[key] = img_tensor.cuda()
 
-    if "state" in payload:
-        state = torch.tensor(payload["state"], dtype=torch.float32).unsqueeze(0).cuda()
+    if "observation.state" in payload:
+        state = torch.tensor(payload["observation.state"], dtype=torch.float32).unsqueeze(0).cuda()
         observation["observation.state"] = state
 
-    if "instruction" in payload:
-        observation["task"] = payload["instruction"]
+    if "task" in payload:
+        observation["task"] = payload["task"]
 
     with torch.inference_mode():
         action = policy.select_action(observation)
@@ -82,7 +84,7 @@ async def predict_action(payload: dict):
     latency_ms = (time.time() - t0) * 1000
 
     return {
-        "actions": action_np.tolist(),
+        "action": action_np.tolist(),
         "latency_ms": latency_ms,
     }
 
@@ -95,7 +97,22 @@ async def reset():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok" if policy is not None else "not_loaded", "model": "xvla"}
+    info = {
+        "status": "ok" if policy is not None else "not_loaded",
+        "model": "xvla",
+    }
+    if policy is not None and hasattr(policy, "config"):
+        cfg = policy.config
+        info["input_features"] = {
+            k: {"type": v.type if hasattr(v, "type") else "UNKNOWN", "shape": list(v.shape) if hasattr(v, "shape") else []}
+            for k, v in getattr(cfg, "input_features", {}).items()
+        }
+        info["output_features"] = {
+            k: {"type": v.type if hasattr(v, "type") else "UNKNOWN", "shape": list(v.shape) if hasattr(v, "shape") else []}
+            for k, v in getattr(cfg, "output_features", {}).items()
+        }
+        info["n_action_steps"] = getattr(cfg, "n_action_steps", 1)
+    return info
 
 
 def main():

@@ -6,11 +6,12 @@ upvla 컨테이너에서 실행:
     python /temporal_vla/scripts/serve_upvla.py \
     --model-config /temporal_vla/src/policies/UP-VLA/policy_rollout/upvla_model.yaml
 
-통일 API:
-  POST /act     ← {"images": {"static": b64png, "wrist": b64png}, "state": [...], "instruction": "..."}
-                → {"actions": [[7 floats] x act_step], "latency_ms": float}
+통일 API (LeRobot 컨벤션):
+  POST /act     ← {"observation.images.static": b64png, "observation.images.wrist": b64png,
+                    "observation.state": [...], "task": "..."}
+                → {"action": [[7 floats] x act_step], "latency_ms": float}
   POST /reset   ← no-op (히스토리 없음)
-  GET  /health
+  GET  /health  ← feature 정보 포함
 """
 
 import argparse
@@ -129,9 +130,10 @@ def _tensor_to_b64png(t: torch.Tensor) -> str:
 @app.post("/act")
 async def predict_action(payload: dict):
     """
-    통일 API:
-      요청: {"images": {"static": b64png, "wrist": b64png}, "state": [...], "instruction": "..."}
-      응답: {"actions": [[7 floats] x act_step], "latency_ms": float}
+    통일 API (LeRobot 컨벤션):
+      요청: {"observation.images.static": b64png, "observation.images.wrist": b64png,
+             "observation.state": [...], "task": "..."}
+      응답: {"action": [[7 floats] x act_step], "latency_ms": float}
     """
     from training.prompting_utils import (
         create_attention_mask_predict_next_for_future_prediction,
@@ -142,18 +144,18 @@ async def predict_action(payload: dict):
     config = _config
     resolution = config.dataset.preprocessing.resolution
 
-    images = payload.get("images", {})
-
     # static view 처리
-    img_static = _b64_to_pil(images["static"])
+    static_b64 = payload.get("observation.images.static")
+    img_static = _b64_to_pil(static_b64)
     pv_static = (
         image_transform(img_static, resolution=resolution).to(_device).unsqueeze(0)
     )
     image_tokens = _vq_model.get_code(pv_static) + len(_uni_prompting.text_tokenizer)
 
     # wrist view 처리 (num_view=2 && 클라이언트가 전송한 경우)
-    if config.model.vla.num_view == 2 and "wrist" in images:
-        img_wrist = _b64_to_pil(images["wrist"])
+    wrist_b64 = payload.get("observation.images.wrist")
+    if config.model.vla.num_view == 2 and wrist_b64:
+        img_wrist = _b64_to_pil(wrist_b64)
         pv_wrist = (
             image_transform(img_wrist, resolution=resolution).to(_device).unsqueeze(0)
         )
@@ -162,7 +164,7 @@ async def predict_action(payload: dict):
         )
         image_tokens = torch.cat([image_tokens, tokens_wrist], dim=1)
 
-    instruction = payload.get("instruction", "")
+    instruction = payload.get("task", "")
     input_ids, _ = _uni_prompting(([instruction], image_tokens), "pre_gen")
     attention_mask = create_attention_mask_predict_next_for_future_prediction(
         input_ids,
@@ -195,7 +197,7 @@ async def predict_action(payload: dict):
         actions_np = actions_np[np.newaxis, :]
     latency_ms = (time.time() - t0) * 1000
 
-    return {"actions": actions_np.tolist(), "latency_ms": latency_ms}
+    return {"action": actions_np.tolist(), "latency_ms": latency_ms}
 
 
 @app.post("/reset")
@@ -206,10 +208,19 @@ async def reset():
 
 @app.get("/health")
 async def health():
+    act_step = int(_config.act_step) if _config is not None else None
+    resolution = int(_config.dataset.preprocessing.resolution) if _config is not None else 256
     return {
         "status": "ok" if _model is not None else "not_loaded",
         "model": "upvla",
-        "act_step": int(_config.act_step) if _config is not None else None,
+        "input_features": {
+            "observation.images.static": {"type": "VISUAL", "shape": [3, resolution, resolution]},
+            "observation.images.wrist": {"type": "VISUAL", "shape": [3, resolution, resolution]},
+        },
+        "output_features": {
+            "action": {"type": "ACTION", "shape": [7]},
+        },
+        "n_action_steps": act_step,
     }
 
 

@@ -7,11 +7,12 @@ dreamvla 컨테이너 내에서 실행:
       --checkpoint /temporal_vla/checkpoints/dreamvla/checkpoint.pt \
       --precision bf16
 
-통일 API:
-  POST /act     ← {"images": {"static": b64png, "wrist": b64png}, "state": [...], "instruction": "..."}
-                → {"actions": [[7 floats]], "latency_ms": float}
+통일 API (LeRobot 컨벤션):
+  POST /act     ← {"observation.images.static": b64png, "observation.images.wrist": b64png,
+                    "observation.state": [...], "task": "..."}
+                → {"action": [[7 floats]], "latency_ms": float}
   POST /reset   ← 에피소드 시작 시 히스토리 초기화
-  GET  /health
+  GET  /health  ← feature 정보 포함
 """
 
 import argparse
@@ -153,20 +154,22 @@ async def reset():
 @app.post("/act")
 async def predict_action(payload: dict):
     """
-    통일 API:
-      요청: {"images": {"static": b64png, "wrist": b64png}, "state": [...], "instruction": "..."}
-      응답: {"actions": [[7 floats]], "latency_ms": float}
+    통일 API (LeRobot 컨벤션):
+      요청: {"observation.images.static": b64png, "observation.images.wrist": b64png,
+             "observation.state": [...], "task": "..."}
+      응답: {"action": [[7 floats]], "latency_ms": float}
     """
     if model is None:
         return {"error": "model not loaded"}
 
     t0 = time.time()
 
-    images = payload.get("images", {})
-    static_np = _b64_to_numpy(images["static"]) if "static" in images else np.zeros((224, 224, 3), dtype=np.uint8)
-    wrist_np = _b64_to_numpy(images["wrist"]) if "wrist" in images else np.zeros((224, 224, 3), dtype=np.uint8)
-    state_list = payload.get("state", [0.0] * 7)
-    instruction = payload.get("instruction", "")
+    static_b64 = payload.get("observation.images.static")
+    wrist_b64 = payload.get("observation.images.wrist")
+    static_np = _b64_to_numpy(static_b64) if static_b64 else np.zeros((224, 224, 3), dtype=np.uint8)
+    wrist_np = _b64_to_numpy(wrist_b64) if wrist_b64 else np.zeros((224, 224, 3), dtype=np.uint8)
+    state_list = payload.get("observation.state", [0.0] * 7)
+    instruction = payload.get("task", "")
 
     image_x = _preprocess_image(static_np).cuda()
     gripper_x = _preprocess_image(wrist_np).cuda()
@@ -210,14 +213,26 @@ async def predict_action(payload: dict):
     action = torch.cat([arm, gripper], dim=-1).cpu().float().numpy()
 
     return {
-        "actions": [action.tolist()],
+        "action": [action.tolist()],
         "latency_ms": (time.time() - t0) * 1000,
     }
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok" if model is not None else "not_loaded", "model": "dreamvla"}
+    return {
+        "status": "ok" if model is not None else "not_loaded",
+        "model": "dreamvla",
+        "input_features": {
+            "observation.images.static": {"type": "VISUAL", "shape": [3, 224, 224]},
+            "observation.images.wrist": {"type": "VISUAL", "shape": [3, 224, 224]},
+            "observation.state": {"type": "STATE", "shape": [7]},
+        },
+        "output_features": {
+            "action": {"type": "ACTION", "shape": [7]},
+        },
+        "n_action_steps": 1,
+    }
 
 
 def main():
