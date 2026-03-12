@@ -106,7 +106,7 @@ services:
     network_mode: host
     tty: true
     stdin_open: true
-    working_dir: /temporal_vla/src/benchmarks/calvin
+    working_dir: /temporal_vla/src/scripts
     command: ["/bin/bash"]
 
   upvla:
@@ -133,5 +133,5 @@ services:
     network_mode: host
     tty: true
     stdin_open: true
-    working_dir: /temporal_vla/src/policies/UP-VLA
+    working_dir: /temporal_vla/src/scripts
     command: ["/bin/bash"]

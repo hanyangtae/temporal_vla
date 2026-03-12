@@ -67,7 +67,7 @@ RUN pip install /tmp/calvin_models && \
     pip install --no-build-isolation pyhash MulticoreTSNE
 
 # ── tensorflow-datasets (for process_calvin.py) ────────────────────
-RUN pip install tensorflow-cpu tensorflow-datasets
+RUN pip install tensorflow-cpu tensorflow-datasets "pyarrow<15.0.0" fastparquet
 
 # ── numpy<2 required by PyBullet (compiled against NumPy 1.x) ─────
 # tensorflow-datasets may pull numpy 2.x which breaks pybullet at runtime
