@@ -25,15 +25,16 @@ Vision-Language-Action(VLA) 모델을 RoboCasa/Calvin 시뮬레이션 환경에�
 모든 컨테이너: ./  →  /temporal_vla (볼륨 마운트)
 ```
 
-### 통일 API 규격
+### 통일 API 규격 (LeRobot 컨벤션)
 
-모든 모델 서버(`serve_*.py`)가 동일한 엔드포인트와 요청/응답 형식을 따릅니다:
+모든 모델 서버(`serve_*.py`)가 동일한 엔드포인트와 요청/응답 형식을 따릅니다.
+키 네이밍은 [LeRobot](https://github.com/huggingface/lerobot) 컨벤션을 따릅니다:
 
 | Endpoint | 설명 |
 |----------|------|
-| `POST /act` | 액션 예측. 요청: `{"images": {"static": b64png, "wrist": b64png}, "state": [...], "instruction": "..."}`<br>응답: `{"actions": [[floats], ...], "latency_ms": float}` |
+| `POST /act` | 액션 예측. 요청: `{"observation.images.static": b64png, "observation.images.wrist": b64png, "observation.state": [...], "task": "..."}`<br>응답: `{"action": [[floats], ...], "latency_ms": float}` |
 | `POST /reset` | 에피소드 시작 시 히스토리 초기화 (필요 없는 모델은 no-op) |
-| `GET /health` | 서버 상태 확인 |
+| `GET /health` | 서버 상태 + feature 정보 (`input_features`, `output_features`, `n_action_steps`) |
 
 벤치마크 스크립트는 `VLAClient`(`scripts/utils/vla_client.py`)를 사용하며, `--vla-server` URL만 바꾸면 어떤 모델이든 평가할 수 있습니다.
 

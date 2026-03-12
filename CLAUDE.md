@@ -12,17 +12,23 @@ Docker 컨테이너로 모델(DreamVLA, X-VLA, UP-VLA)과 벤치마크(RoboCasa,
 
 - **모델 서버** (`scripts/serve_*.py`): FastAPI + uvicorn. 통일 API 엔드포인트 `/act`, `/reset`, `/health`.
 - **벤치마크 스크립트** (`scripts/robocasa_vla_eval.py`, `scripts/calvin_eval.py`): 모델 무관. `VLAClient`로 통신.
-- **통일 클라이언트** (`scripts/utils/vla_client.py`): `VLAClient` 클래스 1개. 이미지는 base64 PNG, 응답 actions는 항상 2D.
+- **통일 클라이언트** (`scripts/utils/vla_client.py`): `VLAClient` 클래스 1개. 이미지는 base64 PNG, 응답 action은 항상 2D. LeRobot 키 네이밍 컨벤션 사용.
 - **Docker**: `docker-compose.yml`에 5개 서비스. 모두 `network_mode: host` (localhost 통신).
 
-## 통일 API 규격
+## 통일 API 규격 (LeRobot 컨벤션)
 
 ```
 POST /act
-  요청: {"images": {"static": b64png, "wrist": b64png}, "state": [...], "instruction": "..."}
-  응답: {"actions": [[float...], ...], "latency_ms": float}
+  요청: {
+    "observation.images.static": b64png,
+    "observation.images.wrist": b64png,
+    "observation.state": [...],
+    "task": "..."
+  }
+  응답: {"action": [[float...], ...], "latency_ms": float}
 POST /reset  ← 히스토리 초기화 (필요 없으면 no-op)
-GET  /health ← {"status": "ok"|"not_loaded", "model": "..."}
+GET  /health ← {"status": "ok"|"not_loaded", "model": "...",
+                "input_features": {...}, "output_features": {...}, "n_action_steps": int}
 ```
 
 ## 주요 파일 경로
@@ -53,7 +59,7 @@ GET  /health ← {"status": "ok"|"not_loaded", "model": "..."}
 
 1. `scripts/<benchmark>_eval.py` 작성
 2. `VLAClient`(`scripts/utils/vla_client.py`)를 사용하여 모델 서버와 통신
-3. 환경 obs → `{"static": img, "wrist": img}` 매핑, 모델 action → 환경 action 매핑은 벤치마크 스크립트에서 처리
+3. 환경 obs → `{"static": img, "wrist": img}` 매핑 (VLAClient가 `observation.images.*` 키로 변환), 모델 action → 환경 action 매핑은 벤치마크 스크립트에서 처리
 
 ## 주의사항
 
