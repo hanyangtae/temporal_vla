@@ -12,6 +12,7 @@ Docker 컨테이너로 모델(DreamVLA, X-VLA, UP-VLA)과 벤치마크(RoboCasa,
 
 - **모델 서버** (`scripts/serve_*.py`): FastAPI + uvicorn. 통일 API 엔드포인트 `/act`, `/reset`, `/health`.
 - **벤치마크 스크립트** (`scripts/robocasa_vla_eval.py`, `scripts/calvin_eval.py`): 모델 무관. `VLAClient`로 통신.
+- **Processor Pipeline** (`src/processor/`): LeRobot `ProcessorStep` 인터페이스 호환. 벤치마크별 obs/action 변환을 파이프라인으로 분리.
 - **통일 클라이언트** (`scripts/utils/vla_client.py`): `VLAClient` 클래스 1개. 이미지는 base64 PNG, 응답 action은 항상 2D. LeRobot 키 네이밍 컨벤션 사용.
 - **Docker**: `docker-compose.yml`에 5개 서비스. 모두 `network_mode: host` (localhost 통신).
 
@@ -36,6 +37,7 @@ GET  /health ← {"status": "ok"|"not_loaded", "model": "...",
 - 모델 서버: `scripts/serve_dreamvla.py` (:8200), `scripts/serve_upvla.py` (:8300), `scripts/serve_xvla.py` (:8100)
 - 벤치마크: `scripts/robocasa_vla_eval.py` (RoboCasa), `scripts/calvin_eval.py` (Calvin)
 - 클라이언트: `scripts/utils/vla_client.py`
+- Processor: `src/processor/` (base, types, factory, obs/, action/)
 - Docker: `docker-compose.yml`, `docker/` 디렉토리
 - 모델 소스 (git submodule): `src/policies/dreamvla/`, `src/policies/UP-VLA/`
 - 벤치마크 소스 (git submodule): `robocasa/`, `robosuite/`, `src/benchmarks/calvin/`, `lerobot/`
@@ -55,11 +57,34 @@ GET  /health ← {"status": "ok"|"not_loaded", "model": "...",
 3. `scripts/serve_<model>.py` 작성 (통일 API 준수: `/act`, `/reset`, `/health`)
 4. 기존 벤치마크 스크립트에서 `--vla-server` URL만 바꾸면 평가 가능
 
+## Processor Pipeline (벤치마크별 obs/action 변환)
+
+LeRobot의 `ProcessorStep`/`DataProcessorPipeline` 인터페이스를 따르는 경량 자체 구현.
+numpy 기반, Python 3.8 호환. 벤치마크별 obs/action 변환을 선언적으로 분리한다.
+
+```
+env.step(action)
+  → env obs (env-specific dict)
+  → ObsProcessor (키 리매핑 + 포맷 통일)
+    → 통일 키: observation.images.*, observation.state
+  → VLAClient (base64 인코딩 + HTTP 전송)
+  → 모델 서버 (모델별 전처리 + 추론)
+  → VLAClient (action 수신)
+  → ActionProcessor (통일 action → env-specific action)
+env.step(action)
+```
+
+- `ObsProcessor`: env obs dict → 통일 키 (`observation.images.*`, `observation.state`) 변환. 이미지 전처리(resize, normalize 등)는 모델 서버 내부에서 수행.
+- `ActionProcessor`: 모델 출력 action → env에 맞는 차원/포맷 변환.
+- `DataProcessorPipeline`: step 체인 + feature 추적 + save/load 지원.
+- `factory.py`: `make_calvin_processors()`, `make_robocasa_processors()` 등 벤치마크별 팩토리.
+
 ## 새 벤치마크 추가 시
 
-1. `scripts/<benchmark>_eval.py` 작성
-2. `VLAClient`(`scripts/utils/vla_client.py`)를 사용하여 모델 서버와 통신
-3. 환경 obs → `{"static": img, "wrist": img}` 매핑 (VLAClient가 `observation.images.*` 키로 변환), 모델 action → 환경 action 매핑은 벤치마크 스크립트에서 처리
+1. `src/processor/obs/<benchmark>.py` — `ObservationProcessorStep` 구현 (env obs → 통일 키)
+2. `src/processor/action/<benchmark>.py` — `ActionProcessorStep` 구현 (통일 action → env action)
+3. `src/processor/factory.py`에 `make_<benchmark>_processors()` 추가
+4. `scripts/<benchmark>_eval.py` 작성, `VLAClient` + processor pipeline 사용
 
 ## 주의사항
 
