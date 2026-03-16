@@ -28,7 +28,7 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=all
       - NVIDIA_VISIBLE_DEVICES=0
       # - WANDB_API_KEY=${WANDB_API_KEY}
-      - PYTHONPATH=/temporal_vla/robocasa:/temporal_vla/robosuite
+      - PYTHONPATH=/temporal_vla:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite:/temporal_vla/scripts/utils
       - DISPLAY=:1              # VNC 내부 가상 디스플레이
       - VNC_PW=${VNC_PW}        # .env 파일에서 설정
 

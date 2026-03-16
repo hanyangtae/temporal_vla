@@ -17,6 +17,14 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import Pool
 from pathlib import Path
 
+_SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+from path_setup import configure_repo_paths
+
+configure_repo_paths(include_robocasa=True)
+
 import numpy as np
 import robocasa.utils.lerobot_utils as LU
 import robosuite

@@ -37,6 +37,10 @@ import sys
 import traceback
 from pathlib import Path
 
+from path_setup import configure_repo_paths
+
+configure_repo_paths(include_script_utils=True, include_robocasa=True)
+
 import numpy as np
 import robosuite
 from robosuite import load_part_controller_config
@@ -346,7 +350,6 @@ def main():
     output_dir = Path(args.output_dir) if args.output_dir else None
     video_dir = Path(args.video_dir) if args.video_dir else None
 
-    sys.path.insert(0, str(Path(__file__).resolve().parent / "utils"))
     from vla_client import VLAClient
     vla_client = VLAClient(url=args.vla_server)
     logger.info("VLA 서버 연결 대기 중: %s", args.vla_server)
