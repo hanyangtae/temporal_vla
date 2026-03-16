@@ -141,12 +141,15 @@ def _predict(
       {"observation.images.static": uint8 HWC, ...}
     """
     images = {}
+    state = None
     for k, v in processed_obs.items():
         if k.startswith("observation.images."):
             cam_name = k.split("observation.images.")[-1]
             images[cam_name] = v
+        elif k == "observation.state":
+            state = v
 
-    actions, _ = vla_client.predict(images=images, instruction=instruction)
+    actions, _ = vla_client.predict(images=images, state=state, instruction=instruction)
     return actions, None, None
 
 
@@ -193,6 +196,8 @@ def _rollout(
     subtask_idx: int = 0,
 ) -> Tuple[bool, List[np.ndarray]]:
     """단일 subtask 롤아웃. (성공 여부, 프레임 리스트) 반환."""
+    # 원본 DreamVLA eval과 동일: subtask마다 히스토리 초기화
+    vla_client.reset()
     obs = env.get_obs()
     start_info = env.get_info()
     action_buffer = None
@@ -295,7 +300,8 @@ def evaluate(
     logger.info("VLA 서버 연결 완료: %s", server_info)
 
     # Processor pipeline (벤치마크별 obs/action 변환)
-    obs_pipeline, action_pipeline = make_calvin_processors()
+    # DreamVLA 원본 eval은 static + wrist(gripper) 카메라 모두 사용
+    obs_pipeline, action_pipeline = make_calvin_processors(use_wrist=True)
 
     # task oracle (calvin_env.envs.tasks.Tasks) — Calvin-native 클래스
     tasks_cfg = OmegaConf.load(

@@ -37,6 +37,12 @@ class RoboCasaActionProcessor(ActionProcessorStep):
 
     def process_action(self, action: Any) -> np.ndarray:
         action = np.asarray(action, dtype=np.float32)
+        expected_dim = self.arm_dim + 1  # arm + gripper
+        if action.shape[-1] != expected_dim:
+            raise ValueError(
+                "RoboCasaActionProcessor: expected {}D action (arm={} + gripper=1), "
+                "got {}D".format(expected_dim, self.arm_dim, action.shape[-1])
+            )
         arm = action[:self.arm_dim]
         grip = action[self.arm_dim]
         return np.concatenate([

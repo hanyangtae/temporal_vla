@@ -6,9 +6,12 @@ Python 3.8 compatible.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 from ..base import ObservationProcessorStep
 from ..types import (
@@ -49,13 +52,17 @@ class RoboCasaObsProcessor(ObservationProcessorStep):
         sz = self.image_size
         fallback = np.zeros((sz, sz, 3), dtype=np.uint8)
 
+        static_key = "{}_image".format(self.static_cam)
+        wrist_key = "{}_image".format(self.wrist_cam)
+
+        if static_key not in observation:
+            logger.warning("카메라 '%s' 누락, zero 이미지로 대체", static_key)
+        if wrist_key not in observation:
+            logger.warning("카메라 '%s' 누락, zero 이미지로 대체", wrist_key)
+
         result = {
-            "observation.images.static": observation.get(
-                "{}_image".format(self.static_cam), fallback.copy()
-            ),
-            "observation.images.wrist": observation.get(
-                "{}_image".format(self.wrist_cam), fallback.copy()
-            ),
+            "observation.images.static": observation.get(static_key, fallback.copy()),
+            "observation.images.wrist": observation.get(wrist_key, fallback.copy()),
         }
 
         state = observation.get(self.state_key)

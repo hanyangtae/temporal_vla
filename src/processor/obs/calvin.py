@@ -26,14 +26,17 @@ class CalvinObsProcessor(ObservationProcessorStep):
     Input (Calvin env obs):
         obs["rgb_obs"]["rgb_static"]  — CHW tensor, [-1, 1]
         obs["rgb_obs"]["rgb_gripper"] — CHW tensor, [-1, 1] (optional)
+        obs["robot_obs"]             — 15D float (optional, robot state)
 
     Output:
         {"observation.images.static": uint8 HWC numpy}
         {"observation.images.wrist":  uint8 HWC numpy}  (if use_wrist=True)
+        {"observation.state":         float32 numpy 7D}  (if use_state=True)
     """
 
-    def __init__(self, use_wrist: bool = False, image_size: int = 200):
+    def __init__(self, use_wrist: bool = False, use_state: bool = True, image_size: int = 200):
         self.use_wrist = use_wrist
+        self.use_state = use_state
         self.image_size = image_size
 
     def process_observation(self, observation: Dict[str, Any]) -> Dict[str, Any]:
@@ -44,6 +47,13 @@ class CalvinObsProcessor(ObservationProcessorStep):
         }
         if self.use_wrist:
             result["observation.images.wrist"] = self._convert(rgb_obs["rgb_gripper"])
+
+        if self.use_state and "robot_obs" in observation:
+            robot_obs = np.asarray(observation["robot_obs"], dtype=np.float32)
+            # 15D → 7D: arm(6) + gripper(1), DreamVLA 원본 eval과 동일
+            result["observation.state"] = np.concatenate(
+                [robot_obs[:6], robot_obs[-1:]]
+            )
 
         return result
 
@@ -57,13 +67,17 @@ class CalvinObsProcessor(ObservationProcessorStep):
             obs_features["observation.images.wrist"] = PolicyFeature(
                 FeatureType.VISUAL, (self.image_size, self.image_size, 3)
             )
+        if self.use_state:
+            obs_features["observation.state"] = PolicyFeature(
+                FeatureType.STATE, (7,)
+            )
 
         features = dict(features)
         features[PipelineFeatureType.OBSERVATION] = obs_features
         return features
 
     def get_config(self) -> Dict[str, Any]:
-        return {"use_wrist": self.use_wrist, "image_size": self.image_size}
+        return {"use_wrist": self.use_wrist, "use_state": self.use_state, "image_size": self.image_size}
 
     # ------------------------------------------------------------------
 
@@ -72,6 +86,9 @@ class CalvinObsProcessor(ObservationProcessorStep):
         """CHW tensor in [-1, 1] → HWC uint8 numpy in [0, 255]."""
         if hasattr(img, "numpy"):  # torch tensor
             img = img.squeeze().permute(1, 2, 0).cpu().numpy()
+        elif isinstance(img, np.ndarray) and img.ndim == 3 and img.shape[0] in (1, 3):
+            # numpy CHW → HWC
+            img = np.transpose(img, (1, 2, 0))
         if img.dtype != np.uint8:
             img = ((np.clip(img, -1.0, 1.0) + 1.0) / 2.0 * 255.0).astype(np.uint8)
         return img

@@ -36,8 +36,20 @@ class CalvinActionProcessor(ActionProcessorStep):
     def process_action(self, action: Any) -> np.ndarray:
         action = np.array(action, dtype=np.float32).copy()
         if action.ndim == 1:
+            if action.shape[0] != 7:
+                raise ValueError(
+                    "CalvinActionProcessor: expected 7D action, got {}D".format(
+                        action.shape[0]
+                    )
+                )
             action[-1] = 1.0 if action[-1] > self.threshold else -1.0
         else:
+            if action.shape[-1] != 7:
+                raise ValueError(
+                    "CalvinActionProcessor: expected 7D action, got {}D".format(
+                        action.shape[-1]
+                    )
+                )
             action[:, -1] = np.where(
                 action[:, -1] > self.threshold, 1.0, -1.0
             )

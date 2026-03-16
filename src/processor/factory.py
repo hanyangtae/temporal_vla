@@ -18,6 +18,7 @@ from .action.robocasa import RoboCasaActionProcessor
 
 def make_calvin_processors(
     use_wrist: bool = False,
+    use_state: bool = True,
     image_size: int = 200,
     gripper_threshold: float = 0.0,
 ) -> Tuple[DataProcessorPipeline, DataProcessorPipeline]:
@@ -25,6 +26,7 @@ def make_calvin_processors(
 
     Args:
         use_wrist: wrist 카메라 이미지를 포함할지 여부.
+        use_state: robot_obs에서 state(7D)를 추출할지 여부.
         image_size: Calvin 이미지 해상도 (기본 200).
         gripper_threshold: gripper 이산화 임계값.
 
@@ -32,7 +34,7 @@ def make_calvin_processors(
         (obs_pipeline, action_pipeline) 튜플.
     """
     obs_pipeline = DataProcessorPipeline(
-        steps=[CalvinObsProcessor(use_wrist=use_wrist, image_size=image_size)],
+        steps=[CalvinObsProcessor(use_wrist=use_wrist, use_state=use_state, image_size=image_size)],
         name="calvin_obs",
     )
     action_pipeline = DataProcessorPipeline(
