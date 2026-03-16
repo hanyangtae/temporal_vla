@@ -159,24 +159,28 @@ temporal_vla/
 │   └── utils/
 │       ├── vla_client.py                     # 통일 VLA HTTP 클라이언트 (VLAClient)
 │       └── robocasa_eval.py                  # playback 평가 유틸리티
-├── robosuite/                                # Git submodule (로봇 시뮬레이션)
-├── robocasa/                                 # Git submodule (주방 벤치마크)
 ├── lerobot/                                  # Git submodule (LeRobot)
 ├── data/
 │   ├── datasets/                             # RoboCasa 데이터 (LeRobot v2.1, 원본)
 │   ├── datasets_v3/                          # X-VLA용 변환 데이터 (LeRobot v3.0)
 │   └── huggingface/                          # HuggingFace 모델 캐시
 ├── outputs/                                  # 로그, 평가 결과, 영상
-├── src/processor/                             # Processor Pipeline (LeRobot 인터페이스 호환)
-│   ├── base.py                              # ProcessorStep, DataProcessorPipeline
-│   ├── types.py                             # FeatureType, PolicyFeature, Transition
-│   ├── factory.py                           # make_calvin_processors(), make_robocasa_processors()
-│   ├── obs/                                 # 벤치마크별 ObservationProcessorStep
-│   │   ├── calvin.py                        # CalvinObsProcessor
-│   │   └── robocasa.py                      # RoboCasaObsProcessor
-│   └── action/                              # 벤치마크별 ActionProcessorStep
-│       ├── calvin.py                        # CalvinActionProcessor
-│       └── robocasa.py                      # RoboCasaActionProcessor
+├── src/
+│   ├── benchmarks/
+│   │   ├── calvin/                           # Git submodule (CALVIN benchmark)
+│   │   ├── robocasa/                         # Git submodule (주방 벤치마크)
+│   │   └── robosuite/                        # Git submodule (로봇 시뮬레이션)
+│   ├── processor/                            # Processor Pipeline (LeRobot 인터페이스 호환)
+│   │   ├── base.py                           # ProcessorStep, DataProcessorPipeline
+│   │   ├── types.py                          # FeatureType, PolicyFeature, Transition
+│   │   ├── factory.py                        # make_calvin_processors(), make_robocasa_processors()
+│   │   ├── obs/                              # 벤치마크별 ObservationProcessorStep
+│   │   │   ├── calvin.py                     # CalvinObsProcessor
+│   │   │   └── robocasa.py                   # RoboCasaObsProcessor
+│   │   └── action/                           # 벤치마크별 ActionProcessorStep
+│   │       ├── calvin.py                     # CalvinActionProcessor
+│   │       └── robocasa.py                   # RoboCasaActionProcessor
+│   └── utils/
 ├── src/utils/common/logger.py                # 공용 로깅 모듈
 ├── configs/                                  # 모델 설정 (예정)
 ├── models/                                   # 커스텀 모델 코드 (예정)
@@ -228,14 +232,6 @@ docker compose run --rm dreamvla \
 docker compose run --rm upvla \
   python /temporal_vla/scripts/serve_upvla.py \
     --model-config /temporal_vla/src/policies/UP-VLA/policy_rollout/upvla_model.yaml
-```
-
-### Data Conversion
-
-```bash
-# LeRobot v2.1 → v3.0 (X-VLA용)
-docker compose run --rm xvla \
-  python /temporal_vla/scripts/convert_v21_to_v30.py
 ```
 
 ### Evaluation

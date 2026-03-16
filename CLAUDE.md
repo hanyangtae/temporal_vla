@@ -40,7 +40,8 @@ GET  /health ← {"status": "ok"|"not_loaded", "model": "...",
 - Processor: `src/processor/` (base, types, factory, obs/, action/)
 - Docker: `docker-compose.yml`, `docker/` 디렉토리
 - 모델 소스 (git submodule): `src/policies/dreamvla/`, `src/policies/UP-VLA/`
-- 벤치마크 소스 (git submodule): `robocasa/`, `robosuite/`, `src/benchmarks/calvin/`, `lerobot/`
+- 경로 설정: `scripts/path_setup.py` (PYTHONPATH 헬퍼, 스크립트 상단에서 import)
+- 벤치마크 소스 (git submodule): `src/benchmarks/robocasa/`, `src/benchmarks/robosuite/`, `src/benchmarks/calvin/`, `lerobot/`
 
 ## 개발 컨벤션
 
@@ -48,7 +49,7 @@ GET  /health ← {"status": "ok"|"not_loaded", "model": "...",
 - **커밋 메시지**: 한글. `feat:`, `fix:`, `refactor:`, `docs:`, `config:`, `script:` 접두사 사용.
 - **Python**: 컨테이너마다 버전이 다름 (robocasa=3.11, calvin=3.8, 나머지=3.10). calvin 관련 코드는 3.8 호환 필수.
 - **체크포인트**: git에 커밋하지 않음. `.gitignore`에 포함.
-- **git submodule**: `robosuite`, `robocasa`, `lerobot`, `src/policies/dreamvla`, `src/benchmarks/calvin`, `src/policies/UP-VLA`
+- **git submodule**: `src/benchmarks/robosuite`, `src/benchmarks/robocasa`, `lerobot`, `src/policies/dreamvla`, `src/benchmarks/calvin`, `src/policies/UP-VLA`
 
 ## 새 모델 추가 시
 
