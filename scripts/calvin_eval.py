@@ -14,10 +14,13 @@ docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval.py \
 
 # DreamVLA로 평가 (같은 스크립트, URL만 변경)
 docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval.py \
-  --dataset-path /temporal_vla/data/calvin/task_ABC_D \
+  --dataset-path /temporal_vla/src/benchmarks/calvin/dataset/calvin_debug_dataset \
   --server-url http://localhost:8200 \
-  --num-sequences 1000
-
+  --num-sequences 50 \
+  --act-step 1 \
+  --output /temporal_vla/outputs/calvin_eval/debug_result_wrist.json \
+  --num-videos 3 \
+  --video-dir /temporal_vla/outputs/calvin_eval/videos_wrist \
 VLA 서버(serve_*.py)가 먼저 실행 중이어야 한다.
 """
 

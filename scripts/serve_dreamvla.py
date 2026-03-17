@@ -4,8 +4,11 @@ DreamVLA 추론 서버 (통일 API).
 dreamvla 컨테이너 내에서 실행:
   docker compose run --rm dreamvla \
     python /temporal_vla/scripts/serve_dreamvla.py \
-      --checkpoint /temporal_vla/checkpoints/dreamvla/checkpoint.pt \
-      --precision bf16
+    --checkpoint /temporal_vla/checkpoints/dreamvla/dreamvla_dynamic_depth_semantic-001.pth \
+    --vit-checkpoint /temporal_vla/checkpoints/mae_pretrain_vit_base.pth \
+    --precision fp32 \
+    --obs-pred --depth-pred --sam-feat-pred --use-dit-head \
+    --pred-num 1 --attn-implementation sdpa --phase evaluate
 
 통일 API (LeRobot 컨벤션):
   POST /act     ← {"observation.images.static": b64png, "observation.images.wrist": b64png,
