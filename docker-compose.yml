@@ -18,7 +18,7 @@ services:
     environment:
       - HF_HOME=/temporal_vla/data/huggingface # HF 모델/데이터 캐시 경로 변경
       - LIBERO_DATA_DIR=/temporal_vla/data/libero # LIBERO 데이터 경로
-      - PYTHONPATH=/temporal_vla:/temporal_vla/robocasa:/temporal_vla/robosuite:/temporal_vla/scripts/utils
+      - PYTHONPATH=/temporal_vla:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite:/temporal_vla/scripts/utils
     deploy:
       resources:
         reservations:
@@ -82,7 +82,7 @@ services:
   calvin:
     container_name: calvin
     build:
-      # context must be repo root to access calvin/ submodule during build
+      # context must be repo root to access src/benchmarks/calvin submodule during build
       context: .
       dockerfile: ./docker/calvin/Dockerfile
       args:

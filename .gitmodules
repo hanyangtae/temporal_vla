@@ -1,8 +1,8 @@
 [submodule "robosuite"]
-	path = robosuite
+	path = src/benchmarks/robosuite
 	url = https://github.com/ARISE-Initiative/robosuite
 [submodule "robocasa"]
-	path = robocasa
+	path = src/benchmarks/robocasa
 	url = https://github.com/robocasa/robocasa
 [submodule "src/policies/dreamvla"]
 	path = src/policies/dreamvla

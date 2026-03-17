@@ -11,16 +11,17 @@ Vision-Language-Action(VLA) 모델을 RoboCasa/Calvin 시뮬레이션 환경에�
 모델 서버와 벤치마크 스크립트는 **통일 API**를 사용하여 모델-벤치마크 조합을 자유롭게 변경할 수 있습니다.
 
 ```
-┌────────────────────────┐       통일 API (HTTP)
-│  robocasa / calvin     │       POST /act, /reset
-│  벤치마크 + 평가        │──────────────────────────────┐
-│  VLAClient             │─────────────┐                │
-└────────────────────────┘             │                │
-                                       ▼                ▼
-                               ┌──────────┐  ┌───────────┐  ┌──────────┐
-                               │   xvla   │  │ dreamvla  │  │  upvla   │
-                               │  :8100   │  │  :8200    │  │  :8300   │
-                               └──────────┘  └───────────┘  └──────────┘
+┌─────────────────────────────┐       통일 API (HTTP)
+│  robocasa / calvin          │       POST /act, /reset
+│  벤치마크 + 평가             │──────────────────────────────┐
+│                             │─────────────┐                │
+│  ObsProcessor → VLAClient   │             │                │
+│  ActionProcessor ← 응답     │             │                │
+└─────────────────────────────┘             ▼                ▼
+                                    ┌──────────┐  ┌───────────┐  ┌──────────┐
+                                    │   xvla   │  │ dreamvla  │  │  upvla   │
+                                    │  :8100   │  │  :8200    │  │  :8300   │
+                                    └──────────┘  └───────────┘  └──────────┘
 
 모든 컨테이너: ./  →  /temporal_vla (볼륨 마운트)
 ```
@@ -36,7 +37,8 @@ Vision-Language-Action(VLA) 모델을 RoboCasa/Calvin 시뮬레이션 환경에�
 | `POST /reset` | 에피소드 시작 시 히스토리 초기화 (필요 없는 모델은 no-op) |
 | `GET /health` | 서버 상태 + feature 정보 (`input_features`, `output_features`, `n_action_steps`) |
 
-벤치마크 스크립트는 `VLAClient`(`scripts/utils/vla_client.py`)를 사용하며, `--vla-server` URL만 바꾸면 어떤 모델이든 평가할 수 있습니다.
+벤치마크 스크립트는 `VLAClient`(`scripts/utils/vla_client.py`)와 `ProcessorPipeline`(`src/processor/`)을 사용합니다.
+`--vla-server` URL만 바꾸면 어떤 모델이든 평가할 수 있으며, obs/action 변환은 벤치마크별 Processor가 처리합니다.
 
 ### Containers
 
@@ -153,19 +155,32 @@ temporal_vla/
 │   ├── calvin_eval.py                        # Calvin 평가 (모델 무관)
 │   ├── robocasa_playback_eval.py             # 녹화 데이터 재생 평가 (상태 체크 / open-loop)
 │   ├── robocasa_render_failures.py           # 실패 에피소드 영상 렌더링
-│   ├── convert_v21_to_v30.py                 # LeRobot v2.1 → v3.0 변환 (X-VLA용)
 │   ├── start_vnc.sh                          # KasmVNC 시작 스크립트
 │   └── utils/
 │       ├── vla_client.py                     # 통일 VLA HTTP 클라이언트 (VLAClient)
 │       └── robocasa_eval.py                  # playback 평가 유틸리티
-├── robosuite/                                # Git submodule (로봇 시뮬레이션)
-├── robocasa/                                 # Git submodule (주방 벤치마크)
 ├── lerobot/                                  # Git submodule (LeRobot)
 ├── data/
 │   ├── datasets/                             # RoboCasa 데이터 (LeRobot v2.1, 원본)
 │   ├── datasets_v3/                          # X-VLA용 변환 데이터 (LeRobot v3.0)
 │   └── huggingface/                          # HuggingFace 모델 캐시
 ├── outputs/                                  # 로그, 평가 결과, 영상
+├── src/
+│   ├── benchmarks/
+│   │   ├── calvin/                           # Git submodule (CALVIN benchmark)
+│   │   ├── robocasa/                         # Git submodule (주방 벤치마크)
+│   │   └── robosuite/                        # Git submodule (로봇 시뮬레이션)
+│   ├── processor/                            # Processor Pipeline (LeRobot 인터페이스 호환)
+│   │   ├── base.py                           # ProcessorStep, DataProcessorPipeline
+│   │   ├── types.py                          # FeatureType, PolicyFeature, Transition
+│   │   ├── factory.py                        # make_calvin_processors(), make_robocasa_processors()
+│   │   ├── obs/                              # 벤치마크별 ObservationProcessorStep
+│   │   │   ├── calvin.py                     # CalvinObsProcessor
+│   │   │   └── robocasa.py                   # RoboCasaObsProcessor
+│   │   └── action/                           # 벤치마크별 ActionProcessorStep
+│   │       ├── calvin.py                     # CalvinActionProcessor
+│   │       └── robocasa.py                   # RoboCasaActionProcessor
+│   └── utils/
 ├── src/utils/common/logger.py                # 공용 로깅 모듈
 ├── configs/                                  # 모델 설정 (예정)
 ├── models/                                   # 커스텀 모델 코드 (예정)
@@ -217,14 +232,6 @@ docker compose run --rm dreamvla \
 docker compose run --rm upvla \
   python /temporal_vla/scripts/serve_upvla.py \
     --model-config /temporal_vla/src/policies/UP-VLA/policy_rollout/upvla_model.yaml
-```
-
-### Data Conversion
-
-```bash
-# LeRobot v2.1 → v3.0 (X-VLA용)
-docker compose run --rm xvla \
-  python /temporal_vla/scripts/convert_v21_to_v30.py
 ```
 
 ### Evaluation

@@ -4,8 +4,11 @@ DreamVLA 추론 서버 (통일 API).
 dreamvla 컨테이너 내에서 실행:
   docker compose run --rm dreamvla \
     python /temporal_vla/scripts/serve_dreamvla.py \
-      --checkpoint /temporal_vla/checkpoints/dreamvla/checkpoint.pt \
-      --precision bf16
+    --checkpoint /temporal_vla/checkpoints/dreamvla/dreamvla_dynamic_depth_semantic-001.pth \
+    --vit-checkpoint /temporal_vla/checkpoints/mae_pretrain_vit_base.pth \
+    --precision fp32 \
+    --obs-pred --depth-pred --sam-feat-pred --use-dit-head \
+    --pred-num 1 --attn-implementation sdpa --phase evaluate
 
 통일 API (LeRobot 컨벤션):
   POST /act     ← {"observation.images.static": b64png, "observation.images.wrist": b64png,
@@ -84,21 +87,21 @@ def load_model():
         transformer_heads=args.transformer_heads,
         phase=args.phase,
         gripper_width=False,
-        depth_pred=False,
+        depth_pred=args.depth_pred,
         trajectory_pred=False,
-        pred_num=args.action_pred_steps,
+        pred_num=args.pred_num,
         use_trajectory_query=False,
         track_label_patch_size=16,
         use_dinosiglip=False,
-        use_dit_head=False,
+        use_dit_head=args.use_dit_head,
         dino_feat_pred=False,
-        sam_feat_pred=False,
+        sam_feat_pred=args.sam_feat_pred,
         no_pred_gripper_traj=True,
         no_unshuffle=False,
         use_gpt2_pretrained=False,
         share_query=False,
-        attn_implementation="eager",
-        dit_type="dit",
+        attn_implementation=args.attn_implementation,
+        dit_type=args.dit_type,
     )
 
     checkpoint = torch.load(args.checkpoint, map_location="cpu")
@@ -206,11 +209,26 @@ async def predict_action(payload: dict):
             mode="test",
         )
 
-    step_idx = min(num_step, seq_len) - 1
-    arm = arm_pred[0, step_idx, 0, :]
-    gripper = (gripper_pred[0, step_idx, 0, :] > 0.5).float()
-    gripper = (gripper - 0.5) * 2
-    action = torch.cat([arm, gripper], dim=-1).cpu().float().numpy()
+    # 원본 eval과 동일: 전체 pred_steps의 action을 반환
+    # arm_pred: [1, seq_len, pred_num, 6], gripper_pred: [1, seq_len, pred_num, 1]
+    arm = arm_pred[0, :, 0, :]        # [seq_len, 6]
+    gripper = (gripper_pred[0, :, 0, :] > 0.5).float()
+    gripper = (gripper - 0.5) * 2     # [seq_len, 1]
+    all_actions = torch.cat([arm, gripper], dim=-1)  # [seq_len, 7]
+
+    if num_step < seq_len:
+        action = all_actions[num_step - 1]  # [7]
+    else:
+        action = all_actions[-1]            # [7]
+
+    action = action.cpu().float().numpy()
+
+    # 디버그 로그 (첫 5스텝만)
+    if len(img_queue) <= 5:
+        print(f"[DEBUG] step={len(img_queue)} num_step={num_step} "
+              f"state={np.array(state_list[:3]).round(3).tolist()}... "
+              f"action={action.round(4).tolist()} "
+              f"task='{instruction[:30]}'")
 
     return {
         "action": [action.tolist()],
@@ -254,7 +272,13 @@ def main():
     parser.add_argument("--hidden-dim", type=int, default=1024)
     parser.add_argument("--transformer-heads", type=int, default=16)
     parser.add_argument("--obs-pred", action="store_true")
-    parser.add_argument("--phase", type=str, default="pretrain")
+    parser.add_argument("--depth-pred", action="store_true")
+    parser.add_argument("--sam-feat-pred", action="store_true")
+    parser.add_argument("--use-dit-head", action="store_true")
+    parser.add_argument("--pred-num", type=int, default=1)
+    parser.add_argument("--attn-implementation", type=str, default="sdpa")
+    parser.add_argument("--dit-type", type=str, default="DiT-B", choices=["DiT-S", "DiT-B", "DiT-L"])
+    parser.add_argument("--phase", type=str, default="evaluate")
     args = parser.parse_args()
 
     app.state.args = args

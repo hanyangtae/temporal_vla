@@ -28,6 +28,10 @@ import json
 import os
 import traceback
 
+from path_setup import configure_repo_paths
+
+configure_repo_paths(include_script_utils=True, include_robocasa=True)
+
 from src.utils.common.logger import create_module_logger
 
 # robocasa_eval 모듈은 logging.getLogger(__name__)을 쓰는데,

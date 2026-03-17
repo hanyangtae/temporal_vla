@@ -37,6 +37,10 @@ import sys
 import traceback
 from pathlib import Path
 
+from path_setup import configure_repo_paths
+
+configure_repo_paths(include_script_utils=True, include_robocasa=True)
+
 import numpy as np
 import robosuite
 from robosuite import load_part_controller_config
@@ -44,6 +48,8 @@ from robocasa.utils.dataset_registry import TASK_SET_REGISTRY
 from tqdm import tqdm
 
 from src.utils.common.logger import create_module_logger
+from src.processor.factory import make_robocasa_processors
+from src.processor.types import TransitionKey
 
 logger = create_module_logger("robocasa_vla_eval")
 
@@ -101,6 +107,8 @@ def _check_success(env) -> bool:
 def run_vla_rollouts(
     env,
     vla_client,
+    obs_pipeline,
+    action_pipeline,
     num_rollouts: int,
     num_steps: int,
     video_path: str | None = None,
@@ -129,21 +137,26 @@ def run_vla_rollouts(
         first_success_step = None
 
         for step_i in range(num_steps):
-            static_img = obs.get(f"{STATIC_CAM}_image", np.zeros((IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8))
-            wrist_img = obs.get(f"{WRIST_CAM}_image", np.zeros((IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8))
-            state = obs.get("robot0_proprio-state", np.zeros(32, dtype=np.float32))
+            # obs → processor → VLAClient 호출
+            processed = obs_pipeline({TransitionKey.OBSERVATION: obs})
+            processed_obs = processed[TransitionKey.OBSERVATION]
 
-            images = {"static": static_img, "wrist": wrist_img}
+            images = {}
+            state = None
+            for k, v in processed_obs.items():
+                if k.startswith("observation.images."):
+                    cam_name = k.split("observation.images.")[-1]
+                    images[cam_name] = v
+                elif k == "observation.state":
+                    state = v
+
             actions, latency_ms = vla_client.predict(images, state, instruction)
             raw_action = actions[0]  # 첫 번째 스텝만 사용
             latencies.append(latency_ms)
 
-            # 모델 출력(가변 차원) → PandaMobile 12-dim 매핑
-            # 대부분의 VLA: arm[6] + gripper[1] = 7-dim
-            # PandaMobile expects: right[6] + right_gripper[2] + base[3] + torso[1]
-            arm6 = raw_action[:6]
-            grip1 = raw_action[6:7]
-            action = np.concatenate([arm6, [grip1[0], grip1[0]], [0.0, 0.0, 0.0], [0.0]])
+            # VLA 7D action → PandaMobile 12D (processor)
+            processed_act = action_pipeline({TransitionKey.ACTION: raw_action})
+            action = processed_act[TransitionKey.ACTION]
 
             obs, _, done, _ = env.step(action)
 
@@ -189,6 +202,8 @@ def run_vla_rollouts(
 def evaluate_task(
     task_name: str,
     vla_client,
+    obs_pipeline,
+    action_pipeline,
     num_rollouts: int = 50,
     num_steps: int = 400,
     video_path: str | None = None,
@@ -204,7 +219,10 @@ def evaluate_task(
         seed=seed,
     )
     try:
-        info = run_vla_rollouts(env, vla_client, num_rollouts, num_steps, video_path)
+        info = run_vla_rollouts(
+            env, vla_client, obs_pipeline, action_pipeline,
+            num_rollouts, num_steps, video_path,
+        )
     finally:
         env.close()
 
@@ -332,12 +350,14 @@ def main():
     output_dir = Path(args.output_dir) if args.output_dir else None
     video_dir = Path(args.video_dir) if args.video_dir else None
 
-    sys.path.insert(0, str(Path(__file__).resolve().parent / "utils"))
     from vla_client import VLAClient
     vla_client = VLAClient(url=args.vla_server)
     logger.info("VLA 서버 연결 대기 중: %s", args.vla_server)
     server_info = vla_client.wait_until_ready()
     logger.info("VLA 서버 연결 완료: %s", server_info)
+
+    # Processor pipeline (벤치마크별 obs/action 변환)
+    obs_pipeline, action_pipeline = make_robocasa_processors()
 
     if args.task:
         tasks = [args.task]
@@ -364,6 +384,7 @@ def main():
         try:
             summary = evaluate_task(
                 task_name, vla_client,
+                obs_pipeline, action_pipeline,
                 num_rollouts=args.num_rollouts,
                 num_steps=args.num_steps,
                 video_path=video_path,

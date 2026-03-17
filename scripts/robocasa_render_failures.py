@@ -42,6 +42,10 @@ from pathlib import Path
 import argparse
 import json
 
+from path_setup import configure_repo_paths
+
+configure_repo_paths(include_robocasa=True)
+
 import imageio
 import robocasa.utils.lerobot_utils as LU
 import robosuite

@@ -30,7 +30,7 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=all
       - NVIDIA_VISIBLE_DEVICES=0
       # - WANDB_API_KEY=${WANDB_API_KEY}
-      - PYTHONPATH=/temporal_vla/robocasa:/temporal_vla/robosuite
+      - PYTHONPATH=/temporal_vla:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite:/temporal_vla/scripts/utils
       - DISPLAY=${DISPLAY}      # .env 파일에서 설정 (보통 :0 또는 :1)
 
   xvla:
