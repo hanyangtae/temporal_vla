@@ -3,12 +3,15 @@
 벤치마크 환경(robocasa, calvin 등)에서 실행되며,
 모델 서버(DreamVLA, UP-VLA, X-VLA 등)에 관측값을 보내고 액션을 받는다.
 
-통일 API 규격 (LeRobot 컨벤션):
+통일 API 규격:
   POST /act
     요청: {
       "observation.images.static": base64png,
       "observation.images.wrist": base64png,
-      "observation.state": [float...],
+      "observation.state.eef_pos": [float, float, float],
+      "observation.state.eef_quat": [float x4],
+      "observation.state.joint_pos": [float x7],
+      ...
       "task": "str"
     }
     응답: {
@@ -74,7 +77,7 @@ class VLAClient:
     def predict(
         self,
         images: dict[str, np.ndarray],
-        state: np.ndarray | list[float] | None = None,
+        states: dict[str, np.ndarray] | None = None,
         instruction: str = "",
     ) -> tuple[np.ndarray, float]:
         """모델 서버에 액션 예측 요청.
@@ -82,23 +85,23 @@ class VLAClient:
         Args:
             images: 카메라 이름 → HxWx3 uint8 numpy 딕셔너리.
                     키 이름은 "static", "wrist" 등 벤치마크가 정하는 이름.
-            state: proprioceptive state (1-D float). None이면 전송하지 않음.
+            states: observation.state.* 키 → numpy 배열 딕셔너리.
+                    예: {"observation.state.eef_pos": np.array([...]), ...}
+                    None이면 state 관련 키를 전송하지 않음.
             instruction: 태스크 언어 지시문.
 
         Returns:
             (actions [N, action_dim], latency_ms)
             N은 모델의 action prediction steps (1 이상).
         """
-        # LeRobot 컨벤션: observation.images.<cam>, observation.state, task
         payload = {}
         for k, v in images.items():
             payload[f"observation.images.{k}"] = encode_image(v)
         payload["task"] = instruction
-        if state is not None:
-            if isinstance(state, np.ndarray):
-                payload["observation.state"] = state.tolist()
-            else:
-                payload["observation.state"] = state
+
+        if states is not None:
+            for k, v in states.items():
+                payload[k] = v.tolist() if isinstance(v, np.ndarray) else v
 
         t0 = time.time()
         r = requests.post(f"{self.url}/act", json=payload, timeout=self.timeout)

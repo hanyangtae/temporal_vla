@@ -135,11 +135,47 @@ def _preprocess_image(np_image: np.ndarray) -> torch.Tensor:
     return image_processor(pil).unsqueeze(0).unsqueeze(0).to(dtype=cast_dtype)
 
 
-def _preprocess_state(state_list: list) -> torch.Tensor:
-    """proprio → [1, 1, 7] (6 arm + 1 gripper)"""
-    state = np.array(state_list, dtype=np.float32)
-    state7 = np.concatenate([state[:6], state[[-1]]])
-    return torch.from_numpy(state7).unsqueeze(0).unsqueeze(0).to(dtype=cast_dtype)
+def _quat_xyzw_to_euler(quat):
+    """Quaternion (x,y,z,w) → euler (roll, pitch, yaw)."""
+    import math
+    x, y, z, w = float(quat[0]), float(quat[1]), float(quat[2]), float(quat[3])
+    roll = math.atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y))
+    sinp = max(-1.0, min(1.0, 2.0 * (w * y - z * x)))
+    pitch = math.asin(sinp)
+    yaw = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+    return np.array([roll, pitch, yaw], dtype=np.float32)
+
+
+def _assemble_state_7d(payload: dict) -> list:
+    """payload의 observation.state.* sub-keys에서 DreamVLA용 7D state 조립.
+
+    DreamVLA는 Calvin 학습 기준: eef_pos(3) + eef_euler(3) + gripper(1) = 7D.
+    벤치마크에 따라 euler/quat, gripper 키가 다를 수 있으므로 fallback 포함.
+    """
+    eef_pos = payload.get("observation.state.eef_pos")
+    if eef_pos is None:
+        return [0.0] * 7
+
+    eef_euler = payload.get("observation.state.eef_euler")
+    if eef_euler is None:
+        eef_quat = payload.get("observation.state.eef_quat")
+        eef_euler = _quat_xyzw_to_euler(eef_quat).tolist() if eef_quat else [0.0, 0.0, 0.0]
+
+    gripper_action = payload.get("observation.state.gripper_action")
+    if gripper_action is not None:
+        grip = float(gripper_action[0]) if hasattr(gripper_action, '__len__') else float(gripper_action)
+    else:
+        gripper_qpos = payload.get("observation.state.gripper_qpos")
+        grip = 1.0 if (gripper_qpos is not None and float(gripper_qpos[0]) > 0.01) else -1.0
+
+    pos = list(eef_pos) if not isinstance(eef_pos, list) else eef_pos
+    orn = list(eef_euler) if not isinstance(eef_euler, list) else eef_euler
+    return pos[:3] + orn[:3] + [grip]
+
+
+def _preprocess_state(state_7d: list) -> torch.Tensor:
+    """7D state → [1, 1, 7] tensor."""
+    return torch.tensor(state_7d, dtype=cast_dtype).unsqueeze(0).unsqueeze(0)
 
 
 def _preprocess_text(instruction: str) -> torch.Tensor:
@@ -157,9 +193,10 @@ async def reset():
 @app.post("/act")
 async def predict_action(payload: dict):
     """
-    통일 API (LeRobot 컨벤션):
+    통일 API:
       요청: {"observation.images.static": b64png, "observation.images.wrist": b64png,
-             "observation.state": [...], "task": "..."}
+             "observation.state.eef_pos": [...], "observation.state.eef_quat": [...], ...,
+             "task": "..."}
       응답: {"action": [[7 floats]], "latency_ms": float}
     """
     if model is None:
@@ -171,7 +208,7 @@ async def predict_action(payload: dict):
     wrist_b64 = payload.get("observation.images.wrist")
     static_np = _b64_to_numpy(static_b64) if static_b64 else np.zeros((224, 224, 3), dtype=np.uint8)
     wrist_np = _b64_to_numpy(wrist_b64) if wrist_b64 else np.zeros((224, 224, 3), dtype=np.uint8)
-    state_list = payload.get("observation.state", [0.0] * 7)
+    state_list = _assemble_state_7d(payload)
     instruction = payload.get("task", "")
 
     image_x = _preprocess_image(static_np).cuda()
@@ -226,7 +263,7 @@ async def predict_action(payload: dict):
     # 디버그 로그 (첫 5스텝만)
     if len(img_queue) <= 5:
         print(f"[DEBUG] step={len(img_queue)} num_step={num_step} "
-              f"state={np.array(state_list[:3]).round(3).tolist()}... "
+              f"state_7d={[round(v, 4) for v in state_list]} "
               f"action={action.round(4).tolist()} "
               f"task='{instruction[:30]}'")
 

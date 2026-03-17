@@ -142,15 +142,15 @@ def run_vla_rollouts(
             processed_obs = processed[TransitionKey.OBSERVATION]
 
             images = {}
-            state = None
+            states = {}
             for k, v in processed_obs.items():
                 if k.startswith("observation.images."):
                     cam_name = k.split("observation.images.")[-1]
                     images[cam_name] = v
-                elif k == "observation.state":
-                    state = v
+                elif k.startswith("observation.state"):
+                    states[k] = v
 
-            actions, latency_ms = vla_client.predict(images, state, instruction)
+            actions, latency_ms = vla_client.predict(images, states or None, instruction)
             raw_action = actions[0]  # 첫 번째 스텝만 사용
             latencies.append(latency_ms)
 

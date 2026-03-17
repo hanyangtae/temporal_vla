@@ -26,7 +26,7 @@ def make_calvin_processors(
 
     Args:
         use_wrist: wrist 카메라 이미지를 포함할지 여부.
-        use_state: robot_obs에서 state(7D)를 추출할지 여부.
+        use_state: robot_obs에서 state sub-keys를 추출할지 여부.
         image_size: Calvin 이미지 해상도 (기본 200).
         gripper_threshold: gripper 이산화 임계값.
 
@@ -47,7 +47,7 @@ def make_calvin_processors(
 def make_robocasa_processors(
     static_cam: str = "robot0_agentview_left",
     wrist_cam: str = "robot0_eye_in_hand",
-    state_key: str = "robot0_proprio-state",
+    robot_prefix: str = "robot0_",
     image_size: int = 224,
     arm_dim: int = 6,
 ) -> Tuple[DataProcessorPipeline, DataProcessorPipeline]:
@@ -56,7 +56,7 @@ def make_robocasa_processors(
     Args:
         static_cam: 정적 카메라 이름 (robosuite 환경 기준).
         wrist_cam: 손목 카메라 이름.
-        state_key: proprioceptive state 키.
+        robot_prefix: 로봇 observable 키 접두사 (기본 "robot0_").
         image_size: 이미지 해상도 (기본 224).
         arm_dim: arm action 차원 수 (기본 6).
 
@@ -67,7 +67,7 @@ def make_robocasa_processors(
         steps=[RoboCasaObsProcessor(
             static_cam=static_cam,
             wrist_cam=wrist_cam,
-            state_key=state_key,
+            robot_prefix=robot_prefix,
             image_size=image_size,
         )],
         name="robocasa_obs",

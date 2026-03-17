@@ -144,15 +144,15 @@ def _predict(
       {"observation.images.static": uint8 HWC, ...}
     """
     images = {}
-    state = None
+    states = {}
     for k, v in processed_obs.items():
         if k.startswith("observation.images."):
             cam_name = k.split("observation.images.")[-1]
             images[cam_name] = v
-        elif k == "observation.state":
-            state = v
+        elif k.startswith("observation.state"):
+            states[k] = v
 
-    actions, _ = vla_client.predict(images=images, state=state, instruction=instruction)
+    actions, _ = vla_client.predict(images=images, states=states or None, instruction=instruction)
     return actions, None, None
 
 
@@ -278,7 +278,7 @@ def _evaluate_sequence(
             break
 
     # MP4 저장: 기록 대상이고 완전 성공(5/5)이 아닌 경우
-    if record and video_dir is not None and all_frames and success_counter < 4:
+    if record and video_dir is not None and all_frames and success_counter < 5:
         mp4_path = video_dir / "seq{:04d}_result{}.mp4".format(seq_idx, success_counter)
         _save_video(all_frames, mp4_path)
 
