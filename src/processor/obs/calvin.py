@@ -21,17 +21,28 @@ from ..types import (
 
 
 class CalvinObsProcessor(ObservationProcessorStep):
-    """Calvin raw obs → VLAClient-compatible dict.
+    """Calvin raw obs → observation.state.* sub-keys.
 
     Input (Calvin env obs):
         obs["rgb_obs"]["rgb_static"]  — CHW tensor, [-1, 1]
         obs["rgb_obs"]["rgb_gripper"] — CHW tensor, [-1, 1] (optional)
         obs["robot_obs"]             — 15D float (optional, robot state)
 
-    Output:
-        {"observation.images.static": uint8 HWC numpy}
-        {"observation.images.wrist":  uint8 HWC numpy}  (if use_wrist=True)
-        {"observation.state":         float32 numpy 7D}  (if use_state=True)
+    robot_obs 15D layout:
+        [ 0: 3] tcp_pos          — EEF 위치 (xyz)
+        [ 3: 6] tcp_orn          — EEF 자세 (euler rpy)
+        [ 6]    gripper_opening  — 그리퍼 열림 폭 (연속값)
+        [ 7:14] arm_joint_pos    — 7 관절 위치
+        [14]    gripper_action   — 그리퍼 액션 (-1 close / 1 open)
+
+    Output keys:
+        observation.images.static              — uint8 HWC numpy
+        observation.images.wrist               — uint8 HWC numpy  (if use_wrist)
+        observation.state.eef_pos              — float32 (3,)
+        observation.state.eef_euler            — float32 (3,)  rpy
+        observation.state.gripper_opening      — float32 (1,)
+        observation.state.joint_pos            — float32 (7,)
+        observation.state.gripper_action       — float32 (1,)  {-1, 1}
     """
 
     def __init__(self, use_wrist: bool = False, use_state: bool = True, image_size: int = 200):
@@ -44,33 +55,37 @@ class CalvinObsProcessor(ObservationProcessorStep):
 
         result = {
             "observation.images.static": self._convert(rgb_obs["rgb_static"]),
-        }
+        }  # type: Dict[str, Any]
         if self.use_wrist:
             result["observation.images.wrist"] = self._convert(rgb_obs["rgb_gripper"])
 
         if self.use_state and "robot_obs" in observation:
             robot_obs = np.asarray(observation["robot_obs"], dtype=np.float32)
-            # 15D → 7D: arm(6) + gripper(1), DreamVLA 원본 eval과 동일
-            result["observation.state"] = np.concatenate(
-                [robot_obs[:6], robot_obs[-1:]]
-            )
+            result["observation.state.eef_pos"] = robot_obs[0:3].copy()
+            result["observation.state.eef_euler"] = robot_obs[3:6].copy()
+            result["observation.state.gripper_opening"] = robot_obs[6:7].copy()
+            result["observation.state.joint_pos"] = robot_obs[7:14].copy()
+            result["observation.state.gripper_action"] = robot_obs[14:15].copy()
 
         return result
 
     def transform_features(self, features: Features) -> Features:
+        sz = self.image_size
         obs_features = {
             "observation.images.static": PolicyFeature(
-                FeatureType.VISUAL, (self.image_size, self.image_size, 3)
+                FeatureType.VISUAL, (sz, sz, 3)
             ),
-        }
+        }  # type: Dict[str, PolicyFeature]
         if self.use_wrist:
             obs_features["observation.images.wrist"] = PolicyFeature(
-                FeatureType.VISUAL, (self.image_size, self.image_size, 3)
+                FeatureType.VISUAL, (sz, sz, 3)
             )
         if self.use_state:
-            obs_features["observation.state"] = PolicyFeature(
-                FeatureType.STATE, (7,)
-            )
+            obs_features["observation.state.eef_pos"] = PolicyFeature(FeatureType.STATE, (3,))
+            obs_features["observation.state.eef_euler"] = PolicyFeature(FeatureType.STATE, (3,))
+            obs_features["observation.state.gripper_opening"] = PolicyFeature(FeatureType.STATE, (1,))
+            obs_features["observation.state.joint_pos"] = PolicyFeature(FeatureType.STATE, (7,))
+            obs_features["observation.state.gripper_action"] = PolicyFeature(FeatureType.STATE, (1,))
 
         features = dict(features)
         features[PipelineFeatureType.OBSERVATION] = obs_features
