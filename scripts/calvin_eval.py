@@ -40,12 +40,15 @@ sys.path.insert(0, "/temporal_vla/src/benchmarks/calvin/calvin_env")
 sys.path.insert(0, "/temporal_vla/src/benchmarks/calvin/calvin_models")
 sys.path.insert(0, "/temporal_vla/src")
 
-from calvin_agent.evaluation.multistep_sequences import get_sequences
-from calvin_agent.evaluation.utils import count_success, get_env_state_for_initial_condition
-from calvin_env.envs.play_table_env import get_env
-from calvin_env.utils.utils import EglDeviceNotFoundError, get_egl_device_id
 import hydra
 import numpy as np
+from calvin_agent.evaluation.multistep_sequences import get_sequences
+from calvin_agent.evaluation.utils import (
+    count_success,
+    get_env_state_for_initial_condition,
+)
+from calvin_env.envs.play_table_env import get_env
+from calvin_env.utils.utils import EglDeviceNotFoundError, get_egl_device_id
 from omegaconf import OmegaConf
 from PIL import Image
 from tqdm import tqdm
@@ -57,6 +60,7 @@ logger = logging.getLogger(__name__)
 # ─── VLA 클라이언트 (통일 API) ────────────────────────────────────────────────
 
 from vla_client import VLAClient
+
 from processor.factory import make_calvin_processors
 from processor.types import TransitionKey
 
@@ -177,6 +181,7 @@ def _get_raw_image(obs: Dict, key: str) -> np.ndarray:
     비디오 프레임 저장 시 원본 obs에서 직접 이미지를 추출해야 할 때 사용.
     """
     from processor.obs.calvin import CalvinObsProcessor
+
     return CalvinObsProcessor._convert(obs["rgb_obs"][key])
 
 
@@ -210,9 +215,7 @@ def _rollout(
         if step % act_step == 0:
             processed = obs_pipeline({TransitionKey.OBSERVATION: obs})
             processed_obs = processed[TransitionKey.OBSERVATION]
-            action_buffer, _, _ = _predict(
-                vla_client, processed_obs, instruction
-            )
+            action_buffer, _, _ = _predict(vla_client, processed_obs, instruction)
 
         raw_action = action_buffer[step % act_step]
         processed = action_pipeline({TransitionKey.ACTION: raw_action})
@@ -396,7 +399,7 @@ def main():
     parser.add_argument(
         "--calvin-conf",
         type=str,
-        default="/temporal_vla/src/policies/UP-VLA/policy_conf",
+        default="/temporal_vla/src/benchmarks/calvin/calvin_models/conf",
         help="Calvin task/annotation config 디렉토리 경로",
     )
     parser.add_argument(
