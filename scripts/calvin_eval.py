@@ -8,9 +8,9 @@ calvin 컨테이너에서 실행:
 docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval.py \
   --dataset-path /temporal_vla/src/benchmarks/calvin/dataset/calvin_debug_dataset \
   --server-url http://localhost:8300 \
-  --num-sequences 1 \
+  --num-sequences 100 \
   --video-dir /temporal_vla/outputs/calvin_eval/video \
-  --num-videos 1
+  --num-videos 100
 
 # DreamVLA로 평가 (같은 스크립트, URL만 변경)
 docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval.py \
@@ -199,9 +199,6 @@ def _rollout(
     act_step: int,
     ep_len: int,
     record: bool = False,
-    video_dir: Optional[Path] = None,
-    seq_idx: int = 0,
-    subtask_idx: int = 0,
 ) -> Tuple[bool, List[np.ndarray]]:
     """단일 subtask 롤아웃. (성공 여부, 프레임 리스트) 반환."""
     # 원본 DreamVLA eval과 동일: subtask마다 히스토리 초기화
@@ -254,7 +251,7 @@ def _evaluate_sequence(
 
     success_counter = 0
     all_frames = []
-    for subtask_idx, subtask in enumerate(eval_sequence):
+    for subtask in eval_sequence:
         instruction = val_annotations[subtask][0]
         success, frames = _rollout(
             env,
@@ -267,9 +264,6 @@ def _evaluate_sequence(
             act_step,
             ep_len,
             record=record,
-            video_dir=video_dir,
-            seq_idx=seq_idx,
-            subtask_idx=subtask_idx,
         )
         if record and frames:
             frames = _draw_instruction(frames, instruction)
@@ -280,8 +274,9 @@ def _evaluate_sequence(
         else:
             break
 
-    # MP4 저장: 기록 대상이고 완전 성공(5/5)이 아닌 경우
-    if record and video_dir is not None and all_frames and success_counter < 4:
+    # MP4 저장: 기록 대상이고 완전 성공(5/5)이 아닌 경우 (실패 케이스만 저장)
+    if record and video_dir is not None and all_frames and success_counter < 5:
+        video_dir.mkdir(parents=True, exist_ok=True)
         mp4_path = video_dir / "seq{:04d}_result{}.mp4".format(seq_idx, success_counter)
         _save_video(all_frames, mp4_path)
 
