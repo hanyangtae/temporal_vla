@@ -16,17 +16,29 @@ Docker 컨테이너로 모델(DreamVLA, X-VLA, UP-VLA)과 벤치마크(RoboCasa,
 - **통일 클라이언트** (`scripts/utils/vla_client.py`): `VLAClient` 클래스 1개. 이미지는 base64 PNG, 응답 action은 항상 2D. LeRobot 키 네이밍 컨벤션 사용.
 - **Docker**: `docker-compose.yml`에 5개 서비스. 모두 `network_mode: host` (localhost 통신).
 
-## 통일 API 규격 (LeRobot 컨벤션)
+## 통일 API 규격
 
 ```
 POST /act
   요청: {
     "observation.images.static": b64png,
     "observation.images.wrist": b64png,
-    "observation.state": [...],
+    "observation.state.eef_pos": [float x3],
+    "observation.state.eef_quat": [float x4],      ← RoboCasa (xyzw)
+    "observation.state.eef_euler": [float x3],      ← Calvin (rpy)
+    "observation.state.gripper_qpos": [float x2],   ← RoboCasa
+    "observation.state.gripper_action": [float x1],  ← Calvin (-1/1)
+    "observation.state.joint_pos": [float x7],
+    "observation.state.joint_vel": [float x7],       ← RoboCasa
+    "observation.state.base_pos": [float x3],        ← RoboCasa (mobile)
+    "observation.state.base_quat": [float x4],       ← RoboCasa (mobile)
     "task": "..."
   }
   응답: {"action": [[float...], ...], "latency_ms": float}
+
+  state sub-keys는 벤치마크마다 존재하는 키가 다르다.
+  모델 서버는 필요한 키만 꺼내 쓰고, 없으면 변환(quat→euler 등)을 자체 수행.
+
 POST /reset  ← 히스토리 초기화 (필요 없으면 no-op)
 GET  /health ← {"status": "ok"|"not_loaded", "model": "...",
                 "input_features": {...}, "output_features": {...}, "n_action_steps": int}
@@ -67,15 +79,15 @@ numpy 기반, Python 3.8 호환. 벤치마크별 obs/action 변환을 선언적�
 env.step(action)
   → env obs (env-specific dict)
   → ObsProcessor (키 리매핑 + 포맷 통일)
-    → 통일 키: observation.images.*, observation.state
-  → VLAClient (base64 인코딩 + HTTP 전송)
-  → 모델 서버 (모델별 전처리 + 추론)
+    → 통일 키: observation.images.*, observation.state.*
+  → VLAClient (이미지 base64 인코딩, state sub-keys → HTTP 전송)
+  → 모델 서버 (필요한 state 성분 선택 + 변환 + 추론)
   → VLAClient (action 수신)
   → ActionProcessor (통일 action → env-specific action)
 env.step(action)
 ```
 
-- `ObsProcessor`: env obs dict → 통일 키 (`observation.images.*`, `observation.state`) 변환. 이미지 전처리(resize, normalize 등)는 모델 서버 내부에서 수행.
+- `ObsProcessor`: env obs dict → 통일 키 변환. 이미지는 `observation.images.*`, state는 `observation.state.*` sub-keys (eef_pos, eef_quat, joint_pos 등)로 분리. 정보 손실 없이 보존하며, 이미지 전처리(resize, normalize 등)는 모델 서버 내부에서 수행.
 - `ActionProcessor`: 모델 출력 action → env에 맞는 차원/포맷 변환.
 - `DataProcessorPipeline`: step 체인 + feature 추적 + save/load 지원.
 - `factory.py`: `make_calvin_processors()`, `make_robocasa_processors()` 등 벤치마크별 팩토리.
