@@ -8,9 +8,9 @@ calvin 컨테이너에서 실행:
 docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval.py \
   --dataset-path /temporal_vla/src/benchmarks/calvin/dataset/calvin_debug_dataset \
   --server-url http://localhost:8300 \
-  --num-sequences 1 \
+  --num-sequences 50 \
   --video-dir /temporal_vla/outputs/calvin_eval/video \
-  --num-videos 1
+  --num-videos 50
 
 # DreamVLA로 평가 (같은 스크립트, URL만 변경)
 docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval.py \
@@ -23,6 +23,12 @@ docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval.py \
   --video-dir /temporal_vla/outputs/calvin_eval/videos_wrist \
 VLA 서버(serve_*.py)가 먼저 실행 중이어야 한다.
 """
+
+URL_MAP = {
+    "http://localhost:8300": "UP-VLA",
+    "http://localhost:8200": "DreamVLA",
+    "http://localhost:8100": "X-VLA",
+}
 
 import argparse
 import json
@@ -40,12 +46,15 @@ sys.path.insert(0, "/temporal_vla/src/benchmarks/calvin/calvin_env")
 sys.path.insert(0, "/temporal_vla/src/benchmarks/calvin/calvin_models")
 sys.path.insert(0, "/temporal_vla/src")
 
-from calvin_agent.evaluation.multistep_sequences import get_sequences
-from calvin_agent.evaluation.utils import count_success, get_env_state_for_initial_condition
-from calvin_env.envs.play_table_env import get_env
-from calvin_env.utils.utils import EglDeviceNotFoundError, get_egl_device_id
 import hydra
 import numpy as np
+from calvin_agent.evaluation.multistep_sequences import get_sequences
+from calvin_agent.evaluation.utils import (
+    count_success,
+    get_env_state_for_initial_condition,
+)
+from calvin_env.envs.play_table_env import get_env
+from calvin_env.utils.utils import EglDeviceNotFoundError, get_egl_device_id
 from omegaconf import OmegaConf
 from PIL import Image
 from tqdm import tqdm
@@ -57,6 +66,7 @@ logger = logging.getLogger(__name__)
 # ─── VLA 클라이언트 (통일 API) ────────────────────────────────────────────────
 
 from vla_client import VLAClient
+
 from processor.factory import make_calvin_processors
 from processor.types import TransitionKey
 
@@ -177,6 +187,7 @@ def _get_raw_image(obs: Dict, key: str) -> np.ndarray:
     비디오 프레임 저장 시 원본 obs에서 직접 이미지를 추출해야 할 때 사용.
     """
     from processor.obs.calvin import CalvinObsProcessor
+
     return CalvinObsProcessor._convert(obs["rgb_obs"][key])
 
 
@@ -194,9 +205,6 @@ def _rollout(
     act_step: int,
     ep_len: int,
     record: bool = False,
-    video_dir: Optional[Path] = None,
-    seq_idx: int = 0,
-    subtask_idx: int = 0,
 ) -> Tuple[bool, List[np.ndarray]]:
     """단일 subtask 롤아웃. (성공 여부, 프레임 리스트) 반환."""
     # 원본 DreamVLA eval과 동일: subtask마다 히스토리 초기화
@@ -210,9 +218,7 @@ def _rollout(
         if step % act_step == 0:
             processed = obs_pipeline({TransitionKey.OBSERVATION: obs})
             processed_obs = processed[TransitionKey.OBSERVATION]
-            action_buffer, _, _ = _predict(
-                vla_client, processed_obs, instruction
-            )
+            action_buffer, _, _ = _predict(vla_client, processed_obs, instruction)
 
         raw_action = action_buffer[step % act_step]
         processed = action_pipeline({TransitionKey.ACTION: raw_action})
@@ -251,7 +257,7 @@ def _evaluate_sequence(
 
     success_counter = 0
     all_frames = []
-    for subtask_idx, subtask in enumerate(eval_sequence):
+    for subtask in eval_sequence:
         instruction = val_annotations[subtask][0]
         success, frames = _rollout(
             env,
@@ -264,9 +270,6 @@ def _evaluate_sequence(
             act_step,
             ep_len,
             record=record,
-            video_dir=video_dir,
-            seq_idx=seq_idx,
-            subtask_idx=subtask_idx,
         )
         if record and frames:
             frames = _draw_instruction(frames, instruction)
@@ -396,7 +399,7 @@ def main():
     parser.add_argument(
         "--calvin-conf",
         type=str,
-        default="/temporal_vla/src/policies/UP-VLA/policy_conf",
+        default="/temporal_vla/src/benchmarks/calvin/calvin_models/conf",
         help="Calvin task/annotation config 디렉토리 경로",
     )
     parser.add_argument(
@@ -455,7 +458,12 @@ def main():
         act_step=args.act_step,
         output_path=Path(args.output) if args.output else None,
         num_videos=args.num_videos,
-        video_dir=Path(args.video_dir) if args.video_dir else None,
+        video_dir=(
+            Path(args.video_dir)
+            / (time.strftime("%Y%m%d_%H%M%S") + f"_{URL_MAP[args.server_url]}")
+            if args.video_dir
+            else None
+        ),
     )
 
 
