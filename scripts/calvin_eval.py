@@ -8,9 +8,9 @@ calvin 컨테이너에서 실행:
 docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval.py \
   --dataset-path /temporal_vla/src/benchmarks/calvin/dataset/calvin_debug_dataset \
   --server-url http://localhost:8300 \
-  --num-sequences 100 \
+  --num-sequences 50 \
   --video-dir /temporal_vla/outputs/calvin_eval/video \
-  --num-videos 100
+  --num-videos 50
 
 # DreamVLA로 평가 (같은 스크립트, URL만 변경)
 docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval.py \
@@ -23,6 +23,12 @@ docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval.py \
   --video-dir /temporal_vla/outputs/calvin_eval/videos_wrist \
 VLA 서버(serve_*.py)가 먼저 실행 중이어야 한다.
 """
+
+URL_MAP = {
+    "http://localhost:8300": "UP-VLA",
+    "http://localhost:8200": "DreamVLA",
+    "http://localhost:8100": "X-VLA",
+}
 
 import argparse
 import json
@@ -275,7 +281,7 @@ def _evaluate_sequence(
             break
 
     # MP4 저장: 기록 대상이고 완전 성공(5/5)이 아닌 경우 (실패 케이스만 저장)
-    if record and video_dir is not None and all_frames and success_counter < 5:
+    if record and video_dir is not None and all_frames and success_counter == 5:
         video_dir.mkdir(parents=True, exist_ok=True)
         mp4_path = video_dir / "seq{:04d}_result{}.mp4".format(seq_idx, success_counter)
         _save_video(all_frames, mp4_path)
@@ -453,7 +459,12 @@ def main():
         act_step=args.act_step,
         output_path=Path(args.output) if args.output else None,
         num_videos=args.num_videos,
-        video_dir=Path(args.video_dir) if args.video_dir else None,
+        video_dir=(
+            Path(args.video_dir)
+            / (time.strftime("%Y%m%d_%H%M%S") + f"_{URL_MAP[args.server_url]}")
+            if args.video_dir
+            else None
+        ),
     )
 
 
