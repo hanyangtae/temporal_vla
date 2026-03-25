@@ -118,15 +118,6 @@ def load_model():
     )
 
 
-def _tensor_to_b64png(t: torch.Tensor) -> str:
-    """[1, C, H, W] float [-1,1] 텐서 → base64 PNG."""
-    arr = torch.clamp((t + 1.0) / 2.0, 0.0, 1.0)
-    arr = (arr * 255).permute(0, 2, 3, 1).squeeze(0).cpu().numpy().astype("uint8")
-    buf = io.BytesIO()
-    Image.fromarray(arr).save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode()
-
-
 @app.post("/act")
 async def predict_action(payload: dict):
     """
@@ -159,9 +150,7 @@ async def predict_action(payload: dict):
         pv_wrist = (
             image_transform(img_wrist, resolution=resolution).to(_device).unsqueeze(0)
         )
-        tokens_wrist = _vq_model.get_code(pv_wrist) + len(
-            _uni_prompting.text_tokenizer
-        )
+        tokens_wrist = _vq_model.get_code(pv_wrist) + len(_uni_prompting.text_tokenizer)
         image_tokens = torch.cat([image_tokens, tokens_wrist], dim=1)
 
     instruction = payload.get("task", "")
@@ -209,13 +198,21 @@ async def reset():
 @app.get("/health")
 async def health():
     act_step = int(_config.act_step) if _config is not None else None
-    resolution = int(_config.dataset.preprocessing.resolution) if _config is not None else 256
+    resolution = (
+        int(_config.dataset.preprocessing.resolution) if _config is not None else 256
+    )
     return {
         "status": "ok" if _model is not None else "not_loaded",
         "model": "upvla",
         "input_features": {
-            "observation.images.static": {"type": "VISUAL", "shape": [3, resolution, resolution]},
-            "observation.images.wrist": {"type": "VISUAL", "shape": [3, resolution, resolution]},
+            "observation.images.static": {
+                "type": "VISUAL",
+                "shape": [3, resolution, resolution],
+            },
+            "observation.images.wrist": {
+                "type": "VISUAL",
+                "shape": [3, resolution, resolution],
+            },
         },
         "output_features": {
             "action": {"type": "ACTION", "shape": [7]},

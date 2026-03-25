@@ -73,4 +73,8 @@ RUN pip install tensorflow-cpu tensorflow-datasets "pyarrow<15.0.0" fastparquet
 # tensorflow-datasets may pull numpy 2.x which breaks pybullet at runtime
 RUN pip install "numpy>=1.20,<1.24"
 
+# ── typing_extensions upgrade (wandb/pytorch_lightning 호환) ──────
+# wandb imports Generator from typing_extensions, requires >=4.6
+RUN pip install --upgrade typing_extensions
+
 CMD ["/bin/bash"]
