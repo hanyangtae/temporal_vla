@@ -1,0 +1,9 @@
+# LeRobot with policies and simulation environments
+# - groot: includes transformers, peft, flash-attn (pi0 also covered via transformers-dep)
+# - pusht: lightweight 2D sim for quick testing
+# - libero: manipulation benchmark
+lerobot[groot,pusht,libero]
+
+# Training utilities
+wandb
+tensorboard
