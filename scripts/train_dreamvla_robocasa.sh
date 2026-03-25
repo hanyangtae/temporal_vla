@@ -16,7 +16,7 @@ ROBOCASA_DATASET="${ROBOCASA_DATASET:-${REPO_ROOT}/src/benchmarks/robocasa/datas
 SAVE_CHECKPOINT_PATH="${REPO_ROOT}/checkpoints/dreamvla_robocasa"
 VIT_CHECKPOINT_PATH="${REPO_ROOT}/checkpoints/dreamvla/mae_pretrain_vit_base.pth"
 
-# Auxiliary feature paths (extracted by extract_sam_robocasa.py / extract_cotrack_robocasa.py)
+# Auxiliary feature paths (extracted by scripts/extract/extract_sam_robocasa.py / extract_cotrack_robocasa.py)
 SAM_FEATURE_PATH="${SAM_FEATURE_PATH:-${REPO_ROOT}/src/benchmarks/robocasa/datasets/features/sam}"
 TRACK_LABEL_PATH="${TRACK_LABEL_PATH:-${REPO_ROOT}/src/benchmarks/robocasa/datasets/features/tracks}"
 

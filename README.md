@@ -175,8 +175,9 @@ temporal_vla/
 │   ├── train_dreamvla.sh                     # DreamVLA fine-tuning (Calvin)
 │   ├── train_dreamvla_robocasa.py            # DreamVLA fine-tuning (RoboCasa) 스크립트
 │   ├── train_dreamvla_robocasa.sh            # DreamVLA fine-tuning (RoboCasa) 실행
-│   ├── extract_sam_robocasa.py               # SAM feature 추출 (LeRobot → .pt)
-│   ├── extract_cotrack_robocasa.py           # CoTracker trajectory 추출 (LeRobot → .npz)
+│   ├── extract/
+│   │   ├── extract_sam_robocasa.py           # SAM feature 추출 (LeRobot → .pt)
+│   │   └── extract_cotrack_robocasa.py       # CoTracker trajectory 추출 (LeRobot → .npz)
 │   ├── robocasa_vla_eval.py                  # RoboCasa closed-loop 평가 (모델 무관)
 │   ├── calvin_eval.py                        # Calvin 평가 (모델 무관)
 │   ├── robocasa_playback_eval.py             # 녹화 데이터 재생 평가 (상태 체크 / open-loop)
