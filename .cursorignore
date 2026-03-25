@@ -1,2 +1,20 @@
 
 .env
+*.pth
+*.pt
+*.ckpt
+*.bin
+*.safetensors
+*.onnx
+*.zip
+*.tar
+*.tar.gz
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/

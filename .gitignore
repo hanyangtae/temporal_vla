@@ -2,11 +2,37 @@ docker-compose.override.yml
 .env
 *.mp4
 data/*
+data
 outputs/
 logs/*
 *.log
 *.tar
 *.gz
 models/*
+*.pyc
+checkpoints/*
+src/policies/UP-VLA/showlab/
 lerobot/tests/**
+
 temp/**
+
+# AI Assistant
+CLAUDE.md
+GEMINI.md
+.claude/
+.cursor/
+
+# Model checkpoints
+*.pth
+*.pt
+*.bin
+*.safetensors
+*.ckpt
+*.pkl
+
+# 3D Assets
+*.obj
+*.DAE
+
+# MuJoCo
+MUJOCO_LOG.TXT

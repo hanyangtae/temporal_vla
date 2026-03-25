@@ -22,8 +22,12 @@ opencv-python
 pandas
 termcolor
 safetensors
+scipy
 
 # Inference server (same pattern as X-VLA)
 fastapi
 uvicorn
 colorlog
+
+# Training monitoring
+wandb
