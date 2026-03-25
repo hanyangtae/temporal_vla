@@ -1,5 +1,4 @@
 docker-compose.override.yml
-
 .env
 *.mp4
 data/*
@@ -11,7 +10,7 @@ logs/*
 *.gz
 models/*
 *.pyc
-
+checkpoints/*
 src/policies/UP-VLA/showlab/
 lerobot/tests/**
 

@@ -54,7 +54,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ['0']
+              device_ids: ['${DREAMVLA_GPU:-2}'] # 인자로 동적 할당당
               capabilities: [gpu]
     ipc: host
     environment:
