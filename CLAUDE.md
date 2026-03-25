@@ -4,103 +4,91 @@
 
 ## 프로젝트 개요
 
-VLA(Vision-Language-Action) 모델을 RoboCasa/Calvin 시뮬레이션 환경에서 평가하는 프로젝트.
+VLA(Vision-Language-Action) 모델을 RoboCasa/Calvin 시뮬레이션 환경에서 학습(fine-tuning)하고 평가하는 프로젝트.
 Docker 컨테이너로 모델(DreamVLA, X-VLA, UP-VLA)과 벤치마크(RoboCasa, Calvin)를 분리하고,
 통일 HTTP API로 통신한다.
 
 ## 핵심 아키텍처
 
-- **모델 서버** (`scripts/serve_*.py`): FastAPI + uvicorn. 통일 API 엔드포인트 `/act`, `/reset`, `/health`.
-- **벤치마크 스크립트** (`scripts/robocasa_vla_eval.py`, `scripts/calvin_eval.py`): 모델 무관. `VLAClient`로 통신.
-- **Processor Pipeline** (`src/processor/`): LeRobot `ProcessorStep` 인터페이스 호환. 벤치마크별 obs/action 변환을 파이프라인으로 분리.
-- **통일 클라이언트** (`scripts/utils/vla_client.py`): `VLAClient` 클래스 1개. 이미지는 base64 PNG, 응답 action은 항상 2D. LeRobot 키 네이밍 컨벤션 사용.
-- **Docker**: `docker-compose.yml`에 5개 서비스. 모두 `network_mode: host` (localhost 통신).
+- **모델 서버** (`scripts/serve_*.py`): FastAPI + uvicorn. 통일 API (`/act`, `/reset`, `/health`).
+- **벤치마크 평가** (`scripts/*_eval.py`): 모델 무관. `VLAClient`로 통신.
+- **Processor Pipeline** (`src/processor/`): **추론(eval)용**. 벤치마크별 env↔통일API obs/action 변환.
+- **Dataset + Adapter** (`src/datasets/`): **학습(train)용**. 벤치마크별 generic dataset + 모델별 adapter.
+- **통일 클라이언트** (`scripts/utils/vla_client.py`): `VLAClient` 클래스 1개.
+- **Docker**: `docker-compose.yml`에 5개 서비스. 모두 `network_mode: host`.
 
 ## 통일 API 규격
 
-```
-POST /act
-  요청: {
-    "observation.images.static": b64png,
-    "observation.images.wrist": b64png,
-    "observation.state.eef_pos": [float x3],
-    "observation.state.eef_quat": [float x4],      ← RoboCasa (xyzw)
-    "observation.state.eef_euler": [float x3],      ← Calvin (rpy)
-    "observation.state.gripper_qpos": [float x2],   ← RoboCasa
-    "observation.state.gripper_action": [float x1],  ← Calvin (-1/1)
-    "observation.state.joint_pos": [float x7],
-    "observation.state.joint_vel": [float x7],       ← RoboCasa
-    "observation.state.base_pos": [float x3],        ← RoboCasa (mobile)
-    "observation.state.base_quat": [float x4],       ← RoboCasa (mobile)
-    "task": "..."
-  }
-  응답: {"action": [[float...], ...], "latency_ms": float}
-
-  state sub-keys는 벤치마크마다 존재하는 키가 다르다.
-  모델 서버는 필요한 키만 꺼내 쓰고, 없으면 변환(quat→euler 등)을 자체 수행.
-
-POST /reset  ← 히스토리 초기화 (필요 없으면 no-op)
-GET  /health ← {"status": "ok"|"not_loaded", "model": "...",
-                "input_features": {...}, "output_features": {...}, "n_action_steps": int}
-```
+`scripts/utils/vla_client.py:1-24` 참고. 핵심 규칙:
+- state sub-keys는 벤치마크마다 존재하는 키가 다름. 모델 서버는 필요한 키만 꺼내 쓰고, 없으면 변환(quat→euler 등)을 자체 수행.
+- 이미지는 base64 PNG. action 응답은 항상 2D array.
 
 ## 주요 파일 경로
 
 - 모델 서버: `scripts/serve_dreamvla.py` (:8200), `scripts/serve_upvla.py` (:8300), `scripts/serve_xvla.py` (:8100)
-- 벤치마크: `scripts/robocasa_vla_eval.py` (RoboCasa), `scripts/calvin_eval.py` (Calvin)
-- 클라이언트: `scripts/utils/vla_client.py`
-- Processor: `src/processor/` (base, types, factory, obs/, action/)
-- Docker: `docker-compose.yml`, `docker/` 디렉토리
-- 모델 소스 (git submodule): `src/policies/dreamvla/`, `src/policies/UP-VLA/`
-- 경로 설정: `scripts/path_setup.py` (PYTHONPATH 헬퍼, 스크립트 상단에서 import)
-- 벤치마크 소스 (git submodule): `src/benchmarks/robocasa/`, `src/benchmarks/robosuite/`, `src/benchmarks/calvin/`, `lerobot/`
+- 벤치마크 평가: `scripts/robocasa_vla_eval.py`, `scripts/calvin_eval.py`
+- 학습: `scripts/train_dreamvla_robocasa.py` + `.sh`
+- Feature 추출: `scripts/extract_sam_robocasa.py`, `scripts/extract_cotrack_robocasa.py`
+- Processor (추론용): `src/processor/` — `base.py`, `types.py`, `factory.py`, `obs/`, `action/`
+- Dataset (학습용): `src/datasets/adapters/dreamvla.py` (adapter, LeRobotDataset 직접 사용)
+- 경로 설정: `scripts/path_setup.py`
+- 모델 소스 (submodule): `src/policies/dreamvla/`, `src/policies/UP-VLA/`
+- 벤치마크 소스 (submodule): `src/benchmarks/robocasa/`, `src/benchmarks/robosuite/`, `src/benchmarks/calvin/`, `lerobot/`
 
 ## 개발 컨벤션
 
-- **브랜치**: `feat/`, `fix/`, `exp/`, `refactor/` 접두사. `dev` 브랜치에서 분기, PR은 `dev`로.
-- **커밋 메시지**: 한글. `feat:`, `fix:`, `refactor:`, `docs:`, `config:`, `script:` 접두사 사용.
-- **Python**: 컨테이너마다 버전이 다름 (robocasa=3.11, calvin=3.8, 나머지=3.10). calvin 관련 코드는 3.8 호환 필수.
+- **브랜치**: `feat/`, `fix/`, `exp/`, `refactor/` 접두사. `dev`에서 분기, PR은 `dev`로.
+- **커밋 메시지**: 한글. `feat:`, `fix:`, `refactor:`, `docs:`, `config:`, `script:` 접두사.
+- **Python**: robocasa=3.11, calvin=3.8, 나머지=3.10. calvin 관련 코드는 3.8 호환 필수.
 - **체크포인트**: git에 커밋하지 않음. `.gitignore`에 포함.
-- **git submodule**: `src/benchmarks/robosuite`, `src/benchmarks/robocasa`, `lerobot`, `src/policies/dreamvla`, `src/benchmarks/calvin`, `src/policies/UP-VLA`
 
-## 새 모델 추가 시
+## Processor Pipeline (추론용)
 
-1. `docker/` 에 Dockerfile 추가
-2. `docker-compose.yml`에 서비스 추가
-3. `scripts/serve_<model>.py` 작성 (통일 API 준수: `/act`, `/reset`, `/health`)
-4. 기존 벤치마크 스크립트에서 `--vla-server` URL만 바꾸면 평가 가능
-
-## Processor Pipeline (벤치마크별 obs/action 변환)
-
-LeRobot의 `ProcessorStep`/`DataProcessorPipeline` 인터페이스를 따르는 경량 자체 구현.
-numpy 기반, Python 3.8 호환. 벤치마크별 obs/action 변환을 선언적으로 분리한다.
+`src/processor/` 참고. 추론 시 데이터 흐름:
 
 ```
-env.step(action)
-  → env obs (env-specific dict)
-  → ObsProcessor (키 리매핑 + 포맷 통일)
-    → 통일 키: observation.images.*, observation.state.*
-  → VLAClient (이미지 base64 인코딩, state sub-keys → HTTP 전송)
-  → 모델 서버 (필요한 state 성분 선택 + 변환 + 추론)
-  → VLAClient (action 수신)
-  → ActionProcessor (통일 action → env-specific action)
-env.step(action)
+env obs → ObsProcessor (통일 키 변환) → VLAClient (HTTP) → 모델 서버 → VLAClient → ActionProcessor (env 포맷) → env.step
 ```
 
-- `ObsProcessor`: env obs dict → 통일 키 변환. 이미지는 `observation.images.*`, state는 `observation.state.*` sub-keys (eef_pos, eef_quat, joint_pos 등)로 분리. 정보 손실 없이 보존하며, 이미지 전처리(resize, normalize 등)는 모델 서버 내부에서 수행.
-- `ActionProcessor`: 모델 출력 action → env에 맞는 차원/포맷 변환.
-- `DataProcessorPipeline`: step 체인 + feature 추적 + save/load 지원.
-- `factory.py`: `make_calvin_processors()`, `make_robocasa_processors()` 등 벤치마크별 팩토리.
+## Dataset + Adapter (학습용)
 
-## 새 벤치마크 추가 시
+`src/datasets/` 참고. 학습 시 데이터 흐름:
 
-1. `src/processor/obs/<benchmark>.py` — `ObservationProcessorStep` 구현 (env obs → 통일 키)
-2. `src/processor/action/<benchmark>.py` — `ActionProcessorStep` 구현 (통일 action → env action)
-3. `src/processor/factory.py`에 `make_<benchmark>_processors()` 추가
-4. `scripts/<benchmark>_eval.py` 작성, `VLAClient` + processor pipeline 사용
+```
+LeRobotDataset (v3.0) → Model Adapter (차원 변환 + SAM/track feature 로딩 + collator) → 학습 루프
+```
+
+- **Model Adapter** (`src/datasets/adapters/<model>.py`): 모델별 1개. LeRobotDataset을 직접 wrapping. state/action 변환 + collator.
+- DreamVLA adapter는 SAM feature, CoTracker trajectory label도 로딩 지원 (`sam_features_path`, `track_label_path`).
+
+## Feature 추출 (학습 보조 데이터)
+
+SAM/CoTracker feature는 학습 전에 오프라인으로 추출:
+
+```
+LeRobotDataset → extract_sam_robocasa.py → {save_path}/rgb_static/training/{frame_idx}.pt
+LeRobotDataset → extract_cotrack_robocasa.py → {save_path}/rgb_static/training/{frame_idx}.npz
+```
+
+- SAM: `segment-anything` ViT-B encoder → avg_pool → `[C, 256]` per frame.
+- CoTracker: frame pair (frame_gap=5) → optical flow delta → `{tracks: [784, 2], visibility: [784]}` per frame.
+- 체크포인트: `src/policies/dreamvla/segment-anything/ckpts/`, `src/policies/dreamvla/co-tracker/checkpoints/`.
+
+## 확장 가이드
+
+### 새 모델 추가
+
+1. `docker/`에 Dockerfile, `docker-compose.yml`에 서비스 추가
+2. `scripts/serve_<model>.py` 작성 (통일 API: `/act`, `/reset`, `/health`)
+3. (학습) `src/datasets/adapters/<model>.py` — adapter + factory
+
+### 새 벤치마크 추가
+
+1. (평가) `src/processor/obs/`, `action/`에 ProcessorStep 구현 + `factory.py`에 등록
+2. (학습) `src/datasets/<benchmark>_lerobot.py` — generic dataset
+3. `scripts/<benchmark>_eval.py` 작성
 
 ## 주의사항
 
 - serve 스크립트는 Docker 컨테이너 내에서 실행됨. 경로는 `/temporal_vla/...` 기준.
-- 이미지 전송은 base64 PNG. numpy list 직접 전송은 사용하지 않음.
 - action 차원은 모델마다 다를 수 있음 (7, 14 등). 벤치마크에서 환경에 맞게 매핑.

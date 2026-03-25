@@ -150,7 +150,11 @@ temporal_vla/
 │   ├── serve_dreamvla.py                     # DreamVLA 추론 서버 (:8200, 통일 API)
 │   ├── serve_upvla.py                        # UP-VLA 추론 서버 (:8300, 통일 API)
 │   ├── train_xvla.sh                         # X-VLA LoRA fine-tuning
-│   ├── train_dreamvla.sh                     # DreamVLA fine-tuning
+│   ├── train_dreamvla.sh                     # DreamVLA fine-tuning (Calvin)
+│   ├── train_dreamvla_robocasa.py            # DreamVLA fine-tuning (RoboCasa) 스크립트
+│   ├── train_dreamvla_robocasa.sh            # DreamVLA fine-tuning (RoboCasa) 실행
+│   ├── extract_sam_robocasa.py               # SAM feature 추출 (LeRobot → .pt)
+│   ├── extract_cotrack_robocasa.py           # CoTracker trajectory 추출 (LeRobot → .npz)
 │   ├── robocasa_vla_eval.py                  # RoboCasa closed-loop 평가 (모델 무관)
 │   ├── calvin_eval.py                        # Calvin 평가 (모델 무관)
 │   ├── robocasa_playback_eval.py             # 녹화 데이터 재생 평가 (상태 체크 / open-loop)
@@ -162,7 +166,6 @@ temporal_vla/
 ├── lerobot/                                  # Git submodule (LeRobot)
 ├── data/
 │   ├── datasets/                             # RoboCasa 데이터 (LeRobot v2.1, 원본)
-│   ├── datasets_v3/                          # X-VLA용 변환 데이터 (LeRobot v3.0)
 │   └── huggingface/                          # HuggingFace 모델 캐시
 ├── outputs/                                  # 로그, 평가 결과, 영상
 ├── src/
@@ -170,7 +173,10 @@ temporal_vla/
 │   │   ├── calvin/                           # Git submodule (CALVIN benchmark)
 │   │   ├── robocasa/                         # Git submodule (주방 벤치마크)
 │   │   └── robosuite/                        # Git submodule (로봇 시뮬레이션)
-│   ├── processor/                            # Processor Pipeline (LeRobot 인터페이스 호환)
+│   ├── datasets/                             # 학습용 데이터 파이프라인
+│   │   └── adapters/                         # 모델별 adapter (LeRobotDataset wrapping + 변환 + collator)
+│   │       └── dreamvla.py                   # DreamVLA adapter (SAM/track feature 지원)
+│   ├── processor/                            # 추론용 Processor Pipeline (LeRobot 인터페이스 호환)
 │   │   ├── base.py                           # ProcessorStep, DataProcessorPipeline
 │   │   ├── types.py                          # FeatureType, PolicyFeature, Transition
 │   │   ├── factory.py                        # make_calvin_processors(), make_robocasa_processors()
@@ -182,9 +188,6 @@ temporal_vla/
 │   │       └── robocasa.py                   # RoboCasaActionProcessor
 │   └── utils/
 ├── src/utils/common/logger.py                # 공용 로깅 모듈
-├── configs/                                  # 모델 설정 (예정)
-├── models/                                   # 커스텀 모델 코드 (예정)
-└── experiments/                              # 실험 기록 (예정)
 ```
 
 ## Common Commands
@@ -207,10 +210,13 @@ docker compose logs -f robocasa                            # 실시간 로그
 docker compose run --rm xvla \
   bash /temporal_vla/scripts/train_xvla.sh
 
-# DreamVLA fine-tuning (사전에 dreamvla 레포 clone 필요)
-# git clone https://github.com/Zhangwenyao1/DreamVLA dreamvla
+# DreamVLA fine-tuning (Calvin)
 docker compose run --rm dreamvla \
   bash /temporal_vla/scripts/train_dreamvla.sh
+
+# DreamVLA fine-tuning (RoboCasa)
+docker compose run --rm dreamvla \
+  bash /temporal_vla/scripts/train_dreamvla_robocasa.sh
 ```
 
 ### Inference Server (통일 API)

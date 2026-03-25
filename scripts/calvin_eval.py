@@ -250,6 +250,7 @@ def _evaluate_sequence(
     record: bool = False,
     video_dir: Optional[Path] = None,
     seq_idx: int = 0,
+    save_all_videos: bool = False,
 ) -> int:
     """5-subtask 시퀀스 평가. 연속 성공 수 반환."""
     robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
@@ -280,8 +281,8 @@ def _evaluate_sequence(
         else:
             break
 
-    # MP4 저장: 기록 대상이고 완전 성공(5/5)이 아닌 경우
-    if record and video_dir is not None and all_frames and success_counter < 5:
+    # MP4 저장: save_all_videos=True면 항상, 아니면 완전 성공(5/5) 제외
+    if record and video_dir is not None and all_frames and (save_all_videos or success_counter < 5):
         mp4_path = video_dir / "seq{:04d}_result{}.mp4".format(seq_idx, success_counter)
         _save_video(all_frames, mp4_path)
 
@@ -298,6 +299,7 @@ def evaluate(
     output_path: Optional[Path],
     num_videos: int = 0,
     video_dir: Optional[Path] = None,
+    save_all_videos: bool = False,
 ):
     # 통일 VLA 클라이언트
     vla_client = VLAClient(url=server_url)
@@ -353,6 +355,7 @@ def evaluate(
             record=record,
             video_dir=video_dir,
             seq_idx=seq_idx,
+            save_all_videos=save_all_videos,
         )
         results.append(result)
 
@@ -436,13 +439,18 @@ def main():
         "--num-videos",
         type=int,
         default=0,
-        help="비디오로 기록할 시퀀스 수 (0=비활성화). 성공 4회 미만인 경우만 MP4 저장.",
+        help="비디오로 기록할 시퀀스 수 (0=비활성화). 기본: 완전 성공(5/5) 제외 저장. --save-all-videos로 전체 저장.",
     )
     parser.add_argument(
         "--video-dir",
         type=str,
         default=None,
         help="비디오/PNG 저장 디렉토리 (--num-videos > 0일 때 필수)",
+    )
+    parser.add_argument(
+        "--save-all-videos",
+        action="store_true",
+        help="성공 여부 관계없이 모든 비디오 저장 (기본: 완전 성공(5/5) 제외)",
     )
     args = parser.parse_args()
 
@@ -458,12 +466,13 @@ def main():
         act_step=args.act_step,
         output_path=Path(args.output) if args.output else None,
         num_videos=args.num_videos,
-        video_dir=(
+video_dir=(
             Path(args.video_dir)
             / (time.strftime("%Y%m%d_%H%M%S") + f"_{URL_MAP[args.server_url]}")
             if args.video_dir
             else None
         ),
+        save_all_videos=args.save_all_videos,
     )
 
 

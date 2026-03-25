@@ -73,7 +73,7 @@ services:
       - .:/temporal_vla:rw
     environment:
       - HF_HOME=/temporal_vla/data/huggingface
-      - PYTHONPATH=/temporal_vla/src/policies/dreamvla:/temporal_vla
+      - PYTHONPATH=/temporal_vla/src/policies/dreamvla:/temporal_vla:/temporal_vla/lerobot/src
     network_mode: host
     tty: true
     stdin_open: true

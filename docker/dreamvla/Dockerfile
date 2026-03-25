@@ -41,4 +41,8 @@ RUN pip install flash-attn --no-build-isolation
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
 
+# LeRobot (dataset loading only — installed from submodule at runtime)
+# Dependencies: datasets, pyarrow, av, accelerate, jsonlines
+RUN pip install --no-cache-dir datasets pyarrow av accelerate jsonlines
+
 CMD ["/bin/bash"]
