@@ -4,7 +4,7 @@ Adapted from src/policies/dreamvla/data_process/cotrack_extractor.py for LeRobot
 Saves per-frame optical flow tracks as .npz files.
 
 Usage (in dreamvla container):
-    python scripts/extract_cotrack_robocasa.py \
+    python scripts/extract/extract_cotrack_robocasa.py \
         --dataset_path /temporal_vla/src/benchmarks/robocasa/datasets/v1.0/.../lerobot \
         --save_path /temporal_vla/src/benchmarks/robocasa/datasets/features/tracks \
         --checkpoint /temporal_vla/src/policies/dreamvla/co-tracker/checkpoints/scaled_offline.pth \
@@ -23,9 +23,9 @@ from PIL import Image
 from tqdm import tqdm
 
 # -- path setup --
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "policies", "dreamvla"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "policies", "dreamvla", "co-tracker"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lerobot", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src", "policies", "dreamvla"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src", "policies", "dreamvla", "co-tracker"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "lerobot", "src"))
 
 from cotracker.predictor import CoTrackerPredictor
 

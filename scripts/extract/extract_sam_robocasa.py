@@ -4,7 +4,7 @@ Adapted from src/policies/dreamvla/data_process/sam_extractor.py for LeRobot for
 Saves per-frame SAM image encoder features as .pt files.
 
 Usage (in dreamvla container):
-    python scripts/extract_sam_robocasa.py \
+    python scripts/extract/extract_sam_robocasa.py \
         --dataset_path /temporal_vla/src/benchmarks/robocasa/datasets/v1.0/.../lerobot \
         --save_path /temporal_vla/src/benchmarks/robocasa/datasets/features/sam \
         --checkpoint /temporal_vla/src/policies/dreamvla/segment-anything/ckpts/sam_vit_b_01ec64.pth
@@ -21,9 +21,9 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 # -- path setup --
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "policies", "dreamvla"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "policies", "dreamvla", "segment-anything"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lerobot", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src", "policies", "dreamvla"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src", "policies", "dreamvla", "segment-anything"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "lerobot", "src"))
 
 from segment_anything import sam_model_registry
 from segment_anything.utils.transforms import ResizeLongestSide

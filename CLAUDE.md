@@ -41,7 +41,7 @@ VLA 모델의 **실패 루프 탈출** 문제를 연구하는 프로젝트.
 - 모델 서버: `scripts/serve_dreamvla.py` (:8200), `scripts/serve_upvla.py` (:8300), `scripts/serve_xvla.py` (:8100)
 - 벤치마크 평가: `scripts/robocasa_vla_eval.py`, `scripts/calvin_eval.py`
 - 학습: `scripts/train_dreamvla_robocasa.py` + `.sh`
-- Feature 추출: `scripts/extract_sam_robocasa.py`, `scripts/extract_cotrack_robocasa.py`
+- Feature 추출: `scripts/extract/extract_sam_robocasa.py`, `scripts/extract/extract_cotrack_robocasa.py`
 - Processor (추론용): `src/processor/` — `base.py`, `types.py`, `factory.py`, `obs/`, `action/`
 - Dataset (학습용): `src/datasets/adapters/dreamvla.py` (adapter, LeRobotDataset 직접 사용)
 - 경로 설정: `scripts/path_setup.py`
@@ -79,8 +79,8 @@ LeRobotDataset (v3.0) → Model Adapter (차원 변환 + SAM/track feature 로�
 SAM/CoTracker feature는 학습 전에 오프라인으로 추출:
 
 ```
-LeRobotDataset → extract_sam_robocasa.py → {save_path}/rgb_static/training/{frame_idx}.pt
-LeRobotDataset → extract_cotrack_robocasa.py → {save_path}/rgb_static/training/{frame_idx}.npz
+LeRobotDataset → scripts/extract/extract_sam_robocasa.py → {save_path}/rgb_static/training/{frame_idx}.pt
+LeRobotDataset → scripts/extract/extract_cotrack_robocasa.py → {save_path}/rgb_static/training/{frame_idx}.npz
 ```
 
 - SAM: `segment-anything` ViT-B encoder → avg_pool → `[C, 256]` per frame.
