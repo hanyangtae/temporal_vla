@@ -3,7 +3,8 @@
 	url = https://github.com/ARISE-Initiative/robosuite
 [submodule "robocasa"]
 	path = src/benchmarks/robocasa
-	url = https://github.com/robocasa/robocasa
+	url = https://github.com/hanyangtae/robocasa.git
+	branch = temporal_vla
 [submodule "src/policies/dreamvla"]
 	path = src/policies/dreamvla
 	url = https://github.com/Zhangwenyao1/DreamVLA
