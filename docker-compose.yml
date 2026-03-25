@@ -39,7 +39,37 @@ services:
     # entrypoint: ["/bin/bash", "/temporal_vla/scripts/setup_env.sh"]
     command: ["/bin/bash"]
 
-  # ── VLA Model Services ──────────────────────────────────────────
+  # ── LeRobot All-in-One ──────────────────────────────────────────
+  # LeRobot 지원 모델(pi0, groot) + 벤치마크(pusht, libero)를 단일 컨테이너에서 학습/평가.
+
+  lerobot:
+    container_name: lerobot
+    build:
+      context: ./docker/lerobot
+      dockerfile: Dockerfile
+      args:
+        USER_NAME: ${USER_NAME}
+        USER_ID: ${USER_ID}
+        GROUP_ID: ${GROUP_ID}
+    volumes:
+      - .:/temporal_vla:rw
+    environment:
+      - HF_HOME=/temporal_vla/data/huggingface
+      - PYTHONPATH=/temporal_vla
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    network_mode: host
+    ipc: host
+    tty: true
+    stdin_open: true
+    command: ["/bin/bash"]
+
+  # ── VLA Model Services (LeRobot 미지원 모델) ─────────────────────
   # 독립 환경에서 학습/추론. 평가는 robocasa 컨테이너에서 HTTP로 요청.
 
   xvla:
