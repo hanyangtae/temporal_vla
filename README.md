@@ -1,7 +1,29 @@
 # temporal_vla
 
-Vision-Language-Action(VLA) 모델을 RoboCasa/Calvin 시뮬레이션 환경에서 fine-tuning하고 평가하는 프로젝트입니다.
-현재 X-VLA, DreamVLA, UP-VLA를 지원하며, 향후 커스텀 모델 개발 및 실물 실험으로 확장할 예정입니다.
+VLA(Vision-Language-Action) 모델의 **실패 루프 탈출** 문제를 연구하는 프로젝트입니다.
+성공 데이터로만 학습된 VLA 모델이 실패 시 같은 trajectory를 반복하는 문제를, 외부 모듈(TTA 기반 progress predictor)을 통해 VLA 백본 추가학습 없이 해결하는 것을 목표로 합니다.
+
+RoboCasa/Calvin 시뮬레이션 환경에서 다양한 VLA 모델(pi0, groot, DreamVLA 등)을 Docker 기반 통일 API로 서빙·평가하는 인프라를 갖추고 있습니다.
+
+## Research Direction
+
+### 문제
+성공 데이터로만 학습된 VLA 모델이 실패 시 같은 trajectory를 반복(Loop)하며 실패를 반복하는 현상.
+
+### 가설
+외부 모듈(TTA progress predictor)을 사용해 **VLA 백본 추가학습 없이, 실패 데이터 없이**, 기존 VLA 모델의 action output에 변형을 줘서 실패 루프 탈출 → **Success Rate 개선**.
+
+### 접근 방식
+1. **실패 감지**: VITA(ICLR 2026) 기반 TTA adaptation module로 task 진행률(0~1) 예측. 단조증가에서 벗어나면 실패로 판단.
+2. **Action 변형** (실험 후보):
+   - LLM 출력 head 직전에 TTA hidden state projection add
+   - VLA 출력 Logit shifting (이산화 출력 모델)
+   - Diffusion action expert에 FiLM condition 입력
+   - Input 토큰 추가 (가장 간단)
+
+### Baseline
+- VLA 모델: pi0, groot
+- 진행률/실패 추정: VITA
 
 ## Architecture
 

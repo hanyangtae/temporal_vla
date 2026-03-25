@@ -4,9 +4,22 @@
 
 ## 프로젝트 개요
 
-VLA(Vision-Language-Action) 모델을 RoboCasa/Calvin 시뮬레이션 환경에서 학습(fine-tuning)하고 평가하는 프로젝트.
-Docker 컨테이너로 모델(DreamVLA, X-VLA, UP-VLA)과 벤치마크(RoboCasa, Calvin)를 분리하고,
-통일 HTTP API로 통신한다.
+VLA 모델의 **실패 루프 탈출** 문제를 연구하는 프로젝트.
+성공 데이터로만 학습된 VLA 모델이 실패 시 같은 trajectory를 반복하는 문제를,
+외부 모듈(TTA 기반 progress predictor)을 통해 VLA 백본 추가학습 없이 해결하는 것이 목표.
+
+인프라: Docker 컨테이너로 모델과 벤치마크(RoboCasa, Calvin)를 분리하고, 통일 HTTP API로 통신.
+
+## 연구 방향
+
+- **실패 감지**: VITA(ICLR 2026) 기반 TTA adaptation module → task 진행률(0~1) 예측, 단조증가 이탈 시 실패 판단
+- **Action 변형** (실험 후보):
+  - LLM 출력 head 직전에 TTA hidden state projection add
+  - VLA 출력 Logit shifting (이산화 출력 모델)
+  - Diffusion action expert에 FiLM condition 입력
+  - Input 토큰 추가
+- **Baseline 모델**: pi0, groot
+- **Metric**: Success Rate 상승
 
 ## 핵심 아키텍처
 
