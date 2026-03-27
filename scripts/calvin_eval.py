@@ -200,7 +200,6 @@ def _rollout(
     vla_client: VLAClient,
     obs_pipeline,
     action_pipeline,
-    act_step: int,
     record: bool = False,
 ) -> Tuple[bool, List[np.ndarray]]:
     """단일 subtask 롤아웃. (성공 여부, 프레임 리스트) 반환."""
@@ -242,7 +241,6 @@ def _evaluate_sequence(
     vla_client: VLAClient,
     obs_pipeline,
     action_pipeline,
-    act_step: int,
     record: bool = False,
     video_dir: Optional[Path] = None,
     seq_idx: int = 0,
@@ -264,7 +262,6 @@ def _evaluate_sequence(
             vla_client,
             obs_pipeline,
             action_pipeline,
-            act_step,
             record=record,
         )
         if record and frames:
@@ -354,7 +351,6 @@ def evaluate(
             vla_client,
             obs_pipeline,
             action_pipeline,
-            act_step,
             record=record,
             video_dir=video_dir,
             seq_idx=seq_idx,
