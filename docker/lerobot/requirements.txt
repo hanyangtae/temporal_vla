@@ -1,8 +1,5 @@
 # LeRobot with policies and simulation environments
-# - pi: pi0/pi05 (patched transformers@fix/lerobot_openpi 필수)
-# - groot: gr00t (peft, flash-attn)
-# - pusht: lightweight 2D sim for quick testing
-# - libero: manipulation benchmark
+# transformers v5 (PR #2964)로 pi0/groot 충돌 해소 → 단일 컨테이너 가능
 lerobot[pi,groot,pusht,libero]
 
 # Training utilities
