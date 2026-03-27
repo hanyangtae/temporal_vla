@@ -28,6 +28,7 @@ from __future__ import annotations
 import base64
 import io
 import time
+
 import numpy as np
 import requests
 from PIL import Image

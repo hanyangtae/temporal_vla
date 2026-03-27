@@ -36,7 +36,10 @@ class CalvinActionProcessor(ActionProcessorStep):
     def process_action(self, action: Any) -> np.ndarray:
         action = np.array(action, dtype=np.float32).copy()
         if action.ndim == 1:
-            if action.shape[0] != 7:
+            if action.shape[0] == 6:
+                # gripper 차원 없는 모델 (e.g. smolvla): 기본값 1.0(열림)으로 패딩
+                action = np.append(action, 1.0)
+            elif action.shape[0] != 7:
                 raise ValueError(
                     "CalvinActionProcessor: expected 7D action, got {}D".format(
                         action.shape[0]
@@ -44,7 +47,10 @@ class CalvinActionProcessor(ActionProcessorStep):
                 )
             action[-1] = 1.0 if action[-1] > self.threshold else -1.0
         else:
-            if action.shape[-1] != 7:
+            if action.shape[-1] == 6:
+                pad = np.ones((action.shape[0], 1), dtype=np.float32)
+                action = np.concatenate([action, pad], axis=-1)
+            elif action.shape[-1] != 7:
                 raise ValueError(
                     "CalvinActionProcessor: expected 7D action, got {}D".format(
                         action.shape[-1]
