@@ -224,7 +224,9 @@ class TestApplyInputRemap(unittest.TestCase):
 
     def test_camera_key_renamed(self):
         """_camera_key_map에 따라 이미지 키가 rename됨."""
-        self.srv._camera_key_map = {"observation.images.static": "observation.images.top"}
+        self.srv._camera_key_map = {
+            "observation.images.static": "observation.images.top"
+        }
         batch = {"observation.images.static": torch.zeros(1, 3, 200, 200), "task": "t"}
         result = self.srv._apply_input_remap(batch)
         self.assertIn("observation.images.top", result)
@@ -249,7 +251,9 @@ class TestApplyInputRemap(unittest.TestCase):
     def test_state_dim_slicing(self):
         """_state_dim > 0이면 observation.state를 앞 N차원으로 truncate."""
         self.srv._state_dim = 7
-        batch = {"observation.state": torch.arange(15, dtype=torch.float32).unsqueeze(0)}
+        batch = {
+            "observation.state": torch.arange(15, dtype=torch.float32).unsqueeze(0)
+        }
         result = self.srv._apply_input_remap(batch)
         self.assertEqual(result["observation.state"].shape, (1, 7))
         np.testing.assert_allclose(
@@ -265,7 +269,9 @@ class TestApplyInputRemap(unittest.TestCase):
 
     def test_missing_src_key_ignored(self):
         """리맵핑 src 키가 batch에 없으면 에러 없이 무시."""
-        self.srv._camera_key_map = {"observation.images.wrist": "observation.images.wrist_left"}
+        self.srv._camera_key_map = {
+            "observation.images.wrist": "observation.images.wrist_left"
+        }
         batch = {"observation.images.static": torch.zeros(1, 3, 200, 200)}
         result = self.srv._apply_input_remap(batch)
         self.assertIn("observation.images.static", result)
@@ -289,8 +295,12 @@ class TestBuildRemapConfig(unittest.TestCase):
 
     def test_no_wrist_single_camera_different_key(self):
         """is_wrist=False, policy 키가 다르면 static → policy 키로 매핑."""
-        key_map, _ = _build_remap_config(["observation.images.top"], None, is_wrist=False)
-        self.assertEqual(key_map, {"observation.images.static": "observation.images.top"})
+        key_map, _ = _build_remap_config(
+            ["observation.images.top"], None, is_wrist=False
+        )
+        self.assertEqual(
+            key_map, {"observation.images.static": "observation.images.top"}
+        )
 
     def test_no_wrist_same_key_removed(self):
         """is_wrist=False, policy 키가 static과 동일하면 맵에서 제거."""
@@ -326,7 +336,9 @@ class TestBuildRemapConfig(unittest.TestCase):
 
     def test_state_feat_none_gives_zero(self):
         """state_feat=None → state_dim=0 (슬라이싱 없음)."""
-        _, state_dim = _build_remap_config(["observation.images.top"], None, is_wrist=False)
+        _, state_dim = _build_remap_config(
+            ["observation.images.top"], None, is_wrist=False
+        )
         self.assertEqual(state_dim, 0)
 
     def test_state_feat_shape_extracted(self):

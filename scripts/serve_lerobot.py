@@ -42,9 +42,7 @@ preprocessor = None
 postprocessor = None
 _policy_type = "unknown"
 _n_action_steps = 1
-_camera_key_map: dict = (
-    {}
-)  # 통일 키 → policy 키 (e.g. observation.images.static → observation.images.top)
+_camera_key_map: dict = {}  # 통일 키 → policy 키 (e.g. observation.images.static → observation.images.top)
 _state_dim: int = 0  # >0이면 observation.state를 앞 N차원으로 슬라이싱
 
 # Calvin 기준 고정 state sub-key 순서 (eef_pos(3)+eef_euler(3)+gripper_opening(1)+joint_pos(7)+gripper_action(1)=15D)
@@ -231,49 +229,18 @@ def load_model():
             for k, sv_dict in raw.items()
         }
 
-    # factory를 import하면 lerobot/policies/__init__.py → groot/__init__.py → modeling_groot
-    # → groot_n1 → transformers 순으로 eager import되어 transformers 버전 충돌 발생.
-    # 요청된 policy 타입만 직접 import해서 우회.
-    if args.policy_type in ("pi0", "pi0_fast", "pi05"):
-        from lerobot.policies.pi0.modeling_pi0 import PI0Policy
-        from lerobot.policies.pi0.processor_pi0 import make_pi0_pre_post_processors
+    from lerobot.policies.factory import get_policy_class, make_pre_post_processors
 
-        policy = PI0Policy.from_pretrained(args.pretrained_path)
-        policy.config.device = args.device
-        policy.to(args.device)
-        policy.eval()
-        preprocessor, postprocessor = make_pi0_pre_post_processors(
-            config=policy.config,
-            dataset_stats=dataset_stats,
-        )
-    elif args.policy_type == "groot":
-        from lerobot.policies.groot.modeling_groot import GrootPolicy
-        from lerobot.policies.groot.processor_groot import (
-            make_groot_pre_post_processors,
-        )
-
-        policy = GrootPolicy.from_pretrained(args.pretrained_path)
-        policy.config.device = args.device
-        policy.to(args.device)
-        policy.eval()
-        preprocessor, postprocessor = make_groot_pre_post_processors(
-            config=policy.config,
-            dataset_stats=dataset_stats,
-        )
-    else:
-        # 그 외 policy: factory 경유 (transformers 버전 충돌 없는 경우만 동작)
-        from lerobot.policies.factory import get_policy_class, make_pre_post_processors
-
-        policy_cls = get_policy_class(args.policy_type)
-        policy = policy_cls.from_pretrained(args.pretrained_path)
-        policy.config.device = args.device
-        policy.to(args.device)
-        policy.eval()
-        preprocessor, postprocessor = make_pre_post_processors(
-            policy_cfg=policy.config,
-            pretrained_path=args.pretrained_path,
-            dataset_stats=dataset_stats,
-        )
+    policy_cls = get_policy_class(args.policy_type)
+    policy = policy_cls.from_pretrained(args.pretrained_path)
+    policy.config.device = args.device
+    policy.to(args.device)
+    policy.eval()
+    preprocessor, postprocessor = make_pre_post_processors(
+        policy_cfg=policy.config,
+        pretrained_path=args.pretrained_path,
+        dataset_stats=dataset_stats,
+    )
 
     from lerobot.configs.types import FeatureType
 

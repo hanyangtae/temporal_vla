@@ -47,7 +47,5 @@ RUN pip install fastapi uvicorn colorlog
 # LeRobot + policies + simulation envs
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
-# pi0용 패치 transformers 강제 설치 (lerobot[pi] extra가 groot의 transformers-dep에 밀리는 문제 우회)
-RUN pip install "transformers @ git+https://github.com/huggingface/transformers.git@fix/lerobot_openpi"
 
 CMD ["/bin/bash"]
