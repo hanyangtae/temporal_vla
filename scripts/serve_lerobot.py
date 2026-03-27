@@ -8,8 +8,10 @@ lerobot 컨테이너 내에서 실행:
     --pretrained-path lerobot/pi0_base \
     --port 8400
 
-  wrist 카메라 포함 시:
-    --is-wrist 추가 (static 1장 + gripper 1장 → policy input_features 순서대로 매핑)
+카메라 키 매핑: policy input_features의 visual key 순서대로 통일 키에 자동 매핑.
+  1번째 → observation.images.static
+  2번째 → observation.images.wrist
+  3번째 → observation.images.wrist2
 
 통일 API:
   POST /act     ← {"observation.images.static": b64png, ...,
@@ -63,26 +65,29 @@ def _b64_to_numpy(b64_str: str) -> np.ndarray:
     return np.array(Image.open(io.BytesIO(base64.b64decode(b64_str))).convert("RGB"))
 
 
-def _build_remap_config(visual_keys: list, state_feat, is_wrist: bool) -> tuple:
+def _build_remap_config(visual_keys: list, state_feat) -> tuple:
     """policy input_features에서 카메라 키맵과 state dim을 도출.
+
+    visual_keys 순서대로 통일 API 키에 매핑:
+      0번째 → observation.images.static
+      1번째 → observation.images.wrist
+      2번째 → observation.images.wrist2
 
     Args:
         visual_keys: policy.config.input_features에서 VISUAL 타입 키 목록 (순서 보존).
         state_feat:  policy.config.robot_state_feature (없으면 None).
-        is_wrist:    wrist 카메라 사용 여부.
 
     Returns:
         (camera_key_map, state_dim)
         - camera_key_map: 통일 API 키 → policy 키 dict (src==dst인 항목은 제거)
         - state_dim: policy가 기대하는 state 차원 (0이면 슬라이싱 없음)
     """
-    if is_wrist:
-        raw = {
-            "observation.images.static": visual_keys[0],
-            "observation.images.gripper": visual_keys[1],
-        }
-    else:
-        raw = {"observation.images.static": visual_keys[0]}
+    unified_keys = [
+        "observation.images.static",
+        "observation.images.wrist",
+        "observation.images.wrist2",
+    ]
+    raw = {unified_keys[i]: vk for i, vk in enumerate(visual_keys) if i < len(unified_keys)}
     camera_key_map = {s: d for s, d in raw.items() if s != d}
     state_dim = state_feat.shape[0] if state_feat is not None else 0
     return camera_key_map, state_dim
@@ -210,8 +215,6 @@ def load_model():
     _policy_type = args.policy_type
 
     sys.path.insert(0, "/temporal_vla/lerobot/src")
-    from lerobot.configs.types import FeatureType
-    from lerobot.policies.factory import get_policy_class, make_pre_post_processors
 
     if not args.pretrained_path:
         raise ValueError("--pretrained-path is required for inference server")
@@ -228,19 +231,52 @@ def load_model():
             for k, sv_dict in raw.items()
         }
 
-    # make_policy는 ds_meta/env_cfg 필수라 추론 서버에서 사용 불가.
-    # 예제(lerobot/examples/tutorial/pi0)와 동일하게 from_pretrained 직접 호출.
-    policy_cls = get_policy_class(args.policy_type)
-    policy = policy_cls.from_pretrained(args.pretrained_path)
-    policy.config.device = args.device
-    policy.to(args.device)
-    policy.eval()
+    # factory를 import하면 lerobot/policies/__init__.py → groot/__init__.py → modeling_groot
+    # → groot_n1 → transformers 순으로 eager import되어 transformers 버전 충돌 발생.
+    # 요청된 policy 타입만 직접 import해서 우회.
+    if args.policy_type in ("pi0", "pi0_fast", "pi05"):
+        from lerobot.policies.pi0.modeling_pi0 import PI0Policy
+        from lerobot.policies.pi0.processor_pi0 import make_pi0_pre_post_processors
 
-    preprocessor, postprocessor = make_pre_post_processors(
-        policy_cfg=policy.config,
-        pretrained_path=args.pretrained_path,
-        dataset_stats=dataset_stats,
-    )
+        policy = PI0Policy.from_pretrained(args.pretrained_path)
+        policy.config.device = args.device
+        policy.to(args.device)
+        policy.eval()
+        preprocessor, postprocessor = make_pi0_pre_post_processors(
+            config=policy.config,
+            dataset_stats=dataset_stats,
+        )
+    elif args.policy_type == "groot":
+        from lerobot.policies.groot.modeling_groot import GrootPolicy
+        from lerobot.policies.groot.processor_groot import (
+            make_groot_pre_post_processors,
+        )
+
+        policy = GrootPolicy.from_pretrained(args.pretrained_path)
+        policy.config.device = args.device
+        policy.to(args.device)
+        policy.eval()
+        preprocessor, postprocessor = make_groot_pre_post_processors(
+            config=policy.config,
+            dataset_stats=dataset_stats,
+        )
+    else:
+        # 그 외 policy: factory 경유 (transformers 버전 충돌 없는 경우만 동작)
+        from lerobot.policies.factory import get_policy_class, make_pre_post_processors
+
+        policy_cls = get_policy_class(args.policy_type)
+        policy = policy_cls.from_pretrained(args.pretrained_path)
+        policy.config.device = args.device
+        policy.to(args.device)
+        policy.eval()
+        preprocessor, postprocessor = make_pre_post_processors(
+            policy_cfg=policy.config,
+            pretrained_path=args.pretrained_path,
+            dataset_stats=dataset_stats,
+        )
+
+    from lerobot.configs.types import FeatureType
+
     _n_action_steps = getattr(policy.config, "n_action_steps", 1)
 
     # 카메라 키 리맵핑 + state dim: policy config에서 자동 도출
@@ -250,7 +286,7 @@ def load_model():
         if v.type == FeatureType.VISUAL
     ]
     _camera_key_map, _state_dim = _build_remap_config(
-        visual_keys, getattr(policy.config, "robot_state_feature", None), args.is_wrist
+        visual_keys, getattr(policy.config, "robot_state_feature", None)
     )
 
     print(
@@ -288,11 +324,7 @@ def main():
         default=None,
         help="정규화 통계 JSON 경로 (없으면 체크포인트에서 로드)",
     )
-    parser.add_argument(
-        "--is-wrist",
-        action="store_true",
-        help="wrist 카메라 사용 여부. 지정하면 static+gripper 2장, 미지정이면 static 1장.",
-    )
+
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8400)
     args = parser.parse_args()

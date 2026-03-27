@@ -300,7 +300,7 @@ class TestBuildRemapConfig(unittest.TestCase):
         self.assertEqual(key_map, {})
 
     def test_is_wrist_two_cameras(self):
-        """is_wrist=True → static + gripper 각각 policy 첫째/둘째 키로 매핑."""
+        """is_wrist=True → 통일 키 static+wrist가 policy 첫째/둘째 visual 키로 매핑."""
         key_map, _ = _build_remap_config(
             ["observation.images.top", "observation.images.wrist"],
             None,
@@ -310,14 +310,13 @@ class TestBuildRemapConfig(unittest.TestCase):
             key_map,
             {
                 "observation.images.static": "observation.images.top",
-                "observation.images.gripper": "observation.images.wrist",
             },
         )
 
     def test_is_wrist_src_eq_dst_removed(self):
         """is_wrist=True, src==dst인 항목은 맵에서 제거."""
         key_map, _ = _build_remap_config(
-            ["observation.images.static", "observation.images.gripper"],
+            ["observation.images.static", "observation.images.wrist"],
             None,
             is_wrist=True,
         )
