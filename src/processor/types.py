@@ -5,15 +5,16 @@ are interoperable when bridging to LeRobot later.
 
 Python 3.8 compatible.
 """
+
 from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Dict, Optional, Tuple
 
-
 # ---------------------------------------------------------------------------
 # Feature type enums (mirrors lerobot.configs.types)
 # ---------------------------------------------------------------------------
+
 
 class FeatureType(str, Enum):
     STATE = "STATE"
@@ -30,6 +31,7 @@ class PipelineFeatureType(str, Enum):
 # ---------------------------------------------------------------------------
 # Feature descriptor
 # ---------------------------------------------------------------------------
+
 
 class PolicyFeature:
     """Describes a single feature's type and shape.
@@ -69,6 +71,7 @@ Features = Dict[PipelineFeatureType, Dict[str, PolicyFeature]]
 # ---------------------------------------------------------------------------
 # Transition keys (mirrors lerobot.processor.core.TransitionKey)
 # ---------------------------------------------------------------------------
+
 
 class TransitionKey(str, Enum):
     OBSERVATION = "observation"
