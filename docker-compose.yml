@@ -39,9 +39,69 @@ services:
     # entrypoint: ["/bin/bash", "/temporal_vla/scripts/setup_env.sh"]
     command: ["/bin/bash"]
 
-  # ── LeRobot All-in-One ──────────────────────────────────────────
-  # LeRobot 지원 모델(pi0, groot) + 벤치마크(pusht, libero)를 단일 컨테이너에서 학습/평가.
+  # ── LeRobot policy별 컨테이너 ────────────────────────────────────
+  # pi0/groot는 transformers 버전 충돌로 컨테이너 분리.
+  # lerobot_pi0 (:8400), lerobot_groot (:8401)
 
+  lerobot_pi0:
+    container_name: lerobot_pi0
+    build:
+      context: ./docker/lerobot_pi0
+      dockerfile: Dockerfile
+      args:
+        USER_NAME: ${USER_NAME}
+        USER_ID: ${USER_ID}
+        GROUP_ID: ${GROUP_ID}
+    volumes:
+      - .:/temporal_vla:rw
+    environment:
+      - HF_HOME=/temporal_vla/data/huggingface
+      - PYTHONPATH=/temporal_vla
+      - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN}
+      - TORCHINDUCTOR_CACHE_DIR=/temporal_vla/tmp/torchinductor
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    network_mode: host
+    ipc: host
+    tty: true
+    stdin_open: true
+    command: ["/bin/bash"]
+
+  lerobot_groot:
+    container_name: lerobot_groot
+    build:
+      context: ./docker/lerobot_groot
+      dockerfile: Dockerfile
+      args:
+        USER_NAME: ${USER_NAME}
+        USER_ID: ${USER_ID}
+        GROUP_ID: ${GROUP_ID}
+    volumes:
+      - .:/temporal_vla:rw
+    environment:
+      - HF_HOME=/temporal_vla/data/huggingface
+      - PYTHONPATH=/temporal_vla
+      - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN}
+      - TORCHINDUCTOR_CACHE_DIR=/temporal_vla/tmp/torchinductor
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    network_mode: host
+    ipc: host
+    tty: true
+    stdin_open: true
+    command: ["/bin/bash"]
+
+  # ── LeRobot All-in-One (deprecated: pi0/groot 충돌로 분리됨) ─────
   lerobot:
     container_name: lerobot
     build:

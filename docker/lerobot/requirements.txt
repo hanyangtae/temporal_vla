@@ -1,8 +1,9 @@
 # LeRobot with policies and simulation environments
-# - groot: includes transformers, peft, flash-attn (pi0 also covered via transformers-dep)
+# - pi: pi0/pi05 (patched transformers@fix/lerobot_openpi 필수)
+# - groot: gr00t (peft, flash-attn)
 # - pusht: lightweight 2D sim for quick testing
 # - libero: manipulation benchmark
-lerobot[groot,pusht,libero]
+lerobot[pi,groot,pusht,libero]
 
 # Training utilities
 wandb

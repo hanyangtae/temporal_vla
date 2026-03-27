@@ -1,5 +1,5 @@
-# LeRobot all-in-one: training, finetuning, evaluation
-# Supports pi0, groot policies + pusht, libero simulation environments
+# LeRobot pi0 / pi05 전용
+# flash-attn 미설치: patched transformers(fix/lerobot_openpi)와 ABI 불일치로 크래시
 FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
 
 ARG USER_NAME
@@ -30,6 +30,7 @@ USER ${USER_NAME}
 WORKDIR /temporal_vla
 
 ENV PATH="/home/${USER_NAME}/.local/bin:${PATH}"
+ENV TORCHINDUCTOR_CACHE_DIR=/temporal_vla/tmp/torchinductor
 
 RUN pip install --upgrade pip setuptools wheel
 
@@ -37,17 +38,14 @@ RUN pip install --upgrade pip setuptools wheel
 RUN pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 \
     --index-url https://download.pytorch.org/whl/cu121
 
-# Flash Attention
-RUN pip install psutil packaging ninja
-RUN pip install flash-attn --no-build-isolation
-
 # Inference server
 RUN pip install fastapi uvicorn colorlog
 
-# LeRobot + policies + simulation envs
+# LeRobot + pi0 policy + simulation envs
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
-# pi0용 패치 transformers 강제 설치 (lerobot[pi] extra가 groot의 transformers-dep에 밀리는 문제 우회)
+
+# pi0 필수: patched transformers
 RUN pip install "transformers @ git+https://github.com/huggingface/transformers.git@fix/lerobot_openpi"
 
 CMD ["/bin/bash"]

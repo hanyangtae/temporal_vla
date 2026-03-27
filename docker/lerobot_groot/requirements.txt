@@ -1,0 +1,6 @@
+# groot 전용 (pi0 제외 — transformers 버전 충돌)
+lerobot[groot,pusht,libero]
+
+# Training utilities
+wandb
+tensorboard
