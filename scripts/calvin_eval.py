@@ -265,7 +265,6 @@ def _evaluate_sequence(
             obs_pipeline,
             action_pipeline,
             act_step,
-            EP_LEN,
             record=record,
         )
         if record and frames:
@@ -356,7 +355,6 @@ def evaluate(
             obs_pipeline,
             action_pipeline,
             act_step,
-            EP_LEN,
             record=record,
             video_dir=video_dir,
             seq_idx=seq_idx,
