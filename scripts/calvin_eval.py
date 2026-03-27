@@ -6,7 +6,7 @@ calvin 컨테이너에서 실행:
 
 # LeRobot (pi0, groot 등)으로 평가
 docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval.py \
-  --dataset-path /temporal_vla/src/benchmarks/calvin/dataset/task_D_D \
+  --dataset-path /temporal_vla/src/benchmarks/calvin/dataset/calvin_debug_dataset \
   --server-url http://localhost:8400
 
 # DreamVLA로 평가 (같은 스크립트, URL만 변경)
@@ -212,12 +212,12 @@ def _rollout(
     frames = []
 
     for step in range(EP_LEN):
-        if step % act_step == 0:
+        if action_buffer is None or step % len(action_buffer) == 0:
             processed = obs_pipeline({TransitionKey.OBSERVATION: obs})
             processed_obs = processed[TransitionKey.OBSERVATION]
             action_buffer, _, _ = _predict(vla_client, processed_obs, instruction)
 
-        raw_action = action_buffer[step % act_step]
+        raw_action = action_buffer[step % len(action_buffer)]
         processed = action_pipeline({TransitionKey.ACTION: raw_action})
         obs, _, _, current_info = env.step(processed[TransitionKey.ACTION])
 

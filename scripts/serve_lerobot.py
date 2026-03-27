@@ -42,7 +42,9 @@ preprocessor = None
 postprocessor = None
 _policy_type = "unknown"
 _n_action_steps = 1
-_camera_key_map: dict = {}  # 통일 키 → policy 키 (e.g. observation.images.static → observation.images.top)
+_camera_key_map: dict = (
+    {}
+)  # 통일 키 → policy 키 (e.g. observation.images.static → observation.images.top)
 _state_dim: int = 0  # >0이면 observation.state를 앞 N차원으로 슬라이싱
 
 # Calvin 기준 고정 state sub-key 순서 (eef_pos(3)+eef_euler(3)+gripper_opening(1)+joint_pos(7)+gripper_action(1)=15D)
@@ -85,7 +87,9 @@ def _build_remap_config(visual_keys: list, state_feat) -> tuple:
         "observation.images.wrist",
         "observation.images.wrist2",
     ]
-    raw = {unified_keys[i]: vk for i, vk in enumerate(visual_keys) if i < len(unified_keys)}
+    raw = {
+        unified_keys[i]: vk for i, vk in enumerate(visual_keys) if i < len(unified_keys)
+    }
     camera_key_map = {s: d for s, d in raw.items() if s != d}
     state_dim = state_feat.shape[0] if state_feat is not None else 0
     return camera_key_map, state_dim
