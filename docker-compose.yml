@@ -56,6 +56,7 @@ services:
     environment:
       - HF_HOME=/temporal_vla/data/huggingface
       - PYTHONPATH=/temporal_vla
+      - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN}
     deploy:
       resources:
         reservations:
