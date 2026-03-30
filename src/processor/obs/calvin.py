@@ -5,6 +5,7 @@ Calvin env는 rgb_obs를 [-1, 1] 범위의 CHW tensor로 반환한다.
 
 Python 3.8 compatible.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, Tuple
@@ -12,12 +13,7 @@ from typing import Any, Dict, Tuple
 import numpy as np
 
 from ..base import ObservationProcessorStep
-from ..types import (
-    FeatureType,
-    Features,
-    PipelineFeatureType,
-    PolicyFeature,
-)
+from ..types import Features, FeatureType, PipelineFeatureType, PolicyFeature
 
 
 class CalvinObsProcessor(ObservationProcessorStep):
@@ -45,7 +41,9 @@ class CalvinObsProcessor(ObservationProcessorStep):
         observation.state.gripper_action       — float32 (1,)  {-1, 1}
     """
 
-    def __init__(self, use_wrist: bool = False, use_state: bool = True, image_size: int = 200):
+    def __init__(
+        self, use_wrist: bool = False, use_state: bool = True, image_size: int = 200
+    ):
         self.use_wrist = use_wrist
         self.use_state = use_state
         self.image_size = image_size
@@ -72,27 +70,39 @@ class CalvinObsProcessor(ObservationProcessorStep):
     def transform_features(self, features: Features) -> Features:
         sz = self.image_size
         obs_features = {
-            "observation.images.static": PolicyFeature(
-                FeatureType.VISUAL, (sz, sz, 3)
-            ),
+            "observation.images.static": PolicyFeature(FeatureType.VISUAL, (sz, sz, 3)),
         }  # type: Dict[str, PolicyFeature]
         if self.use_wrist:
             obs_features["observation.images.wrist"] = PolicyFeature(
                 FeatureType.VISUAL, (sz, sz, 3)
             )
         if self.use_state:
-            obs_features["observation.state.eef_pos"] = PolicyFeature(FeatureType.STATE, (3,))
-            obs_features["observation.state.eef_euler"] = PolicyFeature(FeatureType.STATE, (3,))
-            obs_features["observation.state.gripper_opening"] = PolicyFeature(FeatureType.STATE, (1,))
-            obs_features["observation.state.joint_pos"] = PolicyFeature(FeatureType.STATE, (7,))
-            obs_features["observation.state.gripper_action"] = PolicyFeature(FeatureType.STATE, (1,))
+            obs_features["observation.state.eef_pos"] = PolicyFeature(
+                FeatureType.STATE, (3,)
+            )
+            obs_features["observation.state.eef_euler"] = PolicyFeature(
+                FeatureType.STATE, (3,)
+            )
+            obs_features["observation.state.gripper_opening"] = PolicyFeature(
+                FeatureType.STATE, (1,)
+            )
+            obs_features["observation.state.joint_pos"] = PolicyFeature(
+                FeatureType.STATE, (7,)
+            )
+            obs_features["observation.state.gripper_action"] = PolicyFeature(
+                FeatureType.STATE, (1,)
+            )
 
         features = dict(features)
         features[PipelineFeatureType.OBSERVATION] = obs_features
         return features
 
     def get_config(self) -> Dict[str, Any]:
-        return {"use_wrist": self.use_wrist, "use_state": self.use_state, "image_size": self.image_size}
+        return {
+            "use_wrist": self.use_wrist,
+            "use_state": self.use_state,
+            "image_size": self.image_size,
+        }
 
     # ------------------------------------------------------------------
 

@@ -19,45 +19,59 @@ from ..types import (
     PolicyFeature,
 )
 
+# Calvin이 지원하는 action_dim. 확인된 구조만 허용.
+_SUPPORTED_DIMS = (7,)
+
 
 class CalvinActionProcessor(ActionProcessorStep):
-    """VLA 7D action → Calvin env-compatible 7D action.
+    """VLA action → Calvin env-compatible 7D action.
 
-    변환:
-        action[-1] (gripper) → 1.0 if > threshold else -1.0
+    지원 action_model_dim:
+        7D: [eef_pos(3), eef_euler(3), gripper(1)] — 표준 Calvin 포맷
+            action[-1] → 1.0 if > threshold else -1.0
 
-    Input:  np.ndarray shape (7,) 또는 (N, 7)
-    Output: np.ndarray shape 동일, gripper 이산화됨
+    미지원 dim(예: 6D bimanual 14D 등)은 명시적 ValueError.
+    6D 지원은 smolvla/wall-x checkpoint 구조 확인 후 추가 예정.
+
+    Args:
+        action_model_dim: 모델 출력 차원. serve /health의 action_dim에서 읽어 전달.
+        threshold: gripper 이산화 임계값.
+
+    Input:  np.ndarray shape (action_model_dim,) 또는 (N, action_model_dim)
+    Output: np.ndarray shape (7,) 또는 (N, 7), gripper 이산화됨
     """
 
-    def __init__(self, threshold: float = 0.0):
+    def __init__(self, action_model_dim: int = 7, threshold: float = 0.0):
+        if action_model_dim not in _SUPPORTED_DIMS:
+            raise ValueError(
+                "CalvinActionProcessor: action_model_dim={}는 미지원. "
+                "지원: {}. 6D 모델은 checkpoint action 구조 확인 후 추가 예정.".format(
+                    action_model_dim, _SUPPORTED_DIMS
+                )
+            )
+        self.action_model_dim = action_model_dim
         self.threshold = threshold
 
     def process_action(self, action: Any) -> np.ndarray:
         action = np.array(action, dtype=np.float32).copy()
         if action.ndim == 1:
-            if action.shape[0] != 7:
+            if action.shape[0] != self.action_model_dim:
                 raise ValueError(
-                    "CalvinActionProcessor: expected 7D action, got {}D".format(
-                        action.shape[0]
-                    )
+                    "CalvinActionProcessor: 런타임 action shape {}D ≠ "
+                    "설정된 action_model_dim={}D".format(action.shape[0], self.action_model_dim)
                 )
             action[-1] = 1.0 if action[-1] > self.threshold else -1.0
         else:
-            if action.shape[-1] != 7:
+            if action.shape[-1] != self.action_model_dim:
                 raise ValueError(
-                    "CalvinActionProcessor: expected 7D action, got {}D".format(
-                        action.shape[-1]
-                    )
+                    "CalvinActionProcessor: 런타임 action shape {}D ≠ "
+                    "설정된 action_model_dim={}D".format(action.shape[-1], self.action_model_dim)
                 )
-            action[:, -1] = np.where(
-                action[:, -1] > self.threshold, 1.0, -1.0
-            )
+            action[:, -1] = np.where(action[:, -1] > self.threshold, 1.0, -1.0)
         return action
 
     def transform_features(self, features: Features) -> Features:
-        # shape 불변: 7D → 7D (gripper 값만 이산화)
         return features
 
     def get_config(self) -> Dict[str, Any]:
-        return {"threshold": self.threshold}
+        return {"action_model_dim": self.action_model_dim, "threshold": self.threshold}

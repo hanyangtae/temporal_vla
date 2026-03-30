@@ -1,8 +1,6 @@
 # LeRobot with policies and simulation environments
-# - groot: includes transformers, peft, flash-attn (pi0 also covered via transformers-dep)
-# - pusht: lightweight 2D sim for quick testing
-# - libero: manipulation benchmark
-lerobot[groot,pusht,libero]
+# transformers v5 (PR #2964)로 pi0/groot 충돌 해소 → 단일 컨테이너 가능
+lerobot[pi,groot,smolvla,pusht,libero]
 
 # Training utilities
 wandb

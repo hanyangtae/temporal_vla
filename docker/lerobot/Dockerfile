@@ -41,6 +41,9 @@ RUN pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 \
 RUN pip install psutil packaging ninja
 RUN pip install flash-attn --no-build-isolation
 
+# Inference server
+RUN pip install fastapi uvicorn colorlog
+
 # LeRobot + policies + simulation envs
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt

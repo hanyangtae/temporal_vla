@@ -5,6 +5,7 @@ but is self-contained, numpy-centric, and Python 3.8 compatible.
 
 Python 3.8 compatible.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -16,18 +17,12 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from .types import (
-    Features,
-    PolicyFeature,
-    Transition,
-    TransitionKey,
-    create_transition,
-)
-
+from .types import Features, PolicyFeature, Transition, TransitionKey, create_transition
 
 # ============================================================================
 # ProcessorStep — single transformation
 # ============================================================================
+
 
 class ProcessorStep(ABC):
     """Abstract base class for a single step in a data processing pipeline.
@@ -60,12 +55,12 @@ class ProcessorStep(ABC):
 # Specialised base classes — narrow __call__ to a single field
 # ============================================================================
 
+
 class ObservationProcessorStep(ProcessorStep, ABC):
     """Step that only transforms the *observation* part of a transition."""
 
     @abstractmethod
-    def process_observation(self, observation: Dict[str, Any]) -> Dict[str, Any]:
-        ...
+    def process_observation(self, observation: Dict[str, Any]) -> Dict[str, Any]: ...
 
     def __call__(self, transition: Transition) -> Transition:
         t = dict(transition)
@@ -80,8 +75,7 @@ class ActionProcessorStep(ProcessorStep, ABC):
     """Step that only transforms the *action* part of a transition."""
 
     @abstractmethod
-    def process_action(self, action: Any) -> Any:
-        ...
+    def process_action(self, action: Any) -> Any: ...
 
     def __call__(self, transition: Transition) -> Transition:
         t = dict(transition)
@@ -95,6 +89,7 @@ class ActionProcessorStep(ProcessorStep, ABC):
 # ============================================================================
 # DataProcessorPipeline — chains steps
 # ============================================================================
+
 
 class DataProcessorPipeline:
     """Sequential pipeline that chains multiple :class:`ProcessorStep` instances.
@@ -200,6 +195,7 @@ class DataProcessorPipeline:
 # Helpers (private)
 # ============================================================================
 
+
 def _import_class(full_class_path: str) -> type:
     module_path, class_name = full_class_path.rsplit(".", 1)
     module = importlib.import_module(module_path)
@@ -210,7 +206,11 @@ def _save_state_json(state: Dict[str, Any], path: str) -> None:
     serialisable = {}
     for k, v in state.items():
         if isinstance(v, np.ndarray):
-            serialisable[k] = {"__ndarray__": True, "data": v.tolist(), "dtype": str(v.dtype)}
+            serialisable[k] = {
+                "__ndarray__": True,
+                "data": v.tolist(),
+                "dtype": str(v.dtype),
+            }
         else:
             serialisable[k] = v
     with open(path, "w") as f:

@@ -4,27 +4,23 @@ VLA 평가 스크립트 (Calvin 환경, 모델 무관).
 통일 API를 따르는 어떤 VLA 서버든 --server-url만 바꾸면 평가 가능.
 calvin 컨테이너에서 실행:
 
-# UP-VLA로 평가
+# LeRobot (pi0, groot 등)으로 평가
 docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval.py \
   --dataset-path /temporal_vla/src/benchmarks/calvin/dataset/calvin_debug_dataset \
-  --server-url http://localhost:8300 \
-  --num-sequences 50 \
-  --video-dir /temporal_vla/outputs/calvin_eval/video \
-  --num-videos 50
+  --server-url http://localhost:8400
 
 # DreamVLA로 평가 (같은 스크립트, URL만 변경)
 docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval.py \
-  --dataset-path /temporal_vla/src/benchmarks/calvin/dataset/calvin_debug_dataset \
+  --dataset-path /temporal_vla/src/benchmarks/calvin/dataset/task_D_D \
   --server-url http://localhost:8200 \
-  --num-sequences 50 \
-  --act-step 1 \
-  --output /temporal_vla/outputs/calvin_eval/debug_result_wrist.json \
-  --num-videos 3 \
-  --video-dir /temporal_vla/outputs/calvin_eval/videos_wrist \
+  --num-sequences 1000
+
+act_step은 서버 /health의 n_action_steps에서 자동 감지.
 VLA 서버(serve_*.py)가 먼저 실행 중이어야 한다.
 """
 
 URL_MAP = {
+    "http://localhost:8400": "LeRobot",
     "http://localhost:8300": "UP-VLA",
     "http://localhost:8200": "DreamVLA",
     "http://localhost:8100": "X-VLA",
@@ -162,7 +158,9 @@ def _predict(
         elif k.startswith("observation.state"):
             states[k] = v
 
-    actions, _ = vla_client.predict(images=images, states=states or None, instruction=instruction)
+    actions, _ = vla_client.predict(
+        images=images, states=states or None, instruction=instruction
+    )
     return actions, None, None
 
 
@@ -202,8 +200,6 @@ def _rollout(
     vla_client: VLAClient,
     obs_pipeline,
     action_pipeline,
-    act_step: int,
-    ep_len: int,
     record: bool = False,
 ) -> Tuple[bool, List[np.ndarray]]:
     """단일 subtask 롤아웃. (성공 여부, 프레임 리스트) 반환."""
@@ -214,13 +210,13 @@ def _rollout(
     action_buffer = None
     frames = []
 
-    for step in range(ep_len):
-        if step % act_step == 0:
+    for step in range(EP_LEN):
+        if action_buffer is None or step % len(action_buffer) == 0:
             processed = obs_pipeline({TransitionKey.OBSERVATION: obs})
             processed_obs = processed[TransitionKey.OBSERVATION]
             action_buffer, _, _ = _predict(vla_client, processed_obs, instruction)
 
-        raw_action = action_buffer[step % act_step]
+        raw_action = action_buffer[step % len(action_buffer)]
         processed = action_pipeline({TransitionKey.ACTION: raw_action})
         obs, _, _, current_info = env.step(processed[TransitionKey.ACTION])
 
@@ -245,8 +241,6 @@ def _evaluate_sequence(
     vla_client: VLAClient,
     obs_pipeline,
     action_pipeline,
-    act_step: int,
-    ep_len: int,
     record: bool = False,
     video_dir: Optional[Path] = None,
     seq_idx: int = 0,
@@ -268,8 +262,6 @@ def _evaluate_sequence(
             vla_client,
             obs_pipeline,
             action_pipeline,
-            act_step,
-            ep_len,
             record=record,
         )
         if record and frames:
@@ -282,11 +274,19 @@ def _evaluate_sequence(
             break
 
     # MP4 저장: save_all_videos=True면 항상, 아니면 완전 성공(5/5) 제외
-    if record and video_dir is not None and all_frames and (save_all_videos or success_counter < 5):
+    if (
+        record
+        and video_dir is not None
+        and all_frames
+        and (save_all_videos or success_counter < 5)
+    ):
         mp4_path = video_dir / "seq{:04d}_result{}.mp4".format(seq_idx, success_counter)
         _save_video(all_frames, mp4_path)
 
     return success_counter
+
+
+EP_LEN = 360  # Calvin 표준: 30fps × 12초
 
 
 def evaluate(
@@ -294,8 +294,6 @@ def evaluate(
     calvin_conf: Path,
     server_url: str,
     num_sequences: int,
-    ep_len: int,
-    act_step: int,
     output_path: Optional[Path],
     num_videos: int = 0,
     video_dir: Optional[Path] = None,
@@ -307,9 +305,21 @@ def evaluate(
     server_info = vla_client.wait_until_ready()
     logger.info("VLA 서버 연결 완료: %s", server_info)
 
+    act_step = server_info.get("n_action_steps", 1)
+    logger.info("act_step: %d (서버 health에서 자동 감지)", act_step)
+
+    action_dim = server_info.get("action_dim", 7)
+    if action_dim != 7:
+        raise RuntimeError(
+            "Calvin 평가는 7D EE space action이 필요합니다. "
+            "서버 모델의 action_dim={}. ".format(action_dim) +
+            "Calvin용 7D EE space로 finetuning된 checkpoint를 사용하세요."
+        )
+    logger.info("action_dim: %d (서버 health에서 자동 감지)", action_dim)
+
     # Processor pipeline (벤치마크별 obs/action 변환)
     # DreamVLA 원본 eval은 static + wrist(gripper) 카메라 모두 사용
-    obs_pipeline, action_pipeline = make_calvin_processors(use_wrist=True)
+    obs_pipeline, action_pipeline = make_calvin_processors(use_wrist=True, action_model_dim=action_dim)
 
     # task oracle (calvin_env.envs.tasks.Tasks) — Calvin-native 클래스
     tasks_cfg = OmegaConf.load(
@@ -350,8 +360,6 @@ def evaluate(
             vla_client,
             obs_pipeline,
             action_pipeline,
-            act_step,
-            ep_len,
             record=record,
             video_dir=video_dir,
             seq_idx=seq_idx,
@@ -399,12 +407,7 @@ def main():
         required=True,
         help="Calvin 데이터셋 경로 (e.g. /temporal_vla/src/benchmarks/calvin/dataset/calvin_debug_dataset)",
     )
-    parser.add_argument(
-        "--calvin-conf",
-        type=str,
-        default="/temporal_vla/src/benchmarks/calvin/calvin_models/conf",
-        help="Calvin task/annotation config 디렉토리 경로",
-    )
+
     parser.add_argument(
         "--server-url",
         type=str,
@@ -414,20 +417,8 @@ def main():
     parser.add_argument(
         "--num-sequences",
         type=int,
-        default=1000,
+        default=50,
         help="평가 시퀀스 수",
-    )
-    parser.add_argument(
-        "--ep-len",
-        type=int,
-        default=360,
-        help="subtask당 최대 스텝 수",
-    )
-    parser.add_argument(
-        "--act-step",
-        type=int,
-        default=10,
-        help="모델이 한번에 예측하는 action step 수 (기본: 10)",
     )
     parser.add_argument(
         "--output",
@@ -442,35 +433,21 @@ def main():
         help="비디오로 기록할 시퀀스 수 (0=비활성화). 기본: 완전 성공(5/5) 제외 저장. --save-all-videos로 전체 저장.",
     )
     parser.add_argument(
-        "--video-dir",
-        type=str,
-        default=None,
-        help="비디오/PNG 저장 디렉토리 (--num-videos > 0일 때 필수)",
-    )
-    parser.add_argument(
         "--save-all-videos",
         action="store_true",
         help="성공 여부 관계없이 모든 비디오 저장 (기본: 완전 성공(5/5) 제외)",
     )
     args = parser.parse_args()
 
-    if args.num_videos > 0 and args.video_dir is None:
-        parser.error("--num-videos > 0 이면 --video-dir 를 지정해야 합니다.")
-
     evaluate(
         dataset_path=Path(args.dataset_path),
-        calvin_conf=Path(args.calvin_conf),
+        calvin_conf=Path("/temporal_vla/src/benchmarks/calvin/calvin_models/conf"),
         server_url=args.server_url,
         num_sequences=args.num_sequences,
-        ep_len=args.ep_len,
-        act_step=args.act_step,
         output_path=Path(args.output) if args.output else None,
         num_videos=args.num_videos,
-video_dir=(
-            Path(args.video_dir)
-            / (time.strftime("%Y%m%d_%H%M%S") + f"_{URL_MAP[args.server_url]}")
-            if args.video_dir
-            else None
+        video_dir=Path(
+            f"/temporal_vla/outputs/calvin_eval/{URL_MAP[args.server_url]}/{time.strftime('%Y%m%d_%H%M%S')}"
         ),
         save_all_videos=args.save_all_videos,
     )
