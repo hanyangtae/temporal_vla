@@ -42,6 +42,7 @@ preprocessor = None
 postprocessor = None
 _policy_type = "unknown"
 _n_action_steps = 1
+_action_dim: int = 7  # policy select_action 출력 차원 (output_features에서 읽힘)
 _camera_key_map: dict = (
     {}
 )  # 통일 키 → policy 키 (e.g. observation.images.static → observation.images.top)
@@ -200,6 +201,7 @@ async def health():
         "status": "ok" if policy is not None else "not_loaded",
         "model": _policy_type,
         "n_action_steps": _n_action_steps,
+        "action_dim": _action_dim,
     }
 
 
@@ -208,7 +210,7 @@ async def health():
 
 @app.on_event("startup")
 def load_model():
-    global policy, preprocessor, postprocessor, _policy_type, _n_action_steps, _camera_key_map, _state_dim
+    global policy, preprocessor, postprocessor, _policy_type, _n_action_steps, _action_dim, _camera_key_map, _state_dim
 
     args = getattr(app.state, "args", None)
     if args is None:
@@ -247,8 +249,15 @@ def load_model():
     )
 
     from lerobot.configs.types import FeatureType
+    from lerobot.utils.constants import ACTION
 
     _n_action_steps = getattr(policy.config, "n_action_steps", 1)
+
+    # action_dim: output_features에서 읽음 (checkpoint 로드 시 확정)
+    if ACTION in policy.config.output_features:
+        _action_dim = policy.config.output_features[ACTION].shape[0]
+    else:
+        _action_dim = 7  # fallback
 
     # 카메라 키 리맵핑 + state dim: policy config에서 자동 도출
     visual_keys = [

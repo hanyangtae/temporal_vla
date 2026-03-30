@@ -308,9 +308,18 @@ def evaluate(
     act_step = server_info.get("n_action_steps", 1)
     logger.info("act_step: %d (서버 health에서 자동 감지)", act_step)
 
+    action_dim = server_info.get("action_dim", 7)
+    if action_dim != 7:
+        raise RuntimeError(
+            "Calvin 평가는 7D EE space action이 필요합니다. "
+            "서버 모델의 action_dim={}. ".format(action_dim) +
+            "Calvin용 7D EE space로 finetuning된 checkpoint를 사용하세요."
+        )
+    logger.info("action_dim: %d (서버 health에서 자동 감지)", action_dim)
+
     # Processor pipeline (벤치마크별 obs/action 변환)
     # DreamVLA 원본 eval은 static + wrist(gripper) 카메라 모두 사용
-    obs_pipeline, action_pipeline = make_calvin_processors(use_wrist=True)
+    obs_pipeline, action_pipeline = make_calvin_processors(use_wrist=True, action_model_dim=action_dim)
 
     # task oracle (calvin_env.envs.tasks.Tasks) — Calvin-native 클래스
     tasks_cfg = OmegaConf.load(

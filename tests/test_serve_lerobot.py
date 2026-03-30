@@ -293,65 +293,60 @@ class TestBuildRemapConfig(unittest.TestCase):
 
     # ── 카메라 키맵 ──────────────────────────────────────────────────────────
 
-    def test_no_wrist_single_camera_different_key(self):
-        """is_wrist=False, policy 키가 다르면 static → policy 키로 매핑."""
+    def test_single_camera_different_key(self):
+        """policy 키가 다르면 static → policy 키로 매핑."""
+        key_map, _ = _build_remap_config(["observation.images.top"], None)
+        self.assertEqual(
+            key_map, {"observation.images.static": "observation.images.top"}
+        )
+
+    def test_single_camera_same_key_removed(self):
+        """policy 키가 static과 동일하면 맵에서 제거."""
+        key_map, _ = _build_remap_config(["observation.images.static"], None)
+        self.assertEqual(key_map, {})
+
+    def test_two_cameras_wrist_same_key_removed(self):
+        """static+wrist 두 카메라, wrist키가 동일하면 static만 매핑."""
         key_map, _ = _build_remap_config(
-            ["observation.images.top"], None, is_wrist=False
+            ["observation.images.top", "observation.images.wrist"], None
         )
         self.assertEqual(
             key_map, {"observation.images.static": "observation.images.top"}
         )
 
-    def test_no_wrist_same_key_removed(self):
-        """is_wrist=False, policy 키가 static과 동일하면 맵에서 제거."""
+    def test_two_cameras_all_same_keys_empty(self):
+        """두 카메라 모두 src==dst이면 빈 맵."""
         key_map, _ = _build_remap_config(
-            ["observation.images.static"], None, is_wrist=False
+            ["observation.images.static", "observation.images.wrist"], None
         )
         self.assertEqual(key_map, {})
 
-    def test_is_wrist_two_cameras(self):
-        """is_wrist=True → 통일 키 static+wrist가 policy 첫째/둘째 visual 키로 매핑."""
+    def test_three_cameras_all_mapped(self):
+        """세 카메라 모두 다른 키면 전부 매핑."""
         key_map, _ = _build_remap_config(
-            ["observation.images.top", "observation.images.wrist"],
+            ["observation.images.top", "observation.images.wrist_left", "observation.images.wrist_right"],
             None,
-            is_wrist=True,
         )
-        self.assertEqual(
-            key_map,
-            {
-                "observation.images.static": "observation.images.top",
-            },
-        )
-
-    def test_is_wrist_src_eq_dst_removed(self):
-        """is_wrist=True, src==dst인 항목은 맵에서 제거."""
-        key_map, _ = _build_remap_config(
-            ["observation.images.static", "observation.images.wrist"],
-            None,
-            is_wrist=True,
-        )
-        self.assertEqual(key_map, {})
+        self.assertEqual(key_map, {
+            "observation.images.static": "observation.images.top",
+            "observation.images.wrist": "observation.images.wrist_left",
+            "observation.images.wrist2": "observation.images.wrist_right",
+        })
 
     # ── state dim ────────────────────────────────────────────────────────────
 
     def test_state_feat_none_gives_zero(self):
         """state_feat=None → state_dim=0 (슬라이싱 없음)."""
-        _, state_dim = _build_remap_config(
-            ["observation.images.top"], None, is_wrist=False
-        )
+        _, state_dim = _build_remap_config(["observation.images.top"], None)
         self.assertEqual(state_dim, 0)
 
     def test_state_feat_shape_extracted(self):
         """state_feat.shape[0] → state_dim."""
-        _, state_dim = _build_remap_config(
-            ["observation.images.top"], _StateFeat(7), is_wrist=False
-        )
+        _, state_dim = _build_remap_config(["observation.images.top"], _StateFeat(7))
         self.assertEqual(state_dim, 7)
 
     def test_state_feat_14dim(self):
-        _, state_dim = _build_remap_config(
-            ["observation.images.top"], _StateFeat(14), is_wrist=False
-        )
+        _, state_dim = _build_remap_config(["observation.images.top"], _StateFeat(14))
         self.assertEqual(state_dim, 14)
 
 
@@ -498,6 +493,12 @@ class TestHealthEndpoint(unittest.TestCase):
         r = self.client.get("/health")
         self.assertIn("n_action_steps", r.json())
         self.assertIsInstance(r.json()["n_action_steps"], int)
+
+    def test_health_has_action_dim(self):
+        """응답에 action_dim 필드 존재 (calvin_eval.py가 action 차원 검증에 사용)."""
+        r = self.client.get("/health")
+        self.assertIn("action_dim", r.json())
+        self.assertIsInstance(r.json()["action_dim"], int)
 
 
 if __name__ == "__main__":

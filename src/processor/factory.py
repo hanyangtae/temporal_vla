@@ -21,6 +21,7 @@ def make_calvin_processors(
     use_state: bool = True,
     image_size: int = 200,
     gripper_threshold: float = 0.0,
+    action_model_dim: int = 7,
 ) -> Tuple[DataProcessorPipeline, DataProcessorPipeline]:
     """Calvin 벤치마크용 (obs_pipeline, action_pipeline) 생성.
 
@@ -29,6 +30,8 @@ def make_calvin_processors(
         use_state: robot_obs에서 state sub-keys를 추출할지 여부.
         image_size: Calvin 이미지 해상도 (기본 200).
         gripper_threshold: gripper 이산화 임계값.
+        action_model_dim: 모델 출력 action 차원. serve /health의 action_dim에서 읽어 전달.
+                          현재 지원: 7. 미지원 dim은 CalvinActionProcessor에서 ValueError.
 
     Returns:
         (obs_pipeline, action_pipeline) 튜플.
@@ -38,7 +41,7 @@ def make_calvin_processors(
         name="calvin_obs",
     )
     action_pipeline = DataProcessorPipeline(
-        steps=[CalvinActionProcessor(threshold=gripper_threshold)],
+        steps=[CalvinActionProcessor(action_model_dim=action_model_dim, threshold=gripper_threshold)],
         name="calvin_action",
     )
     return obs_pipeline, action_pipeline
