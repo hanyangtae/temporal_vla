@@ -1,14 +1,14 @@
 """
 Phase 1 ProgressPredictor 학습 스크립트.
 
-VITA D.1 학습 방식:
-    - 에피소드 전체(≤120프레임)를 배치로 구성
-    - 매 timestep 순차 TTT 업데이트 → train/inference mismatch 없음
-    - ℓpred: dissimilarity sampling으로 선택된 k=8 window frame에서만 계산
-    - 5 epochs ≈ ~470 gradient steps
+VITA D.1 학습 방식 (full trajectory):
+    - 에피소드 전체를 θ_0에서 시작하여 순차 TTT unroll
+    - ℓpred: dissimilarity sampling으로 선택된 k window frame에서만 계산 (shortcut 방지)
+    - ℓself: 전체 valid frame에서 계산
+    - train/inference mismatch 없음 (둘 다 full trajectory)
 
 meta_forward()로 inner update를 통한 computational graph 유지 (MAML 방식).
-ℓpred gradient가 TTT inner update 전체를 differentiating through 역전파됨.
+ℓpred gradient가 전체 trajectory의 inner update를 통해 역전파됨.
 """
 
 import argparse
@@ -29,67 +29,70 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.ttt.predictor import ProgressPredictor
 from src.datasets.phase1_dataset import Phase1EpisodicDataset
 
-MAX_T = Phase1EpisodicDataset.MAX_EP_LEN  # 120
+
+MAX_EP_LEN = 120  # VITA D.1: pad all trajectories to max length 120
 
 
 def collate_fn(batch):
     """
-    에피소드를 배치 내 최대 길이(≤120)로 패딩.
+    에피소드 배치 구성 (가변 길이 → MAX_EP_LEN으로 패딩).
 
     Returns:
-        z_seq:     [B, T, D]
-        targets:   [B, T, 1]
-        pred_mask: [B, T] bool — ℓpred 계산 frame
-        pad_mask:  [B, T] bool — valid (non-padded) frame
+        z_seq:      [B, MAX_EP_LEN, D]
+        targets:    [B, MAX_EP_LEN, 1]
+        pred_mask:  [B, MAX_EP_LEN] bool — ℓpred 계산 대상 frame
+        valid_mask: [B, MAX_EP_LEN] bool — 패딩이 아닌 valid frame
     """
     B = len(batch)
-    D = batch[0]["z_seq"].shape[-1]
-    max_T_batch = min(max(b["ep_len"] for b in batch), MAX_T)
+    D = batch[0]["z_seq"].size(-1)
 
-    z_seqs    = torch.zeros(B, max_T_batch, D)
-    targets   = torch.zeros(B, max_T_batch, 1)
-    pred_masks = torch.zeros(B, max_T_batch, dtype=torch.bool)
-    pad_masks  = torch.zeros(B, max_T_batch, dtype=torch.bool)
+    z_seq      = torch.zeros(B, MAX_EP_LEN, D)
+    targets    = torch.zeros(B, MAX_EP_LEN, 1)
+    pred_mask  = torch.zeros(B, MAX_EP_LEN, dtype=torch.bool)
+    valid_mask = torch.zeros(B, MAX_EP_LEN, dtype=torch.bool)
 
     for i, b in enumerate(batch):
-        T = min(b["ep_len"], max_T_batch)
-        z_seqs[i, :T]     = b["z_seq"][:T]
-        targets[i, :T]    = b["targets"][:T]
-        pred_masks[i, :T] = b["pred_mask"][:T]
-        pad_masks[i, :T]  = True
+        T = b["ep_len"]
+        z_seq[i, :T]      = b["z_seq"]
+        targets[i, :T]    = b["targets"]
+        pred_mask[i, :T]  = b["pred_mask"]
+        valid_mask[i, :T] = True
 
     return {
-        "z_seq":      z_seqs,
-        "targets":    targets,
-        "pred_mask":  pred_masks,
-        "pad_mask":   pad_masks,
+        "z_seq": z_seq,
+        "targets": targets,
+        "pred_mask": pred_mask,
+        "valid_mask": valid_mask,
     }
 
 
 def forward_pass(predictor, batch, device, lambda_self, create_graph=True):
-    z_seq      = batch["z_seq"].to(device)      # [B, T, D]
-    targets    = batch["targets"].to(device)    # [B, T, 1]
-    pred_mask  = batch["pred_mask"].to(device)  # [B, T] bool
-    pad_mask   = batch["pad_mask"].to(device)   # [B, T] bool
+    z_seq      = batch["z_seq"].to(device)      # [B, T_max, D]
+    targets    = batch["targets"].to(device)     # [B, T_max, 1]
+    pred_mask  = batch["pred_mask"].to(device)   # [B, T_max]
+    valid_mask = batch["valid_mask"].to(device)   # [B, T_max]
 
-    z_seq_t    = z_seq.permute(1, 0, 2).contiguous()  # [T, B, D]
-    valid_mask = pad_mask.permute(1, 0)                # [T, B] bool
+    z_seq_t    = z_seq.permute(1, 0, 2).contiguous()    # [T_max, B, D]
+    valid_mask_t = valid_mask.permute(1, 0).contiguous() # [T_max, B]
 
     result = predictor.meta_forward(
-        z_seq_t, create_graph=create_graph, valid_mask=valid_mask
+        z_seq_t, create_graph=create_graph, valid_mask=valid_mask_t
     )
 
-    progress_seq = result["progress_seq"]   # [T, B, 1]
-    targets_t    = targets.permute(1, 0, 2) # [T, B, 1]
-    pred_mask_t  = pred_mask.permute(1, 0)  # [T, B]
+    progress_seq = result["progress_seq"]    # [T_max, B, 1]
+    targets_t    = targets.permute(1, 0, 2)  # [T_max, B, 1]
+    pred_mask_t  = pred_mask.permute(1, 0)   # [T_max, B]
 
-    # ℓpred: dissimilarity-selected window frame에서만 계산 (VITA Eq.5)
-    pred_selected = progress_seq[pred_mask_t]   # [N, 1]
-    tgt_selected  = targets_t[pred_mask_t]      # [N, 1]
-    pred_loss = F.mse_loss(pred_selected, tgt_selected)
+    # ℓpred: dissimilarity sampling으로 선택된 frame에서만 계산
+    pred_loss = F.mse_loss(
+        progress_seq[pred_mask_t.unsqueeze(-1).expand_as(progress_seq)],
+        targets_t[pred_mask_t.unsqueeze(-1).expand_as(targets_t)],
+    )
 
-    # ℓself: 유효 frame에서의 SSL loss 평균 (패딩은 0으로 처리됨)
-    ssl_loss = torch.stack(result["ssl_losses"]).mean()
+    # ℓself: valid frame만의 SSL loss 평균 (패딩 frame 제외)
+    ssl_losses = torch.stack(result["ssl_losses"])  # [T_max]
+    n_valid_steps = valid_mask_t.any(dim=1).sum()   # 배치 내 최소 1개라도 valid인 timestep 수
+    ssl_loss = ssl_losses.sum() / n_valid_steps.clamp(min=1)
 
     loss = pred_loss + lambda_self * ssl_loss
     return loss, pred_loss, ssl_loss
@@ -125,7 +128,8 @@ def main():
     parser.add_argument("--data_root", type=str, default="data/bridge_v2_lerobot")
     parser.add_argument("--repo_id", type=str, default="FedorX8/bridge_v2_lerobot")
     parser.add_argument("--image_key", type=str, default="observation.images.primary")
-    parser.add_argument("--window_size", type=int, default=8)
+    parser.add_argument("--window_size", type=int, default=8,
+                        help="dissimilarity sampling용 sub-trajectory 길이 (VITA=8)")
     parser.add_argument("--max_windows_per_episode", type=int, default=8,
                         help="dissimilarity sampling k (VITA=8)")
     parser.add_argument("--train_episodes", type=int, default=2986)
@@ -133,6 +137,10 @@ def main():
     parser.add_argument("--split_seed", type=int, default=42)
     parser.add_argument("--embed_cache_path", type=str,
                         default="data/bridge_v2_lerobot_clip_embeddings.pt")
+    parser.add_argument("--task_keywords", type=str, nargs="+",
+                        default=["put", "place", "pick"],
+                        help="task description 필터링 키워드 (OR 조건). "
+                             "VITA: pick-and-place만 사용 (fold, sweep, stack 제외)")
 
     # Model
     parser.add_argument("--input_dim", type=int, default=1024)
@@ -160,23 +168,70 @@ def main():
     parser.add_argument("--wandb_project", type=str, default="temporal-vla")
     parser.add_argument("--wandb_run_name", type=str, default=None)
     parser.add_argument("--resume_ckpt", type=str, default=None)
+    parser.add_argument("--save_suffix", type=str, default=None,
+                        help="체크포인트 폴더명 뒤에 붙일 접미사 (예: mlp, linear)")
 
     args = parser.parse_args()
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     date_str = datetime.now().strftime("%Y%m%d_%H%M")
+    if args.save_suffix:
+        date_str = f"{date_str}_{args.save_suffix}"
     args.save_dir = os.path.join(args.save_dir, date_str)
     os.makedirs(args.save_dir, exist_ok=True)
 
     wandb.init(
         project=args.wandb_project,
-        name=args.wandb_run_name or f"phase1_window_w{args.window_size}_k{args.max_windows_per_episode}",
+        name=args.wandb_run_name or f"phase1_vita_full_traj_k{args.max_windows_per_episode}",
         config=vars(args),
     )
 
     # ──────────────────────────────────────────────
-    # Dataset
+    # Dataset (full trajectory, VITA D.1)
     # ──────────────────────────────────────────────
+
+    # 1) 먼저 전체 에피소드에서 task keyword로 필터링 + 임베딩 캐시 존재 여부 확인
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset as _LRD
+    _tmp_ds = _LRD(repo_id=args.repo_id, root=args.data_root)
+    _meta = _tmp_ds.meta
+
+    # 임베딩 캐시가 있으면 캐시에 포함된 에피소드만 사용
+    cached_indices = None
+    if args.embed_cache_path and os.path.exists(args.embed_cache_path):
+        _cache = torch.load(args.embed_cache_path, map_location="cpu", weights_only=True)
+        cached_indices = set(_cache.keys())
+        del _cache
+        print(f"Embedding cache: {len(cached_indices)} frames cached")
+
+    all_filtered = []
+    n_keyword_match = 0
+    for ep_idx in range(_meta.total_episodes):
+        ep = _meta.episodes[ep_idx]
+        task_text = " ".join(ep.get("tasks", [])).lower()
+        if args.task_keywords and not any(kw.lower() in task_text for kw in args.task_keywords):
+            continue
+        n_keyword_match += 1
+        # 캐시가 있으면, 에피소드 첫 프레임이 캐시에 있는지 확인
+        if cached_indices is not None:
+            ep_from = ep["dataset_from_index"]
+            if ep_from not in cached_indices:
+                continue
+        all_filtered.append(ep_idx)
+    del _tmp_ds
+    print(f"Task filter {args.task_keywords}: {_meta.total_episodes} total → "
+          f"{n_keyword_match} keyword match → {len(all_filtered)} with embeddings")
+
+    # 2) 필터된 에피소드에서 train/val split
+    total_needed = args.train_episodes + args.val_episodes
+    assert len(all_filtered) >= total_needed, (
+        f"pick-and-place 에피소드 {len(all_filtered)}개 < 필요 {total_needed}개"
+    )
+    random.seed(args.split_seed)
+    random.shuffle(all_filtered)
+    train_indices = all_filtered[:args.train_episodes]
+    val_indices   = all_filtered[args.train_episodes:total_needed]
+
+    # 3) 데이터셋 생성 (이미 필터된 인덱스이므로 task_keywords 불필요)
     dataset_kwargs = dict(
         data_root=args.data_root,
         repo_id=args.repo_id,
@@ -185,22 +240,16 @@ def main():
         image_key=args.image_key,
         embed_device=args.embed_device,
         embed_cache_path=args.embed_cache_path,
+        task_keywords=None,  # 이미 필터 완료
     )
-
-    total_needed = args.train_episodes + args.val_episodes
-    all_indices = list(range(total_needed))
-    random.seed(args.split_seed)
-    random.shuffle(all_indices)
-    train_indices = all_indices[:args.train_episodes]
-    val_indices   = all_indices[args.train_episodes:]
 
     print("Loading train dataset...")
     train_ds = Phase1EpisodicDataset(episode_indices=train_indices, **dataset_kwargs)
-    print(f"Train: {len(train_ds)} episodes")
+    print(f"Train: {len(train_ds)} episodes (pick-and-place only)")
 
     print("Loading val dataset...")
     val_ds = Phase1EpisodicDataset(episode_indices=val_indices, **dataset_kwargs)
-    print(f"Val:   {len(val_ds)} episodes")
+    print(f"Val:   {len(val_ds)} episodes (pick-and-place only)")
 
     loader_kwargs = dict(
         batch_size=args.batch_size,
