@@ -34,7 +34,7 @@ class ProgressHead(nn.Module):
         super().__init__()
         self.head = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Linear(hidden_dim, 1),
             nn.Sigmoid(),
         )
