@@ -13,7 +13,7 @@ models/*
 checkpoints/*
 src/policies/UP-VLA/showlab/
 lerobot/tests/**
-
+wandb/**
 temp/**
 
 # AI Assistant
