@@ -24,6 +24,7 @@ import random
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+from scipy.stats import spearmanr
 from tqdm import tqdm
 
 import sys
@@ -41,6 +42,12 @@ def pearson_r(pred: np.ndarray, target: np.ndarray) -> float:
     if pred.std() < 1e-8 or target.std() < 1e-8:
         return 0.0
     return float(np.corrcoef(pred, target)[0, 1])
+
+
+def spearman_rho(pred: np.ndarray, target: np.ndarray) -> float:
+    if pred.std() < 1e-8 or target.std() < 1e-8:
+        return 0.0
+    return float(spearmanr(pred, target).statistic)
 
 
 def mono_rate(pred: np.ndarray) -> float:
@@ -79,13 +86,14 @@ def eval_episode(
     targets = np.linspace(0, 1, len(preds))
 
     return {
-        "mse":       float(np.mean((preds - targets) ** 2)),
-        "mae":       float(np.mean(np.abs(preds - targets))),
-        "pearson_r": pearson_r(preds, targets),
-        "mono_rate": mono_rate(preds),
-        "preds":     preds,
-        "targets":   targets,
-        "ep_len":    len(preds),
+        "mse":         float(np.mean((preds - targets) ** 2)),
+        "mae":         float(np.mean(np.abs(preds - targets))),
+        "pearson_r":   pearson_r(preds, targets),
+        "spearman_rho": spearman_rho(preds, targets),
+        "mono_rate":   mono_rate(preds),
+        "preds":       preds,
+        "targets":     targets,
+        "ep_len":      len(preds),
     }
 
 
@@ -100,10 +108,11 @@ def save_episode_json(ep_idx: int, split: str, r: dict, save_path: str):
         "split": split,
         "ep_len": r["ep_len"],
         "metrics": {
-            "mse":       r["mse"],
-            "mae":       r["mae"],
-            "pearson_r": r["pearson_r"],
-            "mono_rate": r["mono_rate"],
+            "mse":         r["mse"],
+            "mae":         r["mae"],
+            "pearson_r":   r["pearson_r"],
+            "spearman_rho": r["spearman_rho"],
+            "mono_rate":   r["mono_rate"],
         },
         "records": records,
     }
@@ -250,12 +259,13 @@ def eval_split(
         return {}
 
     agg = {
-        "mse":       np.mean([r["mse"]       for r in results]),
-        "mae":       np.mean([r["mae"]        for r in results]),
-        "pearson_r": np.mean([r["pearson_r"]  for r in results]),
-        "mono_rate": np.mean([r["mono_rate"]  for r in results]),
-        "n_episodes": len(results),
-        "mean_ep_len": np.mean([r["ep_len"]   for r in results]),
+        "mse":         np.mean([r["mse"]          for r in results]),
+        "mae":         np.mean([r["mae"]           for r in results]),
+        "pearson_r":   np.mean([r["pearson_r"]     for r in results]),
+        "spearman_rho": np.mean([r["spearman_rho"] for r in results]),
+        "mono_rate":   np.mean([r["mono_rate"]     for r in results]),
+        "n_episodes":  len(results),
+        "mean_ep_len": np.mean([r["ep_len"]        for r in results]),
     }
     agg["examples"] = example_episodes
     agg["all_results"] = all_results
@@ -321,6 +331,9 @@ def main():
                         help="영상 FPS (기본: 10)")
     parser.add_argument("--image_key",     type=str, default="observation.images.primary",
                         help="LeRobotDataset에서 사용할 이미지 키")
+    parser.add_argument("--task_keywords", type=str, nargs="+",
+                        default=["put", "place", "pick"],
+                        help="task description 필터링 키워드 (학습과 동일해야 함)")
     args = parser.parse_args()
 
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
@@ -354,23 +367,31 @@ def main():
     meta = ds.meta
     total_ep = meta.total_episodes
 
-    # ── 학습 시와 동일한 train/val split 재현 ──
-    total_used = args.train_episodes + args.val_episodes
-    all_indices = list(range(total_used))
-    random.seed(args.split_seed)
-    random.shuffle(all_indices)
-    train_idx = all_indices[:args.train_episodes]
-    val_idx   = all_indices[args.train_episodes:]
+    # ── 학습 시와 동일한 방식: task keyword 필터 + 캐시 존재 확인 → train/val split 재현 ──
+    all_filtered = []
+    n_keyword_match = 0
+    for ep_idx in range(total_ep):
+        ep = meta.episodes[ep_idx]
+        task_text = " ".join(ep.get("tasks", [])).lower()
+        if args.task_keywords and not any(kw.lower() in task_text for kw in args.task_keywords):
+            continue
+        n_keyword_match += 1
+        ep_from = ep["dataset_from_index"]
+        if ep_from not in cached_indices:
+            continue
+        all_filtered.append(ep_idx)
+    print(f"Task filter {args.task_keywords}: {total_ep} total → "
+          f"{n_keyword_match} keyword match → {len(all_filtered)} with embeddings")
 
-    # unseen: 캐시에 있는 에피소드 중 train/val 에 없는 것
-    used_set = set(all_indices)
-    max_cached_ep = max(
-        (ep_idx for ep_idx in range(total_ep)
-         if any(i in cached_indices for i in [meta.episodes[ep_idx]["dataset_from_index"]])),
-        default=total_used,
-    )
-    unseen_idx = [i for i in range(total_used, min(max_cached_ep + 1, total_ep))
-                  if i not in used_set]
+    total_used = args.train_episodes + args.val_episodes
+    random.seed(args.split_seed)
+    random.shuffle(all_filtered)
+    train_idx = all_filtered[:args.train_episodes]
+    val_idx   = all_filtered[args.train_episodes:total_used]
+
+    # unseen: 필터된 에피소드 중 train/val에 없는 것
+    used_set = set(train_idx + val_idx)
+    unseen_idx = [i for i in all_filtered[total_used:] if i not in used_set]
     print(f"Split — train: {len(train_idx)}, val: {len(val_idx)}, unseen pool: {len(unseen_idx)}")
 
     # ── 평가 ──
@@ -429,9 +450,11 @@ def main():
                 )
 
     # ── 결과 출력 ──
-    print("\n" + "=" * 55)
-    print(f"{'Split':<10} {'MSE':>8} {'MAE':>8} {'Pearson r':>10} {'Mono rate':>10} {'N':>6}")
-    print("-" * 55)
+    header = f"{'Split':<10} {'MSE':>8} {'MAE':>8} {'Pearson r':>10} {'Spearman':>10} {'Mono rate':>10} {'N':>6}"
+    sep_len = len(header) + 2
+    print("\n" + "=" * sep_len)
+    print(header)
+    print("-" * sep_len)
     for split_name, m in all_metrics.items():
         if not m:
             continue
@@ -440,15 +463,16 @@ def main():
             f"{m['mse']:>8.4f} "
             f"{m['mae']:>8.4f} "
             f"{m['pearson_r']:>10.4f} "
+            f"{m['spearman_rho']:>10.4f} "
             f"{m['mono_rate']:>10.4f} "
             f"{m['n_episodes']:>6}"
         )
-    print("=" * 55)
+    print("=" * sep_len)
 
     # 결과 저장
     result_path = os.path.join(args.save_dir, "metrics.txt")
     with open(result_path, "w") as f:
-        f.write(f"{'Split':<10} {'MSE':>8} {'MAE':>8} {'Pearson r':>10} {'Mono rate':>10} {'N':>6}\n")
+        f.write(f"{'Split':<10} {'MSE':>8} {'MAE':>8} {'Pearson r':>10} {'Spearman':>10} {'Mono rate':>10} {'N':>6}\n")
         for split_name, m in all_metrics.items():
             if not m:
                 continue
@@ -457,6 +481,7 @@ def main():
                 f"{m['mse']:>8.4f} "
                 f"{m['mae']:>8.4f} "
                 f"{m['pearson_r']:>10.4f} "
+                f"{m['spearman_rho']:>10.4f} "
                 f"{m['mono_rate']:>10.4f} "
                 f"{m['n_episodes']:>6}\n"
             )
