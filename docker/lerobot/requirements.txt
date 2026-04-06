@@ -5,3 +5,4 @@ lerobot[pi,groot,smolvla,pusht,libero]
 # Training utilities
 wandb
 tensorboard
+open-clip-torch
