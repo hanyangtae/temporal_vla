@@ -268,7 +268,9 @@ async def predict_action(payload: dict):
               f"task='{instruction[:30]}'")
 
     return {
-        "action": [action.tolist()],
+        "action.eef_pos": [action[:3].tolist()],
+        "action.eef_euler": [action[3:6].tolist()],
+        "action.gripper": [action[6:7].tolist()],
         "latency_ms": (time.time() - t0) * 1000,
     }
 
@@ -278,15 +280,9 @@ async def health():
     return {
         "status": "ok" if model is not None else "not_loaded",
         "model": "dreamvla",
-        "input_features": {
-            "observation.images.static": {"type": "VISUAL", "shape": [3, 224, 224]},
-            "observation.images.wrist": {"type": "VISUAL", "shape": [3, 224, 224]},
-            "observation.state": {"type": "STATE", "shape": [7]},
-        },
-        "output_features": {
-            "action": {"type": "ACTION", "shape": [7]},
-        },
         "n_action_steps": 1,
+        "action_type": "relative",
+        "action_keys": ["action.eef_pos", "action.eef_euler", "action.gripper"],
     }
 
 
