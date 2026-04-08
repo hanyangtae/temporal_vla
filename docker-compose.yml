@@ -70,6 +70,37 @@ services:
     stdin_open: true
     command: ["/bin/bash"]
 
+  # ── GR00T N1.6 Server (Isaac-GR00T 공식) ─────────────────────────
+  # ZMQ 서버로 모델 서빙. robocasa 컨테이너에서 rollout_policy.py로 평가.
+
+  groot:
+    container_name: groot
+    build:
+      context: ./docker/groot
+      dockerfile: Dockerfile
+      args:
+        USER_NAME: ${USER_NAME}
+        USER_ID: ${USER_ID}
+        GROUP_ID: ${GROUP_ID}
+    volumes:
+      - .:/temporal_vla:rw
+      - /D/temporal_vla_data:/D/temporal_vla_data:rw
+    environment:
+      - HF_HOME=/temporal_vla/data/huggingface
+      - PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    network_mode: host
+    ipc: host
+    tty: true
+    stdin_open: true
+    command: ["/bin/bash"]
+
   # ── VLA Model Services (LeRobot 미지원 모델) ─────────────────────
   # 독립 환경에서 학습/추론. 평가는 robocasa 컨테이너에서 HTTP로 요청.
 
@@ -86,6 +117,15 @@ services:
       - .:/temporal_vla:rw
     environment:
       - HF_HOME=/temporal_vla/data/huggingface
+      - PYTHONPATH=/temporal_vla/lerobot/src:/temporal_vla:/temporal_vla/scripts/utils
+      - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     network_mode: host
     tty: true
     stdin_open: true
