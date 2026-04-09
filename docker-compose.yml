@@ -115,8 +115,10 @@ services:
         GROUP_ID: ${GROUP_ID}
     volumes:
       - .:/temporal_vla:rw
+      - /D/temporal_vla_data:/D/temporal_vla_data:rw
     environment:
-      - HF_HOME=/temporal_vla/data/huggingface
+      - HF_HOME=/home/${USER_NAME}/.cache/huggingface
+      - HF_TRUST_REMOTE_CODE=1
       - PYTHONPATH=/temporal_vla/lerobot/src:/temporal_vla:/temporal_vla/scripts/utils
       - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN}
     deploy:
