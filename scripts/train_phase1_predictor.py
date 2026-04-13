@@ -1,7 +1,7 @@
 """
 Phase 1 ProgressPredictor 학습 스크립트.
 
-VITA D.1 학습 방식 (full trajectory):
+VITA D.1 학습 방식 (full trajectory, episodic + mean dissimilarity):
     - 에피소드 전체를 θ_0에서 시작하여 순차 TTT unroll
     - ℓpred: dissimilarity sampling으로 선택된 k window frame에서만 계산 (shortcut 방지)
     - ℓself: 전체 valid frame에서 계산
@@ -136,7 +136,7 @@ def main():
     parser.add_argument("--val_episodes", type=int, default=287)
     parser.add_argument("--split_seed", type=int, default=42)
     parser.add_argument("--embed_cache_path", type=str,
-                        default="data/bridge_v2_lerobot_clip_embeddings.pt")
+                        default="data/bridge_v2_pnp_5000_clip_embeddings.pt")
     parser.add_argument("--task_keywords", type=str, nargs="+",
                         default=["put", "place", "pick"],
                         help="task description 필터링 키워드 (OR 조건). "
@@ -145,7 +145,7 @@ def main():
     # Model
     parser.add_argument("--input_dim", type=int, default=1024)
     parser.add_argument("--proj_dim", type=int, default=64)
-    parser.add_argument("--inner_model_type", type=str, default="mlp",
+    parser.add_argument("--inner_model_type", type=str, default="linear",
                         choices=["linear", "mlp"])
     parser.add_argument("--head_hidden_dim", type=int, default=128)
     parser.add_argument("--eta_base", type=float, default=0.1)
@@ -158,7 +158,7 @@ def main():
     parser.add_argument("--lambda_self", type=float, default=0.5)
     parser.add_argument("--val_steps", type=int, default=50,
                         help="validation 시 사용할 배치 수")
-    parser.add_argument("--log_interval", type=int, default=10)
+    parser.add_argument("--log_interval", type=int, default=50)
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--embed_device", type=str, default="cuda")
 
@@ -182,20 +182,21 @@ def main():
 
     wandb.init(
         project=args.wandb_project,
-        name=args.wandb_run_name or f"phase1_vita_full_traj_k{args.max_windows_per_episode}",
+        name=args.wandb_run_name or f"phase1_episodic_k{args.max_windows_per_episode}",
         config=vars(args),
     )
 
     # ──────────────────────────────────────────────
-    # Dataset (full trajectory, VITA D.1)
+    # Dataset
     # ──────────────────────────────────────────────
 
-    # 1) 먼저 전체 에피소드에서 task keyword로 필터링 + 임베딩 캐시 존재 여부 확인
+    total_needed = args.train_episodes + args.val_episodes
+
+    # task keyword + embed cache 필터링
     from lerobot.datasets.lerobot_dataset import LeRobotDataset as _LRD
     _tmp_ds = _LRD(repo_id=args.repo_id, root=args.data_root)
     _meta = _tmp_ds.meta
 
-    # 임베딩 캐시가 있으면 캐시에 포함된 에피소드만 사용
     cached_indices = None
     if args.embed_cache_path and os.path.exists(args.embed_cache_path):
         _cache = torch.load(args.embed_cache_path, map_location="cpu", weights_only=True)
@@ -211,7 +212,6 @@ def main():
         if args.task_keywords and not any(kw.lower() in task_text for kw in args.task_keywords):
             continue
         n_keyword_match += 1
-        # 캐시가 있으면, 에피소드 첫 프레임이 캐시에 있는지 확인
         if cached_indices is not None:
             ep_from = ep["dataset_from_index"]
             if ep_from not in cached_indices:
@@ -221,17 +221,14 @@ def main():
     print(f"Task filter {args.task_keywords}: {_meta.total_episodes} total → "
           f"{n_keyword_match} keyword match → {len(all_filtered)} with embeddings")
 
-    # 2) 필터된 에피소드에서 train/val split
-    total_needed = args.train_episodes + args.val_episodes
     assert len(all_filtered) >= total_needed, (
-        f"pick-and-place 에피소드 {len(all_filtered)}개 < 필요 {total_needed}개"
+        f"에피소드 {len(all_filtered)}개 < 필요 {total_needed}개"
     )
     random.seed(args.split_seed)
     random.shuffle(all_filtered)
     train_indices = all_filtered[:args.train_episodes]
     val_indices   = all_filtered[args.train_episodes:total_needed]
 
-    # 3) 데이터셋 생성 (이미 필터된 인덱스이므로 task_keywords 불필요)
     dataset_kwargs = dict(
         data_root=args.data_root,
         repo_id=args.repo_id,
@@ -243,11 +240,11 @@ def main():
         task_keywords=None,  # 이미 필터 완료
     )
 
-    print("Loading train dataset...")
+    print(f"Loading train dataset...")
     train_ds = Phase1EpisodicDataset(episode_indices=train_indices, **dataset_kwargs)
     print(f"Train: {len(train_ds)} episodes (pick-and-place only)")
 
-    print("Loading val dataset...")
+    print(f"Loading val dataset...")
     val_ds = Phase1EpisodicDataset(episode_indices=val_indices, **dataset_kwargs)
     print(f"Val:   {len(val_ds)} episodes (pick-and-place only)")
 
@@ -261,8 +258,11 @@ def main():
     val_loader   = DataLoader(val_ds, shuffle=False, **loader_kwargs)
 
     steps_per_epoch = len(train_loader)
-    total_steps     = args.n_epochs * steps_per_epoch
-    print(f"Steps per epoch: {steps_per_epoch}, total: {total_steps}")
+    n_epochs = args.n_epochs
+    total_steps = n_epochs * steps_per_epoch
+
+    print(f"Steps per epoch: {steps_per_epoch}, total_steps: {total_steps}, "
+          f"n_epochs: {n_epochs}")
 
     # ──────────────────────────────────────────────
     # Model
@@ -278,7 +278,10 @@ def main():
 
     n_params = sum(p.numel() for p in predictor.parameters())
     print(f"ProgressPredictor params: {n_params:,}")
-    wandb.config.update({"n_params": n_params, "steps_per_epoch": steps_per_epoch})
+    wandb.config.update({
+        "n_params": n_params, "steps_per_epoch": steps_per_epoch,
+        "total_steps": total_steps,
+    }, allow_val_change=True)
 
     optimizer = torch.optim.AdamW(predictor.parameters(), lr=args.lr, weight_decay=1e-4)
 
@@ -291,23 +294,21 @@ def main():
         return 0.5 * (1.0 + math.cos(math.pi * progress))
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
-    start_epoch  = 0
-    global_step  = 0
+    global_step = 0
     if args.resume_ckpt:
         ckpt = torch.load(args.resume_ckpt, map_location=device)
         predictor.load_state_dict(ckpt["model_state_dict"])
         optimizer.load_state_dict(ckpt["optimizer_state_dict"])
         if "scheduler_state_dict" in ckpt:
             scheduler.load_state_dict(ckpt["scheduler_state_dict"])
-        start_epoch = ckpt.get("epoch", 0)
-        global_step = start_epoch * steps_per_epoch
-        print(f"Resumed from {args.resume_ckpt} (epoch {start_epoch})")
+        global_step = ckpt.get("global_step", 0)
+        print(f"Resumed from {args.resume_ckpt} (step {global_step})")
 
     # ──────────────────────────────────────────────
-    # Training loop (epoch 기반, VITA D.1: 5 epochs)
+    # Training loop
     # ──────────────────────────────────────────────
     predictor.train()
-    for epoch in range(start_epoch, args.n_epochs):
+    for epoch in range(n_epochs):
         for batch in train_loader:
             loss, pred_loss, ssl_loss = forward_pass(
                 predictor, batch, device, args.lambda_self
@@ -323,7 +324,7 @@ def main():
             if global_step % args.log_interval == 0:
                 current_lr = scheduler.get_last_lr()[0]
                 print(
-                    f"[epoch {epoch+1}/{args.n_epochs} step {global_step}] "
+                    f"[epoch {epoch+1} step {global_step}/{total_steps}] "
                     f"loss={loss.item():.4f}  pred={pred_loss.item():.4f}  "
                     f"ssl={ssl_loss.item():.4f}  lr={current_lr:.2e}"
                 )
@@ -335,7 +336,7 @@ def main():
                     "train/epoch":     epoch + 1,
                 }, step=global_step)
 
-        # ── Epoch 종료: validation + 체크포인트 저장 ──
+        # Epoch 끝마다 validation + 체크포인트 저장
         val_metrics = validate(predictor, val_loader, device, args.lambda_self, args.val_steps)
         wandb.log(val_metrics, step=global_step)
         print(
@@ -344,10 +345,11 @@ def main():
             f"pred={val_metrics['val/pred_loss']:.4f}  "
             f"ssl={val_metrics['val/ssl_loss']:.4f}"
         )
+        predictor.train()
 
-        ckpt_path = os.path.join(args.save_dir, f"epoch_{epoch+1:03d}.pt")
+        ckpt_path = os.path.join(args.save_dir, f"step_{global_step:06d}.pt")
         torch.save({
-            "epoch":                epoch + 1,
+            "global_step":          global_step,
             "model_state_dict":     predictor.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
             "scheduler_state_dict": scheduler.state_dict(),
@@ -363,7 +365,7 @@ def main():
     predictor.save_init()
     final_path = os.path.join(args.save_dir, "phase1_final.pt")
     torch.save(predictor.state_dict(), final_path)
-    print(f"Phase 1 complete. Final: {final_path}")
+    print(f"Phase 1 complete ({global_step} steps). Final: {final_path}")
 
     wandb.finish()
 
