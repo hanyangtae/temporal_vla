@@ -93,13 +93,16 @@ class CalvinActionProcessor(ActionProcessorStep):
             )
 
         # gripper — 이산화
+        # X-VLA sigmoid: 높은 값 = close(학습 라벨 1.0=closed), 낮은 값 = open
+        # Calvin 규격: 1 = open, -1 = close
+        # 따라서: sigmoid < threshold → open(1), sigmoid >= threshold → close(-1)
         gripper = np.asarray(action_dict["action.gripper"], dtype=np.float32).flatten()
-        gripper_val = 1.0 if float(gripper[0]) > self.threshold else -1.0
+        gripper_val = 1.0 if float(gripper[0]) < self.threshold else -1.0
 
         if self.action_type == "absolute":
             # Calvin env: len(action)==3 이면 absolute로 처리
-            # action = (pos_array, euler_array, gripper_scalar)
-            return (eef_pos[:3], eef_euler[:3], gripper_val)
+            # action = ((x,y,z), (euler_x,euler_y,euler_z), (gripper,))
+            return (tuple(eef_pos[:3]), tuple(eef_euler[:3]), (gripper_val,))
 
         # relative: flat 7D
         return np.concatenate([eef_pos[:3], eef_euler[:3], [gripper_val]]).astype(np.float32)
@@ -132,11 +135,15 @@ class CalvinActionProcessor(ActionProcessorStep):
 def _rot6d_to_euler(rot6d: np.ndarray) -> np.ndarray:
     """6D rotation → euler (roll, pitch, yaw).
 
-    rot6d: (..., 6) — rotation matrix의 첫 두 column을 flatten한 것.
+    rot6d: (..., 6) — R.as_matrix()[:,:2].reshape(6) 형태.
+    행 우선 flatten이므로 [R00, R01, R10, R11, R20, R21].
+    열 벡터 복원은 interleaved 인덱싱: col0=[0,2,4], col1=[1,3,5].
+
     반환: (..., 3) — euler angles (Rz @ Ry @ Rx convention).
     """
-    a1 = rot6d[..., 0:3]
-    a2 = rot6d[..., 3:6]
+    # interleaved extraction: rotation matrix column vectors
+    a1 = rot6d[..., 0::2]  # [0, 2, 4] → R column 0
+    a2 = rot6d[..., 1::2]  # [1, 3, 5] → R column 1
 
     # Gram-Schmidt orthogonalization → rotation matrix columns
     b1 = a1 / (np.linalg.norm(a1, axis=-1, keepdims=True) + 1e-8)

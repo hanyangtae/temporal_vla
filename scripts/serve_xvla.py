@@ -67,7 +67,10 @@ def _euler_to_rot6d(euler: np.ndarray) -> np.ndarray:
     """Euler angles (roll, pitch, yaw) → 6D rotation representation.
 
     Calvin euler 순서: roll(x), pitch(y), yaw(z).
-    R = Rz(yaw) @ Ry(pitch) @ Rx(roll), rot6d = [R[:,0], R[:,1]].
+    R = Rz(yaw) @ Ry(pitch) @ Rx(roll).
+
+    X-VLA rot6d 포맷: R[:, :2].reshape(6) = 행 우선 flatten
+      [R00, R01, R10, R11, R20, R21]
     """
     r, p, y = float(euler[0]), float(euler[1]), float(euler[2])
     cr, sr = math.cos(r), math.sin(r)
@@ -80,7 +83,8 @@ def _euler_to_rot6d(euler: np.ndarray) -> np.ndarray:
         [-sp,     cp * sr,                cp * cr],
     ], dtype=np.float32)
 
-    return np.concatenate([R[:, 0], R[:, 1]])  # (6,)
+    # R[:, :2].reshape(6) — 행 우선: [R00, R01, R10, R11, R20, R21]
+    return R[:, :2].reshape(6)
 
 
 # ─── 전처리 ──────────────────────────────────────────────────────────────────
@@ -176,7 +180,8 @@ def load_model():
     )
     model = model.to(_device).eval()
 
-    _tokenizer = AutoTokenizer.from_pretrained(args.pretrained_path)
+    # X-VLA는 BART tokenizer 사용. AutoTokenizer는 XVLAConfig를 모르므로 직접 지정.
+    _tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large")
 
     _n_action_steps = args.n_action_steps
     _denoising_steps = args.denoising_steps

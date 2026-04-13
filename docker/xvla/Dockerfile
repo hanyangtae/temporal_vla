@@ -33,16 +33,18 @@ ENV PATH="/home/${USER_NAME}/.local/bin:${PATH}"
 
 RUN pip install --upgrade pip setuptools wheel
 
-# PyTorch (CUDA 12.1)
+# PyTorch (CUDA 12.1) — lerobot이 덮어쓰지 않도록 먼저 설치 후 제약
 RUN pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 \
     --index-url https://download.pytorch.org/whl/cu121
 
-# Flash Attention
+# Flash Attention (PyTorch 2.5.1 호환)
 RUN pip install psutil packaging ninja
 RUN pip install flash-attn --no-build-isolation
 
-# LeRobot with X-VLA support (includes lerobot >= 0.4 + xvla policy)
+# LeRobot with X-VLA support + 의존성
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install -r /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt \
+    && pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 \
+       --index-url https://download.pytorch.org/whl/cu121
 
 CMD ["/bin/bash"]
