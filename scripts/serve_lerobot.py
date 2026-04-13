@@ -27,6 +27,7 @@ import base64
 import io
 import sys
 import time
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -189,10 +190,19 @@ async def predict_action(payload: dict):
     if action_np.ndim == 1:
         action_np = action_np[np.newaxis, :]  # [action_dim] → [1, action_dim]
 
-    return {
-        "action": action_np.tolist(),
-        "latency_ms": (time.time() - t0) * 1000,
-    }
+    # action_dim에 따라 sub-key 분리
+    dim = action_np.shape[-1]
+    result = {"latency_ms": (time.time() - t0) * 1000}
+    if dim >= 7:
+        # 표준 EE space: pos(3) + euler(3) + gripper(1) [+ extra...]
+        result["action.eef_pos"] = action_np[:, :3].tolist()
+        result["action.eef_euler"] = action_np[:, 3:6].tolist()
+        result["action.gripper"] = action_np[:, 6:7].tolist()
+    else:
+        # 비표준 dim: flat으로 반환 (하위호환)
+        result["action"] = action_np.tolist()
+
+    return result
 
 
 @app.get("/health")
@@ -201,7 +211,8 @@ async def health():
         "status": "ok" if policy is not None else "not_loaded",
         "model": _policy_type,
         "n_action_steps": _n_action_steps,
-        "action_dim": _action_dim,
+        "action_type": "relative",
+        "action_keys": ["action.eef_pos", "action.eef_euler", "action.gripper"],
     }
 
 
@@ -238,13 +249,64 @@ def load_model():
     from lerobot.policies.factory import get_policy_class, make_pre_post_processors
 
     policy_cls = get_policy_class(args.policy_type)
-    policy = policy_cls.from_pretrained(args.pretrained_path)
+
+    # RLinf 등 외부 체크포인트: config 파일 없이 safetensors만 있는 경우
+    ckpt_dir = Path(args.pretrained_path)
+    has_lerobot_config = (ckpt_dir / "config.json").exists() or not ckpt_dir.is_dir()
+    if not has_lerobot_config and (ckpt_dir / "model.safetensors").exists():
+        print(f"[INFO] lerobot config 없음 — 외부 체크포인트 수동 로딩: {ckpt_dir}")
+        from safetensors.torch import load_file
+
+        from lerobot.configs.policies import PolicyFeature
+        from lerobot.configs.types import FeatureType
+
+        cfg = policy_cls.config_class()
+        # CALVIN 기본 설정 (PolicyFeature 객체로 생성)
+        cfg.input_features = {
+            "observation.images.top": PolicyFeature(type=FeatureType.VISUAL, shape=[3, 200, 200]),
+            "observation.state": PolicyFeature(type=FeatureType.STATE, shape=[7]),
+        }
+        cfg.output_features = {
+            "action": PolicyFeature(type=FeatureType.ACTION, shape=[7]),
+        }
+        # norm_stats 로딩
+        norm_stats_path = list(ckpt_dir.rglob("norm_stats.json"))
+        if norm_stats_path:
+            import json as _json
+            with open(norm_stats_path[0]) as _f:
+                raw_norm = _json.load(_f)
+            if "norm_stats" in raw_norm:
+                raw_norm = raw_norm["norm_stats"]
+            # state -> observation.state, actions -> action
+            dataset_stats = {}
+            if "state" in raw_norm:
+                dataset_stats["observation.state"] = {
+                    sk: torch.tensor(sv) for sk, sv in raw_norm["state"].items()
+                }
+            if "actions" in raw_norm:
+                dataset_stats["action"] = {
+                    sk: torch.tensor(sv) for sk, sv in raw_norm["actions"].items()
+                }
+            print(f"  norm_stats loaded: {list(dataset_stats.keys())}")
+
+        policy = policy_cls(cfg)
+        state_dict = load_file(str(ckpt_dir / "model.safetensors"))
+        # weight tying 호환: lm_head <-> embed_tokens
+        embed_key = "paligemma_with_expert.paligemma.model.language_model.embed_tokens.weight"
+        lm_head_key = "paligemma_with_expert.paligemma.lm_head.weight"
+        if lm_head_key in state_dict and embed_key not in state_dict:
+            state_dict[embed_key] = state_dict[lm_head_key]
+        policy.model.load_state_dict(state_dict, strict=True)
+        print(f"  외부 체크포인트 로드 성공")
+    else:
+        policy = policy_cls.from_pretrained(args.pretrained_path)
+
     policy.config.device = args.device
     policy.to(args.device)
     policy.eval()
     preprocessor, postprocessor = make_pre_post_processors(
         policy_cfg=policy.config,
-        pretrained_path=args.pretrained_path,
+        pretrained_path=args.pretrained_path if has_lerobot_config else None,
         dataset_stats=dataset_stats,
     )
 
@@ -255,7 +317,11 @@ def load_model():
 
     # action_dim: output_features에서 읽음 (checkpoint 로드 시 확정)
     if ACTION in policy.config.output_features:
-        _action_dim = policy.config.output_features[ACTION].shape[0]
+        feat = policy.config.output_features[ACTION]
+        if isinstance(feat, dict):
+            _action_dim = feat["shape"][0]
+        else:
+            _action_dim = feat.shape[0]
     else:
         _action_dim = 7  # fallback
 
@@ -263,11 +329,16 @@ def load_model():
     visual_keys = [
         k
         for k, v in policy.config.input_features.items()
-        if v.type == FeatureType.VISUAL
+        if (v.get("type") if isinstance(v, dict) else v.type) == (FeatureType.VISUAL if not isinstance(v, dict) else "VISUAL")
     ]
-    _camera_key_map, _state_dim = _build_remap_config(
-        visual_keys, getattr(policy.config, "robot_state_feature", None)
-    )
+    state_feat = getattr(policy.config, "robot_state_feature", None)
+    # 외부 체크포인트: robot_state_feature 없으면 input_features에서 state dim 추출
+    if state_feat is None and "observation.state" in policy.config.input_features:
+        sf = policy.config.input_features["observation.state"]
+        _state_dim = sf["shape"][0] if isinstance(sf, dict) else sf.shape[0]
+    _camera_key_map, sd = _build_remap_config(visual_keys, state_feat)
+    if sd > 0:
+        _state_dim = sd
 
     print(
         f"LeRobot '{args.policy_type}' loaded from {args.pretrained_path} "

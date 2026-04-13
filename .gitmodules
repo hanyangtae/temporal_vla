@@ -18,3 +18,6 @@
 [submodule "src/policies/UP-VLA"]
 	path = src/policies/UP-VLA
 	url = https://github.com/CladernyJorn/UP-VLA
+[submodule "src/policies/Isaac-GR00T"]
+	path = src/policies/Isaac-GR00T
+	url = https://github.com/NVIDIA/Isaac-GR00T.git

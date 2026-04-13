@@ -32,9 +32,32 @@ VLA 모델의 **실패 루프 탈출** 문제를 연구하는 프로젝트.
 
 ## 통일 API 규격
 
-`scripts/utils/vla_client.py:1-24` 참고. 핵심 규칙:
+`scripts/utils/vla_client.py` 참고. 핵심 규칙:
+
+### Observation (요청)
 - state sub-keys는 벤치마크마다 존재하는 키가 다름. 모델 서버는 필요한 키만 꺼내 쓰고, 없으면 변환(quat→euler 등)을 자체 수행.
-- 이미지는 base64 PNG. action 응답은 항상 2D array.
+- 이미지는 base64 PNG.
+- 예: `observation.images.static`, `observation.state.eef_pos`, `observation.state.eef_euler`, `task`
+
+### Action (응답) — Sub-key 방식
+- 모델 서버는 자신의 native format을 **action sub-key**로 분리하여 반환.
+- 벤치마크 측 ActionProcessor가 자신에게 필요한 포맷으로 변환.
+- action sub-key 값은 항상 2D list `[n_steps, dim]`.
+
+```
+// relative 모델 (DreamVLA, UP-VLA 등)
+{"action.eef_pos": [[dx,dy,dz],...], "action.eef_euler": [[r,p,y],...], "action.gripper": [[g],...]}
+
+// absolute 모델 (X-VLA 등)
+{"action.eef_pos": [[x,y,z],...], "action.eef_rot6d": [[6D],...], "action.gripper": [[g],...]}
+```
+
+표준 action sub-key: `action.eef_pos`, `action.eef_euler`, `action.eef_rot6d`, `action.eef_quat`, `action.gripper`, `action.joint_pos`
+
+### /health 응답
+- `action_type`: `"relative"` | `"absolute"` — 모든 서버 필수.
+- `action_keys`: 서버가 반환하는 action sub-key 목록.
+- `n_action_steps`: 예측당 반환 action 수.
 
 ## 주요 파일 경로
 
@@ -47,6 +70,8 @@ VLA 모델의 **실패 루프 탈출** 문제를 연구하는 프로젝트.
 - 경로 설정: `scripts/path_setup.py`
 - 모델 소스 (submodule): `src/policies/dreamvla/`, `src/policies/UP-VLA/`
 - 벤치마크 소스 (submodule): `src/benchmarks/robocasa/`, `src/benchmarks/robosuite/`, `src/benchmarks/calvin/`, `lerobot/`
+-출력: `outputs`
+-모델 추론 결과 출력: `outputs/eval/{benchmark}/{model}/{yymmddhhmmss}/`
 
 ## 개발 컨벤션
 
