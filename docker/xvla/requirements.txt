@@ -1,6 +1,10 @@
 # X-VLA via LeRobot (native integration, lerobot v3.0 dataset support)
 lerobot[xvla]
 
+# HuggingFace trust_remote_code 의존성 (X-VLA Calvin checkpoint)
+timm
+transformers>=4.44,<4.50
+
 # Inference server
 fastapi
 uvicorn
