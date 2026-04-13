@@ -48,16 +48,37 @@ RoboCasa/Calvin 시뮬레이션 환경에서 다양한 VLA 모델(pi0, groot, Dr
 모든 컨테이너: ./  →  /temporal_vla (볼륨 마운트)
 ```
 
-### 통일 API 규격 (LeRobot 컨벤션)
+### 통일 API 규격
 
 모든 모델 서버(`serve_*.py`)가 동일한 엔드포인트와 요청/응답 형식을 따릅니다.
-키 네이밍은 [LeRobot](https://github.com/huggingface/lerobot) 컨벤션을 따릅니다:
 
 | Endpoint | 설명 |
 |----------|------|
-| `POST /act` | 액션 예측. 요청: `{"observation.images.static": b64png, "observation.images.wrist": b64png, "observation.state": [...], "task": "..."}`<br>응답: `{"action": [[floats], ...], "latency_ms": float}` |
+| `POST /act` | 액션 예측 |
 | `POST /reset` | 에피소드 시작 시 히스토리 초기화 (필요 없는 모델은 no-op) |
-| `GET /health` | 서버 상태 + feature 정보 (`input_features`, `output_features`, `n_action_steps`) |
+| `GET /health` | 서버 상태 + `action_type`, `action_keys`, `n_action_steps` |
+
+**요청 (Observation)**: 벤치마크가 env obs를 sub-key로 분리하여 전송.
+```json
+{
+  "observation.images.static": "base64png",
+  "observation.images.wrist": "base64png",
+  "observation.state.eef_pos": [x, y, z],
+  "observation.state.eef_euler": [r, p, y],
+  "task": "pick up the red block"
+}
+```
+
+**응답 (Action)**: 모델 서버가 자신의 native format을 action sub-key로 분리하여 반환. 벤치마크 측 ActionProcessor가 env에 맞게 변환.
+```json
+// relative 모델 (DreamVLA, UP-VLA 등)
+{"action.eef_pos": [[dx,dy,dz],...], "action.eef_euler": [[r,p,y],...], "action.gripper": [[g],...]}
+
+// absolute 모델 (X-VLA 등)
+{"action.eef_pos": [[x,y,z],...], "action.eef_rot6d": [[6D],...], "action.gripper": [[g],...]}
+```
+
+표준 action sub-key: `action.eef_pos`, `action.eef_euler`, `action.eef_rot6d`, `action.eef_quat`, `action.gripper`, `action.joint_pos`
 
 벤치마크 스크립트는 `VLAClient`(`scripts/utils/vla_client.py`)와 `ProcessorPipeline`(`src/processor/`)을 사용합니다.
 `--vla-server` URL만 바꾸면 어떤 모델이든 평가할 수 있으며, obs/action 변환은 벤치마크별 Processor가 처리합니다.
@@ -228,19 +249,6 @@ docker compose logs -f robocasa                            # 실시간 로그
 
 ### Training
 
-```bash
-# X-VLA LoRA fine-tuning
-docker compose run --rm xvla \
-  bash /temporal_vla/scripts/train_xvla.sh
-
-# DreamVLA fine-tuning (Calvin)
-docker compose run --rm dreamvla \
-  bash /temporal_vla/scripts/train_dreamvla.sh
-
-# DreamVLA fine-tuning (RoboCasa)
-docker compose run --rm dreamvla \
-  bash /temporal_vla/scripts/train_dreamvla_robocasa.sh
-```
 
 ### Inference Server (통일 API)
 
@@ -266,14 +274,6 @@ docker compose run --rm upvla \
 ### Evaluation
 
 ```bash
-# 녹화 데이터 재생 평가 (빠른 상태 체크, 기본값)
-docker compose exec robocasa python /temporal_vla/scripts/robocasa_playback_eval.py \
-  --dataset /temporal_vla/data/datasets/v1.0/pretrain/atomic/TurnOnToaster/20250820/lerobot
-
-# 녹화 데이터 재생 평가 (open-loop 액션 재생, 궤적 발산 확인)
-docker compose exec robocasa python /temporal_vla/scripts/robocasa_playback_eval.py \
-  --dataset <path> --use-actions
-
 # RoboCasa closed-loop 평가 (모델 무관, 서버 먼저 실행 필요)
 # --vla-server URL만 바꾸면 DreamVLA, X-VLA, UP-VLA 등 어떤 모델이든 평가 가능
 docker compose exec robocasa python /temporal_vla/scripts/robocasa_vla_eval.py \

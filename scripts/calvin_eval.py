@@ -20,10 +20,10 @@ VLA 서버(serve_*.py)가 먼저 실행 중이어야 한다.
 """
 
 URL_MAP = {
-    "http://localhost:8400": "LeRobot",
-    "http://localhost:8300": "UP-VLA",
-    "http://localhost:8200": "DreamVLA",
-    "http://localhost:8100": "X-VLA",
+    "http://localhost:8400": "lerobot",
+    "http://localhost:8300": "upvla",
+    "http://localhost:8200": "dreamvla",
+    "http://localhost:8100": "xvla",
 }
 
 import argparse
@@ -144,7 +144,12 @@ def _predict(
     processed_obs: Dict,
     instruction: str,
 ) -> Tuple:
-    """통일 API로 액션 예측. (actions [act_step, 7], None, None) 반환.
+    """통일 API로 액션 예측.
+
+    반환: (actions, None, None)
+      - actions: dict[str, np.ndarray] (sub-keyed) 또는 np.ndarray (flat)
+      - sub-keyed 예: {"action.eef_pos": [N,3], "action.eef_rot6d": [N,6], ...}
+      - flat 예: [N, 7]
 
     processed_obs는 obs_pipeline 을 거친 결과:
       {"observation.images.static": uint8 HWC, ...}
@@ -192,6 +197,23 @@ def _get_raw_image(obs: Dict, key: str) -> np.ndarray:
 # ─── 평가 루프 ───────────────────────────────────────────────────────────────
 
 
+def _action_buffer_len(action_buffer):
+    """action_buffer(dict 또는 ndarray)의 step 수 반환."""
+    if isinstance(action_buffer, dict):
+        return next(iter(action_buffer.values())).shape[0]
+    return len(action_buffer)
+
+
+def _action_buffer_get(action_buffer, idx):
+    """action_buffer에서 idx번째 action 추출.
+
+    dict → {k: v[idx]} (sub-keyed), ndarray → ndarray[idx] (flat).
+    """
+    if isinstance(action_buffer, dict):
+        return {k: v[idx] for k, v in action_buffer.items()}
+    return action_buffer[idx]
+
+
 def _rollout(
     env,
     task_oracle,
@@ -200,23 +222,29 @@ def _rollout(
     vla_client: VLAClient,
     obs_pipeline,
     action_pipeline,
+    action_type: str = "relative",
     record: bool = False,
 ) -> Tuple[bool, List[np.ndarray]]:
     """단일 subtask 롤아웃. (성공 여부, 프레임 리스트) 반환."""
-    # 원본 DreamVLA eval과 동일: subtask마다 히스토리 초기화
     vla_client.reset()
     obs = env.get_obs()
     start_info = env.get_info()
     action_buffer = None
+    buf_len = 0
+    buf_idx = 0
     frames = []
 
     for step in range(EP_LEN):
-        if action_buffer is None or step % len(action_buffer) == 0:
+        if action_buffer is None or buf_idx >= buf_len:
             processed = obs_pipeline({TransitionKey.OBSERVATION: obs})
             processed_obs = processed[TransitionKey.OBSERVATION]
             action_buffer, _, _ = _predict(vla_client, processed_obs, instruction)
+            buf_len = _action_buffer_len(action_buffer)
+            buf_idx = 0
 
-        raw_action = action_buffer[step % len(action_buffer)]
+        raw_action = _action_buffer_get(action_buffer, buf_idx)
+        buf_idx += 1
+
         processed = action_pipeline({TransitionKey.ACTION: raw_action})
         obs, _, _, current_info = env.step(processed[TransitionKey.ACTION])
 
@@ -232,6 +260,7 @@ def _rollout(
     return False, frames
 
 
+
 def _evaluate_sequence(
     env,
     task_oracle,
@@ -241,6 +270,7 @@ def _evaluate_sequence(
     vla_client: VLAClient,
     obs_pipeline,
     action_pipeline,
+    action_type: str = "relative",
     record: bool = False,
     video_dir: Optional[Path] = None,
     seq_idx: int = 0,
@@ -262,6 +292,7 @@ def _evaluate_sequence(
             vla_client,
             obs_pipeline,
             action_pipeline,
+            action_type=action_type,
             record=record,
         )
         if record and frames:
@@ -308,18 +339,19 @@ def evaluate(
     act_step = server_info.get("n_action_steps", 1)
     logger.info("act_step: %d (서버 health에서 자동 감지)", act_step)
 
-    action_dim = server_info.get("action_dim", 7)
-    if action_dim != 7:
-        raise RuntimeError(
-            "Calvin 평가는 7D EE space action이 필요합니다. "
-            "서버 모델의 action_dim={}. ".format(action_dim) +
-            "Calvin용 7D EE space로 finetuning된 checkpoint를 사용하세요."
-        )
-    logger.info("action_dim: %d (서버 health에서 자동 감지)", action_dim)
+    action_type = server_info.get("action_type", "relative")
+    action_keys = server_info.get("action_keys", [])
+    logger.info("action_type: %s, action_keys: %s", action_type, action_keys)
+
+    # gripper threshold: absolute 모델(X-VLA 등)은 0.8, relative 모델은 0.0
+    gripper_threshold = 0.8 if action_type == "absolute" else 0.0
 
     # Processor pipeline (벤치마크별 obs/action 변환)
-    # DreamVLA 원본 eval은 static + wrist(gripper) 카메라 모두 사용
-    obs_pipeline, action_pipeline = make_calvin_processors(use_wrist=True, action_model_dim=action_dim)
+    obs_pipeline, action_pipeline = make_calvin_processors(
+        use_wrist=True,
+        gripper_threshold=gripper_threshold,
+        action_type=action_type,
+    )
 
     # task oracle (calvin_env.envs.tasks.Tasks) — Calvin-native 클래스
     tasks_cfg = OmegaConf.load(
@@ -360,6 +392,7 @@ def evaluate(
             vla_client,
             obs_pipeline,
             action_pipeline,
+            action_type=action_type,
             record=record,
             video_dir=video_dir,
             seq_idx=seq_idx,
@@ -447,7 +480,7 @@ def main():
         output_path=Path(args.output) if args.output else None,
         num_videos=args.num_videos,
         video_dir=Path(
-            f"/temporal_vla/outputs/calvin_eval/{URL_MAP[args.server_url]}/{time.strftime('%Y%m%d_%H%M%S')}"
+            f"/temporal_vla/outputs/eval/calvin/{URL_MAP[args.server_url]}/{time.strftime('%y%m%d%H%M%S')}"
         ),
         save_all_videos=args.save_all_videos,
     )

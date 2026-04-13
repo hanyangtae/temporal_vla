@@ -80,7 +80,7 @@ class VLAClient:
         images: dict[str, np.ndarray],
         states: dict[str, np.ndarray] | None = None,
         instruction: str = "",
-    ) -> tuple[np.ndarray, float]:
+    ):
         """모델 서버에 액션 예측 요청.
 
         Args:
@@ -92,8 +92,13 @@ class VLAClient:
             instruction: 태스크 언어 지시문.
 
         Returns:
-            (actions [N, action_dim], latency_ms)
-            N은 모델의 action prediction steps (1 이상).
+            (actions, latency_ms)
+
+            actions 형식은 서버 응답에 따라 결정:
+              - Sub-keyed (신규): dict[str, np.ndarray]
+                예: {"action.eef_pos": [N, 3], "action.eef_rot6d": [N, 6], ...}
+              - Flat (하위호환): np.ndarray [N, action_dim]
+                예: [N, 7]
         """
         payload = {}
         for k, v in images.items():
@@ -110,6 +115,19 @@ class VLAClient:
         latency_ms = (time.time() - t0) * 1000
 
         result = r.json()
+
+        # Sub-keyed 포맷 감지: "action.*" 키가 하나라도 있으면 dict 반환
+        action_keys = [k for k in result if k.startswith("action.")]
+        if action_keys:
+            action_dict = {}
+            for k in action_keys:
+                arr = np.array(result[k], dtype=np.float32)
+                if arr.ndim == 1:
+                    arr = arr[np.newaxis, :]
+                action_dict[k] = arr
+            return action_dict, latency_ms
+
+        # 하위호환: flat "action" 배열
         actions = np.array(result["action"], dtype=np.float32)
         if actions.ndim == 1:
             actions = actions[np.newaxis, :]

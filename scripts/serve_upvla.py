@@ -186,7 +186,12 @@ async def predict_action(payload: dict):
         actions_np = actions_np[np.newaxis, :]
     latency_ms = (time.time() - t0) * 1000
 
-    return {"action": actions_np.tolist(), "latency_ms": latency_ms}
+    return {
+        "action.eef_pos": actions_np[:, :3].tolist(),
+        "action.eef_euler": actions_np[:, 3:6].tolist(),
+        "action.gripper": actions_np[:, 6:7].tolist(),
+        "latency_ms": latency_ms,
+    }
 
 
 @app.post("/reset")
@@ -198,26 +203,12 @@ async def reset():
 @app.get("/health")
 async def health():
     act_step = int(_config.act_step) if _config is not None else None
-    resolution = (
-        int(_config.dataset.preprocessing.resolution) if _config is not None else 256
-    )
     return {
         "status": "ok" if _model is not None else "not_loaded",
         "model": "upvla",
-        "input_features": {
-            "observation.images.static": {
-                "type": "VISUAL",
-                "shape": [3, resolution, resolution],
-            },
-            "observation.images.wrist": {
-                "type": "VISUAL",
-                "shape": [3, resolution, resolution],
-            },
-        },
-        "output_features": {
-            "action": {"type": "ACTION", "shape": [7]},
-        },
         "n_action_steps": act_step,
+        "action_type": "relative",
+        "action_keys": ["action.eef_pos", "action.eef_euler", "action.gripper"],
     }
 
 
