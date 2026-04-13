@@ -20,10 +20,10 @@ VLA 서버(serve_*.py)가 먼저 실행 중이어야 한다.
 """
 
 URL_MAP = {
-    "http://localhost:8400": "LeRobot",
-    "http://localhost:8300": "UP-VLA",
-    "http://localhost:8200": "DreamVLA",
-    "http://localhost:8100": "X-VLA",
+    "http://localhost:8400": "lerobot",
+    "http://localhost:8300": "upvla",
+    "http://localhost:8200": "dreamvla",
+    "http://localhost:8100": "xvla",
 }
 
 import argparse
@@ -447,7 +447,7 @@ def main():
         output_path=Path(args.output) if args.output else None,
         num_videos=args.num_videos,
         video_dir=Path(
-            f"/temporal_vla/outputs/calvin_eval/{URL_MAP[args.server_url]}/{time.strftime('%Y%m%d_%H%M%S')}"
+            f"/temporal_vla/outputs/eval/calvin/{URL_MAP[args.server_url]}/{time.strftime('%y%m%d%H%M%S')}"
         ),
         save_all_videos=args.save_all_videos,
     )
