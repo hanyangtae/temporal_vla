@@ -5,7 +5,7 @@ Reuses DreamVLA's model, optimizer, lr_scheduler, and training loop
 LeRobotDataset via the DreamVLA adapter.
 
 Usage:
-    torchrun --nproc_per_node=N scripts/train_dreamvla_robocasa.py [args]
+    torchrun --nproc_per_node=N scripts/train/dreamvla_robocasa.py [args]
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from transformers import (
 )
 
 # -- path setup (must come before DreamVLA imports) --
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/
 import path_setup
 
 path_setup.configure_repo_paths(

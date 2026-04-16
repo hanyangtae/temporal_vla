@@ -109,7 +109,7 @@ val_indices   = all_indices[2986:]
 
 ## 학습
 
-### 설정 (`scripts/train_phase1_predictor.sh`)
+### 설정 (`scripts/train/phase1_predictor.sh`)
 
 | 하이퍼파라미터 | 값 | 비고 |
 |---|---|---|
@@ -150,7 +150,7 @@ L_ssl  = SSL self-supervised loss (TTT inner update용)
 
 ## 평가 결과
 
-평가 스크립트: `scripts/eval_phase1_predictor.py`  
+평가 스크립트: `scripts/eval/phase1_predictor.py`  
 각 split에서 100 에피소드 랜덤 샘플, 에피소드 전체를 inference 모드로 순차 처리.
 
 ### step 50k vs final (100k)

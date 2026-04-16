@@ -5,12 +5,12 @@ VLA 평가 스크립트 (Calvin 환경, 모델 무관).
 calvin 컨테이너에서 실행:
 
 # LeRobot (pi0, groot 등)으로 평가
-docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval.py \
+docker compose run --rm calvin python /temporal_vla/scripts/eval/calvin.py \
   --dataset-path /temporal_vla/src/benchmarks/calvin/dataset/calvin_debug_dataset \
   --server-url http://localhost:8400
 
 # DreamVLA로 평가 (같은 스크립트, URL만 변경)
-docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval.py \
+docker compose run --rm calvin python /temporal_vla/scripts/eval/calvin.py \
   --dataset-path /temporal_vla/src/benchmarks/calvin/dataset/task_D_D \
   --server-url http://localhost:8200 \
   --num-sequences 1000

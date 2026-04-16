@@ -4,7 +4,7 @@
 # - epoch 4~10에 대해 evaluate
 #
 # 실행:
-#   docker exec -it lerobot bash /temporal_vla/scripts/train_eval_phase1_mlp_linear.sh
+#   docker exec -it lerobot bash /temporal_vla/scripts/train/eval_phase1_mlp_linear.sh
 
 set -e
 cd /temporal_vla
@@ -18,7 +18,7 @@ if [ ! -f "$EMBED_CACHE" ]; then
     echo "============================================"
     echo "Building CLIP embedding cache for pick-and-place episodes"
     echo "============================================"
-    python scripts/build_clip_cache.py \
+    python scripts/analysis/build_clip_cache.py \
         --save_path "$EMBED_CACHE" \
         --task_keywords put place pick \
         --max_episodes 5000 \
@@ -75,7 +75,7 @@ EVAL_EPOCHS="004 005 006 007 008 009 010"
 echo "============================================"
 echo "Training MLP (10 epochs)"
 echo "============================================"
-python scripts/train_phase1_predictor.py \
+python scripts/train/phase1_predictor.py \
     --inner_model_type mlp \
     --save_suffix mlp \
     --wandb_run_name phase1_vita_full_traj_mlp \
@@ -91,7 +91,7 @@ echo "MLP checkpoint dir: ${CKPT_MLP}"
 echo "============================================"
 echo "Training Linear (10 epochs)"
 echo "============================================"
-python scripts/train_phase1_predictor.py \
+python scripts/train/phase1_predictor.py \
     --inner_model_type linear \
     --save_suffix linear \
     --wandb_run_name phase1_vita_full_traj_linear \
@@ -107,7 +107,7 @@ for EPOCH in $EVAL_EPOCHS; do
     echo "============================================"
     echo "Evaluating MLP epoch ${EPOCH}"
     echo "============================================"
-    python scripts/eval_phase1_predictor.py \
+    python scripts/eval/phase1_predictor.py \
         --ckpt "${CKPT_MLP}/epoch_${EPOCH}.pt" \
         --inner_model_type mlp \
         --save_dir "outputs/eval_results/phase1/mlp_ep${EPOCH}" \
@@ -121,7 +121,7 @@ for EPOCH in $EVAL_EPOCHS; do
     echo "============================================"
     echo "Evaluating Linear epoch ${EPOCH}"
     echo "============================================"
-    python scripts/eval_phase1_predictor.py \
+    python scripts/eval/phase1_predictor.py \
         --ckpt "${CKPT_LINEAR}/epoch_${EPOCH}.pt" \
         --inner_model_type linear \
         --save_dir "outputs/eval_results/phase1/linear_ep${EPOCH}" \

@@ -4,7 +4,7 @@ rollout_policy.py의 환경/모델 셋업을 재사용하되,
 매 스텝의 action과 state를 기록하여 .npz로 저장한다.
 
 사용법 (groot 컨테이너 내부):
-    MUJOCO_GL=egl python /temporal_vla/scripts/collect_groot_trajectories.py \
+    MUJOCO_GL=egl python /temporal_vla/scripts/analysis/collect_groot_trajectories.py \
         --model_path /temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B \
         --env_name robocasa_panda_omron/PnPCounterToCab_PandaOmron_Env \
         --n_episodes 20 \

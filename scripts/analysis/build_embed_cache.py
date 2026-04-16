@@ -5,7 +5,7 @@ Pick-and-place 에피소드 CLIP 임베딩 캐시 생성.
 최대 max_episodes개의 CLIP 임베딩을 캐시 파일로 저장.
 
 사용법:
-    python scripts/build_embed_cache.py \
+    python scripts/analysis/build_embed_cache.py \
         --max_episodes 5000 \
         --task_keywords put place pick \
         --save_path data/bridge_v2_pnp_5000_clip_embeddings.pt
@@ -20,7 +20,7 @@ import torch.nn.functional as F
 from torchvision.transforms.functional import to_pil_image
 from tqdm import tqdm
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 

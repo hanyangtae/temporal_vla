@@ -5,7 +5,7 @@
 #   git submodule update --init src/policies/dreamvla
 #
 # 사용법:
-#   docker compose --profile dreamvla run --rm dreamvla bash /temporal_vla/scripts/train_dreamvla.sh
+#   docker compose --profile dreamvla run --rm dreamvla bash /temporal_vla/scripts/train/dreamvla.sh
 
 set -e
 

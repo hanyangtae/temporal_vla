@@ -1,7 +1,7 @@
 """DreamVLA adapter 검증 스크립트.
 
 컨테이너 내에서 실행:
-    python /temporal_vla/scripts/verify_adapter.py
+    python /temporal_vla/scripts/analysis/verify_adapter.py
 
 확인 항목:
     1. LeRobotDataset raw 데이터 shape + 실제 값
@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import sys
 import functools
+from pathlib import Path
 
 import numpy as np
 import torch
 from PIL import Image
 
 # ---- path setup ----
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/
 import path_setup
 
 path_setup.configure_repo_paths(

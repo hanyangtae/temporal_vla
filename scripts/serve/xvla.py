@@ -3,7 +3,7 @@ X-VLA 추론 서버 (통일 API, port 8100).
 
 xvla 컨테이너에서 실행:
   docker compose run --rm xvla \
-    python /temporal_vla/scripts/serve_xvla.py \
+    python /temporal_vla/scripts/serve/xvla.py \
     --pretrained-path 2toINF/X-VLA-Calvin-ABC_D
 
 통일 API:

@@ -3,14 +3,14 @@
 #
 # 실행 순서:
 #   1. groot 컨테이너에서 서버 시작:
-#      docker exec -it groot bash /temporal_vla/scripts/eval_groot_robocasa.sh server
+#      docker exec -it groot bash /temporal_vla/scripts/eval/groot_robocasa.sh server
 #
 #   2. robocasa 컨테이너에서 클라이언트 실행:
-#      docker exec -it robocasa bash /temporal_vla/scripts/eval_groot_robocasa.sh client [ENV_NAME] [N_EPISODES]
+#      docker exec -it robocasa bash /temporal_vla/scripts/eval/groot_robocasa.sh client [ENV_NAME] [N_EPISODES]
 #
 # 최초 실행 시 (한 번만):
-#   docker exec -it groot bash /temporal_vla/scripts/eval_groot_robocasa.sh setup-server
-#   docker exec -it robocasa bash /temporal_vla/scripts/eval_groot_robocasa.sh setup-client
+#   docker exec -it groot bash /temporal_vla/scripts/eval/groot_robocasa.sh setup-server
+#   docker exec -it robocasa bash /temporal_vla/scripts/eval/groot_robocasa.sh setup-client
 
 set -e
 cd /temporal_vla

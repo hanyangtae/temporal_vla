@@ -3,7 +3,7 @@
 #
 # groot 컨테이너에서 실행:
 #   docker exec -e HF_MODULES_CACHE=/tmp/hf_modules -e MUJOCO_GL=egl groot \
-#       bash /temporal_vla/scripts/collect_and_analyze_groot.sh [N_EPISODES]
+#       bash /temporal_vla/scripts/analysis/collect_and_analyze_groot.sh [N_EPISODES]
 
 set -e
 cd /temporal_vla
@@ -45,7 +45,7 @@ for TASK in "${TASKS[@]}"; do
     echo "============================================"
     echo "[COLLECT] ${TASK_SHORT} (${N_EPISODES} episodes)"
     echo "============================================"
-    python /temporal_vla/scripts/collect_groot_trajectories.py \
+    python /temporal_vla/scripts/analysis/collect_groot_trajectories.py \
         --model_path "${MODEL_PATH}" \
         --env_name "${TASK}" \
         --n_episodes "${N_EPISODES}" \
@@ -57,7 +57,7 @@ echo ""
 echo "============================================"
 echo "[ANALYZE] Running loop pattern analysis"
 echo "============================================"
-python /temporal_vla/scripts/analyze_loop_patterns.py \
+python /temporal_vla/scripts/analysis/analyze_loop_patterns.py \
     --traj_dir "${SAVE_DIR}" \
     --output_dir "${ANALYSIS_DIR}"
 

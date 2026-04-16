@@ -23,8 +23,8 @@ VLA 모델의 **실패 루프 탈출** 문제를 연구하는 프로젝트.
 
 ## 핵심 아키텍처
 
-- **모델 서버** (`scripts/serve_*.py`): FastAPI + uvicorn. 통일 API (`/act`, `/reset`, `/health`).
-- **벤치마크 평가** (`scripts/*_eval.py`): 모델 무관. `VLAClient`로 통신.
+- **모델 서버** (`scripts/serve/*.py`): FastAPI + uvicorn. 통일 API (`/act`, `/reset`, `/health`).
+- **벤치마크 평가** (`scripts/eval/*.py`): 모델 무관. `VLAClient`로 통신.
 - **Processor Pipeline** (`src/processor/`): **추론(eval)용**. 벤치마크별 env↔통일API obs/action 변환.
 - **Dataset + Adapter** (`src/datasets/`): **학습(train)용**. 벤치마크별 generic dataset + 모델별 adapter.
 - **통일 클라이언트** (`scripts/utils/vla_client.py`): `VLAClient` 클래스 1개.
@@ -61,9 +61,10 @@ VLA 모델의 **실패 루프 탈출** 문제를 연구하는 프로젝트.
 
 ## 주요 파일 경로
 
-- 모델 서버: `scripts/serve_dreamvla.py` (:8200), `scripts/serve_upvla.py` (:8300), `scripts/serve_xvla.py` (:8100)
-- 벤치마크 평가: `scripts/robocasa_vla_eval.py`, `scripts/calvin_eval.py`
-- 학습: `scripts/train_dreamvla_robocasa.py` + `.sh`
+- 모델 서버: `scripts/serve/dreamvla.py` (:8200), `scripts/serve/upvla.py` (:8300), `scripts/serve/xvla.py` (:8100)
+- 벤치마크 평가: `scripts/eval/robocasa_eval.py`, `scripts/eval/calvin.py`
+- 학습: `scripts/train/dreamvla_robocasa.py` + `.sh`
+- 분석: `scripts/analysis/` — 루프 패턴 분석, CLIP 캐시, trajectory 수집 등
 - Feature 추출: `scripts/extract/extract_sam_robocasa.py`, `scripts/extract/extract_cotrack_robocasa.py`
 - Processor (추론용): `src/processor/` — `base.py`, `types.py`, `factory.py`, `obs/`, `action/`
 - Dataset (학습용): `src/datasets/adapters/dreamvla.py` (adapter, LeRobotDataset 직접 사용)
@@ -117,14 +118,14 @@ LeRobotDataset → scripts/extract/extract_cotrack_robocasa.py → {save_path}/r
 ### 새 모델 추가
 
 1. `docker/`에 Dockerfile, `docker-compose.yml`에 서비스 추가
-2. `scripts/serve_<model>.py` 작성 (통일 API: `/act`, `/reset`, `/health`)
+2. `scripts/serve/<model>.py` 작성 (통일 API: `/act`, `/reset`, `/health`)
 3. (학습) `src/datasets/adapters/<model>.py` — adapter + factory
 
 ### 새 벤치마크 추가
 
 1. (평가) `src/processor/obs/`, `action/`에 ProcessorStep 구현 + `factory.py`에 등록
 2. (학습) `src/datasets/<benchmark>_lerobot.py` — generic dataset
-3. `scripts/<benchmark>_eval.py` 작성
+3. `scripts/eval/<benchmark>.py` 작성
 
 ## 주의사항
 

@@ -3,7 +3,7 @@ DreamVLA 추론 서버 (통일 API).
 
 dreamvla 컨테이너 내에서 실행:
   docker compose run --rm dreamvla \
-    python /temporal_vla/scripts/serve_dreamvla.py \
+    python /temporal_vla/scripts/serve/dreamvla.py \
     --checkpoint /temporal_vla/checkpoints/dreamvla/dreamvla_dynamic_depth_semantic-001.pth \
     --vit-checkpoint /temporal_vla/checkpoints/mae_pretrain_vit_base.pth \
     --precision fp32 \

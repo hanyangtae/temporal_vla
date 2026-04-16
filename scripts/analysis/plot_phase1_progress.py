@@ -5,16 +5,16 @@ eval_phase1_predictor.py --save_json 로 생성된 *.progress.json 파일을 읽
 
 사용 예:
   # 특정 파일 하나
-  python scripts/plot_phase1_progress.py --input_json eval_results/phase1_step50k/episodes/val/ep_000042.progress.json
+  python scripts/analysis/plot_phase1_progress.py --input_json eval_results/phase1_step50k/episodes/val/ep_000042.progress.json
 
   # 디렉토리 전체 (split별 서브디렉토리 포함)
-  python scripts/plot_phase1_progress.py --input_json eval_results/phase1_step50k/episodes/val
+  python scripts/analysis/plot_phase1_progress.py --input_json eval_results/phase1_step50k/episodes/val
 
   # 여러 에피소드를 grid PNG 하나로
-  python scripts/plot_phase1_progress.py --input_json eval_results/phase1_step50k/episodes/val --grid
+  python scripts/analysis/plot_phase1_progress.py --input_json eval_results/phase1_step50k/episodes/val --grid
 
   # split 필터링
-  python scripts/plot_phase1_progress.py --input_json eval_results/phase1_step50k/episodes --split val
+  python scripts/analysis/plot_phase1_progress.py --input_json eval_results/phase1_step50k/episodes --split val
 """
 
 from __future__ import annotations

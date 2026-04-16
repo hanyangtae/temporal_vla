@@ -2,7 +2,7 @@
 GR00T N1.6 추론 서버 (통일 API).
 
 groot 컨테이너 내에서 실행:
-  python /temporal_vla/scripts/serve_groot.py \
+  python /temporal_vla/scripts/serve/groot.py \
     --model-path /temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B \
     --port 8500
 

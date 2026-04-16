@@ -9,7 +9,7 @@ collect_groot_trajectories.py로 수집한 .npz trajectory에서
 3. Gripper 반복 — gripper open/close가 짧은 주기로 반복하는 패턴
 
 사용법:
-    python scripts/analyze_loop_patterns.py \
+    python scripts/analysis/analyze_loop_patterns.py \
         --traj_dir outputs/trajectories/PnPCounterToCab \
         --output_dir outputs/analysis
 """

@@ -26,7 +26,7 @@ echo " steps: ${TOTAL_STEPS}, no_task_filter"
 echo "=========================================="
 
 # ── 1. 학습 ──
-python scripts/train_phase1_predictor.py \
+python scripts/train/phase1_predictor.py \
     --dataset_mode ${DATASET_MODE} \
     --no_task_filter \
     --inner_model_type ${INNER_MODEL} \
@@ -50,7 +50,7 @@ fi
 echo "Checkpoint: ${FINAL_CKPT}"
 
 # ── 2. 평가 (n_samples=100, n_videos=5) ──
-python scripts/eval_phase1_predictor.py \
+python scripts/eval/phase1_predictor.py \
     --ckpt "${FINAL_CKPT}" \
     --inner_model_type ${INNER_MODEL} \
     --train_episodes ${TRAIN_EPISODES} \

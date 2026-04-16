@@ -2,10 +2,10 @@
 # X-VLA LoRA Fine-tuning on RoboCasa (xvla 컨테이너 내에서 실행)
 #
 # 사용법:
-#   docker compose --profile xvla run --rm xvla bash /temporal_vla/scripts/train_xvla.sh
+#   docker compose --profile xvla run --rm xvla bash /temporal_vla/scripts/train/xvla.sh
 #
 # 또는 직접 컨테이너 안에서:
-#   bash /temporal_vla/scripts/train_xvla.sh
+#   bash /temporal_vla/scripts/train/xvla.sh
 
 set -e
 

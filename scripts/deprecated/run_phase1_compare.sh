@@ -71,7 +71,7 @@ run_experiment() {
         TRAIN_ARGS+=(--total_steps ${WINDOW_STEPS} --val_interval 1000 --save_interval 10000)
     fi
 
-    python scripts/train_phase1_predictor.py "${TRAIN_ARGS[@]}"
+    python scripts/train/phase1_predictor.py "${TRAIN_ARGS[@]}"
 
     # ── 체크포인트 찾기 ──
     LATEST_CKPT_DIR=$(ls -dt checkpoints/phase1/*_${LABEL} 2>/dev/null | head -1)
@@ -84,7 +84,7 @@ run_experiment() {
     echo "Checkpoint: ${FINAL_CKPT}"
 
     # ── 평가 (n_samples=100, n_videos=10) ──
-    python scripts/eval_phase1_predictor.py \
+    python scripts/eval/phase1_predictor.py \
         --ckpt "${FINAL_CKPT}" \
         --inner_model_type ${INNER_MODEL} \
         --train_episodes ${TRAIN_EPISODES} \

@@ -134,7 +134,7 @@ docker compose exec xvla bash
 ```bash
 # xvla 컨테이너에서 학습 스크립트 실행 후 자동 삭제
 docker compose run --rm xvla \
-  bash /temporal_vla/scripts/train_xvla.sh
+  bash /temporal_vla/scripts/train/xvla.sh
 ```
 
 `run --rm`은 새 컨테이너를 만들어 명령을 실행하고, 끝나면 컨테이너를 자동 삭제합니다.
@@ -437,7 +437,7 @@ docker system prune -a
 docker compose up -d xvla
 
 # 2. 서버 실행
-docker compose exec xvla python /temporal_vla/scripts/serve_xvla.py \
+docker compose exec xvla python /temporal_vla/scripts/serve/xvla.py \
   --model-path lerobot/xvla-base
 
 # 3. health check으로 확인

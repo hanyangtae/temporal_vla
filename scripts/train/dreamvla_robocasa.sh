@@ -11,7 +11,7 @@
 set -euo pipefail
 
 # ---------- paths (adjust to your environment) ----------
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ROBOCASA_DATASET="${ROBOCASA_DATASET:-${REPO_ROOT}/src/benchmarks/robocasa/datasets/v1.0/pretrain/atomic/PickPlaceSinkToCounter/20250819/lerobot}"
 SAVE_CHECKPOINT_PATH="${REPO_ROOT}/checkpoints/dreamvla_robocasa"
 VIT_CHECKPOINT_PATH="${REPO_ROOT}/checkpoints/dreamvla/mae_pretrain_vit_base.pth"
@@ -33,7 +33,7 @@ torchrun \
     --nnodes=${NODE} \
     --nproc_per_node=${NPROC} \
     --master_port=${MASTER_PORT} \
-    "${REPO_ROOT}/scripts/train_dreamvla_robocasa.py" \
+    "${REPO_ROOT}/scripts/train/dreamvla_robocasa.py" \
     --robocasa_dataset "${ROBOCASA_DATASET}" \
     --vit_checkpoint_path "${VIT_CHECKPOINT_PATH}" \
     --save_checkpoint_path "${SAVE_CHECKPOINT_PATH}" \

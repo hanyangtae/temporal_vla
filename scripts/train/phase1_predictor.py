@@ -24,7 +24,7 @@ from torch.utils.data import DataLoader
 import wandb
 
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.ttt.predictor import ProgressPredictor
 from src.datasets.phase1_dataset import Phase1EpisodicDataset

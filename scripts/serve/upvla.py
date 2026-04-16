@@ -3,7 +3,7 @@ UP-VLA 추론 서버 (통일 API, port 8300).
 
 upvla 컨테이너에서 실행:
   docker compose run --rm upvla \
-    python /temporal_vla/scripts/serve_upvla.py \
+    python /temporal_vla/scripts/serve/upvla.py \
     --model-config /temporal_vla/src/policies/UP-VLA/policy_rollout/upvla_model.yaml
 
 통일 API (LeRobot 컨벤션):

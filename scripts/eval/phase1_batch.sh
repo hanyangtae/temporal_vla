@@ -3,7 +3,7 @@
 # 영상: split당 10개, n_samples=100
 #
 # 실행:
-#   docker exec -it lerobot bash /temporal_vla/scripts/eval_phase1_batch.sh
+#   docker exec -it lerobot bash /temporal_vla/scripts/eval/phase1_batch.sh
 
 set -e
 cd /temporal_vla
@@ -36,7 +36,7 @@ for EPOCH in $EPOCHS; do
     # echo "============================================"
     # echo "Evaluating linear epoch ${EPOCH}"
     # echo "============================================"
-    # python scripts/eval_phase1_predictor.py \
+    # python scripts/eval/phase1_predictor.py \
     #     --ckpt "${CKPT_LINEAR}/epoch_${EPOCH}.pt" \
     #     --inner_model_type linear \
     #     --save_dir "outputs/eval_results/phase1/linear_ep${EPOCH}" \
@@ -45,7 +45,7 @@ for EPOCH in $EPOCHS; do
     echo "============================================"
     echo "Evaluating mlp epoch ${EPOCH}"
     echo "============================================"
-    python scripts/eval_phase1_predictor.py \
+    python scripts/eval/phase1_predictor.py \
         --ckpt "${CKPT_MLP}/epoch_${EPOCH}.pt" \
         --inner_model_type mlp \
         --save_dir "outputs/eval_results/phase1/2mlp_ep${EPOCH}" \

@@ -6,12 +6,12 @@
 # 에피소드 전체(≤120프레임) 순차 TTT → train/inference mismatch 없음
 #
 # 실행:
-#   docker exec -it lerobot bash /temporal_vla/scripts/train_phase1_predictor.sh
+#   docker exec -it lerobot bash /temporal_vla/scripts/train/phase1_predictor.sh
 
 set -e
 cd /temporal_vla
 
-python scripts/train_phase1_predictor.py \
+python scripts/train/phase1_predictor.py \
     --data_root     data/bridge_v2_lerobot \
     --repo_id       FedorX8/bridge_v2_lerobot \
     --image_key     observation.images.primary \

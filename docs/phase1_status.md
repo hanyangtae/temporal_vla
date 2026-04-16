@@ -13,7 +13,7 @@
 | unseen| step 50k | 0.0685 | 0.2073 | **0.654** | 0.569 |
 
 ### 2. 시각화 스크립트 구현
-- `scripts/eval_phase1_predictor.py`: `--save_video`, `--save_json`, `--save_individual`, `--n_examples` 추가
+- `scripts/eval/phase1_predictor.py`: `--save_video`, `--save_json`, `--save_individual`, `--n_examples` 추가
   - `--save_video`: 원본 영상(좌) + progress curve(우) 결합 MP4 생성
   - `--save_json`: 에피소드별 `*.progress.json` 저장
 - `scripts/plot_phase1_progress.py`: 저장된 JSON 읽어 개별 PNG 또는 grid PNG 생성
@@ -38,7 +38,7 @@ stride = 1  # 변경 전: max(1, window_size // 2) = 4
 - 변경 후: global score `s(w) = Σ_{v∈W} ||w-v||²` 계산 후 top-k 선택 (논문 Eq.5)
 
 ### 수정 3: Adam → AdamW + Cosine LR schedule (10% warmup)
-**파일**: `scripts/train_phase1_predictor.py`
+**파일**: `scripts/train/phase1_predictor.py`
 - AdamW, weight_decay=1e-4 (VITA Appendix D.1)
 - cosine LR schedule with 10% linear warmup
 - 체크포인트에 scheduler state 저장/복원 추가
@@ -46,7 +46,7 @@ stride = 1  # 변경 전: max(1, window_size // 2) = 4
 
 ### 재학습 실행 명령어
 ```bash
-docker exec -it lerobot bash /temporal_vla/scripts/train_phase1_predictor.sh
+docker exec -it lerobot bash /temporal_vla/scripts/train/phase1_predictor.sh
 ```
 
 ---

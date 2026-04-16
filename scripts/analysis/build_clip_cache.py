@@ -6,8 +6,8 @@ Pick-and-place 에피소드 전체에 대한 CLIP embedding 캐시 생성.
 모든 프레임의 z_t = L2_norm([CLIP_vis(img) ; CLIP_text(goal)]) 를 계산.
 
 실행:
-    python scripts/build_clip_cache.py
-    python scripts/build_clip_cache.py --save_path data/bridge_v2_pick_place_clip.pt
+    python scripts/analysis/build_clip_cache.py
+    python scripts/analysis/build_clip_cache.py --save_path data/bridge_v2_pick_place_clip.pt
 """
 
 import argparse
@@ -20,7 +20,7 @@ import torch.nn.functional as F
 from torchvision.transforms.functional import to_pil_image
 from tqdm import tqdm
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 

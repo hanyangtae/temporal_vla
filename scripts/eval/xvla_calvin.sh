@@ -4,14 +4,14 @@
 # 사전 준비:
 #   1) xvla 컨테이너에서 서버 실행:
 #      docker compose run --rm xvla \
-#        python /temporal_vla/scripts/serve_xvla.py \
+#        python /temporal_vla/scripts/serve/xvla.py \
 #        --pretrained-path 2toINF/X-VLA-Calvin-ABC_D
 #
 #   2) 이 스크립트를 calvin 컨테이너에서 실행:
-#      docker compose run --rm calvin bash /temporal_vla/scripts/eval_xvla_calvin.sh
+#      docker compose run --rm calvin bash /temporal_vla/scripts/eval/xvla_calvin.sh
 #
 # 또는 한 줄로 (서버가 이미 떠 있을 때):
-#   docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval.py \
+#   docker compose run --rm calvin python /temporal_vla/scripts/eval/calvin.py \
 #     --dataset-path /temporal_vla/src/benchmarks/calvin/dataset/task_ABC_D \
 #     --server-url http://localhost:8100 \
 #     --num-sequences 1000
@@ -30,7 +30,7 @@ echo "Sequences:  ${NUM_SEQ}"
 echo "Videos:     ${NUM_VIDEOS}"
 echo "================================"
 
-python /temporal_vla/scripts/calvin_eval.py \
+python /temporal_vla/scripts/eval/calvin.py \
   --dataset-path "${DATASET_PATH}" \
   --server-url "${SERVER_URL}" \
   --num-sequences "${NUM_SEQ}" \

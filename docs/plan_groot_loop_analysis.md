@@ -82,7 +82,7 @@ eval_groot_robocasa.sh에 `local` / `local-batch` 모드 추가 (ZMQ 서버 없�
 ```bash
 # 로컬 배치 평가 (groot 컨테이너 단독)
 docker exec -e HF_MODULES_CACHE=/tmp/hf_modules -e MUJOCO_GL=egl groot \
-    bash /temporal_vla/scripts/eval_groot_robocasa.sh local-batch 20
+    bash /temporal_vla/scripts/eval/groot_robocasa.sh local-batch 20
 ```
 
 > 로그: `outputs/groot_eval_batch_*.log`
@@ -91,24 +91,24 @@ docker exec -e HF_MODULES_CACHE=/tmp/hf_modules -e MUJOCO_GL=egl groot \
 
 **스크립트 작성 완료**, Phase 2 배치 평가 완료 후 실행.
 
-1. **Trajectory 수집**: `scripts/collect_groot_trajectories.py`
+1. **Trajectory 수집**: `scripts/analysis/collect_groot_trajectories.py`
    - 매 스텝 action/state를 `.npz`로 저장
    - 동시에 비디오도 저장
 
-2. **Loop 분석**: `scripts/analyze_loop_patterns.py`
+2. **Loop 분석**: `scripts/analysis/analyze_loop_patterns.py`
    - action cosine similarity 연속 구간 탐지 (threshold=0.98, min_run=10)
    - state 변화량 정체 구간 탐지
    - gripper open/close 반복 패턴
    - near-zero action (frozen) 탐지
    - 자동 분류: stuck_loop, action_repetition, state_stagnation, gripper_oscillation, frozen, other_failure
 
-3. **배치 스크립트**: `scripts/collect_and_analyze_groot.sh`
+3. **배치 스크립트**: `scripts/analysis/collect_and_analyze_groot.sh`
    - 수집 + 분석 일괄 실행
 
 ```bash
 # Phase 2 완료 후 실행
 docker exec -e HF_MODULES_CACHE=/tmp/hf_modules -e MUJOCO_GL=egl groot \
-    bash /temporal_vla/scripts/collect_and_analyze_groot.sh 20
+    bash /temporal_vla/scripts/analysis/collect_and_analyze_groot.sh 20
 ```
 
 > 결과: `outputs/trajectories/` (npz), `outputs/analysis/` (json)
@@ -145,10 +145,10 @@ export PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T  # docker-compose에 �
 | `src/policies/Isaac-GR00T/gr00t/eval/run_gr00t_server.py` | ZMQ 서버 (필요시) |
 | `src/policies/Isaac-GR00T/gr00t/policy/gr00t_policy.py` | Gr00tPolicy 클래스 |
 | `src/policies/Isaac-GR00T/external_dependencies/robocasa/` | 포크 robocasa (환경) |
-| `scripts/eval_groot_robocasa.sh` | 평가 스크립트 (local/local-batch 모드 추가) |
-| `scripts/collect_groot_trajectories.py` | trajectory 수집 (action/state .npz 저장) |
-| `scripts/analyze_loop_patterns.py` | Loop 패턴 분석 (cosine sim, stagnation, gripper) |
-| `scripts/collect_and_analyze_groot.sh` | 수집 + 분석 배치 스크립트 |
+| `scripts/eval/groot_robocasa.sh` | 평가 스크립트 (local/local-batch 모드 추가) |
+| `scripts/analysis/collect_groot_trajectories.py` | trajectory 수집 (action/state .npz 저장) |
+| `scripts/analysis/analyze_loop_patterns.py` | Loop 패턴 분석 (cosine sim, stagnation, gripper) |
+| `scripts/analysis/collect_and_analyze_groot.sh` | 수집 + 분석 배치 스크립트 |
 | `checkpoints/nvidia/GR00T-N1.6-3B/` | 모델 체크포인트 (로컬) |
 | `docs/plan_groot_loop_analysis.md` | 이 문서 |
 

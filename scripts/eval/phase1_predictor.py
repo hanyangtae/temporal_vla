@@ -28,7 +28,7 @@ from scipy.stats import spearmanr
 from tqdm import tqdm
 
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from src.ttt.predictor import ProgressPredictor
