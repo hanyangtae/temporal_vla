@@ -63,12 +63,14 @@ class RoboCasaObsProcessor(ObservationProcessorStep):
     def __init__(
         self,
         static_cam: str = "robot0_agentview_left",
+        static_cam2: str = None,
         wrist_cam: str = "robot0_eye_in_hand",
         robot_prefix: str = "robot0_",
         image_size: int = 224,
         state_key: str = "robot0_proprio-state",
     ):
         self.static_cam = static_cam
+        self.static_cam2 = static_cam2
         self.wrist_cam = wrist_cam
         self.robot_prefix = robot_prefix
         self.image_size = image_size
@@ -117,10 +119,22 @@ class RoboCasaObsProcessor(ObservationProcessorStep):
         if wrist_key not in observation:
             logger.warning("카메라 '%s' 누락, zero 이미지로 대체", wrist_key)
 
-        result = {
-            "observation.images.static": observation.get(static_key, fallback.copy()),
-            "observation.images.wrist": observation.get(wrist_key, fallback.copy()),
-        }  # type: Dict[str, Any]
+        if self.static_cam2 is not None:
+            # 3-camera 모드: 서버 auto-mapping이 위치 기반이므로
+            # 모델이 기대하는 순서(left, right, wrist)에 맞춰 출력
+            static2_key = "{}_image".format(self.static_cam2)
+            if static2_key not in observation:
+                logger.warning("카메라 '%s' 누락, zero 이미지로 대체", static2_key)
+            result = {
+                "observation.images.static": observation.get(static_key, fallback.copy()),
+                "observation.images.wrist": observation.get(static2_key, fallback.copy()),
+                "observation.images.wrist2": observation.get(wrist_key, fallback.copy()),
+            }  # type: Dict[str, Any]
+        else:
+            result = {
+                "observation.images.static": observation.get(static_key, fallback.copy()),
+                "observation.images.wrist": observation.get(wrist_key, fallback.copy()),
+            }  # type: Dict[str, Any]
 
         states = self._extract_named_states(observation)
         if not states:

@@ -48,6 +48,7 @@ from robocasa_eval import (
     run_all_datasets,
     safe_worker_count,
 )
+from vla_client import DreamVLAClient
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -63,6 +64,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--task-type", default=None, choices=["atomic", "composite"])
     p.add_argument("--n", type=int, default=None, help="태스크당 평가 에피소드 수 (기본: 전체)")
     p.add_argument("--use-actions", action="store_true", help="open-loop 액션 재생 모드")
+    p.add_argument("--vla-server", type=str, default=None,
+                   help="DreamVLA 서버 URL (예: http://localhost:8200). 지정 시 closed-loop VLA 평가 모드")
     p.add_argument("--output-dir", type=str, default=None,
                    help="결과 저장 디렉터리 (태스크별 JSON + summary.json 생성)")
     p.add_argument("--workers", type=int, default=1,
@@ -115,11 +118,20 @@ def main():
     args = build_parser().parse_args()
     output_dir = Path(args.output_dir) if args.output_dir else None
 
+    vla_client = None
+    if args.vla_server:
+        vla_client = DreamVLAClient(url=args.vla_server)
+        logger.info("DreamVLA 서버 연결 대기 중: %s", args.vla_server)
+        vla_client.wait_until_ready()
+        logger.info("DreamVLA 서버 연결 완료.")
+
     workers = safe_worker_count(
         args.workers if args.workers > 0 else os.cpu_count(),
         env_mem_gb=args.env_mem_gb,
         reserve_gb=args.reserve_gb,
     )
+    if vla_client is not None:
+        workers = 1  # VLA 평가는 서버 stateful → sequential 강제
     log_memory_info(workers)
 
     if args.dataset:
@@ -129,7 +141,8 @@ def main():
             sys.exit(1)
         try:
             summary = evaluate_dataset(
-                dataset_path, n=args.n, use_actions=args.use_actions, workers=workers
+                dataset_path, n=args.n, use_actions=args.use_actions,
+                workers=workers, vla_client=vla_client,
             )
         except KeyboardInterrupt:
             logger.warning("평가 중단됨.")
@@ -200,6 +213,7 @@ def main():
             use_actions=args.use_actions,
             workers=workers,
             task_callback=on_task_done,
+            vla_client=vla_client,
         )
 
         # --resume 시 기존 결과를 병합해서 summary 생성

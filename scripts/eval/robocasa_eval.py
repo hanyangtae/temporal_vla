@@ -5,23 +5,23 @@ VLA closed-loop 평가 스크립트 (RoboCasa, 모델 무관).
 
 사용법:
   # DreamVLA로 평가
-  python scripts/robocasa_vla_eval.py \
+  python scripts/eval/robocasa_eval.py \
     --task TurnOnMicrowave \
     --vla-server http://localhost:8200
 
   # X-VLA로 평가 (같은 스크립트, URL만 변경)
-  python scripts/robocasa_vla_eval.py \
+  python scripts/eval/robocasa_eval.py \
     --task TurnOnMicrowave \
     --vla-server http://localhost:8100
 
   # 태스크셋 평가
-  python scripts/robocasa_vla_eval.py \
+  python scripts/eval/robocasa_eval.py \
     --task-set pretrain50 \
     --vla-server http://localhost:8200 \
     --output-dir /temporal_vla/outputs/vla_eval
 
   # 태스크 리스트 확인
-  python scripts/robocasa_vla_eval.py --list-tasks
+  python scripts/eval/robocasa_eval.py --list-tasks
 
 출력 구조 (--output-dir 지정 시):
   {output_dir}/
@@ -37,6 +37,7 @@ import sys
 import traceback
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/
 from path_setup import configure_repo_paths
 
 configure_repo_paths(include_script_utils=True, include_robocasa=True)
@@ -151,7 +152,11 @@ def run_vla_rollouts(
                     states[k] = v
 
             actions, latency_ms = vla_client.predict(images, states or None, instruction)
-            raw_action = actions[0]  # 첫 번째 스텝만 사용
+            # sub-keyed dict 또는 flat ndarray 양쪽 지원
+            if isinstance(actions, dict):
+                raw_action = {k: v[0] for k, v in actions.items()}
+            else:
+                raw_action = actions[0]
             latencies.append(latency_ms)
 
             # VLA 7D action → PandaMobile 12D (processor)
@@ -332,6 +337,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="롤아웃 영상 저장 디렉토리")
     p.add_argument("--resume", action="store_true",
                    help="이미 결과 JSON이 있는 태스크 건너뛰기")
+    p.add_argument("--three-cameras", action="store_true",
+                   help="3-camera 모드 (left+right agentview + wrist). pi0.5 등 3-camera 모델용")
     return p
 
 
@@ -351,13 +358,15 @@ def main():
     video_dir = Path(args.video_dir) if args.video_dir else None
 
     from vla_client import VLAClient
-    vla_client = VLAClient(url=args.vla_server)
+    vla_client = VLAClient(url=args.vla_server, timeout=300.0)
     logger.info("VLA 서버 연결 대기 중: %s", args.vla_server)
     server_info = vla_client.wait_until_ready()
     logger.info("VLA 서버 연결 완료: %s", server_info)
 
     # Processor pipeline (벤치마크별 obs/action 변환)
-    obs_pipeline, action_pipeline = make_robocasa_processors()
+    obs_pipeline, action_pipeline = make_robocasa_processors(
+        static_cam2="robot0_agentview_right" if args.three_cameras else None,
+    )
 
     if args.task:
         tasks = [args.task]

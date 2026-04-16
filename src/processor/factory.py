@@ -52,6 +52,7 @@ def make_calvin_processors(
 
 def make_robocasa_processors(
     static_cam: str = "robot0_agentview_left",
+    static_cam2: str = None,
     wrist_cam: str = "robot0_eye_in_hand",
     robot_prefix: str = "robot0_",
     image_size: int = 224,
@@ -61,6 +62,7 @@ def make_robocasa_processors(
 
     Args:
         static_cam: 정적 카메라 이름 (robosuite 환경 기준).
+        static_cam2: 두 번째 정적 카메라 (3-camera 모델용, None이면 2-camera).
         wrist_cam: 손목 카메라 이름.
         robot_prefix: 로봇 observable 키 접두사 (기본 "robot0_").
         image_size: 이미지 해상도 (기본 224).
@@ -72,6 +74,7 @@ def make_robocasa_processors(
     obs_pipeline = DataProcessorPipeline(
         steps=[RoboCasaObsProcessor(
             static_cam=static_cam,
+            static_cam2=static_cam2,
             wrist_cam=wrist_cam,
             robot_prefix=robot_prefix,
             image_size=image_size,

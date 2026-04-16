@@ -3,7 +3,7 @@ LeRobot policy 추론 서버 (통일 API).
 
 lerobot 컨테이너 내에서 실행:
   docker compose run --rm lerobot \
-    python /temporal_vla/scripts/serve_lerobot.py \
+    python /temporal_vla/scripts/serve/lerobot.py \
     --policy-type pi0 \
     --pretrained-path lerobot/pi0_base \
     --port 8400
@@ -49,13 +49,21 @@ _camera_key_map: dict = (
 )  # 통일 키 → policy 키 (e.g. observation.images.static → observation.images.top)
 _state_dim: int = 0  # >0이면 observation.state를 앞 N차원으로 슬라이싱
 
-# Calvin 기준 고정 state sub-key 순서 (eef_pos(3)+eef_euler(3)+gripper_opening(1)+joint_pos(7)+gripper_action(1)=15D)
+# state sub-key canonical 정렬 순서 (벤치마크 공통).
+# payload에 있는 키만 이 순서대로 concat하여 observation.state를 구성.
+# Calvin: eef_pos(3)+eef_euler(3)+gripper_opening(1)+joint_pos(7)+gripper_action(1)=15D
+# RoboCasa: eef_pos(3)+eef_quat(4)+gripper_qpos(2)+joint_pos(7)=16D
 STATE_KEY_ORDER = [
     "observation.state.eef_pos",
     "observation.state.eef_euler",
+    "observation.state.eef_quat",
     "observation.state.gripper_opening",
+    "observation.state.gripper_qpos",
     "observation.state.joint_pos",
+    "observation.state.joint_vel",
     "observation.state.gripper_action",
+    "observation.state.base_pos",
+    "observation.state.base_quat",
 ]
 
 
@@ -133,7 +141,7 @@ def parse_payload(payload: dict) -> dict:
             t = torch.from_numpy(np_img).permute(2, 0, 1).float() / 255.0  # CHW
             batch[k] = t.unsqueeze(0)  # [1, C, H, W]
 
-    # state: STATE_KEY_ORDER 순서, 없는 키는 skip
+    # state: payload의 observation.state.* sub-key를 STATE_KEY_ORDER 순서로 concatenate
     state_parts = []
     for key in STATE_KEY_ORDER:
         if key in payload:
