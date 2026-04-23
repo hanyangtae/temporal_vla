@@ -74,6 +74,14 @@ class ImagePreprocess:
 
 
 @dataclass
+class LoraAdapter:
+    """PEFT LoRA 어댑터 로드 명세. `checkpoint_source` 와 동일 repo/path 아래의
+    `subfolder` 에서 `adapter_config.json` + `adapter_model.safetensors` 를 찾는다.
+    """
+    subfolder: str
+
+
+@dataclass
 class CheckpointProfile:
     name: str
     base_model: str
@@ -88,6 +96,7 @@ class CheckpointProfile:
     n_action_steps: int
     image_preprocess: ImagePreprocess
     emits_subkeys: List[str]
+    lora: Optional[LoraAdapter] = None
 
     @property
     def action_dim(self) -> int:
@@ -150,6 +159,8 @@ def load_profile(path: str | Path) -> CheckpointProfile:
 
     obs = data["observation_requirements"]
     img = data.get("image_preprocess", {})
+    lora_data = data.get("lora")
+    lora_obj = LoraAdapter(**lora_data) if lora_data else None
 
     profile = CheckpointProfile(
         name=data["name"],
@@ -165,6 +176,7 @@ def load_profile(path: str | Path) -> CheckpointProfile:
         n_action_steps=int(data["n_action_steps"]),
         image_preprocess=ImagePreprocess(**img),
         emits_subkeys=list(data["emits_subkeys"]),
+        lora=lora_obj,
     )
 
     # cross-field sanity

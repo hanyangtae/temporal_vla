@@ -174,6 +174,25 @@ def _load_model_impl():
     # 모델 로드
     _model = get_model(cfg)
 
+    # LoRA adapter 적용 (프로파일에 lora 필드가 있을 때)
+    if profile.lora is not None:
+        from peft import PeftModel
+
+        src = profile.checkpoint_source
+        if src.type == "hf_repo":
+            adapter_arg = src.id
+            subfolder_kwarg = {"subfolder": profile.lora.subfolder}
+        else:
+            adapter_arg = os.path.join(src.id, profile.lora.subfolder)
+            subfolder_kwarg = {}
+        logger.info(
+            "Applying LoRA adapter from %s (subfolder=%s)",
+            adapter_arg, profile.lora.subfolder,
+        )
+        _model = PeftModel.from_pretrained(_model, adapter_arg, **subfolder_kwarg)
+        _model = _model.merge_and_unload()
+        logger.info("LoRA adapter merged into base model")
+
     # unnorm_key 결정 — 프로파일의 key_selection fallback chain 사용
     available = list(_model.norm_stats.keys())
     cfg.unnorm_key = _select_unnorm_key(profile, available)
