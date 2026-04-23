@@ -1,0 +1,61 @@
+# RLinf/RLinf-OpenVLAOFT-CALVIN-SFT — OpenVLA-OFT 를 CALVIN ABC split 으로 SFT 한 체크포인트.
+#
+# 근거 (HF repo 조사):
+#   - dataset_statistics.json: top-level key "calvin_abc", action 7D, proprio 7D
+#     · action mask=[T,T,T,T,T,T,F] → dim 0-5 continuous, dim 6 discrete (gripper)
+#     · action q01/q99 정의 → q01_q99 정규화 방식
+#     · proprio stats: mean/std 가 [-2.7, 2.8] 범위의 radian 값 → joint angles 로 추정
+#   - config.json: OpenVLA (Llama-2-7b backbone, DINO+SigLIP dual vision), image 224x224
+#   - preprocessor_config.json: dual-stream normalization (DINO means + SigLIP 0.5/0.5)
+#   - lora_adapter/ 서브디렉토리 존재 → 서빙 시 PEFT LoRA 로드 필요
+#
+# 아직 불확실 (smoke test 전까지 TODO):
+#   - rotation_encoding: CALVIN native 는 delta euler. RLinf 학습 코드가 euler→axisangle 변환을
+#     했는지 여부 미확인. 잘못 두면 rotation 이 조용히 엉킴. GitHub rlinf 저장소 학습 코드
+#     확인하거나 smoke test 로 판별.
+#   - gripper sign_flip: LIBERO 는 true, CALVIN SFT 에서는 보통 false 추정. 검증 필요.
+#   - observation_requirements.state: proprio 7D 가 (a) joint_pos 인지 (b) eef_pos+euler+gripper
+#     인지 확인. stats 분포는 joint angle 에 더 가까움.
+#   - n_action_steps: config 에 명시 없음. OpenVLA-OFT 기본 8 로 가정.
+
+name: openvla_oft__rlinf_calvin_sft
+base_model: openvla_oft
+checkpoint_source:
+  type: hf_repo
+  id: RLinf/RLinf-OpenVLAOFT-CALVIN-SFT
+compatible_benchmarks: [calvin]
+
+action_type: relative
+action_layout:
+  - {name: eef_pos,   dims: 3}
+  - {name: eef_euler, dims: 3}    # TODO: axisangle 가능성도 검증. CALVIN native = euler.
+  - {name: gripper,   dims: 1}
+rotation_encoding: euler          # TODO: smoke test 로 axisangle 대비 검증
+gripper_encoding:
+  range: "{-1,1}"                 # CALVIN native gripper 집합
+  binarize: true
+  sign_flip: false                # TODO: 검증. LIBERO 와 달리 false 추정.
+  threshold: 0.0
+
+normalization:
+  scheme: q01_q99
+  stats_file: dataset_statistics.json
+  key_selection:
+    - calvin_abc                  # dataset_statistics.json 의 유일한 top-level key
+
+observation_requirements:
+  images: [static, wrist]
+  state:                          # TODO: joint_pos 7D 가정. stats 분포 기반 추정.
+    - joint_pos
+  allow_conversions: []
+
+n_action_steps: 8                 # TODO: 실제 체크포인트 inference 시 결정. 기본값.
+image_preprocess:
+  resolution: 224
+  rotate_180: false               # CALVIN 은 upstream 이미지 회전 없음
+  center_crop: true
+
+emits_subkeys:
+  - action.eef_pos
+  - action.eef_euler
+  - action.gripper
