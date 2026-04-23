@@ -181,6 +181,38 @@ services:
     working_dir: /temporal_vla/scripts
     command: ["/bin/bash"]
 
+  openvla_oft:
+    container_name: openvla_oft
+    build:
+      context: ./docker/openvla_oft
+      dockerfile: Dockerfile
+      args:
+        USER_NAME: ${USER_NAME}
+        USER_ID: ${USER_ID}
+        GROUP_ID: ${GROUP_ID}
+    volumes:
+      - .:/temporal_vla:rw
+      - /D/temporal_vla_data:/D/temporal_vla_data:rw
+      # HF cache 는 NTFS(/D) 가 chmod 를 지원 안 해서 호스트 ext4 홈을 직접 bind mount.
+      - ${HOME}/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface:rw
+    environment:
+      - HF_HOME=/home/${USER_NAME}/.cache/huggingface
+      - HF_TRUST_REMOTE_CODE=1
+      - HF_TOKEN=${HF_TOKEN}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+      - PYTHONPATH=/temporal_vla/src/policies/openvla-oft:/temporal_vla:/temporal_vla/scripts/utils
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    network_mode: host
+    tty: true
+    stdin_open: true
+    command: ["/bin/bash"]
+
   upvla:
     container_name: upvla
     build:

@@ -121,6 +121,17 @@ LeRobotDataset → scripts/extract/extract_cotrack_robocasa.py → {save_path}/r
 2. `scripts/serve/<model>.py` 작성 (통일 API: `/act`, `/reset`, `/health`)
 3. (학습) `src/datasets/adapters/<model>.py` — adapter + factory
 
+### 새 체크포인트 추가
+
+기존 모델 아키텍처에 새 체크포인트를 얹거나, 같은 체크포인트의 벤치마크 변형을 추가할 때.
+
+1. `configs/checkpoints/<base_model>__<variant>.yaml` 프로파일 작성 (스키마: `configs/checkpoints/README.md`).
+2. 해당 serve 스크립트에 프로파일 기반 분기 추가 (기존 하드코딩을 프로파일 필드로 치환).
+3. `python scripts/utils/checkpoint_profile.py configs/checkpoints/<name>.yaml` 로 로드 검증.
+4. eval 스크립트에서 serve 기동 시 `--profile` 경로 지정.
+
+상세 절차: `docs/adding_checkpoint.md`. 반복 작업 시 `vla-checkpoint-manager` 에이전트 호출.
+
 ### 새 벤치마크 추가
 
 1. (평가) `src/processor/obs/`, `action/`에 ProcessorStep 구현 + `factory.py`에 등록
