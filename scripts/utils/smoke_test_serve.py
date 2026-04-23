@@ -48,6 +48,7 @@ _DUMMY_STATE = {
     "eef_axisangle": [0.0, 0.0, 0.0],
     "gripper_qpos": [0.0, 0.0],
     "gripper_action": [0.0],
+    "gripper_opening": [0.0],
     "joint_pos": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
 }
 

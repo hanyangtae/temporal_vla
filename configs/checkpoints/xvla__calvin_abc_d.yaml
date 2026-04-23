@@ -1,0 +1,53 @@
+# X-VLA Calvin ABC_D — 2toINF/X-VLA-Calvin-ABC_D HF 체크포인트.
+# 현재 scripts/serve/xvla.py 의 하드코딩된 Calvin 동작을 프로파일로 추출해 재현.
+
+name: xvla__calvin_abc_d
+base_model: xvla
+checkpoint_source:
+  type: hf_repo
+  id: 2toINF/X-VLA-Calvin-ABC_D
+compatible_benchmarks: [calvin]
+
+action_type: absolute
+# X-VLA 는 내부적으로 20D(ee6d dual-arm)를 예측하지만 Calvin 은 single-arm 이라
+# arm1 10D 만 emit. action_layout 은 emit 되는 10D 기준으로 기술.
+action_layout:
+  - {name: eef_pos,   dims: 3}
+  - {name: eef_rot6d, dims: 6}
+  - {name: gripper,   dims: 1}
+rotation_encoding: rot6d
+gripper_encoding:
+  range: "[0,1]"                  # sigmoid 출력
+  binarize: false                 # Calvin ActionProcessor 에서 threshold 0.8 로 처리
+  sign_flip: false
+  threshold: 0.0
+
+# X-VLA 는 모델 내부에서 de-normalization 을 수행하므로 serve 가 stats 파일을 다룰 필요 없음.
+normalization:
+  scheme: none
+  stats_file: null
+  key_selection: []
+
+observation_requirements:
+  images: [static, wrist]
+  state: [eef_pos, eef_euler, gripper_opening]
+  allow_conversions: [euler_to_rot6d]
+
+n_action_steps: 30                # X-VLA 기본 chunk size
+image_preprocess:
+  resolution: 224
+  rotate_180: false
+  center_crop: false              # resize 만 수행 (bilinear)
+
+emits_subkeys:
+  - action.eef_pos
+  - action.eef_rot6d
+  - action.gripper
+
+model_specific:
+  domain_id: 2                    # Calvin domain (X-VLA domain_config.py)
+  denoising_steps: 10             # Flow matching denoising steps
+  max_views: 3                    # View padding 상한
+  tokenizer: facebook/bart-large  # X-VLA 가 사용하는 tokenizer
+  image_normalization: imagenet   # ImageNet mean/std 로 normalize
+  proprio_layout: ee6d_dual_arm   # arm1=eef_pos+rot6d+gripper(10D), arm2=zeros(10)

@@ -12,7 +12,7 @@ import logging
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
 
@@ -97,6 +97,9 @@ class CheckpointProfile:
     image_preprocess: ImagePreprocess
     emits_subkeys: List[str]
     lora: Optional[LoraAdapter] = None
+    # 모델 아키텍처 고유 설정 (domain_id, denoising_steps, embodiment 등).
+    # 각 serve 스크립트가 자기가 필요한 key 만 참조하고 나머지는 무시.
+    model_specific: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def action_dim(self) -> int:
@@ -177,6 +180,7 @@ def load_profile(path: str | Path) -> CheckpointProfile:
         image_preprocess=ImagePreprocess(**img),
         emits_subkeys=list(data["emits_subkeys"]),
         lora=lora_obj,
+        model_specific=dict(data.get("model_specific", {})),
     )
 
     # cross-field sanity

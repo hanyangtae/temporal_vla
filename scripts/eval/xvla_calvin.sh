@@ -5,7 +5,7 @@
 #   1) xvla 컨테이너에서 서버 실행:
 #      docker compose run --rm xvla \
 #        python /temporal_vla/scripts/serve/xvla.py \
-#        --pretrained-path 2toINF/X-VLA-Calvin-ABC_D
+#        --profile /temporal_vla/configs/checkpoints/xvla__calvin_abc_d.yaml
 #
 #   2) 이 스크립트를 calvin 컨테이너에서 실행:
 #      docker compose run --rm calvin bash /temporal_vla/scripts/eval/xvla_calvin.sh

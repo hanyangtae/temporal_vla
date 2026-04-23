@@ -58,6 +58,17 @@ emits_subkeys:                           # /act 응답에 포함될 action.* sub
   - action.eef_pos
   - action.eef_euler                     # axisangle → euler 변환해서 emit
   - action.gripper
+
+# 선택 필드 — 체크포인트가 LoRA 어댑터를 포함할 때
+lora:
+  subfolder: lora_adapter                # checkpoint_source 기준 서브폴더
+
+# 선택 필드 — 모델 아키텍처 고유 설정. 각 serve 가 필요한 key 만 참조.
+# 예시 (X-VLA): domain_id, denoising_steps, max_views, tokenizer, image_normalization, proprio_layout
+# 예시 (GR00T): embodiment_tag
+model_specific:
+  domain_id: 2
+  denoising_steps: 10
 ```
 
 ## 로더
