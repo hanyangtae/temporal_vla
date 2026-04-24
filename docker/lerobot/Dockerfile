@@ -48,4 +48,16 @@ RUN pip install fastapi uvicorn colorlog
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
 
+# pi0 / pi05 policies 는 transformers fork (fix/lerobot_openpi) 가 필요.
+# 다른 extras(groot, smolvla 등) 가 공식 transformers 로 덮어쓰므로 마지막에 재설치.
+# fork 는 tokenizers>=0.21,<0.22 를 요구하므로 같이 다운그레이드.
+RUN pip install --force-reinstall --no-deps \
+    "transformers @ git+https://github.com/huggingface/transformers.git@fix/lerobot_openpi" && \
+    pip install "tokenizers>=0.21,<0.22"
+
+# requirements 가 torch 를 2.5.1 → 2.10 로 업그레이드시키는데, 먼저 설치한 flash-attn
+# prebuilt wheel 은 torch 2.5.1 ABI 에 link 되어있어 undefined symbol 로 import 실패.
+# 추론 정확도에 영향 없으므로 flash-attn 제거 (transformers 는 eager attention 으로 fallback).
+RUN pip uninstall -y flash-attn
+
 CMD ["/bin/bash"]
