@@ -7,7 +7,7 @@ type: project
 # VLA 체크포인트 온보딩 — 진행 상태 (2026-04-24)
 
 ## 한 줄 요약
-`feat/vla-checkpoint-manager` 브랜치 위에 프로파일 시스템 + 에이전트 + 2개 serve 리팩터(openvla_oft / xvla / lerobot) 까지 완료. **dreamvla 리팩터 시작하기 직전에서 중단**. groot / upvla 대기. RLinf CALVIN (openvla_oft × CALVIN) 는 별도로 보류.
+`feat/vla-checkpoint-manager` 브랜치 위에 프로파일 시스템 + 에이전트 + **5개 serve 리팩터** (openvla_oft / xvla / lerobot / dreamvla / groot) + openvla_oft EGL Docker fix + RoboCasaActionProcessor 확장 까지 완료. upvla 는 skip. RLinf CALVIN (openvla_oft × CALVIN) 는 별도로 보류. groot 정확도 (axisangle↔env 입력) 추가 검증은 별건 작업.
 
 ## 브랜치 & 커밋 (feat/vla-checkpoint-manager)
 
@@ -27,9 +27,11 @@ dev 에서 분기. push 안 함. 시간순:
 
 | serve | 체크포인트 | 벤치 | smoke | rollout | video path |
 |---|---|---|---|---|---|
-| openvla_oft | moojink/...-spatial-object-goal-10 | LIBERO | ✅ | (native eval, 이번 범위 외) | — |
+| openvla_oft | moojink/...-spatial-object-goal-10 | LIBERO | ✅ | **10/10 = 100%** native eval (libero_spatial 전 task) | `src/policies/openvla-oft/rollouts/2026_04_26/*.mp4` |
 | xvla | 2toINF/X-VLA-Calvin-ABC_D | Calvin | ✅ | **5/5 = 100%** (18.7s) | `outputs/eval/calvin/xvla/260424022221/seq0000_result5.mp4` |
 | lerobot (pi05) | checkpoints/pi05-calvin-sft | Calvin | ✅ | **0/5** (체크포인트 자체 이슈, 과거 log 도 동일) | (video 저장 안 됨) |
+| dreamvla | checkpoints/dreamvla/...dynamic_depth_semantic-001.pth | Calvin | ✅ | **1/5** (1 seq, Avg seq length 1.000) | `outputs/eval/calvin/dreamvla/260506101245/seq0000_result1.mp4` |
+| groot | nvidia/GR00T-N1.6-3B (ROBOCASA_PANDA_OMRON) | RoboCasa | ✅ | 통신/변환 경로 ✅. 정확도 미해결 — 별건 이슈 분리 (`issue_groot_robocasa_unified_path.md`). native eval 은 **CloseDrawer 1/1 = 100%** 검증 완료. | `outputs/eval/robocasa/groot/260506144254/CloseFridge.mp4` 외 |
 
 ## 보류
 
@@ -41,40 +43,31 @@ dev 에서 분기. push 안 함. 시간순:
 - 재개 시: RLinf GitHub examples 에서 CALVIN inference 코드 파악 후 serve 에 `inference_mode: token_based` vs `oft_l1_regression` 분기 추가 필요
 
 ### pi05-calvin-sft rollout success = 0%
-- serve 레이어는 정상 (smoke test 통과, action shape/값 반환 OK)
-- rollout 0% 는 체크포인트/설정 문제. 추정 원인: state dim 불일치, norm_stats 로딩 실패, policy_type 오매칭, fallback external_config 의 image/state/action shape 오설정
-- 과거 `outputs/calvin_pi05_eval.log` 도 10 seq × 0%. 별개 디버깅 이슈로 분리.
+별건 이슈로 분리됨. 상세 디버깅 노트, 추정 원인 5종, 액션 후보:
+**`.claude/agent-memory/vla-checkpoint-manager/issue_pi05_calvin_zero_success.md`** 참조.
+요약: serve 레이어는 깨끗(smoke pass) → 체크포인트 + 프로파일 fallback config 매칭 문제.
 
-## 남은 작업 (C1 나머지)
+## 남은 작업 / 후속 fix
 
-우선순위 순:
-
-### 1. dreamvla × Calvin  ← **다음 재개 지점**
-- 파일: `scripts/serve/dreamvla.py` (322 lines, 이미 구조 파악 완료)
-- 체크포인트: `/temporal_vla/checkpoints/dreamvla/dreamvla_dynamic_depth_semantic-001.pth` (로컬)
-- vit_checkpoint: `/temporal_vla/checkpoints/mae_pretrain_vit_base.pth`
-- docker-compose 확인됨: PYTHONPATH 에 `/temporal_vla/scripts/utils` **없음** → 추가 필요
-- HF_HOME 은 NTFS 경로(`/temporal_vla/data/huggingface`) → ext4 로 이동 여부는 HF 다운로드 여부에 따라 결정 (로컬 ckpt 만 쓰면 당장 문제 없지만 일관성 위해 바꾸는 게 나음)
-- dreamvla 이미지 아직 빌드 안 됨
-
-**할 일**:
-1. `scripts/serve/dreamvla.py` 리팩터 (--profile 필수화, 모든 하이퍼파라미터를 `model_specific` 으로, `_profile` 전역 추가, load_model try/except 패턴)
-2. `configs/checkpoints/dreamvla__calvin_dynamic_depth_semantic.yaml` 작성 — action_type relative, eef_pos(3)+eef_euler(3)+gripper(1), `observation_requirements.state: [eef_pos, eef_euler, gripper_action]`, `observation.state.gripper_qpos` fallback 로 gripper 유추, `model_specific`: vit_checkpoint, precision=fp32, sequence_length=10, action_pred_steps=3, num_resampler_query=16, num_obs_token_per_image=9, image_size=224, patch_size=16, transformer_layers=24, hidden_dim=1024, transformer_heads=16, obs_pred=true, depth_pred=true, sam_feat_pred=true, use_dit_head=true, pred_num=1, attn_implementation=sdpa, dit_type=DiT-B, phase=evaluate, history_len=10, atten_goal=0
-3. `docker-compose.yml` dreamvla 서비스 수정 — PYTHONPATH 에 `scripts/utils` 추가, HF_HOME → ext4, HF 토큰 env 추가
-4. dreamvla 컨테이너 빌드 (`docker compose build dreamvla` — 첫 빌드 10~20분 예상)
-5. serve 기동 + smoke test + Calvin rollout 1 seq
-
-### 2. groot × RoboCasa
-- 체크포인트: `/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B` (로컬)
-- eval: `scripts/eval/groot_robocasa.sh`
-- 특이: GR00T 는 embodiment_tag 기반, action 이 dict 로 반환 (native `action.base_motion`, `action.end_effector_position` 등)
-- 프로파일 action_layout 표현이 다른 serve 들과 다름 — dict 출력을 그대로 emit 하는 구조라 `action_layout` 을 어떻게 표현할지 검토 필요
-- embodiment_tag 는 `model_specific.embodiment_tag` 로
-- 벤치마크: RoboCasa (Calvin 아님) — `src/processor/action/robocasa.py` 와 계약 확인
-
-### 3. upvla × Calvin
+### upvla × Calvin — **사용자 결정으로 SKIP**
 - `scripts/serve/upvla.py` — Calvin spec(7D relative) 에 맞춤. 체크포인트 미확인.
-- HF 에서 체크포인트 받아야 할 수도. 가장 후순위.
+- 사용자가 이번 온보딩 사이클에서는 skip. 추후 필요 시 재개.
+
+### groot × RoboCasa 통일 API path 정확도 (별건 분리)
+별건 이슈로 분리됨 → **`.claude/agent-memory/vla-checkpoint-manager/issue_groot_robocasa_unified_path.md`**
+요약:
+- native eval: CloseDrawer 1/1 = 100% (모델/체크포인트 정상)
+- 통일 API path: 0% (obs/action 매핑이 native 와 다름)
+- R3 commit (`c74c1c8` in robocasa submodule) 으로 GrootRoboCasaEnv 사용자 fork 에 이식 완료. 의존성 호환 (mujoco) + robosuite robot 초기화 실패 진단 미완.
+- 다음 우선순위: `composite_controller None` 진단 (robocasa_models 미설치 / mink 호환 의심).
+
+### openvla_oft × CALVIN (RLinf/RLinf-OpenVLAOFT-CALVIN-SFT) — 보류
+- 프로파일 작성 완료 (`configs/checkpoints/openvla_oft__rlinf_calvin_sft.yaml`)
+- RLinf 체크포인트는 token-based action 방식일 가능성 (OFT-L1 regression 경로 안 맞음)
+- 재개 시 RLinf inference 코드 파악 후 serve 에 inference_mode 분기 추가 필요
+
+### pi05 × Calvin 0% rollout
+- 별건 이슈 → `.claude/agent-memory/vla-checkpoint-manager/issue_pi05_calvin_zero_success.md`
 
 ## 기술 포인트 (재개 시 참고)
 
@@ -114,6 +107,15 @@ dev 에서 분기. push 안 함. 시간순:
 - **PYTHONUNBUFFERED=1** 필수 (부모가 auto 감지 안 함).
 - **Calvin pip/cmake 호환성** (이미 efdcb1c 로 fix): `pip<24.1`, `cmake==3.18.4.post1`.
 - **lerobot torch ABI 불일치** (이미 5f54660 로 fix): pi05 는 transformers fork(fix/lerobot_openpi) 필요, tokenizers<0.22, requirements 설치 중 torch 2.5.1→2.10 업그레이드로 flash-attn ABI 깨짐 → flash-attn 제거 (eager attention fallback).
+- **mujoco/robosuite EGL 초기화 실패** (openvla_oft LIBERO native eval 진행 중 만남, 이번 세션 fix): PyOpenGL 이 `libEGL.so.1` 을 dlopen 못 해 `_p.PLATFORM.EGL = None`. 해결:
+  1. Dockerfile 에 `libegl1 libglvnd0 libglx0 libgles2` 추가
+  2. docker-compose env 에 `NVIDIA_VISIBLE_DEVICES=all`, `NVIDIA_DRIVER_CAPABILITIES=all`, `MUJOCO_GL=egl`
+  3. 이 조합으로 NVIDIA EGL ICD 가 컨테이너에 mount 됨. Default `compute,utility` 만으론 graphics lib 못 들어옴.
+  cf. 호스트 노트: `docs/docker로 ai2thor cloudrendering(headless)돌릴때 생긴문제(v 27a63918d42a803ea893cf610b8a6c7c.md`
+- **LIBERO native eval 추가 함정**:
+  - `pip install -e LIBERO` 가 user-site 에 등록 → `PYTHONPATH=/temporal_vla/src/benchmarks/LIBERO` 로 직접 보강 필요
+  - LIBERO `__init__.py` 가 첫 import 때 `input(...)` 으로 dataset 경로 묻는 이슈 → `~/.libero/config.yaml` 사전 작성 필요
+  - 두 fix 모두 `scripts/eval/openvla_oft_libero.sh` 에 반영됨 (이번 세션 modify)
 
 ### 에이전트 인프라
 - 정의: `.claude/agents/vla-checkpoint-manager.md`
@@ -127,5 +129,32 @@ dev 에서 분기. push 안 함. 시간순:
 1. 현재 브랜치 확인: `git branch --show-current` — `feat/vla-checkpoint-manager` 여야 함
 2. 이 메모리 파일 읽기 (MEMORY.md 에 인덱스 있음)
 3. `git log --oneline -10` 으로 커밋 상태 재확인
-4. dreamvla 컨테이너 이미지 여부: `docker images | grep dreamvla`
-5. **dreamvla 리팩터부터 재개**
+4. groot 체크포인트 확인: `ls /temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B/`
+5. **groot × RoboCasa 부터 재개**
+
+## 미커밋 변경사항 (이번 세션, 별도 commitor 처리 예정)
+
+**Submodule commit (`src/benchmarks/robocasa`):**
+- `c74c1c8` feat: GR00T 호환 RoboCasa env wrapper 추가 (R3 — KeyConverter, GrootRoboCasaEnv, RoboCasaEnv)
+
+**Main repo:**
+- `M docker-compose.yml` — openvla_oft (EGL caps + MUJOCO_GL=egl), dreamvla (HF ext4 + scripts/utils + GPU deploy + HF_TOKEN), groot (HF ext4 + scripts/utils + HF_TOKEN)
+- `M docker/openvla_oft/Dockerfile` — libegl1 libglvnd0 libglx0 libgles2
+- `M docker/groot/Dockerfile` — fastapi / uvicorn / opencv-python-headless / pyyaml
+- `M scripts/eval/openvla_oft_libero.sh` — PYTHONPATH 보강, ~/.libero/config.yaml 사전 작성, MUJOCO_GL/PYOPENGL_PLATFORM
+- `M scripts/eval/robocasa_eval.py` — `--use-groot-env` flag + `run_vla_rollouts_groot` 함수 + GR00T schema rename 매핑 + action dump (env VLA_ACTION_DUMP)
+- `M scripts/serve/dreamvla.py` — 프로파일 기반 풀 리팩터
+- `M scripts/serve/groot.py` — 프로파일 기반 리팩터, native dict → 통일 sub-key 매핑, 누락 video/state 키 zero fallback (state dim 은 statistics.json 에서 로드)
+- `M src/processor/action/robocasa.py` — eef_axisangle / base_motion / torso 옵션 키 처리, missing 키 1회 warning
+- `M src/processor/obs/robocasa.py` — 3-camera 모드 키 정정 (static + left + right + wrist)
+- `M src/benchmarks/robocasa` — submodule pointer → c74c1c8 (R3)
+- `?? configs/checkpoints/dreamvla__calvin_dynamic_depth_semantic.yaml`
+- `?? configs/checkpoints/groot__robocasa_panda_omron.yaml`
+- `?? .claude/agent-memory/vla-checkpoint-manager/issue_pi05_calvin_zero_success.md`
+- `?? .claude/agent-memory/vla-checkpoint-manager/issue_groot_robocasa_unified_path.md`
+
+## 컨테이너 함정 (이번 세션 추가)
+- **robocasa Dockerfile entrypoint = `start_vnc.sh`**: `docker compose run --rm robocasa <cmd>` 시 entrypoint 가 cmd 무시하고 KasmVNC 만 띄운 후 `tail -f /dev/null` 로 hang. 우회: `docker compose run --rm --entrypoint "" robocasa <cmd>`.
+- **GR00T modality_keys 의 prefix 누락**: `_modality_configs["video"].modality_keys` 가 `'res256_image_side_0'` 형태 (prefix 없음) 인데 GR00T 검증은 `'video.res256_image_side_0'` (prefix 있음) 으로 함. fallback 시 prefix 자동 추가 필요.
+- **GR00T state dim 정보 출처**: `_modality_configs` 에는 dim 없음. `<checkpoint>/statistics.json` → `embodiment_value/state/<key>/mean` 에서 추출.
+- **`docker system prune -af` 주의**: stopped 컨테이너의 모든 unused 이미지 삭제. dreamvla / xvla / openvla_oft 등 active container 없는 이미지 다 날아감.
