@@ -206,6 +206,11 @@ services:
       - HF_TOKEN=${HF_TOKEN}
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
       - PYTHONPATH=/temporal_vla/src/policies/openvla-oft:/temporal_vla:/temporal_vla/scripts/utils
+      # mujoco/robosuite 의 EGL GPU 렌더링을 위해 NVIDIA driver capabilities 확장.
+      # default(compute,utility) 만 있으면 libEGL_nvidia.so 가 컨테이너에 mount 안 됨.
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - MUJOCO_GL=egl
     deploy:
       resources:
         reservations:

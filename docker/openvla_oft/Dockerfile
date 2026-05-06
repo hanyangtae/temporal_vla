@@ -22,6 +22,7 @@ RUN apt update && apt install -y --no-install-recommends \
     sudo cmake pkg-config \
     libgl1-mesa-glx libglib2.0-0 ffmpeg \
     libglew-dev libglfw3-dev libosmesa6-dev \
+    libegl1 libglvnd0 libglx0 libgles2 \
     && rm -rf /var/lib/apt/lists/* && \
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
     update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1 && \
