@@ -58,7 +58,8 @@ UNIFIED_TO_VIDEO_KEY = {
     "observation.images.side_0": "video.res256_image_side_0",
     "observation.images.right":  "video.res256_image_side_1",
     "observation.images.side_1": "video.res256_image_side_1",
-    "observation.images.wrist":  "video.res256_image_wrist_0",
+    "observation.images.wrist":   "video.res256_image_wrist_0",
+    "observation.images.wrist_0": "video.res256_image_wrist_0",
 }
 
 # 통일 API state 키 → GR00T state 키 (PandaOmronKeyConverter 기준).

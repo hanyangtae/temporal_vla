@@ -39,7 +39,8 @@ normalization:
   key_selection: []
 
 observation_requirements:
-  images: [static, wrist]
+  # GR00T ROBOCASA_PANDA_OMRON KeyConverter: agentview_left → side_0, agentview_right → side_1, eye_in_hand → wrist_0.
+  images: [side_0, side_1, wrist_0]
   state: [eef_pos, eef_quat, gripper_qpos, joint_pos]
   allow_conversions: []
 

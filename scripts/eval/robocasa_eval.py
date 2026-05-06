@@ -177,6 +177,14 @@ def run_vla_rollouts_groot(
             actions, latency_ms = vla_client.predict(images, states or None, instruction)
             latencies.append(latency_ms)
 
+            # DEBUG: action 통계 dump (VLA_ACTION_DUMP=path env 로 활성).
+            import os, json
+            _dbg = os.environ.get("VLA_ACTION_DUMP")
+            if _dbg and isinstance(actions, dict):
+                with open(_dbg, "a") as f:
+                    rec = {k: (v.tolist() if hasattr(v, "tolist") else v) for k, v in actions.items()}
+                    f.write(json.dumps(rec) + "\n")
+
             # 통일 sub-key (action.eef_pos 등) → GR00T action_dict (action.end_effector_position 등)
             if not isinstance(actions, dict):
                 raise RuntimeError(
