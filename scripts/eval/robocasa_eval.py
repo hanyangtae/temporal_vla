@@ -105,6 +105,130 @@ def _check_success(env) -> bool:
     return bool(result.get("task", False)) if isinstance(result, dict) else bool(result)
 
 
+# GR00T env 모드 매핑: GrootRoboCasaEnv 의 obs/action schema ↔ 통일 API sub-key.
+# - obs (env → vla_client): GR00T schema 키를 통일 API 의 의미 명확한 sub-key 로 rename.
+# - action (vla_client → env): 통일 sub-key 를 GR00T native action_dict 키로 rename.
+GROOT_VIDEO_TO_UNIFIED_CAM = {
+    "video.res256_image_side_0": "left",
+    "video.res256_image_side_1": "right",
+    "video.res256_image_wrist_0": "wrist",
+}
+GROOT_STATE_TO_UNIFIED = {
+    "state.end_effector_position_relative": "observation.state.eef_pos_rel",
+    "state.end_effector_rotation_relative": "observation.state.eef_quat_rel",
+    "state.gripper_qpos":                   "observation.state.gripper_qpos",
+    "state.base_position":                  "observation.state.base_position",
+    "state.base_rotation":                  "observation.state.base_rotation",
+}
+UNIFIED_ACTION_TO_GROOT = {
+    "action.eef_pos":         "action.end_effector_position",
+    "action.eef_axisangle":   "action.end_effector_rotation",
+    "action.gripper":         "action.gripper_close",
+    "action.base_motion":     "action.base_motion",
+    "action.control_mode":    "action.control_mode",
+}
+
+
+def run_vla_rollouts_groot(
+    env,
+    vla_client,
+    num_rollouts: int,
+    num_steps: int,
+    video_path: str | None = None,
+) -> dict:
+    """GrootRoboCasaEnv 기반 rollout — KeyConverter 가 obs/action 을 native 와 동일 schema 로 변환.
+
+    obs/action processor 우회. 통일 API 통신 layer 만 거침.
+    """
+    video_writer = None
+    if video_path is not None:
+        try:
+            import imageio
+            video_writer = imageio.get_writer(video_path, fps=20)
+        except ImportError:
+            logger.error("영상 저장을 위해 imageio 필요")
+            video_writer = None
+
+    results = []
+    num_success = 0
+
+    for rollout_i in tqdm(range(num_rollouts), desc="롤아웃 평가 (groot env)"):
+        obs, _info = env.reset()
+        instruction = obs.get("annotation.human.action.task_description", "")
+        if isinstance(instruction, (list, tuple)):
+            instruction = instruction[0] if instruction else ""
+        vla_client.reset()
+
+        latencies = []
+        first_success_step = None
+        step_i = 0
+        for step_i in range(num_steps):
+            # obs (GR00T schema) → 통일 sub-key rename
+            images = {}
+            for groot_k, unified_cam in GROOT_VIDEO_TO_UNIFIED_CAM.items():
+                if groot_k in obs:
+                    images[unified_cam] = obs[groot_k]
+            states = {}
+            for groot_k, unified_k in GROOT_STATE_TO_UNIFIED.items():
+                if groot_k in obs:
+                    val = obs[groot_k]
+                    states[unified_k] = np.asarray(val, dtype=np.float32).flatten()
+
+            actions, latency_ms = vla_client.predict(images, states or None, instruction)
+            latencies.append(latency_ms)
+
+            # 통일 sub-key (action.eef_pos 등) → GR00T action_dict (action.end_effector_position 등)
+            if not isinstance(actions, dict):
+                raise RuntimeError(
+                    "groot env mode 는 sub-keyed action 필요 — flat ndarray 받음"
+                )
+            groot_action = {}
+            for unified_k, groot_k in UNIFIED_ACTION_TO_GROOT.items():
+                if unified_k in actions:
+                    arr = actions[unified_k]
+                    # action chunk 의 첫 step 만 적용 (n_action_steps=16 chunk → 1 step apply)
+                    groot_action[groot_k] = np.asarray(arr[0], dtype=np.float32)
+
+            obs, _reward, terminated, truncated, info = env.step(groot_action)
+
+            if video_writer is not None:
+                # GrootRoboCasaEnv 의 obs 의 high-res frame 또는 256x256 frame 사용.
+                frame = obs.get("video.res256_image_side_0_512x512") or obs.get(
+                    "video.res256_image_side_0"
+                )
+                if frame is not None:
+                    video_writer.append_data(np.asarray(frame, dtype=np.uint8))
+
+            if info.get("success", False):
+                if first_success_step is None:
+                    first_success_step = step_i
+                num_success += 1
+                break
+            if terminated or truncated:
+                break
+
+        results.append({
+            "rollout": rollout_i,
+            "success": first_success_step is not None,
+            "first_success_step": first_success_step,
+            "steps": step_i + 1,
+            "mean_latency_ms": float(np.mean(latencies)) if latencies else 0.0,
+            "instruction": instruction,
+        })
+
+    if video_writer is not None:
+        video_writer.close()
+        logger.info("영상 저장: %s", video_path)
+
+    return {
+        "num_success": num_success,
+        "num_rollouts": num_rollouts,
+        "success_rate": num_success / num_rollouts if num_rollouts > 0 else 0.0,
+        "mean_latency_ms": float(np.mean([r["mean_latency_ms"] for r in results])) if results else 0.0,
+        "rollouts": results,
+    }
+
+
 def run_vla_rollouts(
     env,
     vla_client,
@@ -157,6 +281,17 @@ def run_vla_rollouts(
                 raw_action = {k: v[0] for k, v in actions.items()}
             else:
                 raw_action = actions[0]
+
+            # DEBUG: groot 출력값 통계용 dump (sub-key 별 16 step chunk 그대로)
+            import os, json
+            _dbg = os.environ.get("VLA_ACTION_DUMP")
+            if _dbg:
+                with open(_dbg, "a") as f:
+                    if isinstance(actions, dict):
+                        rec = {k: (v.tolist() if hasattr(v, "tolist") else v) for k, v in actions.items()}
+                    else:
+                        rec = {"action": actions.tolist() if hasattr(actions, "tolist") else actions}
+                    f.write(json.dumps(rec) + "\n")
             latencies.append(latency_ms)
 
             # VLA 7D action → PandaMobile 12D (processor)
@@ -213,27 +348,49 @@ def evaluate_task(
     num_steps: int = 400,
     video_path: str | None = None,
     seed: int | None = None,
+    use_groot_env: bool = False,
 ) -> dict:
     """단일 태스크 평가."""
-    logger.info("태스크: %s (rollouts=%d, steps=%d)", task_name, num_rollouts, num_steps)
-    env = create_eval_env(
-        env_name=task_name,
-        camera_names=CAMERA_NAMES,
-        camera_widths=IMAGE_SIZE,
-        camera_heights=IMAGE_SIZE,
-        seed=seed,
-    )
-    try:
-        info = run_vla_rollouts(
-            env, vla_client, obs_pipeline, action_pipeline,
-            num_rollouts, num_steps, video_path,
+    logger.info("태스크: %s (rollouts=%d, steps=%d, groot_env=%s)",
+                task_name, num_rollouts, num_steps, use_groot_env)
+
+    if use_groot_env:
+        # GrootRoboCasaEnv (KeyConverter 통한 schema 변환) 사용.
+        # task_name 형식이 "PnPCounterToCab" 같으면 namespace 자동 prefix.
+        env_id = (
+            task_name if "/" in task_name
+            else f"robocasa_panda_omron/{task_name}_PandaOmron_Env"
         )
-    finally:
-        env.close()
+        import gymnasium as gym
+        import robocasa  # noqa: F401  (env 등록 trigger)
+        from robocasa.utils.gym_utils import GrootRoboCasaEnv  # noqa: F401
+        import robosuite  # noqa: F401
+        env = gym.make(env_id, enable_render=True)
+        try:
+            info = run_vla_rollouts_groot(
+                env, vla_client, num_rollouts, num_steps, video_path,
+            )
+        finally:
+            env.close()
+    else:
+        env = create_eval_env(
+            env_name=task_name,
+            camera_names=CAMERA_NAMES,
+            camera_widths=IMAGE_SIZE,
+            camera_heights=IMAGE_SIZE,
+            seed=seed,
+        )
+        try:
+            info = run_vla_rollouts(
+                env, vla_client, obs_pipeline, action_pipeline,
+                num_rollouts, num_steps, video_path,
+            )
+        finally:
+            env.close()
 
     return {
         "task": task_name,
-        "mode": "vla",
+        "mode": "vla_groot_env" if use_groot_env else "vla",
         **info,
     }
 
@@ -339,6 +496,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="이미 결과 JSON이 있는 태스크 건너뛰기")
     p.add_argument("--three-cameras", action="store_true",
                    help="3-camera 모드 (left+right agentview + wrist). pi0.5 등 3-camera 모델용")
+    p.add_argument("--use-groot-env", action="store_true",
+                   help="GrootRoboCasaEnv (KeyConverter schema) 사용. groot 체크포인트 평가용 — "
+                        "ObsProcessor/ActionProcessor 우회하고 native 와 동일 schema 보장.")
     return p
 
 
@@ -363,10 +523,14 @@ def main():
     server_info = vla_client.wait_until_ready()
     logger.info("VLA 서버 연결 완료: %s", server_info)
 
-    # Processor pipeline (벤치마크별 obs/action 변환)
-    obs_pipeline, action_pipeline = make_robocasa_processors(
-        static_cam2="robot0_agentview_right" if args.three_cameras else None,
-    )
+    # Processor pipeline (벤치마크별 obs/action 변환).
+    # use_groot_env 모드는 GrootRoboCasaEnv 가 schema 변환을 직접 담당하므로 None.
+    if args.use_groot_env:
+        obs_pipeline, action_pipeline = None, None
+    else:
+        obs_pipeline, action_pipeline = make_robocasa_processors(
+            static_cam2="robot0_agentview_right" if args.three_cameras else None,
+        )
 
     if args.task:
         tasks = [args.task]
@@ -398,6 +562,7 @@ def main():
                 num_steps=args.num_steps,
                 video_path=video_path,
                 seed=args.seed,
+                use_groot_env=args.use_groot_env,
             )
             log_summary(summary)
             all_summaries.append(summary)
