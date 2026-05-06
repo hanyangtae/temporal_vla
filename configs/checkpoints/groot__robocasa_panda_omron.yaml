@@ -1,0 +1,66 @@
+# GR00T N1.6-3B + RoboCasa PandaOmron embodiment.
+# 로컬 체크포인트 (HF model directory). 통일 HTTP API serve 로 robocasa_eval.py 평가.
+#
+# GR00T native action keys (statistics.json):
+#   end_effector_position [3], end_effector_rotation [3], gripper_close [1],
+#   base_motion [4], control_mode [1]  → 총 12D
+# serve 측에서 통일 sub-key 로 매핑하여 emit:
+#   end_effector_position → action.eef_pos
+#   end_effector_rotation → action.eef_axisangle (robosuite OSC_POSE 입력 형식)
+#   gripper_close         → action.gripper
+#   base_motion           → action.base_motion (옵션)
+#   control_mode          → action.control_mode (정보 보존, ActionProcessor 는 무시)
+
+name: groot__robocasa_panda_omron
+base_model: groot
+checkpoint_source:
+  type: local
+  id: /temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B
+compatible_benchmarks: [robocasa]
+
+action_type: relative
+# 7D 필수 layout 만 명시 (RoboCasaActionProcessor 의 핵심 입력).
+# base_motion / control_mode 는 emits_subkeys 에 별도로 추가하여 정보 보존.
+action_layout:
+  - {name: eef_pos,        dims: 3}
+  - {name: eef_axisangle,  dims: 3}
+  - {name: gripper,        dims: 1}
+rotation_encoding: axisangle
+gripper_encoding:
+  range: "[-1,1]"                  # GR00T statistics: gripper_close min=-1, max=1
+  binarize: false                  # GR00T 가 연속값 출력. ActionProcessor 가 그대로 env 에 전달.
+  sign_flip: false
+  threshold: 0.0
+
+# GR00T 가 Gr00tSimPolicyWrapper 내부에서 unnormalize 후 raw value 반환 → serve/processor 쪽 추가 정규화 불필요.
+normalization:
+  scheme: none
+  stats_file: null
+  key_selection: []
+
+observation_requirements:
+  images: [static, wrist]
+  state: [eef_pos, eef_quat, gripper_qpos, joint_pos]
+  allow_conversions: []
+
+# n_action_steps 는 modality_configs["action"].delta_indices 길이로 동적 결정.
+# /health 에서 실제값 반영. 16 은 GR00T N1 표준 chunk size.
+n_action_steps: 16
+image_preprocess:
+  resolution: 256                  # GR00T native 해상도 (FINAL_IMAGE_RESOLUTION)
+  rotate_180: false
+  center_crop: false               # 정사각형 패딩 + 256x256 resize (groot serve 가 자체 처리)
+
+# 필수 (RoboCasaActionProcessor 가 7D 만들 때 사용).
+# base_motion / control_mode 는 ActionProcessor 가 옵션 키로 받기 (없으면 0+warning).
+emits_subkeys:
+  - action.eef_pos
+  - action.eef_axisangle
+  - action.gripper
+  - action.base_motion
+  - action.control_mode
+
+model_specific:
+  embodiment_tag: ROBOCASA_PANDA_OMRON   # GR00T 의 embodiment_tags.py 의 enum value
+  no_strict: false                       # Gr00tSimPolicyWrapper(strict=True). 디버깅 시 true 로 완화.
+  device: cuda

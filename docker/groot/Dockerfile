@@ -56,6 +56,9 @@ RUN pip install flash-attn --no-build-isolation
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
 
+# 통일 HTTP API serve 용 (scripts/serve/groot.py)
+RUN pip install fastapi==0.115.0 uvicorn[standard]==0.30.6 opencv-python-headless==4.10.0.84 pyyaml
+
 # Isaac-GR00T 패키지 설치 (volume mount 후 editable install)
 # 컨테이너 시작 후 수동: pip install -e /temporal_vla/src/policies/Isaac-GR00T --no-deps
 

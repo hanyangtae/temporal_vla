@@ -90,9 +90,14 @@ services:
     volumes:
       - .:/temporal_vla:rw
       - /D/temporal_vla_data:/D/temporal_vla_data:rw
+      # HF cache 는 NTFS(/D) 가 chmod 미지원 → 호스트 ext4 홈을 직접 bind mount.
+      - ${HOME}/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface:rw
     environment:
-      - HF_HOME=/temporal_vla/data/huggingface
-      - PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T
+      - HF_HOME=/home/${USER_NAME}/.cache/huggingface
+      - HF_TRUST_REMOTE_CODE=1
+      - HF_TOKEN=${HF_TOKEN}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+      - PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla:/temporal_vla/scripts/utils
     deploy:
       resources:
         reservations:
