@@ -224,8 +224,16 @@ def _rollout(
     action_pipeline,
     action_type: str = "relative",
     record: bool = False,
+    ep_len: int = 360,
+    success_deadline: Optional[int] = None,
 ) -> Tuple[bool, List[np.ndarray]]:
-    """단일 subtask 롤아웃. (성공 여부, 프레임 리스트) 반환."""
+    """단일 subtask 롤아웃. (성공 여부, 프레임 리스트) 반환.
+
+    success_deadline: 이 step 안에 task oracle 이 성공 신호를 줘야 진짜 성공.
+    그 이후 ep_len 까지 사이에 성공 신호가 나오면 실패로 마킹하고 즉시 종료.
+    None 이면 ep_len 과 동일.
+    """
+    deadline = success_deadline if success_deadline is not None else ep_len
     vla_client.reset()
     obs = env.get_obs()
     start_info = env.get_info()
@@ -234,7 +242,7 @@ def _rollout(
     buf_idx = 0
     frames = []
 
-    for step in range(EP_LEN):
+    for step in range(ep_len):
         if action_buffer is None or buf_idx >= buf_len:
             processed = obs_pipeline({TransitionKey.OBSERVATION: obs})
             processed_obs = processed[TransitionKey.OBSERVATION]
@@ -255,7 +263,8 @@ def _rollout(
             start_info, current_info, {subtask}
         )
         if len(current_task_info) > 0:
-            return True, frames
+            # deadline 안에 끝났는지 확인 (step 은 0-indexed → step < deadline)
+            return (step < deadline), frames
 
     return False, frames
 
@@ -275,6 +284,8 @@ def _evaluate_sequence(
     video_dir: Optional[Path] = None,
     seq_idx: int = 0,
     save_all_videos: bool = False,
+    ep_len: int = 360,
+    success_deadline: Optional[int] = None,
 ) -> int:
     """5-subtask 시퀀스 평가. 연속 성공 수 반환."""
     robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
@@ -294,6 +305,8 @@ def _evaluate_sequence(
             action_pipeline,
             action_type=action_type,
             record=record,
+            ep_len=ep_len,
+            success_deadline=success_deadline,
         )
         if record and frames:
             frames = _draw_instruction(frames, instruction)
@@ -329,6 +342,8 @@ def evaluate(
     num_videos: int = 0,
     video_dir: Optional[Path] = None,
     save_all_videos: bool = False,
+    ep_len: int = 360,
+    success_deadline: Optional[int] = None,
 ):
     # 통일 VLA 클라이언트
     vla_client = VLAClient(url=server_url)
@@ -405,6 +420,8 @@ def evaluate(
             video_dir=video_dir,
             seq_idx=seq_idx,
             save_all_videos=save_all_videos,
+            ep_len=ep_len,
+            success_deadline=success_deadline,
         )
         results.append(result)
 
@@ -478,7 +495,34 @@ def main():
         action="store_true",
         help="성공 여부 관계없이 모든 비디오 저장 (기본: 완전 성공(5/5) 제외)",
     )
+    parser.add_argument(
+        "--ep-len",
+        type=int,
+        default=360,
+        help="subtask 당 rollout 최대 step 수 (Calvin 표준=360, 30fps×12s).",
+    )
+    parser.add_argument(
+        "--success-deadline",
+        type=int,
+        default=None,
+        help="이 step 안에 task oracle 성공 신호가 와야 진짜 성공. "
+        "그 이후 ep-len 까지 사이에 성공이 나오면 실패로 마킹. "
+        "None=ep-len 과 동일 (기존 동작).",
+    )
+    parser.add_argument(
+        "--video-dir",
+        type=str,
+        default=None,
+        help="비디오 저장 경로 override. 미지정시 outputs/eval/calvin/{model}/{ts}.",
+    )
     args = parser.parse_args()
+
+    if args.video_dir is not None:
+        video_dir = Path(args.video_dir)
+    else:
+        video_dir = Path(
+            f"/temporal_vla/outputs/eval/calvin/{URL_MAP[args.server_url]}/{time.strftime('%y%m%d%H%M%S')}"
+        )
 
     evaluate(
         dataset_path=Path(args.dataset_path),
@@ -487,10 +531,10 @@ def main():
         num_sequences=args.num_sequences,
         output_path=Path(args.output) if args.output else None,
         num_videos=args.num_videos,
-        video_dir=Path(
-            f"/temporal_vla/outputs/eval/calvin/{URL_MAP[args.server_url]}/{time.strftime('%y%m%d%H%M%S')}"
-        ),
+        video_dir=video_dir,
         save_all_videos=args.save_all_videos,
+        ep_len=args.ep_len,
+        success_deadline=args.success_deadline,
     )
 
 

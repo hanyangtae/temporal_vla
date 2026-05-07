@@ -1,0 +1,50 @@
+# OpenVLA-OFT LIBERO-10 (long-horizon).
+# 멀티태스크 체크포인트(spatial-object-goal-10) 의 dataset_statistics 에서 libero_10 키 선택.
+
+name: openvla_oft__moojink_libero_10
+base_model: openvla_oft
+checkpoint_source:
+  type: hf_repo
+  id: moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10
+compatible_benchmarks: [libero]
+
+action_type: relative
+action_layout:
+  - {name: eef_pos,       dims: 3}
+  - {name: eef_axisangle, dims: 3}
+  - {name: gripper,       dims: 1}
+rotation_encoding: axisangle
+gripper_encoding:
+  range: "[0,1]"
+  binarize: true
+  sign_flip: true
+  threshold: 0.0
+
+normalization:
+  scheme: q01_q99
+  stats_file: dataset_statistics.json
+  key_selection:
+    - libero_10
+    - libero_10_no_noops
+    - <first_available>
+
+observation_requirements:
+  images: [static, wrist]
+  state:
+    - eef_pos
+    - eef_quat
+    - gripper_qpos
+  allow_conversions:
+    - quat_to_axisangle
+    - euler_to_axisangle
+
+n_action_steps: 8
+image_preprocess:
+  resolution: 256
+  rotate_180: true
+  center_crop: true
+
+emits_subkeys:
+  - action.eef_pos
+  - action.eef_euler
+  - action.gripper

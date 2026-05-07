@@ -11,8 +11,10 @@ from typing import Tuple
 
 from .base import DataProcessorPipeline
 from .obs.calvin import CalvinObsProcessor
+from .obs.libero import LIBEROObsProcessor
 from .obs.robocasa import RoboCasaObsProcessor
 from .action.calvin import CalvinActionProcessor
+from .action.libero import LIBEROActionProcessor
 from .action.robocasa import RoboCasaActionProcessor
 
 
@@ -58,6 +60,36 @@ def make_calvin_processors(
             )
         ],
         name="calvin_action",
+    )
+    return obs_pipeline, action_pipeline
+
+
+def make_libero_processors(
+    image_size: int = 256,
+) -> Tuple[DataProcessorPipeline, DataProcessorPipeline]:
+    """LIBERO 벤치마크용 (obs_pipeline, action_pipeline) 생성.
+
+    Args:
+        image_size: 이미지 해상도 (LIBERO env `camera_heights`/`camera_widths`).
+                   openvla-oft 학습 기본 = 256.
+
+    데이터 흐름:
+        env obs (raw orientation) → obs_processor →
+        unified payload (`observation.images.{static,wrist}`, `observation.state.{eef_pos,eef_quat,gripper_qpos}`)
+        → /act 서버 (학습 시 사용된 dataset_statistics 기준 normalize/denorm) →
+        sub-key action (이미 디노말 + gripper 후처리 완료) → action_processor →
+        7D LIBERO env action `[pos(3), axisangle(3), gripper(1)]`.
+
+    Returns:
+        (obs_pipeline, action_pipeline) 튜플.
+    """
+    obs_pipeline = DataProcessorPipeline(
+        steps=[LIBEROObsProcessor(image_size=image_size)],
+        name="libero_obs",
+    )
+    action_pipeline = DataProcessorPipeline(
+        steps=[LIBEROActionProcessor()],
+        name="libero_action",
     )
     return obs_pipeline, action_pipeline
 
