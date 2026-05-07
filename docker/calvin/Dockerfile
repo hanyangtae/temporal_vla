@@ -41,11 +41,13 @@ WORKDIR /temporal_vla
 
 ENV PATH="/home/${USER_NAME}/.local/bin:${PATH}"
 
-RUN pip install --upgrade pip wheel
+# pip<24.1: 최신 pip 는 old setuptools==57.5.0 소스 빌드를 거부 (PEP 517 호환성).
+RUN pip install --upgrade 'pip<24.1' wheel
 
-# cmake==3.18.4 required by MulticoreTSNE (higher versions break its build)
-# setuptools==57.5.0 required by pyhash (matches calvin_models/requirements.txt pin)
-RUN pip install cmake==3.18.4 setuptools==57.5.0
+# cmake==3.18.4.post1 required by MulticoreTSNE (higher versions break its build).
+# 3.18.4 는 PyPI 에서 yanked 되었으므로 .post1 사용.
+# setuptools==57.5.0 required by pyhash (matches calvin_models/requirements.txt pin).
+RUN pip install cmake==3.18.4.post1 setuptools==57.5.0
 
 # PyTorch 1.13.1 (CUDA 11.7) — pinned by calvin_models/requirements.txt
 RUN pip install torch==1.13.1+cu117 torchvision==0.14.1+cu117 \

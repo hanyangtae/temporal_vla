@@ -1,0 +1,51 @@
+# OpenVLA-OFT LIBERO Spatial.
+# 현재 scripts/serve/openvla_oft.py 의 하드코딩된 LIBERO 동작을 프로파일로 추출해 재현한 것.
+# 다른 LIBERO task suite(object/goal/10)는 이 파일 복사 후 normalization.key_selection 만 변경.
+
+name: openvla_oft__moojink_libero_spatial
+base_model: openvla_oft
+checkpoint_source:
+  type: hf_repo
+  id: moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10
+compatible_benchmarks: [libero]
+
+action_type: relative
+action_layout:
+  - {name: eef_pos,       dims: 3}
+  - {name: eef_axisangle, dims: 3}
+  - {name: gripper,       dims: 1}
+rotation_encoding: axisangle
+gripper_encoding:
+  range: "[0,1]"                   # raw 모델 출력 범위. 서빙 시 [-1,+1] 로 스케일 후 binarize.
+  binarize: true
+  sign_flip: true                  # LIBERO 학습 시 gripper 부호 뒤집혀 학습됨. 서빙 시 복원.
+  threshold: 0.0
+
+normalization:
+  scheme: q01_q99
+  stats_file: dataset_statistics.json
+  key_selection:
+    - libero_spatial
+    - libero_spatial_no_noops
+    - <first_available>            # sentinel: 첫 번째 사용 가능한 key 로 fallback
+
+observation_requirements:
+  images: [static, wrist]
+  state:                           # 8D proprio = eef_pos + axisangle + gripper_qpos
+    - eef_pos
+    - eef_quat                     # axisangle 로 내부 변환 (fallback: eef_euler)
+    - gripper_qpos                 # 없으면 gripper_action 을 [g,g] 로 padding
+  allow_conversions:
+    - quat_to_axisangle
+    - euler_to_axisangle
+
+n_action_steps: 8                  # num_open_loop_steps. serve 는 queue 에서 1개씩 반환
+image_preprocess:
+  resolution: 256
+  rotate_180: true                 # LIBERO bddl 이미지 업스트림 회전 보정
+  center_crop: true
+
+emits_subkeys:
+  - action.eef_pos
+  - action.eef_euler               # axisangle → euler 변환해서 반환
+  - action.gripper

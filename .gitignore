@@ -19,7 +19,11 @@ temp/**
 # AI Assistant
 CLAUDE.md
 GEMINI.md
-.claude/
+# .claude/ 바로 아래 파일들(settings.local.json, worktrees/ 등)은 개인 설정이라 ignore.
+# 단, agents/ 와 agent-memory/ 는 팀 공유용으로 버전 관리.
+.claude/*
+!.claude/agents/
+!.claude/agent-memory/
 .cursor/
 
 # Model checkpoints

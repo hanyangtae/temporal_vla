@@ -1,0 +1,47 @@
+# OpenVLA-OFT core dependencies
+accelerate>=0.25.0
+draccus==0.8.0
+einops
+huggingface_hub
+json-numpy
+jsonlines
+matplotlib
+peft==0.11.1
+protobuf
+rich
+sentencepiece==0.1.99
+timm==0.9.10
+tokenizers==0.19.1
+diffusers==0.30.3
+imageio[ffmpeg]
+wandb
+
+# IMPORTANT: custom transformers fork (bidirectional attn for parallel decoding)
+transformers @ git+https://github.com/moojink/transformers-openvla-oft.git
+
+# TensorFlow (image preprocessing pipeline 호환)
+tensorflow==2.15.0
+tensorflow_datasets==4.9.3
+tensorflow_graphics==2021.12.3
+
+# dlimp (dataset loading)
+dlimp @ git+https://github.com/moojink/dlimp_openvla
+
+# LIBERO 환경 의존성
+robosuite==1.4.1
+bddl
+easydict
+cloudpickle
+gym
+
+# Inference server
+fastapi
+uvicorn
+
+# Utilities
+pillow
+opencv-python
+tqdm
+termcolor
+numpy
+scipy

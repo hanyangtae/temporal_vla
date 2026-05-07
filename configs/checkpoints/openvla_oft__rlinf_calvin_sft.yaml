@@ -1,0 +1,84 @@
+# RLinf/RLinf-OpenVLAOFT-CALVIN-SFT — OpenVLA-OFT 를 CALVIN ABC split 으로 SFT 한 체크포인트.
+#
+# ⚠️ 상태: 서빙 미지원 (보류).
+#   - 현재 scripts/serve/openvla_oft.py 는 OpenVLA-OFT 의 L1 regression action head +
+#     proprio projector 를 별도 .pt 파일로 로드하는 경로 전용.
+#   - RLinf 체크포인트에는 action_head / proprio_projector .pt 파일이 없음 → openvla-oft 의
+#     `get_action_head` / `get_proprio_projector` 가 "Unsupported HF Hub pretrained checkpoint"
+#     로 즉시 실패 (openvla_utils.py:423, 505).
+#   - config.json 의 `n_action_bins: 256` 등 단서로 보아 RLinf 는 원본 OpenVLA 의
+#     token-based action 방식을 썼을 가능성이 크고, 그 경우 serve 가 token decode 분기를
+#     별도로 가져야 함. 현재 미구현.
+#   - 재개 시 필요 작업: (1) RLinf GitHub examples 에서 CALVIN inference 코드 확인
+#     (token-based vs OFT-L1), (2) serve 에 inference_mode 프로파일 필드 신설,
+#     (3) 아래 TODO 필드들을 smoke test 로 확정.
+#
+# 근거 (HF repo 조사):
+#   - dataset_statistics.json: top-level key "calvin_abc", action 7D, proprio 7D
+#     · action mask=[T,T,T,T,T,T,F] → dim 0-5 continuous, dim 6 discrete (gripper)
+#     · action q01/q99 정의 → q01_q99 정규화 방식
+#     · proprio stats: mean/std 가 [-2.7, 2.8] 범위의 radian 값 → joint angles 로 추정
+#   - config.json: OpenVLA (Llama-2-7b backbone, DINO+SigLIP dual vision), image 224x224,
+#     n_action_bins=256 (token-based 시사)
+#   - preprocessor_config.json: dual-stream normalization (DINO means + SigLIP 0.5/0.5)
+#   - lora_adapter/ 서브디렉토리 존재 → 서빙 시 PEFT LoRA 로드 필요 (아래 lora 필드)
+#
+# 아직 불확실 (smoke test 전까지 TODO):
+#   - rotation_encoding: CALVIN native 는 delta euler. RLinf 학습 코드가 euler→axisangle
+#     변환을 했는지 여부 미확인. 잘못 두면 rotation 이 조용히 엉킴.
+#   - gripper sign_flip: LIBERO 는 true, CALVIN SFT 에서는 보통 false 추정. 검증 필요.
+#   - observation_requirements.state: proprio 7D 가 (a) joint_pos 인지 (b) eef_pos+euler+gripper
+#     인지 확인. stats 분포는 joint angle 에 더 가까움.
+#   - n_action_steps: config 에 명시 없음. OpenVLA-OFT 기본 8 로 가정.
+
+name: openvla_oft__rlinf_calvin_sft
+base_model: openvla_oft
+checkpoint_source:
+  type: hf_repo
+  id: RLinf/RLinf-OpenVLAOFT-CALVIN-SFT
+compatible_benchmarks: [calvin]
+
+action_type: relative
+action_layout:                    # OpenVLA-OFT 파이프라인 표준(LIBERO 와 동일) 가정.
+  - {name: eef_pos,       dims: 3}
+  - {name: eef_axisangle, dims: 3}  # TODO: euler 로 학습됐을 가능성도 smoke test 로 검증
+  - {name: gripper,       dims: 1}
+rotation_encoding: axisangle      # TODO: smoke test 로 euler 대비 검증
+gripper_encoding:
+  range: "[0,1]"                  # OpenVLA-OFT 표준 raw 출력 범위 가정
+  binarize: true
+  sign_flip: false                # TODO: 검증. LIBERO 와 달리 CALVIN SFT 는 flip 안 함 추정.
+  threshold: 0.0
+
+normalization:
+  scheme: q01_q99
+  stats_file: dataset_statistics.json
+  key_selection:
+    - calvin_abc                  # dataset_statistics.json 의 유일한 top-level key
+
+observation_requirements:
+  images: [static, wrist]
+  state:                          # TODO: LIBERO 와 동일한 8D(eef_pos+axisangle+gripper_qpos)
+                                  # 가정. CALVIN env 는 joint_pos 도 제공하므로 실측 필요.
+    - eef_pos
+    - eef_quat
+    - gripper_qpos
+  allow_conversions:
+    - quat_to_axisangle
+    - euler_to_axisangle
+
+n_action_steps: 8                 # OpenVLA-OFT 표준 chunk size
+image_preprocess:
+  resolution: 224
+  rotate_180: false               # CALVIN 은 upstream 이미지 회전 없음
+  center_crop: true
+
+# RLinf/RLinf-OpenVLAOFT-CALVIN-SFT 는 base weight(maniskill-merged) + CALVIN LoRA 구조.
+# repo 안의 `lora_adapter/` 서브폴더에 PEFT 어댑터가 있음.
+lora:
+  subfolder: lora_adapter
+
+emits_subkeys:
+  - action.eef_pos
+  - action.eef_euler              # axisangle → euler 변환해서 반환
+  - action.gripper

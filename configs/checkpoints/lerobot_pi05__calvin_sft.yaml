@@ -1,0 +1,53 @@
+# pi0.5 CALVIN SFT — 로컬 체크포인트 /temporal_vla/checkpoints/pi05-calvin-sft.
+# RLinf (InternRobotics) 의 외부 체크포인트 구조: lerobot config.json 없이
+# model.safetensors + 하위 디렉토리에 norm_stats.json.
+
+name: lerobot_pi05__calvin_sft
+base_model: lerobot
+checkpoint_source:
+  type: local
+  id: /temporal_vla/checkpoints/pi05-calvin-sft
+compatible_benchmarks: [calvin]
+
+action_type: relative
+action_layout:
+  - {name: eef_pos,   dims: 3}
+  - {name: eef_euler, dims: 3}
+  - {name: gripper,   dims: 1}
+rotation_encoding: euler
+gripper_encoding:
+  range: "[-1,1]"                  # pi05 continuous 출력
+  binarize: false                  # Calvin processor 측 threshold 처리
+  sign_flip: false
+  threshold: 0.0
+
+# lerobot 내부 processor 가 norm_stats 를 적용. serve 는 재귀 검색으로 파일만 찾음.
+normalization:
+  scheme: mean_std
+  stats_file: InternRobotics/InternData-Calvin_ABC/norm_stats.json
+  key_selection: []
+
+observation_requirements:
+  images: [static, wrist]
+  state: [eef_pos, eef_euler, gripper_opening, joint_pos, gripper_action]
+  allow_conversions: []
+
+n_action_steps: 50                 # pi05 기본 chunk size (/health 는 policy.config 에서 재확인)
+image_preprocess:
+  resolution: 200                  # CALVIN native 해상도
+  rotate_180: false
+  center_crop: false
+
+emits_subkeys:
+  - action.eef_pos
+  - action.eef_euler
+  - action.gripper
+
+model_specific:
+  policy_type: pi05
+  # lerobot config.json 이 없는 외부 체크포인트용 fallback.
+  external_config:
+    image_shape: [3, 200, 200]
+    state_shape: [7]               # CALVIN 학습 state 차원
+    action_shape: [7]
+    camera_key: observation.images.top

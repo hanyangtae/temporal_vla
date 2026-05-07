@@ -1,0 +1,1 @@
+- [Onboarding 진행 상태 (2026-04-24)](project_onboarding_progress.md) — dreamvla 리팩터 직전 중단. xvla/openvla_oft/lerobot 완료. RLinf OpenVLA-OFT CALVIN 보류.

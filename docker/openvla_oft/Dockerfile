@@ -1,5 +1,5 @@
-# LeRobot all-in-one: training, finetuning, evaluation
-# Supports pi0, groot policies + pusht, libero simulation environments
+# OpenVLA-OFT Inference & Evaluation
+# Python 3.10, PyTorch 2.2.0 (openvla-oft 공식 권장), custom transformers fork
 FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
 
 ARG USER_NAME
@@ -9,6 +9,10 @@ ARG GROUP_ID
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Seoul
 
+# apt 미러를 카카오로 변경 (한국 내 빌드 속도 개선)
+RUN sed -i 's|http://archive.ubuntu.com|http://mirror.kakao.com|g' /etc/apt/sources.list && \
+    sed -i 's|http://security.ubuntu.com|http://mirror.kakao.com|g' /etc/apt/sources.list
+
 RUN apt update && apt install -y --no-install-recommends \
     software-properties-common && \
     add-apt-repository -y ppa:deadsnakes/ppa && \
@@ -17,6 +21,8 @@ RUN apt update && apt install -y --no-install-recommends \
     python3.10 python3.10-dev python3.10-venv python3.10-distutils \
     sudo cmake pkg-config \
     libgl1-mesa-glx libglib2.0-0 ffmpeg \
+    libglew-dev libglfw3-dev libosmesa6-dev \
+    libegl1 libglvnd0 libglx0 libgles2 \
     && rm -rf /var/lib/apt/lists/* && \
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
     update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1 && \
@@ -33,31 +39,18 @@ ENV PATH="/home/${USER_NAME}/.local/bin:${PATH}"
 
 RUN pip install --upgrade pip setuptools wheel
 
-# PyTorch (CUDA 12.1)
-RUN pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 \
+# PyTorch 2.2.0 (CUDA 12.1) — openvla-oft 공식 버전
+RUN pip install torch==2.2.0 torchvision==0.17.0 torchaudio==2.2.0 \
     --index-url https://download.pytorch.org/whl/cu121
 
-# Flash Attention
+# Flash Attention (openvla-oft 권장)
 RUN pip install psutil packaging ninja
-RUN pip install flash-attn --no-build-isolation
+RUN pip install "flash-attn==2.5.5" --no-build-isolation
 
-# Inference server
-RUN pip install fastapi uvicorn colorlog
-
-# LeRobot + policies + simulation envs
+# openvla-oft 의존성 (requirements.txt로 관리)
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install -r /tmp/requirements.txt
-
-# pi0 / pi05 policies 는 transformers fork (fix/lerobot_openpi) 가 필요.
-# 다른 extras(groot, smolvla 등) 가 공식 transformers 로 덮어쓰므로 마지막에 재설치.
-# fork 는 tokenizers>=0.21,<0.22 를 요구하므로 같이 다운그레이드.
-RUN pip install --force-reinstall --no-deps \
-    "transformers @ git+https://github.com/huggingface/transformers.git@fix/lerobot_openpi" && \
-    pip install "tokenizers>=0.21,<0.22"
-
-# requirements 가 torch 를 2.5.1 → 2.10 로 업그레이드시키는데, 먼저 설치한 flash-attn
-# prebuilt wheel 은 torch 2.5.1 ABI 에 link 되어있어 undefined symbol 로 import 실패.
-# 추론 정확도에 영향 없으므로 flash-attn 제거 (transformers 는 eager attention 으로 fallback).
-RUN pip uninstall -y flash-attn
+RUN pip install -r /tmp/requirements.txt \
+    && pip install torch==2.2.0 torchvision==0.17.0 torchaudio==2.2.0 \
+       --index-url https://download.pytorch.org/whl/cu121
 
 CMD ["/bin/bash"]

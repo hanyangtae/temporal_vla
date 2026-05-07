@@ -1,34 +1,30 @@
 """
 X-VLA 추론 서버 (통일 API, port 8100).
 
+프로파일 기반 동작: 체크포인트별 domain_id, denoising_steps, tokenizer,
+image normalization, proprio layout 등은 configs/checkpoints/*.yaml 에 선언.
+
 xvla 컨테이너에서 실행:
   docker compose run --rm xvla \
     python /temporal_vla/scripts/serve/xvla.py \
-    --pretrained-path 2toINF/X-VLA-Calvin-ABC_D
+    --profile /temporal_vla/configs/checkpoints/xvla__calvin_abc_d.yaml
 
 통일 API:
-  POST /act     ← {"observation.images.static": b64png, ...,
-                    "observation.state.eef_pos": [...], ...,
+  POST /act     ← {"observation.images.*": b64png, "observation.state.*": [...],
                     "task": "..."}
-                → {"action.eef_pos": [[3]], "action.eef_rot6d": [[6]],
-                    "action.gripper": [[1]], "latency_ms": float}
-  POST /reset   ← no-op (X-VLA는 히스토리 없음)
-  GET  /health  ← 서버 상태 + 모델 정보
-
-X-VLA Calvin 체크포인트는 ee6d action mode (20D, dual-arm).
-서버는 모델 native format 그대로 sub-key로 분리하여 반환한다.
-  - action.eef_pos: arm1 position (3D, absolute)
-  - action.eef_rot6d: arm1 6D rotation (6D, absolute)
-  - action.gripper: arm1 gripper sigmoid (1D)
-회전 변환(rot6d→euler 등)은 벤치마크 측 ActionProcessor가 담당.
+                → 프로파일 emits_subkeys 규약에 따라 sub-key dict 반환
+  POST /reset   ← no-op (X-VLA 는 히스토리 없음)
+  GET  /health  ← 프로파일 기반 서버 상태
 """
 
 import argparse
 import base64
 import io
+import logging
 import math
 import sys
 import time
+from typing import Optional
 
 import numpy as np
 import torch
@@ -38,18 +34,19 @@ from PIL import Image
 
 sys.path.insert(0, "/temporal_vla/lerobot/src")
 
+# 프로파일 로더 (scripts/utils 는 PYTHONPATH 에 포함)
+from checkpoint_profile import CheckpointProfile, load_profile  # noqa: E402
+
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="X-VLA Inference Server")
 
 # ─── 글로벌 ──────────────────────────────────────────────────────────────────
 
-model = None
+_model = None
 _tokenizer = None
-_n_action_steps = 30
-_denoising_steps = 10
-_max_views = 3
+_profile: Optional[CheckpointProfile] = None
 _device = "cuda"
-_domain_id = 2  # Calvin domain ID (X-VLA domain_config.py 기준)
-_image_size = 224  # X-VLA Calvin 학습 해상도
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
@@ -68,9 +65,7 @@ def _euler_to_rot6d(euler: np.ndarray) -> np.ndarray:
 
     Calvin euler 순서: roll(x), pitch(y), yaw(z).
     R = Rz(yaw) @ Ry(pitch) @ Rx(roll).
-
-    X-VLA rot6d 포맷: R[:, :2].reshape(6) = 행 우선 flatten
-      [R00, R01, R10, R11, R20, R21]
+    X-VLA rot6d 포맷: R[:, :2].reshape(6) = [R00, R01, R10, R11, R20, R21]
     """
     r, p, y = float(euler[0]), float(euler[1]), float(euler[2])
     cr, sr = math.cos(r), math.sin(r)
@@ -83,7 +78,6 @@ def _euler_to_rot6d(euler: np.ndarray) -> np.ndarray:
         [-sp,     cp * sr,                cp * cr],
     ], dtype=np.float32)
 
-    # R[:, :2].reshape(6) — 행 우선: [R00, R01, R10, R11, R20, R21]
     return R[:, :2].reshape(6)
 
 
@@ -93,20 +87,29 @@ def _euler_to_rot6d(euler: np.ndarray) -> np.ndarray:
 def _preprocess_images(pil_images: list) -> tuple:
     """PIL images → (image_input [1, V, C, H, W], image_mask [1, V]).
 
-    224×224로 리사이즈 후 ImageNet 정규화.
+    프로파일의 resolution 으로 resize 후 정규화. max_views 까지 zero padding.
     """
-    mean = torch.tensor(IMAGENET_MEAN).view(3, 1, 1)
-    std = torch.tensor(IMAGENET_STD).view(3, 1, 1)
+    profile = _profile
+    assert profile is not None
+    resolution = profile.image_preprocess.resolution
+    max_views = int(profile.model_specific.get("max_views", 3))
+    norm_scheme = profile.model_specific.get("image_normalization", "imagenet")
+
+    if norm_scheme == "imagenet":
+        mean = torch.tensor(IMAGENET_MEAN).view(3, 1, 1)
+        std = torch.tensor(IMAGENET_STD).view(3, 1, 1)
+    else:
+        raise NotImplementedError(f"image_normalization={norm_scheme!r} not supported")
 
     tensors = []
     for img in pil_images:
-        img = img.resize((_image_size, _image_size), Image.BILINEAR)
+        img = img.resize((resolution, resolution), Image.BILINEAR)
         t = torch.from_numpy(np.array(img)).permute(2, 0, 1).float() / 255.0
         t = (t - mean) / std
         tensors.append(t)
     masks = [True] * len(tensors)
 
-    while len(tensors) < _max_views:
+    while len(tensors) < max_views:
         tensors.append(torch.zeros_like(tensors[0]))
         masks.append(False)
 
@@ -116,26 +119,28 @@ def _preprocess_images(pil_images: list) -> tuple:
 
 
 def _assemble_proprio(payload: dict) -> torch.Tensor:
-    """Calvin obs sub-keys → ee6d proprio tensor [1, 20].
+    """payload obs → proprio tensor.
 
-    ee6d layout (dual-arm, Calvin은 single-arm이므로 arm2는 전부 0):
-      Arm1 [0:10]:  eef_pos(3) + eef_rot6d(6) + gripper(1)
-      Arm2 [10:20]: zeros(10)
-
-    Calvin obs sub-keys → ee6d 변환:
-      eef_pos(3)   → 그대로
-      eef_euler(3) → rot6d(6) 변환
-      gripper      → binary (preprocess에서 0으로 마스킹됨)
+    현재 지원 레이아웃: `ee6d_dual_arm`
+      Arm1 [0:10]: eef_pos(3) + eef_rot6d(6) + gripper(1)
+      Arm2 [10:20]: zeros (single-arm 체크포인트용 padding)
     """
-    eef_pos = payload.get("observation.state.eef_pos", [0.0, 0.0, 0.0])
-    eef_pos = list(eef_pos)[:3]
+    profile = _profile
+    assert profile is not None
+    layout = profile.model_specific.get("proprio_layout", "ee6d_dual_arm")
 
-    eef_euler = payload.get("observation.state.eef_euler", [0.0, 0.0, 0.0])
-    eef_euler = np.array(eef_euler, dtype=np.float32)[:3]
+    if layout != "ee6d_dual_arm":
+        raise NotImplementedError(f"proprio_layout={layout!r} not supported")
+
+    eef_pos = list(payload.get("observation.state.eef_pos", [0.0, 0.0, 0.0]))[:3]
+    eef_euler = np.array(
+        payload.get("observation.state.eef_euler", [0.0, 0.0, 0.0]),
+        dtype=np.float32,
+    )[:3]
     eef_rot6d = _euler_to_rot6d(eef_euler)
 
     gripper_val = payload.get("observation.state.gripper_opening", [0.0])
-    if hasattr(gripper_val, '__len__'):
+    if hasattr(gripper_val, "__len__"):
         gripper_val = float(gripper_val[0])
     else:
         gripper_val = float(gripper_val)
@@ -164,34 +169,63 @@ def _tokenize(instruction: str) -> torch.Tensor:
 
 @app.on_event("startup")
 def load_model():
-    global model, _tokenizer, _n_action_steps, _denoising_steps, _device
+    try:
+        _load_model_impl()
+    except Exception:
+        import traceback
+        sys.stderr.write("=== load_model FAILED ===\n")
+        traceback.print_exc(file=sys.stderr)
+        sys.stderr.flush()
+        raise
+
+
+def _load_model_impl():
+    global _model, _tokenizer, _device
 
     args = app.state.args
-    _device = args.device
+    profile = _profile
+    assert profile is not None, "profile must be set before load_model"
 
+    _device = args.device
     from transformers import AutoModel, AutoTokenizer
 
-    print(f"Loading X-VLA from {args.pretrained_path} ...")
+    checkpoint_id = profile.checkpoint_source.id
+    logger.info("Loading X-VLA from %s (profile=%s)", checkpoint_id, profile.name)
+
     dtype = torch.bfloat16 if args.dtype == "bfloat16" else torch.float32
-    model = AutoModel.from_pretrained(
-        args.pretrained_path,
+    _model = AutoModel.from_pretrained(
+        checkpoint_id,
         trust_remote_code=True,
         torch_dtype=dtype,
     )
-    model = model.to(_device).eval()
+    _model = _model.to(_device).eval()
 
-    # X-VLA는 BART tokenizer 사용. AutoTokenizer는 XVLAConfig를 모르므로 직접 지정.
-    _tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large")
+    tokenizer_id = profile.model_specific.get("tokenizer", "facebook/bart-large")
+    _tokenizer = AutoTokenizer.from_pretrained(tokenizer_id)
 
-    _n_action_steps = args.n_action_steps
-    _denoising_steps = args.denoising_steps
+    if profile.lora is not None:
+        from peft import PeftModel
 
-    num_actions = getattr(model.config, "num_actions", _n_action_steps)
-    print(
-        f"X-VLA loaded.  num_actions(chunk)={num_actions}  "
-        f"n_action_steps={_n_action_steps}  denoising_steps={_denoising_steps}  "
-        f"action_mode={model.config.action_mode}  dtype={dtype}  "
-        f"domain_id={_domain_id}  image_size={_image_size}"
+        src = profile.checkpoint_source
+        if src.type == "hf_repo":
+            adapter_arg = src.id
+            kw = {"subfolder": profile.lora.subfolder}
+        else:
+            import os as _os
+            adapter_arg = _os.path.join(src.id, profile.lora.subfolder)
+            kw = {}
+        logger.info("Applying LoRA adapter subfolder=%s", profile.lora.subfolder)
+        _model = PeftModel.from_pretrained(_model, adapter_arg, **kw).merge_and_unload()
+
+    num_actions = getattr(_model.config, "num_actions", profile.n_action_steps)
+    logger.info(
+        "X-VLA loaded. num_actions(chunk)=%s, n_action_steps=%d, "
+        "denoising_steps=%s, domain_id=%s, tokenizer=%s",
+        num_actions,
+        profile.n_action_steps,
+        profile.model_specific.get("denoising_steps"),
+        profile.model_specific.get("domain_id"),
+        tokenizer_id,
     )
 
 
@@ -200,82 +234,100 @@ def load_model():
 
 @app.post("/reset")
 async def reset():
-    """X-VLA는 히스토리 없음. no-op."""
+    """X-VLA 는 히스토리 없음. no-op."""
     return {"status": "reset"}
 
 
 @app.post("/act")
 async def predict_action(payload: dict):
     """통일 API: 이미지 + state + instruction → action sub-keys."""
-    if model is None:
+    if _model is None:
         return {"error": "model not loaded"}
 
     t0 = time.time()
+    profile = _profile
+    assert profile is not None
 
-    # 1) 이미지: base64 → PIL → 224×224 resize → ImageNet normalize
-    images = []
-    for k in sorted(k for k in payload if k.startswith("observation.images.")):
-        images.append(_b64_to_pil(payload[k]))
-    if not images:
+    # 1) 이미지 — 프로파일 images 순서대로 로드
+    pil_images = []
+    for view in profile.observation_requirements.images:
+        b64 = payload.get(f"observation.images.{view}")
+        if b64 is not None:
+            pil_images.append(_b64_to_pil(b64))
+    if not pil_images:
         return {"error": "no images in payload"}
-
-    image_input, image_mask = _preprocess_images(images)
+    image_input, image_mask = _preprocess_images(pil_images)
 
     # 2) Instruction tokenize
     input_ids = _tokenize(payload.get("task", ""))
 
-    # 3) Proprio (Calvin obs → ee6d 20D)
+    # 3) Proprio
     proprio = _assemble_proprio(payload)
 
-    # 4) Domain ID
-    domain_id = torch.tensor([_domain_id], dtype=torch.long, device=_device)
+    # 4) Domain ID (프로파일 기반)
+    domain_id_val = int(profile.model_specific.get("domain_id", 0))
+    domain_id = torch.tensor([domain_id_val], dtype=torch.long, device=_device)
 
-    # 5) Action 생성
-    cast_dtype = next(model.parameters()).dtype
+    # 5) Flow matching denoising
+    denoising_steps = int(profile.model_specific.get("denoising_steps", 10))
+    cast_dtype = next(_model.parameters()).dtype
     with torch.inference_mode():
-        actions = model.generate_actions(
+        actions = _model.generate_actions(
             input_ids=input_ids,
             image_input=image_input.to(dtype=cast_dtype),
             image_mask=image_mask,
             domain_id=domain_id,
             proprio=proprio.to(dtype=cast_dtype),
-            steps=_denoising_steps,
+            steps=denoising_steps,
         )
-    # actions: [1, num_actions, 20] — ee6d postprocessed (gripper에 sigmoid 적용됨)
+    # actions: [1, num_actions, 20] dual-arm
 
-    # 6) Arm1만 추출하여 sub-key로 분리 (native format 그대로)
-    arm1 = actions[0, :_n_action_steps, :10].cpu().float().numpy()  # [N, 10]
+    # 6) 프로파일 action_dim 만큼 앞에서 추출 (arm1 10D = Calvin single-arm)
+    n_steps = profile.n_action_steps
+    dim = profile.action_dim
+    arm1 = actions[0, :n_steps, :dim].cpu().float().numpy()  # [N, dim]
 
     latency_ms = (time.time() - t0) * 1000
+
+    # 7) Sub-key 분리 (layout 기반)
+    out = {}
+    for sk in profile.emits_subkeys:
+        local_name = sk[len("action."):]  # ex: "eef_pos"
+        if local_name in {a.name for a in profile.action_layout}:
+            sl = profile.dim_slice(local_name)
+            out[sk] = arm1[:, sl].tolist()
+        else:
+            raise ValueError(
+                f"emit sub-key {sk} has no matching action_layout entry"
+            )
 
     # 디버그 로그 (첫 5 호출)
     step_count = getattr(app.state, "_step", 0) + 1
     app.state._step = step_count
     if step_count <= 5:
-        print(
-            f"[DEBUG] call={step_count}  "
-            f"n_actions={arm1.shape[0]}  "
-            f"pos={arm1[0, :3].round(4).tolist()}  "
-            f"grip={arm1[0, 9]:.4f}  "
-            f"task='{payload.get('task', '')[:40]}'"
+        logger.info(
+            "call=%d n_actions=%d pos=%s grip=%.4f task=%r",
+            step_count, arm1.shape[0],
+            arm1[0, profile.dim_slice("eef_pos")].round(4).tolist(),
+            float(arm1[0, profile.dim_slice("gripper")][0]),
+            payload.get("task", "")[:40],
         )
 
-    return {
-        "action.eef_pos": arm1[:, :3].tolist(),       # [N, 3] absolute position
-        "action.eef_rot6d": arm1[:, 3:9].tolist(),    # [N, 6] absolute rotation 6D
-        "action.gripper": arm1[:, 9:10].tolist(),      # [N, 1] sigmoid [0,1]
-        "latency_ms": latency_ms,
-    }
+    out["latency_ms"] = latency_ms
+    return out
 
 
 @app.get("/health")
 async def health():
+    if _profile is None:
+        return {"status": "not_loaded", "model": "xvla"}
     return {
-        "status": "ok" if model is not None else "not_loaded",
+        "status": "ok" if _model is not None else "not_loaded",
         "model": "xvla",
-        "n_action_steps": _n_action_steps,
-        "action_type": "absolute",
-        "action_keys": ["action.eef_pos", "action.eef_rot6d", "action.gripper"],
+        "profile": _profile.name,
+        "n_action_steps": _profile.n_action_steps,
+        "action_type": _profile.action_type,
+        "action_keys": list(_profile.emits_subkeys),
     }
 
 
@@ -283,35 +335,33 @@ async def health():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="X-VLA 추론 서버 (통일 API, port 8100)")
+    global _profile
+
+    try:
+        from src.utils.common.logger import create_module_logger
+
+        create_module_logger("xvla_serve")
+    except ImportError:
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
+    parser = argparse.ArgumentParser(description="X-VLA 추론 서버 (port 8100)")
     parser.add_argument(
-        "--pretrained-path",
-        type=str,
-        default="2toINF/X-VLA-Calvin-ABC_D",
-        help="HuggingFace repo ID 또는 로컬 체크포인트 경로",
+        "--profile", type=str, required=True,
+        help="체크포인트 프로파일 YAML 경로 (configs/checkpoints/*.yaml)",
     )
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8100)
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument(
-        "--dtype",
-        type=str,
-        default="bfloat16",
-        choices=["float32", "bfloat16"],
-    )
-    parser.add_argument(
-        "--n-action-steps",
-        type=int,
-        default=30,
-        help="예측마다 반환할 action 수 (기본: 30, 체크포인트 chunk_size와 동일)",
-    )
-    parser.add_argument(
-        "--denoising-steps",
-        type=int,
-        default=10,
-        help="Flow matching denoising steps (기본: 10)",
+        "--dtype", type=str, default="bfloat16", choices=["float32", "bfloat16"],
     )
     args = parser.parse_args()
+
+    _profile = load_profile(args.profile)
+    logger.info("Loaded profile %s from %s", _profile.name, args.profile)
+    assert _profile.base_model == "xvla", (
+        f"profile.base_model={_profile.base_model!r}, but this server is xvla"
+    )
 
     app.state.args = args
     app.state._step = 0

@@ -53,10 +53,15 @@ services:
         GROUP_ID: ${GROUP_ID}
     volumes:
       - .:/temporal_vla:rw
+      - /D/temporal_vla_data:/D/temporal_vla_data:rw
+      # HF cache 는 NTFS(/D) 가 chmod 를 지원 안 해서 호스트 ext4 홈을 직접 bind mount.
+      - ${HOME}/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface:rw
     environment:
-      - HF_HOME=/temporal_vla/data/huggingface
-      - PYTHONPATH=/temporal_vla
-      - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN}
+      - HF_HOME=/home/${USER_NAME}/.cache/huggingface
+      - HF_TRUST_REMOTE_CODE=1
+      - HF_TOKEN=${HF_TOKEN}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+      - PYTHONPATH=/temporal_vla:/temporal_vla/scripts/utils
     deploy:
       resources:
         reservations:
@@ -85,9 +90,14 @@ services:
     volumes:
       - .:/temporal_vla:rw
       - /D/temporal_vla_data:/D/temporal_vla_data:rw
+      # HF cache 는 NTFS(/D) 가 chmod 미지원 → 호스트 ext4 홈을 직접 bind mount.
+      - ${HOME}/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface:rw
     environment:
-      - HF_HOME=/temporal_vla/data/huggingface
-      - PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T
+      - HF_HOME=/home/${USER_NAME}/.cache/huggingface
+      - HF_TRUST_REMOTE_CODE=1
+      - HF_TOKEN=${HF_TOKEN}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+      - PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla:/temporal_vla/scripts/utils
     deploy:
       resources:
         reservations:
@@ -144,9 +154,22 @@ services:
         GROUP_ID: ${GROUP_ID}
     volumes:
       - .:/temporal_vla:rw
+      - /D/temporal_vla_data:/D/temporal_vla_data:rw
+      # HF cache 는 NTFS(/D) 가 chmod 미지원 → 호스트 ext4 홈을 직접 bind mount.
+      - ${HOME}/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface:rw
     environment:
-      - HF_HOME=/temporal_vla/data/huggingface
-      - PYTHONPATH=/temporal_vla/src/policies/dreamvla:/temporal_vla:/temporal_vla/lerobot/src
+      - HF_HOME=/home/${USER_NAME}/.cache/huggingface
+      - HF_TRUST_REMOTE_CODE=1
+      - HF_TOKEN=${HF_TOKEN}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+      - PYTHONPATH=/temporal_vla/src/policies/dreamvla:/temporal_vla:/temporal_vla/lerobot/src:/temporal_vla/scripts/utils
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     network_mode: host
     tty: true
     stdin_open: true
@@ -179,6 +202,43 @@ services:
     tty: true
     stdin_open: true
     working_dir: /temporal_vla/scripts
+    command: ["/bin/bash"]
+
+  openvla_oft:
+    container_name: openvla_oft
+    build:
+      context: ./docker/openvla_oft
+      dockerfile: Dockerfile
+      args:
+        USER_NAME: ${USER_NAME}
+        USER_ID: ${USER_ID}
+        GROUP_ID: ${GROUP_ID}
+    volumes:
+      - .:/temporal_vla:rw
+      - /D/temporal_vla_data:/D/temporal_vla_data:rw
+      # HF cache 는 NTFS(/D) 가 chmod 를 지원 안 해서 호스트 ext4 홈을 직접 bind mount.
+      - ${HOME}/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface:rw
+    environment:
+      - HF_HOME=/home/${USER_NAME}/.cache/huggingface
+      - HF_TRUST_REMOTE_CODE=1
+      - HF_TOKEN=${HF_TOKEN}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+      - PYTHONPATH=/temporal_vla/src/policies/openvla-oft:/temporal_vla:/temporal_vla/scripts/utils
+      # mujoco/robosuite 의 EGL GPU 렌더링을 위해 NVIDIA driver capabilities 확장.
+      # default(compute,utility) 만 있으면 libEGL_nvidia.so 가 컨테이너에 mount 안 됨.
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - MUJOCO_GL=egl
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    network_mode: host
+    tty: true
+    stdin_open: true
     command: ["/bin/bash"]
 
   upvla:
