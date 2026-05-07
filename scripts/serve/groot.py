@@ -17,23 +17,32 @@ groot 컨테이너에서 실행:
 """
 
 import argparse
-import base64
-import io
 import logging
 import sys
 import time
 from typing import Optional
 
-import cv2
 import numpy as np
 import uvicorn
 from fastapi import FastAPI
-from PIL import Image
-
-sys.path.insert(0, "/temporal_vla/src/policies/Isaac-GR00T")
 
 # 프로파일 로더 (scripts/utils 는 PYTHONPATH 에 포함)
 from checkpoint_profile import CheckpointProfile, load_profile  # noqa: E402
+
+# 학습 adapter 와 공유하는 GR00T helper (src/policies/groot/).
+sys.path.insert(0, "/temporal_vla")
+from src.policies.groot.preprocess import (  # noqa: E402
+    FINAL_IMAGE_RESOLUTION,
+    decode_b64_image,
+    process_img,
+)
+from src.policies.groot.schema import (  # noqa: E402
+    GROOT_TO_UNIFIED_ACTION,
+    UNIFIED_TO_STATE_KEY,
+    UNIFIED_TO_VIDEO_KEY,
+    normalize_modality_key,
+)
+from src.policies.groot.loader import load_groot_policy  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -47,77 +56,10 @@ _modality_configs = None
 _profile: Optional[CheckpointProfile] = None
 _device = "cuda"
 
-FINAL_IMAGE_RESOLUTION = (256, 256)
-
-# 통일 API 이미지 키 → GR00T video 키 (PandaOmron 기준).
-# robocasa native 카메라: left(=agentview_left) / right(=agentview_right) / wrist(=eye_in_hand).
-# GR00T modality keys: side_0 / side_1 / wrist_0 ← left / right / eye_in_hand 학습 매핑.
-UNIFIED_TO_VIDEO_KEY = {
-    "observation.images.left":   "video.res256_image_side_0",
-    "observation.images.static": "video.res256_image_side_0",  # left alias (2-camera 모델 호환)
-    "observation.images.side_0": "video.res256_image_side_0",
-    "observation.images.right":  "video.res256_image_side_1",
-    "observation.images.side_1": "video.res256_image_side_1",
-    "observation.images.wrist":   "video.res256_image_wrist_0",
-    "observation.images.wrist_0": "video.res256_image_wrist_0",
-}
-
-# 통일 API state 키 → GR00T state 키 (PandaOmronKeyConverter 기준).
-UNIFIED_TO_STATE_KEY = {
-    "observation.state.gripper_qpos":   "state.gripper_qpos",
-    "observation.state.base_position":  "state.base_position",
-    "observation.state.base_rotation":  "state.base_rotation",
-    "observation.state.eef_pos_rel":    "state.end_effector_position_relative",
-    "observation.state.eef_quat_rel":   "state.end_effector_rotation_relative",
-    "observation.state.gripper_qvel":   "state.gripper_qvel",
-    "observation.state.eef_pos":        "state.end_effector_position_absolute",
-    "observation.state.eef_quat":       "state.end_effector_rotation_absolute",
-    "observation.state.joint_pos":      "state.joint_position",
-    "observation.state.joint_pos_cos":  "state.joint_position_cos",
-    "observation.state.joint_pos_sin":  "state.joint_position_sin",
-    "observation.state.joint_vel":      "state.joint_velocity",
-}
-
-# GR00T native action key → 통일 sub-key (RoboCasaActionProcessor 가 인식하는 형식).
-GROOT_TO_UNIFIED_ACTION = {
-    "end_effector_position": "action.eef_pos",
-    "end_effector_rotation": "action.eef_axisangle",
-    "gripper_close":         "action.gripper",
-    "base_motion":           "action.base_motion",
-    "control_mode":          "action.control_mode",
-}
-
-
-# ─── 유틸 ────────────────────────────────────────────────────────────────────
-
-
-def _b64_to_numpy(b64_str: str) -> np.ndarray:
-    """base64 PNG → HxWx3 uint8 numpy."""
-    return np.array(Image.open(io.BytesIO(base64.b64decode(b64_str))).convert("RGB"))
-
-
-def _process_img(img: np.ndarray) -> np.ndarray:
-    """GrootRoboCasaEnv.process_img 동일 로직: 정사각형 패딩 + 256x256 리사이즈."""
-    h, w, _ = img.shape
-    if h != w:
-        dim = max(h, w)
-        y_offset = (dim - h) // 2
-        x_offset = (dim - w) // 2
-        img = np.pad(img, ((y_offset, y_offset), (x_offset, x_offset), (0, 0)))
-    if img.shape[:2] != FINAL_IMAGE_RESOLUTION:
-        img = cv2.resize(img, FINAL_IMAGE_RESOLUTION, cv2.INTER_AREA)
-    return np.copy(img)
-
-
 _warned_missing_video_keys: set = set()
 _warned_missing_state_keys: set = set()
 # embodiment 별 state key → dim. statistics.json 에서 모델 로드 시 채워짐.
 _state_dims: dict = {}
-
-
-def _normalize_modality_key(key: str, prefix: str) -> str:
-    """modality_keys 가 'res256_image_side_0' 형태일 수 있으므로 prefix 보장."""
-    return key if key.startswith(prefix + ".") else "{}.{}".format(prefix, key)
 
 
 def _build_groot_obs(payload: dict) -> dict:
@@ -136,7 +78,7 @@ def _build_groot_obs(payload: dict) -> dict:
         b64 = payload.get(unified_key)
         if b64 is None or groot_key in obs:
             continue
-        np_img = _process_img(_b64_to_numpy(b64))
+        np_img = process_img(decode_b64_image(b64))
         obs[groot_key] = np_img[np.newaxis, np.newaxis, ...]
 
     for unified_key, groot_key in UNIFIED_TO_STATE_KEY.items():
@@ -151,7 +93,7 @@ def _build_groot_obs(payload: dict) -> dict:
         zero_img = np.zeros((1, 1, h, w, 3), dtype=np.uint8)
 
         for vk_raw in _modality_configs["video"].modality_keys:
-            vk = _normalize_modality_key(vk_raw, "video")
+            vk = normalize_modality_key(vk_raw, "video")
             if vk not in obs:
                 obs[vk] = zero_img
                 if vk not in _warned_missing_video_keys:
@@ -161,7 +103,7 @@ def _build_groot_obs(payload: dict) -> dict:
                     _warned_missing_video_keys.add(vk)
 
         for sk_raw in _modality_configs["state"].modality_keys:
-            sk = _normalize_modality_key(sk_raw, "state")
+            sk = normalize_modality_key(sk_raw, "state")
             if sk not in obs:
                 # state dim 은 statistics.json 에서 가져옴, 없으면 1D
                 local = sk[len("state."):]
@@ -175,30 +117,6 @@ def _build_groot_obs(payload: dict) -> dict:
 
     obs["annotation.human.action.task_description"] = (payload.get("task", ""),)
     return obs
-
-
-def _load_state_dims_from_statistics(model_path: str, embodiment_value: str) -> dict:
-    """checkpoints 의 statistics.json 에서 embodiment 의 state key dim map 추출."""
-    import json
-    import os
-
-    stats_path = os.path.join(model_path, "statistics.json")
-    if not os.path.exists(stats_path):
-        logger.warning("statistics.json not found under %s", model_path)
-        return {}
-    try:
-        with open(stats_path) as f:
-            stats = json.load(f)
-        emb = stats.get(embodiment_value, {})
-        state = emb.get("state", {})
-        dims = {}
-        for k, v in state.items():
-            if isinstance(v, dict) and "mean" in v and hasattr(v["mean"], "__len__"):
-                dims[k] = len(v["mean"])
-        return dims
-    except Exception as e:  # pragma: no cover
-        logger.warning("failed to parse statistics.json: %s", e)
-        return {}
 
 
 # ─── 모델 로딩 ───────────────────────────────────────────────────────────────
@@ -217,49 +135,18 @@ def load_model():
 
 
 def _load_model_impl():
-    global _policy, _embodiment_tag, _modality_configs, _device
+    global _policy, _embodiment_tag, _modality_configs, _device, _state_dims
 
     args = app.state.args
     profile = _profile
     assert profile is not None, "profile must be set before load_model"
 
-    from gr00t.data.embodiment_tags import EmbodimentTag
-    from gr00t.policy.gr00t_policy import Gr00tPolicy, Gr00tSimPolicyWrapper
-
-    ms = profile.model_specific
-    _device = ms.get("device", args.device)
-    _embodiment_tag = EmbodimentTag[ms["embodiment_tag"]]
-
-    model_path = profile.checkpoint_source.id
-    strict = not bool(ms.get("no_strict", False))
-    logger.info(
-        "Loading GR00T from %s (profile=%s, embodiment=%s, device=%s, strict=%s)",
-        model_path, profile.name, _embodiment_tag.value, _device, strict,
-    )
-
-    base_policy = Gr00tPolicy(
-        embodiment_tag=_embodiment_tag,
-        model_path=model_path,
-        device=_device,
-        strict=strict,
-    )
-    _policy = Gr00tSimPolicyWrapper(base_policy, strict=strict)
-    _modality_configs = _policy.get_modality_config()
-
-    for modality, cfg in _modality_configs.items():
-        logger.info("[%s] modality_keys=%s", modality, cfg.modality_keys)
-
-    horizon = len(_modality_configs["action"].delta_indices)
-
-    # state dim map (fallback zero state 시 정확한 dim 으로 채우기 위함)
-    global _state_dims
-    _state_dims = _load_state_dims_from_statistics(model_path, _embodiment_tag.value)
-    logger.info("state dims loaded from statistics.json: %s", _state_dims)
-
-    logger.info(
-        "GR00T loaded. action_horizon=%d (profile.n_action_steps=%d)",
-        horizon, profile.n_action_steps,
-    )
+    loaded = load_groot_policy(profile, device=args.device)
+    _policy = loaded.policy
+    _embodiment_tag = loaded.embodiment_tag
+    _modality_configs = loaded.modality_configs
+    _state_dims = loaded.state_dims
+    _device = loaded.device
 
 
 # ─── FastAPI 엔드포인트 ──────────────────────────────────────────────────────
