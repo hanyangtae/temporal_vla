@@ -343,14 +343,22 @@ def evaluate(
     action_keys = server_info.get("action_keys", [])
     logger.info("action_type: %s, action_keys: %s", action_type, action_keys)
 
-    # gripper threshold: absolute 모델(X-VLA 등)은 0.8, relative 모델은 0.0
-    gripper_threshold = 0.8 if action_type == "absolute" else 0.0
+    # gripper 컨벤션 분기:
+    #  absolute 모델 (X-VLA): sigmoid 연속값 emit, 1=close. invert=True, threshold=0.8.
+    #  relative 모델 (DreamVLA 등): ±1 binarized emit, +1=open. invert=False, threshold=0.0.
+    if action_type == "absolute":
+        gripper_threshold = 0.8
+        gripper_invert = True
+    else:
+        gripper_threshold = 0.0
+        gripper_invert = False
 
     # Processor pipeline (벤치마크별 obs/action 변환)
     obs_pipeline, action_pipeline = make_calvin_processors(
         use_wrist=True,
         gripper_threshold=gripper_threshold,
         action_type=action_type,
+        gripper_invert=gripper_invert,
     )
 
     # task oracle (calvin_env.envs.tasks.Tasks) — Calvin-native 클래스

@@ -54,9 +54,24 @@ class CalvinActionProcessor(ActionProcessorStep):
             absolute → tuple(np.ndarray(3,), np.ndarray(3,), float)
     """
 
-    def __init__(self, threshold: float = 0.0, action_type: str = "relative"):
+    def __init__(
+        self,
+        threshold: float = 0.0,
+        action_type: str = "relative",
+        gripper_invert: bool = False,
+    ):
+        """
+        gripper_invert:
+          False (default, **표준**): emit 값이 "클수록 open" 컨벤션.
+            DreamVLA 처럼 ±1 binarized 후 +1=open, -1=close 로 emit 하는 모델.
+            Calvin env 가 동일 부호 사용. → `g > threshold → open(+1)`.
+          True: emit 값이 "클수록 close" 컨벤션 (X-VLA 같이 학습 라벨 1=closed).
+            sigmoid 연속값을 그대로 emit 하는 경우 사용 (threshold ≈ 0.8 권장).
+            → `g < threshold → open(+1)`.
+        """
         self.threshold = threshold
         self.action_type = action_type
+        self.gripper_invert = gripper_invert
 
     def process_action(self, action: Any) -> Any:
         if isinstance(action, dict):
@@ -92,12 +107,18 @@ class CalvinActionProcessor(ActionProcessorStep):
                 "받은 키: {}".format(list(action_dict.keys()))
             )
 
-        # gripper — 이산화
-        # X-VLA sigmoid: 높은 값 = close(학습 라벨 1.0=closed), 낮은 값 = open
-        # Calvin 규격: 1 = open, -1 = close
-        # 따라서: sigmoid < threshold → open(1), sigmoid >= threshold → close(-1)
+        # gripper — 컨벤션 분기
+        # 표준 (gripper_invert=False): emit 클수록 open. DreamVLA 같은 ±1 binarized 출력.
+        #   → g > threshold → open(+1), 아니면 close(-1).
+        # invert (gripper_invert=True): emit 클수록 close. X-VLA 같은 sigmoid (1=closed).
+        #   → g < threshold → open(+1), 아니면 close(-1).
+        # Calvin env: +1 = open, -1 = close.
         gripper = np.asarray(action_dict["action.gripper"], dtype=np.float32).flatten()
-        gripper_val = 1.0 if float(gripper[0]) < self.threshold else -1.0
+        g = float(gripper[0])
+        if self.gripper_invert:
+            gripper_val = 1.0 if g < self.threshold else -1.0
+        else:
+            gripper_val = 1.0 if g > self.threshold else -1.0
 
         if self.action_type == "absolute":
             # Calvin env: len(action)==3 이면 absolute로 처리
@@ -112,12 +133,20 @@ class CalvinActionProcessor(ActionProcessorStep):
     # ------------------------------------------------------------------
 
     def _process_flat(self, action: Any) -> np.ndarray:
-        """Flat 7D ndarray → gripper 이산화."""
+        """Flat 7D ndarray → gripper 이산화. 컨벤션은 _process_subkeyed 와 동일."""
         action = np.array(action, dtype=np.float32).copy()
-        if action.ndim == 1:
-            action[-1] = 1.0 if action[-1] > self.threshold else -1.0
+        if self.gripper_invert:
+            # high = close
+            if action.ndim == 1:
+                action[-1] = 1.0 if action[-1] < self.threshold else -1.0
+            else:
+                action[:, -1] = np.where(action[:, -1] < self.threshold, 1.0, -1.0)
         else:
-            action[:, -1] = np.where(action[:, -1] > self.threshold, 1.0, -1.0)
+            # 표준: high = open
+            if action.ndim == 1:
+                action[-1] = 1.0 if action[-1] > self.threshold else -1.0
+            else:
+                action[:, -1] = np.where(action[:, -1] > self.threshold, 1.0, -1.0)
         return action
 
     # ------------------------------------------------------------------
