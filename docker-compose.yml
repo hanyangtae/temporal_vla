@@ -53,7 +53,7 @@ services:
         GROUP_ID: ${GROUP_ID}
     volumes:
       - .:/temporal_vla:rw
-      - /D/temporal_vla_data:/D/temporal_vla_data:rw
+      # /D/temporal_vla_data 등 환경별 데이터 마운트는 docker-compose.override.yml 에서 추가.
       # HF cache 는 NTFS(/D) 가 chmod 를 지원 안 해서 호스트 ext4 홈을 직접 bind mount.
       - ${HOME}/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface:rw
     environment:
@@ -89,7 +89,7 @@ services:
         GROUP_ID: ${GROUP_ID}
     volumes:
       - .:/temporal_vla:rw
-      - /D/temporal_vla_data:/D/temporal_vla_data:rw
+      # /D/temporal_vla_data 등 환경별 데이터 마운트는 docker-compose.override.yml 에서 추가.
       # HF cache 는 NTFS(/D) 가 chmod 미지원 → 호스트 ext4 홈을 직접 bind mount.
       - ${HOME}/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface:rw
     environment:
@@ -125,7 +125,7 @@ services:
         GROUP_ID: ${GROUP_ID}
     volumes:
       - .:/temporal_vla:rw
-      - /D/temporal_vla_data:/D/temporal_vla_data:rw
+      # /D/temporal_vla_data 등 환경별 데이터 마운트는 docker-compose.override.yml 에서 추가.
     environment:
       - HF_HOME=/home/${USER_NAME}/.cache/huggingface
       - HF_TRUST_REMOTE_CODE=1
@@ -154,7 +154,7 @@ services:
         GROUP_ID: ${GROUP_ID}
     volumes:
       - .:/temporal_vla:rw
-      - /D/temporal_vla_data:/D/temporal_vla_data:rw
+      # /D/temporal_vla_data 등 환경별 데이터 마운트는 docker-compose.override.yml 에서 추가.
       # HF cache 는 NTFS(/D) 가 chmod 미지원 → 호스트 ext4 홈을 직접 bind mount.
       - ${HOME}/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface:rw
     environment:
@@ -215,7 +215,7 @@ services:
         GROUP_ID: ${GROUP_ID}
     volumes:
       - .:/temporal_vla:rw
-      - /D/temporal_vla_data:/D/temporal_vla_data:rw
+      # /D/temporal_vla_data 등 환경별 데이터 마운트는 docker-compose.override.yml 에서 추가.
       # HF cache 는 NTFS(/D) 가 chmod 를 지원 안 해서 호스트 ext4 홈을 직접 bind mount.
       - ${HOME}/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface:rw
     environment:
