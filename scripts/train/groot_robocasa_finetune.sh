@@ -11,6 +11,15 @@ set -euo pipefail
 
 cd /temporal_vla/src/policies/Isaac-GR00T
 
+if [ ! -x ".venv/bin/python" ]; then
+    echo "ERROR: Isaac-GR00T uv environment not found at $(pwd)/.venv/bin/python" >&2
+    echo "Run inside the groot container: cd /temporal_vla/src/policies/Isaac-GR00T && uv sync" >&2
+    exit 1
+fi
+
+PYTHON_BIN=".venv/bin/python"
+TORCHRUN_BIN=".venv/bin/torchrun"
+
 NUM_GPUS="${NUM_GPUS:-1}"
 MASTER_PORT="${MASTER_PORT:-29500}"
 BASE_MODEL_PATH="${BASE_MODEL_PATH:-/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B}"
@@ -21,7 +30,7 @@ OUTPUT_DIR="${OUTPUT_DIR:-/temporal_vla/outputs/groot_robocasa_10tasks_full}"
 MAX_STEPS="${MAX_STEPS:-20000}"
 SAVE_STEPS="${SAVE_STEPS:-500}"
 SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-5}"
-GLOBAL_BATCH_SIZE="${GLOBAL_BATCH_SIZE:-128}"
+GLOBAL_BATCH_SIZE="${GLOBAL_BATCH_SIZE:-1}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-2}"
 SHARD_SIZE="${SHARD_SIZE:-1024}"
 NUM_SHARDS_PER_EPOCH="${NUM_SHARDS_PER_EPOCH:-100000}"
@@ -84,10 +93,11 @@ echo "  Tune DiT:    ${TUNE_DIFFUSION_MODEL}"
 echo "  Optim:       adamw_torch (from upstream launch_finetune.py)"
 echo "  VLLN:        upstream default"
 echo "  Top LLM:     upstream default"
+echo "  Python:      ${PYTHON_BIN}"
 echo "============================================"
 
 if [ "${NUM_GPUS}" = "1" ]; then
-    exec python "${cmd[@]}"
+    exec "${PYTHON_BIN}" "${cmd[@]}"
 fi
 
-exec torchrun --nproc_per_node="${NUM_GPUS}" --master_port="${MASTER_PORT}" "${cmd[@]}"
+exec "${TORCHRUN_BIN}" --nproc_per_node="${NUM_GPUS}" --master_port="${MASTER_PORT}" "${cmd[@]}"
