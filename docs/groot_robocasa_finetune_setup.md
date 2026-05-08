@@ -113,8 +113,10 @@ Wrote merged dataset: data/datasets/robocasa_10tasks_lerobot_v21
 파일:
 
 ```bash
-src/policies/Isaac-GR00T/examples/robocasa/panda_omron_config.py
+configs/policies/groot_robocasa_panda_omron_config.py
 ```
+
+이 config는 upstream `Isaac-GR00T` 코드를 직접 수정하지 않기 위해 repo의 `configs/` 아래에 둔다. `launch_finetune.py`에는 `--modality_config_path`로 전달한다.
 
 등록 tag:
 
@@ -158,29 +160,20 @@ annotation.human.task_description
 
 Action config는 모두 `ActionRepresentation.ABSOLUTE`로 설정했다.
 
-## GR00T 코드 수정
+## GR00T 코드베이스 유지 방침
 
-### Video backend fallback
+핵심 방침:
 
-파일:
+- `launch_finetune.py`, `finetune_config.py`, model setup 등 upstream 핵심 학습 코드는 수정하지 않는다.
+- 학습 진입은 upstream `gr00t/experiment/launch_finetune.py`를 그대로 사용한다.
+- 로컬에서 추가한 것은 dataset merge script, RoboCasa PandaOmron modality config, train wrapper다.
+- custom modality config는 `src/policies/Isaac-GR00T/examples`가 아니라 `configs/policies` 아래에 둔다.
 
-```bash
-src/policies/Isaac-GR00T/gr00t/utils/video_utils.py
-```
-
-수정:
-
-- fallback 순서를 `torchcodec -> decord -> opencv -> ffmpeg -> pyav`로 변경했다.
-- OpenCV frame을 `BGR -> RGB`로 변환하도록 수정했다.
-
-이유:
+Video backend 관련 주의:
 
 - 현재 `groot` container에는 `torchcodec`, `decord`, `ffmpeg`가 없고 `cv2`는 있다.
-- 기존 fallback이 `pyav`로 떨어지면 `get_frames_by_indices()`가 구현되어 있지 않아 `NotImplementedError`가 발생했다.
-
-주의:
-
-- `launch_finetune.py`, `finetune_config.py`, model setup 쪽은 upstream과 최대한 동일하게 유지한다.
+- upstream `video_utils.py`는 수정하지 않는 방향이다.
+- 장기 학습 전에는 Docker image에 `torchcodec` 또는 `decord`를 설치해서 upstream video path가 정상 동작하도록 맞추는 것이 좋다.
 - 16GB GPU에서 짧은 확인을 위해 `optim`, `tune_top_llm_layers`, `tune_vlln` 같은 비공식 제어 옵션을 추가할 수는 있지만, 기본 fine-tuning 경로에는 섞지 않는다.
 
 ## 추가한 train wrapper
@@ -188,7 +181,7 @@ src/policies/Isaac-GR00T/gr00t/utils/video_utils.py
 파일:
 
 ```bash
-scripts/train/groot_robocasa_10tasks.sh
+scripts/train/groot_robocasa_finetune.sh
 ```
 
 기본값:
@@ -196,7 +189,7 @@ scripts/train/groot_robocasa_10tasks.sh
 ```bash
 BASE_MODEL_PATH=/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B
 DATASET_PATH=/temporal_vla/data/datasets/robocasa_10tasks_lerobot_v21
-MODALITY_CONFIG_PATH=/temporal_vla/src/policies/Isaac-GR00T/examples/robocasa/panda_omron_config.py
+MODALITY_CONFIG_PATH=/temporal_vla/configs/policies/groot_robocasa_panda_omron_config.py
 OUTPUT_DIR=/temporal_vla/outputs/groot_robocasa_10tasks_full
 MAX_STEPS=20000
 SAVE_STEPS=500
@@ -241,14 +234,14 @@ optimizer, VLLN, top LLM layer 제어는 upstream `launch_finetune.py` 기본값
 Fine-tuning 실행:
 
 ```bash
-docker compose exec groot bash /temporal_vla/scripts/train/groot_robocasa_10tasks.sh
+docker compose exec groot bash /temporal_vla/scripts/train/groot_robocasa_finetune.sh
 ```
 
 짧은 syntax/data-path 확인:
 
 ```bash
 docker compose exec -T groot bash -lc \
-  'MAX_STEPS=2 SAVE_STEPS=2 GLOBAL_BATCH_SIZE=1 OUTPUT_DIR=/temporal_vla/outputs/groot_robocasa_10tasks_check bash /temporal_vla/scripts/train/groot_robocasa_10tasks.sh'
+  'MAX_STEPS=2 SAVE_STEPS=2 GLOBAL_BATCH_SIZE=1 OUTPUT_DIR=/temporal_vla/outputs/groot_robocasa_10tasks_check bash /temporal_vla/scripts/train/groot_robocasa_finetune.sh'
 ```
 
 주의: 16GB GPU에서는 upstream 기본 optimizer/action-head 설정 때문에 짧은 실행도 OOM이 날 수 있다. 공식 recipe 검증은 48GB급 이상 GPU에서 돌리는 쪽이 현실적이다.
@@ -265,14 +258,14 @@ docker compose exec -T groot bash -lc \
 아직 아닌 것:
 
 - 16GB GPU에서 full GR00T N1.6 fine-tuning
-- OpenCV video backend 기반 장기 학습 성능 최적화
+- video backend dependency 정리 (`torchcodec` 또는 `decord` 설치)
 
 ## 실제 fine-tuning으로 넘어갈 때
 
 메모리가 충분한 GPU에서는 기본값 그대로 실행한다.
 
 ```bash
-docker compose exec groot bash /temporal_vla/scripts/train/groot_robocasa_10tasks.sh
+docker compose exec groot bash /temporal_vla/scripts/train/groot_robocasa_finetune.sh
 ```
 
 optimizer, VLLN, top LLM layer는 upstream 기본값을 사용한다. 현재 코드베이스 기본값 기준으로 `tune_llm=False`, `tune_visual=False`, `tune_projector=True`, `tune_diffusion_model=True`이며, model config의 기본 top LLM/VLLN 설정도 적용된다.

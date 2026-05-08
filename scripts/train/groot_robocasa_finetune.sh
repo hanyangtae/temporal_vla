@@ -2,10 +2,10 @@
 # GR00T N1.6 fine-tuning on the merged RoboCasa 10-task LeRobot v2.1 dataset.
 #
 # Full fine-tune:
-#   docker compose exec groot bash /temporal_vla/scripts/train/groot_robocasa_10tasks.sh
+#   docker compose exec groot bash /temporal_vla/scripts/train/groot_robocasa_finetune.sh
 #
 # Short syntax check run:
-#   docker compose exec groot bash -lc 'MAX_STEPS=2 SAVE_STEPS=2 GLOBAL_BATCH_SIZE=1 bash /temporal_vla/scripts/train/groot_robocasa_10tasks.sh'
+#   docker compose exec groot bash -lc 'MAX_STEPS=2 SAVE_STEPS=2 GLOBAL_BATCH_SIZE=1 bash /temporal_vla/scripts/train/groot_robocasa_finetune.sh'
 
 set -euo pipefail
 
@@ -15,7 +15,7 @@ NUM_GPUS="${NUM_GPUS:-1}"
 MASTER_PORT="${MASTER_PORT:-29500}"
 BASE_MODEL_PATH="${BASE_MODEL_PATH:-/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B}"
 DATASET_PATH="${DATASET_PATH:-/temporal_vla/data/datasets/robocasa_10tasks_lerobot_v21}"
-MODALITY_CONFIG_PATH="${MODALITY_CONFIG_PATH:-/temporal_vla/src/policies/Isaac-GR00T/examples/robocasa/panda_omron_config.py}"
+MODALITY_CONFIG_PATH="${MODALITY_CONFIG_PATH:-/temporal_vla/configs/policies/groot_robocasa_panda_omron_config.py}"
 OUTPUT_DIR="${OUTPUT_DIR:-/temporal_vla/outputs/groot_robocasa_10tasks_full}"
 
 MAX_STEPS="${MAX_STEPS:-20000}"
