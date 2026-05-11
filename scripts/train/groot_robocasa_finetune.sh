@@ -2,35 +2,64 @@
 # GR00T N1.6 fine-tuning on the merged RoboCasa 10-task LeRobot v2.1 dataset.
 #
 # Full fine-tune:
+#   bash scripts/train/groot_robocasa_finetune.sh
+#   REPO_ROOT=/home/dongkyu/temporal_vla bash scripts/train/groot_robocasa_finetune.sh
 #   docker compose exec groot bash /temporal_vla/scripts/train/groot_robocasa_finetune.sh
 #
 # Short syntax check run:
-#   docker compose exec groot bash -lc 'MAX_STEPS=2 SAVE_STEPS=2 GLOBAL_BATCH_SIZE=1 bash /temporal_vla/scripts/train/groot_robocasa_finetune.sh'
+#   MAX_STEPS=2 SAVE_STEPS=2 GLOBAL_BATCH_SIZE=1 bash scripts/train/groot_robocasa_finetune.sh
 
 set -euo pipefail
 
-cd /temporal_vla/src/policies/Isaac-GR00T
+expand_home() {
+    local path="$1"
+    printf '%s\n' "${path/#\~/$HOME}"
+}
 
-if [ ! -x ".venv/bin/python" ]; then
-    echo "ERROR: Isaac-GR00T uv environment not found at $(pwd)/.venv/bin/python" >&2
-    echo "Run inside the groot container: cd /temporal_vla/src/policies/Isaac-GR00T && uv sync" >&2
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="$(expand_home "${REPO_ROOT:-${DEFAULT_REPO_ROOT}}")"
+ISAAC_GR00T_DIR="$(expand_home "${ISAAC_GR00T_DIR:-${REPO_ROOT}/src/policies/Isaac-GR00T}")"
+
+cd "${ISAAC_GR00T_DIR}"
+
+if [ -x ".venv/bin/python" ]; then
+    PYTHON_CMD=(".venv/bin/python")
+    TORCHRUN_CMD=(".venv/bin/torchrun")
+elif command -v uv >/dev/null 2>&1; then
+    PYTHON_CMD=(uv run python)
+    TORCHRUN_CMD=(uv run torchrun)
+else
+    echo "ERROR: Isaac-GR00T environment not found at $(pwd)/.venv/bin/python, and uv is unavailable" >&2
+    echo "Run: cd ${ISAAC_GR00T_DIR} && uv sync" >&2
     exit 1
 fi
 
-PYTHON_BIN=".venv/bin/python"
-TORCHRUN_BIN=".venv/bin/torchrun"
-
 NUM_GPUS="${NUM_GPUS:-1}"
 MASTER_PORT="${MASTER_PORT:-29500}"
-BASE_MODEL_PATH="${BASE_MODEL_PATH:-/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B}"
-DATASET_PATH="${DATASET_PATH:-/temporal_vla/data/datasets/robocasa_10tasks_lerobot_v21}"
-MODALITY_CONFIG_PATH="${MODALITY_CONFIG_PATH:-/temporal_vla/configs/policies/groot_robocasa_panda_omron_config.py}"
-OUTPUT_DIR="${OUTPUT_DIR:-/temporal_vla/outputs/groot_robocasa_10tasks_full}"
+
+LOCAL_BASE_MODEL_PATH="${REPO_ROOT}/checkpoints/nvidia/GR00T-N1.6-3B"
+if [ -z "${BASE_MODEL_PATH:-}" ]; then
+    if [ -f "${LOCAL_BASE_MODEL_PATH}/config.json" ]; then
+        BASE_MODEL_PATH="${LOCAL_BASE_MODEL_PATH}"
+    else
+        BASE_MODEL_PATH="nvidia/GR00T-N1.6-3B"
+    fi
+fi
+
+DATASET_PATH="${DATASET_PATH:-${REPO_ROOT}/data/datasets/robocasa_10tasks_lerobot_v21}"
+MODALITY_CONFIG_PATH="${MODALITY_CONFIG_PATH:-${REPO_ROOT}/configs/policies/groot_robocasa_panda_omron_config.py}"
+OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/outputs/groot_robocasa_10tasks_full}"
+
+BASE_MODEL_PATH="$(expand_home "${BASE_MODEL_PATH}")"
+DATASET_PATH="$(expand_home "${DATASET_PATH}")"
+MODALITY_CONFIG_PATH="$(expand_home "${MODALITY_CONFIG_PATH}")"
+OUTPUT_DIR="$(expand_home "${OUTPUT_DIR}")"
 
 MAX_STEPS="${MAX_STEPS:-20000}"
 SAVE_STEPS="${SAVE_STEPS:-500}"
-SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-5}"
-GLOBAL_BATCH_SIZE="${GLOBAL_BATCH_SIZE:-1}"
+SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-2}"
+GLOBAL_BATCH_SIZE="${GLOBAL_BATCH_SIZE:-64}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-2}"
 SHARD_SIZE="${SHARD_SIZE:-1024}"
 NUM_SHARDS_PER_EPOCH="${NUM_SHARDS_PER_EPOCH:-100000}"
@@ -41,7 +70,6 @@ WARMUP_RATIO="${WARMUP_RATIO:-0.05}"
 USE_WANDB="${USE_WANDB:-0}"
 TUNE_PROJECTOR="${TUNE_PROJECTOR:-1}"
 TUNE_DIFFUSION_MODEL="${TUNE_DIFFUSION_MODEL:-1}"
-
 cmd=(
     gr00t/experiment/launch_finetune.py
     --base_model_path "${BASE_MODEL_PATH}"
@@ -82,6 +110,8 @@ fi
 
 echo "============================================"
 echo "GR00T RoboCasa 10-task fine-tune"
+echo "  Repo root:   ${REPO_ROOT}"
+echo "  GR00T dir:   ${ISAAC_GR00T_DIR}"
 echo "  Dataset:     ${DATASET_PATH}"
 echo "  Base model:  ${BASE_MODEL_PATH}"
 echo "  Output:      ${OUTPUT_DIR}"
@@ -92,12 +122,11 @@ echo "  Tune proj:   ${TUNE_PROJECTOR}"
 echo "  Tune DiT:    ${TUNE_DIFFUSION_MODEL}"
 echo "  Optim:       adamw_torch (from upstream launch_finetune.py)"
 echo "  VLLN:        upstream default"
-echo "  Top LLM:     upstream default"
-echo "  Python:      ${PYTHON_BIN}"
+echo "  Python:      ${PYTHON_CMD[*]}"
 echo "============================================"
 
 if [ "${NUM_GPUS}" = "1" ]; then
-    exec "${PYTHON_BIN}" "${cmd[@]}"
+    exec "${PYTHON_CMD[@]}" "${cmd[@]}"
 fi
 
-exec "${TORCHRUN_BIN}" --nproc_per_node="${NUM_GPUS}" --master_port="${MASTER_PORT}" "${cmd[@]}"
+exec "${TORCHRUN_CMD[@]}" --nproc_per_node="${NUM_GPUS}" --master_port="${MASTER_PORT}" "${cmd[@]}"
