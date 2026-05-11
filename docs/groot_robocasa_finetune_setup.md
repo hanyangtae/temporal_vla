@@ -13,10 +13,10 @@ Isaac-GR00T `n1.6-release` 공식 코드베이스 기준으로 RoboCasa PandaOmr
 
 참고한 공식 문서:
 
-- https://github.com/NVIDIA/Isaac-GR00T/blob/n1.6-release/getting_started/finetune_new_embodiment.md
-- https://github.com/NVIDIA/Isaac-GR00T/blob/n1.6-release/examples/finetune.sh
-- https://github.com/NVIDIA/Isaac-GR00T/tree/n1.6-release/examples/robocasa
-- https://github.com/NVIDIA/Isaac-GR00T/tree/n1.6-release/examples/robocasa-gr1-tabletop-tasks
+- [https://github.com/NVIDIA/Isaac-GR00T/blob/n1.6-release/getting_started/finetune_new_embodiment.md](https://github.com/NVIDIA/Isaac-GR00T/blob/n1.6-release/getting_started/finetune_new_embodiment.md)
+- [https://github.com/NVIDIA/Isaac-GR00T/blob/n1.6-release/examples/finetune.sh](https://github.com/NVIDIA/Isaac-GR00T/blob/n1.6-release/examples/finetune.sh)
+- [https://github.com/NVIDIA/Isaac-GR00T/tree/n1.6-release/examples/robocasa](https://github.com/NVIDIA/Isaac-GR00T/tree/n1.6-release/examples/robocasa)
+- [https://github.com/NVIDIA/Isaac-GR00T/tree/n1.6-release/examples/robocasa-gr1-tabletop-tasks](https://github.com/NVIDIA/Isaac-GR00T/tree/n1.6-release/examples/robocasa-gr1-tabletop-tasks)
 
 ## 대상 task
 
@@ -51,14 +51,16 @@ data/datasets/robocasa_10tasks_lerobot_v21
 
 검증된 크기:
 
-| 항목 | 값 |
-| --- | ---: |
-| episodes | 1061 |
-| frames | 253971 |
-| unique language tasks | 99 |
-| video files | 3183 |
-| data chunks | 2 |
-| disk usage | 733M |
+
+| 항목                    | 값      |
+| --------------------- | ------ |
+| episodes              | 1061   |
+| frames                | 253971 |
+| unique language tasks | 99     |
+| video files           | 3183   |
+| data chunks           | 2      |
+| disk usage            | 733M   |
+
 
 필수 메타 파일:
 
@@ -211,23 +213,25 @@ optimizer, VLLN, top LLM layer 제어는 upstream `launch_finetune.py` 기본값
 
 현재 wrapper의 값은 하나의 RoboCasa 전용 공식 script에서 복사한 것이 아니라, 아래 출처를 조합한 것이다.
 
-| 값 | 현재 설정 | 출처 | 비고 |
-| --- | ---: | --- | --- |
-| `LEARNING_RATE` | `1e-4` | `gr00t/configs/finetune_config.py`, GR00T paper Table 6 | 코드 default와 논문 일치 |
-| `WEIGHT_DECAY` | `1e-5` | `gr00t/configs/finetune_config.py`, GR00T paper Table 6 | 코드 default와 논문 일치 |
-| `WARMUP_RATIO` | `0.05` | `gr00t/configs/finetune_config.py`, GR00T paper Table 6 | 코드 default와 논문 일치 |
-| optimizer | `adamw_torch` | `gr00t/experiment/launch_finetune.py`; paper는 AdamW | wrapper에서 직접 제어하지 않음 |
-| `TUNE_PROJECTOR` | `1` | `gr00t/configs/finetune_config.py` | upstream default `True` |
-| `TUNE_DIFFUSION_MODEL` | `1` | `gr00t/configs/finetune_config.py` | upstream default `True` |
-| `SAVE_TOTAL_LIMIT` | `5` | `gr00t/configs/finetune_config.py`, official example scripts | 코드 default |
-| `DATALOADER_NUM_WORKERS` | `2` | `gr00t/configs/finetune_config.py` | official examples는 4 또는 6도 사용 |
-| `SHARD_SIZE` | `1024` | `gr00t/configs/finetune_config.py`, `examples/SO100/finetune_so100.sh` | 코드 default |
-| `NUM_SHARDS_PER_EPOCH` | `100000` | `gr00t/configs/finetune_config.py`, `examples/SO100/finetune_so100.sh` | 코드 default |
-| `EPISODE_SAMPLING_RATE` | `0.1` | `gr00t/configs/finetune_config.py`, `examples/SO100/finetune_so100.sh` | 코드 default |
-| `MAX_STEPS` | `20000` | GR00T paper Table 6, official LIBERO/SimplerEnv scripts | paper post-training range `20k-60k`의 lower bound |
-| `GLOBAL_BATCH_SIZE` | `128` | GR00T paper Table 6 | paper post-training value `128 or 1024` 중 memory-conservative choice |
-| `SAVE_STEPS` | `500` | GR00T paper simulation eval protocol | official example scripts는 보통 `1000`; strict code-example 기준이면 `1000`도 가능 |
-| `color_jitter_params` | `0.3/0.4/0.5/0.08` | official fine-tuning example scripts | `finetune_config.py` default는 아님 |
+
+| 값                        | 현재 설정              | 출처                                                                     | 비고                                                                       |
+| ------------------------ | ------------------ | ---------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `LEARNING_RATE`          | `1e-4`             | `gr00t/configs/finetune_config.py`, GR00T paper Table 6                | 코드 default와 논문 일치                                                        |
+| `WEIGHT_DECAY`           | `1e-5`             | `gr00t/configs/finetune_config.py`, GR00T paper Table 6                | 코드 default와 논문 일치                                                        |
+| `WARMUP_RATIO`           | `0.05`             | `gr00t/configs/finetune_config.py`, GR00T paper Table 6                | 코드 default와 논문 일치                                                        |
+| optimizer                | `adamw_torch`      | `gr00t/experiment/launch_finetune.py`; paper는 AdamW                    | wrapper에서 직접 제어하지 않음                                                     |
+| `TUNE_PROJECTOR`         | `1`                | `gr00t/configs/finetune_config.py`                                     | upstream default `True`                                                  |
+| `TUNE_DIFFUSION_MODEL`   | `1`                | `gr00t/configs/finetune_config.py`                                     | upstream default `True`                                                  |
+| `SAVE_TOTAL_LIMIT`       | `5`                | `gr00t/configs/finetune_config.py`, official example scripts           | 코드 default                                                               |
+| `DATALOADER_NUM_WORKERS` | `2`                | `gr00t/configs/finetune_config.py`                                     | official examples는 4 또는 6도 사용                                            |
+| `SHARD_SIZE`             | `1024`             | `gr00t/configs/finetune_config.py`, `examples/SO100/finetune_so100.sh` | 코드 default                                                               |
+| `NUM_SHARDS_PER_EPOCH`   | `100000`           | `gr00t/configs/finetune_config.py`, `examples/SO100/finetune_so100.sh` | 코드 default                                                               |
+| `EPISODE_SAMPLING_RATE`  | `0.1`              | `gr00t/configs/finetune_config.py`, `examples/SO100/finetune_so100.sh` | 코드 default                                                               |
+| `MAX_STEPS`              | `20000`            | GR00T paper Table 6, official LIBERO/SimplerEnv scripts                | paper post-training range `20k-60k`의 lower bound                         |
+| `GLOBAL_BATCH_SIZE`      | `128`              | GR00T paper Table 6                                                    | paper post-training value `128 or 1024` 중 memory-conservative choice     |
+| `SAVE_STEPS`             | `500`              | GR00T paper simulation eval protocol                                   | official example scripts는 보통 `1000`; strict code-example 기준이면 `1000`도 가능 |
+| `color_jitter_params`    | `0.3/0.4/0.5/0.08` | official fine-tuning example scripts                                   | `finetune_config.py` default는 아님                                         |
+
 
 엄밀히 말하면 현재 default는 `공식 코드 default + 공식 예제 관례 + 논문 post-training lower-bound`이다. “코드베이스 default만” 따르려면 `MAX_STEPS=10000`, `SAVE_STEPS=1000`, `GLOBAL_BATCH_SIZE=64`가 더 가깝다. 반대로 paper post-training 설정에 더 맞추려면 현재처럼 `MAX_STEPS=20000`, `GLOBAL_BATCH_SIZE=128`을 lower-bound로 쓰는 것이 합리적이다.
 
@@ -278,3 +282,4 @@ optimizer, VLLN, top LLM layer는 upstream 기본값을 사용한다. 현재 코
 - `torchcodec` 또는 `decord`를 container에 설치해서 video decoding 병목을 줄인다.
 - `bitsandbytes` 8-bit optimizer, LoRA, 더 작은 trainable subset 등 메모리 절감 방법을 추가로 검토한다.
 - upstream을 건드리지 않을 경우, 16GB용 축소 실험은 별도 스크립트로 분리한다.
+
