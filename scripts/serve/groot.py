@@ -39,7 +39,7 @@ from src.policies.groot.preprocess import (  # noqa: E402
 from src.policies.groot.schema import (  # noqa: E402
     GROOT_TO_UNIFIED_ACTION,
     UNIFIED_TO_STATE_KEY,
-    UNIFIED_TO_VIDEO_KEY,
+    build_video_mapping,
     normalize_modality_key,
 )
 from src.policies.groot.loader import load_groot_policy  # noqa: E402
@@ -60,6 +60,9 @@ _warned_missing_video_keys: set = set()
 _warned_missing_state_keys: set = set()
 # embodiment 별 state key → dim. statistics.json 에서 모델 로드 시 채워짐.
 _state_dims: dict = {}
+# 통일 API 이미지 키 → GR00T video 키. 로드된 모델의 modality_configs 로 동적 구성
+# (pretrain ckpt 의 res256_image_* 와 finetune ckpt 의 robot0_agentview_* 둘 다 흡수).
+_video_key_mapping: dict[str, str] = {}
 
 
 def _build_groot_obs(payload: dict) -> dict:
@@ -74,7 +77,7 @@ def _build_groot_obs(payload: dict) -> dict:
     """
     obs = {}
 
-    for unified_key, groot_key in UNIFIED_TO_VIDEO_KEY.items():
+    for unified_key, groot_key in _video_key_mapping.items():
         b64 = payload.get(unified_key)
         if b64 is None or groot_key in obs:
             continue
@@ -136,6 +139,7 @@ def load_model():
 
 def _load_model_impl():
     global _policy, _embodiment_tag, _modality_configs, _device, _state_dims
+    global _video_key_mapping
 
     args = app.state.args
     profile = _profile
@@ -148,6 +152,39 @@ def _load_model_impl():
     _state_dims = loaded.state_dims
     _device = loaded.device
 
+    # TTT 분기 — 프로파일 model_specific.predictor_path 가 있으면
+    # 로드된 base Gr00tN1d6 를 Gr00tN1d6WithTTT 로 in-place 승격.
+    ms = profile.model_specific or {}
+    predictor_path = ms.get("predictor_path")
+    if predictor_path:
+        from src.ttt.integrations.groot_wrapper import attach_ttt_to_groot
+
+        base_model = _policy.policy.model  # Gr00tSimPolicyWrapper.policy(=Gr00tPolicy).model
+        ttt_model = attach_ttt_to_groot(
+            base_model,
+            predictor_state_path=predictor_path,
+            predictor_input_dim=int(ms.get("predictor_input_dim", 2048)),
+            predictor_proj_dim=int(ms.get("predictor_proj_dim", 2048)),
+            predictor_inner_model=ms.get("predictor_inner_model", "linear"),
+            predictor_eta_base=float(ms.get("predictor_eta_base", 0.1)),
+            ttt_update_in_train=False,
+            # default True — 추론 시 매 frame 마다 TTT inner-loop adaptation
+            # (사용자 의도: "test time train 진행"). episode 시작 reset 은 /reset 이 처리.
+            ttt_update_at_inference=bool(ms.get("ttt_update_at_inference", True)),
+        )
+        _policy.policy.model = ttt_model
+        logger.info(
+            "[ttt] base GR00T → Gr00tN1d6WithTTT (predictor=%s)", predictor_path,
+        )
+
+    # 통일 API video 키 매핑 동적 구성 (pretrain/finetune ckpt 둘 다 흡수).
+    video_modality_keys = list(_modality_configs["video"].modality_keys)
+    _video_key_mapping = build_video_mapping(video_modality_keys)
+    logger.info(
+        "[video] modality_keys=%s → mapping=%s",
+        video_modality_keys, _video_key_mapping,
+    )
+
 
 # ─── FastAPI 엔드포인트 ──────────────────────────────────────────────────────
 
@@ -156,6 +193,12 @@ def _load_model_impl():
 async def reset():
     if _policy is not None:
         _policy.reset()
+        # TTT wrapper 의 inner state 도 episode 시작 시점에 θ_init 으로 복원.
+        # Gr00tPolicy.reset 자체는 no-op 이라 여기서 직접 호출.
+        inner = getattr(_policy, "policy", None)
+        model = getattr(inner, "model", None) if inner is not None else None
+        if model is not None and hasattr(model, "reset_predictor"):
+            model.reset_predictor()
     return {"status": "reset"}
 
 

@@ -58,3 +58,64 @@ def normalize_modality_key(key: str, prefix: str) -> str:
     이미 'video.' / 'state.' 접두사가 있으면 그대로, 없으면 추가.
     """
     return key if key.startswith(prefix + ".") else f"{prefix}.{key}"
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# 동적 modality 매핑 (옵션 B) — 로드된 모델의 modality_keys 에서 추론.
+# ──────────────────────────────────────────────────────────────────────────
+
+
+# pretrain (NVIDIA) 와 finetune (LeRobot raw) 양쪽 컨벤션을 다 흡수하는 패턴.
+_VIDEO_ROLE_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
+    ("left",  ("side_0", "agentview_left", "_left", "static")),
+    ("right", ("side_1", "agentview_right", "_right")),
+    ("wrist", ("wrist_0", "wrist_1", "eye_in_hand", "wrist")),
+]
+
+# role → 통일 API 입력 키 (alias 들; 첫 항목이 canonical).
+_ROLE_TO_UNIFIED: dict[str, tuple[str, ...]] = {
+    "left":  ("observation.images.left",  "observation.images.static", "observation.images.side_0"),
+    "right": ("observation.images.right", "observation.images.side_1"),
+    "wrist": ("observation.images.wrist", "observation.images.wrist_0"),
+}
+
+
+def _classify_video_modality_key(modality_key: str) -> str | None:
+    """모델이 노출한 video modality_key (예: 'res256_image_side_0' 또는
+    'robot0_agentview_left') 가 left/right/wrist 중 어느 role 인지 분류.
+
+    매칭되는 role 이 없으면 None — 이 경우 정체불명 카메라이므로 호출 측에서
+    identity alias 만 등록.
+    """
+    mk = modality_key.lower()
+    for role, patterns in _VIDEO_ROLE_PATTERNS:
+        for p in patterns:
+            if p in mk:
+                return role
+    return None
+
+
+def build_video_mapping(modality_keys: list[str]) -> dict[str, str]:
+    """``policy.modality_configs["video"].modality_keys`` 를 받아 통일 API 입력 키
+    → ``video.<modality_key>`` 매핑을 동적으로 구성한다.
+
+    pretrain ckpt (``res256_image_side_0/...``) 든 finetune ckpt
+    (``robot0_agentview_left/...``) 든 같은 통일 API 입력으로 서빙 가능.
+
+    추가로 raw key 자체에 대해서도 ``observation.images.<modality_key>`` 형태의
+    identity alias 를 등록해 호출자가 원본 키를 그대로 보내고 싶을 때도 지원.
+    """
+    mapping: dict[str, str] = {}
+    for mk in modality_keys:
+        groot_key = normalize_modality_key(mk, "video")
+
+        role = _classify_video_modality_key(mk)
+        if role is not None:
+            for unified in _ROLE_TO_UNIFIED[role]:
+                # 같은 unified 키에 다른 modality 가 이미 매핑돼 있으면 첫 등록 우선.
+                mapping.setdefault(unified, groot_key)
+
+        # identity alias — 호출자가 raw modality_key 를 그대로 보낸 경우.
+        mapping.setdefault(f"observation.images.{mk}", groot_key)
+
+    return mapping
