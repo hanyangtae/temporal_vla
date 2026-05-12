@@ -15,6 +15,7 @@ mkdir -p "${BASE_DIR}"
 
 # task | date | box-id  (human pretrain atomic)
 ENTRIES=(
+  # 기존 10 task
   "OpenDrawer|20250819|1wh3r8fumly55x8orq4hynzdvui61adj"
   "CloseDrawer|20250819|nvrtrm29t0i438c1g1erlvqhxttnl46f"
   "OpenCabinet|20250819|xfg5pamn63h8r0mfjgx04sxi3jpyvy58"
@@ -25,6 +26,30 @@ ENTRIES=(
   "CloseMicrowave|20250819|wiunvswubst88t8x7cy00udi4k7q78jr"
   "PickPlaceCounterToStove|20250819|ddqy3klmtxeai90ujtheqgqqydk0ngji"
   "PickPlaceCounterToSink|20250819|9cv0clw8zw4sfahtu81g4uizpb0stpwa"
+  # 신규 20 task — 모두 fixed-base atomic. single-door (cabinet 류 제외).
+  # Doors/Lids (7) — Open 위주, motion 다양성
+  "OpenOven|20250820|wm696hf03usgrjsqjkdmnbchfpf6ujvu"
+  "OpenDishwasher|20250820|cn13od342z0046si983deodgtxkimor9"
+  "OpenFridgeDrawer|20250821|zfes13imtdxt0csy46cga4b0qi3ipr2w"
+  "OpenToasterOvenDoor|20250820|elr8b557cy5vc0pfgwt4wwt9lwj8sltj"
+  "OpenBlenderLid|20250822|hwmpnoj1vyfcs7gs8j8wpdivk7laimh8"
+  "OpenElectricKettleLid|20250820|xywmovoafrygd4ry2mxdy56o9y3pt805"
+  "OpenStandMixerHead|20250820|bbcwsuneusxu2sx9skuai8oglkio8nca"
+  # PickPlace (7) — 다양한 source/target 조합
+  "PickPlaceCounterToCabinet|20250819|myhvbjtfii7at6itjepbivcuo1y8krbp"
+  "PickPlaceCabinetToCounter|20250819|u4jnblpqftlg2e3nafmh426sjm3xdo3r"
+  "PickPlaceCounterToDrawer|20250821|ptft0eb0gc0q4o4k3zsl886a2zq18t2n"
+  "PickPlaceCounterToMicrowave|20250819|h1c72tmzbsmi28c5k0k7n5xa3houq9cm"
+  "PickPlaceCounterToOven|20250819|ts6s7u1xvzicffn0m7y4hkiqxnf6z17i"
+  "PickPlaceSinkToCounter|20250819|yeglgmnrbgv1omfsqr986llfxby06x2b"
+  "PickPlaceStoveToCounter|20250819|h1te73m68o9qkbqewf8vl3z1uqsuagwy"
+  # Turn/Switch (6) — 다양한 control type (faucet/knob/button/lever)
+  "TurnOnSinkFaucet|20250819|3anr1aa9obr6surhz83npcsz77fevfsb"
+  "TurnOnStove|20250819|l8my16o129y0yjyo5t16t6ijud2kmz7g"
+  "TurnOnMicrowave|20250819|7alz6aevqinrny6ggbl83ld3ty3w27lf"
+  "TurnOnBlender|20250822|76lkwmzhcekpffs3cq7hbybsvdd55btl"
+  "TurnOnElectricKettle|20250820|183i98pu2opkn92cpihhhwiv0xiek9bc"
+  "TurnOnToaster|20250820|scjjcg9tw9o9sf3rlk2gcc4vapnv7pfn"
 )
 
 download_one () {

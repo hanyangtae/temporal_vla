@@ -26,11 +26,20 @@ DEFAULT_DATA_ROOT = REPO_ROOT / "data/robocasa/v1.0/pretrain/atomic"
 DEFAULT_CACHE_ROOT = REPO_ROOT / "data/robocasa_eagle_pre_llm"
 
 DEFAULT_TASKS = [
+    # 기존 10
     "OpenDrawer", "CloseDrawer",
     "OpenCabinet", "CloseCabinet",
     "OpenFridge", "CloseFridge",
     "OpenMicrowave", "CloseMicrowave",
     "PickPlaceCounterToStove", "PickPlaceCounterToSink",
+    # 신규 20 (single-door / single-fixture atomic)
+    "OpenOven", "OpenDishwasher", "OpenFridgeDrawer", "OpenToasterOvenDoor",
+    "OpenBlenderLid", "OpenElectricKettleLid", "OpenStandMixerHead",
+    "PickPlaceCounterToCabinet", "PickPlaceCabinetToCounter", "PickPlaceCounterToDrawer",
+    "PickPlaceCounterToMicrowave", "PickPlaceCounterToOven",
+    "PickPlaceSinkToCounter", "PickPlaceStoveToCounter",
+    "TurnOnSinkFaucet", "TurnOnStove", "TurnOnMicrowave",
+    "TurnOnBlender", "TurnOnElectricKettle", "TurnOnToaster",
 ]
 
 EXPECTED_HIDDEN = 2048
