@@ -1,26 +1,124 @@
 # GR00T N1.6 RoboCasa 10-task fine-tuning setup
 
-Isaac-GR00T `n1.6-release` 공식 코드베이스 기준으로 RoboCasa PandaOmron 10개 task를 하나의 LeRobot v2.1 dataset으로 합치고, GR00T fine-tuning entrypoint까지 준비한 기록.
+Isaac-GR00T `n1.6-release` 기반으로 RoboCasa PandaOmron 10개 task를 하나의 LeRobot v2.1 dataset으로 병합하고, GR00T fine-tuning을 host 또는 Docker에서 실행하기 위한 runbook이다.
 
-## 결론
+## 요약
 
-- 공식 GR00T N1.6 fine-tuning 경로를 사용한다.
-- 입력 dataset은 GR00T가 기대하는 LeRobot v2.1 형식이어야 한다.
-- 공식 `launch_finetune.py` CLI는 `--dataset-path` 하나만 받으므로, 10개 task는 하나의 dataset root로 merge했다.
-- upstream `launch_finetune.py`는 유지한다. 로컬 wrapper는 공식 entrypoint에 dataset/model/config 인자를 넘기는 역할만 한다.
-- 현재 16GB GPU에서는 full fine-tuning이 OOM 가능성이 높다.
-- 짧은 run은 실제 성능 검증이 아니라, 데이터 로딩, modality mapping, forward/backward, checkpoint 저장이 되는지 확인하는 절차다.
+- 학습 entrypoint는 upstream `gr00t/experiment/launch_finetune.py`를 그대로 사용한다.
+- 로컬 wrapper `scripts/train/groot_robocasa_finetune.sh`는 repo 경로, checkpoint, dataset, modality config, 주요 hyperparameter를 정리해서 넘기는 역할만 한다.
+- `launch_finetune.py`, `finetune_config.py`, model setup 등 upstream GR00T 핵심 학습 코드는 수정하지 않는다.
+- 10개 RoboCasa task는 `--dataset-path` 하나로 넘기기 위해 `data/datasets/robocasa_10tasks_lerobot_v21` 아래에 병합했다.
+- `ROBOCASA_PANDA_OMRON` enum 존재만으로는 충분하지 않다. 학습 시 `configs/policies/groot_robocasa_panda_omron_config.py`를 `--modality_config_path`로 import해서 modality config를 등록해야 한다.
+- Full DiT fine-tuning은 16GB GPU에서 OOM이 난다. 서버 관찰값 기준 약 36GB VRAM을 사용했고, 20,000 step은 약 2시간 걸렸다.
 
-참고한 공식 문서:
+## 필요한 파일
 
-- [https://github.com/NVIDIA/Isaac-GR00T/blob/n1.6-release/getting_started/finetune_new_embodiment.md](https://github.com/NVIDIA/Isaac-GR00T/blob/n1.6-release/getting_started/finetune_new_embodiment.md)
-- [https://github.com/NVIDIA/Isaac-GR00T/blob/n1.6-release/examples/finetune.sh](https://github.com/NVIDIA/Isaac-GR00T/blob/n1.6-release/examples/finetune.sh)
-- [https://github.com/NVIDIA/Isaac-GR00T/tree/n1.6-release/examples/robocasa](https://github.com/NVIDIA/Isaac-GR00T/tree/n1.6-release/examples/robocasa)
-- [https://github.com/NVIDIA/Isaac-GR00T/tree/n1.6-release/examples/robocasa-gr1-tabletop-tasks](https://github.com/NVIDIA/Isaac-GR00T/tree/n1.6-release/examples/robocasa-gr1-tabletop-tasks)
+서버에서 학습을 돌리려면 최소한 아래가 있어야 한다.
 
-## 대상 task
+```text
+temporal_vla/
+├── scripts/train/groot_robocasa_finetune.sh
+├── configs/policies/groot_robocasa_panda_omron_config.py
+├── checkpoints/nvidia/GR00T-N1.6-3B/
+├── data/datasets/robocasa_10tasks_lerobot_v21/
+└── src/policies/Isaac-GR00T/
+```
 
-아래 10개 RoboCasa atomic task를 하나의 dataset으로 병합했다.
+복사하지 않아도 되는 것:
+
+```text
+.venv/
+outputs/
+wandb/
+__pycache__/
+.cache/
+```
+
+## 서버 사전 준비
+
+권장 환경:
+
+- Linux + NVIDIA GPU + CUDA 12.x
+- 직접 Python/uv 환경 또는 Docker `groot` container
+- 디스크 여유:
+  - checkpoint와 병합 dataset만 둘 경우 50GB 이상 권장
+  - HF cache/raw task archive까지 다룰 경우 200GB 이상 권장
+- VRAM:
+  - 16GB: full fine-tuning 불가
+  - 24GB: 매우 빡빡함
+  - 32GB: 최소 실험선
+  - 40GB/48GB 이상: 현실적
+
+서버에서 repo를 새로 받는 경우:
+
+```bash
+git clone https://github.com/hanyangtae/temporal_vla.git
+cd temporal_vla
+git submodule update --init --recursive
+```
+
+GR00T uv 환경:
+
+```bash
+cd ~/temporal_vla/src/policies/Isaac-GR00T
+
+# uv가 없으면 먼저 설치
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# venv + dependency 설치
+uv sync
+
+# import 확인
+uv run python -c "import gr00t; from gr00t.data.embodiment_tags import EmbodimentTag; print(EmbodimentTag.ROBOCASA_PANDA_OMRON)"
+```
+
+Modality config 등록 확인:
+
+```bash
+export REPO_ROOT=~/temporal_vla
+cd "${REPO_ROOT}/src/policies/Isaac-GR00T"
+
+uv run python -c "import os, sys; sys.path.append(os.path.expanduser(os.environ['REPO_ROOT']) + '/configs/policies'); import groot_robocasa_panda_omron_config; from gr00t.configs.data.embodiment_configs import MODALITY_CONFIGS; print('robocasa_panda_omron' in MODALITY_CONFIGS)"
+```
+
+`True`가 나와야 한다.
+
+## Checkpoint 준비
+
+기본 위치:
+
+```text
+checkpoints/nvidia/GR00T-N1.6-3B
+```
+
+서버에서 새로 다운로드:
+
+```bash
+cd ~/temporal_vla
+mkdir -p checkpoints/nvidia
+
+huggingface-cli download nvidia/GR00T-N1.6-3B \
+  --local-dir checkpoints/nvidia/GR00T-N1.6-3B
+```
+
+기존 머신에서 옮기는 경우:
+
+```bash
+rsync -avhP \
+  /path/to/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B/ \
+  user@training-server:/home/dongkyu/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B/
+```
+
+확인:
+
+```bash
+ls checkpoints/nvidia/GR00T-N1.6-3B/config.json
+ls checkpoints/nvidia/GR00T-N1.6-3B/embodiment_id.json
+```
+
+## Dataset 준비
+
+대상 task:
 
 1. `OpenDrawer`
 2. `CloseDrawer`
@@ -33,34 +131,22 @@ Isaac-GR00T `n1.6-release` 공식 코드베이스 기준으로 RoboCasa PandaOmr
 9. `PickPlaceCounterToStove`
 10. `PickPlaceCounterToSink`
 
-원본 위치:
+원본은 RoboCasa atomic PandaOmron dataset이고, 현재 학습에는 병합된 LeRobot v2.1 dataset을 사용한다.
 
-```bash
-src/benchmarks/robocasa/datasets/v1.0/pretrain/atomic/<Task>/20250819/lerobot
-```
-
-위 경로의 각 task dataset은 이미 LeRobot v3.0에서 v2.1로 변환한 결과를 사용했다.
-
-## 생성한 merged dataset
-
-출력 위치:
-
-```bash
+```text
 data/datasets/robocasa_10tasks_lerobot_v21
 ```
 
-검증된 크기:
+검증된 병합 dataset 통계:
 
-
-| 항목                    | 값      |
-| --------------------- | ------ |
-| episodes              | 1061   |
-| frames                | 253971 |
-| unique language tasks | 99     |
-| video files           | 3183   |
-| data chunks           | 2      |
-| disk usage            | 733M   |
-
+| 항목 | 값 |
+| --- | --- |
+| episodes | 1061 |
+| frames | 253971 |
+| unique language tasks | 99 |
+| video files | 3183 |
+| data chunks | 2 |
+| disk usage | 733M |
 
 필수 메타 파일:
 
@@ -75,13 +161,29 @@ meta/stats.json
 meta/tasks.jsonl
 ```
 
-`relative_stats.json`은 `{}`로 둔다. RoboCasa PandaOmron N1.6 checkpoint의 action config가 모두 `ABSOLUTE`라서 relative action statistics가 필요하지 않다.
+`relative_stats.json`은 `{}`로 둔다. 현재 RoboCasa PandaOmron action config는 모두 `ABSOLUTE`라서 relative action statistics가 필요하지 않다.
 
-## 추가한 merge script
+서버로 zip을 옮겨 푸는 경우:
+
+```bash
+mkdir -p ~/temporal_vla/data/datasets
+unzip ~/temporal_vla/data/datasets/robocasa_10tasks_lerobot_v21.zip \
+  -d ~/temporal_vla/data/datasets
+```
+
+zip 내부가 `robocasa_10tasks_lerobot_v21/` 폴더를 포함하지 않고 `data/`, `meta/`, `videos/`를 바로 담고 있으면 다음처럼 푼다.
+
+```bash
+mkdir -p ~/temporal_vla/data/datasets/robocasa_10tasks_lerobot_v21
+unzip ~/temporal_vla/data/datasets/robocasa_10tasks_lerobot_v21.zip \
+  -d ~/temporal_vla/data/datasets/robocasa_10tasks_lerobot_v21
+```
+
+## Dataset merge script
 
 파일:
 
-```bash
+```text
 scripts/data/merge_robocasa_lerobot_v21.py
 ```
 
@@ -100,7 +202,7 @@ scripts/data/merge_robocasa_lerobot_v21.py
 python scripts/data/merge_robocasa_lerobot_v21.py
 ```
 
-출력:
+예상 출력:
 
 ```text
 Wrote merged dataset: data/datasets/robocasa_10tasks_lerobot_v21
@@ -110,15 +212,15 @@ Wrote merged dataset: data/datasets/robocasa_10tasks_lerobot_v21
   chunks: 2
 ```
 
-## 추가한 modality config
+## Modality config
 
 파일:
 
-```bash
+```text
 configs/policies/groot_robocasa_panda_omron_config.py
 ```
 
-이 config는 upstream `Isaac-GR00T` 코드를 직접 수정하지 않기 위해 repo의 `configs/` 아래에 둔다. `launch_finetune.py`에는 `--modality_config_path`로 전달한다.
+이 파일은 upstream `Isaac-GR00T`를 직접 수정하지 않고 `ROBOCASA_PANDA_OMRON`에 대한 modality config를 등록하기 위해 둔다. `launch_finetune.py` 실행 시 `--modality_config_path`로 전달해야 한다.
 
 등록 tag:
 
@@ -128,7 +230,7 @@ EmbodimentTag.ROBOCASA_PANDA_OMRON
 
 Video keys:
 
-```python
+```text
 robot0_agentview_left
 robot0_agentview_right
 robot0_eye_in_hand
@@ -136,7 +238,7 @@ robot0_eye_in_hand
 
 State keys:
 
-```python
+```text
 end_effector_position_relative
 end_effector_rotation_relative
 gripper_qpos
@@ -146,7 +248,7 @@ base_rotation
 
 Action keys:
 
-```python
+```text
 end_effector_position
 end_effector_rotation
 gripper_close
@@ -156,130 +258,193 @@ control_mode
 
 Language key:
 
-```python
+```text
 annotation.human.task_description
 ```
 
 Action config는 모두 `ActionRepresentation.ABSOLUTE`로 설정했다.
 
-## GR00T 코드베이스 유지 방침
-
-핵심 방침:
-
-- `launch_finetune.py`, `finetune_config.py`, model setup 등 upstream 핵심 학습 코드는 수정하지 않는다.
-- 학습 진입은 upstream `gr00t/experiment/launch_finetune.py`를 그대로 사용한다.
-- 로컬에서 추가한 것은 dataset merge script, RoboCasa PandaOmron modality config, train wrapper다.
-- custom modality config는 `src/policies/Isaac-GR00T/examples`가 아니라 `configs/policies` 아래에 둔다.
-
-Video backend 관련 주의:
-
-- 현재 `groot` container에는 `torchcodec`, `decord`, `ffmpeg`가 없고 `cv2`는 있다.
-- upstream `video_utils.py`는 수정하지 않는 방향이다.
-- 장기 학습 전에는 Docker image에 `torchcodec` 또는 `decord`를 설치해서 upstream video path가 정상 동작하도록 맞추는 것이 좋다.
-- 16GB GPU에서 짧은 확인을 위해 `optim`, `tune_top_llm_layers`, `tune_vlln` 같은 비공식 제어 옵션을 추가할 수는 있지만, 기본 fine-tuning 경로에는 섞지 않는다.
-
-## 추가한 train wrapper
+## Train wrapper
 
 파일:
 
-```bash
+```text
 scripts/train/groot_robocasa_finetune.sh
 ```
 
-기본값:
+이 wrapper는 자기 자신의 위치에서 repo root를 계산한다. 그래서 host의 `~/temporal_vla`와 Docker mount의 `/temporal_vla`에서 같은 스크립트를 사용할 수 있다. 필요하면 `REPO_ROOT` 또는 `ISAAC_GR00T_DIR`로 override한다.
+
+주요 기본값:
+
+| 변수 | 기본값 |
+| --- | --- |
+| `BASE_MODEL_PATH` | `${REPO_ROOT}/checkpoints/nvidia/GR00T-N1.6-3B`가 있으면 사용, 없으면 `nvidia/GR00T-N1.6-3B` |
+| `DATASET_PATH` | `${REPO_ROOT}/data/datasets/robocasa_10tasks_lerobot_v21` |
+| `MODALITY_CONFIG_PATH` | `${REPO_ROOT}/configs/policies/groot_robocasa_panda_omron_config.py` |
+| `OUTPUT_DIR` | `${REPO_ROOT}/outputs/groot_robocasa_10tasks_full` |
+| `MAX_STEPS` | `20000` |
+| `SAVE_STEPS` | `500` |
+| `SAVE_TOTAL_LIMIT` | `2` |
+| `GLOBAL_BATCH_SIZE` | `64` |
+| `DATALOADER_NUM_WORKERS` | `2` |
+| `SHARD_SIZE` | `1024` |
+| `NUM_SHARDS_PER_EPOCH` | `100000` |
+| `EPISODE_SAMPLING_RATE` | `0.1` |
+| `LEARNING_RATE` | `1e-4` |
+| `WEIGHT_DECAY` | `1e-5` |
+| `WARMUP_RATIO` | `0.05` |
+| `TUNE_PROJECTOR` | `1` |
+| `TUNE_DIFFUSION_MODEL` | `1` |
+
+Wrapper가 직접 제어하지 않는 값:
+
+- optimizer: upstream `launch_finetune.py`의 `adamw_torch`
+- VLLN: upstream model config/checkpoint default
+- top LLM layers: upstream model config/checkpoint default
+
+현재 N1.6 코드 기준으로 `tune_llm=False`라도 model config/checkpoint의 `tune_top_llm_layers=4`가 적용될 수 있다. 이 값을 바꾸려면 upstream 코드 변경 또는 별도 실험 스크립트가 필요하므로 기본 wrapper에는 넣지 않는다.
+
+## 실행
+
+Host에서 smoke test:
 
 ```bash
-BASE_MODEL_PATH=/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B
-DATASET_PATH=/temporal_vla/data/datasets/robocasa_10tasks_lerobot_v21
-MODALITY_CONFIG_PATH=/temporal_vla/configs/policies/groot_robocasa_panda_omron_config.py
-OUTPUT_DIR=/temporal_vla/outputs/groot_robocasa_10tasks_full
-MAX_STEPS=20000
-SAVE_STEPS=500
-SAVE_TOTAL_LIMIT=5
-GLOBAL_BATCH_SIZE=128
-DATALOADER_NUM_WORKERS=2
-SHARD_SIZE=1024
-NUM_SHARDS_PER_EPOCH=100000
-LEARNING_RATE=1e-4
-WEIGHT_DECAY=1e-5
-WARMUP_RATIO=0.05
-TUNE_PROJECTOR=1
-TUNE_DIFFUSION_MODEL=1
+cd ~/temporal_vla
+
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+MAX_STEPS=2 SAVE_STEPS=2 GLOBAL_BATCH_SIZE=1 \
+OUTPUT_DIR=~/temporal_vla/outputs/groot_robocasa_smoke \
+bash scripts/train/groot_robocasa_finetune.sh
 ```
 
-optimizer, VLLN, top LLM layer 제어는 upstream `launch_finetune.py` 기본값을 따른다.
-
-### Hyperparameter 출처
-
-현재 wrapper의 값은 하나의 RoboCasa 전용 공식 script에서 복사한 것이 아니라, 아래 출처를 조합한 것이다.
-
-
-| 값                        | 현재 설정              | 출처                                                                     | 비고                                                                       |
-| ------------------------ | ------------------ | ---------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `LEARNING_RATE`          | `1e-4`             | `gr00t/configs/finetune_config.py`, GR00T paper Table 6                | 코드 default와 논문 일치                                                        |
-| `WEIGHT_DECAY`           | `1e-5`             | `gr00t/configs/finetune_config.py`, GR00T paper Table 6                | 코드 default와 논문 일치                                                        |
-| `WARMUP_RATIO`           | `0.05`             | `gr00t/configs/finetune_config.py`, GR00T paper Table 6                | 코드 default와 논문 일치                                                        |
-| optimizer                | `adamw_torch`      | `gr00t/experiment/launch_finetune.py`; paper는 AdamW                    | wrapper에서 직접 제어하지 않음                                                     |
-| `TUNE_PROJECTOR`         | `1`                | `gr00t/configs/finetune_config.py`                                     | upstream default `True`                                                  |
-| `TUNE_DIFFUSION_MODEL`   | `1`                | `gr00t/configs/finetune_config.py`                                     | upstream default `True`                                                  |
-| `SAVE_TOTAL_LIMIT`       | `5`                | `gr00t/configs/finetune_config.py`, official example scripts           | 코드 default                                                               |
-| `DATALOADER_NUM_WORKERS` | `2`                | `gr00t/configs/finetune_config.py`                                     | official examples는 4 또는 6도 사용                                            |
-| `SHARD_SIZE`             | `1024`             | `gr00t/configs/finetune_config.py`, `examples/SO100/finetune_so100.sh` | 코드 default                                                               |
-| `NUM_SHARDS_PER_EPOCH`   | `100000`           | `gr00t/configs/finetune_config.py`, `examples/SO100/finetune_so100.sh` | 코드 default                                                               |
-| `EPISODE_SAMPLING_RATE`  | `0.1`              | `gr00t/configs/finetune_config.py`, `examples/SO100/finetune_so100.sh` | 코드 default                                                               |
-| `MAX_STEPS`              | `20000`            | GR00T paper Table 6, official LIBERO/SimplerEnv scripts                | paper post-training range `20k-60k`의 lower bound                         |
-| `GLOBAL_BATCH_SIZE`      | `128`              | GR00T paper Table 6                                                    | paper post-training value `128 or 1024` 중 memory-conservative choice     |
-| `SAVE_STEPS`             | `500`              | GR00T paper simulation eval protocol                                   | official example scripts는 보통 `1000`; strict code-example 기준이면 `1000`도 가능 |
-| `color_jitter_params`    | `0.3/0.4/0.5/0.08` | official fine-tuning example scripts                                   | `finetune_config.py` default는 아님                                         |
-
-
-엄밀히 말하면 현재 default는 `공식 코드 default + 공식 예제 관례 + 논문 post-training lower-bound`이다. “코드베이스 default만” 따르려면 `MAX_STEPS=10000`, `SAVE_STEPS=1000`, `GLOBAL_BATCH_SIZE=64`가 더 가깝다. 반대로 paper post-training 설정에 더 맞추려면 현재처럼 `MAX_STEPS=20000`, `GLOBAL_BATCH_SIZE=128`을 lower-bound로 쓰는 것이 합리적이다.
-
-Fine-tuning 실행:
+Docker에서 smoke test:
 
 ```bash
-docker compose exec groot bash /temporal_vla/scripts/train/groot_robocasa_finetune.sh
+docker compose exec groot bash -lc '
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+MAX_STEPS=2 SAVE_STEPS=2 GLOBAL_BATCH_SIZE=1 \
+OUTPUT_DIR=/temporal_vla/outputs/groot_robocasa_smoke \
+bash /temporal_vla/scripts/train/groot_robocasa_finetune.sh
+'
 ```
 
-짧은 syntax/data-path 확인:
+Host에서 full run:
 
 ```bash
-docker compose exec -T groot bash -lc \
-  'MAX_STEPS=2 SAVE_STEPS=2 GLOBAL_BATCH_SIZE=1 OUTPUT_DIR=/temporal_vla/outputs/groot_robocasa_10tasks_check bash /temporal_vla/scripts/train/groot_robocasa_finetune.sh'
+cd ~/temporal_vla
+
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+bash scripts/train/groot_robocasa_finetune.sh
 ```
 
-주의: 16GB GPU에서는 upstream 기본 optimizer/action-head 설정 때문에 짧은 실행도 OOM이 날 수 있다. 공식 recipe 검증은 48GB급 이상 GPU에서 돌리는 쪽이 현실적이다.
-
-## 현재 상태에서 가능한 것
-
-가능:
-
-- merged 10-task dataset을 GR00T loader로 읽기
-- N1.6 base checkpoint 로딩
-- PandaOmron modality config 적용
-- upstream `launch_finetune.py` 경로로 fine-tuning 명령 구성
-
-아직 아닌 것:
-
-- 16GB GPU에서 full GR00T N1.6 fine-tuning
-- video backend dependency 정리 (`torchcodec` 또는 `decord` 설치)
-
-## 실제 fine-tuning으로 넘어갈 때
-
-메모리가 충분한 GPU에서는 기본값 그대로 실행한다.
+Docker에서 full run:
 
 ```bash
-docker compose exec groot bash /temporal_vla/scripts/train/groot_robocasa_finetune.sh
+docker compose exec groot bash -lc '
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+bash /temporal_vla/scripts/train/groot_robocasa_finetune.sh
+'
 ```
 
-optimizer, VLLN, top LLM layer는 upstream 기본값을 사용한다. 현재 코드베이스 기본값 기준으로 `tune_llm=False`, `tune_visual=False`, `tune_projector=True`, `tune_diffusion_model=True`이며, model config의 기본 top LLM/VLLN 설정도 적용된다.
+다중 GPU:
 
-현재 16GB GPU에서 위 설정은 OOM 가능성이 높다.
+```bash
+NUM_GPUS=4 MASTER_PORT=29500 bash scripts/train/groot_robocasa_finetune.sh
+```
 
-현실적인 다음 선택지는 아래 중 하나다.
+## Hyperparameter 출처와 메모리
 
-- 더 큰 GPU에서 full fine-tuning을 돌린다.
-- `torchcodec` 또는 `decord`를 container에 설치해서 video decoding 병목을 줄인다.
-- `bitsandbytes` 8-bit optimizer, LoRA, 더 작은 trainable subset 등 메모리 절감 방법을 추가로 검토한다.
-- upstream을 건드리지 않을 경우, 16GB용 축소 실험은 별도 스크립트로 분리한다.
+현재 wrapper의 값은 하나의 RoboCasa 전용 공식 script에서 복사한 것이 아니라, GR00T 코드 default, 공식 예제 관례, GR00T paper post-training 범위를 조합한 값이다.
 
+| 값 | 현재 설정 | 출처/근거 |
+| --- | --- | --- |
+| `LEARNING_RATE` | `1e-4` | `gr00t/configs/finetune_config.py`, GR00T paper Table 6 |
+| `WEIGHT_DECAY` | `1e-5` | `gr00t/configs/finetune_config.py`, GR00T paper Table 6 |
+| `WARMUP_RATIO` | `0.05` | `gr00t/configs/finetune_config.py`, GR00T paper Table 6 |
+| optimizer | `adamw_torch` | `gr00t/experiment/launch_finetune.py` |
+| `TUNE_PROJECTOR` | `1` | upstream default `True` |
+| `TUNE_DIFFUSION_MODEL` | `1` | upstream default `True` |
+| `SAVE_TOTAL_LIMIT` | `2` | 서버 디스크 사용량을 줄이기 위한 wrapper default |
+| `DATALOADER_NUM_WORKERS` | `2` | `gr00t/configs/finetune_config.py` |
+| `SHARD_SIZE` | `1024` | `gr00t/configs/finetune_config.py` |
+| `NUM_SHARDS_PER_EPOCH` | `100000` | `gr00t/configs/finetune_config.py` |
+| `EPISODE_SAMPLING_RATE` | `0.1` | `gr00t/configs/finetune_config.py` |
+| `MAX_STEPS` | `20000` | paper post-training range `20k-60k`의 lower bound |
+| `GLOBAL_BATCH_SIZE` | `64` | 코드 default에 가까운 서버용 conservative setting |
+| `SAVE_STEPS` | `500` | 중간 checkpoint 확인을 위한 wrapper setting |
+| `color_jitter_params` | `0.3/0.4/0.5/0.08` | official fine-tuning example scripts 관례 |
+
+관찰값:
+
+- Full DiT fine-tuning 기준 약 36GB VRAM 사용
+- `MAX_STEPS=20000` 기준 약 2시간
+- 16GB GPU에서는 full fine-tuning이 OOM
+
+메모리 절감용으로 가능한 wrapper 옵션:
+
+```bash
+TUNE_DIFFUSION_MODEL=0 bash scripts/train/groot_robocasa_finetune.sh
+```
+
+이 경우 DiT full fine-tuning이 아니므로 최종 recipe 검증이 아니라 축소 실험으로만 본다.
+
+## 학습 결과 연결
+
+학습이 끝나면 output 아래에 checkpoint가 생긴다.
+
+```text
+outputs/groot_robocasa_10tasks_full/checkpoint-<step>/
+```
+
+평가용 profile을 따로 만들 때는 base profile을 복사한 뒤 checkpoint path만 바꾼다.
+
+```bash
+cp configs/checkpoints/groot__robocasa_panda_omron.yaml \
+   configs/checkpoints/groot__robocasa_panda_omron_finetuned.yaml
+```
+
+예시:
+
+```yaml
+name: groot__robocasa_panda_omron_finetuned
+checkpoint_source:
+  type: local
+  id: /temporal_vla/outputs/groot_robocasa_10tasks_full/checkpoint-20000
+```
+
+Docker 평가 예시:
+
+```bash
+docker exec groot python /temporal_vla/scripts/serve/groot.py \
+  --profile /temporal_vla/configs/checkpoints/groot__robocasa_panda_omron_finetuned.yaml
+
+docker exec robocasa python /temporal_vla/scripts/eval/robocasa_eval.py \
+  --task-set robocasa_eval_25 \
+  --vla-server http://localhost:8500 \
+  --use-groot-env \
+  --num-rollouts 10 \
+  --num-steps 720 \
+  --output-dir outputs/eval/robocasa/groot/finetuned_<DATE>
+```
+
+## 트러블슈팅
+
+| 증상 | 원인/해결 |
+| --- | --- |
+| `KeyError: 'robocasa_panda_omron'` | `--modality_config_path`가 빠졌거나 경로가 잘못되어 modality config가 import되지 않은 상태다. |
+| `unrecognized arguments: --tune_top_llm_layers` | 현재 upstream `FinetuneConfig`에는 해당 CLI가 없다. 기본 wrapper에는 넣지 않는다. |
+| `embodiment_id.json not found` | checkpoint path가 잘못됐다. `checkpoints/nvidia/GR00T-N1.6-3B/embodiment_id.json` 존재를 확인한다. |
+| LeRobot dataset load 실패 | `meta/modality.json`, `meta/info.json`, `meta/episodes.jsonl` 등 필수 meta 파일 누락 여부를 확인한다. |
+| 학습 중 OOM | 더 큰 GPU에서 실행하거나, smoke test는 `GLOBAL_BATCH_SIZE=1`, 축소 실험은 `TUNE_DIFFUSION_MODEL=0`을 사용한다. |
+| step/sec가 너무 느림 | `DATALOADER_NUM_WORKERS`를 늘리거나 video backend 병목을 확인한다. |
+| video backend 오류 | 장기 학습 전 Docker image 또는 uv 환경에 `torchcodec`/`decord`/`ffmpeg` 중 필요한 backend를 정리한다. |
+
+## 참고
+
+- `src/policies/Isaac-GR00T/getting_started/finetune_new_embodiment.md`
+- `src/policies/Isaac-GR00T/getting_started/data_preparation.md`
+- `src/policies/Isaac-GR00T/examples/finetune.sh`
+- `src/policies/Isaac-GR00T/examples/robocasa/README.md`
+- `src/policies/Isaac-GR00T/examples/robocasa-gr1-tabletop-tasks`
+- `configs/checkpoints/groot__robocasa_panda_omron.yaml`
+- `scripts/train/groot_robocasa_finetune.sh`
