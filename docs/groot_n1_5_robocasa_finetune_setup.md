@@ -44,15 +44,17 @@ src/policies/Isaac-GR00T-N1.5/examples/RoboCasa/README.md
 
 N1.6 PandaOmron fine-tuning과 N1.5 GR1 tabletop fine-tuning은 같은 RoboCasa 이름을 쓰지만 학습 stack이 다르다.
 
-| 항목 | N1.6 PandaOmron | N1.5 GR1 tabletop |
-| --- | --- | --- |
-| 코드 경로 | `src/policies/Isaac-GR00T` | `src/policies/Isaac-GR00T-N1.5` |
-| 학습 entrypoint | `gr00t/experiment/launch_finetune.py` 계열 | `scripts/gr00t_finetune.py` |
-| 대상 embodiment | `ROBOCASA_PANDA_OMRON` | `gr1` |
-| data config | custom modality config 필요 | `fourier_gr1_arms_waist` |
-| task scope | RoboCasa PandaOmron atomic 10 tasks | GR1 tabletop 24 tasks |
-| modality config | repo의 `configs/policies/...`를 import | dataset/config에 사전 준비 |
-| 목적 | 우리 N1.6 PandaOmron 실험 | N1.5 공식 RoboCasa tabletop recipe 재현 |
+
+| 항목              | N1.6 PandaOmron                          | N1.5 GR1 tabletop                   |
+| --------------- | ---------------------------------------- | ----------------------------------- |
+| 코드 경로           | `src/policies/Isaac-GR00T`               | `src/policies/Isaac-GR00T-N1.5`     |
+| 학습 entrypoint   | `gr00t/experiment/launch_finetune.py` 계열 | `scripts/gr00t_finetune.py`         |
+| 대상 embodiment   | `ROBOCASA_PANDA_OMRON`                   | `gr1`                               |
+| data config     | custom modality config 필요                | `fourier_gr1_arms_waist`            |
+| task scope      | RoboCasa PandaOmron atomic 10 tasks      | GR1 tabletop 24 tasks               |
+| modality config | repo의 `configs/policies/...`를 import     | dataset/config에 사전 준비               |
+| 목적              | 우리 N1.6 PandaOmron 실험                    | N1.5 공식 RoboCasa tabletop recipe 재현 |
+
 
 따라서 N1.5를 돌릴 때 `scripts/train/groot_robocasa_finetune.sh`를 그대로 쓰면 안 된다. N1.5는 `src/policies/Isaac-GR00T-N1.5` 아래에서 `scripts/gr00t_finetune.py`를 호출해야 한다.
 
@@ -112,7 +114,8 @@ annotation.human.task_description
 - 이 실험 결과와 N1.6 PandaOmron fine-tuning 결과는 같은 의미로 비교하면 안 된다.
 - `gripper_close`, `control_mode`는 현재 dataset의 `-1/1` 범위를 보존하기 위해 N1.5 `binary`가 아니라 `min_max` normalization을 사용한다.
 - target dataset 의 `meta/modality.json` / `meta/embodiment.json` 은 pretrain split과 identical 하므로 `RobocasaPandaOmron10TaskDataConfig` 를 그대로 재사용한다.
-- task당 500~543 episode (info.json `total_episodes` 기준), 합계 ~7,620 episode / ~84k frame.
+- task당 500~543 episode, episode당 평균 ~252 frame (info.json `total_frames` / `total_episodes` 기준). 합계 **7,622 episode / 1,917,362 frame**.
+- 학습 sample 수 = `max_steps × batch_size = 50000 × 64 = 3,200,000` → 데이터셋 1 epoch ≈ 1,917,362 frame 기준 **약 1.67 epoch**.
 
 ### 공통 환경변수
 
@@ -156,10 +159,32 @@ CUDA_VISIBLE_DEVICES="" conda run -n gr00t --no-capture-output python /tmp/groot
 
 이 프로젝트 PandaOmron 학습 기본 설정. `scripts/gr00t_finetune.py` `ArgsConfig` dataclass default에서 batch / max-steps / save-steps 만 override 한다. dataset 은 위 다운로드 스크립트로 받은 target × atomic 15 task 를 glob 으로 전달 (task별 `<date>` 가 달라서 `*/*` 두 단계 와일드카드).
 
+학습 시작 전:
+
+1. repo root 에서 실행, `PYTHONPATH` 에 `configs/policies` 추가 (`--data-config <module>:<Class>` 형식이 외부 모듈을 import 함)
+2. `nvidia-smi` 로 비어있는 GPU index 확인 → `CUDA_VISIBLE_DEVICES=<idx>` 로 핀 (`--num-gpus 1` default 그대로 두고 visible 만 1개로 제한)
+3. wandb API key 는 `read -s` 로 1회 입력 → 같은 셸 안에서 export 유지
+
+#### 1단계 — wandb key 1회 입력 (셸 1회만)
+
 ```bash
+read -s WANDB_API_KEY; export WANDB_API_KEY
+```
+
+커서가 깜빡이면 키 paste + Enter. 같은 터미널 셸 동안 환경변수로 유지된다. 셸 닫으면 사라짐. (이 줄을 학습 명령 블록과 합치면 paste 시 `read -s` 가 다음 줄을 키 입력으로 먹어버리므로 분리.)
+
+#### 2단계 — 학습 명령 (한 블록 paste 가능)
+
+```bash
+cd /home/junhyeong/pkt_ws/temporal_vla
+export PYTHONPATH=$PWD/configs/policies
 TS=$(date +%y%m%d%H%M%S)
 OUT=$PWD/outputs/train/groot_n1_5/$TS
 
+CUDA_VISIBLE_DEVICES=2 \
+WANDB_ENTITY=rnlgksclsrn9868-hanyang-university \
+WANDB_PROJECT=finetune-gr00t-n1d5 \
+WANDB_NAME=target15_$TS \
 conda run -n gr00t --no-capture-output python \
   src/policies/Isaac-GR00T-N1.5/scripts/gr00t_finetune.py \
   --dataset-path $PWD/data/robocasa/v1.0/target/atomic/*/*/lerobot \
@@ -170,24 +195,90 @@ conda run -n gr00t --no-capture-output python \
   --save-steps 10000
 ```
 
-| 항목 | 값 | 비고 |
-| --- | --- | --- |
-| batch-size | **64** / GPU | override (dataclass default 32) |
-| max-steps | **50000** | override (dataclass default 10000) |
-| save-steps | **10000** | override (dataclass default 1000) |
-| num-gpus | 1 | dataclass default 그대로 |
-| gradient-accumulation-steps | 1 | dataclass default 그대로 |
-| base-model | `nvidia/GR00T-N1.5-3B` | dataclass default 그대로 |
-| tune-llm / tune-visual | False | dataclass default 그대로 |
-| tune-projector / tune-diffusion-model | True | dataclass default 그대로 |
-| lr / wd / warmup | 1e-4 / 1e-5 / 0.05 | dataclass default 그대로 |
-| lora-rank | 0 (LoRA off) | dataclass default 그대로 |
-| embodiment-tag | `new_embodiment` | dataclass default 그대로 |
-| video-backend | `torchcodec` | dataclass default 그대로 |
-| report-to | `wandb` | dataclass default 그대로 |
-| dataloader-num-workers / prefetch | 12 / 4 | dataclass default 그대로 |
+메모:
+
+- `CUDA_VISIBLE_DEVICES=3` 은 예시 — 실제 비어있는 GPU index 로 바꿔 사용. 프로세스는 device 0 으로 인식하지만 실제 사용 물리 GPU 는 그 index.
+- `WANDB_API_KEY` / `WANDB_ENTITY` / `WANDB_PROJECT` / `WANDB_NAME` 은 HF Trainer + wandb integration 이 환경변수만 읽는다 (`gr00t_finetune.py` 자체엔 wandb CLI 인자 없음).
+- entity/project 는 `rnlgksclsrn9868-hanyang-university` / `finetune-gr00t-n1d5` 고정.
+- env 변수는 그 터미널 셸 process 한정 — 셸 닫으면 자동으로 사라짐.
+
+
+| 항목                                    | 값                      | 비고                                 |
+| ------------------------------------- | ---------------------- | ---------------------------------- |
+| batch-size                            | **64** / GPU           | override (dataclass default 32)    |
+| max-steps                             | **50000**              | override (dataclass default 10000) |
+| save-steps                            | **10000**              | override (dataclass default 1000)  |
+| num-gpus                              | 1                      | dataclass default 그대로              |
+| gradient-accumulation-steps           | 1                      | dataclass default 그대로              |
+| base-model                            | `nvidia/GR00T-N1.5-3B` | dataclass default 그대로              |
+| tune-llm / tune-visual                | False                  | dataclass default 그대로              |
+| tune-projector / tune-diffusion-model | True                   | dataclass default 그대로              |
+| lr / wd / warmup                      | 1e-4 / 1e-5 / 0.05     | dataclass default 그대로              |
+| lora-rank                             | 0 (LoRA off)           | dataclass default 그대로              |
+| embodiment-tag                        | `new_embodiment`       | dataclass default 그대로              |
+| video-backend                         | `torchcodec`           | dataclass default 그대로              |
+| report-to                             | `wandb`                | dataclass default 그대로              |
+| dataloader-num-workers / prefetch     | 12 / 4                 | dataclass default 그대로              |
+
 
 참고로 공식 RoboCasa GR1 recipe (`examples/RoboCasa/README.md`) 는 또 다른 값 사용 (batch 48 / steps 60000 / 8 GPU / lr 3e-5 / grad-accum 4 / `--tune-visual`).
+
+### Fine-tuning subset (각 task 앞 200 episode, ~5h sanity check)
+
+전체 dataset (~1.9M frame, 7,622 episode) 으로 50k step 돌리면 ~25h 걸린다. sanity check 또는 빠른 iteration 용으로 task당 앞 200 episode 만 사용하고 step 도 줄이는 모드.
+
+핵심:
+
+- N1.5 `LeRobotSingleDataset` 는 episode subset 인자가 없다. submodule 수정 없이 처리하기 위해 wrapper script `scripts/train/gr00t_n15_finetune_subset.py` 가 `_get_trajectories` 를 monkey-patch 한다.
+- `MAX_EPISODES_PER_DATASET=<N>` env var 로 상한 지정 (`0` 또는 unset 이면 patch 미적용 = upstream `gr00t_finetune.py` 와 동일 동작).
+- 학습 시간은 dataset 크기가 아니라 `max_steps` 에 비례하므로 step 도 같이 줄여야 시간 단축이 의미 있음.
+
+예상치 (task당 200 episode, `episodes.jsonl` 의 episode length 합계 기준):
+
+| 항목 | 값 |
+| --- | --- |
+| 사용 episodes | 15 × 200 = **3,000** |
+| 사용 frames (정확) | **754,530** (전체 1,917,362 의 **39.4%**) |
+| **1 epoch (batch 64)** | **11,790 step** |
+
+step → epoch / 시간 환산 (per-step ≈ 1.8 s 기준):
+
+| `max-steps` | epoch | 시간 |
+| --- | --- | --- |
+| 10,000 | 0.85 | ~5 h |
+| 11,790 | 1.00 | ~5.9 h |
+| **23,580** | **2.00** | **~12 h** ← 이 프로젝트 기본 |
+
+> `save-steps` 는 `11790` 으로 두면 1 epoch / 2 epoch 두 지점에서 정확히 checkpoint 가 떨어져 의미 단위가 깔끔 (총 2 ckpt, `save_total_limit=3` 한도 안). 더 자주 보고 싶으면 `7860` (≈ 0.67 epoch 간격, 3 ckpt) 등으로 줄이면 됨.
+
+#### 명령 (2단계 paste 가능, 1단계 wandb key 는 위와 동일)
+
+```bash
+cd /home/junhyeong/pkt_ws/temporal_vla
+export PYTHONPATH=$PWD/configs/policies
+TS=$(date +%y%m%d%H%M%S)
+OUT=$PWD/outputs/train/groot_n1_5/$TS-subset200
+
+CUDA_VISIBLE_DEVICES=2 \
+MAX_EPISODES_PER_DATASET=200 \
+WANDB_ENTITY=rnlgksclsrn9868-hanyang-university \
+WANDB_PROJECT=finetune-gr00t-n1d5 \
+WANDB_NAME=target15_subset200_$TS \
+conda run -n gr00t --no-capture-output python \
+  scripts/train/gr00t_n15_finetune_subset.py \
+  --dataset-path $PWD/data/robocasa/v1.0/target/atomic/*/*/lerobot \
+  --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
+  --output-dir $OUT \
+  --batch-size 64 \
+  --max-steps 23580 \
+  --save-steps 11790
+```
+
+메모:
+
+- entrypoint 가 wrapper (`gr00t_n15_finetune_subset.py`) 로 바뀐 것 외에는 인자 동일. wrapper 가 `MAX_EPISODES_PER_DATASET` 처리 후 upstream `gr00t_finetune.py` 를 `runpy` 로 실행.
+- `max-steps 23580` = 정확히 2 epoch, `save-steps 11790` = 1 epoch / 2 epoch 지점에서 checkpoint 2개 (`save_total_limit=3` 한도 안, 둘 다 보존).
+- stdout 에 `[episode-subset] <task>: using 200/513 episodes ...` 형식 line 이 task 마다 한 줄씩 찍히면 patch 적용 확인.
 
 ## 환경 준비
 
@@ -417,24 +508,26 @@ python scripts/gr00t_finetune.py \
 
 `scripts/gr00t_finetune.py`의 `ArgsConfig` 기본값:
 
-| config field | 기본값 | 의미 |
-| --- | --- | --- |
-| `base_model_path` | `nvidia/GR00T-N1.5-3B` | 시작 checkpoint |
-| `batch_size` | `32` | GPU당 batch size |
-| `max_steps` | `10000` | 총 optimizer step |
-| `save_steps` | `1000` | checkpoint 저장 간격 |
-| `learning_rate` | `1e-4` | AdamW learning rate |
-| `weight_decay` | `1e-5` | AdamW weight decay |
-| `warmup_ratio` | `0.05` | cosine schedule warmup ratio |
-| `tune_llm` | `False` | language model backbone tuning |
-| `tune_visual` | `False` | vision tower tuning |
-| `tune_projector` | `True` | action head projector tuning |
-| `tune_diffusion_model` | `True` | action head DiT tuning |
-| `lora_rank` | `0` | 0이면 LoRA 미사용 |
-| `gradient_accumulation_steps` | `1` | gradient accumulation |
-| `video_backend` | `torchcodec` | video decoding backend |
-| `balance_dataset_weights` | `True` | multi-dataset weight balancing |
-| `balance_trajectory_weights` | `True` | trajectory length 기반 sampling |
+
+| config field                  | 기본값                    | 의미                             |
+| ----------------------------- | ---------------------- | ------------------------------ |
+| `base_model_path`             | `nvidia/GR00T-N1.5-3B` | 시작 checkpoint                  |
+| `batch_size`                  | `32`                   | GPU당 batch size                |
+| `max_steps`                   | `10000`                | 총 optimizer step               |
+| `save_steps`                  | `1000`                 | checkpoint 저장 간격               |
+| `learning_rate`               | `1e-4`                 | AdamW learning rate            |
+| `weight_decay`                | `1e-5`                 | AdamW weight decay             |
+| `warmup_ratio`                | `0.05`                 | cosine schedule warmup ratio   |
+| `tune_llm`                    | `False`                | language model backbone tuning |
+| `tune_visual`                 | `False`                | vision tower tuning            |
+| `tune_projector`              | `True`                 | action head projector tuning   |
+| `tune_diffusion_model`        | `True`                 | action head DiT tuning         |
+| `lora_rank`                   | `0`                    | 0이면 LoRA 미사용                   |
+| `gradient_accumulation_steps` | `1`                    | gradient accumulation          |
+| `video_backend`               | `torchcodec`           | video decoding backend         |
+| `balance_dataset_weights`     | `True`                 | multi-dataset weight balancing |
+| `balance_trajectory_weights`  | `True`                 | trajectory length 기반 sampling  |
+
 
 주의할 점:
 
