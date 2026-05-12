@@ -58,25 +58,29 @@ N1.6 PandaOmron fine-tuning과 N1.5 GR1 tabletop fine-tuning은 같은 RoboCasa 
 
 ## PandaOmron 10-task를 N1.5로 돌리는 경우
 
-우리 RoboCasa PandaOmron 10-task dataset을 N1.5에서 돌릴 수는 있지만, 이 경우는 공식 GR1 RoboCasa recipe가 아니다. N1.5에는 `ROBOCASA_PANDA_OMRON` pretrained embodiment tag가 없으므로 `new_embodiment`로 학습한다.
+우리 RoboCasa PandaOmron dataset을 N1.5에서 돌릴 수는 있지만, 이 경우는 공식 GR1 RoboCasa recipe가 아니다. N1.5에는 `ROBOCASA_PANDA_OMRON` pretrained embodiment tag가 없으므로 `new_embodiment`로 학습한다.
 
 사용하는 custom data config:
 
 ```text
-configs/policies/robocasa_n15_panda_omron_data_config.py
+configs/policies/robocasa_n15_panda_omron_data_config.py  →  RobocasaPandaOmron10TaskDataConfig
 ```
 
-class:
+dataset schema:
 
 ```text
-RobocasaPandaOmron10TaskDataConfig
-```
+dataset (per-task, target × human × atomic, 15 task):
+data/robocasa/v1.0/target/atomic/<Task>/<date>/lerobot
 
-이 config는 현재 dataset schema를 그대로 따른다.
+다운로드 스크립트:
+scripts/utils/download_robocasa_target_human.sh
+(box id 출처: src/benchmarks/robocasa/.../box_links_ds.json 의 target/atomic/<Task>/<date>/lerobot.tar)
 
-```text
-dataset:
-data/datasets/robocasa_10tasks_lerobot_v21
+15 task (RoboCasa atomic-seen 18개 중 CloseBlenderLid / NavigateKitchen / OpenStandMixerHead 3개 제외):
+TurnOnElectricKettle, CloseToasterOvenDoor, OpenCabinet, SlideDishwasherRack,
+PickPlaceToasterToCounter, TurnOnMicrowave, OpenDrawer, PickPlaceSinkToCounter,
+PickPlaceCounterToStove, CloseFridge, TurnOnSinkFaucet, PickPlaceCounterToCabinet,
+CoffeeSetupMug, PickPlaceDrawerToCounter, TurnOffStove
 
 video:
 video.robot0_agentview_left
@@ -101,63 +105,146 @@ language:
 annotation.human.task_description
 ```
 
-Smoke test:
-
-```bash
-cd /home/dongkyu/pdk_ws/temporal_vla
-
-PYTHONPATH=/home/dongkyu/pdk_ws/temporal_vla/src/policies/Isaac-GR00T-N1.5:/home/dongkyu/pdk_ws/temporal_vla/configs/policies \
-python src/policies/Isaac-GR00T-N1.5/scripts/gr00t_finetune.py \
-  --dataset-path /home/dongkyu/pdk_ws/temporal_vla/data/datasets/robocasa_10tasks_lerobot_v21 \
-  --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
-  --embodiment_tag new_embodiment \
-  --num-gpus 1 \
-  --batch-size 1 \
-  --max-steps 2 \
-  --save-steps 2 \
-  --output-dir /tmp/groot_n1_5_robocasa_panda_omron_smoke
-```
-
 주의:
 
 - 이 경로는 N1.6 `ROBOCASA_PANDA_OMRON` pretrained head를 쓰지 않는다.
 - `new_embodiment` action head를 현재 PandaOmron 데이터로 학습하는 실험이다.
 - 이 실험 결과와 N1.6 PandaOmron fine-tuning 결과는 같은 의미로 비교하면 안 된다.
 - `gripper_close`, `control_mode`는 현재 dataset의 `-1/1` 범위를 보존하기 위해 N1.5 `binary`가 아니라 `min_max` normalization을 사용한다.
+- target dataset 의 `meta/modality.json` / `meta/embodiment.json` 은 pretrain split과 identical 하므로 `RobocasaPandaOmron10TaskDataConfig` 를 그대로 재사용한다.
+- task당 500~543 episode (info.json `total_episodes` 기준), 합계 ~7,620 episode / ~84k frame.
+
+### 공통 환경변수
+
+```bash
+cd /home/junhyeong/pkt_ws/temporal_vla
+export PYTHONPATH=$PWD/configs/policies
+```
+
+### Smoke 1 — data config import
+
+```bash
+conda run -n gr00t --no-capture-output python -c \
+"from robocasa_n15_panda_omron_data_config import RobocasaPandaOmron10TaskDataConfig; \
+c=RobocasaPandaOmron10TaskDataConfig(); print(c.action_keys)"
+```
+
+`action_keys: ['action.base_motion', 'action.control_mode', 'action.end_effector_position', 'action.end_effector_rotation', 'action.gripper_close']` 가 출력되면 OK.
+
+### Smoke 2 — `load_dataset.py` (단일 task)
+
+upstream `load_dataset.py` 는 `--data-config` 옵션이 없고 dataset `meta/modality.json` 만 본다.
+
+```bash
+conda run -n gr00t --no-capture-output python \
+  src/policies/Isaac-GR00T-N1.5/scripts/load_dataset.py \
+  --dataset-path $PWD/data/robocasa/v1.0/target/atomic/CloseFridge/20250816/lerobot \
+  --embodiment-tag new_embodiment
+```
+
+### Smoke 3 — data config + transform (CPU only, GPU 사용 X)
+
+`RobocasaPandaOmron10TaskDataConfig.transform()` 까지 실제 데이터에 적용되는지 검증. 모델 로드 안 함.
+
+```bash
+CUDA_VISIBLE_DEVICES="" conda run -n gr00t --no-capture-output python /tmp/groot_dataconfig_smoke.py
+```
+
+스크립트 본체는 `LeRobotSingleDataset` 인스턴스화 → `ds[0]` 1샘플 가져와 `state (1,64)`, `action (16,32)`, `eagle_content` 까지 shape 확인 (`embodiment_id=31`).
+
+### Fine-tuning (target atomic-seen 15 task)
+
+이 프로젝트 PandaOmron 학습 기본 설정. `scripts/gr00t_finetune.py` `ArgsConfig` dataclass default에서 batch / max-steps / save-steps 만 override 한다. dataset 은 위 다운로드 스크립트로 받은 target × atomic 15 task 를 glob 으로 전달 (task별 `<date>` 가 달라서 `*/*` 두 단계 와일드카드).
+
+```bash
+TS=$(date +%y%m%d%H%M%S)
+OUT=$PWD/outputs/train/groot_n1_5/$TS
+
+conda run -n gr00t --no-capture-output python \
+  src/policies/Isaac-GR00T-N1.5/scripts/gr00t_finetune.py \
+  --dataset-path $PWD/data/robocasa/v1.0/target/atomic/*/*/lerobot \
+  --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
+  --output-dir $OUT \
+  --batch-size 64 \
+  --max-steps 50000 \
+  --save-steps 10000
+```
+
+| 항목 | 값 | 비고 |
+| --- | --- | --- |
+| batch-size | **64** / GPU | override (dataclass default 32) |
+| max-steps | **50000** | override (dataclass default 10000) |
+| save-steps | **10000** | override (dataclass default 1000) |
+| num-gpus | 1 | dataclass default 그대로 |
+| gradient-accumulation-steps | 1 | dataclass default 그대로 |
+| base-model | `nvidia/GR00T-N1.5-3B` | dataclass default 그대로 |
+| tune-llm / tune-visual | False | dataclass default 그대로 |
+| tune-projector / tune-diffusion-model | True | dataclass default 그대로 |
+| lr / wd / warmup | 1e-4 / 1e-5 / 0.05 | dataclass default 그대로 |
+| lora-rank | 0 (LoRA off) | dataclass default 그대로 |
+| embodiment-tag | `new_embodiment` | dataclass default 그대로 |
+| video-backend | `torchcodec` | dataclass default 그대로 |
+| report-to | `wandb` | dataclass default 그대로 |
+| dataloader-num-workers / prefetch | 12 / 4 | dataclass default 그대로 |
+
+참고로 공식 RoboCasa GR1 recipe (`examples/RoboCasa/README.md`) 는 또 다른 값 사용 (batch 48 / steps 60000 / 8 GPU / lr 3e-5 / grad-accum 4 / `--tune-visual`).
 
 ## 환경 준비
 
-공식 N1.5 README는 Python 3.10 conda 환경과 editable install을 기준으로 설명한다.
+공식 N1.5 README는 Python 3.10 conda 환경과 editable install을 기준으로 설명한다. 이 프로젝트도 동일하게 conda + pip 조합을 쓴다 (uv 미사용).
+
+### 1. conda env 생성
 
 ```bash
-cd /home/dongkyu/pdk_ws/temporal_vla/src/policies/Isaac-GR00T-N1.5
+cd /home/junhyeong/pkt_ws/temporal_vla/src/policies/Isaac-GR00T-N1.5
 
-conda create -n gr00t-n1-5 python=3.10
-conda activate gr00t-n1-5
+conda create -n gr00t python=3.10 -y
+conda activate gr00t
 
 pip install --upgrade setuptools
 pip install -e .[base]
-pip install --no-build-isolation flash-attn==2.7.1.post4
 ```
 
-공식 README 기준으로 CUDA 12.4가 권장된다. CUDA 11.8도 동작 확인 사례가 있으나, 이 경우 호환되는 `flash-attn` 버전을 수동으로 맞춰야 한다.
+### 2. CUDA toolkit (nvcc) 준비 — flash-attn 빌드용
 
-시스템 의존성:
+시스템에 `nvcc`가 없으면 conda env 내부로 toolkit을 가져온다. `cuda-toolkit=12.4` 메타패키지는 컴포넌트를 12.9로 끌어오지만 (`cuda-toolkit` 메타는 nvcc 마이너 버전을 핀하지 않음), CUDA 12.x 마이너 버전 호환성 덕분에 torch `+cu124` 빌드와 같이 동작한다.
+
+```bash
+conda install -n gr00t -c nvidia cuda-toolkit=12.4 -y
+```
+
+### 3. flash-attn 설치 (env-local CUDA_HOME 기준)
+
+```bash
+conda run -n gr00t --no-capture-output bash -c \
+  'export CUDA_HOME=$CONDA_PREFIX && export PATH=$CUDA_HOME/bin:$PATH && \
+   pip install --no-build-isolation flash-attn==2.7.1.post4'
+```
+
+### 4. 시스템 의존성 (관리자 권한 필요)
 
 ```bash
 sudo apt-get install -y ffmpeg libsm6 libxext6
 ```
 
-서버에서 system package 설치 권한이 없으면 관리자에게 요청하거나, 이미 설치된 container/conda 환경을 사용한다.
-
-설치 확인:
+### 5. 설치 확인
 
 ```bash
-cd /home/dongkyu/pdk_ws/temporal_vla/src/policies/Isaac-GR00T-N1.5
+conda run -n gr00t --no-capture-output python -c \
+"import torch, flash_attn, gr00t; \
+print('torch:', torch.__version__, 'cuda:', torch.version.cuda); \
+print('flash_attn:', flash_attn.__version__); \
+print('cuda available:', torch.cuda.is_available(), 'devices:', torch.cuda.device_count()); \
+print('gr00t:', gr00t.__file__)"
+```
 
-python scripts/gr00t_finetune.py --help
-python -c "from gr00t.data.embodiment_tags import EmbodimentTag; print(EmbodimentTag.GR1)"
-python -c "from gr00t.experiment.data_config import DATA_CONFIG_MAP; print(DATA_CONFIG_MAP['fourier_gr1_arms_waist'])"
+기대 출력:
+
+```text
+torch: 2.5.1+cu124 cuda: 12.4
+flash_attn: 2.7.1.post4
+cuda available: True devices: <N>
+gr00t: .../src/policies/Isaac-GR00T-N1.5/gr00t/__init__.py
 ```
 
 ## Dataset
