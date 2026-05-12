@@ -17,25 +17,93 @@ cd /temporal_vla
 
 MODE=${1:-help}
 MODEL_PATH=${MODEL_PATH:-"/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B"}
-PORT=${PORT:-5555}
+PORT=${PORT:-5556}
+POLICY_CLIENT_HOST=${POLICY_CLIENT_HOST:-166.104.35.98}
+EVAL_OUTPUT_DIR=${EVAL_OUTPUT_DIR:-"/temporal_vla/outputs/eval/robocasa/groot"}
+EVAL_RUN_ID=${EVAL_RUN_ID:-"$(date +%Y%m%d_%H%M%S)"}
+export PORT POLICY_CLIENT_HOST EVAL_OUTPUT_DIR EVAL_RUN_ID
 export HF_MODULES_CACHE=${HF_MODULES_CACHE:-/tmp/hf_modules}
 export MUJOCO_GL=${MUJOCO_GL:-egl}
+
+GR00T_SOURCE_DIR="/temporal_vla/src/policies/Isaac-GR00T"
+ROBOCASA_SOURCE_DIR="/temporal_vla/src/benchmarks/robocasa"
+ROBOSUITE_SOURCE_DIR="/temporal_vla/src/benchmarks/robosuite"
+export PYTHONPATH="${GR00T_SOURCE_DIR}:${ROBOCASA_SOURCE_DIR}:${ROBOSUITE_SOURCE_DIR}:${PYTHONPATH:-}"
+
+gr00t_imports_from_source() {
+    python - "${GR00T_SOURCE_DIR}" <<'PY'
+import sys
+from pathlib import Path
+
+try:
+    import gr00t
+except Exception:
+    sys.exit(1)
+
+source_dir = Path(sys.argv[1]).resolve()
+module_path = Path(gr00t.__file__).resolve()
+sys.exit(0 if source_dir in module_path.parents else 1)
+PY
+}
+
+ensure_gr00t_editable_install() {
+    if gr00t_imports_from_source; then
+        echo "Isaac-GR00T package already importable from ${GR00T_SOURCE_DIR}; skipping install."
+    else
+        echo "Installing Isaac-GR00T package..."
+        python -m pip install -e "${GR00T_SOURCE_DIR}" --no-deps
+    fi
+}
+
+robocasa_kitchen_assets_ready() {
+    PYTHONPATH="${ROBOCASA_SOURCE_DIR}:${ROBOSUITE_SOURCE_DIR}:${PYTHONPATH:-}" python - <<'PY'
+import os
+import sys
+
+try:
+    import robocasa
+except Exception:
+    sys.exit(1)
+
+asset_root = os.path.join(robocasa.__path__[0], "models", "assets")
+required_dirs = [
+    os.path.join(asset_root, "textures"),
+    os.path.join(asset_root, "generative_textures"),
+    os.path.join(asset_root, "fixtures"),
+    os.path.join(asset_root, "objects", "objaverse"),
+    os.path.join(asset_root, "objects", "aigen_objs"),
+    os.path.join(asset_root, "objects", "lightwheel"),
+]
+
+for path in required_dirs:
+    if not os.path.isdir(path) or not os.listdir(path):
+        sys.exit(1)
+
+sys.exit(0)
+PY
+}
+
+ensure_robocasa_kitchen_assets() {
+    if robocasa_kitchen_assets_ready; then
+        echo "RoboCasa kitchen assets already present; skipping download."
+    else
+        echo "Downloading RoboCasa kitchen assets..."
+        printf 'y\n' | PYTHONPATH="${ROBOCASA_SOURCE_DIR}:${ROBOSUITE_SOURCE_DIR}:${PYTHONPATH:-}" python "${ROBOCASA_SOURCE_DIR}/robocasa/scripts/download_kitchen_assets.py"
+    fi
+}
 
 case "$MODE" in
 
   # ── 최초 설치 (groot 컨테이너) ──
   setup-server)
-    echo "Installing Isaac-GR00T package..."
-    pip install -e /temporal_vla/src/policies/Isaac-GR00T --no-deps
+    ensure_gr00t_editable_install
     echo "Done. Run: bash $0 server"
     ;;
 
   # ── 최초 설치 (robocasa 컨테이너) ──
   setup-client)
-    echo "Installing Isaac-GR00T package (no-deps, client only)..."
-    pip install -e /temporal_vla/src/policies/Isaac-GR00T --no-deps
-    echo "Downloading RoboCasa kitchen assets..."
-    python /temporal_vla/src/benchmarks/robocasa/robocasa/scripts/download_kitchen_assets.py -y 2>/dev/null || true
+    ensure_gr00t_editable_install
+    ensure_robocasa_kitchen_assets
     echo "Done. Run: bash $0 client"
     ;;
 
@@ -60,10 +128,20 @@ case "$MODE" in
     N_ENVS=${4:-5}
     N_ACTION_STEPS=${5:-8}
     MAX_STEPS=${6:-720}
+    TASK_SHORT="${ENV_NAME#*/}"
+    TASK_SHORT="${TASK_SHORT%_PandaOmron_Env}"
+    if [ -n "${VIDEO_DIR:-}" ]; then
+        CLIENT_VIDEO_DIR="${VIDEO_DIR}"
+    else
+        CLIENT_VIDEO_DIR="${EVAL_OUTPUT_DIR}/${EVAL_RUN_ID}/videos/${TASK_SHORT}"
+    fi
+    mkdir -p "${CLIENT_VIDEO_DIR}"
 
     echo "============================================"
     echo "Running RoboCasa evaluation"
     echo "  Env:          ${ENV_NAME}"
+    echo "  Server:       ${POLICY_CLIENT_HOST}:${PORT}"
+    echo "  Video dir:    ${CLIENT_VIDEO_DIR}"
     echo "  Episodes:     ${N_EPISODES}"
     echo "  Parallel:     ${N_ENVS}"
     echo "  Action steps: ${N_ACTION_STEPS}"
@@ -72,14 +150,15 @@ case "$MODE" in
 
     export MUJOCO_GL=egl
 
-    python /temporal_vla/src/policies/Isaac-GR00T/gr00t/eval/rollout_policy.py \
-        --policy_client_host 127.0.0.1 \
-        --policy_client_port "${PORT}" \
-        --env_name "${ENV_NAME}" \
-        --n_episodes "${N_EPISODES}" \
-        --n_envs "${N_ENVS}" \
-        --n_action_steps "${N_ACTION_STEPS}" \
-        --max_episode_steps "${MAX_STEPS}"
+    python /temporal_vla/scripts/eval/groot_robocasa_zmq_eval.py \
+        --policy-client-host "${POLICY_CLIENT_HOST}" \
+        --policy-client-port "${PORT}" \
+        --env-name "${ENV_NAME}" \
+        --n-episodes "${N_EPISODES}" \
+        --n-envs "${N_ENVS}" \
+        --n-action-steps "${N_ACTION_STEPS}" \
+        --max-episode-steps "${MAX_STEPS}" \
+        --video-dir "${CLIENT_VIDEO_DIR}"
     ;;
 
   # ── 전체 벤치마크 (실패 많은 task 위주, ZMQ 클라이언트) ──
@@ -106,6 +185,45 @@ case "$MODE" in
         echo "Task: ${TASK_SHORT} (${N_EPISODES} episodes)"
         echo "============================================"
         bash "$0" client "$TASK" "$N_EPISODES" 5 8 720
+    done
+    ;;
+
+  # ── fine-tuning 에 사용한 RoboCasa 10-task scope 평가 (ZMQ 클라이언트) ──
+  client-train10)
+    N_EPISODES=${2:-50}
+    N_ENVS=${3:-4}
+    N_ACTION_STEPS=${4:-8}
+    MAX_STEPS=${5:-720}
+    TASKS=(
+        "robocasa_panda_omron/OpenDrawer_PandaOmron_Env"
+        "robocasa_panda_omron/CloseDrawer_PandaOmron_Env"
+        "robocasa_panda_omron/OpenCabinet_PandaOmron_Env"
+        "robocasa_panda_omron/CloseCabinet_PandaOmron_Env"
+        "robocasa_panda_omron/OpenFridge_PandaOmron_Env"
+        "robocasa_panda_omron/CloseFridge_PandaOmron_Env"
+        "robocasa_panda_omron/OpenMicrowave_PandaOmron_Env"
+        "robocasa_panda_omron/CloseMicrowave_PandaOmron_Env"
+        "robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env"
+        "robocasa_panda_omron/PickPlaceCounterToSink_PandaOmron_Env"
+    )
+
+    echo "============================================"
+    echo "Running RoboCasa fine-tune 10-task evaluation"
+    echo "  Server:       ${POLICY_CLIENT_HOST}:${PORT}"
+    echo "  Output:       ${EVAL_OUTPUT_DIR}/${EVAL_RUN_ID}"
+    echo "  Episodes:     ${N_EPISODES}"
+    echo "  Parallel:     ${N_ENVS}"
+    echo "  Action steps: ${N_ACTION_STEPS}"
+    echo "  Max steps:    ${MAX_STEPS}"
+    echo "============================================"
+
+    for TASK in "${TASKS[@]}"; do
+        TASK_SHORT=$(echo "$TASK" | sed 's|robocasa_panda_omron/||; s|_PandaOmron_Env||')
+        echo ""
+        echo "============================================"
+        echo "Task: ${TASK_SHORT} (${N_EPISODES} episodes)"
+        echo "============================================"
+        bash "$0" client "$TASK" "$N_EPISODES" "$N_ENVS" "$N_ACTION_STEPS" "$MAX_STEPS"
     done
     ;;
 
@@ -226,6 +344,7 @@ case "$MODE" in
     echo "  $0 server         — groot 서버 시작 (ZMQ)"
     echo "  $0 client [env] [n_ep] [n_envs] [n_act] [max_steps]  — ZMQ 클라이언트"
     echo "  $0 client-batch [n_ep]  — ZMQ 일괄 평가"
+    echo "  $0 client-train10 [n_ep] [n_envs] [n_act] [max_steps] — fine-tune 10-task ZMQ 평가"
     echo "  $0 local [env] [n_ep] [n_envs] [n_act] [max_steps]   — 로컬 단독 실행"
     echo "  $0 local-batch [n_ep] [n_envs] — 로컬 일괄 평가 (완료 skip, 영상 자동 이동)"
     ;;
