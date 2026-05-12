@@ -39,24 +39,32 @@ class TTTInnerModel(nn.Module):
     TTT의 inner model f.
     hidden state로 사용되는 모델. Linear 또는 MLP.
 
-    f(x) = x + LN(f_res(x))  (residual + LayerNorm for stability)
+    model_type 별 정의:
+      "linear":       f(x) = x + LN(W·x)           — TTT paper / VITA 표준
+      "mlp":          f(x) = x + LN(MLP(x))         — 〃
+      "linear_preLN": f(x) = x + W·x                — LN 은 TTTModule outer 에서 처리
+                                                       (closed-form mini-batch TTT 호환)
+
+    "linear_preLN" 이 추가된 이유: inner update 의 affine recurrence 성질을 보존하기
+    위해 LN 을 inner model 밖으로 빼야 함. 그렇지 않으면 ∇_W ℓ_self 가 W 에 nonlinear
+    의존이 생겨 parallel scan (Sun et al. 2024 §2.3) 적용 불가.
 
     Args:
         input_dim: 입력 차원 (= projection dimension d')
-        model_type: "linear" (TTT-Linear) 또는 "mlp" (TTT-MLP)
+        model_type: inner model 종류
         expansion_factor: MLP일 때 hidden dim = input_dim * expansion_factor
     """
 
     def __init__(
         self,
         input_dim: int,
-        model_type: Literal["linear", "mlp"] = "linear",
+        model_type: Literal["linear", "mlp", "linear_preLN"] = "linear",
         expansion_factor: int = 4,
     ):
         super().__init__()
         self.model_type = model_type
 
-        if model_type == "linear":
+        if model_type in ("linear", "linear_preLN"):
             self.f_res = nn.Linear(input_dim, input_dim, bias=False)
         elif model_type == "mlp":
             hidden_dim = input_dim * expansion_factor
@@ -68,10 +76,12 @@ class TTTInnerModel(nn.Module):
         else:
             raise ValueError(f"Unknown model_type: {model_type}")
 
-        self.ln = nn.LayerNorm(input_dim)
+        # linear_preLN 은 inner 에 LN 없음 (TTTModule.outer_ln_{K,Q} 에서 처리)
+        self.ln = None if model_type == "linear_preLN" else nn.LayerNorm(input_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """x + LN(f_res(x))"""
+        if self.model_type == "linear_preLN":
+            return x + self.f_res(x)
         return x + self.ln(self.f_res(x))
 
     def functional_forward(self, x: torch.Tensor, params: dict) -> torch.Tensor:
@@ -83,6 +93,10 @@ class TTTInnerModel(nn.Module):
             x: input [batch, input_dim]
             params: {name: tensor} dict. self.state_dict()와 같은 키 구조.
         """
+        if self.model_type == "linear_preLN":
+            res = F.linear(x, params["f_res.weight"])
+            return x + res
+
         if self.model_type == "linear":
             res = F.linear(x, params["f_res.weight"])
         elif self.model_type == "mlp":
@@ -125,7 +139,7 @@ class TTTModule(nn.Module):
         self,
         input_dim: int,
         proj_dim: int = 64,
-        inner_model_type: Literal["linear", "mlp"] = "linear",
+        inner_model_type: Literal["linear", "mlp", "linear_preLN"] = "linear",
         inner_expansion: int = 4,
         eta_base: float = 0.1,
         learnable_eta: bool = False,
@@ -134,6 +148,7 @@ class TTTModule(nn.Module):
         self.input_dim = input_dim
         self.proj_dim = proj_dim
         self.eta_base = eta_base
+        self.inner_model_type = inner_model_type
 
         # Meta-learned projections (outer-loop parameters)
         # P_K: training view (corrupted input for SSL)
@@ -142,6 +157,17 @@ class TTTModule(nn.Module):
         self.P_V = nn.Linear(input_dim, proj_dim, bias=False)
         # P_Q: test view (output을 위한 projection)
         self.P_Q = nn.Linear(input_dim, proj_dim, bias=False)
+
+        # linear_preLN: LN 을 inner 밖으로 빼서 K_t=LN(P_K z) / Q_t=LN(P_Q z) 로 normalize.
+        # 이렇게 하면 W (= f_res.weight) 만 inner_params 가 되고 ∇_W ℓ 가 W 에 affine →
+        # affine recurrence W_t = W_{t-1}(I - 2η K_t K_tᵀ) + 2η (V_t - K_t) K_tᵀ 성립,
+        # parallel scan (mini-batch TTT) 적용 가능. 다른 model_type 은 Identity.
+        if inner_model_type == "linear_preLN":
+            self.outer_ln_K = nn.LayerNorm(proj_dim)
+            self.outer_ln_Q = nn.LayerNorm(proj_dim)
+        else:
+            self.outer_ln_K = nn.Identity()
+            self.outer_ln_Q = nn.Identity()
 
         # Inner model f (its weights = TTT hidden state)
         self.f_adapt = TTTInnerModel(
@@ -161,7 +187,8 @@ class TTTModule(nn.Module):
         """
         Self-supervised reconstruction loss.
 
-        ℓ_self(z; θ) = ||f(P_K·z; θ) - P_V·z||^2
+        ℓ_self(z; θ) = ||f(LN(P_K·z); θ) - P_V·z||^2   (linear_preLN)
+        ℓ_self(z; θ) = ||f(P_K·z; θ) - P_V·z||^2        (linear/mlp)
 
         Args:
             z: input representation [batch, input_dim] or [input_dim]
@@ -169,8 +196,8 @@ class TTTModule(nn.Module):
         Returns:
             scalar loss
         """
-        train_view = self.P_K(z)  # corrupted input
-        label_view = self.P_V(z)  # reconstruction target
+        train_view = self.outer_ln_K(self.P_K(z))  # LN 은 linear_preLN 만, 나머지 Identity
+        label_view = self.P_V(z)                   # reconstruction target
 
         # inner model forward (functional forward if params given)
         if params is not None:
@@ -213,7 +240,8 @@ class TTTModule(nn.Module):
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         """
-        Output rule: output = f(P_Q·z; θ_t)
+        Output rule: output = f(LN(P_Q·z); θ_t)   (linear_preLN)
+                     output = f(P_Q·z; θ_t)        (linear/mlp)
 
         ttt_step()이 먼저 호출된 후 사용.
 
@@ -222,7 +250,7 @@ class TTTModule(nn.Module):
         Returns:
             adapted output [batch, proj_dim] or [proj_dim]
         """
-        test_view = self.P_Q(z)
+        test_view = self.outer_ln_Q(self.P_Q(z))
         return self.f_adapt(test_view)
 
     def reset_inner_state(self) -> None:
@@ -255,12 +283,13 @@ class TTTModule(nn.Module):
     ) -> torch.Tensor:
         """
         Functional SSL loss.
-        ℓ_self(z; θ) = ||f(P_K·z; θ) - P_V·z||²
+        ℓ_self(z; θ) = ||f(LN(P_K·z); θ) - P_V·z||²   (linear_preLN)
+        ℓ_self(z; θ) = ||f(P_K·z; θ) - P_V·z||²        (linear/mlp)
 
-        P_K, P_V는 outer-loop params (autograd 자동 추적),
+        outer_ln_K, P_K, P_V는 outer-loop params (autograd 자동 추적),
         inner model은 explicit inner_params로 forward.
         """
-        train_view = self.P_K(z)
+        train_view = self.outer_ln_K(self.P_K(z))
         label_view = self.P_V(z)
         pred = self.f_adapt.functional_forward(train_view, inner_params)
         return F.mse_loss(pred, label_view)
@@ -297,9 +326,10 @@ class TTTModule(nn.Module):
     ) -> torch.Tensor:
         """
         Functional output. explicit inner params로 계산.
-        output = f(P_Q·z; θ_t)
+        output = f(LN(P_Q·z); θ_t)   (linear_preLN)
+        output = f(P_Q·z; θ_t)        (linear/mlp)
         """
-        test_view = self.P_Q(z)
+        test_view = self.outer_ln_Q(self.P_Q(z))
         return self.f_adapt.functional_forward(test_view, inner_params)
 
     def _functional_forward(

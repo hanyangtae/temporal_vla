@@ -1,25 +1,31 @@
 """
-Phase 1 ProgressPredictor 성능 평가 스크립트.
+Phase 1 ProgressPredictor 성능 평가 스크립트 — RoboCasa atomic 10 task per-task mixture.
 
-세 가지 split에서 각 100개 에피소드를 평가:
-  - train:   학습에 사용된 에피소드
-  - val:     validation에 사용된 에피소드
-  - unseen:  어디에도 사용되지 않은 에피소드 (index >= train+val)
+학습 (`scripts/train/phase1_groot_robocasa.py`) 과 동일한 dataset/split 재현:
+  - per-task LeRobot v2.1 dataset 의 episodes 를 split_seed 로 train/val 분리.
+  - Eagle pre-LLM cache (`data/robocasa_eagle_pre_llm/<Task>/embeddings.pt`) 사용.
+
+여러 ckpt 동시 비교 가능 (`--ckpts ckpt_a.pt ckpt_b.pt`) — 같은 episode 들에 각각
+적용해서 metric 나란히 출력. inner_model_type 이 ckpt 마다 다르면 `--inner_model_types`
+로 지정.
 
 각 에피소드를 처음부터 끝까지 순차 처리 (inference 모드):
   predictor.reset() → for z_t: predictor.forward(z_t) → progress 예측
 
 Metrics (에피소드별 계산 후 평균):
-  - MSE:          MSE(predicted, t/T)
-  - MAE:          MAE(predicted, t/T)
-  - Pearson r:    predicted와 t/T의 상관계수
-  - Mono rate:    단조증가 비율 = mean(v_{t+1} > v_t)
+  - MSE:           MSE(predicted, t/T)
+  - MAE:           MAE(predicted, t/T)
+  - Pearson r:     predicted 와 t/T 의 상관계수
+  - Spearman ρ:    rank 기반 상관계수
+  - Mono rate:     단조증가 비율 = mean(v_{t+1} >= v_t)
 """
 
 import argparse
 import json
 import os
 import random
+import sys
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -27,10 +33,10 @@ import matplotlib.pyplot as plt
 from scipy.stats import spearmanr
 from tqdm import tqdm
 
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from src.datasets.robocasa_v21_reader import RoboCasaV21Reader
 from src.ttt.predictor import ProgressPredictor
 
 
@@ -75,7 +81,7 @@ def eval_episode(
     for abs_idx in range(ep_from, ep_to):
         if abs_idx not in embeddings:
             break
-        z_t = embeddings[abs_idx].unsqueeze(0).to(device)  # [1, 1024]
+        z_t = embeddings[abs_idx].unsqueeze(0).to(device)  # [1, D]
         result = predictor.forward(z_t, update=True)
         preds.append(result["progress"].item())
 
@@ -296,195 +302,315 @@ def plot_examples(examples: list, split_name: str, save_path: str):
 
 
 # ──────────────────────────────────────────────
+# RoboCasa per-task dataset loading
+# ──────────────────────────────────────────────
+
+def _find_lerobot_root(data_root: Path, task: str) -> Path:
+    matches = sorted((data_root / task).glob("*/lerobot"))
+    if not matches:
+        raise FileNotFoundError(f"No lerobot/ under {data_root / task}")
+    return matches[0]
+
+
+def load_robocasa_split(
+    tasks: list[str],
+    data_root: Path,
+    cache_root: Path,
+    train_frac: float,
+    split_seed: int,
+) -> tuple[dict, list[tuple], list[tuple]]:
+    """학습 (phase1_groot_robocasa.py) 과 동일한 split 재현.
+
+    Returns
+    -------
+    embeddings_by_task : dict[task -> {abs_idx: tensor}]
+    train_pool         : list[(task, ep_idx, ep_from, ep_to)]
+    val_pool           : list[(task, ep_idx, ep_from, ep_to)]
+    """
+    embeddings_by_task: dict[str, dict[int, torch.Tensor]] = {}
+    train_pool: list[tuple] = []
+    val_pool: list[tuple] = []
+
+    for task in tasks:
+        cache_path = cache_root / task / "embeddings.pt"
+        if not cache_path.exists():
+            raise FileNotFoundError(f"Eagle cache 없음: {cache_path}")
+        lerobot_root = _find_lerobot_root(data_root, task)
+
+        cache = torch.load(str(cache_path), map_location="cpu", weights_only=True)
+        cached_indices = set(int(k) for k in cache.keys())
+        embeddings_by_task[task] = {int(k): v for k, v in cache.items()}
+
+        reader = RoboCasaV21Reader(lerobot_root)
+        all_eps = reader.lerobot_meta_episodes()
+        eligible = [
+            ep_idx for ep_idx, ep in all_eps.items()
+            if ep["dataset_from_index"] in cached_indices
+        ]
+        rng = random.Random(split_seed)
+        rng.shuffle(eligible)
+        n_train = int(len(eligible) * train_frac)
+        train_eps = sorted(eligible[:n_train])
+        val_eps = sorted(eligible[n_train:])
+
+        for ep_idx in train_eps:
+            ep = all_eps[ep_idx]
+            train_pool.append((task, ep_idx, ep["dataset_from_index"], ep["dataset_to_index"]))
+        for ep_idx in val_eps:
+            ep = all_eps[ep_idx]
+            val_pool.append((task, ep_idx, ep["dataset_from_index"], ep["dataset_to_index"]))
+
+        print(f"[{task}] eligible={len(eligible)}  train={len(train_eps)}  val={len(val_eps)}")
+
+    return embeddings_by_task, train_pool, val_pool
+
+
+def eval_pool(
+    predictor: ProgressPredictor,
+    pool: list[tuple],
+    embeddings_by_task: dict,
+    device: torch.device,
+    n_samples: int,
+    seed: int,
+    split_name: str,
+    n_examples: int = 5,
+    max_ep_len: int = 485,
+) -> dict:
+    """(task, ep_idx, ep_from, ep_to) pool 에서 n_samples 개 sample 평가."""
+    rng = random.Random(seed)
+    sampled = rng.sample(pool, min(n_samples, len(pool)))
+
+    results = []
+    all_results = []
+    example_episodes = []
+
+    for task, ep_idx, ep_from, ep_to in tqdm(sampled, desc=f"Eval [{split_name}]"):
+        ep_len = ep_to - ep_from
+        # 학습과 동일하게 max_ep_len 으로 truncate
+        ep_to_eff = ep_from + min(ep_len, max_ep_len)
+        embeddings = embeddings_by_task[task]
+        r = eval_episode(predictor, embeddings, ep_from, ep_to_eff, device)
+        if r is None:
+            continue
+        r["task"] = task
+        results.append(r)
+        all_results.append(((task, ep_idx), r))
+        if len(example_episodes) < n_examples:
+            example_episodes.append(((task, ep_idx), r))
+
+    if not results:
+        return {}
+
+    return {
+        "mse":          float(np.mean([r["mse"]          for r in results])),
+        "mae":          float(np.mean([r["mae"]           for r in results])),
+        "pearson_r":    float(np.mean([r["pearson_r"]     for r in results])),
+        "spearman_rho": float(np.mean([r["spearman_rho"] for r in results])),
+        "mono_rate":    float(np.mean([r["mono_rate"]     for r in results])),
+        "n_episodes":   len(results),
+        "mean_ep_len":  float(np.mean([r["ep_len"]        for r in results])),
+        "examples":     example_episodes,
+        "all_results":  all_results,
+    }
+
+
+# ──────────────────────────────────────────────
 # Main
 # ──────────────────────────────────────────────
 
+DEFAULT_TASKS = [
+    "OpenDrawer", "CloseDrawer",
+    "OpenCabinet", "CloseCabinet",
+    "OpenFridge", "CloseFridge",
+    "OpenMicrowave", "CloseMicrowave",
+    "PickPlaceCounterToStove", "PickPlaceCounterToSink",
+]
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ckpt",          type=str, default="checkpoints/phase1/phase1_final.pt")
-    parser.add_argument("--data_root",     type=str, default="data/bridge_v2_lerobot")
-    parser.add_argument("--repo_id",       type=str, default="FedorX8/bridge_v2_lerobot")
-    parser.add_argument("--embed_cache",   type=str, default="data/bridge_v2_lerobot_clip_embeddings.pt")
-    parser.add_argument("--train_episodes",type=int, default=2986)
-    parser.add_argument("--val_episodes",  type=int, default=287)
-    parser.add_argument("--split_seed",    type=int, default=42)
-    parser.add_argument("--n_samples",     type=int, default=100)
-    parser.add_argument("--device",        type=str, default="cuda")
-    parser.add_argument("--save_dir",      type=str, default="eval_results/phase1")
-    # Model architecture (학습 시와 동일해야 함)
-    parser.add_argument("--input_dim",     type=int, default=1024)
-    parser.add_argument("--proj_dim",      type=int, default=64)
-    parser.add_argument("--inner_model_type", type=str, default="mlp")
-    parser.add_argument("--head_hidden_dim",  type=int, default=128)
-    parser.add_argument("--eta_base",      type=float, default=0.1)
-    parser.add_argument("--n_examples",    type=int,   default=5,
-                        help="grid PNG에 포함할 예시 에피소드 수")
-    parser.add_argument("--save_json",     action="store_true",
-                        help="에피소드별 예측 결과를 JSON으로 저장 (plot_phase1_progress.py 입력용)")
+    # Multi-ckpt 비교
+    parser.add_argument("--ckpts", type=str, nargs="+", required=True,
+                        help="비교할 ckpt 경로들. 여러 개 가능.")
+    parser.add_argument("--ckpt_labels", type=str, nargs="+", default=None,
+                        help="ckpt 별 라벨 (출력용). 미지정 시 파일 stem.")
+    parser.add_argument("--inner_model_types", type=str, nargs="+", default=None,
+                        help="ckpt 별 inner_model_type (linear/mlp/linear_preLN). "
+                             "미지정 시 모두 --inner_model_type 값 사용.")
+    # Dataset (학습과 동일하게)
+    parser.add_argument("--data_root", type=str,
+                        default=str(REPO_ROOT / "data/robocasa/v1.0/pretrain/atomic"))
+    parser.add_argument("--cache_root", type=str,
+                        default=str(REPO_ROOT / "data/robocasa_eagle_pre_llm"))
+    parser.add_argument("--tasks", type=str, nargs="+", default=DEFAULT_TASKS)
+    parser.add_argument("--train_frac", type=float, default=0.9)
+    parser.add_argument("--split_seed", type=int, default=42)
+    parser.add_argument("--max_ep_len", type=int, default=485,
+                        help="episode 평가 truncate 길이 (학습과 동일).")
+    parser.add_argument("--n_samples", type=int, default=100,
+                        help="split 당 평가할 random sample 수.")
+    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--save_dir", type=str,
+                        default=str(REPO_ROOT / "outputs/eval/phase1_groot_robocasa"))
+    # Model architecture (학습 시와 동일해야 함, ckpt 마다 다르면 --inner_model_types)
+    parser.add_argument("--input_dim", type=int, default=2048)
+    parser.add_argument("--proj_dim", type=int, default=2048)
+    parser.add_argument("--inner_model_type", type=str, default="linear",
+                        choices=["linear", "mlp", "linear_preLN"])
+    parser.add_argument("--head_hidden_dim", type=int, default=128)
+    parser.add_argument("--eta_base", type=float, default=0.1)
+    parser.add_argument("--train_batch_size", type=int, default=32,
+                        help="학습 시 batch size. F.mse_loss(reduction='mean') 가 1/B 곱하기 때문에 "
+                             "eval batch=1 path 가 학습보다 B 배 큰 inner-update step 을 받음. "
+                             "이걸 보정해서 학습 trajectory 와 매칭하기 위해 "
+                             "eta_eval = eta_base / train_batch_size 로 scale. 0 이면 보정 비활성.")
+    # 출력
+    parser.add_argument("--n_examples", type=int, default=5,
+                        help="grid PNG 에 포함할 예시 에피소드 수")
+    parser.add_argument("--save_json", action="store_true",
+                        help="에피소드별 예측 결과를 JSON 으로 저장")
     parser.add_argument("--save_individual", action="store_true",
                         help="에피소드별 개별 PNG 저장")
-    parser.add_argument("--save_video",    action="store_true",
-                        help="에피소드별 원본영상+progress curve 결합 MP4 저장")
-    parser.add_argument("--n_videos",      type=int, default=10,
-                        help="저장할 최대 영상 수 (split당). eval 자체는 n_samples만큼 수행.")
-    parser.add_argument("--fps",           type=int, default=10,
-                        help="영상 FPS (기본: 10)")
-    parser.add_argument("--image_key",     type=str, default="observation.images.primary",
-                        help="LeRobotDataset에서 사용할 이미지 키")
-    parser.add_argument("--task_keywords", type=str, nargs="+",
-                        default=["put", "place", "pick"],
-                        help="task description 필터링 키워드 (학습과 동일해야 함)")
     args = parser.parse_args()
 
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     os.makedirs(args.save_dir, exist_ok=True)
 
-    # ── 모델 로드 ──
-    predictor = ProgressPredictor(
-        input_dim=args.input_dim,
-        proj_dim=args.proj_dim,
-        inner_model_type=args.inner_model_type,
-        eta_base=args.eta_base,
-        learnable_eta=False,
-        head_hidden_dim=args.head_hidden_dim,
-    ).to(device)
-    state = torch.load(args.ckpt, map_location=device)
-    if "model_state_dict" in state:
-        state = state["model_state_dict"]
-    predictor.load_state_dict(state)
-    predictor.save_init()   # θ_0 등록 (reset() 사용 위해)
-    predictor.eval()
-    print(f"Loaded: {args.ckpt}")
-
-    # ── 임베딩 캐시 로드 ──
-    print(f"Loading embedding cache...")
-    embeddings = torch.load(args.embed_cache, map_location="cpu", weights_only=True)
-    cached_indices = set(embeddings.keys())
-    print(f"Cached frames: {len(cached_indices)}")
-
-    # ── LeRobot meta 로드 (에피소드 경계용) ──
-    ds = LeRobotDataset(repo_id=args.repo_id, root=args.data_root)
-    meta = ds.meta
-    total_ep = meta.total_episodes
-
-    # ── 학습 시와 동일한 방식: task keyword 필터 + 캐시 존재 확인 → train/val split 재현 ──
-    all_filtered = []
-    n_keyword_match = 0
-    for ep_idx in range(total_ep):
-        ep = meta.episodes[ep_idx]
-        task_text = " ".join(ep.get("tasks", [])).lower()
-        if args.task_keywords and not any(kw.lower() in task_text for kw in args.task_keywords):
-            continue
-        n_keyword_match += 1
-        ep_from = ep["dataset_from_index"]
-        if ep_from not in cached_indices:
-            continue
-        all_filtered.append(ep_idx)
-    print(f"Task filter {args.task_keywords}: {total_ep} total → "
-          f"{n_keyword_match} keyword match → {len(all_filtered)} with embeddings")
-
-    total_used = args.train_episodes + args.val_episodes
-    random.seed(args.split_seed)
-    random.shuffle(all_filtered)
-    train_idx = all_filtered[:args.train_episodes]
-    val_idx   = all_filtered[args.train_episodes:total_used]
-
-    # unseen: 필터된 에피소드 중 train/val에 없는 것
-    used_set = set(train_idx + val_idx)
-    unseen_idx = [i for i in all_filtered[total_used:] if i not in used_set]
-    print(f"Split — train: {len(train_idx)}, val: {len(val_idx)}, unseen pool: {len(unseen_idx)}")
-
-    # ── 평가 ──
-    splits = {
-        "train":  train_idx,
-        "val":    val_idx,
-        "unseen": unseen_idx,
-    }
-
-    all_metrics = {}
-    for split_name, indices in splits.items():
-        if not indices:
-            print(f"[{split_name}] 에피소드 없음, 스킵")
-            continue
-        metrics = eval_split(
-            predictor, embeddings, indices, meta, device,
-            n_samples=args.n_samples,
-            seed=args.split_seed,
-            split_name=split_name,
-            n_examples=args.n_examples,
+    # ckpt 메타
+    ckpts = args.ckpts
+    labels = args.ckpt_labels or [Path(c).stem for c in ckpts]
+    inner_types = args.inner_model_types or [args.inner_model_type] * len(ckpts)
+    if not (len(labels) == len(inner_types) == len(ckpts)):
+        raise ValueError(
+            f"--ckpts({len(ckpts)}), --ckpt_labels({len(labels)}), "
+            f"--inner_model_types({len(inner_types)}) 길이 불일치"
         )
-        all_metrics[split_name] = metrics
 
-        # 예시 grid 시각화
-        if metrics.get("examples"):
-            plot_examples(
-                metrics["examples"],
-                split_name=split_name,
-                save_path=os.path.join(args.save_dir, f"progress_curves_{split_name}.png"),
+    print(f"[ckpts] {len(ckpts)} 개 비교:")
+    for c, l, t in zip(ckpts, labels, inner_types):
+        print(f"  - {l:30s}  inner={t:14s}  path={c}")
+
+    # ── Dataset 로딩 (모든 ckpt 가 같은 split 평가) ──
+    print(f"\n[data] loading {len(args.tasks)} tasks...")
+    embeddings_by_task, train_pool, val_pool = load_robocasa_split(
+        tasks=args.tasks,
+        data_root=Path(args.data_root),
+        cache_root=Path(args.cache_root),
+        train_frac=args.train_frac,
+        split_seed=args.split_seed,
+    )
+    print(f"[data] total: train={len(train_pool)}  val={len(val_pool)} episodes\n")
+
+    splits = {"train": train_pool, "val": val_pool}
+
+    # ckpt → split → metrics
+    all_metrics: dict[str, dict[str, dict]] = {}
+
+    for ckpt_path, label, inner_type in zip(ckpts, labels, inner_types):
+        print(f"\n=== Evaluating ckpt: {label} ({inner_type}) ===")
+        predictor = ProgressPredictor(
+            input_dim=args.input_dim,
+            proj_dim=args.proj_dim,
+            inner_model_type=inner_type,
+            eta_base=args.eta_base,
+            learnable_eta=False,
+            head_hidden_dim=args.head_hidden_dim,
+        ).to(device)
+        state = torch.load(ckpt_path, map_location=device, weights_only=False)
+        if isinstance(state, dict) and "model_state_dict" in state:
+            state = state["model_state_dict"]
+        predictor.load_state_dict(state)
+        # 학습/eval 의 batch-size mismatch 보정. ssl loss 의 1/B 분모 때문에 batch=1 eval 의
+        # inner update step 이 batch=32 학습 대비 B 배 큼 → W 가 너무 빠르게 saturate 해서
+        # progress 가 평평하게 나옴. eta 만 1/B 로 scale 해도 step 크기 일치.
+        if args.train_batch_size and args.train_batch_size > 1:
+            predictor.ttt.eta_base = predictor.ttt.eta_base / args.train_batch_size
+            print(f"  eta_base scaled: {args.eta_base} → {predictor.ttt.eta_base} "
+                  f"(/= train_batch_size={args.train_batch_size})")
+        predictor.save_init()
+        predictor.eval()
+        print(f"  loaded: {ckpt_path}")
+
+        ckpt_metrics = {}
+        ckpt_save_dir = os.path.join(args.save_dir, label)
+        os.makedirs(ckpt_save_dir, exist_ok=True)
+
+        for split_name, pool in splits.items():
+            if not pool:
+                continue
+            m = eval_pool(
+                predictor=predictor,
+                pool=pool,
+                embeddings_by_task=embeddings_by_task,
+                device=device,
+                n_samples=args.n_samples,
+                seed=args.split_seed,
+                split_name=f"{label}/{split_name}",
+                n_examples=args.n_examples,
+                max_ep_len=args.max_ep_len,
             )
+            ckpt_metrics[split_name] = m
 
-        # 에피소드별 JSON / 개별 PNG 저장
-        if (args.save_json or args.save_individual) and metrics.get("all_results"):
-            ep_dir = os.path.join(args.save_dir, "episodes", split_name)
-            os.makedirs(ep_dir, exist_ok=True)
-            for ep_idx, r in metrics["all_results"]:
-                if args.save_json:
-                    json_path = os.path.join(ep_dir, f"ep_{ep_idx:06d}.progress.json")
-                    save_episode_json(ep_idx, split_name, r, json_path)
-                if args.save_individual:
-                    png_path = os.path.join(ep_dir, f"ep_{ep_idx:06d}.png")
-                    plot_single_episode(ep_idx, r, split_name, png_path)
-            print(f"[{split_name}] {len(metrics['all_results'])}개 에피소드 저장 → {ep_dir}")
-
-        # 에피소드별 MP4 저장 (최대 n_videos개)
-        if args.save_video and metrics.get("all_results"):
-            ep_dir = os.path.join(args.save_dir, "episodes", split_name)
-            os.makedirs(ep_dir, exist_ok=True)
-            video_targets = metrics["all_results"][:args.n_videos]
-            for ep_idx, r in tqdm(video_targets, desc=f"Video [{split_name}]"):
-                ep_from = meta.episodes[ep_idx]["dataset_from_index"]
-                video_path = os.path.join(ep_dir, f"ep_{ep_idx:06d}.mp4")
-                make_episode_video(
-                    ep_idx, r, split_name, ds, ep_from, video_path,
-                    fps=args.fps, image_key=args.image_key,
+            if m.get("examples"):
+                # examples 의 ep_idx tag 가 (task, ep_idx) 튜플이므로 plot_examples 호환을 위해 str 화
+                examples_str = [
+                    (f"{task}/ep{ep}", r) for (task, ep), r in m["examples"]
+                ]
+                plot_examples(
+                    examples_str,
+                    split_name=f"{label} [{split_name}]",
+                    save_path=os.path.join(ckpt_save_dir, f"progress_curves_{split_name}.png"),
                 )
 
-    # ── 결과 출력 ──
-    header = f"{'Split':<10} {'MSE':>8} {'MAE':>8} {'Pearson r':>10} {'Spearman':>10} {'Mono rate':>10} {'N':>6}"
+            if (args.save_json or args.save_individual) and m.get("all_results"):
+                ep_dir = os.path.join(ckpt_save_dir, "episodes", split_name)
+                os.makedirs(ep_dir, exist_ok=True)
+                for (task, ep_idx), r in m["all_results"]:
+                    tag = f"{task}_ep{ep_idx:06d}"
+                    if args.save_json:
+                        save_episode_json(tag, split_name, r, os.path.join(ep_dir, f"{tag}.progress.json"))
+                    if args.save_individual:
+                        plot_single_episode(tag, r, split_name, os.path.join(ep_dir, f"{tag}.png"))
+
+        all_metrics[label] = ckpt_metrics
+
+    # ── 결과 출력 (ckpt 별 나란히) ──
+    header = (
+        f"{'Ckpt':<24} {'Split':<6} {'MSE':>8} {'MAE':>8} "
+        f"{'Pearson r':>10} {'Spearman':>10} {'Mono rate':>10} {'EpLen':>8} {'N':>6}"
+    )
     sep_len = len(header) + 2
     print("\n" + "=" * sep_len)
     print(header)
     print("-" * sep_len)
-    for split_name, m in all_metrics.items():
-        if not m:
-            continue
-        print(
-            f"{split_name:<10} "
-            f"{m['mse']:>8.4f} "
-            f"{m['mae']:>8.4f} "
-            f"{m['pearson_r']:>10.4f} "
-            f"{m['spearman_rho']:>10.4f} "
-            f"{m['mono_rate']:>10.4f} "
-            f"{m['n_episodes']:>6}"
-        )
-    print("=" * sep_len)
-
-    # 결과 저장
-    result_path = os.path.join(args.save_dir, "metrics.txt")
-    with open(result_path, "w") as f:
-        f.write(f"{'Split':<10} {'MSE':>8} {'MAE':>8} {'Pearson r':>10} {'Spearman':>10} {'Mono rate':>10} {'N':>6}\n")
-        for split_name, m in all_metrics.items():
+    for label, ckpt_metrics in all_metrics.items():
+        for split_name in ["train", "val"]:
+            m = ckpt_metrics.get(split_name)
             if not m:
                 continue
-            f.write(
-                f"{split_name:<10} "
-                f"{m['mse']:>8.4f} "
-                f"{m['mae']:>8.4f} "
-                f"{m['pearson_r']:>10.4f} "
-                f"{m['spearman_rho']:>10.4f} "
-                f"{m['mono_rate']:>10.4f} "
-                f"{m['n_episodes']:>6}\n"
+            print(
+                f"{label:<24} {split_name:<6} "
+                f"{m['mse']:>8.4f} {m['mae']:>8.4f} "
+                f"{m['pearson_r']:>10.4f} {m['spearman_rho']:>10.4f} "
+                f"{m['mono_rate']:>10.4f} {m['mean_ep_len']:>8.1f} {m['n_episodes']:>6}"
             )
+    print("=" * sep_len)
+
+    # metrics.txt
+    result_path = os.path.join(args.save_dir, "metrics.txt")
+    with open(result_path, "w") as f:
+        f.write(header + "\n")
+        for label, ckpt_metrics in all_metrics.items():
+            for split_name in ["train", "val"]:
+                m = ckpt_metrics.get(split_name)
+                if not m:
+                    continue
+                f.write(
+                    f"{label:<24} {split_name:<6} "
+                    f"{m['mse']:>8.4f} {m['mae']:>8.4f} "
+                    f"{m['pearson_r']:>10.4f} {m['spearman_rho']:>10.4f} "
+                    f"{m['mono_rate']:>10.4f} {m['mean_ep_len']:>8.1f} {m['n_episodes']:>6}\n"
+                )
     print(f"Saved: {result_path}")
 
 

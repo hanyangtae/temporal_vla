@@ -1,26 +1,23 @@
-"""End-to-end post-processing for downloaded RoboCasa LeRobot datasets.
+"""Add a per-frame `progress` feature to RoboCasa LeRobot v2.1 datasets in place.
 
-For each `lerobot/` dataset directory found, this script runs:
+For each downloaded `lerobot/` dataset, this script:
 
-  1. v2.1 → v3.0 conversion (LeRobot built-in, called as subprocess against
-     the submodule script to avoid the pip-installed lerobot's
-     `convert_dataset` quirk that appends `repo_id` to `--root`).
-     - original `lerobot/` → `lerobot_old/` (backup)
-     - `lerobot/` becomes v3.0
-  2. Add per-frame `progress` feature (rounded to 2 decimals). The result is
-     written by `add_features()` to a sibling `lerobot_with_progress/` dir,
-     then swapped in place of `lerobot/` so the final layout is:
-         <base>/lerobot/      ← v3.0 + progress (final)
-         <base>/lerobot_old/  ← v2.1 backup
-  3. Copy `embodiment.json` and `modality.json` from `lerobot_old/meta/` to
-     `lerobot/meta/` (LeRobot converter and `add_features()` do not migrate
-     RoboCasa-specific meta).
+  1. Reads each `data/chunk-XXX/episode_YYYYYY.parquet`.
+  2. Computes `progress = frame_index / max(length-1, 1)` rounded to 2 decimals,
+     using per-episode lengths from `meta/episodes.jsonl`.
+  3. Appends the `progress` column to the parquet (overwriting in place).
+  4. Registers `progress` in `meta/info.json` `features`.
+  5. Adds per-episode progress stats to `meta/episodes_stats.jsonl`.
+  6. Adds aggregate progress stats to `meta/stats.json`.
 
-Assumes step 0 (download) was done separately via robocasa container's
-`download_datasets.py`. Run this in the lerobot container.
+The dataset stays at codebase_version v2.1 — no schema upgrade. groot finetuning
+expects v2.1, so we keep the format.
 
-Default behavior: auto-discover all RoboCasa atomic tasks under
-`/temporal_vla/src/benchmarks/robocasa/datasets/v1.0/<split>/atomic/*/*/lerobot`.
+Idempotent: a finished dataset is detected via `info.json` and skipped. Per-file
+checks also skip already-processed parquet rows / stats entries, so an interrupted
+run can simply be re-executed.
+
+Run inside the lerobot container.
 
 Usage:
     # Auto-discover all downloaded atomic tasks (default split=pretrain):
@@ -36,175 +33,178 @@ Usage:
 
 import argparse
 import json
-import shutil
-import subprocess
+import os
 from pathlib import Path
 
 import numpy as np
-from lerobot.datasets.dataset_tools import add_features
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
+import pyarrow as pa
+import pyarrow.parquet as pq
 
-META_FILES_TO_MIGRATE = ["embodiment.json", "modality.json"]
-SUBMODULE_CONVERT_SCRIPT = (
-    "/temporal_vla/lerobot/src/lerobot/datasets/v30/convert_dataset_v21_to_v30.py"
-)
-DEFAULT_BASE_TPL = "/temporal_vla/src/benchmarks/robocasa/datasets/v1.0/{split}/atomic"
+DEFAULT_BASE_TPL = "/temporal_vla/data/robocasa/v1.0/{split}/atomic"
+
+# LeRobot scalar-feature convention: shape=[1] with no `names`.
+PROGRESS_FEATURE = {"dtype": "float32", "shape": [1], "names": None}
 
 
-def discover_dataset_roots(split: str, tasks: list[str] | None = None) -> list[Path]:
-    """Find every `<base>/<task>/<date>/lerobot` directory under the atomic base.
-
-    If `tasks` is given, restrict to those task names.
-    """
+def discover_dataset_roots(split: str, tasks: list[str] | None) -> list[Path]:
     base = Path(DEFAULT_BASE_TPL.format(split=split))
     if not base.is_dir():
         raise FileNotFoundError(f"Atomic base not found: {base}")
 
     if tasks:
-        candidates: list[Path] = []
+        out: list[Path] = []
         for task in tasks:
             task_dir = base / task
             matches = sorted(task_dir.glob("*/lerobot"))
             if not matches:
                 raise FileNotFoundError(
                     f"No dataset for task '{task}' under {task_dir}/. "
-                    f"Run download_datasets.py first."
+                    f"Run download_robocasa_pretrain_human.sh first."
                 )
-            candidates.extend(matches)
-        return candidates
+            out.extend(matches)
+        return out
 
     return sorted(base.glob("*/*/lerobot"))
 
 
-def derive_repo_id(root: Path) -> str:
-    """Infer a repo_id label from the dataset path.
-
-    For RoboCasa datasets at `.../atomic/<TaskName>/<date>/lerobot`,
-    returns `robocasa/<TaskName>`.
-    """
-    parts = root.parts
-    if "atomic" in parts:
-        idx = parts.index("atomic")
-        if idx + 1 < len(parts):
-            return f"robocasa/{parts[idx + 1]}"
-    return f"robocasa/{root.parent.parent.name}"
+def load_info(root: Path) -> dict:
+    return json.loads((root / "meta" / "info.json").read_text())
 
 
-def codebase_version(root: Path) -> str | None:
-    info_path = root / "meta" / "info.json"
-    if not info_path.exists():
-        return None
-    return json.loads(info_path.read_text()).get("codebase_version")
+def has_progress(root: Path) -> bool:
+    return "progress" in load_info(root).get("features", {})
 
 
-def has_progress_feature(root: Path) -> bool:
-    info_path = root / "meta" / "info.json"
-    if not info_path.exists():
-        return False
-    return "progress" in json.loads(info_path.read_text()).get("features", {})
+def load_episode_lengths(root: Path) -> dict[int, int]:
+    out: dict[int, int] = {}
+    with open(root / "meta" / "episodes.jsonl") as f:
+        for line in f:
+            d = json.loads(line)
+            out[int(d["episode_index"])] = int(d["length"])
+    return out
 
 
-def step_convert_v21_to_v30(root: Path, repo_id: str) -> None:
-    if codebase_version(root) == "v3.0":
-        print(f"  [skip convert] {root.name} is already v3.0")
-        return
-    print(f"  [convert] {root.name} → v3.0 (backup at {root.name}_old)")
-    subprocess.run(
-        [
-            "python",
-            SUBMODULE_CONVERT_SCRIPT,
-            "--repo-id",
-            repo_id,
-            "--root",
-            str(root),
-            "--push-to-hub=false",
-        ],
-        check=True,
-    )
-
-
-def step_copy_robocasa_meta(root: Path) -> None:
-    src_dir = root.parent / f"{root.name}_old" / "meta"
-    if not src_dir.exists():
-        print(f"  [skip meta copy] no backup dir {src_dir}")
-        return
-    for fname in META_FILES_TO_MIGRATE:
-        src, dst = src_dir / fname, root / "meta" / fname
-        if dst.exists():
-            print(f"  [skip meta copy] {fname} already in v3.0 meta")
-            continue
-        if src.exists():
-            shutil.copy2(src, dst)
-            print(f"  [copy meta] {fname}")
-
-
-def compute_progress(ds: LeRobotDataset) -> np.ndarray:
-    """Return per-frame linear progress rounded to 2 decimals."""
-    ep_lengths = {
-        int(e): int(length)
-        for e, length in zip(
-            ds.meta.episodes["episode_index"], ds.meta.episodes["length"]
-        )
-    }
-    data = ds.hf_dataset.with_format(None)
-    frame_idx = np.asarray(data["frame_index"], dtype=np.int64)
-    ep_idx = np.asarray(data["episode_index"], dtype=np.int64)
-    lengths = np.asarray([ep_lengths[int(e)] for e in ep_idx], dtype=np.int64)
-    raw = frame_idx / np.maximum(lengths - 1, 1)
+def compute_progress(length: int) -> np.ndarray:
+    raw = np.arange(length, dtype=np.float32) / max(length - 1, 1)
     return np.round(raw, 2).astype(np.float32)
 
 
-def step_add_progress(root: Path, repo_id: str) -> None:
-    if has_progress_feature(root):
-        print(f"  [skip add_progress] {root.name} already has 'progress' feature")
+def episode_parquet_path(root: Path, ep_idx: int, chunks_size: int, tpl: str) -> Path:
+    chunk = ep_idx // chunks_size
+    return root / tpl.format(episode_chunk=chunk, episode_index=ep_idx)
+
+
+def add_progress_column(parquet_path: Path, progress: np.ndarray) -> None:
+    table = pq.read_table(str(parquet_path))
+    if "progress" in table.column_names:
+        return
+    if len(progress) != table.num_rows:
+        raise ValueError(
+            f"progress length {len(progress)} != parquet rows {table.num_rows} "
+            f"for {parquet_path}"
+        )
+    table = table.append_column("progress", pa.array(progress, type=pa.float32()))
+    # Atomic-ish write: write to .tmp then rename.
+    tmp_path = parquet_path.with_suffix(parquet_path.suffix + ".tmp")
+    pq.write_table(table, str(tmp_path))
+    os.replace(tmp_path, parquet_path)
+
+
+def update_episodes_stats(root: Path, ep_lengths: dict[int, int]) -> None:
+    path = root / "meta" / "episodes_stats.jsonl"
+    if not path.exists():
+        print(f"  [skip episodes_stats] not found: {path}")
         return
 
-    tmp_dir = root.parent / f"{root.name}_with_progress"
-    if tmp_dir.exists():
-        shutil.rmtree(tmp_dir)
+    rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    changed = False
+    for row in rows:
+        ep_idx = int(row["episode_index"])
+        if "progress" in row["stats"]:
+            continue
+        prog = compute_progress(ep_lengths[ep_idx])
+        row["stats"]["progress"] = {
+            "min": [float(prog.min())],
+            "max": [float(prog.max())],
+            "mean": [float(prog.mean())],
+            "std": [float(prog.std())],
+            "count": [int(prog.size)],
+        }
+        changed = True
 
-    ds = LeRobotDataset(repo_id=repo_id, root=str(root))
-    progress = compute_progress(ds)
-    print(
-        f"  [add_progress] {ds.num_frames} frames, "
-        f"min={progress.min():.2f}, max={progress.max():.2f}, "
-        f"unique={len(np.unique(progress))}"
-    )
+    if changed:
+        with open(path, "w") as f:
+            for row in rows:
+                f.write(json.dumps(row) + "\n")
 
-    add_features(
-        ds,
-        features={
-            "progress": (
-                progress,
-                # shape=(1,) tuple ⇒ HF Value (scalar). list [1] would map to
-                # Sequence and require per-row arrays.
-                {"dtype": "float32", "shape": (1,), "names": None},
-            ),
-        },
-        output_dir=str(tmp_dir),
-        repo_id=f"{repo_id}_with_progress",
-    )
 
-    # Swap: discard intermediate v3.0 (no progress), promote tmp to canonical.
-    shutil.rmtree(root)
-    shutil.move(str(tmp_dir), str(root))
-    print(f"  [add_progress] swapped → {root}")
+def update_stats_json(root: Path, all_progress: np.ndarray) -> None:
+    path = root / "meta" / "stats.json"
+    if not path.exists():
+        print(f"  [skip stats.json] not found: {path}")
+        return
+    stats = json.loads(path.read_text())
+    if "progress" in stats:
+        return
+    stats["progress"] = {
+        "mean": [float(all_progress.mean())],
+        "std": [float(all_progress.std())],
+        "min": [float(all_progress.min())],
+        "max": [float(all_progress.max())],
+        "q01": [float(np.quantile(all_progress, 0.01))],
+        "q99": [float(np.quantile(all_progress, 0.99))],
+    }
+    path.write_text(json.dumps(stats, indent=4))
+
+
+def update_info_json(root: Path) -> None:
+    p = root / "meta" / "info.json"
+    info = json.loads(p.read_text())
+    info["features"]["progress"] = PROGRESS_FEATURE
+    p.write_text(json.dumps(info, indent=4))
 
 
 def process(root: Path) -> None:
-    if not root.exists():
-        raise FileNotFoundError(root)
-    repo_id = derive_repo_id(root)
-    print(f"\n=== {repo_id} ===")
-    print(f"  root: {root}")
-    step_convert_v21_to_v30(root, repo_id)
-    # add_features() rewrites the dataset and only knows about LeRobot-standard
-    # files, so RoboCasa-specific meta must be copied AFTER the swap.
-    step_add_progress(root, repo_id)
-    step_copy_robocasa_meta(root)
+    print(f"\n=== {root} ===")
+    if has_progress(root):
+        print("  [skip] already has 'progress' feature")
+        return
+
+    info = load_info(root)
+    version = info.get("codebase_version")
+    if version != "v2.1":
+        raise RuntimeError(
+            f"expected codebase_version v2.1, got {version!r}. "
+            f"This script targets v2.1 only (groot finetuning constraint)."
+        )
+
+    chunks_size = int(info["chunks_size"])
+    data_path_tpl = info["data_path"]
+    ep_lengths = load_episode_lengths(root)
+
+    all_chunks: list[np.ndarray] = []
+    for ep_idx, length in sorted(ep_lengths.items()):
+        prog = compute_progress(length)
+        pq_path = episode_parquet_path(root, ep_idx, chunks_size, data_path_tpl)
+        add_progress_column(pq_path, prog)
+        all_chunks.append(prog)
+
+    all_progress = np.concatenate(all_chunks)
+    print(
+        f"  [add_progress] {all_progress.size} frames over {len(ep_lengths)} episodes, "
+        f"min={all_progress.min():.2f}, max={all_progress.max():.2f}, "
+        f"mean={all_progress.mean():.2f}"
+    )
+
+    # Order matters: info.json is the "done" marker — update last so a crash
+    # before completion leaves has_progress() == False and re-running resumes.
+    update_episodes_stats(root, ep_lengths)
+    update_stats_json(root, all_progress)
+    update_info_json(root)
+    print("  [done]")
 
 
-def main():
+def main() -> None:
     p = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -224,7 +224,6 @@ def main():
     args = p.parse_args()
 
     roots = discover_dataset_roots(args.split, args.tasks)
-
     if not roots:
         print("No datasets found.")
         return
