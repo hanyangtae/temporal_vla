@@ -40,7 +40,9 @@ class Phase1V21EpisodicDataset(Dataset):
         max_ep_len: episode 길이 상한 (padding 시 max length).
     """
 
-    DEFAULT_MAX_EP_LEN = 120
+    # RoboCasa atomic pretrain 의 episode 분포(p99=485, max=618)에 맞춰 default 조정.
+    # VITA 원본(BridgeData) 은 p_max=120 였음 — 데이터셋에 따라 외부에서 override 권장.
+    DEFAULT_MAX_EP_LEN = 485
 
     def __init__(
         self,
@@ -92,14 +94,19 @@ class Phase1V21EpisodicDataset(Dataset):
                 (ep_idx, ep["dataset_from_index"], ep["dataset_to_index"])
             )
 
-        # 에피소드별 (ep_idx, ep_from, ep_length, pred_mask) 빌드
-        self._episode_data: list[tuple[int, int, int, torch.Tensor]] = []
+        # 에피소드별 (ep_idx, ep_from, ep_length, full_ep_length, pred_mask) 빌드.
+        # full_ep_length 를 따로 두는 이유: targets = t / (full_ep_length - 1) 로 계산해야
+        # truncate (ep_length < full_ep_length) 된 episode 의 frame 들도 올바른 progress 라벨
+        # 을 받게 된다. ep_length 기준으로 계산하면 잘린 ep 의 마지막 frame 이 progress=1.0
+        # 으로 잘못 라벨링됨 (실제로는 < 1.0).
+        self._episode_data: list[tuple[int, int, int, int, torch.Tensor]] = []
         for ep_idx, ep_from, ep_to in self._episode_ranges:
-            ep_length = min(ep_to - ep_from, self.max_ep_len)
+            full_ep_length = ep_to - ep_from
+            ep_length = min(full_ep_length, self.max_ep_len)
             if ep_length < self.window_size:
                 continue
             pred_mask = self._compute_pred_mask(ep_from, ep_length)
-            self._episode_data.append((ep_idx, ep_from, ep_length, pred_mask))
+            self._episode_data.append((ep_idx, ep_from, ep_length, full_ep_length, pred_mask))
 
     # ──────────────────────────────────────────────
     # Dissimilarity sampling (VITA Eq. 5) — 동일 알고리즘
@@ -138,12 +145,14 @@ class Phase1V21EpisodicDataset(Dataset):
         return len(self._episode_data)
 
     def __getitem__(self, idx: int) -> dict:
-        ep_idx, ep_from, ep_length, pred_mask = self._episode_data[idx]
+        ep_idx, ep_from, ep_length, full_ep_length, pred_mask = self._episode_data[idx]
         z_seq = torch.stack([
             self._embeddings[ep_from + t] for t in range(ep_length)
         ])
+        # progress label 은 full episode 기준 — truncate 되어도 frame t 의 라벨은
+        # t / (full_ep_length - 1) (마지막 잘린 frame 도 정확한 progress < 1).
         targets = (
-            torch.arange(ep_length, dtype=torch.float32) / max(ep_length - 1, 1)
+            torch.arange(ep_length, dtype=torch.float32) / max(full_ep_length - 1, 1)
         ).unsqueeze(-1)
         return {
             "z_seq": z_seq,

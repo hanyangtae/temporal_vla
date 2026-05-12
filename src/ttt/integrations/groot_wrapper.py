@@ -1,43 +1,52 @@
 """GR00T N1.6 × TTT integration wrapper.
 
-Stage 2 학습/추론에서 GR00T 옆에 frozen ProgressPredictor 를 두고, Eagle pre-LLM
-임베딩을 TTT 입력으로 연결, TTT 출력을 DiT cross-attention KV 에 token 으로
-**direct prepend** (projector 없음) 한다. TTT 방향 backprop 차단을 위해 token
-은 ``.detach()`` 후 concat 된다.
+Stage 2 학습/추론: TTT module 은 Phase 1 ckpt 로 **outer-frozen** 으로 로드되고,
+각 sample 마다 episode prefix Eagle pre-LLM 시퀀스 ``z_0..z_t`` 를 sequential 하게
+inner-loop SSL 로 누적 → 마지막 timestep 의 TTT 출력 = **Latent History Token (LHT)**.
+LHT 는 ``.detach()`` 후 DiT cross-attention KV 에 token 으로 **direct prepend**
+(projector 없음) — action loss 의 gradient 가 TTT 로 흐르지 않게 차단. TTT 는
+오로지 inner-loop SSL 로만 적응하고 outer 학습은 안 받음.
 
-Architecture (Stage 2 forward)
-------------------------------
+Architecture (Stage 2 forward, episode-prefix mode)
+---------------------------------------------------
 ::
 
-    backbone_inputs ─► Eagle.model(output_hidden_states=True)
-                         │
-                         ├─ hidden_states[0]  (pre-LLM)
-                         │       │
-                         │       ▼ masked-mean-pool over T_vl
-                         │   z [B, 2048]  (fp32)
-                         │       │
-                         │       ▼ ProgressPredictor (frozen outer; inner-loop optional)
-                         │   h_TTT [B, 2048]
-                         │       │
-                         │       ▼ .detach().unsqueeze(1)
-                         │   ttt_token [B, 1, 2048]
-                         │       │
-                         └─ hidden_states[-1] (vl_embeds, [B, T_vl, 2048])
-                                 │
-                                 ▼ concat ([vl_embeds, ttt_token])
-                         DiT cross-attn KV   [B, T_vl + 1, 2048]
-                                 │
-                                 ▼
-                            action_head (DiT) → action_loss
+    inputs:
+      ├─ ttt_z_seq      [B, T_max, 2048]   (Eagle pre-LLM 캐시 0..t 까지)
+      ├─ ttt_valid_mask [B, T_max] bool
+      └─ <GR00T 표준 obs at frame t (image, state, lang)>
+
+    ttt_z_seq, valid_mask
+        │
+        ▼ predictor.meta_forward (inner-loop SSL, create_graph=False)
+    ttt_outputs_seq [T_max, B, 2048]
+        │
+        ▼ gather last-valid timestep per item
+    LHT [B, 2048]
+        │
+        ▼ .detach().unsqueeze(1)
+    ttt_token [B, 1, 2048]
+
+    <obs at frame t> ─► Eagle.model(hidden_states[-1]) ─► post_llm [B, T_vl, 2048]
+        │
+        ▼ concat(post_llm, ttt_token) → DiT KV [B, T_vl+1, 2048]
+        ▼ DiT → action_loss
 
 Backward gradient routing
 -------------------------
-- ``action_loss`` flows back through DiT/state·action enc/dec; stops at the
-  ``.detach()`` on ``ttt_token``. Predictor outer params are also frozen via
-  ``requires_grad=False``.
-- Predictor's inner-loop adaptation (``ttt_step``) is independently controlled by
-  ``ttt_update_in_train``. Default False during training (deterministic forward),
-  enable for episode-aware experiments.
+- ``action_loss`` flows back through DiT/state·action enc/dec + GR00T LLM 상위
+  4 layer (config.model.tune_top_llm_layers=4).
+- ``.detach()`` on ``ttt_token`` + ``requires_grad=False`` on all predictor params
+  → TTT outer 파라미터 (P_K, P_V, P_Q, θ_0, f_adapt) 는 Phase 2 에서 학습 X.
+- Predictor's inner-loop adaptation (``ttt_step``) 는 ``ttt_update_in_train`` 으로
+  토글. **Default True**: episode prefix replay 시 frame 별 SSL 적용 → LHT 가
+  trajectory history 누적. Phase 2 학습/추론 모두 동일.
+
+Single-frame fallback
+---------------------
+``inputs`` 에 ``ttt_z_seq`` 가 없으면 (=배치가 trajectory 컨텍스트를 안 실어 줌)
+기존 single-frame ``_ttt_token(pre_llm, attn)`` 경로로 fallback. Phase 1 ckpt
+호환성 / smoke test 용.
 """
 
 from __future__ import annotations
@@ -94,7 +103,7 @@ class Gr00tN1d6WithTTT(Gr00tN1d6):
         predictor_proj_dim: int = 2048,
         predictor_inner_model: str = "linear",
         predictor_eta_base: float = 0.1,
-        ttt_update_in_train: bool = False,
+        ttt_update_in_train: bool = True,
         ttt_update_at_inference: bool = True,
     ):
         super().__init__(config, transformers_loading_kwargs=transformers_loading_kwargs)
@@ -204,15 +213,16 @@ class Gr00tN1d6WithTTT(Gr00tN1d6):
         pre_llm: torch.Tensor,
         attention_mask_bool: torch.Tensor,
     ) -> tuple[torch.Tensor, dict]:
-        """Pool pre-LLM, run predictor, return ``(ttt_token, pred_out)``.
+        """Single-frame fallback — `ttt_z_seq` 가 inputs 에 없을 때 사용.
 
+        Pool pre-LLM, run predictor 1 step, return ``(ttt_token, pred_out)``.
         ``ttt_token`` is detached and dtype-matched to ``pre_llm`` so it can be
         concatenated with ``post_llm`` (DiT KV) without grad flowing back to TTT.
 
         ``do_update`` paths:
-          - train: ``ttt_update_in_train`` (default False — deterministic forward).
+          - train: ``ttt_update_in_train`` (default True — frame 별 inner-loop).
           - eval/serve: ``ttt_update_at_inference`` (default True — inner-loop
-            adaptation per the user-specified design).
+            adaptation per episode 누적, serve 시 ``reset_predictor`` 명시 필요).
         Inside the update branch we flip f_adapt requires_grad transiently so
         ``ttt_step`` 's ``autograd.grad`` works without leaking into HF Trainer.
         """
@@ -231,6 +241,68 @@ class Gr00tN1d6WithTTT(Gr00tN1d6):
         h_TTT = pred_out["ttt_output"]                 # [B, proj_dim]
         ttt_token = h_TTT.detach().unsqueeze(1)        # [B, 1, proj_dim]
         ttt_token = ttt_token.to(pre_llm.dtype)
+        return ttt_token, pred_out
+
+    def _ttt_token_from_zseq(
+        self,
+        z_seq: torch.Tensor,           # [B, T_max, D]  fp16/bf16/fp32
+        valid_mask: torch.Tensor,      # [B, T_max] bool
+    ) -> tuple[torch.Tensor, dict]:
+        """**Episode-prefix replay → Latent History Token (LHT).**
+
+        Phase 2 의 핵심 경로. dataset 이 sample 마다 Eagle pre-LLM cache 에서
+        episode 시작부터 현재 frame 직전까지의 z_seq 를 cubidic 으로 채워 batch
+        로 보내주면, 여기서 sequential 하게 inner-loop SSL 을 돌려 trajectory
+        history 가 누적된 LHT 를 만든다. 각 batch item 의 마지막 valid timestep
+        에서의 TTT output 을 LHT 로 채택, detach 후 dtype 정합하여 token 으로 반환.
+
+        Notes
+        -----
+        * meta_forward 는 **batch-shared inner_params** 로 sequential 업데이트.
+          서로 다른 episode prefix 가 같은 inner_params 를 공유 → 평균화 효과로
+          contamination. Phase 1 meta-learning 과 동일한 batching 가정.
+          엄밀한 per-item independent replay 는 cost 가 batch 배여서 1차 implementation
+          에서는 생략. inference 시 batch=1 이라 무관.
+        * ``create_graph=False``: outer backprop 차단 (TTT 는 frozen).
+        * predictor.reset() 은 호출 안 함 — meta_forward 가 매 호출마다
+          ``get_inner_params()`` 로 θ_0 부터 시작.
+        """
+        B, T_max, D = z_seq.shape
+        target_dtype = z_seq.dtype
+
+        # meta_forward 는 [T, B, D] fp32 기대.
+        z_seq_t = z_seq.permute(1, 0, 2).contiguous().float()
+        valid_mask_t = valid_mask.permute(1, 0).contiguous()  # [T_max, B]
+
+        with self._enable_inner_grad():
+            result = self.predictor.meta_forward(
+                z_seq_t, create_graph=False, valid_mask=valid_mask_t,
+            )
+
+        ttt_outputs_seq = result["ttt_outputs_seq"]  # [T_max, B, D]
+
+        # batch item 별 마지막 valid timestep
+        last_valid = valid_mask.long().sum(dim=1) - 1            # [B], -1 if 모두 invalid
+        last_valid = last_valid.clamp(min=0)
+        arange_B = torch.arange(B, device=z_seq.device)
+        lht = ttt_outputs_seq[last_valid, arange_B, :]           # [B, D]
+
+        ttt_token = lht.detach().unsqueeze(1).to(target_dtype)   # [B, 1, D]
+
+        progress_seq = result["progress_seq"]                    # [T_max, B, 1]
+        progress_at_last = progress_seq[last_valid, arange_B, :]
+        # ssl_losses 는 list of T scalars; 마지막 valid timestep 의 평균 ssl
+        ssl_list = result["ssl_losses"]
+        if ssl_list:
+            ssl_at_last = ssl_list[-1] if torch.is_tensor(ssl_list[-1]) else torch.tensor(0.0)
+        else:
+            ssl_at_last = torch.tensor(0.0, device=z_seq.device)
+
+        pred_out = {
+            "progress": progress_at_last.detach(),
+            "ssl_loss": ssl_at_last.detach() if torch.is_tensor(ssl_at_last) else ssl_at_last,
+            "ttt_output": lht.detach(),
+        }
         return ttt_token, pred_out
 
     @staticmethod
@@ -258,9 +330,21 @@ class Gr00tN1d6WithTTT(Gr00tN1d6):
             "image_mask": new_img,
         })
 
-    def _backbone_with_ttt(self, backbone_inputs: dict):
+    def _backbone_with_ttt(
+        self,
+        backbone_inputs: dict,
+        ttt_z_seq: Optional[torch.Tensor] = None,
+        ttt_valid_mask: Optional[torch.Tensor] = None,
+    ):
         pre_llm, post_llm, attn, img_mask = self._eagle_full_forward(backbone_inputs)
-        ttt_token, pred_out = self._ttt_token(pre_llm, attn)
+
+        if ttt_z_seq is not None and ttt_valid_mask is not None:
+            # Phase 2 primary path: episode-prefix replay → LHT
+            ttt_token, pred_out = self._ttt_token_from_zseq(ttt_z_seq, ttt_valid_mask)
+        else:
+            # Fallback: single-frame pre-LLM pooling (legacy / smoke test)
+            ttt_token, pred_out = self._ttt_token(pre_llm, attn)
+
         backbone_outputs = self._augment_backbone_output(post_llm, attn, img_mask, ttt_token)
         return backbone_outputs, pred_out
 
@@ -268,21 +352,38 @@ class Gr00tN1d6WithTTT(Gr00tN1d6):
     # Public forward / get_action — drop-in for upstream Trainer
     # ─────────────────────────────────────────────
 
+    @staticmethod
+    def _pop_ttt_inputs(inputs):
+        """Pop ``ttt_z_seq`` / ``ttt_valid_mask`` so they don't reach `prepare_input`
+        (which would error on unknown keys). Returns (z_seq, valid_mask) or (None, None)."""
+        if not isinstance(inputs, dict):
+            return None, None
+        z_seq = inputs.pop("ttt_z_seq", None)
+        valid_mask = inputs.pop("ttt_valid_mask", None)
+        return z_seq, valid_mask
+
     def forward(self, inputs: dict) -> BatchFeature:
+        ttt_z_seq, ttt_valid_mask = self._pop_ttt_inputs(inputs)
         backbone_inputs, action_inputs = self.prepare_input(inputs)
-        backbone_outputs, pred_out = self._backbone_with_ttt(backbone_inputs)
+        backbone_outputs, pred_out = self._backbone_with_ttt(
+            backbone_inputs, ttt_z_seq=ttt_z_seq, ttt_valid_mask=ttt_valid_mask,
+        )
         action_outputs = self.action_head(backbone_outputs, action_inputs)
         # 모니터링 정보 (action loss 에 영향 없음)
         try:
             action_outputs["progress_pred"] = pred_out["progress"].detach()
-            action_outputs["ttt_ssl_loss"] = pred_out["ssl_loss"].detach()
+            ssl = pred_out["ssl_loss"]
+            action_outputs["ttt_ssl_loss"] = ssl.detach() if torch.is_tensor(ssl) else ssl
         except Exception:
             pass
         return action_outputs
 
     def get_action(self, inputs: dict) -> BatchFeature:
+        ttt_z_seq, ttt_valid_mask = self._pop_ttt_inputs(inputs)
         backbone_inputs, action_inputs = self.prepare_input(inputs)
-        backbone_outputs, _pred_out = self._backbone_with_ttt(backbone_inputs)
+        backbone_outputs, _pred_out = self._backbone_with_ttt(
+            backbone_inputs, ttt_z_seq=ttt_z_seq, ttt_valid_mask=ttt_valid_mask,
+        )
         return self.action_head.get_action(backbone_outputs, action_inputs)
 
 
@@ -299,45 +400,72 @@ def attach_ttt_to_groot(
     predictor_input_dim: int = 2048,
     predictor_inner_model: str = "linear",
     predictor_eta_base: float = 0.1,
-    ttt_update_in_train: bool = False,
+    ttt_update_in_train: bool = True,
     ttt_update_at_inference: bool = True,
-) -> Gr00tN1d6WithTTT:
-    """기존 ``Gr00tN1d6`` 인스턴스의 가중치를 그대로 가지고 ``Gr00tN1d6WithTTT`` 로
-    승격. upstream ``AutoModel.from_pretrained`` 호출 직후에 한 번 부르면 된다.
+) -> Gr00tN1d6:
+    """기존 ``Gr00tN1d6`` 인스턴스에 **in place** 로 TTT 를 부착.
+
+    이전 구현은 ``Gr00tN1d6WithTTT(config)`` 로 새 인스턴스를 만들고 weight 를 copy
+    했는데, ``__init__`` 안의 ``super().__init__()`` 가 Eagle3 backbone 을 from_config
+    로 다시 빌드하면서 ``Siglip2VisionModel.post_init()`` → ``_init_weights`` 의 upstream
+    ``NameError: Siglip2Model is not defined`` 버그를 트리거. base_model 은 이미 from_pretrained
+    로 정상 로드되어 있으므로, **재인스턴스화하지 않고** Gr00tN1d6WithTTT 의 메서드들을
+    기존 instance 에 bind + ``predictor`` submodule 만 추가하는 방식으로 동등 동작.
 
     ``predictor_state_path`` 가 주어지면 Phase 1 체크포인트도 함께 로드.
     """
-    config = base_model.config
-    new_model = Gr00tN1d6WithTTT(
-        config,
-        predictor_input_dim=predictor_input_dim,
-        predictor_proj_dim=predictor_proj_dim,
-        predictor_inner_model=predictor_inner_model,
-        predictor_eta_base=predictor_eta_base,
-        ttt_update_in_train=ttt_update_in_train,
-        ttt_update_at_inference=ttt_update_at_inference,
-    )
-    # base model 의 가중치 → 새 인스턴스로 복사. predictor 키는 base 에 없으므로
-    # strict=False (missing keys 만 발생, predictor 는 새로 init 된 상태 유지).
-    missing, unexpected = new_model.load_state_dict(base_model.state_dict(), strict=False)
-    pred_missing = [k for k in missing if not k.startswith("predictor.")]
-    if pred_missing:
-        logger.warning("Unexpected missing keys (non-predictor): %s", pred_missing[:10])
-    if unexpected:
-        logger.warning("Unexpected keys when copying base→ttt: %s", unexpected[:10])
+    from types import MethodType
 
-    # device / dtype 맞추기
     device = next(base_model.parameters()).device
-    dtype = next(base_model.parameters()).dtype
-    new_model = new_model.to(device=device)
-    # predictor 만 fp32 유지 (autograd.grad 가 fp32 에서 안전)
-    for n, p in new_model.named_parameters():
-        if not n.startswith("predictor."):
-            p.data = p.data.to(dtype=dtype)
-        else:
-            p.data = p.data.to(dtype=torch.float32)
 
+    # 1) Predictor 생성 & attach (fp32 로 — autograd.grad 안전성)
+    predictor = ProgressPredictor(
+        input_dim=predictor_input_dim,
+        proj_dim=predictor_proj_dim,
+        inner_model_type=predictor_inner_model,
+        eta_base=predictor_eta_base,
+        learnable_eta=False,
+    ).to(device=device, dtype=torch.float32)
+    base_model.predictor = predictor
+
+    # 2) TTT 관련 flag
+    base_model.ttt_update_in_train = ttt_update_in_train
+    base_model.ttt_update_at_inference = ttt_update_at_inference
+    base_model._predictor_loaded = False
+
+    # 3) Predictor outer params freeze — 기본은 모두 freeze, ttt_step 호출 시
+    # transient 하게 f_adapt 만 requires_grad=True (_enable_inner_grad context).
+    for p in base_model.predictor.parameters():
+        p.requires_grad = False
+
+    # 4) Gr00tN1d6WithTTT 의 메서드들을 base_model instance 에 bind.
+    #    static method 는 함수 그대로, instance method 는 MethodType 으로.
+    instance_methods = [
+        "forward",
+        "get_action",
+        "_backbone_with_ttt",
+        "_eagle_full_forward",
+        "_ttt_token",
+        "_ttt_token_from_zseq",
+        "_enable_inner_grad",
+        "_freeze_predictor_outer",
+        "load_predictor_state",
+        "reset_predictor",
+    ]
+    for name in instance_methods:
+        fn = getattr(Gr00tN1d6WithTTT, name)
+        setattr(base_model, name, MethodType(fn, base_model))
+
+    # static methods — class에서 가져온 그대로 (이미 underlying function 반환)
+    for name in ["_pop_ttt_inputs", "_masked_mean", "_augment_backbone_output"]:
+        setattr(base_model, name, getattr(Gr00tN1d6WithTTT, name))
+
+    # 5) Phase 1 ckpt 로드 (옵션)
     if predictor_state_path:
-        new_model.load_predictor_state(predictor_state_path)
+        base_model.load_predictor_state(predictor_state_path)
 
-    return new_model
+    logger.info(
+        "[attach_ttt] in-place attached to %s (update_in_train=%s, update_at_inference=%s)",
+        type(base_model).__name__, ttt_update_in_train, ttt_update_at_inference,
+    )
+    return base_model

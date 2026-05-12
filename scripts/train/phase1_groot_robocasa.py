@@ -53,7 +53,7 @@ DEFAULT_TASKS = [
     "PickPlaceCounterToStove", "PickPlaceCounterToSink",
 ]
 
-MAX_EP_LEN = Phase1V21EpisodicDataset.DEFAULT_MAX_EP_LEN  # 120
+DEFAULT_MAX_EP_LEN = Phase1V21EpisodicDataset.DEFAULT_MAX_EP_LEN  # 485 (RoboCasa atomic p99)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -76,6 +76,7 @@ def build_per_task_dataset(
     max_windows_per_episode: int,
     train_frac: float,
     split_seed: int,
+    max_ep_len: int,
 ) -> tuple[Phase1V21EpisodicDataset, Phase1V21EpisodicDataset]:
     """task 한 개에 대해 (train_ds, val_ds) 를 구성. v2.1 호환 — RoboCasaV21Reader 사용."""
     cache_path = cache_root / task / "embeddings.pt"
@@ -110,6 +111,7 @@ def build_per_task_dataset(
         embed_cache_path=str(cache_path),
         window_size=window_size,
         max_windows_per_episode=max_windows_per_episode,
+        max_ep_len=max_ep_len,
     )
     train_ds = Phase1V21EpisodicDataset(episode_indices=train_eps, **common)
     val_ds = Phase1V21EpisodicDataset(episode_indices=val_eps, **common)
@@ -125,12 +127,13 @@ def build_concat_datasets(
     max_windows_per_episode: int,
     train_frac: float,
     split_seed: int,
+    max_ep_len: int,
 ) -> tuple[ConcatDataset, ConcatDataset]:
     train_parts, val_parts = [], []
     for task in tasks:
         tr, va = build_per_task_dataset(
             task, data_root, cache_root, window_size, max_windows_per_episode,
-            train_frac, split_seed,
+            train_frac, split_seed, max_ep_len,
         )
         train_parts.append(tr)
         val_parts.append(va)
@@ -142,26 +145,29 @@ def build_concat_datasets(
 # ──────────────────────────────────────────────────────────────────────────
 
 
-def collate_fn(batch):
-    B = len(batch)
-    D = batch[0]["z_seq"].size(-1)
+def make_collate_fn(max_ep_len: int):
+    """max_ep_len 을 closure 로 받아 padding 길이 동적 결정."""
+    def collate_fn(batch):
+        B = len(batch)
+        D = batch[0]["z_seq"].size(-1)
 
-    z_seq = torch.zeros(B, MAX_EP_LEN, D)
-    targets = torch.zeros(B, MAX_EP_LEN, 1)
-    pred_mask = torch.zeros(B, MAX_EP_LEN, dtype=torch.bool)
-    valid_mask = torch.zeros(B, MAX_EP_LEN, dtype=torch.bool)
+        z_seq = torch.zeros(B, max_ep_len, D)
+        targets = torch.zeros(B, max_ep_len, 1)
+        pred_mask = torch.zeros(B, max_ep_len, dtype=torch.bool)
+        valid_mask = torch.zeros(B, max_ep_len, dtype=torch.bool)
 
-    for i, b in enumerate(batch):
-        T = b["ep_len"]
-        z_seq[i, :T] = b["z_seq"]
-        targets[i, :T] = b["targets"]
-        pred_mask[i, :T] = b["pred_mask"]
-        valid_mask[i, :T] = True
+        for i, b in enumerate(batch):
+            T = b["ep_len"]
+            z_seq[i, :T] = b["z_seq"]
+            targets[i, :T] = b["targets"]
+            pred_mask[i, :T] = b["pred_mask"]
+            valid_mask[i, :T] = True
 
-    return {
-        "z_seq": z_seq, "targets": targets,
-        "pred_mask": pred_mask, "valid_mask": valid_mask,
-    }
+        return {
+            "z_seq": z_seq, "targets": targets,
+            "pred_mask": pred_mask, "valid_mask": valid_mask,
+        }
+    return collate_fn
 
 
 def forward_pass(predictor, batch, device, lambda_self, create_graph=True):
@@ -230,6 +236,9 @@ def main():
     parser.add_argument("--tasks", type=str, nargs="+", default=DEFAULT_TASKS)
     parser.add_argument("--window_size", type=int, default=8)
     parser.add_argument("--max_windows_per_episode", type=int, default=8)
+    parser.add_argument("--max_ep_len", type=int, default=DEFAULT_MAX_EP_LEN,
+                        help="Episode padding 한도. RoboCasa atomic 은 p99=485, max=618. "
+                             "VITA paper(BridgeData) 는 120 이었음.")
     parser.add_argument("--train_frac", type=float, default=0.9,
                         help="task 별 episode 의 train 비율 (나머지 val)")
     parser.add_argument("--split_seed", type=int, default=42)
@@ -240,7 +249,7 @@ def main():
     parser.add_argument("--proj_dim", type=int, default=2048,
                         help="TTT inner dim. 2048 고정 — 학습된 표현이 곧바로 DiT KV(=backbone_embedding_dim) 토큰이 됨")
     parser.add_argument("--inner_model_type", type=str, default="linear",
-                        choices=["linear", "mlp"])
+                        choices=["linear", "mlp", "linear_preLN"])
     parser.add_argument("--head_hidden_dim", type=int, default=128)
     parser.add_argument("--eta_base", type=float, default=0.1)
 
@@ -298,9 +307,12 @@ def main():
         max_windows_per_episode=args.max_windows_per_episode,
         train_frac=args.train_frac,
         split_seed=args.split_seed,
+        max_ep_len=args.max_ep_len,
     )
-    print(f"[data] total train={len(train_ds)} val={len(val_ds)} episodes")
+    print(f"[data] total train={len(train_ds)} val={len(val_ds)} episodes "
+          f"(max_ep_len={args.max_ep_len})")
 
+    collate_fn = make_collate_fn(args.max_ep_len)
     loader_kwargs = dict(
         batch_size=args.batch_size,
         num_workers=args.num_workers,
@@ -398,14 +410,11 @@ def main():
         )
         predictor.train()
 
-        ckpt_path = save_dir / f"step_{global_step:06d}.pt"
-        torch.save({
-            "global_step": global_step,
-            "model_state_dict": predictor.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "scheduler_state_dict": scheduler.state_dict(),
-            "args": vars(args),
-        }, ckpt_path)
+        # Phase 2 wrapper 가 plain state_dict 를 기대하므로 (groot_wrapper.py
+        # `load_predictor_state` 참조) 매 epoch 저장도 같은 format 으로.
+        # 비교 실험용 — 5ep 결과는 `epoch_05.pt`, 10ep 은 `epoch_10.pt`.
+        ckpt_path = save_dir / f"epoch_{epoch+1:02d}.pt"
+        torch.save(predictor.state_dict(), ckpt_path)
         print(f"[save] {ckpt_path}")
 
     # 최종 — predictor.save_init() 으로 inner state 초기값 보존 후 final.pt

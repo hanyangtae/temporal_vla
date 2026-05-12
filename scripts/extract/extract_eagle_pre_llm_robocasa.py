@@ -305,24 +305,86 @@ def build_nested_obs(
 # ──────────────────────────────────────────────────────────────────────────
 
 
-def eagle_pre_llm_forward(policy, nested_obs: dict, device: str) -> torch.Tensor:
-    """Run only the Eagle backbone and return masked-mean-pooled hidden_states[0].
-
-    Mirrors ``Gr00tN1d6.prepare_input`` 's device-move pattern (uses
-    ``tree.map_structure`` for nested dicts/lists/tuples) to make sure every
-    tensor lands on the same device as ``policy.model.backbone.model`` —
-    pixel_values often arrives nested under the Eagle processor.
-    """
-    import tree as dm_tree
+def _process_nested_obs(policy, nested_obs: dict):
+    """Single-frame nested obs (B=1, T=1, ...) → processed message list (len=1)."""
     from gr00t.data.types import MessageType
-    from gr00t.policy.gr00t_policy import _rec_to_dtype
 
     unbatched = policy._unbatch_observation(nested_obs)
-    processed = []
+    out = []
     for obs in unbatched:
         vla_step = policy._to_vla_step_data(obs)
         messages = [{"type": MessageType.EPISODE_STEP.value, "content": vla_step}]
-        processed.append(policy.processor(messages))
+        out.append(policy.processor(messages))
+    return out
+
+
+def _eagle_pre_llm_only(eagle_model, pixel_values, input_ids):
+    """Compute hidden_states[0] WITHOUT running LLM transformer layers.
+
+    Eagle.forward() (modeling_eagle3_vl.py:213) normally does:
+       1. text embed (get_input_embeddings)
+       2. vision encoder + mlp1 projector (extract_feature)
+       3. <image> token positions ← vit_embeds
+       4. language_model(inputs_embeds=...) — full LLM forward (28 Qwen3 layers)
+       5. return hidden_states from LLM
+
+    We only want hidden_states[0] = post-step-3 sequence. Steps 1-3 only.
+    Skips step 4 entirely → ~5-10× faster on Qwen3-1.7B backbone.
+    """
+    input_embeds = eagle_model.language_model.get_input_embeddings()(input_ids)
+    vit_embeds = eagle_model.extract_feature(pixel_values, image_flags=None)
+
+    B, N, C = input_embeds.shape
+    input_embeds = input_embeds.reshape(B * N, C)
+    flat_ids = input_ids.reshape(B * N)
+    selected = flat_ids == eagle_model.image_token_index
+    try:
+        input_embeds[selected] = input_embeds[selected] * 0.0 + vit_embeds
+    except Exception:
+        n_tok = int(selected.sum().item())
+        input_embeds[selected] = input_embeds[selected] * 0.0 + vit_embeds[:n_tok]
+    return input_embeds.reshape(B, N, C)
+
+
+# ThreadPool 으로 batch 안 frame 별 ``policy.processor`` 호출을 병렬 실행
+# (huggingface tokenizer + NumPy/Pillow image 전처리는 GIL 해제 코드).
+_PROCESSOR_THREAD_POOL = None
+
+
+def _get_processor_pool(num_workers: int):
+    global _PROCESSOR_THREAD_POOL
+    if _PROCESSOR_THREAD_POOL is None or _PROCESSOR_THREAD_POOL._max_workers != num_workers:
+        import concurrent.futures
+        if _PROCESSOR_THREAD_POOL is not None:
+            _PROCESSOR_THREAD_POOL.shutdown(wait=False)
+        _PROCESSOR_THREAD_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=num_workers)
+    return _PROCESSOR_THREAD_POOL
+
+
+def eagle_pre_llm_forward_batched(
+    policy, nested_obs_list: list[dict], device: str, cpu_workers: int = 4,
+) -> torch.Tensor:
+    """Eagle backbone (vision encoder + embed + image-token merge) over N frames in one
+    GPU step. **LLM transformer layer skip** + **CPU prep parallel via ThreadPool**.
+
+    Each ``nested_obs_list[i]`` is a single-frame nested obs (B=1, T=1, ...). N frame 의
+    ``policy.processor`` 호출은 ``_get_processor_pool(cpu_workers)`` thread 들에서 동시
+    실행되어 CPU 측 가속. Returns ``[N, hidden_dim]`` fp32 cpu tensor.
+    """
+    import tree as dm_tree
+    from gr00t.policy.gr00t_policy import _rec_to_dtype
+
+    if cpu_workers > 1 and len(nested_obs_list) > 1:
+        pool = _get_processor_pool(cpu_workers)
+        # 각 nested → processed messages (list[dict]).
+        futures = [pool.submit(_process_nested_obs, policy, n) for n in nested_obs_list]
+        processed: list = []
+        for f in futures:
+            processed.extend(f.result())
+    else:
+        processed = []
+        for nested in nested_obs_list:
+            processed.extend(_process_nested_obs(policy, nested))
 
     collated = policy.collate_fn(processed)
     collated = _rec_to_dtype(collated, dtype=torch.bfloat16)
@@ -344,12 +406,15 @@ def eagle_pre_llm_forward(policy, nested_obs: dict, device: str) -> torch.Tensor
 
     backbone.set_frozen_modules_to_eval_mode()
     with torch.inference_mode():
-        outputs = backbone.model(**vl_input, output_hidden_states=True)
-    pre_llm = outputs.hidden_states[0]
+        pre_llm = _eagle_pre_llm_only(
+            backbone.model,
+            pixel_values=vl_input["pixel_values"],
+            input_ids=vl_input["input_ids"],
+        )                                                    # [N, T_vl, D]
     attn_mask = (vl_input["attention_mask"] == 1).to(pre_llm.dtype)
 
     mask = attn_mask.unsqueeze(-1)
-    z = (pre_llm * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1.0)
+    z = (pre_llm * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1.0)  # [N, D]
     return z.float().cpu()
 
 
@@ -369,7 +434,15 @@ def extract_one_task(
     language_key: str,
     device: str,
     override: bool,
+    batch_size: int = 32,
+    cpu_workers: int = 4,
 ) -> None:
+    """Per-task extraction.
+
+    Buffer 가 ``batch_size`` 채워질 때마다 Eagle (vision encoder + embed merge,
+    LLM transformer layer skip) 를 1번 forward. CPU 측 frame-별 ``policy.processor``
+    호출은 ``cpu_workers`` 개 thread 로 병렬화 (GIL 해제 가능한 부분에서만 효과).
+    """
     out_path = save_path / task_name / "embeddings.pt"
     if out_path.exists() and not override:
         print(f"[skip] {task_name}: {out_path} exists (use --override to redo)")
@@ -379,14 +452,28 @@ def extract_one_task(
     reader = RoboCasaV21Reader(lerobot_root)
     print(
         f"[task={task_name}] episodes={reader.total_episodes} "
-        f"frames={reader.total_frames}"
+        f"frames={reader.total_frames} batch_size={batch_size} cpu_workers={cpu_workers}"
     )
 
     embeddings: dict[int, torch.Tensor] = {}
+    buf_nested: list[dict] = []
+    buf_abs_idx: list[int] = []
+
+    def flush():
+        if not buf_nested:
+            return
+        zs = eagle_pre_llm_forward_batched(
+            policy, buf_nested, device, cpu_workers=cpu_workers,
+        )
+        for i, ai in enumerate(buf_abs_idx):
+            embeddings[int(ai)] = zs[i]
+        buf_nested.clear()
+        buf_abs_idx.clear()
+
     pbar = tqdm(reader.episodes, desc=task_name)
     for ep in pbar:
         ep_idx = int(ep["episode_index"])
-        for abs_idx, t, task_text, images in reader.iter_episode_frames(ep_idx):
+        for abs_idx, _t, task_text, images in reader.iter_episode_frames(ep_idx):
             nested = build_nested_obs(
                 images_by_lerobot_col=images,
                 task_text=task_text,
@@ -395,10 +482,12 @@ def extract_one_task(
                 state_dims=state_dims,
                 language_key=language_key,
             )
-            z = eagle_pre_llm_forward(policy, nested, device).squeeze(0)
-            embeddings[int(abs_idx)] = z
-
+            buf_nested.append(nested)
+            buf_abs_idx.append(abs_idx)
+            if len(buf_nested) >= batch_size:
+                flush()
         pbar.set_postfix(ep=ep_idx, ep_len=int(ep["length"]), cached=len(embeddings))
+    flush()  # 남은 frame 처리
 
     print(f"[save] {task_name}: {len(embeddings)} frames → {out_path}")
     torch.save(embeddings, out_path)
@@ -473,6 +562,15 @@ def main() -> None:
     parser.add_argument("--tasks", type=str, nargs="*", default=None)
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--override", action="store_true")
+    parser.add_argument(
+        "--batch_size", type=int, default=32,
+        help="Frame batch for Eagle forward. 32~64 안전 (80GB A100 기준).",
+    )
+    parser.add_argument(
+        "--cpu_workers", type=int, default=4,
+        help="ThreadPoolExecutor workers for parallel per-frame `policy.processor` calls. "
+             "GIL 한계로 ~4 cores 정도가 효과. 1 이면 sequential.",
+    )
     args = parser.parse_args()
 
     register_modality_config(args.modality_config_path)
@@ -506,6 +604,8 @@ def main() -> None:
             language_key=language_key,
             device=args.device,
             override=args.override,
+            batch_size=args.batch_size,
+            cpu_workers=args.cpu_workers,
         )
 
     print("[done]")

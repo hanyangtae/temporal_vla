@@ -28,7 +28,7 @@ python scripts/train/phase1_groot_robocasa.py \
     --head_hidden_dim 128 \
     --eta_base 0.1 \
     \
-    --n_epochs 5 \
+    --n_epochs 10 \
     --batch_size 32 \
     --lr 1e-4 \
     --lambda_self 0.5 \
@@ -40,3 +40,5 @@ python scripts/train/phase1_groot_robocasa.py \
     --save_dir outputs/train/phase1_groot_robocasa \
     --wandb_project temporal-vla \
     --wandb_run_name phase1_groot_robocasa_10tasks
+# 매 epoch 끝마다 epoch_NN.pt (plain state_dict) 저장. 5ep / 10ep 비교는 epoch_05.pt
+# 와 epoch_10.pt 를 Phase 2 wrapper.load_predictor_state(...) 에 각각 넣어서.

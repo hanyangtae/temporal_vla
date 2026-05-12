@@ -44,6 +44,7 @@ from gr00t.configs.finetune_config import FinetuneConfig
 from gr00t.experiment.experiment import run
 
 from src.ttt.integrations.launch_patch import setup_ttt_pipeline_patch
+from src.ttt.integrations.dataset_patch import setup_ttt_dataset_patch
 
 
 @dataclass
@@ -52,6 +53,11 @@ class TTTFinetuneConfig(FinetuneConfig):
 
     Empty ``ttt_predictor_path`` → baseline GR00T finetune (no TTT). 동일 entry
     로 baseline 도 돌릴 수 있다.
+
+    ``ttt_eagle_cache_root`` 가 채워지고 ``ttt_predictor_path`` 도 있으면 episode-prefix
+    모드 활성: dataset 이 sample 마다 ``ttt_z_seq`` (Eagle pre-LLM 캐시 0~t slice) +
+    ``ttt_valid_mask`` 를 부착, wrapper 가 sequential inner-loop replay → LHT.
+    비우면 single-frame fallback (current frame pre-LLM 만, contamination 위험 있음).
     """
 
     ttt_predictor_path: str = ""
@@ -60,6 +66,7 @@ class TTTFinetuneConfig(FinetuneConfig):
     ttt_predictor_proj_dim: int = 2048
     ttt_predictor_inner_model: str = "linear"
     ttt_predictor_eta_base: float = 0.1
+    ttt_eagle_cache_root: str = ""  # ex: /temporal_vla/data/robocasa_eagle_pre_llm
 
 
 def load_modality_config(modality_config_path: str) -> None:
@@ -96,17 +103,39 @@ if __name__ == "__main__":
         update_in_train=ft_config.ttt_update_in_train,
     )
 
-    # 3. config 빌드 (upstream launch_finetune.py 와 동일)
+    # 2b. TTT dataset patch — episode-prefix z_seq 주입 활성. eagle_cache_root + TTT 가
+    # 둘 다 켜져 있을 때만 적용 (baseline 이면 skip).
+    if ft_config.ttt_eagle_cache_root and ft_config.ttt_predictor_path:
+        setup_ttt_dataset_patch(eagle_cache_root=ft_config.ttt_eagle_cache_root)
+
+    # 3. config 빌드 (upstream launch_finetune.py 와 동일).
+    # dataset_path 가 ":" 로 구분된 multi-path 면 per-task mixture, 아니면 단일 dataset.
+    if ":" in ft_config.dataset_path:
+        ds_paths = [p for p in ft_config.dataset_path.split(":") if p]
+        datasets_cfg = [
+            {
+                "dataset_paths": [p],
+                "mix_ratio": 1.0 / len(ds_paths),
+                "embodiment_tag": embodiment_tag,
+            }
+            for p in ds_paths
+        ]
+    else:
+        datasets_cfg = [
+            {
+                "dataset_paths": [ft_config.dataset_path],
+                "mix_ratio": 1.0,
+                "embodiment_tag": embodiment_tag,
+            }
+        ]
     config = get_default_config().load_dict({
         "data": {
             "download_cache": False,
-            "datasets": [
-                {
-                    "dataset_paths": [ft_config.dataset_path],
-                    "mix_ratio": 1.0,
-                    "embodiment_tag": embodiment_tag,
-                }
-            ],
+            "datasets": datasets_cfg,
+            # default 'torchcodec' 미설치 + fallback pyav 는 get_frames_by_indices
+            # 가 NotImplementedError. ffmpeg binary 도 container 에 없음.
+            # decord 가 가장 가벼움 (pip install decord, 친구 script 와 동일).
+            "video_backend": "decord",
         }
     })
     config.load_config_path = None

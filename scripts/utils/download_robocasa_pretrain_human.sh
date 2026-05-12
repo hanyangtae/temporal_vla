@@ -50,8 +50,18 @@ download_one () {
   echo "[done] ${task}"
 }
 
+# 선택적 task 필터: 인자 주면 해당 task 만, 안 주면 10개 전체.
+SELECTED=("$@")
+
 for entry in "${ENTRIES[@]}"; do
   IFS='|' read -r task date box_id <<< "${entry}"
+  if [[ ${#SELECTED[@]} -gt 0 ]]; then
+    skip=1
+    for s in "${SELECTED[@]}"; do
+      if [[ "${s}" == "${task}" ]]; then skip=0; break; fi
+    done
+    [[ ${skip} -eq 1 ]] && continue
+  fi
   download_one "${task}" "${date}" "${box_id}"
 done
 

@@ -53,7 +53,7 @@ class ProgressPredictor(nn.Module):
         self,
         input_dim: int,
         proj_dim: int = 64,
-        inner_model_type: Literal["linear", "mlp"] = "linear",
+        inner_model_type: Literal["linear", "mlp", "linear_preLN"] = "linear",
         inner_expansion: int = 4,
         eta_base: float = 0.1,
         learnable_eta: bool = False,
