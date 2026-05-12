@@ -77,6 +77,7 @@ def build_per_task_dataset(
     train_frac: float,
     split_seed: int,
     max_ep_len: int,
+    max_episodes_per_task: int | None = None,
 ) -> tuple[Phase1V21EpisodicDataset, Phase1V21EpisodicDataset]:
     """task 한 개에 대해 (train_ds, val_ds) 를 구성. v2.1 호환 — RoboCasaV21Reader 사용."""
     cache_path = cache_root / task / "embeddings.pt"
@@ -100,6 +101,9 @@ def build_per_task_dataset(
         ep_idx for ep_idx, ep in all_eps.items()
         if ep["dataset_from_index"] in cached_indices
     ]
+    # episode index 기준 앞에서 N 개만 사용 (target 데이터셋이 500+ ep 라 cap 필요).
+    if max_episodes_per_task is not None and max_episodes_per_task > 0:
+        eligible = [e for e in eligible if e < max_episodes_per_task]
     rng = random.Random(split_seed)
     rng.shuffle(eligible)
     n_train = int(len(eligible) * train_frac)
@@ -128,12 +132,14 @@ def build_concat_datasets(
     train_frac: float,
     split_seed: int,
     max_ep_len: int,
+    max_episodes_per_task: int | None = None,
 ) -> tuple[ConcatDataset, ConcatDataset]:
     train_parts, val_parts = [], []
     for task in tasks:
         tr, va = build_per_task_dataset(
             task, data_root, cache_root, window_size, max_windows_per_episode,
             train_frac, split_seed, max_ep_len,
+            max_episodes_per_task=max_episodes_per_task,
         )
         train_parts.append(tr)
         val_parts.append(va)
@@ -242,6 +248,9 @@ def main():
     parser.add_argument("--train_frac", type=float, default=0.9,
                         help="task 별 episode 의 train 비율 (나머지 val)")
     parser.add_argument("--split_seed", type=int, default=42)
+    parser.add_argument("--max_episodes_per_task", type=int, default=None,
+                        help="task 별 사용할 episode index 상한 (ep_idx < N 만 사용). "
+                             "target 데이터셋은 task 당 500+ episode 라 cap 권장.")
 
     # Model — proj_dim=2048 고정 (Stage 2 에서 DiT KV 직접 주입)
     parser.add_argument("--input_dim", type=int, default=2048,
@@ -308,6 +317,7 @@ def main():
         train_frac=args.train_frac,
         split_seed=args.split_seed,
         max_ep_len=args.max_ep_len,
+        max_episodes_per_task=args.max_episodes_per_task,
     )
     print(f"[data] total train={len(train_ds)} val={len(val_ds)} episodes "
           f"(max_ep_len={args.max_ep_len})")

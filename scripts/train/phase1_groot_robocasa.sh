@@ -20,27 +20,40 @@ cd /temporal_vla
 
 INNER_MODEL_TYPE="${INNER_MODEL_TYPE:-linear}"
 SAVE_SUFFIX="${SAVE_SUFFIX:-}"
-WANDB_RUN_NAME="${WANDB_RUN_NAME:-phase1_groot_robocasa_30tasks_${INNER_MODEL_TYPE}}"
 N_EPOCHS="${N_EPOCHS:-10}"
 BATCH_SIZE="${BATCH_SIZE:-32}"
 LR="${LR:-1e-4}"
 MAX_WINDOWS_PER_EPISODE="${MAX_WINDOWS_PER_EPISODE:-24}"
+DATA_ROOT="${DATA_ROOT:-data/robocasa/v1.0/pretrain/atomic}"
+CACHE_ROOT="${CACHE_ROOT:-data/robocasa_eagle_pre_llm}"
+MAX_EPISODES_PER_TASK="${MAX_EPISODES_PER_TASK:-}"   # 빈 값 = 전체 사용
+
+# default = pretrain/atomic 30 task. TASKS env (공백 구분) 로 override.
+DEFAULT_TASKS=(
+  OpenDrawer CloseDrawer OpenCabinet CloseCabinet
+  OpenFridge CloseFridge OpenMicrowave CloseMicrowave
+  PickPlaceCounterToStove PickPlaceCounterToSink
+  OpenOven OpenDishwasher OpenFridgeDrawer OpenToasterOvenDoor
+  OpenBlenderLid OpenElectricKettleLid OpenStandMixerHead
+  PickPlaceCounterToCabinet PickPlaceCabinetToCounter PickPlaceCounterToDrawer
+  PickPlaceCounterToMicrowave PickPlaceCounterToOven
+  PickPlaceSinkToCounter PickPlaceStoveToCounter
+  TurnOnSinkFaucet TurnOnStove TurnOnMicrowave
+  TurnOnBlender TurnOnElectricKettle TurnOnToaster
+)
+if [ -n "${TASKS:-}" ]; then
+  # shellcheck disable=SC2206
+  TASKS_ARR=( ${TASKS} )
+else
+  TASKS_ARR=( "${DEFAULT_TASKS[@]}" )
+fi
+WANDB_RUN_NAME="${WANDB_RUN_NAME:-phase1_groot_robocasa_${#TASKS_ARR[@]}tasks_${INNER_MODEL_TYPE}}"
 
 cmd=(
     python scripts/train/phase1_groot_robocasa.py
-    --data_root  data/robocasa/v1.0/pretrain/atomic
-    --cache_root data/robocasa_eagle_pre_llm
-    --tasks
-        OpenDrawer CloseDrawer OpenCabinet CloseCabinet
-        OpenFridge CloseFridge OpenMicrowave CloseMicrowave
-        PickPlaceCounterToStove PickPlaceCounterToSink
-        OpenOven OpenDishwasher OpenFridgeDrawer OpenToasterOvenDoor
-        OpenBlenderLid OpenElectricKettleLid OpenStandMixerHead
-        PickPlaceCounterToCabinet PickPlaceCabinetToCounter PickPlaceCounterToDrawer
-        PickPlaceCounterToMicrowave PickPlaceCounterToOven
-        PickPlaceSinkToCounter PickPlaceStoveToCounter
-        TurnOnSinkFaucet TurnOnStove TurnOnMicrowave
-        TurnOnBlender TurnOnElectricKettle TurnOnToaster
+    --data_root  "${DATA_ROOT}"
+    --cache_root "${CACHE_ROOT}"
+    --tasks      "${TASKS_ARR[@]}"
     --window_size 8
     --max_windows_per_episode "${MAX_WINDOWS_PER_EPISODE}"
     --train_frac 0.9
@@ -66,8 +79,15 @@ if [ -n "${SAVE_SUFFIX}" ]; then
     cmd+=(--save_suffix "${SAVE_SUFFIX}")
 fi
 
+if [ -n "${MAX_EPISODES_PER_TASK}" ]; then
+    cmd+=(--max_episodes_per_task "${MAX_EPISODES_PER_TASK}")
+fi
+
 echo "=========================================="
-echo "Phase 1 training (RoboCasa 30 task)"
+echo "Phase 1 training (RoboCasa ${#TASKS_ARR[@]} task)"
+echo "  data_root:               ${DATA_ROOT}"
+echo "  cache_root:              ${CACHE_ROOT}"
+echo "  tasks:                   ${#TASKS_ARR[@]} (${TASKS_ARR[0]} ... ${TASKS_ARR[-1]})"
 echo "  inner_model_type:        ${INNER_MODEL_TYPE}"
 echo "  max_windows_per_episode: ${MAX_WINDOWS_PER_EPISODE}"
 echo "  n_epochs:                ${N_EPOCHS}"

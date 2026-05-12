@@ -436,6 +436,7 @@ def extract_one_task(
     override: bool,
     batch_size: int = 32,
     cpu_workers: int = 4,
+    max_episodes: int | None = None,
 ) -> None:
     """Per-task extraction.
 
@@ -450,9 +451,13 @@ def extract_one_task(
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     reader = RoboCasaV21Reader(lerobot_root)
+    eps_to_use = reader.episodes
+    if max_episodes is not None and max_episodes > 0:
+        eps_to_use = list(reader.episodes)[:max_episodes]
     print(
-        f"[task={task_name}] episodes={reader.total_episodes} "
+        f"[task={task_name}] episodes={len(eps_to_use)}/{reader.total_episodes} "
         f"frames={reader.total_frames} batch_size={batch_size} cpu_workers={cpu_workers}"
+        f"{' (capped)' if max_episodes else ''}"
     )
 
     embeddings: dict[int, torch.Tensor] = {}
@@ -470,7 +475,7 @@ def extract_one_task(
         buf_nested.clear()
         buf_abs_idx.clear()
 
-    pbar = tqdm(reader.episodes, desc=task_name)
+    pbar = tqdm(eps_to_use, desc=task_name)
     for ep in pbar:
         ep_idx = int(ep["episode_index"])
         for abs_idx, _t, task_text, images in reader.iter_episode_frames(ep_idx):
@@ -571,6 +576,10 @@ def main() -> None:
         help="ThreadPoolExecutor workers for parallel per-frame `policy.processor` calls. "
              "GIL 한계로 ~4 cores 정도가 효과. 1 이면 sequential.",
     )
+    parser.add_argument(
+        "--max_episodes", type=int, default=None,
+        help="Cap 추출 episode 수 per task (앞에서부터 N개). None 이면 전체.",
+    )
     args = parser.parse_args()
 
     register_modality_config(args.modality_config_path)
@@ -606,6 +615,7 @@ def main() -> None:
             override=args.override,
             batch_size=args.batch_size,
             cpu_workers=args.cpu_workers,
+            max_episodes=args.max_episodes,
         )
 
     print("[done]")

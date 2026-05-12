@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# RoboCasa atomic task 들의 Eagle pre-LLM 추출을 wave 단위 병렬 실행.
+# RoboCasa atomic task 들의 Eagle pre-LLM 추출을 task queue 방식으로 병렬 실행.
 #
-# 각 process = 1 task. Eagle backbone (~6.5 GB GPU mem) 로드 후 LLM-skip forward.
-# WAVE_SIZE 만큼 동시 실행 → 끝나면 다음 wave 시작 (한 GPU 의 메모리 한계 보호).
-# extract_eagle_pre_llm_robocasa.py 가 cache 이미 있으면 skip 하므로 30 task 전체 list
-# 해도 새 task 만 실제 추출.
+# 각 process = 1 task. Eagle backbone (~6.5-13 GB GPU mem) 로드 후 LLM-skip forward.
+# 한 task 끝나면 즉시 다음 task spawn (wave wait 없음) — 작은 task / 큰 task 가 섞여 있을
+# 때 GPU idle 시간 최소화. extract_eagle_pre_llm_robocasa.py 가 cache 이미 있으면 skip.
 #
 # 사용법:
 #   docker compose exec groot bash /temporal_vla/scripts/extract/extract_eagle_parallel.sh
@@ -12,8 +11,9 @@
 #   TASKS_OVERRIDE="OpenOven OpenDishwasher ..." bash .../extract_eagle_parallel.sh
 #
 # 옵션 환경변수:
-#   WAVE_SIZE=5        wave 당 동시 process (default 5 → 5 × 6.5GB = ~33GB GPU mem peak)
-#   BATCH=32           per-process Eagle batch
+#   MAX_CONCURRENT=5   동시 process 수 (default 5 → 5 × ~8GB = ~40GB GPU mem peak with batch=64)
+#                       (이전 이름 WAVE_SIZE 도 호환)
+#   BATCH=32           per-process Eagle forward batch (크면 GPU 효율 ↑)
 #   CPU_WORKERS=4      per-process processor threads
 #   LOG_DIR=/temporal_vla/outputs/eagle_logs
 #   TASKS_OVERRIDE     공백 구분 task list (지정 시 default 30 list 무시)
@@ -22,10 +22,14 @@ set -e
 
 cd /temporal_vla
 
-WAVE_SIZE="${WAVE_SIZE:-5}"
+# MAX_CONCURRENT (또는 backwards-compat 으로 WAVE_SIZE) — 동시 실행 process 수
+MAX_CONCURRENT="${MAX_CONCURRENT:-${WAVE_SIZE:-5}}"
 BATCH="${BATCH:-32}"
 CPU_WORKERS="${CPU_WORKERS:-4}"
 LOG_DIR="${LOG_DIR:-/temporal_vla/outputs/eagle_logs}"
+DATA_ROOT="${DATA_ROOT:-/temporal_vla/data/robocasa/v1.0/pretrain/atomic}"
+SAVE_PATH="${SAVE_PATH:-/temporal_vla/data/robocasa_eagle_pre_llm}"
+MAX_EPISODES="${MAX_EPISODES:-}"   # 빈 값이면 전체 episode 추출
 
 # default — 30 task. 이미 cache 있는 기존 10 도 list 에 있지만 extract script 가 skip.
 DEFAULT_TASKS=(
@@ -55,30 +59,33 @@ fi
 mkdir -p "$LOG_DIR"
 ts=$(date +%Y%m%d_%H%M%S)
 n_total=${#TASKS[@]}
-n_waves=$(( (n_total + WAVE_SIZE - 1) / WAVE_SIZE ))
-echo "[parallel] tasks=$n_total  wave_size=$WAVE_SIZE  → $n_waves waves, logs → $LOG_DIR/${ts}_*.log"
+echo "[parallel] tasks=$n_total  max_concurrent=$MAX_CONCURRENT  batch=$BATCH"
+echo "[parallel] logs → $LOG_DIR/${ts}_*.log"
 
-# wave 단위 spawn + wait
-for ((s=0; s<n_total; s+=WAVE_SIZE)); do
-  end=$(( s + WAVE_SIZE ))
-  (( end > n_total )) && end=$n_total
-  echo "[wave $(( s / WAVE_SIZE + 1 ))/$n_waves] tasks $s..$((end-1))"
-  pids=()
-  for ((i=s; i<end; i++)); do
-    task="${TASKS[$i]}"
-    log="$LOG_DIR/${ts}_${task}.log"
-    echo "  [spawn] $task → $log"
-    python scripts/extract/extract_eagle_pre_llm_robocasa.py \
-      --batch_size "$BATCH" \
-      --cpu_workers "$CPU_WORKERS" \
-      --tasks "$task" \
-      > "$log" 2>&1 &
-    pids+=($!)
-  done
-  # wave 끝까지 대기 (GPU 메모리 보호)
-  for pid in "${pids[@]}"; do
-    wait "$pid" || echo "  [warn] pid=$pid failed (continuing)"
-  done
-done
+# Task queue 방식: 한 task 끝나면 즉시 다음 spawn. wave wait 없음 → 작은/큰 task 섞여
+# 있을 때 GPU idle 최소화.
+spawn_task() {
+  local task="$1"
+  local log="$LOG_DIR/${ts}_${task}.log"
+  echo "  [spawn] $task → $log"
+  local extra_args=()
+  if [ -n "${MAX_EPISODES}" ]; then
+    extra_args+=(--max_episodes "${MAX_EPISODES}")
+  fi
+  python scripts/extract/extract_eagle_pre_llm_robocasa.py \
+    --data_root "$DATA_ROOT" \
+    --save_path "$SAVE_PATH" \
+    --batch_size "$BATCH" \
+    --cpu_workers "$CPU_WORKERS" \
+    --tasks "$task" \
+    "${extra_args[@]}" \
+    > "$log" 2>&1
+}
+export -f spawn_task
+export DATA_ROOT SAVE_PATH BATCH CPU_WORKERS LOG_DIR ts MAX_EPISODES
+
+# xargs -P 로 동시 process 수 제한하면서 task queue 처리.
+# 한 task 끝날 때마다 새 task spawn → GPU 가 항상 N process 로 가득찬 상태 유지.
+printf '%s\n' "${TASKS[@]}" | xargs -n 1 -P "$MAX_CONCURRENT" -I {} bash -c 'spawn_task "$@"' _ {}
 
 echo "[parallel] all waves done"

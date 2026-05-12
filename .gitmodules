@@ -24,3 +24,6 @@
 [submodule "src/policies/openvla-oft"]
 	path = src/policies/openvla-oft
 	url = https://github.com/moojink/openvla-oft.git
+[submodule "Isaac-GR00T-N1.5"]
+	path = src/policies/Isaac-GR00T-N1.5
+	url = https://github.com/NVIDIA/Isaac-GR00T.git

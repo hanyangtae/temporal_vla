@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# GR00T N1.6 fine-tuning on the merged RoboCasa 10-task LeRobot v2.1 dataset.
+# GR00T N1.6 baseline fine-tuning on RoboCasa 10-task atomic dataset (per-task mixture).
 #
-# Full fine-tune:
+# 변경 이력: 이전엔 merged single LeRobot v2.1 dataset 을 upstream launch_finetune.py 로
+# 학습했으나, per-task mixture 로 전환하면서 mirror entry launch_finetune_ttt.py 의 ":"-split
+# 을 사용한다 (upstream 의 --dataset_path 가 단일 str 라 multi-path 미지원). TTT 학습은
+# groot_ttt_robocasa_finetune.sh 별도. 이 wrapper 는 baseline 전용으로 TTT 인자 없음.
+#
+# Full baseline fine-tune:
 #   bash scripts/train/groot_robocasa_finetune.sh
 #   REPO_ROOT=/home/dongkyu/temporal_vla bash scripts/train/groot_robocasa_finetune.sh
 #   docker compose exec groot bash /temporal_vla/scripts/train/groot_robocasa_finetune.sh
@@ -47,18 +52,35 @@ if [ -z "${BASE_MODEL_PATH:-}" ]; then
     fi
 fi
 
-DATASET_PATH="${DATASET_PATH:-${REPO_ROOT}/data/datasets/robocasa_10tasks_lerobot_v21}"
+# Per-task mixture: 10 atomic task 경로를 ":" 로 join. launch_finetune_ttt 가 split.
+ATOMIC_ROOT="${ATOMIC_ROOT:-${REPO_ROOT}/data/robocasa/v1.0/pretrain/atomic}"
+DATE_TAG="${DATE_TAG:-20250819}"
+DATASET_PATH="${DATASET_PATH:-\
+${ATOMIC_ROOT}/OpenDrawer/${DATE_TAG}/lerobot:\
+${ATOMIC_ROOT}/CloseDrawer/${DATE_TAG}/lerobot:\
+${ATOMIC_ROOT}/OpenCabinet/${DATE_TAG}/lerobot:\
+${ATOMIC_ROOT}/CloseCabinet/${DATE_TAG}/lerobot:\
+${ATOMIC_ROOT}/OpenFridge/${DATE_TAG}/lerobot:\
+${ATOMIC_ROOT}/CloseFridge/${DATE_TAG}/lerobot:\
+${ATOMIC_ROOT}/OpenMicrowave/${DATE_TAG}/lerobot:\
+${ATOMIC_ROOT}/CloseMicrowave/${DATE_TAG}/lerobot:\
+${ATOMIC_ROOT}/PickPlaceCounterToStove/${DATE_TAG}/lerobot:\
+${ATOMIC_ROOT}/PickPlaceCounterToSink/${DATE_TAG}/lerobot}"
+
 MODALITY_CONFIG_PATH="${MODALITY_CONFIG_PATH:-${REPO_ROOT}/configs/policies/groot_robocasa_panda_omron_config.py}"
-OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/outputs/groot_robocasa_10tasks_full}"
+OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/outputs/groot_robocasa_baseline_10tasks}"
+ENTRY_SCRIPT="${ENTRY_SCRIPT:-${REPO_ROOT}/scripts/train/launch_finetune_ttt.py}"
 
 BASE_MODEL_PATH="$(expand_home "${BASE_MODEL_PATH}")"
-DATASET_PATH="$(expand_home "${DATASET_PATH}")"
 MODALITY_CONFIG_PATH="$(expand_home "${MODALITY_CONFIG_PATH}")"
 OUTPUT_DIR="$(expand_home "${OUTPUT_DIR}")"
+ENTRY_SCRIPT="$(expand_home "${ENTRY_SCRIPT}")"
 
+# ckpt 1개 ≈ 22GB. SAVE_STEPS=5000 × LIMIT=4 = 88GB 디스크 사용 가정.
+# 이전에 1k 주기 × limit=20 (=440GB) 으로 디스크 풀로 학습 사망한 사례 있음.
 MAX_STEPS="${MAX_STEPS:-20000}"
-SAVE_STEPS="${SAVE_STEPS:-500}"
-SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-2}"
+SAVE_STEPS="${SAVE_STEPS:-5000}"
+SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-4}"
 GLOBAL_BATCH_SIZE="${GLOBAL_BATCH_SIZE:-64}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-2}"
 SHARD_SIZE="${SHARD_SIZE:-1024}"
@@ -67,11 +89,12 @@ EPISODE_SAMPLING_RATE="${EPISODE_SAMPLING_RATE:-0.1}"
 LEARNING_RATE="${LEARNING_RATE:-1e-4}"
 WEIGHT_DECAY="${WEIGHT_DECAY:-1e-5}"
 WARMUP_RATIO="${WARMUP_RATIO:-0.05}"
-USE_WANDB="${USE_WANDB:-0}"
+USE_WANDB="${USE_WANDB:-1}"
 TUNE_PROJECTOR="${TUNE_PROJECTOR:-1}"
 TUNE_DIFFUSION_MODEL="${TUNE_DIFFUSION_MODEL:-1}"
+
 cmd=(
-    gr00t/experiment/launch_finetune.py
+    "${ENTRY_SCRIPT}"
     --base_model_path "${BASE_MODEL_PATH}"
     --dataset_path "${DATASET_PATH}"
     --embodiment_tag ROBOCASA_PANDA_OMRON
@@ -108,21 +131,23 @@ if [ "${USE_WANDB}" = "1" ]; then
     cmd+=(--use_wandb)
 fi
 
+n_tasks=$(echo "${DATASET_PATH}" | awk -F':' '{print NF}')
 echo "============================================"
-echo "GR00T RoboCasa 10-task fine-tune"
-echo "  Repo root:   ${REPO_ROOT}"
-echo "  GR00T dir:   ${ISAAC_GR00T_DIR}"
-echo "  Dataset:     ${DATASET_PATH}"
-echo "  Base model:  ${BASE_MODEL_PATH}"
-echo "  Output:      ${OUTPUT_DIR}"
-echo "  Steps:       ${MAX_STEPS}"
-echo "  Batch size:  ${GLOBAL_BATCH_SIZE}"
-echo "  GPUs:        ${NUM_GPUS}"
-echo "  Tune proj:   ${TUNE_PROJECTOR}"
-echo "  Tune DiT:    ${TUNE_DIFFUSION_MODEL}"
-echo "  Optim:       adamw_torch (from upstream launch_finetune.py)"
-echo "  VLLN:        upstream default"
-echo "  Python:      ${PYTHON_CMD[*]}"
+echo "GR00T RoboCasa baseline fine-tune (per-task mixture)"
+echo "  Repo root:    ${REPO_ROOT}"
+echo "  GR00T dir:    ${ISAAC_GR00T_DIR}"
+echo "  Entry:        ${ENTRY_SCRIPT}"
+echo "  Datasets:     ${n_tasks} tasks"
+echo "  Base model:   ${BASE_MODEL_PATH}"
+echo "  Output:       ${OUTPUT_DIR}"
+echo "  Steps:        ${MAX_STEPS}   (save every ${SAVE_STEPS}, keep ${SAVE_TOTAL_LIMIT})"
+echo "  Batch size:   ${GLOBAL_BATCH_SIZE}"
+echo "  GPUs:         ${NUM_GPUS}"
+echo "  Tune proj:    ${TUNE_PROJECTOR}"
+echo "  Tune DiT:     ${TUNE_DIFFUSION_MODEL}"
+echo "  Optim:        adamw_torch (from upstream launch_finetune.py)"
+echo "  VLLN:         upstream default"
+echo "  Python:       ${PYTHON_CMD[*]}"
 echo "============================================"
 
 if [ "${NUM_GPUS}" = "1" ]; then
