@@ -105,7 +105,43 @@ python3 src/policies/Isaac-GR00T-N1.5/scripts/inference_service.py --server \
 '
 ```
 
-`simulation_service.py --server`는 custom `--data_config`를 받지 않으므로 PandaOmron에는 사용하지 않는다. PandaOmron simulator rollout은 env registration, observation/action bridge, client compatibility를 별도 확인한 뒤 평가 기준으로 삼는다.
+`groot_n15` container는 N1.5 policy server / offline eval 용도다. RoboCasa simulator rollout은 `robocasa` container에서 실행한다. 기존 `scripts/eval/groot_robocasa.sh client-target15`는 N1.6 server protocol용이므로 N1.5 server에는 붙이지 않는다.
+
+PandaOmron rollout smoke, server:
+
+```bash
+docker compose up -d groot_n15
+
+docker exec -it groot_n15 bash -lc '
+N15_BASE_MODEL=/temporal_vla/data/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e
+PYTHONPATH=/temporal_vla/configs/policies:/temporal_vla/src/policies/Isaac-GR00T-N1.5:/temporal_vla \
+python3 /temporal_vla/src/policies/Isaac-GR00T-N1.5/scripts/inference_service.py --server \
+  --model_path "$N15_BASE_MODEL" \
+  --embodiment_tag new_embodiment \
+  --data_config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
+  --port 5555
+'
+```
+
+PandaOmron rollout smoke, client:
+
+```bash
+docker exec -it robocasa bash -lc '
+export MUJOCO_GL=egl
+PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite:/temporal_vla \
+python /temporal_vla/scripts/eval/groot_n15_robocasa_zmq_eval.py \
+  --policy-client-host 127.0.0.1 \
+  --policy-client-port 5555 \
+  --env-name robocasa_panda_omron/OpenCabinet_PandaOmron_Env \
+  --n-episodes 1 \
+  --n-envs 1 \
+  --n-action-steps 8 \
+  --max-episode-steps 120 \
+  --video-dir /temporal_vla/outputs/eval/robocasa/groot_n15/smoke_open_cabinet
+'
+```
+
+Full target-15 rollout은 위 smoke가 끝난 뒤 episode 수와 task loop를 늘린다. N1.5 base model은 PandaOmron pretrained head가 아니므로, base rollout result는 fine-tuning 전후 비교용 sanity baseline으로만 본다.
 
 ## Official GR1 Tabletop Eval
 
