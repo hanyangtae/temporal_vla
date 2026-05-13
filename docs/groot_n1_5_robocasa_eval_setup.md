@@ -39,6 +39,21 @@ container:
 
 `groot_n15` service의 `HF_HOME`은 `/temporal_vla/data/huggingface`로 둔다. 따라서 `nvidia/GR00T-N1.5-3B` repo id도 이 cache에서 해석될 수 있지만, eval 명령에서는 네트워크 접근을 피하기 위해 snapshot path를 직접 넘긴다.
 
+PandaOmron `new_embodiment` baseline은 base snapshot을 그대로 넘기지 않는다. N1.5 base snapshot의 `experiment_cfg/metadata.json`에는 `gr1`, `oxe_droid`, `agibot_genie1` metadata만 있고 `new_embodiment` metadata가 없다. Base weights를 그대로 쓰되 PandaOmron target-15 metadata를 붙인 local wrapper checkpoint를 먼저 만든다.
+
+```bash
+docker exec -it groot_n15 bash -lc '
+PYTHONPATH=/temporal_vla/configs/policies:/temporal_vla/src/policies/Isaac-GR00T-N1.5:/temporal_vla \
+python /temporal_vla/scripts/utils/prepare_groot_n15_base_new_embodiment.py
+'
+```
+
+Wrapper checkpoint:
+
+```text
+/temporal_vla/outputs/checkpoints/groot_n15_base_pandaomron_new_embodiment
+```
+
 ## PandaOmron Target 15-Task Eval
 
 PandaOmron은 N1.5에 pretrained embodiment tag가 없으므로 fine-tuning과 evaluation 모두 `new_embodiment`를 사용한다. `nvidia/GR00T-N1.5-3B` base model과 fine-tuned checkpoint 비교는 Panda pretrained 성능 비교가 아니라 같은 PandaOmron schema에서 fine-tuning 전후를 보는 ablation이다.
@@ -49,10 +64,10 @@ Base model:
 
 ```bash
 docker compose exec groot_n15 bash -lc '
-N15_BASE_MODEL=/temporal_vla/data/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e
+N15_PANDA_BASE_MODEL=/temporal_vla/outputs/checkpoints/groot_n15_base_pandaomron_new_embodiment
 PYTHONPATH=/temporal_vla/configs/policies:/temporal_vla/src/policies/Isaac-GR00T-N1.5:$PYTHONPATH \
 python3 src/policies/Isaac-GR00T-N1.5/scripts/eval_policy.py \
-  --model-path "$N15_BASE_MODEL" \
+  --model-path "$N15_PANDA_BASE_MODEL" \
   --dataset-path /temporal_vla/data/robocasa/v1.0/target/atomic/OpenCabinet/20250813/lerobot \
   --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
   --embodiment-tag new_embodiment \
@@ -82,12 +97,12 @@ Inference server smoke, base model:
 
 ```bash
 docker compose exec groot_n15 bash -lc '
-N15_BASE_MODEL=/temporal_vla/data/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e
+N15_PANDA_BASE_MODEL=/temporal_vla/outputs/checkpoints/groot_n15_base_pandaomron_new_embodiment
 PYTHONPATH=/temporal_vla/configs/policies:/temporal_vla/src/policies/Isaac-GR00T-N1.5:$PYTHONPATH \
 python3 src/policies/Isaac-GR00T-N1.5/scripts/inference_service.py --server \
-  --model_path "$N15_BASE_MODEL" \
-  --embodiment_tag new_embodiment \
-  --data_config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
+  --model-path "$N15_PANDA_BASE_MODEL" \
+  --embodiment-tag new_embodiment \
+  --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
   --port 5555
 '
 ```
@@ -98,9 +113,9 @@ Inference server smoke, fine-tuned checkpoint:
 docker compose exec groot_n15 bash -lc '
 PYTHONPATH=/temporal_vla/configs/policies:/temporal_vla/src/policies/Isaac-GR00T-N1.5:$PYTHONPATH \
 python3 src/policies/Isaac-GR00T-N1.5/scripts/inference_service.py --server \
-  --model_path /temporal_vla/outputs/train/groot_n1_5/<RUN>/checkpoint-<STEP> \
-  --embodiment_tag new_embodiment \
-  --data_config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
+  --model-path /temporal_vla/outputs/train/groot_n1_5/<RUN>/checkpoint-<STEP> \
+  --embodiment-tag new_embodiment \
+  --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
   --port 5555
 '
 ```
@@ -113,12 +128,12 @@ PandaOmron rollout smoke, server:
 docker compose up -d groot_n15
 
 docker exec -it groot_n15 bash -lc '
-N15_BASE_MODEL=/temporal_vla/data/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e
+N15_PANDA_BASE_MODEL=/temporal_vla/outputs/checkpoints/groot_n15_base_pandaomron_new_embodiment
 PYTHONPATH=/temporal_vla/configs/policies:/temporal_vla/src/policies/Isaac-GR00T-N1.5:/temporal_vla \
 python3 /temporal_vla/src/policies/Isaac-GR00T-N1.5/scripts/inference_service.py --server \
-  --model_path "$N15_BASE_MODEL" \
-  --embodiment_tag new_embodiment \
-  --data_config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
+  --model-path "$N15_PANDA_BASE_MODEL" \
+  --embodiment-tag new_embodiment \
+  --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
   --port 5555
 '
 ```
@@ -137,11 +152,17 @@ python /temporal_vla/scripts/eval/groot_n15_robocasa_zmq_eval.py \
   --n-envs 1 \
   --n-action-steps 8 \
   --max-episode-steps 120 \
+  --steps-per-render 2 \
+  --video-fps 10 \
   --video-dir /temporal_vla/outputs/eval/robocasa/groot_n15/smoke_open_cabinet
 '
 ```
 
 Full target-15 rollout은 위 smoke가 끝난 뒤 episode 수와 task loop를 늘린다. N1.5 base model은 PandaOmron pretrained head가 아니므로, base rollout result는 fine-tuning 전후 비교용 sanity baseline으로만 본다.
+
+`groot_n15_robocasa_zmq_eval.py`는 RoboCasa env observation 중 N1.5 PandaOmron data config가 요구하는 key만 서버로 보낸다. Extra `state.*`, original `video.res*`, duplicate language key를 같이 보내면 N1.5 transform이 잘못된 modality set으로 처리할 수 있다. Base `new_embodiment` rollout은 wiring 검증용이며, 행동 성능은 fine-tuned checkpoint에서 판단한다.
+
+Video length is controlled by `max_episode_steps / steps_per_render / video_fps`. For example, `max_episode_steps=120`, `steps_per_render=2`, `video_fps=20` produces `60 frames / 20 fps = 3s`. Use `--video-fps 10` with `--steps-per-render 2` to show the 120-step smoke as roughly 6s.
 
 ## Official GR1 Tabletop Eval
 
@@ -153,9 +174,9 @@ Base model server:
 docker compose exec groot_n15 bash -lc '
 N15_BASE_MODEL=/temporal_vla/data/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e
 python3 src/policies/Isaac-GR00T-N1.5/scripts/inference_service.py --server \
-  --model_path "$N15_BASE_MODEL" \
-  --embodiment_tag gr1 \
-  --data_config fourier_gr1_arms_waist \
+  --model-path "$N15_BASE_MODEL" \
+  --embodiment-tag gr1 \
+  --data-config fourier_gr1_arms_waist \
   --port 5555
 '
 ```
@@ -165,9 +186,9 @@ Official fine-tuned checkpoint server:
 ```bash
 docker compose exec groot_n15 bash -lc '
 python3 src/policies/Isaac-GR00T-N1.5/scripts/inference_service.py --server \
-  --model_path youliangtan/gr00t-n1.5-robocasa-tabletop-posttrain \
-  --embodiment_tag gr1 \
-  --data_config fourier_gr1_arms_waist \
+  --model-path youliangtan/gr00t-n1.5-robocasa-tabletop-posttrain \
+  --embodiment-tag gr1 \
+  --data-config fourier_gr1_arms_waist \
   --port 5555
 '
 ```
@@ -177,9 +198,9 @@ Local GR1 checkpoint server:
 ```bash
 docker compose exec groot_n15 bash -lc '
 python3 src/policies/Isaac-GR00T-N1.5/scripts/inference_service.py --server \
-  --model_path /temporal_vla/outputs/groot_n1_5_robocasa_tabletop/checkpoint-60000 \
-  --embodiment_tag gr1 \
-  --data_config fourier_gr1_arms_waist \
+  --model-path /temporal_vla/outputs/groot_n1_5_robocasa_tabletop/checkpoint-60000 \
+  --embodiment-tag gr1 \
+  --data-config fourier_gr1_arms_waist \
   --port 5555
 '
 ```

@@ -41,6 +41,17 @@ OBS_ALIASES = {
     "video.res256_image_wrist_0": "video.robot0_eye_in_hand",
     "annotation.human.action.task_description": "annotation.human.task_description",
 }
+REQUIRED_OBS_KEYS = {
+    "video.robot0_agentview_left",
+    "video.robot0_agentview_right",
+    "video.robot0_eye_in_hand",
+    "state.base_position",
+    "state.base_rotation",
+    "state.end_effector_position_relative",
+    "state.end_effector_rotation_relative",
+    "state.gripper_qpos",
+    "annotation.human.task_description",
+}
 
 
 class N15MsgSerializer:
@@ -103,7 +114,11 @@ class N15PolicyClient:
         for src, dst in OBS_ALIASES.items():
             if src in aliased and dst not in aliased:
                 aliased[dst] = aliased[src]
-        return self.call_endpoint("get_action", aliased), {}
+        filtered = {key: aliased[key] for key in REQUIRED_OBS_KEYS if key in aliased}
+        missing = sorted(REQUIRED_OBS_KEYS - filtered.keys())
+        if missing:
+            raise KeyError(f"Missing N1.5 PandaOmron observation keys: {missing}")
+        return self.call_endpoint("get_action", filtered), {}
 
 
 def parse_args() -> argparse.Namespace:
@@ -115,6 +130,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-envs", type=int, default=1)
     parser.add_argument("--n-action-steps", type=int, default=8)
     parser.add_argument("--max-episode-steps", type=int, default=120)
+    parser.add_argument("--video-fps", type=int, default=20)
+    parser.add_argument("--steps-per-render", type=int, default=2)
     parser.add_argument("--video-dir", type=str, default=None)
     return parser.parse_args()
 
@@ -128,7 +145,12 @@ def main() -> None:
     Path(video_dir).mkdir(parents=True, exist_ok=True)
 
     wrapper_configs = WrapperConfigs(
-        video=VideoConfig(video_dir=video_dir, max_episode_steps=args.max_episode_steps),
+        video=VideoConfig(
+            video_dir=video_dir,
+            max_episode_steps=args.max_episode_steps,
+            fps=args.video_fps,
+            steps_per_render=args.steps_per_render,
+        ),
         multistep=MultiStepConfig(
             n_action_steps=args.n_action_steps,
             max_episode_steps=args.max_episode_steps,
