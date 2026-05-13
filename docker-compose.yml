@@ -111,6 +111,39 @@ services:
     stdin_open: true
     command: ["/bin/bash"]
 
+  # ── GR00T N1.5 (Isaac-GR00T-N1.5 공식) ─────────────────────────
+  # N1.5 RoboCasa GR1 tabletop recipe / PandaOmron new_embodiment sanity.
+
+  groot_n15:
+    container_name: groot_n15
+    image: temporal-vla:groot-n15
+    build:
+      context: ./src/policies/Isaac-GR00T-N1.5
+      dockerfile: Dockerfile
+    user: "${USER_ID}:${GROUP_ID}"
+    volumes:
+      - .:/temporal_vla:rw
+    environment:
+      - HOME=/tmp
+      - HF_HOME=/temporal_vla/data/huggingface
+      - HF_TRUST_REMOTE_CODE=1
+      - HF_TOKEN=${HF_TOKEN}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+      - PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T-N1.5:/temporal_vla/configs/policies:/temporal_vla
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    network_mode: host
+    ipc: host
+    tty: true
+    stdin_open: true
+    working_dir: /temporal_vla
+    command: ["/bin/bash"]
+
   # ── VLA Model Services (LeRobot 미지원 모델) ─────────────────────
   # 독립 환경에서 학습/추론. 평가는 robocasa 컨테이너에서 HTTP로 요청.
 
