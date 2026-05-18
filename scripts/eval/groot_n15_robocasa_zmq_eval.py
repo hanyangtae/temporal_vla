@@ -132,6 +132,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-episode-steps", type=int, default=120)
     parser.add_argument("--video-fps", type=int, default=20)
     parser.add_argument("--steps-per-render", type=int, default=2)
+    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--video-file-prefix", type=str, default=None)
+    parser.add_argument("--no-video-outcome-suffix", action="store_true")
+    parser.add_argument(
+        "--one-episode-per-env",
+        action="store_true",
+        help="Count only the first episode from each vector env. Use this for exact seed pairs.",
+    )
     parser.add_argument("--video-dir", type=str, default=None)
     return parser.parse_args()
 
@@ -150,12 +158,17 @@ def main() -> None:
             max_episode_steps=args.max_episode_steps,
             fps=args.video_fps,
             steps_per_render=args.steps_per_render,
+            filename_prefix=args.video_file_prefix,
+            append_outcome_to_filename=not args.no_video_outcome_suffix,
+            record_first_episode_only=args.one_episode_per_env,
         ),
         multistep=MultiStepConfig(
             n_action_steps=args.n_action_steps,
             max_episode_steps=args.max_episode_steps,
             terminate_on_success=True,
         ),
+        seed=args.seed,
+        one_episode_per_env=args.one_episode_per_env,
     )
     policy = N15PolicyClient(args.policy_client_host, args.policy_client_port)
     results = run_rollout_gymnasium_policy(

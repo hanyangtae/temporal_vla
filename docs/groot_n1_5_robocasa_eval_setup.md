@@ -7,7 +7,7 @@
 | Scope | Embodiment | Data config | Main scripts |
 | --- | --- | --- | --- |
 | Official GR1 tabletop | `gr1` | `fourier_gr1_arms_waist` | `inference_service.py`, `simulation_service.py` |
-| PandaOmron target atomic-seen 15-task | `new_embodiment` | `robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig` | `eval_policy.py`, `inference_service.py` |
+| PandaOmron target atomic-seen 15-task | `new_embodiment` | `robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig` | `eval_policy.py`, `inference_service.py`, `groot_n15_robocasa_zmq_eval.py`, `run_groot_n15_target15_seedpairs.sh` |
 
 N1.6 eval은 `groot`/`robocasa` 두 container와 `scripts/eval/groot_robocasa.sh`를 사용한다. N1.5 eval은 `groot_n15` service와 N1.5 submodule의 scripts를 사용한다.
 
@@ -122,23 +122,9 @@ python3 src/policies/Isaac-GR00T-N1.5/scripts/inference_service.py --server \
 
 `groot_n15` container는 N1.5 policy server / offline eval 용도다. RoboCasa simulator rollout은 `robocasa` container에서 실행한다. 기존 `scripts/eval/groot_robocasa.sh client-target15`는 N1.6 server protocol용이므로 N1.5 server에는 붙이지 않는다.
 
-PandaOmron rollout smoke, server:
-
-```bash
-docker compose up -d groot_n15
-
-docker exec -it groot_n15 bash -lc '
-N15_PANDA_BASE_MODEL=/temporal_vla/outputs/checkpoints/groot_n15_base_pandaomron_new_embodiment
-PYTHONPATH=/temporal_vla/configs/policies:/temporal_vla/src/policies/Isaac-GR00T-N1.5:/temporal_vla \
-python3 /temporal_vla/src/policies/Isaac-GR00T-N1.5/scripts/inference_service.py --server \
-  --model-path "$N15_PANDA_BASE_MODEL" \
-  --embodiment-tag new_embodiment \
-  --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
-  --port 5555
-'
-```
-
 PandaOmron rollout smoke, client:
+
+아래 client는 위 `Inference server smoke` 중 하나가 떠 있는 상태에서 실행한다. Base server를 띄웠으면 base rollout smoke, fine-tuned server를 띄웠으면 fine-tuned rollout smoke가 된다.
 
 ```bash
 docker exec -it robocasa bash -lc '
@@ -164,9 +150,91 @@ Full target-15 rollout은 위 smoke가 끝난 뒤 episode 수와 task loop를 �
 
 Video length is controlled by `max_episode_steps / steps_per_render / video_fps`. For example, `max_episode_steps=120`, `steps_per_render=2`, `video_fps=20` produces `60 frames / 20 fps = 3s`. Use `--video-fps 10` with `--steps-per-render 2` to show the 120-step smoke as roughly 6s.
 
+### PandaOmron target-15 rollout runner
+
+위의 `Inference server smoke` / `PandaOmron rollout smoke, client`가 가장 기본적인 manual server-client 통신 확인 절차다. Full target-15 SR rollout은 server를 같은 방식으로 먼저 띄워 둔 뒤, `scripts/eval/run_groot_n15_target15_seedpairs.sh`로 client 실행을 반복한다. 이 wrapper는 server를 띄우지 않고, `robocasa` container에서 client만 실행한다.
+
+`scripts/eval/run_groot_n15_target15_seedpairs.sh`는 내부적으로 N1.5 server protocol용 `groot_n15_robocasa_zmq_eval.py`를 호출한다. `scripts/eval/groot_robocasa.sh client-target15`는 N1.6 server protocol용이므로 N1.5 server에는 사용하지 않는다.
+
+평가 단위는 dataset episode index가 아니라 simulator seed다. 예를 들어 `--seed-start 101 --seed-count 4`는 task별로 seeds `101,102,103,104` 네 scene을 rollout한다. `n_envs=2`이면 seed pair를 `101-102`, `103-104`로 나누어 실행한다.
+
+Single server-client eval은 server 하나를 이미 띄운 상태에서 client만 한 종류로 실행한다:
+
+```bash
+# tuned server 하나만 평가. Remote tuned server 예시.
+TUNED_HOST=166.104.35.50 \
+TUNED_PORT=5556 \
+RUN_ID=n15_tuned_seed101_104_$(date +%Y%m%d_%H%M%S) \
+bash scripts/eval/run_groot_n15_target15_seedpairs.sh \
+  --mode tuned \
+  --seed-start 101 \
+  --seed-count 4 \
+  --n-envs 4
+```
+
+```bash
+# local base server 하나만 평가. Base server가 127.0.0.1:5557에 떠 있어야 한다.
+BASE_HOST=127.0.0.1 \
+BASE_PORT=5557 \
+RUN_ID=n15_base_seed101_104_$(date +%Y%m%d_%H%M%S) \
+bash scripts/eval/run_groot_n15_target15_seedpairs.sh \
+  --mode base \
+  --seed-start 101 \
+  --seed-count 4 \
+  --n-envs 4
+```
+
+Base/tuned pair comparison은 base server와 tuned server를 둘 다 띄운 상태에서 같은 task/seed client를 병렬 실행한다:
+
+```bash
+# base 2 env + tuned 2 env = 총 4 RoboCasa env 동시 실행.
+BASE_HOST=127.0.0.1 \
+BASE_PORT=5557 \
+TUNED_HOST=166.104.35.50 \
+TUNED_PORT=5556 \
+RUN_ID=n15_target15_seed101_104_base_tuned_$(date +%Y%m%d_%H%M%S) \
+bash scripts/eval/run_groot_n15_target15_seedpairs.sh \
+  --mode both \
+  --seed-start 101 \
+  --seed-count 4 \
+  --n-envs 2
+```
+
+다음 4개 seed set은 같은 방식으로 `--seed-start 105 --seed-count 4`를 사용한다. 두 set은 서로 다른 seeds를 쓰므로 같은 task라도 scene 초기화가 겹치지 않는다.
+
+단일 task만 확인할 때:
+
+```bash
+TASKS_CSV=OpenCabinet \
+RUN_ID=n15_tuned_open_cabinet_seed101_104_$(date +%Y%m%d_%H%M%S) \
+bash scripts/eval/run_groot_n15_target15_seedpairs.sh \
+  --mode tuned \
+  --seed-start 101 \
+  --seed-count 4 \
+  --n-envs 4
+```
+
+Output layout:
+
+```text
+outputs/eval/robocasa/groot_n15/target15_seedpairs_<RUN_ID>/
+├── summary.tsv
+├── vram.csv                         # VRAM monitor를 별도로 붙인 경우
+├── base/<Task>/seed_<N>/run.log
+├── base/<Task>/seed_<N>/videos/<Task>_seed<N>.mp4
+├── tuned/<Task>/seed_<N>/run.log
+└── tuned/<Task>/seed_<N>/videos/<Task>_seed<N>.mp4
+```
+
+`base`와 `tuned`의 같은 task/seed 영상은 파일명이 같고 경로만 다르다. 예를 들어 `base/OpenCabinet/seed_101/videos/OpenCabinet_seed101.mp4`와 `tuned/OpenCabinet/seed_101/videos/OpenCabinet_seed101.mp4`를 직접 비교한다. 성공 여부는 파일명 suffix가 아니라 `summary.tsv`와 각 `run.log`의 `results: [True, False, ...]`로 판단한다.
+
+VRAM 주의: `--mode both --n-envs 2`는 local base server와 RoboCasa render/env까지 겹쳐 16GB GPU에서 15GB 후반까지 올라갈 수 있다. OOM이 나면 `--mode tuned --n-envs 4`처럼 단일 server-client로 먼저 돌리거나, `--mode both --n-envs 1`로 낮춘다.
+
 ## Official GR1 Tabletop Eval
 
 공식 N1.5 RoboCasa README는 먼저 inference server를 열고, RoboCasa simulation client를 실행하는 방식을 사용한다. 공식 reported SR은 task당 50 rollouts 기준이며, `n_envs > 1`은 success rate를 낮출 수 있다는 경고가 있다.
+
+이 절은 official GR1 tabletop 재현용 참고다. PandaOmron target-15 평가는 위 `PandaOmron Target 15-Task Eval` 절의 `new_embodiment` / `robocasa` container client 절차를 따른다.
 
 Base model server:
 

@@ -653,7 +653,7 @@ python scripts/gr00t_finetune.py \
 
 N1.5 eval은 N1.6 eval과 별도 경로를 사용한다. N1.6의 `docs/groot_robocasa_eval_setup.md`는 `groot`/`robocasa` ZMQ workflow 기준이고, N1.5는 `groot_n15` service와 `src/policies/Isaac-GR00T-N1.5/scripts` 아래 entrypoint를 사용한다.
 
-상세 명령은 `docs/groot_n1_5_robocasa_eval_setup.md`를 기준으로 한다.
+상세 명령은 `docs/groot_n1_5_robocasa_eval_setup.md`를 기준으로 한다. 해당 문서에서 single server-client eval(`--mode tuned` / `--mode base`)과 base/tuned pair comparison(`--mode both`)을 분리해서 안내한다.
 
 권장 확인 순서:
 
