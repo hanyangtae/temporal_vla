@@ -26,6 +26,7 @@ GEMINI.md
 !.claude/agent-memory/
 .cursor/
 
+CONTEXT.md
 # Model checkpoints
 *.pth
 *.pt
