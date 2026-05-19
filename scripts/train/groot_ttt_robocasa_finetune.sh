@@ -18,7 +18,7 @@ cd /temporal_vla/src/policies/Isaac-GR00T
 
 NUM_GPUS="${NUM_GPUS:-1}"
 MASTER_PORT="${MASTER_PORT:-29500}"
-BASE_MODEL_PATH="${BASE_MODEL_PATH:-/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B}"
+BASE_MODEL_PATH="${BASE_MODEL_PATH:-/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B}"
 
 # Per-task mixture — 10 atomic task 경로를 ":" 로 join. launch_finetune_ttt 가 split.
 ATOMIC_ROOT="/temporal_vla/data/robocasa/v1.0/pretrain/atomic"

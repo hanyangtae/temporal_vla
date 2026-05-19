@@ -80,7 +80,7 @@ sys.path.insert(0, "/temporal_vla/src/policies/Isaac-GR00T")
 REPO_ROOT = Path("/temporal_vla")
 DEFAULT_BASE = REPO_ROOT / "data/robocasa/v1.0/pretrain/atomic"
 DEFAULT_SAVE = REPO_ROOT / "data/robocasa_eagle_pre_llm"
-DEFAULT_MODEL_PATH = REPO_ROOT / "checkpoints/nvidia/GR00T-N1.6-3B"
+DEFAULT_MODEL_PATH = REPO_ROOT / "outputs/checkpoints/GR00T-N1.6-3B"
 DEFAULT_MODALITY_CONFIG = REPO_ROOT / "configs/policies/groot_robocasa_panda_omron_config.py"
 
 # RoboCasa LeRobot parquet 컬럼은 'observation.images.<modality_key>' 형태.

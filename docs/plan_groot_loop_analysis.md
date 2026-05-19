@@ -1,5 +1,7 @@
 # GR00T RoboCasa Loop 분석 실행 계획
 
+> Legacy note: 이 문서는 초기 N1.6 local rollout / loop analysis 계획이다. 현재 권장 N1.6 RoboCasa 평가는 `docs/groot_robocasa_eval_setup.md`의 Docker ZMQ workflow를 기준으로 한다. 체크포인트 위치는 현재 repo 규칙에 맞춰 `/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B`를 사용한다.
+
 ## 목표
 GR00T N1.6-3B 모델을 RoboCasa 환경에서 rollout하여 실패 케이스를 영상으로 확인하고,
 VLA 모델의 **실패 루프(loop) 발생 조건**을 탐색한다.
@@ -31,7 +33,7 @@ robocasa 컨테이너는 사용하지 않음 (기존 다른 모델 평가용으�
 | 포크 robocasa 설치 (groot) | ✅ | `external_dependencies/robocasa` (v0.2.0) |
 | numpy 버전 | ✅ | `numpy==1.26.4` (gr00t 요구) |
 | lxml 설치 | ✅ | robocasa 의존 |
-| GR00T 모델 다운로드 | ✅ | `nvidia/GR00T-N1.6-3B` → `/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B` |
+| GR00T 모델 다운로드 | ✅ | `nvidia/GR00T-N1.6-3B` → `/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B` |
 | GR00T 모델 로딩 테스트 | ✅ | `Gr00tPolicy` 정상 로딩, modality configs OK |
 | Kitchen 에셋 다운로드 | ✅ | HF datasets 캐시로 다운로드 완료 |
 | HF_HOME 경로 해결 | ✅ | docker-compose.yml에 `/D/temporal_vla_data` 볼륨 마운트 추가 |
@@ -60,7 +62,7 @@ robocasa 컨테이너는 사용하지 않음 (기존 다른 모델 평가용으�
 # groot 컨테이너에서 직접 실행 (로컬 모드, model_path는 로컬 체크포인트 경로 사용)
 docker exec -e HF_MODULES_CACHE=/tmp/hf_modules -e MUJOCO_GL=egl groot bash -c "
 python /temporal_vla/src/policies/Isaac-GR00T/gr00t/eval/rollout_policy.py \
-    --model_path /temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B \
+    --model_path /temporal_vla/outputs/checkpoints/GR00T-N1.6-3B \
     --env_name robocasa_panda_omron/OpenDrawer_PandaOmron_Env \
     --n_episodes 5 \
     --n_envs 1 \
@@ -70,7 +72,7 @@ python /temporal_vla/src/policies/Isaac-GR00T/gr00t/eval/rollout_policy.py \
 ```
 
 > **주의**: `--model_path`에 HF hub ID (`nvidia/GR00T-N1.6-3B`) 사용 시 `split('/')[-3]` 에러 발생.
-> 반드시 로컬 경로 (`/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B`) 사용.
+> 반드시 로컬 경로 (`/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B`) 사용.
 > 영상은 `/tmp/sim_eval_videos_*` 에 자동 저장됨.
 
 ### [진행중] Phase 2: 배치 평가
@@ -149,14 +151,14 @@ export PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T  # docker-compose에 �
 | `scripts/analysis/collect_groot_trajectories.py` | trajectory 수집 (action/state .npz 저장) |
 | `scripts/analysis/analyze_loop_patterns.py` | Loop 패턴 분석 (cosine sim, stagnation, gripper) |
 | `scripts/analysis/collect_and_analyze_groot.sh` | 수집 + 분석 배치 스크립트 |
-| `checkpoints/nvidia/GR00T-N1.6-3B/` | 모델 체크포인트 (로컬) |
+| `outputs/checkpoints/GR00T-N1.6-3B/` | 모델 체크포인트 (로컬) |
 | `docs/plan_groot_loop_analysis.md` | 이 문서 |
 
 ## 주의사항
 
 - **HF_HOME**: docker-compose.yml에 `/D/temporal_vla_data` 볼륨 마운트 추가하여 해결. 외장 드라이브 마운트 필수.
 - **HF_MODULES_CACHE**: 외장 드라이브에서 chmod 불가 → `/tmp/hf_modules`로 우회. 모든 실행 시 `HF_MODULES_CACHE=/tmp/hf_modules` 설정 필요.
-- **model_path**: HF hub ID (`nvidia/GR00T-N1.6-3B`) 사용 시 rollout_policy.py에서 `split('/')[-3]` IndexError. 로컬 경로 `/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B` 사용.
+- **model_path**: HF hub ID (`nvidia/GR00T-N1.6-3B`) 사용 시 rollout_policy.py에서 `split('/')[-3]` IndexError. 로컬 경로 `/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B` 사용.
 - **컨테이너 재시작 시**: robocasa, robosuite, mujoco, lxml 재설치 필요 (Dockerfile에 미포함). 체크포인트는 영구 볼륨에 저장되어 유지됨.
 - gymnasium 1.2.2와 rollout_policy.py 호환 확인됨 (동작 OK).
 - mujoco 3.2.6 / robosuite 1.5.2 버전 충돌 경고 있으나 동작 중.

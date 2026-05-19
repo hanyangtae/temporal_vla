@@ -28,7 +28,7 @@ temporal_vla/
 ├── scripts/train/groot_robocasa_target_finetune.sh
 ├── scripts/train/launch_finetune_ttt.py
 ├── configs/policies/groot_robocasa_panda_omron_config.py
-├── checkpoints/nvidia/GR00T-N1.6-3B/
+├── outputs/checkpoints/GR00T-N1.6-3B/
 ├── data/robocasa/v1.0/pretrain/atomic/<Task>/20250819/lerobot/
 ├── data/robocasa/v1.0/target/atomic/<Task>/<date>/lerobot/
 └── src/policies/Isaac-GR00T/
@@ -38,7 +38,7 @@ temporal_vla/
 
 ```text
 .venv/
-outputs/
+outputs/  # 단, outputs/checkpoints/GR00T-N1.6-3B/는 필요
 wandb/
 __pycache__/
 .cache/
@@ -263,7 +263,7 @@ scripts/train/groot_robocasa_finetune.sh
 
 | 변수 | 기본값 |
 | --- | --- |
-| `BASE_MODEL_PATH` | `${REPO_ROOT}/checkpoints/nvidia/GR00T-N1.6-3B`가 있으면 사용, 없으면 `nvidia/GR00T-N1.6-3B` |
+| `BASE_MODEL_PATH` | `${REPO_ROOT}/outputs/checkpoints/GR00T-N1.6-3B`가 있으면 사용, 없으면 `nvidia/GR00T-N1.6-3B` |
 | `DATASET_PATH` | `${REPO_ROOT}/data/robocasa/v1.0/pretrain/atomic/<Task>/20250819/lerobot` 10개를 `:` join |
 | `MODALITY_CONFIG_PATH` | `${REPO_ROOT}/configs/policies/groot_robocasa_panda_omron_config.py` |
 | `OUTPUT_DIR` | `${REPO_ROOT}/outputs/groot_robocasa_baseline_10tasks` |
@@ -446,7 +446,7 @@ Base checkpoint server:
 
 ```bash
 docker exec -it groot bash -lc '
-MODEL_PATH=/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B \
+MODEL_PATH=/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B \
 PORT=5556 \
 bash /temporal_vla/scripts/eval/groot_robocasa.sh server
 '
@@ -496,7 +496,7 @@ bash /temporal_vla/scripts/eval/groot_robocasa.sh client-target15 50 1 8 720
 | --- | --- |
 | `KeyError: 'robocasa_panda_omron'` | `--modality_config_path`가 빠졌거나 경로가 잘못되어 modality config가 import되지 않은 상태다. |
 | `unrecognized arguments: --tune_top_llm_layers` | 현재 upstream `FinetuneConfig`에는 해당 CLI가 없다. 기본 wrapper에는 넣지 않는다. |
-| `embodiment_id.json not found` | checkpoint path가 잘못됐다. `checkpoints/nvidia/GR00T-N1.6-3B/embodiment_id.json` 존재를 확인한다. |
+| `embodiment_id.json not found` | checkpoint path가 잘못됐다. `outputs/checkpoints/GR00T-N1.6-3B/embodiment_id.json` 존재를 확인한다. |
 | LeRobot dataset load 실패 | `meta/modality.json`, `meta/info.json`, `meta/episodes.jsonl` 등 필수 meta 파일 누락 여부를 확인한다. |
 | 학습 중 OOM | 더 큰 GPU에서 실행하거나, smoke test는 `GLOBAL_BATCH_SIZE=1`, 축소 실험은 `TUNE_DIFFUSION_MODEL=0`을 사용한다. |
 | step/sec가 너무 느림 | `DATALOADER_NUM_WORKERS`를 늘리거나 video backend 병목을 확인한다. |

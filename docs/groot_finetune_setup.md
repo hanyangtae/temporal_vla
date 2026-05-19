@@ -80,14 +80,16 @@ uv run python -c "import gr00t; from gr00t.data.embodiment_tags import Embodimen
 
 ## 3. 체크포인트 (GR00T-N1.6-3B base) 준비
 
+> Legacy note: 이 문서는 초기 fine-tuning runbook이다. 현재 N1.6 RoboCasa fine-tuning 기준 문서는 `docs/groot_robocasa_finetune_setup.md`다. 체크포인트 위치는 현재 repo 규칙에 맞춰 `outputs/checkpoints/GR00T-N1.6-3B`를 사용한다.
+
 ```bash
 # Hugging Face 토큰 (gated repo 아니지만 다운로드 속도 ↑)
 export HF_TOKEN=<token>
 
-# repo 루트에 checkpoints/ 디렉토리
-mkdir -p checkpoints/nvidia
+# repo 루트에 outputs/checkpoints/ 디렉토리
+mkdir -p outputs/checkpoints
 huggingface-cli download nvidia/GR00T-N1.6-3B \
-    --local-dir checkpoints/nvidia/GR00T-N1.6-3B
+    --local-dir outputs/checkpoints/GR00T-N1.6-3B
 ```
 
 용량: ~7 GB. 우리 프로파일 `configs/checkpoints/groot__robocasa_panda_omron.yaml` 의 `checkpoint_source.id` 가 이 경로를 가리킴.
@@ -174,7 +176,7 @@ source .venv/bin/activate
 
 CUDA_VISIBLE_DEVICES=0 uv run python \
     gr00t/experiment/launch_finetune.py \
-    --base-model-path /path/to/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B \
+    --base-model-path /path/to/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B \
     --dataset-path    /path/to/temporal_vla/data/groot_robocasa_train/OpenDrawer \
     --embodiment-tag  ROBOCASA_PANDA_OMRON \
     --num-gpus        1 \
@@ -207,7 +209,7 @@ uv run python gr00t/experiment/launch_finetune.py --help | grep -A 1 dataset-pat
 NUM_GPUS=4
 torchrun --nproc-per-node=$NUM_GPUS \
     gr00t/experiment/launch_finetune.py \
-    --base-model-path /path/to/checkpoints/nvidia/GR00T-N1.6-3B \
+    --base-model-path /path/to/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B \
     --dataset-path \
         /path/to/data/groot_robocasa_train/OpenDrawer \
         /path/to/data/groot_robocasa_train/CloseDrawer \
@@ -280,7 +282,7 @@ base 모델 기준 (`examples/robocasa/README.md`) average 66.22% 와 비교해�
 |---|---|
 | `gym.make("robocasa_panda_omron/...")` 시 `composite_controller None` | `src/benchmarks/robocasa` submodule pointer 가 `fda28d0` 이상인지 확인. 우리 fork (`hanyangtae/robocasa`, `temporal_vla` 브랜치) 의 fix 필요. |
 | 학습 중 OOM | `--global-batch-size` 줄이기 / `--gradient-accumulation-steps` 늘리기 / `--bf16` (이미 default) 유지. |
-| `embodiment_id.json` not found | 체크포인트 경로 잘못. `checkpoints/nvidia/GR00T-N1.6-3B/embodiment_id.json` 존재 확인. |
+| `embodiment_id.json` not found | 체크포인트 경로 잘못. `outputs/checkpoints/GR00T-N1.6-3B/embodiment_id.json` 존재 확인. |
 | LeRobot dataset load 실패 | `meta/modality.json` 누락 가능성. NVIDIA Kitchen-Sim-Demos 는 GR00T-flavored 라 들어 있어야 함. tar 추출이 incomplete 한지 확인. |
 | 학습 step/sec 너무 느림 | `--dataloader-num-workers` ↑, video decode bottleneck 이면 미리 frame 추출하는 옵션 검토. |
 

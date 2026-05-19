@@ -16,7 +16,7 @@ set -e
 cd /temporal_vla
 
 MODE=${1:-help}
-MODEL_PATH=${MODEL_PATH:-"/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B"}
+MODEL_PATH=${MODEL_PATH:-"/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B"}
 PORT=${PORT:-5556}
 POLICY_CLIENT_HOST=${POLICY_CLIENT_HOST:-166.104.35.98}
 EVAL_OUTPUT_DIR=${EVAL_OUTPUT_DIR:-"/temporal_vla/outputs/eval/robocasa/groot"}

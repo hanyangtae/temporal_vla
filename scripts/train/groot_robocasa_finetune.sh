@@ -43,7 +43,7 @@ fi
 NUM_GPUS="${NUM_GPUS:-1}"
 MASTER_PORT="${MASTER_PORT:-29500}"
 
-LOCAL_BASE_MODEL_PATH="${REPO_ROOT}/checkpoints/nvidia/GR00T-N1.6-3B"
+LOCAL_BASE_MODEL_PATH="${REPO_ROOT}/outputs/checkpoints/GR00T-N1.6-3B"
 if [ -z "${BASE_MODEL_PATH:-}" ]; then
     if [ -f "${LOCAL_BASE_MODEL_PATH}/config.json" ]; then
         BASE_MODEL_PATH="${LOCAL_BASE_MODEL_PATH}"
