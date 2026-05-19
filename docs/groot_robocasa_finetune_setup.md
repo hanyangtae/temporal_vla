@@ -69,7 +69,9 @@ git submodule update --init --recursive
 
 Host 명령 예시는 `temporal_vla` git checkout 내부에서 실행하는 것을 전제로 `REPO_ROOT="$(git rev-parse --show-toplevel)"`를 사용한다. repo 밖에서 실행할 때는 `REPO_ROOT=/path/to/temporal_vla`처럼 직접 지정한다. Docker 내부 경로는 compose mount 기준으로 `/temporal_vla`를 사용한다.
 
-GR00T uv 환경:
+GR00T host/local uv 환경:
+
+이 절차는 host에서 Isaac-GR00T 학습 코드를 직접 실행할 때만 필요하다. Docker `groot` container 기반 eval, ZMQ server, SAFE feature server는 container 내부 `python`과 `PYTHONPATH`를 사용하며 `uv run`을 거치지 않는다.
 
 ```bash
 export REPO_ROOT="$(git rev-parse --show-toplevel)"
