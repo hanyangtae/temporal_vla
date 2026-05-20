@@ -5,9 +5,10 @@ SAFE_REPO="${SAFE_REPO:-/home/dongkyu/pdk_ws/SAFE}"
 CONDA_ENV="${CONDA_ENV:-vla-safe}"
 
 OUT_ROOT="${OUT_ROOT:-/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16}"
-LOG_ROOT="${LOG_ROOT:-${OUT_ROOT}/safe_train_logs_aggregation_ablation}"
-WANDB_DIR="${WANDB_DIR:-${OUT_ROOT}/wandb_aggregation_ablation}"
-HYDRA_ROOT="${HYDRA_ROOT:-${OUT_ROOT}/hydra_aggregation_ablation}"
+RUN_ROOT="${RUN_ROOT:-${OUT_ROOT}/safe_seen4_unseen2_100ep}"
+LOG_ROOT="${LOG_ROOT:-${RUN_ROOT}/experiments/aggregation_ablation/train_logs}"
+WANDB_DIR="${WANDB_DIR:-${RUN_ROOT}/experiments/aggregation_ablation/wandb}"
+HYDRA_ROOT="${HYDRA_ROOT:-${RUN_ROOT}/experiments/aggregation_ablation/hydra}"
 WANDB_MODE="${WANDB_MODE:-online}"
 
 LR="${LR:-3e-4}"

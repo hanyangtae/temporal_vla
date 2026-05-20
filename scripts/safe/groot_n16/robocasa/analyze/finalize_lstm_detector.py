@@ -21,14 +21,15 @@ from torch.utils.data import DataLoader
 REPO_ROOT = Path(__file__).resolve().parents[5]
 DEFAULT_SAFE_ROOT = Path(os.environ.get("SAFE_ROOT", "/home/dongkyu/pdk_ws/SAFE"))
 OUT_ROOT = REPO_ROOT / "outputs/eval/robocasa/groot_n16"
+RUN_ROOT = OUT_ROOT / "safe_seen4_unseen2_100ep"
 DEFAULT_RUN_DIR = (
-    OUT_ROOT
-    / "safe_train_logs_hparam_sweep"
+    RUN_ROOT
+    / "experiments/hparam_sweep/train_logs"
     / "groot_n16-robocasa_seen4_unseen2_openDrawer_pnpCab_100ep-lstm-agg_hconcat_2_d0p0_lr3e_4_reg1e_1_seed2"
     / "20260520"
     / "182349"
 )
-DEFAULT_FINAL_DIR = OUT_ROOT / "safe_lstm_final_detector_seen4_unseen2_openDrawer_pnpCab_100ep"
+DEFAULT_FINAL_DIR = RUN_ROOT / "final_detector"
 
 
 EVAL_TIMES = ("at earliest stop", "by earliest stop", "by final end")

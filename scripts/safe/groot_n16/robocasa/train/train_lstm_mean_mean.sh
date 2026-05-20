@@ -4,8 +4,10 @@ set -euo pipefail
 SAFE_REPO="${SAFE_REPO:-/home/dongkyu/pdk_ws/SAFE}"
 CONDA_ENV="${CONDA_ENV:-vla-safe}"
 
-LOG_ROOT="${LOG_ROOT:-/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_train_logs}"
-WANDB_DIR="${WANDB_DIR:-/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/wandb}"
+OUT_ROOT="${OUT_ROOT:-/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16}"
+RUN_ROOT="${RUN_ROOT:-${OUT_ROOT}/safe_seen4_unseen2_100ep}"
+LOG_ROOT="${LOG_ROOT:-${RUN_ROOT}/experiments/mean_mean_baseline/train_logs}"
+WANDB_DIR="${WANDB_DIR:-${RUN_ROOT}/experiments/mean_mean_baseline/wandb}"
 WANDB_MODE="${WANDB_MODE:-online}"
 SEED="${SEED:-0}"
 

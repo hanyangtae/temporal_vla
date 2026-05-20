@@ -273,7 +273,7 @@ SAFE 논문/레포 방식에 맞출 때는 별도 `train / validation / CP / tes
 생성된 split:
 
 ```text
-/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_split_seen4_unseen2_openDrawer_pnpCab_100ep
+/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/split
 ```
 
 Split summary:
@@ -327,13 +327,13 @@ Loader contract:
 최종 checkpoint:
 
 ```text
-/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_lstm_final_detector_seen4_unseen2_openDrawer_pnpCab_100ep/model_final.ckpt
+/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector/model_final.ckpt
 ```
 
 최종 산출물:
 
 ```text
-/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_lstm_final_detector_seen4_unseen2_openDrawer_pnpCab_100ep
+/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector
 ```
 
 이 directory에는 `model_final.ckpt`, `config.yaml`, `manifest.json`, `final_operating_point.json`, `fixed_threshold_eval.csv`, `split_cp_eval.csv`, `per_rollout_scores.csv`, `README.md`가 있다.
@@ -402,7 +402,7 @@ SAFE 논문 Figure 1류의 latent-space 진단은 detector score나 CP threshold
 Visualization 산출물은 `notebooks/`가 아니라 GR00T N1.6 eval output tree 아래에 둔다.
 
 ```text
-/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_feature_vis/seen4_unseen2_openDrawer_pnpCab_100ep
+/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep
 ```
 
 각 visualization directory는 `feats_projected_skip1.pkl`, `feats_vis_skip1-succ.png`, `feats_vis_skip1-taskid.png`, `manifest.json`을 가진다. task structure와 success/failure signal을 한 그림에서 보기 위해 후처리 overlay도 저장한다.
@@ -417,17 +417,17 @@ Visualization 산출물은 `notebooks/`가 아니라 GR00T N1.6 eval output tree
 
 | scope | rollout | timestep feature | path |
 |---|---:|---:|---|
-| all splits | 600 | 18,428 | `safe_feature_vis/seen4_unseen2_openDrawer_pnpCab_100ep/all/tsne_mean_mean` |
-| `val_unseen` | 200 | 5,660 | `safe_feature_vis/seen4_unseen2_openDrawer_pnpCab_100ep/val_unseen/tsne_mean_mean` |
-| `val_unseen/OpenDrawer` | 100 | 2,041 | `safe_feature_vis/seen4_unseen2_openDrawer_pnpCab_100ep/val_unseen_OpenDrawer/tsne_mean_mean` |
-| `val_unseen/PnPCounterToCab` | 100 | 3,619 | `safe_feature_vis/seen4_unseen2_openDrawer_pnpCab_100ep/val_unseen_PnPCounterToCab/tsne_mean_mean` |
+| all splits | 600 | 18,428 | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/all/tsne_mean_mean` |
+| `val_unseen` | 200 | 5,660 | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/val_unseen/tsne_mean_mean` |
+| `val_unseen/OpenDrawer` | 100 | 2,041 | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/val_unseen_OpenDrawer/tsne_mean_mean` |
+| `val_unseen/PnPCounterToCab` | 100 | 3,619 | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/val_unseen_PnPCounterToCab/tsne_mean_mean` |
 
 Silhouette 산출물:
 
 | aggregation | path | conclusion |
 |---|---|---|
-| `mean/mean` | `safe_feature_vis/seen4_unseen2_openDrawer_pnpCab_100ep/silhouette_mean_mean` | success/failure silhouette near zero |
-| `concat-2/0.0` | `safe_feature_vis/seen4_unseen2_openDrawer_pnpCab_100ep/silhouette_hconcat2_d0p0` | final aggregation에서도 static failure zone은 약함 |
+| `mean/mean` | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/silhouette_mean_mean` | success/failure silhouette near zero |
+| `concat-2/0.0` | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/silhouette_hconcat2_d0p0` | final aggregation에서도 static failure zone은 약함 |
 
 재생성 runner:
 
@@ -452,7 +452,7 @@ Overlay runner:
 
 /home/dongkyu/miniforge3/envs/vla-safe/bin/python \
   scripts/safe/groot_n16/robocasa/vis/plot_task_success_overlay.py \
-  outputs/eval/robocasa/groot_n16/safe_feature_vis/seen4_unseen2_openDrawer_pnpCab_100ep/val_unseen/tsne_mean_mean
+  outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/val_unseen/tsne_mean_mean
 ```
 
 초기 관찰:
@@ -483,9 +483,9 @@ ZMQ SAFE:
 
 Final detector artifacts:
 
-- `/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_lstm_final_detector_seen4_unseen2_openDrawer_pnpCab_100ep/README.md`
-- `/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_lstm_final_detector_seen4_unseen2_openDrawer_pnpCab_100ep/model_final.ckpt`
-- `/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_lstm_final_detector_seen4_unseen2_openDrawer_pnpCab_100ep/final_operating_point.json`
+- `/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector/README.md`
+- `/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector/model_final.ckpt`
+- `/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector/final_operating_point.json`
 
 HTTP:
 

@@ -20,7 +20,7 @@
 최종 detector artifact:
 
 ```text
-outputs/eval/robocasa/groot_n16/safe_lstm_final_detector_seen4_unseen2_openDrawer_pnpCab_100ep
+outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector
 ```
 
 ## RoboCasa Reference

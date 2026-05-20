@@ -14,9 +14,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 OUT_ROOT = REPO_ROOT / "outputs/eval/robocasa/groot_n16"
-DEFAULT_LOG_ROOT = OUT_ROOT / "safe_train_logs_aggregation_ablation"
-DEFAULT_JSON = OUT_ROOT / "safe_lstm_aggregation_ablation_summary.json"
-DEFAULT_MD = OUT_ROOT / "safe_lstm_aggregation_ablation_summary.md"
+RUN_ROOT = OUT_ROOT / "safe_seen4_unseen2_100ep"
+DEFAULT_LOG_ROOT = RUN_ROOT / "experiments/aggregation_ablation/train_logs"
+DEFAULT_JSON = RUN_ROOT / "experiments/aggregation_ablation/reports/safe_lstm_aggregation_ablation_summary.json"
+DEFAULT_MD = RUN_ROOT / "experiments/aggregation_ablation/reports/safe_lstm_aggregation_ablation_summary.md"
 
 
 def _parse_config(config_path: Path) -> dict[str, str | int]:

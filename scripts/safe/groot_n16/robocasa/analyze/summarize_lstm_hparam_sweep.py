@@ -15,9 +15,10 @@ from summarize_lstm_aggregation_ablation import _fmt, _mean_std, _read_threshold
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 OUT_ROOT = REPO_ROOT / "outputs/eval/robocasa/groot_n16"
-DEFAULT_LOG_ROOT = OUT_ROOT / "safe_train_logs_hparam_sweep"
-DEFAULT_JSON = OUT_ROOT / "safe_lstm_hparam_sweep_summary.json"
-DEFAULT_MD = OUT_ROOT / "safe_lstm_hparam_sweep_summary.md"
+RUN_ROOT = OUT_ROOT / "safe_seen4_unseen2_100ep"
+DEFAULT_LOG_ROOT = RUN_ROOT / "experiments/hparam_sweep/train_logs"
+DEFAULT_JSON = RUN_ROOT / "experiments/hparam_sweep/reports/safe_lstm_hparam_sweep_summary.json"
+DEFAULT_MD = RUN_ROOT / "experiments/hparam_sweep/reports/safe_lstm_hparam_sweep_summary.md"
 
 
 def _match_value(text: str, key: str) -> str:

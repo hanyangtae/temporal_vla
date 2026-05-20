@@ -5,9 +5,10 @@ SAFE_REPO="${SAFE_REPO:-/home/dongkyu/pdk_ws/SAFE}"
 CONDA_ENV="${CONDA_ENV:-vla-safe}"
 
 OUT_ROOT="${OUT_ROOT:-/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16}"
-LOG_ROOT="${LOG_ROOT:-${OUT_ROOT}/safe_train_logs_hparam_sweep}"
-WANDB_DIR="${WANDB_DIR:-${OUT_ROOT}/wandb_hparam_sweep}"
-HYDRA_ROOT="${HYDRA_ROOT:-${OUT_ROOT}/hydra_hparam_sweep}"
+RUN_ROOT="${RUN_ROOT:-${OUT_ROOT}/safe_seen4_unseen2_100ep}"
+LOG_ROOT="${LOG_ROOT:-${RUN_ROOT}/experiments/hparam_sweep/train_logs}"
+WANDB_DIR="${WANDB_DIR:-${RUN_ROOT}/experiments/hparam_sweep/wandb}"
+HYDRA_ROOT="${HYDRA_ROOT:-${RUN_ROOT}/experiments/hparam_sweep/hydra}"
 WANDB_MODE="${WANDB_MODE:-online}"
 
 HORIZON_IDX_REL="${HORIZON_IDX_REL:-concat-2}"

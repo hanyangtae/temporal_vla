@@ -234,7 +234,7 @@ Aggregation ablation은 `horizon_idx_rel`과 `diff_idx_rel`을 `{0.0, 1.0, mean,
 최종 detector는 hparam sweep의 `seed2` checkpoint로 고정했다.
 
 ```text
-/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_lstm_final_detector_seen4_unseen2_openDrawer_pnpCab_100ep/model_final.ckpt
+/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector/model_final.ckpt
 ```
 
 Fixed threshold baseline은 `val_seen`에서 max-so-far balanced accuracy를 최대화하는 threshold를 고르고 이를 `val_unseen`에 그대로 적용한 결과다.
@@ -361,7 +361,7 @@ g_\phi(h_{1:t}) \to \mathbf{1}[t \ge t_{onset}]
 - `scripts/safe/groot_n16/robocasa/train/train_lstm_hparam_sweep.sh`
 - `scripts/safe/groot_n16/robocasa/analyze/finalize_lstm_detector.py`
 - `scripts/safe/groot_n16/robocasa/vis/run_feature_visualization.py`
-- `outputs/eval/robocasa/groot_n16/safe_lstm_final_detector_seen4_unseen2_openDrawer_pnpCab_100ep/README.md`
-- `outputs/eval/robocasa/groot_n16/safe_lstm_final_detector_seen4_unseen2_openDrawer_pnpCab_100ep/final_operating_point.json`
+- `outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector/README.md`
+- `outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector/final_operating_point.json`
 - `/home/dongkyu/pdk_ws/SAFE/failure_prob/data/groot_n16.py`
 - `/home/dongkyu/pdk_ws/SAFE/failure_prob/conf/dataset/groot_n16.yaml`

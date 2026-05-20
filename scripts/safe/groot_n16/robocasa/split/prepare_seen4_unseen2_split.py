@@ -54,7 +54,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path(
             "/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/"
-            "rollouts_n16_seen5_20ep_upstream_video_20260519"
+            "safe_seen4_unseen2_100ep/raw_rollouts"
         ),
         help="Rollout source root containing one task directory per task.",
     )
@@ -63,7 +63,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path(
             "/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/"
-            "safe_split_seen4_unseen2_openDrawer_pnpCab_100ep"
+            "safe_seen4_unseen2_100ep/split"
         ),
         help="Destination split root to create.",
     )

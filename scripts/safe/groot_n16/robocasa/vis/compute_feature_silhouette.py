@@ -18,19 +18,18 @@ from sklearn.metrics import silhouette_score
 REPO_ROOT = Path(__file__).resolve().parents[5]
 DEFAULT_SPLIT_ROOT = (
     REPO_ROOT
-    / "outputs/eval/robocasa/groot_n16"
-    / "safe_split_seen4_unseen2_openDrawer_pnpCab_100ep"
+    / "outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/split"
 )
 DEFAULT_OUT_DIR = (
     REPO_ROOT
     / "outputs/eval/robocasa/groot_n16"
-    / "safe_feature_vis/seen4_unseen2_openDrawer_pnpCab_100ep"
+    / "safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep"
     / "silhouette_mean_mean"
 )
 DEFAULT_VIS_ROOT = (
     REPO_ROOT
     / "outputs/eval/robocasa/groot_n16"
-    / "safe_feature_vis/seen4_unseen2_openDrawer_pnpCab_100ep"
+    / "safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep"
 )
 
 

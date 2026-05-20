@@ -28,10 +28,12 @@ SAFE_ROOT = WORKSPACE_ROOT / "SAFE"
 EXPERIMENT_ID = "seen4_unseen2_openDrawer_pnpCab_100ep"
 DEFAULT_SPLIT_ROOT = (
     REPO_ROOT
-    / "outputs/eval/robocasa/groot_n16"
-    / "safe_split_seen4_unseen2_openDrawer_pnpCab_100ep"
+    / "outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/split"
 )
-DEFAULT_OUT_ROOT = REPO_ROOT / "outputs/eval/robocasa/groot_n16/safe_feature_vis"
+DEFAULT_OUT_ROOT = (
+    REPO_ROOT
+    / "outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/visualizations/feature_space"
+)
 DEFAULT_SUBSET_NAME = "robocasa_seen4_unseen2_openDrawer_pnpCab_100ep"
 
 

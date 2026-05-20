@@ -10,7 +10,8 @@ SEED_START="${SEED_START:-241}"
 EPISODE_START_IDX="${EPISODE_START_IDX:-0}"
 EPISODES_PER_TASK="${EPISODES_PER_TASK:-1}"
 RUN_ID="${RUN_ID:-n16_six_task_safe_flow_features_smoke}"
-OUT_ROOT="${OUT_ROOT:-${CONTAINER_REPO_ROOT}/outputs/eval/robocasa/groot_n16/rollouts_${RUN_ID}}"
+RUN_ROOT="${RUN_ROOT:-${CONTAINER_REPO_ROOT}/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep}"
+OUT_ROOT="${OUT_ROOT:-${RUN_ROOT}/experiments/collection_smoke/rollouts_${RUN_ID}}"
 
 TASKS=(
     # GR00T fork v0.2 names. robocasa365 mappings:
