@@ -13,8 +13,15 @@
 
 ## SAFE Wiring
 
-- [SAFE x GR00T N1.6 RoboCasa Wiring](safe/groot_n16_robocasa_wiring.md): GR00T N1.6 base checkpoint와 SAFE detector를 연결하는 현재 기준 문서.
+- [SAFE x GR00T N1.6 RoboCasa Report](safe/groot_n16_robocasa_safe_report.md): SAFE 논문식 failure detection을 GR00T N1.6 RoboCasa에 축소 재현한 기술 보고서.
+- [SAFE x GR00T N1.6 RoboCasa Wiring](safe/groot_n16_robocasa_wiring.md): GR00T N1.6 base checkpoint와 SAFE detector를 연결하는 현재 기준 문서. 최종 SAFE-LSTM 운영점은 `split_cp`, `alpha=0.2`, `neg_success`, threshold `0.8474180102348328`.
 - [ADR 0001](adr/0001-dedicated-safe-groot-n16-zmq-server.md): SAFE GR00T N1.6에 dedicated ZMQ feature server를 두기로 한 결정.
+
+최종 detector artifact:
+
+```text
+outputs/eval/robocasa/groot_n16/safe_lstm_final_detector_seen4_unseen2_openDrawer_pnpCab_100ep
+```
 
 ## RoboCasa Reference
 
