@@ -1,6 +1,6 @@
-"""Isaac-GR00T N1.5 BaseDataConfig for RoboCasa PandaOmron NVIDIA-publish dataset.
+"""Isaac-GR00T N1.5 BaseDataConfig for RoboCasa PandaOmron datasets.
 
-Targets the per-task LeRobot v2.1 datasets downloaded by
+Originally targets the per-task LeRobot v2.1 pretrain datasets downloaded by
 ``scripts/utils/download_robocasa_pretrain_human.sh`` to:
 
     data/robocasa/v1.0/pretrain/atomic/<Task>/20250819/lerobot
@@ -8,6 +8,9 @@ Targets the per-task LeRobot v2.1 datasets downloaded by
 The same config also works with the merged dataset at
 ``data/datasets/robocasa_10tasks_lerobot_v21`` since they share the same
 ``meta/modality.json`` schema (state/action/video/language keys identical).
+It also works with the target atomic-seen 15-task datasets under:
+
+    data/robocasa/v1.0/target/atomic/<Task>/<date>/lerobot
 
 Used via N1.5's ``new_embodiment`` route (N1.5's EmbodimentTag enum has no
 ``ROBOCASA_PANDA_OMRON`` entry — that exists only in N1.6). N1.6 pretrained
@@ -47,10 +50,11 @@ from gr00t.model.transforms import GR00TTransform
 
 
 class RobocasaPandaOmron10TaskDataConfig(BaseDataConfig):
-    """Data config for NVIDIA-publish RoboCasa PandaOmron pretrain atomic datasets.
+    """Data config for RoboCasa PandaOmron atomic datasets.
 
     State/action/video/language key order matches ``meta/modality.json`` of the
-    NVIDIA-publish dataset (start-index order).
+    NVIDIA-publish pretrain and target datasets (start-index order). The class
+    name is historical; it is also used for the target atomic-seen 15-task split.
     """
 
     video_keys = [

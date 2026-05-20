@@ -253,10 +253,10 @@ Phase 1 학습 은 `meta_forward` (functional) 라 OK. 하지만 Phase 2 의 **s
 - `docker-compose.override.yml` — GPU 2 device_ids + CUDA_VISIBLE_DEVICES=0 + WANDB_API_KEY env.
 
 ### HF 캐시
-- 컨테이너의 `~/.cache/huggingface` 가 bind mount source: `/home/junhyeong/pkt_ws/claude-home/.cache/huggingface` (claude 의 $HOME). 이 디렉토리 권한이 root 면 컨테이너 안 user 가 write 못함 → HF download 실패. **해결**: `docker exec lerobot sudo chown -R $(id -u):$(id -g) ~/.cache/huggingface` (lerobot 의 NOPASSWD sudo 이용).
+- 컨테이너의 `~/.cache/huggingface` 가 host의 claude/user `$HOME/.cache/huggingface` bind mount source를 바라본다. 이 디렉토리 권한이 root 면 컨테이너 안 user 가 write 못함 → HF download 실패. **해결**: `docker exec lerobot sudo chown -R $(id -u):$(id -g) ~/.cache/huggingface` (lerobot 의 NOPASSWD sudo 이용).
 
 ### GR00T ckpt
-- `checkpoints/nvidia/GR00T-N1.6-3B/` — 6.2 GB, HF 에서 `huggingface-cli download nvidia/GR00T-N1.6-3B --local-dir ...`.
+- `outputs/checkpoints/GR00T-N1.6-3B/` — 6.2 GB, HF 에서 `huggingface-cli download nvidia/GR00T-N1.6-3B --local-dir ...`.
 
 ---
 

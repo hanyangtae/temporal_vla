@@ -13,7 +13,7 @@ Or direct CLI::
     docker compose exec -T groot bash -lc \\
         'cd /temporal_vla/src/policies/Isaac-GR00T && \\
          python /temporal_vla/scripts/train/launch_finetune_ttt.py \\
-            --base_model_path /temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B \\
+            --base_model_path /temporal_vla/outputs/checkpoints/GR00T-N1.6-3B \\
             --dataset_path /temporal_vla/data/datasets/robocasa_10tasks_lerobot_v21 \\
             --embodiment_tag ROBOCASA_PANDA_OMRON \\
             --modality_config_path /temporal_vla/configs/policies/groot_robocasa_panda_omron_config.py \\

@@ -16,7 +16,7 @@ set -e
 cd /temporal_vla
 
 MODE=${1:-help}
-MODEL_PATH=${MODEL_PATH:-"/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B"}
+MODEL_PATH=${MODEL_PATH:-"/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B"}
 PORT=${PORT:-5556}
 POLICY_CLIENT_HOST=${POLICY_CLIENT_HOST:-166.104.35.98}
 EVAL_OUTPUT_DIR=${EVAL_OUTPUT_DIR:-"/temporal_vla/outputs/eval/robocasa/groot"}
@@ -188,7 +188,51 @@ case "$MODE" in
     done
     ;;
 
-  # ── fine-tuning 에 사용한 RoboCasa 10-task scope 평가 (ZMQ 클라이언트) ──
+  # ── target atomic-seen 15-task scope 평가 (ZMQ 클라이언트) ──
+  client-target15)
+    N_EPISODES=${2:-50}
+    N_ENVS=${3:-4}
+    N_ACTION_STEPS=${4:-8}
+    MAX_STEPS=${5:-720}
+    TASKS=(
+        "robocasa_panda_omron/CloseFridge_PandaOmron_Env"
+        "robocasa_panda_omron/CloseToasterOvenDoor_PandaOmron_Env"
+        "robocasa_panda_omron/CoffeeSetupMug_PandaOmron_Env"
+        "robocasa_panda_omron/OpenCabinet_PandaOmron_Env"
+        "robocasa_panda_omron/OpenDrawer_PandaOmron_Env"
+        "robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env"
+        "robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env"
+        "robocasa_panda_omron/PickPlaceDrawerToCounter_PandaOmron_Env"
+        "robocasa_panda_omron/PickPlaceSinkToCounter_PandaOmron_Env"
+        "robocasa_panda_omron/PickPlaceToasterToCounter_PandaOmron_Env"
+        "robocasa_panda_omron/SlideDishwasherRack_PandaOmron_Env"
+        "robocasa_panda_omron/TurnOffStove_PandaOmron_Env"
+        "robocasa_panda_omron/TurnOnElectricKettle_PandaOmron_Env"
+        "robocasa_panda_omron/TurnOnMicrowave_PandaOmron_Env"
+        "robocasa_panda_omron/TurnOnSinkFaucet_PandaOmron_Env"
+    )
+
+    echo "============================================"
+    echo "Running RoboCasa target atomic-seen 15-task evaluation"
+    echo "  Server:       ${POLICY_CLIENT_HOST}:${PORT}"
+    echo "  Output:       ${EVAL_OUTPUT_DIR}/${EVAL_RUN_ID}"
+    echo "  Episodes:     ${N_EPISODES}"
+    echo "  Parallel:     ${N_ENVS}"
+    echo "  Action steps: ${N_ACTION_STEPS}"
+    echo "  Max steps:    ${MAX_STEPS}"
+    echo "============================================"
+
+    for TASK in "${TASKS[@]}"; do
+        TASK_SHORT=$(echo "$TASK" | sed 's|robocasa_panda_omron/||; s|_PandaOmron_Env||')
+        echo ""
+        echo "============================================"
+        echo "Task: ${TASK_SHORT} (${N_EPISODES} episodes)"
+        echo "============================================"
+        bash "$0" client "$TASK" "$N_EPISODES" "$N_ENVS" "$N_ACTION_STEPS" "$MAX_STEPS"
+    done
+    ;;
+
+  # ── legacy pretrain 10-task scope 평가 (ZMQ 클라이언트) ──
   client-train10)
     N_EPISODES=${2:-50}
     N_ENVS=${3:-4}
@@ -208,7 +252,7 @@ case "$MODE" in
     )
 
     echo "============================================"
-    echo "Running RoboCasa fine-tune 10-task evaluation"
+    echo "Running RoboCasa legacy pretrain 10-task evaluation"
     echo "  Server:       ${POLICY_CLIENT_HOST}:${PORT}"
     echo "  Output:       ${EVAL_OUTPUT_DIR}/${EVAL_RUN_ID}"
     echo "  Episodes:     ${N_EPISODES}"
@@ -344,7 +388,8 @@ case "$MODE" in
     echo "  $0 server         — groot 서버 시작 (ZMQ)"
     echo "  $0 client [env] [n_ep] [n_envs] [n_act] [max_steps]  — ZMQ 클라이언트"
     echo "  $0 client-batch [n_ep]  — ZMQ 일괄 평가"
-    echo "  $0 client-train10 [n_ep] [n_envs] [n_act] [max_steps] — fine-tune 10-task ZMQ 평가"
+    echo "  $0 client-target15 [n_ep] [n_envs] [n_act] [max_steps] — target atomic-seen 15-task ZMQ 평가"
+    echo "  $0 client-train10 [n_ep] [n_envs] [n_act] [max_steps] — legacy pretrain 10-task ZMQ 평가"
     echo "  $0 local [env] [n_ep] [n_envs] [n_act] [max_steps]   — 로컬 단독 실행"
     echo "  $0 local-batch [n_ep] [n_envs] — 로컬 일괄 평가 (완료 skip, 영상 자동 이동)"
     ;;

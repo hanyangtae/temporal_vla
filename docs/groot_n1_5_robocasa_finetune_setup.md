@@ -2,11 +2,12 @@
 
 Isaac-GR00T `n1.5-release` 기준으로 RoboCasa GR1 tabletop benchmark를 fine-tuning 하는 방법을 정리한다. 이 문서는 `src/policies/Isaac-GR00T-N1.5` submodule의 공식 문서를 기준으로 작성한다.
 
-이 문서는 N1.6 PandaOmron 10-task fine-tuning 문서와 의도적으로 분리한다.
+이 문서는 N1.6 PandaOmron fine-tuning 문서와 의도적으로 분리한다.
 
 - N1.6 문서: `docs/groot_robocasa_finetune_setup.md`
 - N1.6 코드 경로: `src/policies/Isaac-GR00T`
 - N1.5 문서: `docs/groot_n1_5_robocasa_finetune_setup.md`
+- N1.5 eval 문서: `docs/groot_n1_5_robocasa_eval_setup.md`
 - N1.5 코드 경로: `src/policies/Isaac-GR00T-N1.5`
 
 ## 결론
@@ -19,6 +20,7 @@ Isaac-GR00T `n1.5-release` 기준으로 RoboCasa GR1 tabletop benchmark를 fine-
 - 공식 reproduce command는 `8 GPU`, `batch-size 48`, `gradient-accumulation-steps 4`, `learning_rate 3e-5`, `max-steps 60000`, `tune-visual`이다.
 - 공식 문서의 reported average success rate는 task당 50 rollouts 기준 `0.48`이다.
 - `n_envs > 1` eval은 success rate를 낮출 수 있다고 공식 README가 경고한다.
+- PandaOmron dataset을 N1.5 `new_embodiment`로 학습/eval하는 경로도 정리한다. Task scope는 target atomic-seen 15 task다.
 
 ## 공식 문서 위치
 
@@ -51,22 +53,24 @@ N1.6 PandaOmron fine-tuning과 N1.5 GR1 tabletop fine-tuning은 같은 RoboCasa 
 | 학습 entrypoint   | `gr00t/experiment/launch_finetune.py` 계열 | `scripts/gr00t_finetune.py`         |
 | 대상 embodiment   | `ROBOCASA_PANDA_OMRON`                   | `gr1`                               |
 | data config     | custom modality config 필요                | `fourier_gr1_arms_waist`            |
-| task scope      | RoboCasa PandaOmron atomic 10 tasks      | GR1 tabletop 24 tasks               |
+| task scope      | PandaOmron pretrain 10-task 또는 target atomic-seen 15-task | GR1 tabletop 24 tasks               |
 | modality config | repo의 `configs/policies/...`를 import     | dataset/config에 사전 준비               |
-| 목적              | 우리 N1.6 PandaOmron 실험                    | N1.5 공식 RoboCasa tabletop recipe 재현 |
+| 목적              | N1.6 PandaOmron 실험                    | N1.5 공식 RoboCasa tabletop recipe 재현 |
 
 
 따라서 N1.5를 돌릴 때 `scripts/train/groot_robocasa_finetune.sh`를 그대로 쓰면 안 된다. N1.5는 `src/policies/Isaac-GR00T-N1.5` 아래에서 `scripts/gr00t_finetune.py`를 호출해야 한다.
 
-## PandaOmron 10-task를 N1.5로 돌리는 경우
+## PandaOmron target atomic-seen 15-task를 N1.5로 돌리는 경우
 
-우리 RoboCasa PandaOmron dataset을 N1.5에서 돌릴 수는 있지만, 이 경우는 공식 GR1 RoboCasa recipe가 아니다. N1.5에는 `ROBOCASA_PANDA_OMRON` pretrained embodiment tag가 없으므로 `new_embodiment`로 학습한다.
+RoboCasa PandaOmron dataset을 N1.5에서 돌릴 수는 있지만, 이 경우는 공식 GR1 RoboCasa recipe가 아니다. N1.5에는 `ROBOCASA_PANDA_OMRON` pretrained embodiment tag가 없으므로 `new_embodiment`로 학습한다.
 
 사용하는 custom data config:
 
 ```text
 configs/policies/robocasa_n15_panda_omron_data_config.py  →  RobocasaPandaOmron10TaskDataConfig
 ```
+
+`RobocasaPandaOmron10TaskDataConfig` 이름은 pretrain 10-task sanity check 때 만든 historical name이다. state/action/video/language schema가 같으므로 target atomic-seen 15-task 학습/eval에도 같은 config를 사용한다.
 
 dataset schema:
 
@@ -110,18 +114,28 @@ annotation.human.task_description
 주의:
 
 - 이 경로는 N1.6 `ROBOCASA_PANDA_OMRON` pretrained head를 쓰지 않는다.
-- `new_embodiment` action head를 현재 PandaOmron 데이터로 학습하는 실험이다.
+- `new_embodiment` action head를 PandaOmron 데이터로 학습하는 실험이다.
 - 이 실험 결과와 N1.6 PandaOmron fine-tuning 결과는 같은 의미로 비교하면 안 된다.
-- `gripper_close`, `control_mode`는 현재 dataset의 `-1/1` 범위를 보존하기 위해 N1.5 `binary`가 아니라 `min_max` normalization을 사용한다.
-- target dataset 의 `meta/modality.json` / `meta/embodiment.json` 은 pretrain split과 identical 하므로 `RobocasaPandaOmron10TaskDataConfig` 를 그대로 재사용한다.
+- `gripper_close`, `control_mode`는 dataset의 `-1/1` 범위를 보존하기 위해 N1.5 `binary`가 아니라 `min_max` normalization을 사용한다.
+- target dataset 의 `meta/modality.json` / `meta/embodiment.json` 은 pretrain split과 identical 하므로 `RobocasaPandaOmron10TaskDataConfig` 를 재사용한다.
 - task당 500~543 episode, episode당 평균 ~252 frame (info.json `total_frames` / `total_episodes` 기준). 합계 **7,622 episode / 1,917,362 frame**.
 - 학습 sample 수 = `max_steps × batch_size = 50000 × 64 = 3,200,000` → 데이터셋 1 epoch ≈ 1,917,362 frame 기준 **약 1.67 epoch**.
 
 ### 공통 환경변수
 
 ```bash
-cd /home/junhyeong/pkt_ws/temporal_vla
-export PYTHONPATH=$PWD/configs/policies
+export REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "${REPO_ROOT}"
+export HF_HOME="${REPO_ROOT}/data/huggingface"
+export PYTHONPATH="${REPO_ROOT}/configs/policies:${PYTHONPATH:-}"
+```
+
+위 명령은 `temporal_vla` git checkout 내부에서 실행하는 것을 전제로 한다. repo 밖에서 실행할 때는 `REPO_ROOT=/path/to/temporal_vla`처럼 직접 지정한다.
+
+N1.5 base model cache:
+
+```text
+data/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e
 ```
 
 ### Smoke 1 — data config import
@@ -176,10 +190,13 @@ read -s WANDB_API_KEY; export WANDB_API_KEY
 #### 2단계 — 학습 명령 (한 블록 paste 가능)
 
 ```bash
-cd /home/junhyeong/pkt_ws/temporal_vla
-export PYTHONPATH=$PWD/configs/policies
+export REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "${REPO_ROOT}"
+export HF_HOME="${REPO_ROOT}/data/huggingface"
+export PYTHONPATH="${REPO_ROOT}/configs/policies:${PYTHONPATH:-}"
 TS=$(date +%y%m%d%H%M%S)
-OUT=$PWD/outputs/train/groot_n1_5/$TS
+OUT="${REPO_ROOT}/outputs/train/groot_n1_5/${TS}"
+N15_BASE_MODEL="${REPO_ROOT}/data/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e"
 
 CUDA_VISIBLE_DEVICES=2 \
 WANDB_ENTITY=rnlgksclsrn9868-hanyang-university \
@@ -187,8 +204,9 @@ WANDB_PROJECT=finetune-gr00t-n1d5 \
 WANDB_NAME=target15_$TS \
 conda run -n gr00t --no-capture-output python \
   src/policies/Isaac-GR00T-N1.5/scripts/gr00t_finetune.py \
-  --dataset-path $PWD/data/robocasa/v1.0/target/atomic/*/*/lerobot \
+  --dataset-path "${REPO_ROOT}"/data/robocasa/v1.0/target/atomic/*/*/lerobot \
   --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
+  --base-model-path "$N15_BASE_MODEL" \
   --output-dir $OUT \
   --batch-size 64 \
   --max-steps 50000 \
@@ -254,10 +272,13 @@ step → epoch / 시간 환산 (per-step ≈ 1.8 s 기준):
 #### 명령 (2단계 paste 가능, 1단계 wandb key 는 위와 동일)
 
 ```bash
-cd /home/junhyeong/pkt_ws/temporal_vla
-export PYTHONPATH=$PWD/configs/policies
+export REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "${REPO_ROOT}"
+export HF_HOME="${REPO_ROOT}/data/huggingface"
+export PYTHONPATH="${REPO_ROOT}/configs/policies:${PYTHONPATH:-}"
 TS=$(date +%y%m%d%H%M%S)
-OUT=$PWD/outputs/train/groot_n1_5/$TS-subset200
+OUT="${REPO_ROOT}/outputs/train/groot_n1_5/${TS}-subset200"
+N15_BASE_MODEL="${REPO_ROOT}/data/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e"
 
 CUDA_VISIBLE_DEVICES=2 \
 MAX_EPISODES_PER_DATASET=200 \
@@ -266,8 +287,9 @@ WANDB_PROJECT=finetune-gr00t-n1d5 \
 WANDB_NAME=target15_subset200_$TS \
 conda run -n gr00t --no-capture-output python \
   scripts/train/gr00t_n15_finetune_subset.py \
-  --dataset-path $PWD/data/robocasa/v1.0/target/atomic/*/*/lerobot \
+  --dataset-path "${REPO_ROOT}"/data/robocasa/v1.0/target/atomic/*/*/lerobot \
   --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
+  --base-model-path "$N15_BASE_MODEL" \
   --output-dir $OUT \
   --batch-size 64 \
   --max-steps 23580 \
@@ -284,10 +306,72 @@ conda run -n gr00t --no-capture-output python \
 
 공식 N1.5 README는 Python 3.10 conda 환경과 editable install을 기준으로 설명한다. 이 프로젝트도 동일하게 conda + pip 조합을 쓴다 (uv 미사용).
 
-### 1. conda env 생성
+### 옵션 A — Docker 환경
+
+서버에 conda 환경을 직접 만들지 않을 때는 compose service `groot_n15`를 쓴다. 기존 `groot` service는 N1.6 전용이므로 N1.5와 섞지 않는다.
 
 ```bash
-cd /home/junhyeong/pkt_ws/temporal_vla/src/policies/Isaac-GR00T-N1.5
+cd "$(git rev-parse --show-toplevel)"
+
+docker compose build groot_n15
+docker compose up -d groot_n15
+docker compose exec groot_n15 bash
+```
+
+service 정의:
+
+```text
+service:        groot_n15
+container_name: groot_n15
+image:          temporal-vla:groot-n15
+Dockerfile:     src/policies/Isaac-GR00T-N1.5/Dockerfile
+working_dir:    /temporal_vla
+PYTHONPATH:     /temporal_vla/src/policies/Isaac-GR00T-N1.5:/temporal_vla/configs/policies:/temporal_vla
+HF_HOME:        /temporal_vla/data/huggingface
+```
+
+일회성 실행으로 쓰고 싶으면:
+
+```bash
+docker compose run --rm groot_n15 bash
+```
+
+메모:
+
+- `groot_n15`는 N1.5 submodule의 공식 Dockerfile을 build context로 쓴다.
+- compose service는 repo root를 `/temporal_vla`로 mount하고, HF cache는 repository-local `/temporal_vla/data/huggingface`를 사용한다.
+- `user: "${USER_ID}:${GROUP_ID}"`로 실행하므로 output file owner가 host 사용자로 남는다. 컨테이너 안에서 추가 `pip install`이 필요하면 별도 image를 다시 빌드하는 편이 낫다.
+- GPU pinning이 필요하면 `docker-compose.override.yml`에서 `groot_n15`의 `device_ids`를 지정한다. 기본 service는 모든 GPU를 visible로 둔다.
+
+Docker 안에서 설치 확인:
+
+```bash
+python -c "import torch, flash_attn, gr00t; print(torch.__version__, torch.version.cuda); print(flash_attn.__version__); print(gr00t.__file__)"
+```
+
+Docker smoke test:
+
+```bash
+export PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T-N1.5:/temporal_vla/configs/policies:/temporal_vla
+
+CUDA_VISIBLE_DEVICES=0 python \
+  src/policies/Isaac-GR00T-N1.5/scripts/gr00t_finetune.py \
+  --dataset-path /temporal_vla/data/robocasa/v1.0/pretrain/atomic/CloseFridge/20250819/lerobot \
+  --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
+  --embodiment_tag new_embodiment \
+  --output-dir /temporal_vla/outputs/train/groot_n1_5/docker_smoke \
+  --batch-size 1 \
+  --max-steps 2 \
+  --save-steps 2
+```
+
+공식 GR1 tabletop 24-task recipe도 같은 컨테이너에서 실행한다. 이 경우 `--data-config fourier_gr1_arms_waist`, `--embodiment_tag gr1`, `_1000` dataset 24개 path를 사용한다.
+
+### 옵션 B-1 — conda env 생성
+
+```bash
+export REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "${REPO_ROOT}/src/policies/Isaac-GR00T-N1.5"
 
 conda create -n gr00t python=3.10 -y
 conda activate gr00t
@@ -296,7 +380,7 @@ pip install --upgrade setuptools
 pip install -e .[base]
 ```
 
-### 2. CUDA toolkit (nvcc) 준비 — flash-attn 빌드용
+### 옵션 B-2 — CUDA toolkit (nvcc) 준비 — flash-attn 빌드용
 
 시스템에 `nvcc`가 없으면 conda env 내부로 toolkit을 가져온다. `cuda-toolkit=12.4` 메타패키지는 컴포넌트를 12.9로 끌어오지만 (`cuda-toolkit` 메타는 nvcc 마이너 버전을 핀하지 않음), CUDA 12.x 마이너 버전 호환성 덕분에 torch `+cu124` 빌드와 같이 동작한다.
 
@@ -304,7 +388,7 @@ pip install -e .[base]
 conda install -n gr00t -c nvidia cuda-toolkit=12.4 -y
 ```
 
-### 3. flash-attn 설치 (env-local CUDA_HOME 기준)
+### 옵션 B-3 — flash-attn 설치 (env-local CUDA_HOME 기준)
 
 ```bash
 conda run -n gr00t --no-capture-output bash -c \
@@ -312,13 +396,13 @@ conda run -n gr00t --no-capture-output bash -c \
    pip install --no-build-isolation flash-attn==2.7.1.post4'
 ```
 
-### 4. 시스템 의존성 (관리자 권한 필요)
+### 옵션 B-4 — 시스템 의존성 (관리자 권한 필요)
 
 ```bash
 sudo apt-get install -y ffmpeg libsm6 libxext6
 ```
 
-### 5. 설치 확인
+### 옵션 B-5 — 설치 확인
 
 ```bash
 conda run -n gr00t --no-capture-output python -c \
@@ -418,7 +502,8 @@ done
 공식 RoboCasa README의 reproduce command:
 
 ```bash
-cd /home/dongkyu/pdk_ws/temporal_vla/src/policies/Isaac-GR00T-N1.5
+export REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "${REPO_ROOT}/src/policies/Isaac-GR00T-N1.5"
 
 python scripts/gr00t_finetune.py \
   --dataset-path "${ALL_DATASET_PATHS[@]}" \
@@ -434,23 +519,25 @@ python scripts/gr00t_finetune.py \
   --gradient-accumulation-steps 4
 ```
 
-우리 서버에서 output 경로는 별도로 잡는다.
+Output 경로는 repository 아래로 잡는다.
 
 ```bash
-OUTPUT_DIR=/home/dongkyu/pdk_ws/temporal_vla/outputs/groot_n1_5_robocasa_tabletop
+export REPO_ROOT="$(git rev-parse --show-toplevel)"
+OUTPUT_DIR="${REPO_ROOT}/outputs/groot_n1_5_robocasa_tabletop"
 ```
 
 예시:
 
 ```bash
-cd /home/dongkyu/pdk_ws/temporal_vla/src/policies/Isaac-GR00T-N1.5
+export REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "${REPO_ROOT}/src/policies/Isaac-GR00T-N1.5"
 
 python scripts/gr00t_finetune.py \
   --dataset-path "${ALL_DATASET_PATHS[@]}" \
   --num-gpus 8 \
   --batch-size 48 \
   --learning_rate 3e-5 \
-  --output-dir /home/dongkyu/pdk_ws/temporal_vla/outputs/groot_n1_5_robocasa_tabletop \
+  --output-dir "${REPO_ROOT}/outputs/groot_n1_5_robocasa_tabletop" \
   --data-config fourier_gr1_arms_waist \
   --embodiment_tag gr1 \
   --tune-visual \
@@ -470,7 +557,8 @@ Effective global batch size:
 전체 학습 전에 데이터 로딩과 forward/backward만 확인하려면 step을 줄인다.
 
 ```bash
-cd /home/dongkyu/pdk_ws/temporal_vla/src/policies/Isaac-GR00T-N1.5
+export REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "${REPO_ROOT}/src/policies/Isaac-GR00T-N1.5"
 
 python scripts/gr00t_finetune.py \
   --dataset-path "${ALL_DATASET_PATHS[@]}" \
@@ -488,6 +576,9 @@ python scripts/gr00t_finetune.py \
 4090급 GPU에서 OOM이 나면 공식 README의 조언대로 DiT fine-tuning을 끈다.
 
 ```bash
+export REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "${REPO_ROOT}/src/policies/Isaac-GR00T-N1.5"
+
 python scripts/gr00t_finetune.py \
   --dataset-path "${ALL_DATASET_PATHS[@]}" \
   --num-gpus 1 \
@@ -547,7 +638,7 @@ python scripts/gr00t_finetune.py \
   --num-gpus 2 \
   --batch-size 16 \
   --learning_rate 3e-5 \
-  --output-dir /home/dongkyu/pdk_ws/temporal_vla/outputs/groot_n1_5_robocasa_lora \
+  --output-dir "${REPO_ROOT}/outputs/groot_n1_5_robocasa_lora" \
   --data-config fourier_gr1_arms_waist \
   --embodiment_tag gr1 \
   --max-steps 20000 \
@@ -558,62 +649,33 @@ python scripts/gr00t_finetune.py \
 
 공식 README는 LoRA fine-tuning이 가능하다고 설명하지만, 성능 관점에서는 full fine-tuning을 권장한다.
 
-## Evaluation
+## Evaluation Quickstart
 
-공식 RoboCasa README는 먼저 inference server를 열고, RoboCasa simulation client를 실행하는 방식을 사용한다.
+N1.5 eval은 N1.6 eval과 별도 경로를 사용한다. N1.6의 `docs/groot_robocasa_eval_setup.md`는 `groot`/`robocasa` ZMQ workflow 기준이고, N1.5는 `groot_n15` service와 `src/policies/Isaac-GR00T-N1.5/scripts` 아래 entrypoint를 사용한다.
 
-공식 fine-tuned checkpoint server:
+상세 명령은 `docs/groot_n1_5_robocasa_eval_setup.md`를 기준으로 한다. 해당 문서에서 single server-client eval(`--mode tuned` / `--mode base`)과 base/tuned pair comparison(`--mode both`)을 분리해서 안내한다.
 
-```bash
-cd /home/dongkyu/pdk_ws/temporal_vla/src/policies/Isaac-GR00T-N1.5
+권장 확인 순서:
 
-python3 scripts/inference_service.py --server \
-  --model_path youliangtan/gr00t-n1.5-robocasa-tabletop-posttrain \
-  --data_config fourier_gr1_arms_waist
-```
+1. `docker compose build groot_n15`
+2. PandaOmron target 15-task는 `new_embodiment` + `RobocasaPandaOmron10TaskDataConfig`로 offline dataset MSE부터 확인
+3. official GR1 tabletop 재현은 `gr1` + `fourier_gr1_arms_waist` + `inference_service.py`/`simulation_service.py`로 확인
 
-내가 학습한 checkpoint를 평가할 때:
+PandaOmron fine-tuned checkpoint의 첫 offline MSE 확인:
 
 ```bash
-python3 scripts/inference_service.py --server \
-  --model_path /home/dongkyu/pdk_ws/temporal_vla/outputs/groot_n1_5_robocasa_tabletop/checkpoint-60000 \
-  --data_config fourier_gr1_arms_waist
+docker compose exec groot_n15 bash -lc '
+PYTHONPATH=/temporal_vla/configs/policies:/temporal_vla/src/policies/Isaac-GR00T-N1.5:$PYTHONPATH \
+python3 src/policies/Isaac-GR00T-N1.5/scripts/eval_policy.py \
+  --model-path /temporal_vla/outputs/train/groot_n1_5/<RUN>/checkpoint-<STEP> \
+  --dataset-path /temporal_vla/data/robocasa/v1.0/target/atomic/OpenCabinet/20250813/lerobot \
+  --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
+  --embodiment-tag new_embodiment \
+  --modality-keys base_motion control_mode end_effector_position end_effector_rotation gripper_close \
+  --steps 150 \
+  --trajs 3
+'
 ```
-
-simulation client:
-
-```bash
-python3 scripts/simulation_service.py --client \
-  --env_name <TASK_NAME> \
-  --video_dir ./videos \
-  --max_episode_steps 720 \
-  --n_episodes 50
-```
-
-공식 README의 reported SR은 task당 50 rollouts 기준이다. `n_envs > 1`은 success rate를 낮출 수 있다는 경고가 있으므로, 공식 재현 기준으로는 `n_envs=1`을 우선 사용한다.
-
-## 공식 reported performance
-
-공식 N1.5 RoboCasa README는 fine-tuned model을 다음 Hugging Face repo에 올려두었다고 설명한다.
-
-```text
-youliangtan/gr00t-n1.5-robocasa-tabletop-posttrain
-```
-
-reported average success rate:
-
-```text
-0.48
-```
-
-평가 조건:
-
-```text
-24 RoboCasa GR1 tabletop tasks
-50 rollouts per task
-```
-
-따라서 N1.5 recipe 재현 여부를 볼 때는 단일 task 한두 개보다 24개 task 전체의 50-episode SR을 기준으로 비교하는 편이 맞다.
 
 ## 운영 메모
 
@@ -622,8 +684,8 @@ reported average success rate:
 1. N1.5 환경 설치 확인
 2. `_1000` dataset 24개 경로 확인
 3. `max-steps 2`, `batch-size 1` smoke test
-4. 공식 checkpoint `youliangtan/gr00t-n1.5-robocasa-tabletop-posttrain` eval로 simulation 환경 확인
+4. 공식 checkpoint eval로 simulation 환경 확인
 5. 공식 recipe와 같은 hyperparameter로 full fine-tuning
-6. 동일 eval 조건, task당 50 episodes, `n_envs=1`로 SR 비교
+6. `docs/groot_n1_5_robocasa_eval_setup.md` 기준으로 SR 비교
 
-N1.5 recipe를 N1.6 PandaOmron 실패 분석에 참고할 수는 있지만, 두 실험의 success rate를 직접 같은 의미로 비교하면 안 된다. embodiment, data config, task set, action space가 다르다.
+공식 reported checkpoint, SR, 평가 조건은 `docs/groot_n1_5_robocasa_eval_setup.md`의 `Reported Reference`를 기준으로 한다. N1.5 recipe를 N1.6 PandaOmron 실패 분석에 참고할 수는 있지만, 두 실험의 success rate를 직접 같은 의미로 비교하면 안 된다. embodiment, data config, task set, action space가 다르다.

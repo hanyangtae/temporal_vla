@@ -8,7 +8,7 @@
 #
 # Full baseline fine-tune:
 #   bash scripts/train/groot_robocasa_finetune.sh
-#   REPO_ROOT=/home/dongkyu/temporal_vla bash scripts/train/groot_robocasa_finetune.sh
+#   REPO_ROOT="$(git rev-parse --show-toplevel)" bash scripts/train/groot_robocasa_finetune.sh
 #   docker compose exec groot bash /temporal_vla/scripts/train/groot_robocasa_finetune.sh
 #
 # Short syntax check run:
@@ -43,7 +43,7 @@ fi
 NUM_GPUS="${NUM_GPUS:-1}"
 MASTER_PORT="${MASTER_PORT:-29500}"
 
-LOCAL_BASE_MODEL_PATH="${REPO_ROOT}/checkpoints/nvidia/GR00T-N1.6-3B"
+LOCAL_BASE_MODEL_PATH="${REPO_ROOT}/outputs/checkpoints/GR00T-N1.6-3B"
 if [ -z "${BASE_MODEL_PATH:-}" ]; then
     if [ -f "${LOCAL_BASE_MODEL_PATH}/config.json" ]; then
         BASE_MODEL_PATH="${LOCAL_BASE_MODEL_PATH}"
@@ -77,7 +77,7 @@ OUTPUT_DIR="$(expand_home "${OUTPUT_DIR}")"
 ENTRY_SCRIPT="$(expand_home "${ENTRY_SCRIPT}")"
 
 # ckpt 1개 ≈ 22GB. SAVE_STEPS=5000 × LIMIT=4 = 88GB 디스크 사용 가정.
-# 이전에 1k 주기 × limit=20 (=440GB) 으로 디스크 풀로 학습 사망한 사례 있음.
+# 1k 주기 × limit=20 설정은 약 440GB까지 누적될 수 있어 기본값으로 쓰지 않는다.
 MAX_STEPS="${MAX_STEPS:-20000}"
 SAVE_STEPS="${SAVE_STEPS:-5000}"
 SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-4}"
