@@ -1,6 +1,6 @@
 # GR00T RoboCasa Loop 분석 실행 계획
 
-> Legacy note: 이 문서는 초기 N1.6 local rollout / loop analysis 계획이다. 현재 권장 N1.6 RoboCasa 평가는 `docs/groot_robocasa_eval_setup.md`의 Docker ZMQ workflow를 기준으로 한다. 체크포인트 위치는 현재 repo 규칙에 맞춰 `/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B`를 사용한다.
+> Legacy note: 이 문서는 초기 N1.6 local rollout / loop analysis 계획이다. 현재 권장 N1.6 RoboCasa 평가는 `docs/groot/n16_robocasa_eval.md`의 Docker ZMQ workflow를 기준으로 한다. 체크포인트 위치는 현재 repo 규칙에 맞춰 `/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B`를 사용한다.
 
 ## 목표
 GR00T N1.6-3B 모델을 RoboCasa 환경에서 rollout하여 실패 케이스를 영상으로 확인하고,
@@ -152,7 +152,7 @@ export PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T  # docker-compose에 �
 | `scripts/analysis/analyze_loop_patterns.py` | Loop 패턴 분석 (cosine sim, stagnation, gripper) |
 | `scripts/analysis/collect_and_analyze_groot.sh` | 수집 + 분석 배치 스크립트 |
 | `outputs/checkpoints/GR00T-N1.6-3B/` | 모델 체크포인트 (로컬) |
-| `docs/plan_groot_loop_analysis.md` | 이 문서 |
+| `docs/phase/legacy_groot_loop_analysis_plan.md` | 이 문서 |
 
 ## 주의사항
 

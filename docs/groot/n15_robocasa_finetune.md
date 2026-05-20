@@ -4,10 +4,10 @@ Isaac-GR00T `n1.5-release` 기준으로 RoboCasa GR1 tabletop benchmark를 fine-
 
 이 문서는 N1.6 PandaOmron fine-tuning 문서와 의도적으로 분리한다.
 
-- N1.6 문서: `docs/groot_robocasa_finetune_setup.md`
+- N1.6 문서: `docs/groot/n16_robocasa_finetune.md`
 - N1.6 코드 경로: `src/policies/Isaac-GR00T`
-- N1.5 문서: `docs/groot_n1_5_robocasa_finetune_setup.md`
-- N1.5 eval 문서: `docs/groot_n1_5_robocasa_eval_setup.md`
+- N1.5 문서: `docs/groot/n15_robocasa_finetune.md`
+- N1.5 eval 문서: `docs/groot/n15_robocasa_eval.md`
 - N1.5 코드 경로: `src/policies/Isaac-GR00T-N1.5`
 
 ## 결론
@@ -651,9 +651,9 @@ python scripts/gr00t_finetune.py \
 
 ## Evaluation Quickstart
 
-N1.5 eval은 N1.6 eval과 별도 경로를 사용한다. N1.6의 `docs/groot_robocasa_eval_setup.md`는 `groot`/`robocasa` ZMQ workflow 기준이고, N1.5는 `groot_n15` service와 `src/policies/Isaac-GR00T-N1.5/scripts` 아래 entrypoint를 사용한다.
+N1.5 eval은 N1.6 eval과 별도 경로를 사용한다. N1.6의 `docs/groot/n16_robocasa_eval.md`는 `groot`/`robocasa` ZMQ workflow 기준이고, N1.5는 `groot_n15` service와 `src/policies/Isaac-GR00T-N1.5/scripts` 아래 entrypoint를 사용한다.
 
-상세 명령은 `docs/groot_n1_5_robocasa_eval_setup.md`를 기준으로 한다. 해당 문서에서 single server-client eval(`--mode tuned` / `--mode base`)과 base/tuned pair comparison(`--mode both`)을 분리해서 안내한다.
+상세 명령은 `docs/groot/n15_robocasa_eval.md`를 기준으로 한다. 해당 문서에서 single server-client eval(`--mode tuned` / `--mode base`)과 base/tuned pair comparison(`--mode both`)을 분리해서 안내한다.
 
 권장 확인 순서:
 
@@ -686,6 +686,6 @@ python3 src/policies/Isaac-GR00T-N1.5/scripts/eval_policy.py \
 3. `max-steps 2`, `batch-size 1` smoke test
 4. 공식 checkpoint eval로 simulation 환경 확인
 5. 공식 recipe와 같은 hyperparameter로 full fine-tuning
-6. `docs/groot_n1_5_robocasa_eval_setup.md` 기준으로 SR 비교
+6. `docs/groot/n15_robocasa_eval.md` 기준으로 SR 비교
 
-공식 reported checkpoint, SR, 평가 조건은 `docs/groot_n1_5_robocasa_eval_setup.md`의 `Reported Reference`를 기준으로 한다. N1.5 recipe를 N1.6 PandaOmron 실패 분석에 참고할 수는 있지만, 두 실험의 success rate를 직접 같은 의미로 비교하면 안 된다. embodiment, data config, task set, action space가 다르다.
+공식 reported checkpoint, SR, 평가 조건은 `docs/groot/n15_robocasa_eval.md`의 `Reported Reference`를 기준으로 한다. N1.5 recipe를 N1.6 PandaOmron 실패 분석에 참고할 수는 있지만, 두 실험의 success rate를 직접 같은 의미로 비교하면 안 된다. embodiment, data config, task set, action space가 다르다.
