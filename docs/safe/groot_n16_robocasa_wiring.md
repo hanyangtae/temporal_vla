@@ -6,9 +6,9 @@
 
 - `ZMQ official eval`: GR00T N1.6 RoboCasa 성공률을 판단하는 기준 경로.
 - `ZMQ SAFE feature server`: SAFE rollout 수집 기준 경로. official RoboCasa 클라이언트 환경을 쓰면서 action과 feature를 함께 저장한다.
-- `HTTP /act`: 프로젝트 공통 serving API로 유지한다. 다만 현재는 GR00T N1.6 RoboCasa 성공률 기준선으로 쓰지 않는다.
+- `HTTP /act`: 프로젝트 공통 serving API로 유지한다. GR00T N1.6 RoboCasa 성공률 기준선은 ZMQ official eval로 둔다.
 
-HTTP 경로는 폐기하지 않는다. 다만 official ZMQ에서는 OpenDrawer가 정상 성공률을 보였고, HTTP 연동에서는 성공률이 낮았으므로 먼저 동일 observation/action chunk 기준 동등성 검증이 필요하다.
+HTTP 경로는 프로젝트 공통 serving API로 유지한다. official ZMQ OpenDrawer baseline은 README 수준이고, HTTP 연동은 observation/action chunk 동등성 검증을 거쳐 SR 지표로 편입한다.
 
 ## Checkpoint And Env
 
@@ -25,6 +25,66 @@ RoboCasa 환경:
 - local robocasa365: `/home/dongkyu/pdk_ws/temporal_vla/src/benchmarks/robocasa`
 
 GR00T official eval과 SAFE collection은 GR00T fork의 RoboCasa v0.2 task name을 쓴다. local data는 robocasa365 v1.0 이름을 쓰므로 task mapping을 명시적으로 유지한다.
+
+## Shared Run Config
+
+SAFE N1.6 RoboCasa scripts는 per-script hardcoded path 대신 공통 run identity를 아래 두 파일에서 가져온다.
+
+| file | consumer | role |
+|---|---|---|
+| `scripts/safe/groot_n16/robocasa/run_config.py` | Python scripts | `Path` 객체와 final detector selection의 canonical config |
+| `scripts/safe/groot_n16/robocasa/run_config.sh` | Bash wrappers | shell 환경에서 쓰는 adapter config |
+
+Python script는 `run_config.py`를 import하고, Bash wrapper는 `run_config.sh`를 source한다. 새 run/task set을 만들 때 개별 script 안의 output path를 직접 고치지 말고 아래 값을 override한다.
+
+| variable | scope | meaning |
+|---|---|---|
+| `ROBOCASA_SAFE_RUN_ID` | Python/Bash shared run root | top-level SAFE run directory, default `safe_seen4_unseen2_100ep` |
+| `ROBOCASA_SAFE_EXPERIMENT_ID` | feature visualization | visualization experiment directory name |
+| `ROBOCASA_SAFE_FINAL_HORIZON_IDX_REL` | detector train/eval | final detector horizon aggregation |
+| `ROBOCASA_SAFE_FINAL_DIFF_IDX_REL` | detector train/eval | final detector diffusion aggregation |
+| `ROBOCASA_SAFE_HPARAM_SWEEP_ID` | detector train/eval | hparam sweep experiment directory |
+| `RUN_ID` | collection wrappers only | per-collection output suffix under `experiments/collection_smoke/rollouts_${RUN_ID}` |
+
+`ROBOCASA_SAFE_RUN_ID`는 전체 SAFE run tree를 바꾸고, `RUN_ID`는 한 번의 rollout collection 산출물 이름만 바꾼다.
+
+현재 default run config 확인:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+python -c "import sys; sys.path.insert(0, 'scripts/safe/groot_n16/robocasa'); import run_config as c; print(c.RUN_ROOT); print(c.SPLIT_ROOT); print(c.FINAL_LSTM_RUN_DIR); print(c.FINAL_DETECTOR_DIR)"
+```
+
+## Script Pipeline Order
+
+이 디렉터리의 파일은 아래 순서로 읽으면 된다. 각 step은 앞 step의 artifact를 입력으로 삼는다.
+
+| order | file | purpose | main input -> output |
+|---:|---|---|---|
+| 0 | `run_config.py` | Python-side shared run identity, paths, final detector selection | constants -> Python defaults |
+| 0 | `run_config.sh` | Bash-side shared run identity adapter | env/defaults -> shell variables |
+| 0 | `safe_feature_vectors.py` | `[K,H,D]` Flow-matching SAFE feature를 timestep-level SAFE feature vector로 aggregate | rollout pkl + aggregation command -> `[T,D]` features |
+| 1 | `serve/feature_server.py` | ZMQ feature server exposing `get_action_with_features` | GR00T checkpoint -> action + unpooled feature |
+| 2 | `collect/collect_rollout.py` | one-task/one-range rollout collector | ZMQ feature server + RoboCasa env -> SAFE-readable pkl/mp4/csv |
+| 2 | `collect/collect_task_set_official_uv_host.sh` | preferred host-side task-set collection wrapper using official `robocasa_uv` env | task set + seeds -> raw rollout directories |
+| 2 | `collect/collect_task_set_in_container.sh` | collection wrapper for already-running container shell context | task set + seeds -> raw rollout directories |
+| 2 | `collect/collect_task_set_via_docker_exec.sh` | host wrapper that enters the Docker container for collection | task set + seeds -> raw rollout directories |
+| 3 | `split/prepare_seen4_unseen2_split.py` | paper-faithful SAFE split construction | raw rollouts -> `train` / `val_seen` / `val_unseen` split tree |
+| 4 | `train/train_lstm_mean_mean.sh` | legacy mean/mean SAFE-LSTM baseline | split tree -> baseline train logs |
+| 4 | `train/train_lstm_aggregation_ablation.sh` | aggregation ablation over horizon/diffusion axes | split tree -> aggregation train logs |
+| 5 | `analyze/summarize_lstm_aggregation_ablation.py` | select candidate aggregation from ablation logs | aggregation train logs -> json/md summary |
+| 6 | `train/train_lstm_hparam_sweep.sh` | hparam sweep with selected final aggregation defaults | split tree -> hparam train logs |
+| 7 | `analyze/summarize_lstm_hparam_sweep.py` | summarize hparam sweep and selection rule | hparam train logs -> json/md summary |
+| 8 | `analyze/finalize_lstm_detector.py` | pin final checkpoint and generate fixed/CP/functional-CP artifacts | selected run dir -> `final_detector/` |
+| 9 | `vis/plot_safe_conformal_curves.py` | SAFE Figure-8-style CP operating curves | `final_detector/*.csv` -> CP figures |
+| 10 | `vis/run_feature_visualization.py` | adapter around SAFE's original feature visualizer | split tree -> SAFE-style t-SNE/UMAP artifacts |
+| 10 | `vis/plot_safe_style_feature_space.py` | native SAFE-style feature-space plotter | split tree -> feature-space plots |
+| 11 | `vis/plot_task_success_overlay.py` | overlay task/success labels on projected feature artifacts | feature visualization pkl -> overlay images |
+| 12 | `vis/compute_feature_silhouette.py` | static feature-space separability diagnostics | split tree / projection pkl -> silhouette tables |
+| 13 | `analyze/diagnose_rollout_mean_feature_separability.py` | rollout-mean aggregation separability diagnostic | split tree -> rollout-level separability tables/plots |
+
+Default visualization and silhouette scripts now use the final detector aggregation from `run_config.py`. To reproduce the early `mean/mean` artifacts, pass `--horizon-idx-rel mean --diff-idx-rel mean` explicitly.
 
 ## ZMQ Official Eval
 
@@ -69,7 +129,7 @@ gr00t/eval/sim/robocasa/robocasa_uv/.venv/bin/python gr00t/eval/rollout_policy.p
 - SR: `0.8`
 - official README의 OpenDrawer `81.1%`와 같은 수준
 
-따라서 현재 checkpoint 자체가 깨졌다는 증거는 없다.
+이 결과를 현재 checkpoint 정상 동작 기준선으로 둔다.
 
 ## ZMQ SAFE Feature Collection
 
@@ -100,17 +160,17 @@ uv run --no-sync python /home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16
 ```bash
 cd /home/dongkyu/pdk_ws/temporal_vla
 
-RUN_ID=n16_six_task_official_uv_smoke \
+RUN_ID=n16_task_set_official_uv_smoke \
 EPISODES_PER_TASK=1 \
 SEED_START=241 \
 EPISODE_START_IDX=0 \
-bash scripts/safe/groot_n16/robocasa/collect/collect_six_task_official_uv_host.sh
+bash scripts/safe/groot_n16/robocasa/collect/collect_task_set_official_uv_host.sh
 ```
 
 저장 위치:
 
 ```text
-/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/rollouts_${RUN_ID}
+/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/experiments/collection_smoke/rollouts_${RUN_ID}
 ```
 
 SAFE feature contract:
@@ -122,7 +182,7 @@ SAFE feature contract:
 - expected default shape: `[4, 16, 1024]`
 - dtype: `float16`
 
-`50`은 우리가 임의로 정한 SAFE horizon이 아니다. GR00T N1.6 checkpoint config의 model-level `action_horizon` / processor `max_action_horizon` 값이다. 반면 RoboCasa PandaOmron modality config의 decoded action delta는 16개다. GR00T 내부 action head는 50개 action-token trajectory를 만들지만, RoboCasa output으로 decode되는 것은 앞 16 step이다.
+GR00T N1.6 checkpoint config의 model-level `action_horizon` / processor `max_action_horizon` 값은 50이다. RoboCasa PandaOmron modality config의 decoded action delta는 16개다. GR00T 내부 action head는 50개 action-token trajectory를 만들고, RoboCasa output은 앞 16 step을 decode한다.
 
 따라서 SAFE 기본 export는 다음처럼 잡는다.
 
@@ -131,11 +191,11 @@ all_action_tokens = model_output[:, -50:, :]
 safe_tokens = all_action_tokens[:, :16, :]
 ```
 
-원하면 feature server를 `--feature-slice all`로 띄워 `[4, 50, 1024]` 전체 action-token feature를 저장할 수 있다. 하지만 이 경우 뒤 34 token은 RoboCasa에서 직접 decode/execution되는 action step이 아니므로 detector input을 희석할 수 있다.
+원하면 feature server를 `--feature-slice all`로 띄워 `[4, 50, 1024]` 전체 action-token feature를 저장할 수 있다. 이 설정은 RoboCasa에서 직접 decode/execution되는 앞 16 step과 뒤 34 model-level token을 함께 넣으므로 detector input을 희석할 수 있다.
 
-SAFE 논문식 flow-matching feature에 맞추기 위해 collector는 feature를 pooling하지 않는다. horizon/diffusion aggregation은 detector train/eval 단계에서 선택해야 한다.
+SAFE 논문식 flow-matching feature에 맞춰 collector는 feature 축을 보존한다. horizon/diffusion aggregation은 detector train/eval 단계에서 선택한다.
 
-영상 저장은 GR00T upstream `VideoRecordingWrapper`에 맡긴다. SAFE collector는 `VideoConfig(video_dir=...)`만 설정해서 wrapper를 켜고, `fps`, `steps_per_render`, `max_episode_steps` 등은 upstream 기본값을 그대로 둔다. 다만 upstream RoboCasa observation은 3개 camera의 `res256`/`res512` key를 모두 포함하므로, recorder 앞단에서 영상용 observation만 `video.res256_image_side_0`, `video.res256_image_side_1`, `video.res256_image_wrist_0`로 제한한다. Episode 종료 후 wrapper가 만든 mp4를 SAFE 산출물 이름(`task{id}--ep{idx}--succ{0|1}.mp4`)으로 이동한다.
+영상 저장은 GR00T upstream `VideoRecordingWrapper`에 맡긴다. SAFE collector는 `VideoConfig(video_dir=...)`만 설정해서 wrapper를 켜고, `fps`, `steps_per_render`, `max_episode_steps` 등은 upstream 기본값을 그대로 둔다. Upstream RoboCasa observation은 3개 camera의 `res256`/`res512` key를 모두 포함하므로, recorder 앞단에서 영상용 observation만 `video.res256_image_side_0`, `video.res256_image_side_1`, `video.res256_image_wrist_0`로 제한한다. Episode 종료 후 wrapper가 만든 mp4를 SAFE 산출물 이름(`task{id}--ep{idx}--succ{0|1}.mp4`)으로 이동한다.
 
 검증된 action 동등성:
 
@@ -147,71 +207,6 @@ SAFE 논문식 flow-matching feature에 맞추기 위해 collector는 feature를
   - `action.gripper_close`
   - `action.base_motion`
   - `action.control_mode`
-
-## HTTP Path
-
-목적: 프로젝트 공통 VLA serving/eval API를 유지한다.
-
-서버:
-
-```bash
-docker compose run --rm groot \
-  python /temporal_vla/scripts/serve/groot.py \
-  --profile /temporal_vla/configs/checkpoints/groot__robocasa_panda_omron.yaml
-```
-
-API:
-
-- `POST /act`
-- `POST /reset`
-- `GET /health`
-
-현재 판단:
-
-- HTTP는 heterogeneous VLA serving을 위한 경로로 계속 유지한다.
-- GR00T N1.6 RoboCasa 성공률 기준선은 아직 ZMQ official eval이다.
-- HTTP에서도 최종적으로는 대응 task의 SR이 높게 나와야 한다. 낮은 SR이 나온다면 checkpoint 성능 문제가 아니라, 우선 wiring/runner/schema mismatch를 의심한다.
-- HTTP를 다시 SR eval에 쓰려면, 같은 RoboCasa observation에 대해 HTTP action과 ZMQ official action의 chunk shape, key mapping, action scale, reset timing, camera/state schema를 먼저 비교해야 한다.
-
-현재 의심 지점:
-
-- observation key conversion 차이
-- action key mapping 차이
-- chunk length 또는 action step 소비 방식 차이
-- reset/stateful policy timing 차이
-- project robocasa365와 GR00T fork RoboCasa env 차이
-
-### TODO: HTTP SR Recovery
-
-현재 HTTP와 ZMQ의 차이는 단순 transport 차이가 아니다.
-
-- HTTP 경로는 보통 project runner를 타며 `src/benchmarks/robocasa`의 robocasa365 v1.0 환경을 사용한다.
-- ZMQ official 경로는 `src/policies/Isaac-GR00T/external_dependencies/robocasa`의 GR00T fork RoboCasa v0.2 환경을 사용한다.
-- 따라서 현재 비교에는 transport, env version, task class name, observation schema, action application 방식 차이가 함께 섞여 있다.
-
-그래도 기대값은 명확하다. 공통 task로 고른 5개는 v0.2와 v1.0 사이에서 의미적으로 대응되는 task이므로, HTTP path에서도 충분히 높은 SR이 나와야 한다. 특히 `OpenSingleDoor`/`OpenCabinet`처럼 official SR이 높은 task에서 HTTP SR이 크게 낮다면 detector 문제가 아니라 policy wiring 문제로 본다.
-
-HTTP SR 회복을 위한 검증 순서:
-
-1. 같은 checkpoint, 같은 seed, 같은 initial env state에 최대한 가깝게 맞춘다.
-2. ZMQ official client가 만든 raw observation을 저장한다.
-3. 같은 observation을 HTTP `/act` 입력 payload로 변환한다.
-4. HTTP output action을 GR00T native action key로 되돌려 ZMQ official action과 비교한다.
-5. action key별 shape, first action, chunk horizon, scale, gripper sign, rotation convention을 비교한다.
-6. action이 같거나 충분히 가까우면, 같은 env에서 HTTP action application loop만 교체해서 SR을 본다.
-7. action은 같은데 SR만 낮으면 action consumption, reset, termination, wrapper, env version 차이를 본다.
-8. action부터 다르면 observation conversion 또는 output mapping을 먼저 고친다.
-
-우선순위가 높은 체크포인트:
-
-- image keys: `side_0`, `side_1`, `wrist_0`가 GR00T의 `res256_image_*` 계열과 동일 의미인지 확인한다.
-- state keys: `eef_pos`, `eef_quat`, `gripper_qpos`, `joint_pos`의 순서와 batch/time dimension이 official wrapper와 같은지 확인한다.
-- action keys: `end_effector_position`, `end_effector_rotation`, `gripper_close`, `base_motion`, `control_mode`가 HTTP의 `action.eef_pos`, `action.eef_axisangle`, `action.gripper`로 손실 없이 매핑되는지 확인한다.
-- action chunk: GR00T N1.6의 chunk horizon과 RoboCasa action repeat/consume 방식이 HTTP runner와 ZMQ runner에서 같은지 확인한다.
-- reset: episode 시작 시 `/reset`이 반드시 호출되고, server-side policy state가 official ZMQ path와 같은 시점에 초기화되는지 확인한다.
-- env version: robocasa365 v1.0에서 task semantics가 v0.2와 충분히 같은지 task별로 확인한다.
-
-이 TODO가 끝나기 전까지 HTTP SR 결과는 “모델 성능”으로 해석하지 않는다. HTTP SR은 wiring parity가 확인된 뒤에만 SAFE/GR00T N1.6 성능 지표로 쓴다.
 
 ## Common Candidate 9 Tasks
 
@@ -245,11 +240,11 @@ GR00T official RoboCasa v0.2 eval task와 local robocasa365 v1.0 atomic dataset�
 제외한 후보:
 
 - `TurnOffStove`: official SR `31.0%`, 이번 6-task set에서는 제외.
-- `TurnOnMicrowave`, `TurnOnSinkFaucet`: 성공률이 높아 failure detector 데이터 균형 관점에서는 우선순위를 낮춘다.
+- `TurnOnMicrowave`, `TurnOnSinkFaucet`: 성공률이 높아 failure detector 데이터 균형 관점에서 이번 6-task set 우선순위 밖에 둔다.
 
 ## Paper-Faithful SAFE Split
 
-SAFE 논문/레포 방식에 맞출 때는 별도 `train / validation / CP / test` 4-way episode split을 만들지 않는다.
+SAFE 논문/레포 방식에 맞춰 task-level split과 seen-task episode split을 사용한다.
 
 - raw rollout cap: `max_rollouts_per_task: 100`
 - task-level split: `unseen_task_ratio: 0.25`
@@ -260,7 +255,7 @@ SAFE 논문/레포 방식에 맞출 때는 별도 `train / validation / CP / tes
 
 따라서 6개 task에서는 `round(0.25 * 6) = 2`개 task가 unseen이 되고, 나머지 4개 task가 seen이 된다. 각 task를 100 rollout으로 맞추면 전체 600 rollout이며, split은 대략 다음 크기가 된다. SAFE 레포 DROID 설정의 `60/task`보다 큰 cap이지만, task별 SR이 낮아 성공 rollout이 부족할 수 있으므로 N1.6 RoboCasa에서는 `100/task`를 사용한다.
 
-이번 small reproduction에서는 완전 랜덤 task split 대신 taxonomy constraint를 둔다. unseen task는 Open 계열 1개와 PnP 계열 1개로 고정한다. 실제 unseen task는 `OpenDrawer`와 `PnPCounterToCab`이다. 이 선택은 `OpenSingleDoor`를 seen 쪽에 남겨 local robocasa365의 `OpenCabinet` 대응 경로를 계속 점검할 수 있게 하고, `val_unseen` 성공/실패 비율도 `114/86`으로 과도하게 치우치지 않는다.
+이번 small reproduction에서는 taxonomy constraint를 둔다. unseen task는 Open 계열 1개와 PnP 계열 1개로 고정한다. 실제 unseen task는 `OpenDrawer`와 `PnPCounterToCab`이다. 이 선택은 `OpenSingleDoor`를 seen 쪽에 남겨 local robocasa365의 `OpenCabinet` 대응 경로를 계속 점검할 수 있게 하고, `val_unseen` 성공/실패 비율도 `114/86`으로 균형을 유지한다.
 
 | split | source | count |
 |---|---|---:|
@@ -269,6 +264,31 @@ SAFE 논문/레포 방식에 맞출 때는 별도 `train / validation / CP / tes
 | `val_unseen` | 2 unseen tasks × 100 rollout | 200 |
 
 `val_seen`은 validation과 conformal calibration 역할을 함께 한다. 별도 CP-only split이나 seen-task test split을 만들면 논문식 재현에서 벗어난다.
+
+Split 생성 전 count 확인:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/split/prepare_seen4_unseen2_split.py \
+  --source-root outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/raw_rollouts \
+  --split-root outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/split \
+  --dry-run
+```
+
+Split 생성은 새 run에서 한 번 수행한다. 현재 run의 source of truth는 아래 `split` directory다. 기존 `split` directory가 있으면 script가 중단되므로, 재생성은 새 `ROBOCASA_SAFE_RUN_ID`에서 수행한다.
+
+Split 최초 생성:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/split/prepare_seen4_unseen2_split.py \
+  --source-root outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/raw_rollouts \
+  --split-root outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/split
+```
 
 생성된 split:
 
@@ -284,7 +304,7 @@ Split summary:
 | `val_seen` | 100 | 58 | 42 | 58.0% |
 | `val_unseen` | 200 | 114 | 86 | 57.0% |
 
-`manifest.tsv`와 `summary.tsv`를 함께 저장해 이후 학습 seed와 split seed가 섞이지 않게 한다.
+`manifest.tsv`와 `summary.tsv`를 함께 저장해 이후 학습 seed와 split seed를 분리한다.
 
 ## SAFE LSTM Final Detector
 
@@ -305,11 +325,61 @@ Loader contract:
 관련 script:
 
 ```text
+/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/run_config.py
+/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/run_config.sh
+/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/safe_feature_vectors.py
 /home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/train/train_lstm_aggregation_ablation.sh
 /home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/analyze/summarize_lstm_aggregation_ablation.py
 /home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/train/train_lstm_hparam_sweep.sh
 /home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/analyze/summarize_lstm_hparam_sweep.py
 /home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/analyze/finalize_lstm_detector.py
+```
+
+`run_config.py` / `run_config.sh`가 run id, output root, 최종 aggregation, hparam sweep directory의 단일 출처다. `safe_feature_vectors.py`가 `[K,H,D]` Flow-matching SAFE feature를 timestep-level SAFE feature vector로 aggregation하는 공용 Module이다.
+
+Aggregation ablation 실행:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+WANDB_MODE=online \
+bash scripts/safe/groot_n16/robocasa/train/train_lstm_aggregation_ablation.sh
+```
+
+Aggregation ablation 요약:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/analyze/summarize_lstm_aggregation_ablation.py
+```
+
+최종 aggregation 기준 hparam sweep 실행:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+WANDB_MODE=online \
+bash scripts/safe/groot_n16/robocasa/train/train_lstm_hparam_sweep.sh
+```
+
+Hparam sweep 요약:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/analyze/summarize_lstm_hparam_sweep.py
+```
+
+Final detector 고정 및 CP artifact 생성:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/analyze/finalize_lstm_detector.py
 ```
 
 최종 선택:
@@ -369,7 +439,7 @@ Final pinned detector 결과:
 | fixed threshold `val_unseen` TPR/TNR | `1.0000 / 1.0000` |
 | fixed threshold `val_unseen` mean T-det | `0.8194` |
 
-최종 운영점은 fixed threshold가 아니라 split conformal prediction으로 고정한다.
+최종 운영점은 split conformal prediction으로 고정한다. Fixed threshold는 baseline으로 함께 기록한다.
 
 | item | value |
 |---|---:|
@@ -387,23 +457,33 @@ Final pinned detector 결과:
 
 - wiring은 닫혔다. GR00T N1.6 rollout feature가 SAFE loader를 통과하고, LSTM 학습/validation/CP table 생성/checkpoint 저장까지 완료됐다.
 - 논문식 feature aggregation ablation과 LSTM hyperparameter sweep을 수행했고, 최종 detector/checkpoint/threshold를 별도 산출물로 고정했다.
-- `val_unseen`에서도 failure monitoring 성능은 강하다. 최종 CP 운영점의 mean T-det는 `0.4114`로 이전 운영점보다 앞당겨졌지만, frame-level onset supervision 없이 얻은 rollout-level detector이므로 supervised early-intervention detector로 해석하지 않는다.
+- `val_unseen`에서도 failure monitoring 성능은 강하다. 최종 CP 운영점의 mean T-det는 `0.4114`로 이전 운영점보다 앞당겨졌다. 현재 label scope는 rollout-level success/failure이며, proactive intervention 평가는 frame-level onset/intervention label을 추가한 뒤 다룬다.
 - CP alpha sweep은 최종 선택된 aggregation/hparam/seed2 checkpoint의 score 위에서 수행했다.
 - Functional CP band도 SAFE repo 구현 그대로 계산했다. `alpha=0.2`, `by final end`, success-calibrated functional CP는 `val_unseen` bal-acc `0.9605`, TPR/TNR `1.0000 / 0.9211`, mean T-det `0.4251`이다. Best by-final-end functional point는 `alpha=0.05`에서 bal-acc `1.0000`, mean T-det `0.6982`다.
-- static latent-space failure zone은 뚜렷하지 않다. detector 성능은 정적 cluster 분리보다 LSTM score trajectory와 threshold crossing으로 해석한다.
+- static latent-space failure zone 근거는 약하다. detector 성능은 정적 cluster 분리보다 LSTM score trajectory와 threshold crossing으로 해석한다.
 
-SAFE 논문 Figure 8류의 CP 시각화는 다음 위치에 생성한다. 이 그림은 feature t-SNE가 아니라 CP operating point curve다.
+SAFE 논문 Figure 8류의 CP 시각화는 다음 위치에 생성한다. 이 그림은 CP operating point curve다.
 
 ```text
 /home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/vis/plot_safe_conformal_curves.py
 /home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/visualizations/conformal_figure/by_final_end
 ```
 
-기본 산출물은 `cp_balacc_tdet.{png,pdf}`와 `cp_alpha_{fpr,fnr,tpr,tnr,bal_acc}.{png,pdf}`다. 입력은 `final_detector/split_cp_eval.csv`와 `final_detector/functional_cp_eval.csv`이며, 원본 SAFE script처럼 W&B summary table을 다시 읽지 않는다.
+기본 산출물은 `cp_balacc_tdet.{png,pdf}`와 `cp_alpha_{fpr,fnr,tpr,tnr,bal_acc}.{png,pdf}`다. 입력은 `final_detector/split_cp_eval.csv`와 `final_detector/functional_cp_eval.csv`이며, 로컬 CSV를 source of truth로 사용한다.
+
+CP curve 생성:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/vis/plot_safe_conformal_curves.py \
+  --eval-time "by final end"
+```
 
 ## SAFE Feature Visualization
 
-SAFE 논문 Figure 1류의 latent-space 진단은 detector score나 CP threshold가 아니라, SAFE loader가 만든 per-timestep detector input feature를 대상으로 한다. 초기 t-SNE artifact는 `mean/mean` aggregation으로 만들었고, 최종 detector의 aggregation은 `horizon_idx_rel=mean`, `diff_idx_rel=concat-2`이다.
+SAFE 논문 Figure 1류의 latent-space 진단은 SAFE loader가 만든 per-timestep detector input feature를 대상으로 한다. 초기 t-SNE artifact는 `mean/mean` aggregation으로 만들었고, 최종 detector의 aggregation은 `horizon_idx_rel=mean`, `diff_idx_rel=concat-2`이다. 현재 visualization/silhouette script의 기본값은 최종 detector aggregation이며, 초기 artifact를 재생성할 때만 `--horizon-idx-rel mean --diff-idx-rel mean`을 명시한다.
 
 최종 aggregation 기준 detector input:
 
@@ -411,7 +491,7 @@ SAFE 논문 Figure 1류의 latent-space 진단은 detector score나 CP threshold
 [T, 4, 16, 1024] -> horizon mean, diff concat(first,last) -> [T, 2048]
 ```
 
-Visualization 산출물은 `notebooks/`가 아니라 GR00T N1.6 eval output tree 아래에 둔다.
+Visualization 산출물은 GR00T N1.6 eval output tree 아래에 둔다.
 
 ```text
 /home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep
@@ -469,21 +549,114 @@ Overlay runner:
   outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/val_unseen/tsne_mean_mean
 ```
 
+SAFE-style feature plot 생성:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/vis/plot_safe_style_feature_space.py \
+  --scope val_unseen \
+  --projector tsne
+```
+
+Silhouette 진단:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/vis/compute_feature_silhouette.py
+```
+
+Rollout-mean separability 진단:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/analyze/diagnose_rollout_mean_feature_separability.py
+```
+
 초기 관찰:
 
 - `val_unseen` 전체로 보면 task structure와 success/failure signal이 함께 섞인다.
 - `OpenDrawer` 단독 t-SNE는 success/failure separation이 약하다.
 - `PnPCounterToCab` 단독 t-SNE는 실패 rollout 후반부로 보이는 red/orange region이 더 뚜렷하다.
 - overlay 기준으로도 `PnPCounterToCab`은 late-failure frame이 특정 영역에 비교적 많이 몰리지만, `OpenDrawer`는 success/failure가 더 강하게 섞인다.
-- 최종 aggregation의 original 2048-D silhouette에서도 `val_unseen` success/failure Mahalanobis score는 `-0.0027`이고, task+failure도 음수다. 따라서 static failure zone claim은 하지 않는다.
+- 최종 aggregation의 original 2048-D silhouette에서도 `val_unseen` success/failure Mahalanobis score는 `-0.0027`이고, task+failure도 음수다. static failure zone 근거는 약하고, detector score trajectory 중심으로 해석한다.
+
+## HTTP Path And SR Recovery
+
+목적: 프로젝트 공통 VLA serving/eval API를 유지하고, ZMQ official 기준선과 action parity를 맞춘다.
+
+서버:
+
+```bash
+docker compose run --rm groot \
+  python /temporal_vla/scripts/serve/groot.py \
+  --profile /temporal_vla/configs/checkpoints/groot__robocasa_panda_omron.yaml
+```
+
+API:
+
+- `POST /act`
+- `POST /reset`
+- `GET /health`
+
+Health check:
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+역할:
+
+- HTTP는 heterogeneous VLA serving 경로다.
+- GR00T N1.6 RoboCasa SR 기준선은 ZMQ official eval이다.
+- HTTP SR은 observation/action parity 확인 후 SAFE/GR00T N1.6 성능 지표에 편입한다.
+- 낮은 HTTP SR에서는 wiring/runner/schema mismatch를 우선 점검한다.
+
+현재 HTTP와 ZMQ 비교에는 transport 이외의 차이가 함께 있다.
+
+- HTTP 경로는 보통 project runner를 타며 `src/benchmarks/robocasa`의 robocasa365 v1.0 환경을 사용한다.
+- ZMQ official 경로는 `src/policies/Isaac-GR00T/external_dependencies/robocasa`의 GR00T fork RoboCasa v0.2 환경을 사용한다.
+- transport, env version, task class name, observation schema, action application 방식 차이가 함께 섞여 있다.
+
+공통 task로 고른 5개는 v0.2와 v1.0 사이에서 의미적으로 대응되는 task다. `OpenSingleDoor`/`OpenCabinet`처럼 official SR이 높은 task에서 HTTP SR이 크게 낮으면 policy wiring을 먼저 점검한다.
+
+HTTP SR 회복을 위한 검증 순서:
+
+1. 같은 checkpoint, 같은 seed, 같은 initial env state에 최대한 가깝게 맞춘다.
+2. ZMQ official client가 만든 raw observation을 저장한다.
+3. 같은 observation을 HTTP `/act` 입력 payload로 변환한다.
+4. HTTP output action을 GR00T native action key로 되돌려 ZMQ official action과 비교한다.
+5. action key별 shape, first action, chunk horizon, scale, gripper sign, rotation convention을 비교한다.
+6. action이 같거나 충분히 가까우면, 같은 env에서 HTTP action application loop만 교체해서 SR을 본다.
+7. action은 같은데 SR만 낮으면 action consumption, reset, termination, wrapper, env version 차이를 본다.
+8. action부터 다르면 observation conversion 또는 output mapping을 먼저 고친다.
+
+우선순위가 높은 체크포인트:
+
+- image keys: `side_0`, `side_1`, `wrist_0`가 GR00T의 `res256_image_*` 계열과 동일 의미인지 확인한다.
+- state keys: `eef_pos`, `eef_quat`, `gripper_qpos`, `joint_pos`의 순서와 batch/time dimension이 official wrapper와 같은지 확인한다.
+- action keys: `end_effector_position`, `end_effector_rotation`, `gripper_close`, `base_motion`, `control_mode`가 HTTP의 `action.eef_pos`, `action.eef_axisangle`, `action.gripper`로 손실 없이 매핑되는지 확인한다.
+- action chunk: GR00T N1.6의 chunk horizon과 RoboCasa action repeat/consume 방식이 HTTP runner와 ZMQ runner에서 같은지 확인한다.
+- reset: episode 시작 시 `/reset`이 반드시 호출되고, server-side policy state가 official ZMQ path와 같은 시점에 초기화되는지 확인한다.
+- env version: robocasa365 v1.0에서 task semantics가 v0.2와 충분히 같은지 task별로 확인한다.
 
 ## Files
 
 ZMQ SAFE:
 
+- `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/run_config.py`
+- `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/run_config.sh`
+- `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/safe_feature_vectors.py`
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/serve/feature_server.py`
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/collect/collect_rollout.py`
-- `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/collect/collect_six_task_official_uv_host.sh`
+- `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/collect/collect_task_set_in_container.sh`
+- `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/collect/collect_task_set_official_uv_host.sh`
+- `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh`
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/split/prepare_seen4_unseen2_split.py`
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/train/train_lstm_mean_mean.sh`
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/train/train_lstm_aggregation_ablation.sh`
