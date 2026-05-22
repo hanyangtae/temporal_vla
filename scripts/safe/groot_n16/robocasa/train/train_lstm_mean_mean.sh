@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../run_config.sh"
+
 SAFE_REPO="${SAFE_REPO:-/home/dongkyu/pdk_ws/SAFE}"
 CONDA_ENV="${CONDA_ENV:-vla-safe}"
 
-OUT_ROOT="${OUT_ROOT:-/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16}"
-RUN_ROOT="${RUN_ROOT:-${OUT_ROOT}/safe_seen4_unseen2_100ep}"
+OUT_ROOT="${OUT_ROOT:-${ROBOCASA_SAFE_OUT_ROOT}}"
+RUN_ROOT="${RUN_ROOT:-${ROBOCASA_SAFE_RUN_ROOT}}"
 LOG_ROOT="${LOG_ROOT:-${RUN_ROOT}/experiments/mean_mean_baseline/train_logs}"
 WANDB_DIR="${WANDB_DIR:-${RUN_ROOT}/experiments/mean_mean_baseline/wandb}"
 WANDB_MODE="${WANDB_MODE:-online}"

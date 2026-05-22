@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../run_config.sh"
+
 SAFE_REPO="${SAFE_REPO:-/home/dongkyu/pdk_ws/SAFE}"
 CONDA_ENV="${CONDA_ENV:-vla-safe}"
 
-OUT_ROOT="${OUT_ROOT:-/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16}"
-RUN_ROOT="${RUN_ROOT:-${OUT_ROOT}/safe_seen4_unseen2_100ep}"
+OUT_ROOT="${OUT_ROOT:-${ROBOCASA_SAFE_OUT_ROOT}}"
+RUN_ROOT="${RUN_ROOT:-${ROBOCASA_SAFE_RUN_ROOT}}"
 LOG_ROOT="${LOG_ROOT:-${RUN_ROOT}/experiments/aggregation_ablation/train_logs}"
 WANDB_DIR="${WANDB_DIR:-${RUN_ROOT}/experiments/aggregation_ablation/wandb}"
 HYDRA_ROOT="${HYDRA_ROOT:-${RUN_ROOT}/experiments/aggregation_ablation/hydra}"
@@ -32,7 +35,7 @@ for horizon_idx_rel in "${HORIZON_VALUES[@]}"; do
       suffix="${suffix//./p}"
       suffix="${suffix//-/_}"
 
-      run_log_root="${LOG_ROOT}/groot_n16-robocasa_seen4_unseen2_openDrawer_pnpCab_100ep-lstm-${suffix}"
+      run_log_root="${LOG_ROOT}/groot_n16-${ROBOCASA_SAFE_SUBSET_NAME}-lstm-${suffix}"
       if find "${run_log_root}" -path "*/model_final.ckpt" -type f -print -quit 2>/dev/null | grep -q .; then
         echo "Skipping existing ${suffix}"
         continue
