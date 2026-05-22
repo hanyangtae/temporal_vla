@@ -392,7 +392,7 @@ cd /home/dongkyu/pdk_ws/temporal_vla
 - aggregation: `horizon_idx_rel=mean`, `diff_idx_rel=concat-2`
 - selected checkpoint seed: `2`
 - W&B project: `vla-safe`
-- timing plots: disabled, because current data has episode-level success/failure only and frame-level failure-onset label이 없다.
+- timing plots: disabled, because current data has episode-level success/failure only and inference-step-level failure-onset label이 없다.
 
 최종 checkpoint:
 
@@ -457,7 +457,7 @@ Final pinned detector 결과:
 
 - wiring은 닫혔다. GR00T N1.6 rollout feature가 SAFE loader를 통과하고, LSTM 학습/validation/CP table 생성/checkpoint 저장까지 완료됐다.
 - 논문식 feature aggregation ablation과 LSTM hyperparameter sweep을 수행했고, 최종 detector/checkpoint/threshold를 별도 산출물로 고정했다.
-- `val_unseen`에서도 failure monitoring 성능은 강하다. 최종 CP 운영점의 mean T-det는 `0.4114`로 이전 운영점보다 앞당겨졌다. 현재 label scope는 rollout-level success/failure이며, proactive intervention 평가는 frame-level onset/intervention label을 추가한 뒤 다룬다.
+- `val_unseen`에서도 failure monitoring 성능은 강하다. 최종 CP 운영점의 mean T-det는 `0.4114`로 이전 운영점보다 앞당겨졌다. 현재 label scope는 rollout-level success/failure이며, proactive intervention 평가는 inference-step-level onset/intervention label을 추가한 뒤 다룬다.
 - CP alpha sweep은 최종 선택된 aggregation/hparam/seed2 checkpoint의 score 위에서 수행했다.
 - Functional CP band도 SAFE repo 구현 그대로 계산했다. `alpha=0.2`, `by final end`, success-calibrated functional CP는 `val_unseen` bal-acc `0.9605`, TPR/TNR `1.0000 / 0.9211`, mean T-det `0.4251`이다. Best by-final-end functional point는 `alpha=0.05`에서 bal-acc `1.0000`, mean T-det `0.6982`다.
 - static latent-space failure zone 근거는 약하다. detector 성능은 정적 cluster 분리보다 LSTM score trajectory와 threshold crossing으로 해석한다.
@@ -499,9 +499,9 @@ Visualization 산출물은 GR00T N1.6 eval output tree 아래에 둔다.
 
 각 visualization directory는 `feats_projected_skip1.pkl`, `feats_vis_skip1-succ.png`, `feats_vis_skip1-taskid.png`, `manifest.json`을 가진다. task structure와 success/failure signal을 한 그림에서 보기 위해 후처리 overlay도 저장한다.
 
-- `feats_vis_skip1-taskid_failred.png`: 기존 task-id t-SNE 좌표를 그대로 쓰고, success frame은 task id 색, failure rollout frame은 단색 빨강으로 칠한다.
-- `feats_vis_skip1-taskid_failure_overlay.png`: task id 색상 위에 실패 rollout frame을 검은 테두리로 겹친다.
-- `feats_vis_skip1-task_success_facets.png`: task별 subplot 안에서 success rollout frame은 파란색, failure rollout frame은 episode 내 상대 시간에 따라 붉게 표시한다.
+- `feats_vis_skip1-taskid_failred.png`: 기존 task-id t-SNE 좌표를 그대로 쓰고, success datapoint(=inference)은 task id 색, failure rollout의 datapoint(=inference)은 단색 빨강으로 칠한다.
+- `feats_vis_skip1-taskid_failure_overlay.png`: task id 색상 위에 실패 rollout의 datapoint을 검은 테두리로 겹친다.
+- `feats_vis_skip1-task_success_facets.png`: task별 subplot 안에서 success rollout의 datapoint(=inference)은 파란색, failure rollout의 datapoint(=inference)은 episode 내 상대 시간에 따라 붉게 표시한다.
 
 `manifest.json`에는 source split/task, projector, aggregation, rollout count, feature count, 생성된 output 파일명을 기록한다.
 
@@ -583,7 +583,7 @@ cd /home/dongkyu/pdk_ws/temporal_vla
 - `val_unseen` 전체로 보면 task structure와 success/failure signal이 함께 섞인다.
 - `OpenDrawer` 단독 t-SNE는 success/failure separation이 약하다.
 - `PnPCounterToCab` 단독 t-SNE는 실패 rollout 후반부로 보이는 red/orange region이 더 뚜렷하다.
-- overlay 기준으로도 `PnPCounterToCab`은 late-failure frame이 특정 영역에 비교적 많이 몰리지만, `OpenDrawer`는 success/failure가 더 강하게 섞인다.
+- overlay 기준으로도 `PnPCounterToCab`은 late-failure datapoint(=inference)이 특정 영역에 비교적 많이 몰리지만, `OpenDrawer`는 success/failure가 더 강하게 섞인다.
 - 최종 aggregation의 original 2048-D silhouette에서도 `val_unseen` success/failure Mahalanobis score는 `-0.0027`이고, task+failure도 음수다. static failure zone 근거는 약하고, detector score trajectory 중심으로 해석한다.
 
 ## HTTP Path And SR Recovery
@@ -691,5 +691,5 @@ Validation utilities:
 ## Next Steps
 
 1. Separately run HTTP-vs-ZMQ action equivalence before using HTTP for SR evaluation.
-2. If proactive intervention is the goal, define or collect frame-level failure onset/intervention labels.
+2. If proactive intervention is the goal, define or collect inference-step-level failure onset/intervention labels.
 3. Optionally compare `--feature-slice all` (`H=50`) against the current valid-horizon (`H=16`) export.
