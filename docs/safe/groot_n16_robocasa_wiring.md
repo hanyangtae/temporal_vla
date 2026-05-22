@@ -299,7 +299,7 @@ Loader contract:
 - split directory는 `train`, `val_seen`, `val_unseen`을 물리적으로 유지한다.
 - per-step hidden feature `[4, 16, 1024]`를 읽는다.
 - detector input은 train/eval config의 aggregation에 따라 만든다.
-- 최종 SAFE-LSTM은 `horizon_idx_rel=concat-2`, `diff_idx_rel=0.0`을 사용하므로 detector input은 `[T, 2048]`이다.
+- 최종 SAFE-LSTM은 `horizon_idx_rel=mean`, `diff_idx_rel=concat-2`를 사용하므로 detector input은 `[T, 2048]`이다.
 - `val_seen`은 validation과 conformal calibration에 쓰고, `val_unseen`은 held-out unseen-task 평가에 쓴다.
 
 관련 script:
@@ -318,8 +318,8 @@ Loader contract:
 - epochs: `1000`
 - batch size: `64`
 - lr: `3e-4`
-- lambda_reg: `1e-1`
-- aggregation: `horizon_idx_rel=concat-2`, `diff_idx_rel=0.0`
+- lambda_reg: `1`
+- aggregation: `horizon_idx_rel=mean`, `diff_idx_rel=concat-2`
 - selected checkpoint seed: `2`
 - W&B project: `vla-safe`
 - timing plots: disabled, because current data has episode-level success/failure only and frame-level failure-onset label이 없다.
@@ -336,36 +336,38 @@ Loader contract:
 /home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector
 ```
 
-이 directory에는 `model_final.ckpt`, `config.yaml`, `manifest.json`, `final_operating_point.json`, `fixed_threshold_eval.csv`, `split_cp_eval.csv`, `per_rollout_scores.csv`, `README.md`가 있다.
+이 directory에는 `model_final.ckpt`, `config.yaml`, `manifest.json`, `final_operating_point.json`, `fixed_threshold_eval.csv`, `split_cp_eval.csv`, `functional_cp_eval.csv`, `functional_cp_bands.npz`, `per_rollout_scores.csv`, `README.md`가 있다.
 
-Aggregation ablation 결과:
+초기 aggregation ablation 결과:
 
 | rank | horizon | diff | dim | val_seen bal-acc | val_seen T-det | val_seen ROC-AUC | val_unseen bal-acc | val_unseen T-det | val_unseen ROC-AUC |
 |---:|---|---|---:|---:|---:|---:|---:|---:|---:|
 | 1 | `concat-2` | `0.0` | 2048 | `0.932 ± 0.011` | `0.574 ± 0.026` | `0.922 ± 0.034` | `0.785 ± 0.021` | `0.694 ± 0.015` | `0.749 ± 0.053` |
 | 10 | `mean` | `mean` | 1024 | `0.854 ± 0.039` | `0.653 ± 0.040` | `0.854 ± 0.042` | `0.754 ± 0.025` | `0.702 ± 0.015` | `0.779 ± 0.015` |
 
+이후 SAFE-style feature visualization과 timestep-level separability 진단에서 `horizon_idx_rel=mean`, `diff_idx_rel=concat-2`를 최종 후보로 고정하고 hparam sweep을 다시 수행했다.
+
 Hyperparameter sweep 결과:
 
 | metric | mean ± std |
 |---|---:|
-| best hparam | `lr=3e-4`, `lambda_reg=1e-1` |
-| `val_seen` bal-acc | `0.950 ± 0.023` |
-| `val_seen` T-det | `0.586 ± 0.027` |
-| `val_seen` ROC-AUC | `0.958 ± 0.029` |
-| `val_unseen` bal-acc | `0.844 ± 0.086` |
-| `val_unseen` T-det | `0.710 ± 0.108` |
-| `val_unseen` ROC-AUC | `0.833 ± 0.113` |
+| best hparam | `lr=3e-4`, `lambda_reg=1` |
+| `val_seen` bal-acc | `0.985 ± 0.012` |
+| `val_seen` T-det | `0.539 ± 0.130` |
+| `val_seen` ROC-AUC | `0.995 ± 0.006` |
+| `val_unseen` bal-acc | `0.981 ± 0.028` |
+| `val_unseen` T-det | `0.642 ± 0.052` |
+| `val_unseen` ROC-AUC | `0.994 ± 0.008` |
 
 Final pinned detector 결과:
 
 | item | value |
 |---|---:|
 | selected checkpoint | `seed2` |
-| fixed threshold baseline | `0.9284` |
-| fixed threshold `val_unseen` bal-acc | `0.9345` |
-| fixed threshold `val_unseen` TPR/TNR | `0.8953 / 0.9737` |
-| fixed threshold `val_unseen` mean T-det | `0.6884` |
+| fixed threshold baseline | `0.5487` |
+| fixed threshold `val_unseen` bal-acc | `1.0000` |
+| fixed threshold `val_unseen` TPR/TNR | `1.0000 / 1.0000` |
+| fixed threshold `val_unseen` mean T-det | `0.8194` |
 
 최종 운영점은 fixed threshold가 아니라 split conformal prediction으로 고정한다.
 
@@ -375,28 +377,38 @@ Final pinned detector 결과:
 | alpha | `0.2` |
 | eval time | `by final end` |
 | calibration label | `neg_success` |
-| threshold | `0.8474180102348328` |
-| `val_unseen` bal-acc | `0.9533` |
-| `val_unseen` TPR/TNR | `0.9767 / 0.9298` |
-| `val_unseen` acc/F1 | `0.9500 / 0.9438` |
-| `val_unseen` mean T-det | `0.5395` |
+| threshold | `0.5301596522331238` |
+| `val_unseen` bal-acc | `0.9518` |
+| `val_unseen` TPR/TNR | `1.0000 / 0.9035` |
+| `val_unseen` acc/F1 | `0.9450 / 0.9399` |
+| `val_unseen` mean T-det | `0.4114` |
 
 해석:
 
 - wiring은 닫혔다. GR00T N1.6 rollout feature가 SAFE loader를 통과하고, LSTM 학습/validation/CP table 생성/checkpoint 저장까지 완료됐다.
 - 논문식 feature aggregation ablation과 LSTM hyperparameter sweep을 수행했고, 최종 detector/checkpoint/threshold를 별도 산출물로 고정했다.
-- `val_unseen`에서도 failure monitoring 성능은 강하다. 다만 최종 CP 운영점의 mean T-det가 `0.5395`이므로 초반 proactive intervention보다 mid-to-late failure monitoring에 가깝다.
+- `val_unseen`에서도 failure monitoring 성능은 강하다. 최종 CP 운영점의 mean T-det는 `0.4114`로 이전 운영점보다 앞당겨졌지만, frame-level onset supervision 없이 얻은 rollout-level detector이므로 supervised early-intervention detector로 해석하지 않는다.
 - CP alpha sweep은 최종 선택된 aggregation/hparam/seed2 checkpoint의 score 위에서 수행했다.
+- Functional CP band도 SAFE repo 구현 그대로 계산했다. `alpha=0.2`, `by final end`, success-calibrated functional CP는 `val_unseen` bal-acc `0.9605`, TPR/TNR `1.0000 / 0.9211`, mean T-det `0.4251`이다. Best by-final-end functional point는 `alpha=0.05`에서 bal-acc `1.0000`, mean T-det `0.6982`다.
 - static latent-space failure zone은 뚜렷하지 않다. detector 성능은 정적 cluster 분리보다 LSTM score trajectory와 threshold crossing으로 해석한다.
+
+SAFE 논문 Figure 8류의 CP 시각화는 다음 위치에 생성한다. 이 그림은 feature t-SNE가 아니라 CP operating point curve다.
+
+```text
+/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/vis/plot_safe_conformal_curves.py
+/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/visualizations/conformal_figure/by_final_end
+```
+
+기본 산출물은 `cp_balacc_tdet.{png,pdf}`와 `cp_alpha_{fpr,fnr,tpr,tnr,bal_acc}.{png,pdf}`다. 입력은 `final_detector/split_cp_eval.csv`와 `final_detector/functional_cp_eval.csv`이며, 원본 SAFE script처럼 W&B summary table을 다시 읽지 않는다.
 
 ## SAFE Feature Visualization
 
-SAFE 논문 Figure 1류의 latent-space 진단은 detector score나 CP threshold가 아니라, SAFE loader가 만든 per-timestep detector input feature를 대상으로 한다. 초기 t-SNE artifact는 `mean/mean` aggregation으로 만들었고, 최종 detector의 aggregation은 `horizon_idx_rel=concat-2`, `diff_idx_rel=0.0`이다.
+SAFE 논문 Figure 1류의 latent-space 진단은 detector score나 CP threshold가 아니라, SAFE loader가 만든 per-timestep detector input feature를 대상으로 한다. 초기 t-SNE artifact는 `mean/mean` aggregation으로 만들었고, 최종 detector의 aggregation은 `horizon_idx_rel=mean`, `diff_idx_rel=concat-2`이다.
 
 최종 aggregation 기준 detector input:
 
 ```text
-[T, 4, 16, 1024] -> horizon concat(first,last), diff first -> [T, 2048]
+[T, 4, 16, 1024] -> horizon mean, diff concat(first,last) -> [T, 2048]
 ```
 
 Visualization 산출물은 `notebooks/`가 아니라 GR00T N1.6 eval output tree 아래에 둔다.
@@ -421,13 +433,15 @@ Visualization 산출물은 `notebooks/`가 아니라 GR00T N1.6 eval output tree
 | `val_unseen` | 200 | 5,660 | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/val_unseen/tsne_mean_mean` |
 | `val_unseen/OpenDrawer` | 100 | 2,041 | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/val_unseen_OpenDrawer/tsne_mean_mean` |
 | `val_unseen/PnPCounterToCab` | 100 | 3,619 | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/val_unseen_PnPCounterToCab/tsne_mean_mean` |
+| all splits, SAFE-style | 600 | 18,428 | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/safe_style_visualize_features/all_hmean_dconcat_2-tsne` |
+| `val_unseen`, SAFE-style | 200 | 5,660 | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/safe_style_visualize_features/val_unseen_hmean_dconcat_2-tsne` |
 
 Silhouette 산출물:
 
 | aggregation | path | conclusion |
 |---|---|---|
 | `mean/mean` | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/silhouette_mean_mean` | success/failure silhouette near zero |
-| `concat-2/0.0` | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/silhouette_hconcat2_d0p0` | final aggregation에서도 static failure zone은 약함 |
+| `concat-2/0.0` | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/silhouette_hconcat2_d0p0` | 초기 detector-metric 후보에서도 static failure zone은 약함 |
 
 재생성 runner:
 
@@ -477,8 +491,11 @@ ZMQ SAFE:
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/analyze/summarize_lstm_aggregation_ablation.py`
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/analyze/summarize_lstm_hparam_sweep.py`
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/analyze/finalize_lstm_detector.py`
+- `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/analyze/diagnose_rollout_mean_feature_separability.py`
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/vis/run_feature_visualization.py`
+- `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/vis/plot_safe_style_feature_space.py`
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/vis/plot_task_success_overlay.py`
+- `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/vis/plot_safe_conformal_curves.py`
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/vis/compute_feature_silhouette.py`
 
 Final detector artifacts:

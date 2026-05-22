@@ -116,7 +116,7 @@ Rollout 전체로는 다음 shape이 저장된다.
 [T, K, H, D] = [T, 4, 16, 1024]
 ```
 
-SAFE loader는 이 feature를 읽은 뒤 detector train/eval config에서 aggregation한다. 최종 SAFE-LSTM은 validation 성능 기준으로 `horizon_idx_rel=concat-2`, `diff_idx_rel=0.0`을 선택했다.
+SAFE loader는 이 feature를 읽은 뒤 detector train/eval config에서 aggregation한다. 최종 SAFE-LSTM은 validation 성능 기준으로 `horizon_idx_rel=mean`, `diff_idx_rel=concat-2`를 선택했다.
 
 ```text
 [T, 4, 16, 1024] -> [T, 2048]
@@ -197,8 +197,8 @@ Loader contract는 다음과 같다.
 | epochs | `1000` |
 | batch size | `64` |
 | learning rate | `3e-4` |
-| regularization | `lambda_reg=1e-1` |
-| aggregation | `horizon_idx_rel=concat-2`, `diff_idx_rel=0.0` |
+| regularization | `lambda_reg=1` |
+| aggregation | `horizon_idx_rel=mean`, `diff_idx_rel=concat-2` |
 | selected checkpoint | `seed2` |
 | final CP alpha | `0.2` |
 
@@ -206,11 +206,11 @@ Loader contract는 다음과 같다.
 
 ## 결과
 
-Aggregation ablation은 `horizon_idx_rel`과 `diff_idx_rel`을 `{0.0, 1.0, mean, concat-2}`에서 비교했다. 선택 규칙은 `val_seen` max-so-far threshold curve에서 balanced accuracy 평균이 가장 높은 설정을 고르는 것이다.
+Aggregation ablation은 `horizon_idx_rel`과 `diff_idx_rel`을 `{0.0, 1.0, mean, concat-2}`에서 비교했다. 아래 표는 초기 detector-metric 기준 결과다. 이후 SAFE-style feature visualization과 timestep-level separability 진단을 반영해 `horizon_idx_rel=mean`, `diff_idx_rel=concat-2`를 최종 후보로 고정하고 hparam sweep을 다시 수행했다.
 
 | metric | mean ± std |
 |---|---:|
-| best aggregation | `horizon_idx_rel=concat-2`, `diff_idx_rel=0.0` |
+| initial metric-best aggregation | `horizon_idx_rel=concat-2`, `diff_idx_rel=0.0` |
 | feature dim | `2048` |
 | `val_seen` bal-acc | `0.932 ± 0.011` |
 | `val_seen` T-det | `0.574 ± 0.026` |
@@ -223,13 +223,13 @@ Aggregation ablation은 `horizon_idx_rel`과 `diff_idx_rel`을 `{0.0, 1.0, mean,
 
 | metric | mean ± std |
 |---|---:|
-| best hparam | `lr=3e-4`, `lambda_reg=1e-1` |
-| `val_seen` bal-acc | `0.950 ± 0.023` |
-| `val_seen` T-det | `0.586 ± 0.027` |
-| `val_seen` ROC-AUC | `0.958 ± 0.029` |
-| `val_unseen` bal-acc | `0.844 ± 0.086` |
-| `val_unseen` T-det | `0.710 ± 0.108` |
-| `val_unseen` ROC-AUC | `0.833 ± 0.113` |
+| best hparam | `lr=3e-4`, `lambda_reg=1` |
+| `val_seen` bal-acc | `0.985 ± 0.012` |
+| `val_seen` T-det | `0.539 ± 0.130` |
+| `val_seen` ROC-AUC | `0.995 ± 0.006` |
+| `val_unseen` bal-acc | `0.981 ± 0.028` |
+| `val_unseen` T-det | `0.642 ± 0.052` |
+| `val_unseen` ROC-AUC | `0.994 ± 0.008` |
 
 최종 detector는 hparam sweep의 `seed2` checkpoint로 고정했다.
 
@@ -241,14 +241,14 @@ Fixed threshold baseline은 `val_seen`에서 max-so-far balanced accuracy를 최
 
 | metric | value |
 |---|---:|
-| threshold | `0.9284` |
-| `val_seen` bal-acc | `0.9795` |
-| `val_seen` TPR/TNR | `0.9762 / 0.9828` |
-| `val_seen` mean T-det | `0.5571` |
-| `val_unseen` bal-acc | `0.9345` |
-| `val_unseen` TPR/TNR | `0.8953 / 0.9737` |
-| `val_unseen` acc/F1 | `0.9400 / 0.9277` |
-| `val_unseen` mean T-det | `0.6884` |
+| threshold | `0.5487` |
+| `val_seen` bal-acc | `1.0000` |
+| `val_seen` TPR/TNR | `1.0000 / 1.0000` |
+| `val_seen` mean T-det | `0.7212` |
+| `val_unseen` bal-acc | `1.0000` |
+| `val_unseen` TPR/TNR | `1.0000 / 1.0000` |
+| `val_unseen` acc/F1 | `1.0000 / 1.0000` |
+| `val_unseen` mean T-det | `0.8194` |
 
 최종 운영점은 split conformal prediction으로 고정했다. Alpha sweep은 최종 선택된 aggregation/hparam/seed2 checkpoint의 score 위에서 수행했다.
 
@@ -258,13 +258,58 @@ Fixed threshold baseline은 `val_seen`에서 max-so-far balanced accuracy를 최
 | alpha | `0.2` |
 | eval time | `by final end` |
 | calibration label | `neg_success` |
-| threshold | `0.8474180102348328` |
-| `val_unseen` bal-acc | `0.9533` |
-| `val_unseen` TPR/TNR | `0.9767 / 0.9298` |
-| `val_unseen` acc/F1 | `0.9500 / 0.9438` |
-| `val_unseen` mean T-det | `0.5395` |
+| threshold | `0.5301596522331238` |
+| `val_unseen` bal-acc | `0.9518` |
+| `val_unseen` TPR/TNR | `1.0000 / 0.9035` |
+| `val_unseen` acc/F1 | `0.9450 / 0.9399` |
+| `val_unseen` mean T-det | `0.4114` |
 
-가장 실용적인 운영점은 `split_cp`, `alpha=0.2`, `calib_label=neg_success`, `by final end`다. 이 설정은 false alarm을 어느 정도 억제하면서 failure recall을 높인다. 다만 mean T-det가 `0.5395`이므로 trajectory 초반 개입 detector라기보다는 중반 이후 failure monitoring detector에 가깝다.
+가장 실용적인 운영점은 `split_cp`, `alpha=0.2`, `calib_label=neg_success`, `by final end`다. 이 설정은 failure recall을 유지하면서 성공 rollout에 대한 false alarm을 calibration한다. mean T-det는 `0.4114`로 이전 운영점보다 앞당겨졌지만, 현재 label은 rollout-level이므로 supervised early-intervention detector라고 해석하지 않는다.
+
+Functional CP band도 SAFE repo 구현 그대로 계산했다. `val_seen`의 successful score curve를 calibration curve로 쓰고, `FunctionalPredictor(ModulationType.Tfunc, RegressionType.Mean)`로 timestep-wise upper band를 만든다.
+
+| metric | value |
+|---|---:|
+| method | `functional_cp` |
+| alpha | `0.2` |
+| eval time | `by final end` |
+| calibration label | `neg_success` |
+| `val_unseen` bal-acc | `0.9605` |
+| `val_unseen` TPR/TNR | `1.0000 / 0.9211` |
+| `val_unseen` acc/F1 | `0.9550 / 0.9503` |
+| `val_unseen` mean T-det | `0.4251` |
+
+Functional CP의 best by-final-end point는 `alpha=0.05`에서 bal-acc `1.0000`, T-det `0.6982`다. 따라서 functional CP도 정상적으로 동작하지만, `alpha=0.2` 기준으로는 split CP 운영점보다 false alarm은 조금 줄고 detection은 약간 늦다. 현재 final operating point는 더 이른 detection을 우선해 split CP `alpha=0.2`로 둔다.
+
+SAFE 논문 Figure 8류의 CP 시각화도 로컬 CSV에서 생성했다. 이 그림은 latent-space t-SNE가 아니라, CP threshold/band 변화에 따른 balanced accuracy, T-det, FPR/FNR/TPR/TNR curve를 보여준다.
+
+| artifact | path |
+|---|---|
+| CP plot script | `scripts/safe/groot_n16/robocasa/vis/plot_safe_conformal_curves.py` |
+| source tables | `final_detector/split_cp_eval.csv`, `final_detector/functional_cp_eval.csv` |
+| functional bands | `final_detector/functional_cp_bands.npz` |
+| output directory | `outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/visualizations/conformal_figure/by_final_end` |
+| main plot | `cp_balacc_tdet.png` / `cp_balacc_tdet.pdf` |
+| alpha sweep plots | `cp_alpha_{fpr,fnr,tpr,tnr,bal_acc}.png` |
+
+성능 해석에는 주의가 필요하다. `val_unseen`은 모델 weight update, hparam sweep의 선택 기준, CP threshold calibration에는 사용하지 않았다. 즉 detector가 `val_unseen`으로 학습된 것은 아니다. 다만 최종 aggregation 후보를 확정하는 연구 판단 과정에서 `val_unseen` 시각화와 separability 진단을 함께 보았기 때문에, 이 split을 완전히 untouched test set이라고 부르지는 않는다. 따라서 아래 결과는 최종 운영 후보를 고정하기 위한 held-out unseen-task evaluation으로 보고, 논문식 일반화 성능 claim으로 확장하지 않는다.
+
+Leakage sanity check는 다음과 같이 수행했다.
+
+| check | result |
+|---|---:|
+| split symlink target overlap | `0` |
+| task/episode id cross-split overlap | `0` |
+| completed hparam checkpoints | `36 / 36` |
+
+즉 동일 rollout이 `train`, `val_seen`, `val_unseen`에 중복으로 들어간 증거는 없다. 다만 fixed threshold baseline의 `val_unseen` perfect score는 margin이 넓어서 나온 결과가 아니다. Final detector의 rollout-level max score 기준으로 `val_unseen` failure minimum은 약 `0.5490`, success maximum은 약 `0.5441`, fixed threshold는 `0.5487`이다. 작은 distribution shift에도 fixed-threshold perfect score는 깨질 수 있으므로, 실제 운영 성능은 CP operating point를 기준으로 보는 것이 더 보수적이다.
+
+추가 확인이 필요한 항목은 다음과 같다.
+
+- 같은 6 task에서 새 rollout seed로 truly untouched test set을 추가 수집한다.
+- 현재 final detector, aggregation, hparam, CP threshold를 고정한 채 재평가한다.
+- random-label sanity를 수행해 label shuffle 시 성능이 chance level로 떨어지는지 확인한다.
+- task-only 또는 length-only baseline을 확인해 episode length/task identity confound를 배제한다.
 
 ## 시각화
 
@@ -274,7 +319,7 @@ SAFE feature 시각화는 detector score나 CP threshold가 아니라 detector i
 [T, 4, 16, 1024] -> aggregation -> [T, D']
 ```
 
-초기 t-SNE는 `mean/mean` aggregation으로 만들었다. 최종 detector aggregation은 `concat-2/0.0`이며, 이 경우 `[T, 2048]` feature가 된다.
+초기 t-SNE는 `mean/mean` aggregation으로 만들었다. 최종 detector aggregation은 `mean/concat-2`이며, 이 경우 `[T, 2048]` feature가 된다.
 
 t-SNE artifact는 전체 split, `val_unseen`, 그리고 `val_unseen`의 task별 subset에 대해 생성했다.
 
@@ -285,7 +330,7 @@ t-SNE artifact는 전체 split, `val_unseen`, 그리고 `val_unseen`의 task별 
 | `val_unseen/OpenDrawer` | 100 | 2,041 |
 | `val_unseen/PnPCounterToCab` | 100 | 3,619 |
 
-시각화 결과는 조심스럽게 해석해야 한다. Feature space에는 task 방향성이 일부 있지만, 전역적인 success/failure 분리는 모든 task에서 강하게 나타나지 않는다. 최종 aggregation인 `concat-2/0.0`에서도 original 2048-D success/failure silhouette은 거의 0에 가깝다. 따라서 이 결과는 diagnostic evidence이지, proactive intervention capability의 독립적인 증거는 아니다.
+시각화 결과는 조심스럽게 해석해야 한다. Feature space에는 task 방향성이 일부 있지만, 전역적인 success/failure 분리는 모든 task에서 강하게 나타나지 않는다. 따라서 이 결과는 diagnostic evidence이지, proactive intervention capability의 독립적인 증거는 아니다.
 
 ## 해석
 
@@ -298,7 +343,7 @@ t-SNE artifact는 전체 split, `val_unseen`, 그리고 `val_unseen`의 task별 
 - final checkpoint와 final operating point가 artifact로 고정됐다.
 - t-SNE/overlay visualization artifact가 detector input feature에서 생성된다.
 
-현재 detector는 이 작은 재현 범위에서 seen/unseen task failure monitoring에는 사용할 수 있다. 그러나 supervised failure-onset detector는 아니다.
+현재 detector는 이 작은 재현 범위에서 seen/unseen task failure monitoring에는 사용할 수 있다. 그러나 final aggregation을 정한 뒤 별도 untouched test set에서 재확인되기 전까지는 selection bias 가능성을 함께 표시해야 한다. 또한 supervised failure-onset detector는 아니다.
 
 현재 label은 rollout-level이다.
 
@@ -360,8 +405,12 @@ g_\phi(h_{1:t}) \to \mathbf{1}[t \ge t_{onset}]
 - `scripts/safe/groot_n16/robocasa/train/train_lstm_aggregation_ablation.sh`
 - `scripts/safe/groot_n16/robocasa/train/train_lstm_hparam_sweep.sh`
 - `scripts/safe/groot_n16/robocasa/analyze/finalize_lstm_detector.py`
+- `scripts/safe/groot_n16/robocasa/analyze/diagnose_rollout_mean_feature_separability.py`
 - `scripts/safe/groot_n16/robocasa/vis/run_feature_visualization.py`
+- `scripts/safe/groot_n16/robocasa/vis/plot_safe_style_feature_space.py`
+- `scripts/safe/groot_n16/robocasa/vis/plot_safe_conformal_curves.py`
 - `outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector/README.md`
 - `outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector/final_operating_point.json`
+- `outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/visualizations/conformal_figure/by_final_end/README.md`
 - `/home/dongkyu/pdk_ws/SAFE/failure_prob/data/groot_n16.py`
 - `/home/dongkyu/pdk_ws/SAFE/failure_prob/conf/dataset/groot_n16.yaml`

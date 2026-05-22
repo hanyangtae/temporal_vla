@@ -10,6 +10,7 @@ LOG_ROOT="${LOG_ROOT:-${RUN_ROOT}/experiments/hparam_sweep/train_logs}"
 WANDB_DIR="${WANDB_DIR:-${RUN_ROOT}/experiments/hparam_sweep/wandb}"
 HYDRA_ROOT="${HYDRA_ROOT:-${RUN_ROOT}/experiments/hparam_sweep/hydra}"
 WANDB_MODE="${WANDB_MODE:-online}"
+DATA_PATH="${DATA_PATH:-${RUN_ROOT}/split}"
 
 HORIZON_IDX_REL="${HORIZON_IDX_REL:-concat-2}"
 DIFF_IDX_REL="${DIFF_IDX_REL:-0.0}"
@@ -47,6 +48,7 @@ for lr in "${LR_VALUES[@]}"; do
         conda run -n "${CONDA_ENV}" python -m failure_prob.train \
           dataset=groot_n16 \
           model=lstm \
+          dataset.data_path="${DATA_PATH}" \
           dataset.horizon_idx_rel="${HORIZON_IDX_REL}" \
           dataset.diff_idx_rel="${DIFF_IDX_REL}" \
           model.batch_size="${BATCH_SIZE}" \
