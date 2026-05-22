@@ -11,21 +11,24 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 from pathlib import Path
+
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
-DEFAULT_FINAL_DIR = (
-    REPO_ROOT
-    / "outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector"
-)
-DEFAULT_OUT_DIR = (
-    REPO_ROOT
-    / "outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/visualizations/conformal_figure"
-)
+ROBOCASA_SAFE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROBOCASA_SAFE_ROOT))
+
+from run_config import CONFORMAL_FIGURE_ROOT, FINAL_DETECTOR_DIR  # noqa: E402
+
+
+DEFAULT_FINAL_DIR = FINAL_DETECTOR_DIR
+DEFAULT_OUT_DIR = CONFORMAL_FIGURE_ROOT
 
 METRIC_DISPLAY = {
     "bal_acc": "Bal-acc: Balanced Accuracy",

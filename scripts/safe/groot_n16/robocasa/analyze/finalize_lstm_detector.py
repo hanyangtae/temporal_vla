@@ -18,18 +18,24 @@ from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
-DEFAULT_SAFE_ROOT = Path(os.environ.get("SAFE_ROOT", "/home/dongkyu/pdk_ws/SAFE"))
-OUT_ROOT = REPO_ROOT / "outputs/eval/robocasa/groot_n16"
-RUN_ROOT = OUT_ROOT / "safe_seen4_unseen2_100ep"
-DEFAULT_RUN_DIR = (
-    RUN_ROOT
-    / "experiments/hparam_sweep_hmean_dconcat2_v2/train_logs"
-    / "groot_n16-robocasa_seen4_unseen2_openDrawer_pnpCab_100ep-lstm-agg_hmean_dconcat_2_lr3e_4_reg1_seed2"
-    / "20260520"
-    / "225235"
+ROBOCASA_SAFE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROBOCASA_SAFE_ROOT))
+
+from run_config import (  # noqa: E402
+    FINAL_DIFF_IDX_REL,
+    FINAL_DETECTOR_DIR,
+    FINAL_HORIZON_IDX_REL,
+    FINAL_LAMBDA_REG,
+    FINAL_LR,
+    FINAL_LSTM_RUN_DIR,
+    FINAL_SEED,
+    SAFE_ROOT as CONFIG_SAFE_ROOT,
 )
-DEFAULT_FINAL_DIR = RUN_ROOT / "final_detector"
+
+
+DEFAULT_SAFE_ROOT = Path(os.environ.get("SAFE_ROOT", str(CONFIG_SAFE_ROOT)))
+DEFAULT_RUN_DIR = FINAL_LSTM_RUN_DIR
+DEFAULT_FINAL_DIR = FINAL_DETECTOR_DIR
 
 
 EVAL_TIMES = ("at earliest stop", "by earliest stop", "by final end")
@@ -229,6 +235,26 @@ def _fmt(value: float) -> str:
     return f"{value:.4f}"
 
 
+def _validate_pinned_selection(cfg: Any) -> None:
+    mismatches = []
+    if str(cfg.dataset.horizon_idx_rel) != FINAL_HORIZON_IDX_REL:
+        mismatches.append(
+            f"horizon_idx_rel={cfg.dataset.horizon_idx_rel!r}, expected {FINAL_HORIZON_IDX_REL!r}"
+        )
+    if str(cfg.dataset.diff_idx_rel) != FINAL_DIFF_IDX_REL:
+        mismatches.append(
+            f"diff_idx_rel={cfg.dataset.diff_idx_rel!r}, expected {FINAL_DIFF_IDX_REL!r}"
+        )
+    if float(cfg.model.lr) != float(FINAL_LR):
+        mismatches.append(f"lr={cfg.model.lr!r}, expected {FINAL_LR!r}")
+    if float(cfg.model.lambda_reg) != float(FINAL_LAMBDA_REG):
+        mismatches.append(f"lambda_reg={cfg.model.lambda_reg!r}, expected {FINAL_LAMBDA_REG!r}")
+    if int(cfg.train.seed) != FINAL_SEED:
+        mismatches.append(f"seed={cfg.train.seed!r}, expected {FINAL_SEED!r}")
+    if mismatches:
+        raise ValueError("Pinned final detector config mismatch: " + "; ".join(mismatches))
+
+
 def _write_summary_md(
     path: Path,
     manifest: dict[str, Any],
@@ -367,6 +393,7 @@ def main() -> None:
     shutil.copy2(config_path, final_config)
 
     cfg = OmegaConf.load(config_path)
+    _validate_pinned_selection(cfg)
     cfg.dataset.load_to_cuda = False
     all_rollouts = load_rollouts(cfg)
     rollouts_by_split = split_rollouts(cfg, all_rollouts)

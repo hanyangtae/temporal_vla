@@ -8,16 +8,20 @@ import csv
 import json
 import math
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
-OUT_ROOT = REPO_ROOT / "outputs/eval/robocasa/groot_n16"
-RUN_ROOT = OUT_ROOT / "safe_seen4_unseen2_100ep"
-DEFAULT_LOG_ROOT = RUN_ROOT / "experiments/aggregation_ablation/train_logs"
-DEFAULT_JSON = RUN_ROOT / "experiments/aggregation_ablation/reports/safe_lstm_aggregation_ablation_summary.json"
-DEFAULT_MD = RUN_ROOT / "experiments/aggregation_ablation/reports/safe_lstm_aggregation_ablation_summary.md"
+ROBOCASA_SAFE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROBOCASA_SAFE_ROOT))
+
+from run_config import AGGREGATION_ABLATION_LOG_ROOT, AGGREGATION_ABLATION_REPORT_ROOT  # noqa: E402
+
+
+DEFAULT_LOG_ROOT = AGGREGATION_ABLATION_LOG_ROOT
+DEFAULT_JSON = AGGREGATION_ABLATION_REPORT_ROOT / "safe_lstm_aggregation_ablation_summary.json"
+DEFAULT_MD = AGGREGATION_ABLATION_REPORT_ROOT / "safe_lstm_aggregation_ablation_summary.md"
 
 
 def _parse_config(config_path: Path) -> dict[str, str | int]:

@@ -6,10 +6,13 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import pickle
 import sys
 from pathlib import Path
 from typing import Any
+
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -18,26 +21,19 @@ from sklearn.decomposition import PCA
 from sklearn.model_selection import StratifiedKFold
 
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
-VIS_DIR = REPO_ROOT / "scripts/safe/groot_n16/robocasa/vis"
-sys.path.insert(0, str(VIS_DIR))
+ROBOCASA_SAFE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROBOCASA_SAFE_ROOT))
 
-from compute_feature_silhouette import (  # noqa: E402
+from run_config import ANALYSIS_ROOT, SPLIT_ROOT  # noqa: E402
+from safe_feature_vectors import (  # noqa: E402
     load_manifest,
     parse_aggregation_command,
     pooled_hidden_states,
 )
 
 
-DEFAULT_SPLIT_ROOT = (
-    REPO_ROOT
-    / "outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/split"
-)
-DEFAULT_OUT_DIR = (
-    REPO_ROOT
-    / "outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/analysis"
-    / "rollout_mean_aggregation_separability"
-)
+DEFAULT_SPLIT_ROOT = SPLIT_ROOT
+DEFAULT_OUT_DIR = ANALYSIS_ROOT / "rollout_mean_aggregation_separability"
 
 
 def parse_args() -> argparse.Namespace:

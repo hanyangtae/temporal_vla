@@ -4,9 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import os
 import pickle
+import sys
 from pathlib import Path
 from typing import Any
+
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -14,24 +18,24 @@ import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.manifold import MDS, TSNE, Isomap, SpectralEmbedding
 
-from compute_feature_silhouette import (
+ROBOCASA_SAFE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROBOCASA_SAFE_ROOT))
+
+from run_config import (  # noqa: E402
+    EXPERIMENT_FEATURE_SPACE_ROOT,
+    FINAL_DIFF_IDX_REL,
+    FINAL_HORIZON_IDX_REL,
+    SPLIT_ROOT,
+)
+from safe_feature_vectors import (  # noqa: E402
     load_manifest,
     parse_aggregation_command,
     pooled_hidden_states,
 )
 
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
-EXPERIMENT_ID = "seen4_unseen2_openDrawer_pnpCab_100ep"
-DEFAULT_SPLIT_ROOT = (
-    REPO_ROOT
-    / "outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/split"
-)
-DEFAULT_OUT_ROOT = (
-    REPO_ROOT
-    / "outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/visualizations/feature_space"
-    / EXPERIMENT_ID
-)
+DEFAULT_SPLIT_ROOT = SPLIT_ROOT
+DEFAULT_OUT_ROOT = EXPERIMENT_FEATURE_SPACE_ROOT
 
 
 def parse_args() -> argparse.Namespace:
@@ -59,8 +63,8 @@ def parse_args() -> argparse.Namespace:
         help="Optional exact task id filters for a family-level plot.",
     )
     parser.add_argument("--name", help="Optional suffix for the output directory.")
-    parser.add_argument("--horizon-idx-rel", default="mean")
-    parser.add_argument("--diff-idx-rel", default="mean")
+    parser.add_argument("--horizon-idx-rel", default=FINAL_HORIZON_IDX_REL)
+    parser.add_argument("--diff-idx-rel", default=FINAL_DIFF_IDX_REL)
     parser.add_argument(
         "--projector",
         default="tsne",

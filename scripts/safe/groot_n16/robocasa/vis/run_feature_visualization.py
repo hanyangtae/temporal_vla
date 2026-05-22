@@ -21,20 +21,23 @@ import types
 from typing import Any
 
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
-WORKSPACE_ROOT = REPO_ROOT.parent
-SAFE_ROOT = WORKSPACE_ROOT / "SAFE"
+ROBOCASA_SAFE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROBOCASA_SAFE_ROOT))
 
-EXPERIMENT_ID = "seen4_unseen2_openDrawer_pnpCab_100ep"
-DEFAULT_SPLIT_ROOT = (
-    REPO_ROOT
-    / "outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/split"
+from run_config import (  # noqa: E402
+    EXPERIMENT_ID,
+    FEATURE_SPACE_ROOT,
+    FINAL_DIFF_IDX_REL,
+    FINAL_HORIZON_IDX_REL,
+    SAFE_ROOT,
+    SAFE_SUBSET_NAME,
+    SPLIT_ROOT,
 )
-DEFAULT_OUT_ROOT = (
-    REPO_ROOT
-    / "outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/visualizations/feature_space"
-)
-DEFAULT_SUBSET_NAME = "robocasa_seen4_unseen2_openDrawer_pnpCab_100ep"
+
+
+DEFAULT_SPLIT_ROOT = SPLIT_ROOT
+DEFAULT_OUT_ROOT = FEATURE_SPACE_ROOT
+DEFAULT_SUBSET_NAME = SAFE_SUBSET_NAME
 
 
 def parse_args() -> argparse.Namespace:
@@ -53,8 +56,8 @@ def parse_args() -> argparse.Namespace:
         help="Optional task directory inside the selected split, for example OpenDrawer.",
     )
     parser.add_argument("--projector", default="tsne")
-    parser.add_argument("--horizon-idx-rel", default="mean")
-    parser.add_argument("--diff-idx-rel", default="mean")
+    parser.add_argument("--horizon-idx-rel", default=FINAL_HORIZON_IDX_REL)
+    parser.add_argument("--diff-idx-rel", default=FINAL_DIFF_IDX_REL)
     parser.add_argument("--split-root", type=Path, default=DEFAULT_SPLIT_ROOT)
     parser.add_argument("--out-root", type=Path, default=DEFAULT_OUT_ROOT)
     parser.add_argument("--safe-root", type=Path, default=SAFE_ROOT)
