@@ -7,18 +7,22 @@ import argparse
 import json
 import math
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 
 from summarize_lstm_aggregation_ablation import _fmt, _mean_std, _read_threshold_metrics
 
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
-OUT_ROOT = REPO_ROOT / "outputs/eval/robocasa/groot_n16"
-RUN_ROOT = OUT_ROOT / "safe_seen4_unseen2_100ep"
-DEFAULT_LOG_ROOT = RUN_ROOT / "experiments/hparam_sweep/train_logs"
-DEFAULT_JSON = RUN_ROOT / "experiments/hparam_sweep/reports/safe_lstm_hparam_sweep_summary.json"
-DEFAULT_MD = RUN_ROOT / "experiments/hparam_sweep/reports/safe_lstm_hparam_sweep_summary.md"
+ROBOCASA_SAFE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROBOCASA_SAFE_ROOT))
+
+from run_config import HPARAM_SWEEP_LOG_ROOT, HPARAM_SWEEP_REPORT_ROOT  # noqa: E402
+
+
+DEFAULT_LOG_ROOT = HPARAM_SWEEP_LOG_ROOT
+DEFAULT_JSON = HPARAM_SWEEP_REPORT_ROOT / "safe_lstm_hparam_sweep_summary.json"
+DEFAULT_MD = HPARAM_SWEEP_REPORT_ROOT / "safe_lstm_hparam_sweep_summary.md"
 
 
 def _match_value(text: str, key: str) -> str:

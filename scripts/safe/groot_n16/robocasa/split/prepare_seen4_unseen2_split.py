@@ -21,6 +21,13 @@ from pathlib import Path
 import random
 import re
 import shutil
+import sys
+
+
+ROBOCASA_SAFE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROBOCASA_SAFE_ROOT))
+
+from run_config import RUN_ROOT, SPLIT_ROOT  # noqa: E402
 
 
 TASKS = {
@@ -52,19 +59,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--source-root",
         type=Path,
-        default=Path(
-            "/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/"
-            "safe_seen4_unseen2_100ep/raw_rollouts"
-        ),
+        default=RUN_ROOT / "raw_rollouts",
         help="Rollout source root containing one task directory per task.",
     )
     parser.add_argument(
         "--split-root",
         type=Path,
-        default=Path(
-            "/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/"
-            "safe_seen4_unseen2_100ep/split"
-        ),
+        default=SPLIT_ROOT,
         help="Destination split root to create.",
     )
     parser.add_argument(

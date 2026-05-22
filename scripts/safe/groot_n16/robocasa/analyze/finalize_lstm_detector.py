@@ -18,18 +18,24 @@ from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
-DEFAULT_SAFE_ROOT = Path(os.environ.get("SAFE_ROOT", "/home/dongkyu/pdk_ws/SAFE"))
-OUT_ROOT = REPO_ROOT / "outputs/eval/robocasa/groot_n16"
-RUN_ROOT = OUT_ROOT / "safe_seen4_unseen2_100ep"
-DEFAULT_RUN_DIR = (
-    RUN_ROOT
-    / "experiments/hparam_sweep/train_logs"
-    / "groot_n16-robocasa_seen4_unseen2_openDrawer_pnpCab_100ep-lstm-agg_hconcat_2_d0p0_lr3e_4_reg1e_1_seed2"
-    / "20260520"
-    / "182349"
+ROBOCASA_SAFE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROBOCASA_SAFE_ROOT))
+
+from run_config import (  # noqa: E402
+    FINAL_DIFF_IDX_REL,
+    FINAL_DETECTOR_DIR,
+    FINAL_HORIZON_IDX_REL,
+    FINAL_LAMBDA_REG,
+    FINAL_LR,
+    FINAL_LSTM_RUN_DIR,
+    FINAL_SEED,
+    SAFE_ROOT as CONFIG_SAFE_ROOT,
 )
-DEFAULT_FINAL_DIR = RUN_ROOT / "final_detector"
+
+
+DEFAULT_SAFE_ROOT = Path(os.environ.get("SAFE_ROOT", str(CONFIG_SAFE_ROOT)))
+DEFAULT_RUN_DIR = FINAL_LSTM_RUN_DIR
+DEFAULT_FINAL_DIR = FINAL_DETECTOR_DIR
 
 
 EVAL_TIMES = ("at earliest stop", "by earliest stop", "by final end")
@@ -128,6 +134,94 @@ def _build_cp_rows(
     return rows
 
 
+def _alpha_key(alpha: float) -> str:
+    return f"alpha_{str(alpha).replace('.', 'p')}"
+
+
+def _copy_scores_by_split(scores_by_split: dict[str, list[np.ndarray]]) -> dict[str, list[np.ndarray]]:
+    return {
+        split: [np.asarray(scores, dtype=float).copy() for scores in split_scores]
+        for split, split_scores in scores_by_split.items()
+    }
+
+
+def _build_functional_cp_rows(
+    rollouts_by_split: dict[str, list[Any]],
+    scores_by_split: dict[str, list[np.ndarray]],
+) -> tuple[list[dict[str, Any]], dict[float, np.ndarray]]:
+    # SAFE's implementation randomly partitions successful calibration curves
+    # into regression and modulation sets. Keep this deterministic for artifacts.
+    np.random.seed(0)
+    df, cp_bands_by_alpha = eval_functional_conformal(
+        rollouts_by_split,
+        _copy_scores_by_split(scores_by_split),
+        method_name="lstm",
+        alphas=list(ALPHAS),
+        calib_split_names=["val_seen"],
+        test_split_names=["val_unseen"],
+        align_method="extend",
+    )
+
+    rows = []
+    for row in df.to_dict("records"):
+        alpha = float(row["alpha"])
+        band = np.asarray(cp_bands_by_alpha[alpha]).reshape(-1)
+        rows.append(
+            {
+                "eval_time": row["time"],
+                "alpha": alpha,
+                "calib_label": "neg_success" if row["calib on"] == "neg" else row["calib on"],
+                "band_min": float(band.min()),
+                "band_mean": float(band.mean()),
+                "band_max": float(band.max()),
+                "tpr": float(row["tpr"]),
+                "tnr": float(row["tnr"]),
+                "fpr": float(row["fpr"]),
+                "fnr": float(row["fnr"]),
+                "acc": float(row["acc"]),
+                "bal_acc": float(row["bal_acc"]),
+                "f1": float(row["f1"]),
+                "avg_det_time": float(row["avg_det_time"]),
+            }
+        )
+    return rows, {float(alpha): np.asarray(band).reshape(-1) for alpha, band in cp_bands_by_alpha.items()}
+
+
+def _write_functional_bands(path: Path, cp_bands_by_alpha: dict[float, np.ndarray]) -> None:
+    np.savez(
+        path,
+        **{_alpha_key(alpha): np.asarray(band).reshape(-1) for alpha, band in cp_bands_by_alpha.items()},
+    )
+
+
+def _find_functional_row(
+    rows: list[dict[str, Any]],
+    *,
+    eval_time: str,
+    alpha: float,
+    calib_label: str = "neg_success",
+) -> dict[str, Any] | None:
+    for row in rows:
+        if (
+            row["eval_time"] == eval_time
+            and row["calib_label"] == calib_label
+            and abs(float(row["alpha"]) - alpha) < 1e-9
+        ):
+            return row
+    return None
+
+
+def _best_functional_row(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    candidates = [
+        row
+        for row in rows
+        if row["eval_time"] == "by final end" and row["calib_label"] == "neg_success"
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda row: (row["bal_acc"], -row["avg_det_time"], row["tpr"], row["tnr"]))
+
+
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     if not rows:
         return
@@ -141,15 +235,38 @@ def _fmt(value: float) -> str:
     return f"{value:.4f}"
 
 
+def _validate_pinned_selection(cfg: Any) -> None:
+    mismatches = []
+    if str(cfg.dataset.horizon_idx_rel) != FINAL_HORIZON_IDX_REL:
+        mismatches.append(
+            f"horizon_idx_rel={cfg.dataset.horizon_idx_rel!r}, expected {FINAL_HORIZON_IDX_REL!r}"
+        )
+    if str(cfg.dataset.diff_idx_rel) != FINAL_DIFF_IDX_REL:
+        mismatches.append(
+            f"diff_idx_rel={cfg.dataset.diff_idx_rel!r}, expected {FINAL_DIFF_IDX_REL!r}"
+        )
+    if float(cfg.model.lr) != float(FINAL_LR):
+        mismatches.append(f"lr={cfg.model.lr!r}, expected {FINAL_LR!r}")
+    if float(cfg.model.lambda_reg) != float(FINAL_LAMBDA_REG):
+        mismatches.append(f"lambda_reg={cfg.model.lambda_reg!r}, expected {FINAL_LAMBDA_REG!r}")
+    if int(cfg.train.seed) != FINAL_SEED:
+        mismatches.append(f"seed={cfg.train.seed!r}, expected {FINAL_SEED!r}")
+    if mismatches:
+        raise ValueError("Pinned final detector config mismatch: " + "; ".join(mismatches))
+
+
 def _write_summary_md(
     path: Path,
     manifest: dict[str, Any],
     best_threshold: dict[str, Any],
     fixed_eval_rows: list[dict[str, Any]],
     cp_rows: list[dict[str, Any]],
+    functional_cp_rows: list[dict[str, Any]],
 ) -> None:
     final_op = manifest["final_operating_point"]
     fixed_val_unseen = [row for row in fixed_eval_rows if row["split"] == "val_unseen"][0]
+    functional_at_final_alpha = manifest.get("functional_cp_at_final_alpha")
+    best_functional = manifest.get("best_functional_cp")
     lines = [
         "# GR00T N1.6 SAFE-LSTM Final Detector",
         "",
@@ -191,6 +308,32 @@ def _write_summary_md(
         f"- val_unseen acc/F1: `{_fmt(final_op['acc'])}` / `{_fmt(final_op['f1'])}`",
         f"- val_unseen mean T-det: `{_fmt(final_op['avg_det_time'])}`",
         "",
+        "## Functional CP",
+        "",
+        "Functional CP is computed from the same `val_seen` successful score curves using SAFE's `FunctionalPredictor(ModulationType.Tfunc, RegressionType.Mean)` implementation. The final operating point remains split CP, but these rows reproduce the SAFE Figure-8-style functional-band evaluation.",
+        "",
+    ]
+    if functional_at_final_alpha is not None:
+        lines.extend(
+            [
+                f"- alpha `0.2`, by final end bal-acc: `{_fmt(functional_at_final_alpha['bal_acc'])}`",
+                f"- alpha `0.2`, by final end TPR/TNR: `{_fmt(functional_at_final_alpha['tpr'])}` / `{_fmt(functional_at_final_alpha['tnr'])}`",
+                f"- alpha `0.2`, by final end mean T-det: `{_fmt(functional_at_final_alpha['avg_det_time'])}`",
+                "",
+            ]
+        )
+    if best_functional is not None:
+        lines.extend(
+            [
+                f"- best by-final-end functional alpha: `{best_functional['alpha']}`",
+                f"- best by-final-end functional bal-acc: `{_fmt(best_functional['bal_acc'])}`",
+                f"- best by-final-end functional TPR/TNR: `{_fmt(best_functional['tpr'])}` / `{_fmt(best_functional['tnr'])}`",
+                f"- best by-final-end functional mean T-det: `{_fmt(best_functional['avg_det_time'])}`",
+                "",
+            ]
+        )
+    lines.extend(
+        [
         "## Files",
         "",
         "- `model_final.ckpt`: pinned detector checkpoint",
@@ -199,11 +342,14 @@ def _write_summary_md(
         "- `final_operating_point.json`: machine-readable final threshold and held-out metrics",
         "- `fixed_threshold_eval.csv`: val_seen-selected threshold applied to val_seen and val_unseen",
         "- `split_cp_eval.csv`: SAFE split-CP thresholds and held-out metrics for all alpha/eval-time settings",
+        "- `functional_cp_eval.csv`: SAFE functional-CP band metrics for all alpha/eval-time settings",
+        "- `functional_cp_bands.npz`: functional-CP timestep bands keyed by alpha",
         "- `per_rollout_scores.csv`: rollout-level max and earliest-stop scores",
         "",
         "Note: this run has physical `train`, `val_seen`, and `val_unseen` directories. There is no separate `test` directory; `val_unseen` is used here as the held-out test split.",
         "",
     ]
+    )
     path.write_text("\n".join(lines))
 
 
@@ -219,12 +365,16 @@ def main() -> None:
     args = parse_args()
     sys.path.insert(0, str(args.safe_root))
 
-    global eval_binary_classification, eval_detection_time, split_conformal_binary
+    global eval_binary_classification, eval_detection_time, eval_functional_conformal, split_conformal_binary
     from failure_prob.data import load_rollouts, split_rollouts
     from failure_prob.data.utils import RolloutDataset
     from failure_prob.model import get_model
     from failure_prob.utils.conformal.split_cp import split_conformal_binary
-    from failure_prob.utils.metrics import eval_binary_classification, eval_detection_time
+    from failure_prob.utils.metrics import (
+        eval_binary_classification,
+        eval_detection_time,
+        eval_functional_conformal,
+    )
     from failure_prob.utils.routines import model_forward_dataloader
 
     run_dir = args.run_dir
@@ -243,6 +393,7 @@ def main() -> None:
     shutil.copy2(config_path, final_config)
 
     cfg = OmegaConf.load(config_path)
+    _validate_pinned_selection(cfg)
     cfg.dataset.load_to_cuda = False
     all_rollouts = load_rollouts(cfg)
     rollouts_by_split = split_rollouts(cfg, all_rollouts)
@@ -283,6 +434,10 @@ def main() -> None:
         rollouts_by_split["val_unseen"],
         scores_by_split["val_unseen"],
     )
+    functional_cp_rows, functional_cp_bands = _build_functional_cp_rows(
+        rollouts_by_split,
+        scores_by_split,
+    )
     final_operating_point = [
         row
         for row in cp_rows
@@ -301,6 +456,13 @@ def main() -> None:
         "calibration_split": "val_seen",
         "test_split": "val_unseen",
     }
+    functional_cp_at_final_alpha = _find_functional_row(
+        functional_cp_rows,
+        eval_time=FINAL_OPERATING_POINT["eval_time"],
+        alpha=FINAL_OPERATING_POINT["alpha"],
+        calib_label=FINAL_OPERATING_POINT["calib_label"],
+    )
+    best_functional_cp = _best_functional_row(functional_cp_rows)
 
     per_rollout_rows = []
     for split, rollouts in rollouts_by_split.items():
@@ -322,6 +484,8 @@ def main() -> None:
 
     _write_csv(final_dir / "fixed_threshold_eval.csv", fixed_rows)
     _write_csv(final_dir / "split_cp_eval.csv", cp_rows)
+    _write_csv(final_dir / "functional_cp_eval.csv", functional_cp_rows)
+    _write_functional_bands(final_dir / "functional_cp_bands.npz", functional_cp_bands)
     _write_csv(final_dir / "per_rollout_scores.csv", per_rollout_rows)
 
     manifest = {
@@ -346,12 +510,21 @@ def main() -> None:
         "selected_threshold_source": "val_seen max-so-far balanced accuracy",
         "selected_threshold": best_threshold,
         "final_operating_point": final_operating_point,
+        "functional_cp_at_final_alpha": functional_cp_at_final_alpha,
+        "best_functional_cp": best_functional_cp,
     }
     (final_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
     (final_dir / "final_operating_point.json").write_text(
         json.dumps(final_operating_point, indent=2)
     )
-    _write_summary_md(final_dir / "README.md", manifest, best_threshold, fixed_rows, cp_rows)
+    _write_summary_md(
+        final_dir / "README.md",
+        manifest,
+        best_threshold,
+        fixed_rows,
+        cp_rows,
+        functional_cp_rows,
+    )
 
     print(f"finalized detector: {final_dir}")
     print(f"checkpoint: {final_ckpt}")
