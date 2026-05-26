@@ -40,6 +40,9 @@ from PIL import Image
 # 프로파일 로더 (scripts/utils 는 PYTHONPATH 에 포함)
 from checkpoint_profile import CheckpointProfile, load_profile  # noqa: E402
 
+# SAFE feature hook (scripts/serve 는 스크립트 실행 시 sys.path[0])
+import safe_hooks  # noqa: E402
+
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="LeRobot Inference Server")
@@ -76,6 +79,13 @@ STATE_KEY_ORDER = [
 
 def _b64_to_numpy(b64_str: str) -> np.ndarray:
     return np.array(Image.open(io.BytesIO(base64.b64decode(b64_str))).convert("RGB"))
+
+
+def _encode_ndarray(arr: np.ndarray) -> str:
+    """ndarray → base64(np.save bytes). dtype/shape 보존, JSON list 대비 경량."""
+    buf = io.BytesIO()
+    np.save(buf, arr, allow_pickle=False)
+    return base64.b64encode(buf.getvalue()).decode()
 
 
 def _build_remap_config(visual_keys: list, state_feat) -> tuple:
@@ -182,6 +192,48 @@ async def predict_action(payload: dict):
     return result
 
 
+@app.post("/act_with_features")
+async def predict_action_with_features(payload: dict):
+    """SAFE 수집용: /act 와 동일하되 추론이 발화한 step 에서 SAFE hidden_states 동봉.
+
+    lerobot 정책은 action queue 가 빌 때(매 n_action_steps)만 새 추론을 돌리므로,
+    그 step 에만 has_feature=True 와 hidden_states_b64(=[K,H,D] 또는 [1,n_tokens,D])
+    가 채워진다. 그 외 step 은 버퍼된 action 만 반환(has_feature=False).
+    """
+    if policy is None:
+        return {"error": "model not loaded"}
+    profile = _profile
+    assert profile is not None
+    if _policy_type not in safe_hooks.SUPPORTED_TYPES:
+        return {"error": f"SAFE features unsupported for policy_type={_policy_type}"}
+
+    t0 = time.time()
+    batch = parse_payload(payload)
+    batch = _apply_input_remap(batch)
+
+    if preprocessor is not None:
+        batch = preprocessor(batch)
+
+    action, hidden, _axes, meta = safe_hooks.run_with_features(policy, batch, _policy_type)
+
+    if postprocessor is not None:
+        action = postprocessor(action)
+
+    action_np = action.detach().cpu().float().numpy()
+    if action_np.ndim == 1:
+        action_np = action_np[np.newaxis, :]
+
+    result = _emit_subkeys(action_np, profile)
+    if hidden is not None:
+        result["has_feature"] = True
+        result["hidden_states_b64"] = _encode_ndarray(hidden)
+        result.update(meta)  # feature_kind, feature_axes, num_inference_timesteps, ...
+    else:
+        result["has_feature"] = False
+    result["latency_ms"] = (time.time() - t0) * 1000
+    return result
+
+
 @app.get("/health")
 async def health():
     if _profile is None:
@@ -225,11 +277,21 @@ def _load_model_impl():
     ms = profile.model_specific
     _policy_type = ms.get("policy_type", "pi0")
 
-    sys.path.insert(0, "/temporal_vla/lerobot/src")
+    # repo root 기준 경로 (host conda / Docker 컨테이너 양쪽 지원)
+    _repo_root = Path(__file__).resolve().parents[2]
+    _lerobot_src = _repo_root / "lerobot" / "src"
+    if _lerobot_src.is_dir():
+        sys.path.insert(0, str(_lerobot_src))
 
     # 체크포인트 경로 결정
     src = profile.checkpoint_source
     pretrained_path = src.id  # local path or HF repo id
+    # 프로파일의 컨테이너 절대경로(/temporal_vla/...)를 host repo root 로 remap.
+    # 컨테이너에서는 _repo_root == /temporal_vla 이므로 identity.
+    if isinstance(pretrained_path, str) and pretrained_path.startswith("/temporal_vla/"):
+        _mapped = _repo_root / pretrained_path[len("/temporal_vla/") :]
+        if _mapped.exists():
+            pretrained_path = str(_mapped)
     logger.info(
         "Loading LeRobot policy_type=%s from %s (profile=%s)",
         _policy_type, pretrained_path, profile.name,
