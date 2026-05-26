@@ -1,0 +1,48 @@
+# pi0.5 LIBERO — lerobot 공식 finetuned 체크포인트 (HF: lerobot/pi05_libero_finetuned).
+# lerobot-native 포맷(config.json + model.safetensors + policy_pre/postprocessor.json):
+# serve 는 from_pretrained + make_pre_post_processors(pretrained_path=repo) 로 로드,
+# de-normalization 은 repo 의 postprocessor 가 자체 수행 → profile normalization=none.
+
+name: lerobot_pi05__libero
+base_model: lerobot
+checkpoint_source:
+  type: hf_repo
+  id: lerobot/pi05_libero_finetuned
+compatible_benchmarks: [libero]
+
+action_type: relative              # LIBERO delta EEF
+action_layout:
+  - {name: eef_pos,       dims: 3}
+  - {name: eef_axisangle, dims: 3}
+  - {name: gripper,       dims: 1}
+rotation_encoding: axisangle
+gripper_encoding:
+  range: "[-1,1]"                  # pi05 continuous 출력
+  binarize: false                  # LIBERO ActionProcessor 측에서 처리
+  sign_flip: false
+  threshold: 0.0
+
+# lerobot 내부 processor(postprocessor.json)가 de-norm 수행 → serve 는 stats 불필요.
+normalization:
+  scheme: none
+  stats_file: null
+  key_selection: []
+
+observation_requirements:
+  images: [static, wrist]
+  state: [eef_pos, eef_quat, gripper_qpos]
+  allow_conversions: []
+
+n_action_steps: 50                 # placeholder; /health 가 policy.config 에서 재확인
+image_preprocess:
+  resolution: 256                  # LIBERO native; lerobot preprocessor 가 재조정
+  rotate_180: false
+  center_crop: false
+
+emits_subkeys:
+  - action.eef_pos
+  - action.eef_axisangle
+  - action.gripper
+
+model_specific:
+  policy_type: pi05
