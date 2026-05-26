@@ -14,17 +14,20 @@ HTTP 경로는 프로젝트 공통 serving API로 유지한다. official ZMQ Ope
 
 체크포인트:
 
-- host: `/home/dongkyu/pdk_ws/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B`
-- container: `/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B`
-- profile: `/home/dongkyu/pdk_ws/temporal_vla/configs/checkpoints/groot__robocasa_panda_omron.yaml`
+- host: `/home/dongkyu/pdk_ws/temporal_vla/outputs/checkpoints/grootn16_robocasa365_multitask_learning/checkpoint-120000`
+- container: `/temporal_vla/outputs/checkpoints/grootn16_robocasa365_multitask_learning/checkpoint-120000`
+- source: `Abhi03/grootn16_robocasa365_multitask_learning/checkpoint-120000`
+- profile: `/home/dongkyu/pdk_ws/temporal_vla/configs/checkpoints/groot__robocasa365_ckpt120000.yaml`
+
+`groot__robocasa365_ckpt120000.yaml`은 사용자-facing 이름을 RoboCasa365 checkpoint 기준으로 둔다. 내부 `model_specific.embodiment_tag`는 checkpoint metadata에 맞춰 `NEW_EMBODIMENT`를 사용한다.
 
 RoboCasa 환경:
 
 - 기준 env: `/home/dongkyu/pdk_ws/temporal_vla/src/policies/Isaac-GR00T/gr00t/eval/sim/robocasa/robocasa_uv/.venv/bin/python`
-- 기준 RoboCasa 코드: `/home/dongkyu/pdk_ws/temporal_vla/src/policies/Isaac-GR00T/external_dependencies/robocasa`
-- local robocasa365: `/home/dongkyu/pdk_ws/temporal_vla/src/benchmarks/robocasa`
+- `robocasa_v02`: `/home/dongkyu/pdk_ws/temporal_vla/src/policies/Isaac-GR00T/external_dependencies/robocasa`
+- `robocasa365`: `/home/dongkyu/pdk_ws/temporal_vla/src/benchmarks/robocasa`
 
-GR00T official eval과 SAFE collection은 GR00T fork의 RoboCasa v0.2 task name을 쓴다. local data는 robocasa365 v1.0 이름을 쓰므로 task mapping을 명시적으로 유지한다.
+GR00T official eval과 기본 SAFE collection은 RoboCasa v0.2 (`robocasa_v02`) task name을 쓴다. RoboCasa365 수집은 `robocasa365` task name을 쓰므로 task mapping을 명시적으로 유지한다.
 
 ## Shared Run Config
 
@@ -88,7 +91,7 @@ Default visualization and silhouette scripts now use the final detector aggregat
 
 ## ZMQ Official Eval
 
-목적: GR00T N1.6 checkpoint 자체가 RoboCasa PandaOmron에서 정상 동작하는지 확인한다.
+목적: pretrained GR00T N1.6 PandaOmron baseline이 RoboCasa v0.2에서 정상 동작하는지 확인한다.
 
 서버:
 
@@ -129,7 +132,7 @@ gr00t/eval/sim/robocasa/robocasa_uv/.venv/bin/python gr00t/eval/rollout_policy.p
 - SR: `0.8`
 - official README의 OpenDrawer `81.1%`와 같은 수준
 
-이 결과를 현재 checkpoint 정상 동작 기준선으로 둔다.
+이 결과를 pretrained PandaOmron baseline 정상 동작 기준선으로 둔다.
 
 ## ZMQ SAFE Feature Collection
 
@@ -138,16 +141,15 @@ gr00t/eval/sim/robocasa/robocasa_uv/.venv/bin/python gr00t/eval/rollout_policy.p
 서버:
 
 ```bash
-cd /home/dongkyu/pdk_ws/temporal_vla/src/policies/Isaac-GR00T
+cd /temporal_vla/src/policies/Isaac-GR00T
 
 UV_CACHE_DIR=/tmp/uv-cache \
-HF_HOME=/home/dongkyu/pdk_ws/temporal_vla/data/huggingface \
+HF_HOME=/temporal_vla/data/huggingface \
 HF_MODULES_CACHE=/tmp/hf_modules \
 NO_ALBUMENTATIONS_UPDATE=1 \
 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
-uv run --no-sync python /home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/serve/feature_server.py \
-  --profile /home/dongkyu/pdk_ws/temporal_vla/configs/checkpoints/groot__robocasa_panda_omron.yaml \
-  --model-path-override /home/dongkyu/pdk_ws/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B \
+uv run --no-sync python /temporal_vla/scripts/safe/groot_n16/robocasa/serve/feature_server.py \
+  --profile /temporal_vla/configs/checkpoints/groot__robocasa365_ckpt120000.yaml \
   --host '*' \
   --port 5557 \
   --device cuda \
@@ -167,6 +169,63 @@ EPISODE_START_IDX=0 \
 bash scripts/safe/groot_n16/robocasa/collect/collect_task_set_official_uv_host.sh
 ```
 
+RoboCasa365 target atomic-seen 18-task 수집:
+
+1ep/task smoke:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+ROBOCASA_SAFE_RUN_ID=target_atomic_seen18_ckpt120000_robocasa365_1ep \
+TASK_SET=target_atomic_seen18 \
+EPISODES_PER_TASK=1 \
+SEED_START=100020 \
+EPISODE_START_IDX=0 \
+HOST=127.0.0.1 \
+PORT=5557 \
+bash scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh
+```
+
+100ep/task collection:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+ROBOCASA_SAFE_RUN_ID=target_atomic_seen18_ckpt120000_robocasa365_100ep \
+TASK_SET=target_atomic_seen18 \
+EPISODES_PER_TASK=100 \
+SEED_START=100000 \
+EPISODE_START_IDX=0 \
+bash scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh
+```
+
+이 mode는 RoboCasa365 (`src/benchmarks/robocasa`)를 사용한다. RoboCasa v0.2 (`robocasa_v02`) 기준 6-task SAFE split과 달리 `CloseBlenderLid`, `NavigateKitchen`, `OpenStandMixerHead` 같은 RoboCasa365 task가 포함되므로 `ROBOCASA_ENV_SOURCE=robocasa365`가 자동으로 선택된다. 기본 저장 위치는 아래다.
+
+```text
+/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_100ep/raw_rollouts
+```
+
+`target_atomic_seen18_ckpt120000_100ep`가 이미 존재하면 pre-fix PandaOmron-profile 산출물과 섞일 수 있으므로 새 collection에는 `target_atomic_seen18_ckpt120000_robocasa365_100ep`를 사용한다.
+
+진행 중 partial 검증:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+python scripts/safe/groot_n16/robocasa/collect/verify_rollout_collection.py \
+  outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_100ep/raw_rollouts \
+  --allow-partial
+```
+
+완료 후 최종 검증:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+python scripts/safe/groot_n16/robocasa/collect/verify_rollout_collection.py \
+  outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_100ep/raw_rollouts
+```
+
 저장 위치:
 
 ```text
@@ -182,7 +241,7 @@ SAFE feature contract:
 - expected default shape: `[4, 16, 1024]`
 - dtype: `float16`
 
-GR00T N1.6 checkpoint config의 model-level `action_horizon` / processor `max_action_horizon` 값은 50이다. RoboCasa PandaOmron modality config의 decoded action delta는 16개다. GR00T 내부 action head는 50개 action-token trajectory를 만들고, RoboCasa output은 앞 16 step을 decode한다.
+GR00T N1.6 checkpoint config의 model-level `action_horizon` / processor `max_action_horizon` 값은 50이다. checkpoint-120000 profile에서 선택한 embodiment modality config의 decoded action delta는 16개다. GR00T 내부 action head는 50개 action-token trajectory를 만들고, RoboCasa output은 앞 16 step을 decode한다.
 
 따라서 SAFE 기본 export는 다음처럼 잡는다.
 
@@ -210,9 +269,9 @@ SAFE 논문식 flow-matching feature에 맞춰 collector는 feature 축을 보�
 
 ## Common Candidate 9 Tasks
 
-GR00T official RoboCasa v0.2 eval task와 local robocasa365 v1.0 atomic dataset이 의미적으로 겹치는 후보는 아래 9개로 둔다.
+GR00T official RoboCasa v0.2 eval task와 robocasa365 v1.0 atomic dataset이 의미적으로 겹치는 후보는 아래 9개로 둔다.
 
-| GR00T fork v0.2 task | local robocasa365 v1.0 task | official SR |
+| RoboCasa v0.2 task | robocasa365 v1.0 task | official SR |
 |---|---|---:|
 | `CoffeeSetupMug` | `CoffeeSetupMug` | 31.0% |
 | `OpenSingleDoor` | `OpenCabinet` | 81.5% |
@@ -226,9 +285,9 @@ GR00T official RoboCasa v0.2 eval task와 local robocasa365 v1.0 atomic dataset�
 
 ## Selected Seen 6 Tasks
 
-최종 seen-task set은 local robocasa365 data에도 있고, GR00T official RoboCasa eval에도 대응되는 task로 둔다.
+최종 seen-task set은 robocasa365 data에도 있고, GR00T official RoboCasa eval에도 대응되는 task로 둔다.
 
-| task id | GR00T fork v0.2 task | local robocasa365 v1.0 task | official SR |
+| task id | RoboCasa v0.2 task | robocasa365 v1.0 task | official SR |
 |---:|---|---|---:|
 | 0 | `CoffeeSetupMug` | `CoffeeSetupMug` | 31.0% |
 | 1 | `OpenSingleDoor` | `OpenCabinet` | 81.5% |
@@ -255,7 +314,7 @@ SAFE 논문/레포 방식에 맞춰 task-level split과 seen-task episode split�
 
 따라서 6개 task에서는 `round(0.25 * 6) = 2`개 task가 unseen이 되고, 나머지 4개 task가 seen이 된다. 각 task를 100 rollout으로 맞추면 전체 600 rollout이며, split은 대략 다음 크기가 된다. SAFE 레포 DROID 설정의 `60/task`보다 큰 cap이지만, task별 SR이 낮아 성공 rollout이 부족할 수 있으므로 N1.6 RoboCasa에서는 `100/task`를 사용한다.
 
-이번 small reproduction에서는 taxonomy constraint를 둔다. unseen task는 Open 계열 1개와 PnP 계열 1개로 고정한다. 실제 unseen task는 `OpenDrawer`와 `PnPCounterToCab`이다. 이 선택은 `OpenSingleDoor`를 seen 쪽에 남겨 local robocasa365의 `OpenCabinet` 대응 경로를 계속 점검할 수 있게 하고, `val_unseen` 성공/실패 비율도 `114/86`으로 균형을 유지한다.
+이번 small reproduction에서는 taxonomy constraint를 둔다. unseen task는 Open 계열 1개와 PnP 계열 1개로 고정한다. 실제 unseen task는 `OpenDrawer`와 `PnPCounterToCab`이다. 이 선택은 `OpenSingleDoor`를 seen 쪽에 남겨 robocasa365의 `OpenCabinet` 대응 경로를 계속 점검할 수 있게 하고, `val_unseen` 성공/실패 비율도 `114/86`으로 균형을 유지한다.
 
 | split | source | count |
 |---|---|---:|
@@ -620,7 +679,7 @@ curl http://127.0.0.1:8000/health
 현재 HTTP와 ZMQ 비교에는 transport 이외의 차이가 함께 있다.
 
 - HTTP 경로는 보통 project runner를 타며 `src/benchmarks/robocasa`의 robocasa365 v1.0 환경을 사용한다.
-- ZMQ official 경로는 `src/policies/Isaac-GR00T/external_dependencies/robocasa`의 GR00T fork RoboCasa v0.2 환경을 사용한다.
+- ZMQ official 경로는 `src/policies/Isaac-GR00T/external_dependencies/robocasa`의 RoboCasa v0.2 (`robocasa_v02`) 환경을 사용한다.
 - transport, env version, task class name, observation schema, action application 방식 차이가 함께 섞여 있다.
 
 공통 task로 고른 5개는 v0.2와 v1.0 사이에서 의미적으로 대응되는 task다. `OpenSingleDoor`/`OpenCabinet`처럼 official SR이 높은 task에서 HTTP SR이 크게 낮으면 policy wiring을 먼저 점검한다.

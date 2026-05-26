@@ -94,7 +94,7 @@ GR00T N1.6 checkpoint의 model-level action horizon은 50이다. 따라서 DiT o
 all_action_tokens = model_output[:, -50:, :]
 ```
 
-RoboCasa PandaOmron modality config에서 실제 decoded/executed action horizon은 16이다. 기본 SAFE feature는 action-token block의 leading 16 positions를 사용한다.
+선택한 RoboCasa checkpoint profile의 modality config에서 실제 decoded/executed action horizon은 16이다. 기본 SAFE feature는 action-token block의 leading 16 positions를 사용한다.
 
 ```python
 safe_tokens = model_output[:, -50:, :][:, :16, :]
@@ -138,9 +138,9 @@ GR00T N1.6 success-rate 기준선은 upstream GR00T ZMQ evaluation path로 둔�
 
 SAFE rollout collection은 dedicated ZMQ feature server로 수행했다. Feature endpoint는 normal action path를 유지하면서 action과 feature를 함께 저장한다. Official direct policy action과 SAFE feature path action의 동등성은 action key별 비교에서 `max_abs=0.0`으로 확인했다.
 
-Task 후보는 GR00T fork RoboCasa v0.2 eval task와 local robocasa365 v1.0 atomic data가 의미적으로 대응되는 task 중에서 고른다. 최종 6-task set은 다음이다.
+Task 후보는 RoboCasa v0.2 (`robocasa_v02`) eval task와 robocasa365 v1.0 atomic data가 의미적으로 대응되는 task 중에서 고른다. 최종 6-task set은 다음이다.
 
-| task id | GR00T fork v0.2 task | local robocasa365 v1.0 task | official SR |
+| task id | RoboCasa v0.2 task | robocasa365 v1.0 task | official SR |
 |---:|---|---|---:|
 | 0 | `CoffeeSetupMug` | `CoffeeSetupMug` | 31.0% |
 | 1 | `OpenSingleDoor` | `OpenCabinet` | 81.5% |

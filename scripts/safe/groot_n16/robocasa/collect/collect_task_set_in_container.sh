@@ -5,6 +5,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../run_config.sh"
+source "${SCRIPT_DIR}/task_sets.sh"
 
 CONTAINER_REPO_ROOT="${CONTAINER_REPO_ROOT:-/temporal_vla}"
 HOST="${HOST:-127.0.0.1}"
@@ -12,25 +13,25 @@ PORT="${PORT:-5557}"
 SEED_START="${SEED_START:-241}"
 EPISODE_START_IDX="${EPISODE_START_IDX:-0}"
 EPISODES_PER_TASK="${EPISODES_PER_TASK:-1}"
-RUN_ID="${RUN_ID:-n16_task_set_safe_flow_features_smoke}"
+TASK_SET="${TASK_SET:-safe_seen6}"
+if [[ -z "${RUN_ID:-}" ]]; then
+    if [[ "${TASK_SET}" == "safe_seen6" ]]; then
+        RUN_ID="n16_task_set_safe_flow_features_smoke"
+    else
+        RUN_ID="n16_${TASK_SET}_safe_flow_features"
+    fi
+fi
 RUN_ROOT="${RUN_ROOT:-${CONTAINER_REPO_ROOT}/outputs/eval/robocasa/groot_n16/${ROBOCASA_SAFE_RUN_ID}}"
-OUT_ROOT="${OUT_ROOT:-${RUN_ROOT}/experiments/collection_smoke/rollouts_${RUN_ID}}"
 
-TASKS=(
-    # GR00T fork v0.2 names. robocasa365 mappings:
-    # CoffeeSetupMug -> CoffeeSetupMug
-    # OpenSingleDoor -> OpenCabinet
-    # PnPCounterToCab -> PickPlaceCounterToCabinet
-    # PnPSinkToCounter -> PickPlaceSinkToCounter
-    # PnPCounterToStove -> PickPlaceCounterToStove
-    # OpenDrawer -> OpenDrawer
-    "CoffeeSetupMug"
-    "OpenSingleDoor"
-    "PnPCounterToCab"
-    "PnPSinkToCounter"
-    "PnPCounterToStove"
-    "OpenDrawer"
-)
+load_robocasa_collection_task_set "${TASK_SET}"
+ROBOCASA_ENV_SOURCE="$(normalize_robocasa_collection_env_source "${ROBOCASA_ENV_SOURCE:-${ROBOCASA_ENV_SOURCE_FOR_TASK_SET}}")"
+if [[ -z "${OUT_ROOT:-}" ]]; then
+    if [[ "${TASK_SET}" == "safe_seen6" ]]; then
+        OUT_ROOT="${RUN_ROOT}/experiments/collection_smoke/rollouts_${RUN_ID}"
+    else
+        OUT_ROOT="${RUN_ROOT}/raw_rollouts"
+    fi
+fi
 
 mkdir -p "${OUT_ROOT}"
 SUMMARY="${OUT_ROOT}/collection_summary.tsv"
@@ -40,6 +41,8 @@ fi
 
 echo "Output: ${OUT_ROOT}"
 echo "Server: ${HOST}:${PORT}"
+echo "Task set: ${TASK_SET} (${#TASKS[@]} tasks)"
+echo "RoboCasa env source: ${ROBOCASA_ENV_SOURCE}"
 echo "Episodes per task: ${EPISODES_PER_TASK}, episode_idx: ${EPISODE_START_IDX}..$((EPISODE_START_IDX + EPISODES_PER_TASK - 1)), seeds: ${SEED_START}..$((SEED_START + EPISODES_PER_TASK - 1))"
 
 for task_id in "${!TASKS[@]}"; do
@@ -64,12 +67,14 @@ for task_id in "${!TASKS[@]}"; do
         echo
         echo "== task${task_id} ${task} ep ${episode_idx} seed ${seed} =="
 
-        if MUJOCO_GL=egl \
+        if ROBOCASA_ENV_SOURCE="${ROBOCASA_ENV_SOURCE}" \
+            MUJOCO_GL=egl \
             PYTHONPATH="${CONTAINER_REPO_ROOT}/src/policies/Isaac-GR00T:${CONTAINER_REPO_ROOT}/src/benchmarks/robocasa:${CONTAINER_REPO_ROOT}/src/benchmarks/robosuite:${CONTAINER_REPO_ROOT}" \
             python "${CONTAINER_REPO_ROOT}/scripts/safe/groot_n16/robocasa/collect/collect_rollout.py" \
                 --policy-client-host "${HOST}" \
                 --policy-client-port "${PORT}" \
                 --env-name "${env_name}" \
+                --robocasa-env-source "${ROBOCASA_ENV_SOURCE}" \
                 --output-dir "${task_dir}" \
                 --task-id "${task_id}" \
                 --episode-start-idx "${episode_idx}" \

@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import csv
 from collections import defaultdict
+import os
 from pathlib import Path
 import pickle
 import shutil
@@ -28,9 +29,40 @@ import zmq
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 GROOT_ROOT = REPO_ROOT / "src/policies/Isaac-GR00T"
+ROBOCASA365_ROOT = REPO_ROOT / "src/benchmarks/robocasa"
+ROBOCASA365_ROBOSUITE_ROOT = REPO_ROOT / "src/benchmarks/robosuite"
+ROBOCASA_V02_ROOT = GROOT_ROOT / "external_dependencies/robocasa"
+ROBOCASA_ENV_SOURCE_ALIASES = {
+    "robocasa_v02": "robocasa_v02",
+    "robocasa365": "robocasa365",
+}
+
+
+def _normalize_robocasa_env_source(source: str) -> str:
+    try:
+        return ROBOCASA_ENV_SOURCE_ALIASES[source]
+    except KeyError:
+        raise ValueError(f"Unknown RoboCasa env source: {source!r}") from None
+
+
+def _select_robocasa_env_source() -> str:
+    source = os.environ.get("ROBOCASA_ENV_SOURCE")
+    for idx, arg in enumerate(sys.argv):
+        if arg == "--robocasa-env-source" and idx + 1 < len(sys.argv):
+            source = sys.argv[idx + 1]
+        elif arg.startswith("--robocasa-env-source="):
+            source = arg.split("=", 1)[1]
+    return _normalize_robocasa_env_source(source or "robocasa_v02")
+
+
+ROBOCASA_ENV_SOURCE = _select_robocasa_env_source()
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(GROOT_ROOT))
-sys.path.insert(0, str(GROOT_ROOT / "external_dependencies/robocasa"))
+if ROBOCASA_ENV_SOURCE == "robocasa365":
+    sys.path.insert(0, str(ROBOCASA365_ROBOSUITE_ROOT))
+    sys.path.insert(0, str(ROBOCASA365_ROOT))
+else:
+    sys.path.insert(0, str(ROBOCASA_V02_ROOT))
 
 from gr00t.eval.rollout_policy import (  # noqa: E402
     MultiStepConfig,
@@ -50,18 +82,26 @@ OBS_ALIASES = {
     "video.robot0_agentview_left": "video.res256_image_side_0",
     "video.robot0_agentview_right": "video.res256_image_side_1",
     "video.robot0_eye_in_hand": "video.res256_image_wrist_0",
+    "video.res256_image_side_0": "video.robot0_agentview_left",
+    "video.res256_image_side_1": "video.robot0_agentview_right",
+    "video.res256_image_wrist_0": "video.robot0_eye_in_hand",
     "annotation.human.task_description": "annotation.human.action.task_description",
+    "annotation.human.action.task_description": "annotation.human.task_description",
 }
 REQUIRED_OBS_KEYS = {
     "video.res256_image_side_0",
     "video.res256_image_side_1",
     "video.res256_image_wrist_0",
+    "video.robot0_agentview_left",
+    "video.robot0_agentview_right",
+    "video.robot0_eye_in_hand",
     "state.base_position",
     "state.base_rotation",
     "state.end_effector_position_relative",
     "state.end_effector_rotation_relative",
     "state.gripper_qpos",
     "annotation.human.action.task_description",
+    "annotation.human.task_description",
 }
 SAFE_ACTION_COLUMNS = [
     "action/dx",
@@ -176,7 +216,7 @@ def _prepare_observation(observation: dict[str, Any]) -> dict[str, Any]:
     filtered = {key: aliased[key] for key in REQUIRED_OBS_KEYS if key in aliased}
     missing = sorted(REQUIRED_OBS_KEYS - filtered.keys())
     if missing:
-        raise KeyError(f"Missing N1.6 PandaOmron observation keys: {missing}")
+        raise KeyError(f"Missing N1.6 RoboCasa observation keys: {missing}")
     return filtered
 
 
@@ -454,6 +494,7 @@ def _write_safe_triplet(
         "model_action_horizon": policy.model_action_horizon,
         "num_inference_timesteps": policy.num_inference_timesteps,
         "env_name": env_name,
+        "robocasa_env_source": ROBOCASA_ENV_SOURCE,
         "video_source": "groot_upstream_video_recording_wrapper",
     }
     with pkl_path.open("wb") as f:
@@ -470,6 +511,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--policy-client-port", type=int, required=True)
     parser.add_argument("--feature-endpoint", default="get_action_with_features")
     parser.add_argument("--env-name", required=True)
+    parser.add_argument(
+        "--robocasa-env-source",
+        choices=["robocasa_v02", "robocasa365"],
+        default=ROBOCASA_ENV_SOURCE,
+        help="RoboCasa environment source: robocasa_v02 or robocasa365.",
+    )
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--task-id", type=int, default=0)
     parser.add_argument("--task-description", default=None)
