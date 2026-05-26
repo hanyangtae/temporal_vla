@@ -204,7 +204,7 @@ Loader contract는 다음과 같다.
 | selected checkpoint | `seed2` |
 | final CP alpha | `0.2` |
 
-현재 데이터에는 episode-level success/failure label만 있고 frame-level failure-onset label이 없으므로 timing plot은 비활성화했다.
+현재 데이터에는 episode-level success/failure label만 있고 inference-step-level failure-onset label이 없으므로 timing plot은 비활성화했다.
 
 ## 결과
 
@@ -388,7 +388,7 @@ g_\phi(h_{1:t}) \to \mathbf{1}[t \ge t_{onset}]
 다음 단계:
 
 1. HTTP-vs-ZMQ observation/action parity를 검증한 뒤 HTTP `/act` SR을 통합 지표로 편입한다.
-2. Proactive intervention이 목표라면 frame-level onset/intervention label을 수집하거나 정의한다.
+2. Proactive intervention이 목표라면 inference-step-level onset/intervention label을 수집하거나 정의한다.
 3. `--feature-slice all`로 model-level `H=50` feature를 수집해 current `H=16` valid-horizon export와 비교할 수 있다.
 4. Taskwise score-trajectory plot을 추가해 CP threshold crossing이 어느 phase에서 발생하는지 더 명확히 본다.
 
