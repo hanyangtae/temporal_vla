@@ -4,10 +4,11 @@
 
 ## Agent 운영 규칙
 
-작업을 시작하면 먼저 `.agents/agent_spec.md`를 읽고 따른다.
+Claude Code 세션에서는 `.agents/agent_spec.md`를 repo-local 운영 규칙으로 한 번 확인하고 따른다.
 
-- 이 파일은 프로젝트 구조, 개발 컨벤션, 실행 경로를 설명한다.
-- `.agents/agent_spec.md`는 agent의 작업 방식, 검증 기준, 문서화 방식, git/PR 절차를 설명한다.
+- 이 파일의 나머지 섹션은 프로젝트 구조, 개발 컨벤션, 실행 경로를 설명한다.
+- `.agents/agent_spec.md`는 agent의 작업 방식, 검증 기준, 문서화 방식, git/PR 절차의 단일 기준이다.
+- `AGENTS.md`는 Codex 계열 agent entrypoint다. Claude Code의 instruction discovery는 `.agents/agent_spec.md`에서 멈추고, `AGENTS.md`는 참고 문맥으로 사용한다.
 - 두 문서의 지침이 충돌하면 더 구체적인 작업 문맥과 현재 repo-local instruction을 우선한다.
 
 ## 프로젝트 개요
@@ -138,7 +139,7 @@ LeRobotDataset → scripts/extract/extract_cotrack_robocasa.py → {save_path}/r
 3. `python scripts/utils/checkpoint_profile.py configs/checkpoints/<name>.yaml` 로 로드 검증.
 4. eval 스크립트에서 serve 기동 시 `--profile` 경로 지정.
 
-상세 절차: `docs/adding_checkpoint.md`. 반복 작업 시 `vla-checkpoint-manager` 에이전트 호출.
+상세 절차: `docs/adding_checkpoint.md`. 반복 작업도 해당 체크리스트를 기준으로 수행하고, 별도 에이전트 호출은 사용자가 명시적으로 요청한 경우에만 수행한다.
 
 ### 새 벤치마크 추가
 

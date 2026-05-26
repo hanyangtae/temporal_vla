@@ -64,11 +64,13 @@ description: Dongkyu-specific agent operating spec for research-code work
 
 작업을 시작하면 repo-local instruction과 현재 상태를 먼저 확인한다.
 
-- Repo-wide 규칙: `CLAUDE.md`, `GEMINI.md`
+- Repo-local 운영 규칙: 이 파일, `.agents/agent_spec.md`
+- Agent entrypoint: `AGENTS.md`, `CLAUDE.md`는 agent별 진입점이나 pointer로 취급한다. Entrypoint chain은 `.agents/agent_spec.md`에서 멈추고, 이후 문서는 task context로 필요한 섹션만 읽는다.
+- Project context: `CLAUDE.md`의 프로젝트 구조, 개발 컨벤션, 실행 경로 섹션
 - Domain language: `CONTEXT.md`
 - 결정 이유와 유지할 contract: `docs/adr/*.md`
 - 실제 수행 절차: 관련 runbook 또는 wiring 문서
-- 관련 markdown: 작업 대상과 가까운 `README.md`, `docs/**/*.md`, module-local markdown을 `rg --files`로 찾고 관련성이 높은 문서부터 읽는다.
+- 관련 markdown: 작업 대상과 가까운 `README.md`, `docs/**/*.md`, module-local markdown을 `rg --files`로 찾고 관련성이 높은 문서부터 필요한 만큼 읽는다.
 - Git 상태: `git status -sb`, branch, upstream, remote
 - 실행 환경: host, container, conda, uv, official env 중 target env
 
@@ -216,8 +218,9 @@ PR 본문 구조:
 
 작업 시작:
 
-- [ ] Repo-local instruction 확인
-- [ ] 관련 README/docs/module-local markdown 확인
+- [ ] `.agents/agent_spec.md` 확인
+- [ ] Agent entrypoint chain을 `.agents/agent_spec.md`에서 종료
+- [ ] 작업 대상과 직접 관련된 README/docs/module-local markdown 확인
 - [ ] `git status -sb` 확인
 - [ ] Target env 결정
 - [ ] 성공 기준과 검증 방법 정의

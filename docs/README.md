@@ -25,17 +25,17 @@ outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector
 
 ## RoboCasa Reference
 
-- [RoboCasa Task Name Mapping](robocasa_task_name_mapping.md): GR00T fork RoboCasa v0.2 task와 local robocasa365 v1.0 task 이름 대응.
+- [RoboCasa Task Name Mapping](robocasa_task_name_mapping.md): RoboCasa v0.2 (`robocasa_v02`) task와 robocasa365 v1.0 task 이름 대응.
 
 ## TTT Methodology
 
-- [TTT Pipeline](ttt/pipeline.md): GR00T N1.6 + TTT RoboCasa pipeline 정리.
+- [TTT Pipeline](ttt/ttt_pipeline.md): GR00T N1.6 + TTT RoboCasa pipeline 정리.
 
 ## Phase / Loop Analysis
 
-- [Phase 1 Progress Predictor](phase/progress_predictor.md): VITA 기반 progress predictor 구현 및 학습 정리.
-- [Phase 1 Status](phase/status.md): Phase 1 진행 상태 snapshot.
-- [GR00T Loop Analysis Plan](phase/legacy_groot_loop_analysis_plan.md): 초기 loop analysis 계획. 문서 상단의 legacy note를 먼저 확인한다.
+- [Phase 1 Progress Predictor](ttt/progress_predictor.md): VITA 기반 progress predictor 구현 및 학습 정리.
+- [Phase 1 Status](ttt/2026_04_01_status.md): Phase 1 진행 상태 snapshot.
+- [GR00T Loop Analysis Plan](ttt/legacy_groot_loop_analysis_plan.md): 초기 loop analysis 계획. 문서 상단의 legacy note를 먼저 확인한다.
 
 ## Legacy / Older Setup Notes
 
@@ -53,8 +53,7 @@ outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector
 ## Organization Rule
 
 - GR00T 실행 절차는 `groot/` 아래에 둔다.
-- TTT 연구 방법론은 `ttt/` 아래에 둔다.
-- Phase 진행 기록과 loop analysis는 `phase/` 아래에 둔다.
+- TTT 연구 방법론, phase 진행 기록, loop analysis는 `ttt/` 아래에 둔다.
 - 장기 결정은 `adr/`에 둔다.
 - SAFE 관련 wiring, split, visualization 문서는 `safe/` 아래에 둔다.
 - 논문 PDF와 외부 reference는 `references/` 아래에 둔다.
