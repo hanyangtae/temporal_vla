@@ -185,12 +185,17 @@ checkpoint profile: configs/checkpoints/groot__robocasa365_ckpt120000.yaml
 env source: robocasa365
 task set: target_atomic_seen18
 episodes: 18 tasks x 100 = 1800
+seed start: 100000
+seed range per task: 100000..100099
+seed formula: seed = 100000 + episode_idx
 artifacts: 1800 pkl, 1800 mp4, 1800 csv
 feature kind: groot_n16_dit_valid_action_tokens_pre_velocity
 feature shape per policy step: [4, 16, 1024]
 verifier: status=ok
 completed at: 2026-05-27 04:02:09 KST
 ```
+
+동일 `episode_idx`는 모든 task에서 같은 seed를 사용한다. 예를 들어 각 task의 `episode_idx=0`은 seed `100000`, `episode_idx=99`는 seed `100099`다. Seed 기록은 `raw_rollouts/collection_summary.tsv`에 남아 있다.
 
 Total SR은 `967/1800 = 53.7%`다.
 

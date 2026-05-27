@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 from collections import defaultdict
 from pathlib import Path
 import pickle
@@ -52,6 +53,44 @@ def parse_shape(text: str) -> tuple[int, ...]:
 def load_pickle(path: Path) -> dict[str, Any]:
     with path.open("rb") as f:
         return pickle.load(f)
+
+
+def load_collection_summary_seed_info(root: Path) -> dict[str, Any] | None:
+    summary_path = root / "collection_summary.tsv"
+    if not summary_path.is_file():
+        return None
+
+    seeds: list[int] = []
+    rows = 0
+    seed_base: int | None = None
+    matches_episode_formula = True
+    with summary_path.open("r", newline="") as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        for row in reader:
+            rows += 1
+            try:
+                seed = int(row["seed"])
+                episode_idx = int(row["episode_idx"])
+            except (KeyError, TypeError, ValueError):
+                matches_episode_formula = False
+                continue
+            if seed_base is None:
+                seed_base = seed - episode_idx
+            seeds.append(seed)
+            if seed - episode_idx != seed_base:
+                matches_episode_formula = False
+
+    if not seeds:
+        return {"path": str(summary_path), "rows": rows, "seeds": None}
+
+    return {
+        "path": str(summary_path),
+        "rows": rows,
+        "seed_start": min(seeds),
+        "seed_end": max(seeds),
+        "unique_seeds": len(set(seeds)),
+        "matches_seed_start_plus_episode_idx": matches_episode_formula,
+    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -158,6 +197,18 @@ def main() -> None:
     print(f"root={root}")
     print(f"tasks={len(tasks)} episodes_per_task={args.episodes_per_task}")
     print(f"completed={len(rows)} expected={expected_total}")
+    seed_info = load_collection_summary_seed_info(root)
+    if seed_info is not None:
+        if "seed_start" not in seed_info:
+            print(f"summary_seeds=unavailable rows={seed_info['rows']}")
+        else:
+            message = (
+                f"summary_seeds={seed_info['seed_start']}..{seed_info['seed_end']} "
+                f"unique={seed_info['unique_seeds']} rows={seed_info['rows']}"
+            )
+            if seed_info["matches_seed_start_plus_episode_idx"]:
+                message += " formula=seed_start+episode_idx"
+            print(message)
     for task_id, task in enumerate(tasks):
         count = count_by_task.get(task_id, 0)
         succ = success_by_task.get(task_id, 0)

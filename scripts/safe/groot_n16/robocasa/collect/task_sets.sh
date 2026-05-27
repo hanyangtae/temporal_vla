@@ -27,6 +27,7 @@ load_robocasa_collection_task_set() {
     case "${task_set}" in
         safe_seen6)
             ROBOCASA_ENV_SOURCE_FOR_TASK_SET="robocasa_v02"
+            ROBOCASA_SEED_START_FOR_TASK_SET=241
             TASKS=(
                 # RoboCasa v0.2 names. robocasa365 mappings:
                 # CoffeeSetupMug -> CoffeeSetupMug
@@ -45,6 +46,7 @@ load_robocasa_collection_task_set() {
             ;;
         target_atomic_seen18 | robocasa365_atomic_seen18)
             ROBOCASA_ENV_SOURCE_FOR_TASK_SET="robocasa365"
+            ROBOCASA_SEED_START_FOR_TASK_SET=100000
             TASKS=(
                 "CloseBlenderLid"
                 "CloseFridge"

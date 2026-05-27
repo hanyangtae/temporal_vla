@@ -7,7 +7,7 @@
 - `ZMQ official eval`: GR00T N1.6 RoboCasa 성공률을 판단하는 기준 경로.
 - `ZMQ SAFE feature server`: SAFE rollout 수집 기준 경로. official RoboCasa 클라이언트 환경을 쓰면서 action과 feature를 함께 저장한다.
 - `HTTP /act`: 프로젝트 공통 serving API로 유지한다. GR00T N1.6 RoboCasa 성공률 기준선은 ZMQ official eval로 둔다.
-- RoboCasa365 `target_atomic_seen18` 100ep/task collection은 완료됐다. `target_atomic_seen18_ckpt120000_robocasa365_100ep`는 `18 x 100 = 1800` episode triplet을 포함하고, verifier 기준 `status=ok`, total SR `967/1800 = 53.7%`다.
+- RoboCasa365 `target_atomic_seen18` 100ep/task collection은 완료됐다. `target_atomic_seen18_ckpt120000_robocasa365_100ep`는 `18 x 100 = 1800` episode triplet을 포함하고, seed range는 task별 `100000..100099`, verifier 기준 `status=ok`, total SR `967/1800 = 53.7%`다.
 
 HTTP 경로는 프로젝트 공통 serving API로 유지한다. official ZMQ OpenDrawer baseline은 README 수준이고, HTTP 연동은 observation/action chunk 동등성 검증을 거쳐 SR 지표로 편입한다.
 
@@ -232,6 +232,9 @@ python scripts/safe/groot_n16/robocasa/collect/verify_rollout_collection.py \
 - completed at: `2026-05-27 04:02:09 KST`
 - verified at: `2026-05-27 09:25 KST`
 - branch: `pdk/0526/groot_rollout`
+- seed start: `100000`
+- seed range per task: `100000..100099`
+- seed formula: `seed = 100000 + episode_idx`
 - artifacts: `1800` pkl, `1800` mp4, `1800` csv
 - output size: `7.9G`
 - verifier: `status=ok`
@@ -243,6 +246,7 @@ Verifier summary:
 root=outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_100ep/raw_rollouts
 tasks=18 episodes_per_task=100
 completed=1800 expected=1800
+summary_seeds=100000..100099 unique=100 rows=1800 formula=seed_start+episode_idx
 status=ok
 ```
 

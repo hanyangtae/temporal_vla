@@ -455,6 +455,7 @@ def _write_safe_triplet(
     task_id: int,
     task_description: str,
     episode_idx: int,
+    seed: int | None,
     episode_success: bool,
     env_name: str,
     upstream_video_path: Path | None,
@@ -479,6 +480,7 @@ def _write_safe_triplet(
         "task_id": task_id,
         "task_description": task_description,
         "episode_idx": episode_idx,
+        "seed": seed,
         "episode_success": int(episode_success),
         "hidden_states": [record["hidden_state"] for record in policy.records],
         "actions": [record["action"] for record in policy.records],
@@ -566,6 +568,7 @@ def main() -> None:
             task_id=args.task_id,
             task_description=task_description,
             episode_idx=episode_idx,
+            seed=episode_seed,
             episode_success=success,
             env_name=args.env_name,
             upstream_video_path=results[3],
@@ -573,7 +576,8 @@ def main() -> None:
         shutil.rmtree(upstream_video_dir, ignore_errors=True)
         print(
             f"wrote {stem}: steps={len(policy.records)} success={int(success)} "
-            f"feature_kind={policy.feature_kind} video_source=groot_upstream"
+            f"seed={episode_seed} feature_kind={policy.feature_kind} "
+            f"video_source=groot_upstream"
         )
 
 

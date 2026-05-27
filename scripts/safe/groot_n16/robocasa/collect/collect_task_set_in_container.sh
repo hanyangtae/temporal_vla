@@ -10,7 +10,6 @@ source "${SCRIPT_DIR}/task_sets.sh"
 CONTAINER_REPO_ROOT="${CONTAINER_REPO_ROOT:-/temporal_vla}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-5557}"
-SEED_START="${SEED_START:-241}"
 EPISODE_START_IDX="${EPISODE_START_IDX:-0}"
 EPISODES_PER_TASK="${EPISODES_PER_TASK:-1}"
 TASK_SET="${TASK_SET:-safe_seen6}"
@@ -24,6 +23,7 @@ fi
 RUN_ROOT="${RUN_ROOT:-${CONTAINER_REPO_ROOT}/outputs/eval/robocasa/groot_n16/${ROBOCASA_SAFE_RUN_ID}}"
 
 load_robocasa_collection_task_set "${TASK_SET}"
+SEED_START="${SEED_START:-${ROBOCASA_SEED_START_FOR_TASK_SET}}"
 ROBOCASA_ENV_SOURCE="$(normalize_robocasa_collection_env_source "${ROBOCASA_ENV_SOURCE:-${ROBOCASA_ENV_SOURCE_FOR_TASK_SET}}")"
 if [[ -z "${OUT_ROOT:-}" ]]; then
     if [[ "${TASK_SET}" == "safe_seen6" ]]; then
