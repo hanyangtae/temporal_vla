@@ -126,7 +126,7 @@ def sample_if_needed(
 
 def task_cmap(custom_cmap: bool) -> mpl.colors.Colormap:
     if not custom_cmap:
-        return mpl.cm.get_cmap("tab10", 10)
+        return mpl.cm.get_cmap("tab20", 20)
 
     custom_colors = [
         "#98df8a",
