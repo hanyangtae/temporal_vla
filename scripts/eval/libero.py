@@ -343,7 +343,12 @@ def evaluate(
                     safe_output_dir, safe_run_id, task_dir_name, task_id, trial, success
                 )
                 write_episode(pkl_path, collector.payload(bool(success)))
-                logger.info("[SAFE] wrote %s (%d latents)", pkl_path, len(collector))
+                # robocasa 번들 컨벤션: episode 영상을 pkl 과 동일 stem 으로 옆에 저장
+                # (succ/fail 모두). split helper 가 {stem}.* 로 함께 복사.
+                _save_video(frames, pkl_path.with_suffix(".mp4"))
+                logger.info(
+                    "[SAFE] wrote %s (%d latents) + mp4", pkl_path, len(collector)
+                )
             task_episodes += 1
             total_episodes += 1
             if success:
