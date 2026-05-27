@@ -9,8 +9,11 @@ LIBERO/VLABench/RoboCasa 수집물도 동일하게 읽도록 한다.
   (= ``hidden_states`` 리스트의 한 원소; flow-matching ``[K,H,D]`` / pi0_fast ``[1,n_tokens,D]``).
 라벨 = episode-level success (파일명 ``succ0/1`` + pkl ``episode_success``).
 
-파일 규약 (groot_n16 와 동일):
-  ``{output_dir}/rollouts_{run_id}/{task_name}/task{task_id}--ep{episode_idx}--succ{0|1}.pkl``
+파일 규약 (groot_n16 robocasa 번들 레이아웃과 동일):
+  ``{output_dir}/{run_id}/raw_rollouts/{task_name}/task{task_id}--ep{episode_idx}--succ{0|1}.pkl``
+  - ``run_id`` 는 자기설명적 이름 권장 (예: ``libero10_pi05-libero-finetuned_100ep``).
+  - ``raw_rollouts/`` 하위 레벨은 split helper(``prepare_*_split.py``)의 source-root
+    기본값(``{run_root}/raw_rollouts``)과 맞춰 downstream 재사용을 보장한다.
 """
 
 from __future__ import annotations
@@ -113,7 +116,8 @@ def episode_path(
     success: bool,
 ) -> Path:
     succ = 1 if success else 0
-    d = Path(output_dir) / f"rollouts_{run_id}" / _safe_name(task_name)
+    # {output_dir}/{run_id}/raw_rollouts/{task_name}/  — robocasa groot_n16 번들과 동일 레이아웃.
+    d = Path(output_dir) / _safe_name(run_id) / "raw_rollouts" / _safe_name(task_name)
     d.mkdir(parents=True, exist_ok=True)
     return d / f"task{int(task_id)}--ep{int(episode_idx)}--succ{succ}.pkl"
 
