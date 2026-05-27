@@ -28,15 +28,18 @@ normalization:
   stats_file: null
   key_selection: []
 
+# pi05 LIBERO state = [eef_pos(3), eef_axisangle(3), gripper_qpos(2)] = 8D
+# (lerobot LiberoProcessorStep 와 동일). LIBERO obs processor 는 eef_quat 을 보내고
+# serve 가 quat_to_axisangle 변환 후 조립.
 observation_requirements:
   images: [static, wrist]
-  state: [eef_pos, eef_quat, gripper_qpos]
-  allow_conversions: []
+  state: [eef_pos, eef_axisangle, gripper_qpos]
+  allow_conversions: [quat_to_axisangle]
 
-n_action_steps: 50                 # placeholder; /health 가 policy.config 에서 재확인
+n_action_steps: 10                 # OpenPI/lerobot LIBERO 재현 기준 (체크포인트 기본 50 override)
 image_preprocess:
   resolution: 256                  # LIBERO native; lerobot preprocessor 가 재조정
-  rotate_180: false
+  rotate_180: true                 # pi05_libero 는 180° 회전 이미지로 학습 (lerobot LiberoProcessorStep 동일). serve 가 flip 수행.
   center_crop: false
 
 emits_subkeys:

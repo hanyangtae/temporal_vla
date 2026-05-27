@@ -55,6 +55,48 @@ SAFE feature(arXiv 2506.09937) = **마지막 레이어에서 action 이 velocity
 
 ---
 
+## 2.5 핵심 운영 제약 (pi05×LIBERO 디버깅으로 확정)
+
+수집 serve 를 처음 세울 때 반드시 알아야 하는 두 가지. 둘 다 실측으로 확정했다.
+
+### (1) 이미지 180° 회전 — serve 가 flip 수행
+`pi05_libero_finetuned` 는 **180° 회전된 이미지로 학습**됐다(lerobot `LiberoProcessorStep`
+이 `torch.flip(img, dims=[2,3])` 적용). serve 가 raw 이미지를 그대로 보내면 **SR 0%** 가 된다.
+→ 프로파일에 `image_preprocess.rotate_180: true` 를 두고, `parse_payload` 가 입력 이미지에
+`torch.flip(t, dims=[1,2])` 를 적용한다. 이 수정 후 SR **0% → 100%**(libero_object 5/5,
+libero_10 3/3) 로 회복. rotate 여부는 체크포인트가 어떤 orientation 으로 학습됐는지에 달렸으니
+**프로파일별로 명시**한다.
+
+### (2) torch.compile × SAFE hook — "첫 compile 시점에 hook 이 있어야 발화"
+**`pi05_libero` 체크포인트 config 는 `compile_model=True`**(새 `PI05Config()` 기본값 False 와
+무관 — config.json 이 override). serve 는 `from_pretrained` 로 로드 시 compiled 로 뜬다.
+
+핵심 메커니즘(실측):
+- `compile_model=True` 면 `sample_actions`(SAFE hook 대상 `action_out_proj` 를 내부 호출)가
+  통째로 `torch.compile(max-autotune)` 된다.
+- forward hook 은 **`sample_actions` 가 "처음" compile 될 때 등록돼 있어야** compiled
+  그래프에 포함되어 발화한다. hook 이 그 시점에 없으면 Dynamo 가 **hook 없는 그래프를 캐시**하고,
+  이후 hook 을 걸어도 그 캐시를 재사용 → **hook 영영 무시(features=None)**.
+- `/act`(hook 없는 추론)와 `/act_with_features`(hook 있는 추론)가 같은 policy 를 공유하므로,
+  **`/act` 가 먼저 돌면** hook 없는 그래프가 캐시돼 이후 수집이 전부 features=None 이 된다.
+
+| 시나리오 | hook 이 첫 compile 에 존재 | hook 발화 |
+|---|---|---|
+| compiled, `/act` 선행 → `/act_with_features` | ❌ | ❌ (features=None) |
+| compiled, `/act_with_features` 만 | ✅ | ✅ |
+| eager (`TORCHDYNAMO_DISABLE=1`) | — (compile 안 함) | ✅ |
+
+**해결 = serve `--collect` 모드.** 수집 시 serve 를 `--collect` 로 띄우면 **`/act` 를 409 로
+거부**하여, 첫 추론이 반드시 `/act_with_features`(hook 있음) 이도록 강제한다. 그러면 **compile 을
+끄지 않고도**(=추론 속도 유지) SAFE hook 이 정상 발화한다. eager 강제는 불필요.
+(검증: cold compiled serve + `--collect` → `/act` 409, `/act_with_features` 발화 2/12,
+shape `[10,50,1024]`.)
+
+> 정리: **추론/eval serve = 평소대로(compiled, flip).
+> SAFE 수집 serve = `--collect` 추가**(compiled 유지, `/act` 차단). 둘 다 flip 필요.
+
+---
+
 ## 3. 타깃 매트릭스 (공개 체크포인트 기준)
 
 수집 가능한 칸 = 공개 체크포인트가 있는 칸. (없는 칸은 별도 학습 필요 → 현재 범위 밖.)
@@ -78,10 +120,12 @@ SAFE feature(arXiv 2506.09937) = **마지막 레이어에서 action 이 velocity
 
 ## 4. 현재까지 완료 (committed)
 
-브랜치 `feat/safe-lerobot-latent-collect`, 커밋 3개:
+브랜치 `feat/safe-lerobot-latent-collect`, 커밋 5개:
 - `chore: lerobot submodule v0.5.1 bump (py3.12/torch2.7/transformers5.3.0)`
 - `feat: SAFE latent 추출 — lerobot serve hook + /act_with_features + client`
 - `feat: SAFE 수집 공통 writer + pi0.5 LIBERO 체크포인트 프로파일`
+- `docs: SAFE latent 수집 lerobot 확장 — plan/현황/handoff 문서`
+- `feat: pi05 LIBERO SAFE 수집 end-to-end — 180° flip + compile/hook --collect 가드` ← 본 작업
 
 | 영역 | 산출물 | 상태 |
 |---|---|---|
@@ -90,11 +134,16 @@ SAFE feature(arXiv 2506.09937) = **마지막 레이어에서 action 이 velocity
 | serve 엔드포인트 | `scripts/serve/lerobot.py`: `/act_with_features` + host/컨테이너 경로 remap | ✅ pi05 serve 로드·`/health` OK |
 | client | `scripts/utils/vla_client.py`: `predict_with_features` | ✅ 직렬화 라운드트립 OK |
 | 수집 writer | `scripts/safe/lerobot/collect_common.py` | ✅ 작성·compile OK |
-| 프로파일 | `configs/checkpoints/lerobot_pi05__libero.yaml` | ✅ 검증 OK (action_dim 7) |
+| 프로파일 | `configs/checkpoints/lerobot_pi05__libero.yaml` | ✅ 검증 OK (rotate_180:true, action_dim 7) |
+| `--safe-collect` collector | `scripts/eval/libero.py` | ✅ pkl 생성·hidden_states 적재 확인 |
+| serve `--collect` 모드 | `scripts/serve/lerobot.py` (/act 409 가드) | ✅ §2.5 메커니즘 검증 |
 
-검증 수준: **host 정적/로드 검증까지 완료** (compile, import, profile load, serve `/health`,
-직렬화 round-trip). `/act_with_features` 의 **실제 추론 1회 end-to-end 호출(hook 발화·shape
-실측)은 아직 미실행** — target GPU 에서 §6 smoke 로 마무리 필요.
+검증 수준: **pi05 × LIBERO end-to-end 완료.**
+- 추론 SR: libero_object 5/5, libero_10 3/3 (= **100%**, lerobot-eval 재현치와 일치).
+- `/act_with_features`: hook 발화 step 에서 `hidden_states (10,50,1024)`,
+  `feature_kind=pi05_action_expert_pre_velocity`, NaN 없음.
+- `--safe-collect`: episode pkl 에 `hidden_states` + `episode_success∈{0,1}` 적재 확인.
+- 두 핵심 제약(§2.5: 180° flip, compile/hook 순서)은 위에 별도 정리.
 
 ---
 
@@ -143,28 +192,38 @@ PYTHONPATH=scripts/utils HF_TOKEN="$HF_TOKEN" HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
 ```
 - pi0.5 libero 의 visual key 는 3개(image, image2, empty_camera_0) → 통일키 static/wrist/wrist2 매핑.
 
-### `/act_with_features` smoke (hook 발화·shape 실측 — **다음에 할 것**)
-합성 obs(랜덤 이미지 static/wrist/wrist2 + state + task)로 `predict_with_features` 호출:
-- 첫 호출(queue 빔) → `has_feature=True`, `hidden_states.shape == [K, H, D]`(pi05: K=num_inference_steps,
-  H=chunk_size, D=action-expert width), NaN 없음.
-- 이후 `n_action_steps-1` step → `has_feature=False`(queue pop).
+### `/act_with_features` smoke (hook 발화·shape 실측 — ✅ 완료)
+`predict_with_features` 를 reset 후 12회 호출:
+- 추론 발화 step(queue 빔, 매 `n_action_steps`) → `has_feature=True`,
+  `hidden_states.shape == [K, H, D]`(pi05: `[10, 50, 1024]`), NaN 없음.
+- 그 외 step → `has_feature=False`(queue pop).
 
-### 수집 (LIBERO, `--safe-collect` — **미구현, §7-2**)
-`scripts/eval/libero.py` 에 `--safe-collect` 플래그를 추가하면, 매 step `predict_with_features` 로
+### SAFE 수집 (LIBERO) — serve 는 반드시 `--collect`
+수집 serve 는 `--collect` 로 띄운다(§2.5: compile 유지하며 `/act` 차단 → SAFE hook 보장):
+```bash
+# 모델 서버 (수집 전용)
+... python scripts/serve/lerobot.py \
+  --profile configs/checkpoints/lerobot_pi05__libero.yaml --device cuda --port 8411 --collect
+# /health 의 collect_mode:true 확인.
+```
+collector 는 `scripts/eval/libero.py --safe-collect` — 매 step `predict_with_features` 로
 전환하고 추론 발화 step 의 latent 를 `collect_common.SafeEpisodeCollector` 로 누적, episode 종료 시
 pkl 작성. 출력 규약: `outputs/eval/{benchmark}/{model}/rollouts_{run_id}/{task}/task{id}--ep{idx}--succ{0|1}.pkl`.
+```bash
+# 벤치(client, libero_bench env). serve 가 host 경로면 PYTHONPATH 로 LIBERO 패키지 지정.
+PYTHONPATH="$REPO/src/benchmarks/LIBERO:$REPO/src:$REPO/scripts/utils:$REPO/src/policies/openvla-oft" \
+  conda run -n libero_bench python scripts/eval/libero.py \
+  --task-suite libero_object --server-url http://localhost:8411 \
+  --num-trials 5 --safe-collect --safe-output-dir outputs/eval/libero/pi05 --safe-run-id run0
+```
 
 ---
 
 ## 7. 앞으로 할 일 (TODO)
 
-1. **pi0.5 × LIBERO end-to-end smoke 마무리** → §6 smoke 로 hook 발화·shape 실측.
-   verify: `hidden_states` 3D `[K,H,D]`, K==num_inference_steps, H==chunk_size, NaN 없음.
-2. **`--safe-collect` collector 통합** (`scripts/eval/libero.py`, 이어서 `robocasa_eval.py`).
-   - `_predict` → `predict_with_features` 분기, `collect_common.SafeEpisodeCollector` 로 누적,
-     episode 종료 시 pkl/csv 작성. `--safe-output-dir`, `--safe-run-id` 인자 추가.
-   - verify: 1-episode 수집 → pkl 1개(`task..--ep..--succ?.pkl`), 각 `hidden_states[i]` 3D,
-     `episode_success∈{0,1}`.
+1. ✅ **pi0.5 × LIBERO end-to-end 완료** (SR 100%, hook 발화·shape 실측, §2.5 제약 확정).
+2. ✅ **`--safe-collect` collector 통합** (`scripts/eval/libero.py`). `robocasa_eval.py` 는
+   동일 패턴으로 이어서. (수집 serve 는 `--collect` 필수 — §2.5.)
 3. **나머지 LIBERO 프로파일 작성·검증**: `xvla__libero`, `groot_n15__libero_long`,
    `pi0fast__libero`(ckpt 확인). 각 `python scripts/utils/checkpoint_profile.py <yaml>` 로드 검증 +
    serve `/act_with_features` 1회로 hook 발화 확인 (특히 pi0_fast 는 `[1,n_tokens,D]`).
@@ -190,5 +249,9 @@ pkl 작성. 출력 규약: `outputs/eval/{benchmark}/{model}/rollouts_{run_id}/{
 - **gated paligemma**: pi0.5/pi0+FAST 는 `HF_TOKEN` 없으면 401 로 startup 실패. `.env` 토큰 사용.
 - **프로파일 경로 remap**: 프로파일의 `checkpoint_source.id` 가 컨테이너 절대경로(`/temporal_vla/...`)
   면 serve 가 repo root 기준으로 remap (host/컨테이너 양쪽 동작). HF repo id 는 그대로 사용.
+- **이미지 180° 회전(§2.5-1)**: 체크포인트가 회전 이미지로 학습됐으면 프로파일 `rotate_180:true`.
+  안 맞추면 SR 0%. 모델 추가 시 학습 orientation 확인 필수.
+- **수집 serve 는 `--collect`(§2.5-2)**: compile_model=True 정책에서 `/act` 선행 시 SAFE hook 이
+  영구 무시(features=None). `--collect` 가 `/act` 를 막아 첫 compile 에 hook 포함 보장. compile 은 유지.
 - **데이터 의미 = 추론당 latent** (env step 당 아님). collector 는 `has_feature=True` step 에만 record.
 - 수집 pkl 스키마는 groot_n16 과 동일 유지 — 기존 split/train/vis 재사용을 위해 깨지 말 것.

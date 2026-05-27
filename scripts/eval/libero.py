@@ -34,11 +34,19 @@ from collections import deque
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+# 이 파일 이름이 `libero.py` 라 자기 디렉토리(`scripts/eval`) 가 sys.path[0] 에 잡히면
+# `from libero.libero import benchmark` 가 자기 자신을 import 해 ModuleNotFoundError 가 난다.
+# LIBERO 패키지가 잡히도록 자기 디렉토리를 sys.path 에서 제거.
+_self_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path[:] = [p for p in sys.path if os.path.abspath(p) != _self_dir]
+
 # LIBERO 컨테이너의 openvla-oft 경로 (set_seed_everywhere 등 일부 유틸 재사용)
 sys.path.insert(0, "/temporal_vla/scripts/utils")
 sys.path.insert(0, "/temporal_vla/src/benchmarks/LIBERO")
 sys.path.insert(0, "/temporal_vla/src")
 sys.path.insert(0, "/temporal_vla/src/policies/openvla-oft")
+# SAFE 수집 공통 writer (repo-relative: scripts/eval → scripts/safe/lerobot)
+sys.path.insert(0, os.path.join(os.path.dirname(_self_dir), "safe", "lerobot"))
 
 import imageio  # noqa: E402
 import numpy as np  # noqa: E402
@@ -49,6 +57,12 @@ from libero.libero import get_libero_path  # noqa: E402
 from processor.factory import make_libero_processors  # noqa: E402
 from processor.types import TransitionKey  # noqa: E402
 from vla_client import VLAClient  # noqa: E402
+from collect_common import (  # noqa: E402
+    SafeEpisodeCollector,
+    episode_path,
+    write_episode,
+    flatten_subkeys,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -108,6 +122,29 @@ def _save_video(frames: List[np.ndarray], path: Path, fps: int = 30) -> None:
 # ─── /act 호출 (sub-key dict 또는 flat 양쪽 지원) ────────────────────────────
 
 
+def _split_obs(processed_obs: Dict) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+    """unified obs sub-keys → (images, states) 분리."""
+    images: Dict[str, np.ndarray] = {}
+    states: Dict[str, np.ndarray] = {}
+    for k, v in processed_obs.items():
+        if k.startswith("observation.images."):
+            images[k.split("observation.images.")[-1]] = v
+        elif k.startswith("observation.state"):
+            states[k] = np.asarray(v)
+    return images, states
+
+
+def _actions_to_dict(actions) -> Dict[str, np.ndarray]:
+    """서버 응답(sub-key dict 또는 flat) → 첫 step action sub-key dict."""
+    if isinstance(actions, dict):
+        # 서버 N=1 → 각 키의 [0] 행만 사용
+        return {k: np.asarray(v[0], dtype=np.float32) for k, v in actions.items()}
+    arr = np.asarray(actions, dtype=np.float32)
+    if arr.ndim == 2:
+        arr = arr[0]
+    return {"_flat": arr}
+
+
 def _predict(
     vla_client: VLAClient, processed_obs: Dict, instruction: str
 ) -> Dict[str, np.ndarray]:
@@ -116,26 +153,25 @@ def _predict(
     openvla_oft 서버는 내부 queue 로 chunk 를 분할해 한 번에 1 step (N=1) 만 반환.
     따라서 매 env step 마다 /act 를 1 회 호출.
     """
-    images: Dict[str, np.ndarray] = {}
-    states: Dict[str, np.ndarray] = {}
-    for k, v in processed_obs.items():
-        if k.startswith("observation.images."):
-            cam = k.split("observation.images.")[-1]
-            images[cam] = v
-        elif k.startswith("observation.state"):
-            states[k] = np.asarray(v)
-
+    images, states = _split_obs(processed_obs)
     actions, _ = vla_client.predict(
         images=images, states=states or None, instruction=instruction
     )
-    if isinstance(actions, dict):
-        # 서버 N=1 → 각 키의 [0] 행만 사용
-        return {k: np.asarray(v[0], dtype=np.float32) for k, v in actions.items()}
-    # flat ndarray fallback
-    arr = np.asarray(actions, dtype=np.float32)
-    if arr.ndim == 2:
-        arr = arr[0]
-    return {"_flat": arr}
+    return _actions_to_dict(actions)
+
+
+def _predict_with_features(
+    vla_client: VLAClient, processed_obs: Dict, instruction: str
+) -> Tuple[Dict[str, np.ndarray], Optional[Dict]]:
+    """SAFE 수집용: /act_with_features 호출 → (action sub-key dict, features|None).
+
+    features 는 정책이 이번 step 에 새 추론을 돌렸을 때만 채워짐(그 외 None).
+    """
+    images, states = _split_obs(processed_obs)
+    actions, features, _ = vla_client.predict_with_features(
+        images=images, states=states or None, instruction=instruction
+    )
+    return _actions_to_dict(actions), features
 
 
 # ─── 단일 episode rollout ───────────────────────────────────────────────────
@@ -151,6 +187,7 @@ def _rollout(
     max_steps: int,
     success_deadline: int,
     record: bool = False,
+    collector: Optional["SafeEpisodeCollector"] = None,
 ) -> Tuple[bool, List[np.ndarray], int]:
     """단일 LIBERO episode rollout.
 
@@ -175,7 +212,19 @@ def _rollout(
     for t in range(max_steps):
         processed = obs_pipeline({TransitionKey.OBSERVATION: obs})
         processed_obs = processed[TransitionKey.OBSERVATION]
-        action_pred = _predict(vla_client, processed_obs, instruction)
+        if collector is not None:
+            action_pred, features = _predict_with_features(
+                vla_client, processed_obs, instruction
+            )
+            # 추론이 발화한 step(features 존재)만 SAFE latent record
+            if features is not None and "_flat" not in action_pred:
+                collector.record(
+                    features,
+                    action_vector=flatten_subkeys(action_pred, list(action_pred.keys())),
+                    action={k: v.tolist() for k, v in action_pred.items()},
+                )
+        else:
+            action_pred = _predict(vla_client, processed_obs, instruction)
         # _flat fallback (서버가 sub-key 가 아니라 flat 으로 응답한 경우) 은 ndarray 직접
         action_in = (
             action_pred["_flat"] if "_flat" in action_pred else action_pred
@@ -185,13 +234,26 @@ def _rollout(
         action = processed_act[TransitionKey.ACTION]
         action_list = action.tolist() if isinstance(action, np.ndarray) else list(action)
 
-        obs, _, done, _ = env.step(action_list)
+        try:
+            obs, _, done, _ = env.step(action_list)
+        except ValueError as e:
+            # robosuite 가 "executing action in terminated episode" 를 raise 하는 경우.
+            # long-horizon libero_10 에서 sim 이 unrecoverable terminated state 로 빠질 때 발생.
+            # 해당 episode 는 실패로 마킹하고 다음 trial 로 진행 (전체 평가 중단 방지).
+            logger.warning("env.step ValueError at t=%d: %s — marking as failure", t, e)
+            effective_t = t + 1
+            success = False
+            break
         if record:
             frames.append(_replay_image(obs))
 
         effective_t = t + 1
-        if done:
-            success = effective_t < success_deadline
+        # LIBERO 진짜 성공 판정은 check_success() — env `done` 은 horizon(기본 1000) 기반이라
+        # 짧은 rollout 에선 안 뜸. lerobot LiberoEnv 도 check_success() 를 사용.
+        if env.check_success():
+            success = effective_t <= success_deadline
+            break
+        if done:  # horizon 도달 (성공 못 함)
             break
 
     return success, frames, effective_t
@@ -210,10 +272,15 @@ def evaluate(
     output_path: Optional[Path],
     image_size: int = 256,
     seed: int = 7,
+    safe_collect: bool = False,
+    safe_output_dir: Optional[Path] = None,
+    safe_run_id: str = "run",
+    max_tasks: Optional[int] = None,
 ):
     np.random.seed(seed)
 
-    vla_client = VLAClient(url=server_url)
+    # 첫 추론은 torch.compile warmup 으로 ~2분 걸릴 수 있음(cold serve) → timeout 넉넉히.
+    vla_client = VLAClient(url=server_url, timeout=300)
     logger.info("VLA 서버 연결 대기: %s", server_url)
     server_info = vla_client.wait_until_ready()
     logger.info("VLA 서버 연결 완료: %s", server_info)
@@ -237,7 +304,8 @@ def evaluate(
     total_successes = 0
     t_start = time.time()
 
-    for task_id in range(n_tasks):
+    n_tasks_run = n_tasks if max_tasks is None else min(n_tasks, max_tasks)
+    for task_id in range(n_tasks_run):
         task = task_suite.get_task(task_id)
         env, task_description = _make_libero_env(task, resolution=image_size)
         initial_states = task_suite.get_task_init_states(task_id)
@@ -246,6 +314,17 @@ def evaluate(
         task_successes = 0
         for trial in range(num_trials):
             init_state = initial_states[trial % len(initial_states)]
+            collector = (
+                SafeEpisodeCollector(
+                    task_suite_name=task_suite_name,
+                    task_id=task_id,
+                    task_description=task_description,
+                    episode_idx=trial,
+                    env_name=f"libero/{task_suite_name}",
+                )
+                if safe_collect
+                else None
+            )
             success, frames, eff_t = _rollout(
                 env,
                 task_description,
@@ -256,7 +335,15 @@ def evaluate(
                 max_steps=max_steps,
                 success_deadline=success_deadline,
                 record=True,
+                collector=collector,
             )
+            if collector is not None and len(collector) > 0:
+                task_dir_name = getattr(task, "name", f"task{task_id:02d}")
+                pkl_path = episode_path(
+                    safe_output_dir, safe_run_id, task_dir_name, task_id, trial, success
+                )
+                write_episode(pkl_path, collector.payload(bool(success)))
+                logger.info("[SAFE] wrote %s (%d latents)", pkl_path, len(collector))
             task_episodes += 1
             total_episodes += 1
             if success:
@@ -386,6 +473,27 @@ def main():
     )
     parser.add_argument("--image-size", type=int, default=256)
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument(
+        "--safe-collect",
+        action="store_true",
+        help="SAFE latent 수집 모드: /act_with_features 로 추론당 latent + episode pkl 저장.",
+    )
+    parser.add_argument(
+        "--safe-output-dir",
+        type=str,
+        default=None,
+        help="SAFE pkl 출력 base dir (예: outputs/eval/libero/pi05). "
+        "하위에 rollouts_{run_id}/{task}/task{id}--ep{idx}--succ{0|1}.pkl 생성.",
+    )
+    parser.add_argument(
+        "--safe-run-id", type=str, default="run", help="SAFE 수집 run 식별자."
+    )
+    parser.add_argument(
+        "--max-tasks",
+        type=int,
+        default=None,
+        help="suite 의 앞 N개 task 만 평가 (smoke/부분 수집용). 미지정 시 전체.",
+    )
     args = parser.parse_args()
 
     max_steps = args.max_steps or DEFAULT_MAX_STEPS[args.task_suite]
@@ -401,6 +509,9 @@ def main():
             "deadline 이 더 길면 의미 없음."
         )
 
+    if args.safe_collect and not args.safe_output_dir:
+        raise ValueError("--safe-collect 사용 시 --safe-output-dir 필요")
+
     evaluate(
         task_suite_name=args.task_suite,
         server_url=args.server_url,
@@ -411,6 +522,10 @@ def main():
         output_path=Path(args.output) if args.output else None,
         image_size=args.image_size,
         seed=args.seed,
+        safe_collect=args.safe_collect,
+        safe_output_dir=Path(args.safe_output_dir) if args.safe_output_dir else None,
+        safe_run_id=args.safe_run_id,
+        max_tasks=args.max_tasks,
     )
 
 
