@@ -174,6 +174,70 @@ Split 요약:
 | `val_seen` | 100 | 58 | 42 | 58.0% |
 | `val_unseen` | 200 | 114 | 86 | 57.0% |
 
+## RoboCasa365 18-Task Collection 결과
+
+기존 SAFE-LSTM detector 재현은 위의 6-task split을 사용한다. 별도로, RoboCasa365 `target_atomic_seen18` 전체 18개 task에 대해 GR00T N1.6 checkpoint-120000 SAFE feature collection을 완료했다. 이 collection은 latent-space visualization과 후속 SAFE split 구성의 raw rollout source로 사용한다.
+
+```text
+run id: target_atomic_seen18_ckpt120000_robocasa365_100ep
+root: /home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_100ep/raw_rollouts
+checkpoint profile: configs/checkpoints/groot__robocasa365_ckpt120000.yaml
+env source: robocasa365
+task set: target_atomic_seen18
+episodes: 18 tasks x 100 = 1800
+artifacts: 1800 pkl, 1800 mp4, 1800 csv
+feature kind: groot_n16_dit_valid_action_tokens_pre_velocity
+feature shape per policy step: [4, 16, 1024]
+verifier: status=ok
+completed at: 2026-05-27 04:02:09 KST
+```
+
+Total SR은 `967/1800 = 53.7%`다.
+
+| task id | RoboCasa365 task | success | failure | SR |
+|---:|---|---:|---:|---:|
+| 0 | `CloseBlenderLid` | 15 | 85 | 15.0% |
+| 1 | `CloseFridge` | 82 | 18 | 82.0% |
+| 2 | `CloseToasterOvenDoor` | 48 | 52 | 48.0% |
+| 3 | `CoffeeSetupMug` | 29 | 71 | 29.0% |
+| 4 | `NavigateKitchen` | 42 | 58 | 42.0% |
+| 5 | `OpenCabinet` | 56 | 44 | 56.0% |
+| 6 | `OpenDrawer` | 37 | 63 | 37.0% |
+| 7 | `OpenStandMixerHead` | 82 | 18 | 82.0% |
+| 8 | `PickPlaceCounterToCabinet` | 66 | 34 | 66.0% |
+| 9 | `PickPlaceCounterToStove` | 61 | 39 | 61.0% |
+| 10 | `PickPlaceDrawerToCounter` | 41 | 59 | 41.0% |
+| 11 | `PickPlaceSinkToCounter` | 76 | 24 | 76.0% |
+| 12 | `PickPlaceToasterToCounter` | 81 | 19 | 81.0% |
+| 13 | `SlideDishwasherRack` | 60 | 40 | 60.0% |
+| 14 | `TurnOffStove` | 25 | 75 | 25.0% |
+| 15 | `TurnOnElectricKettle` | 81 | 19 | 81.0% |
+| 16 | `TurnOnMicrowave` | 48 | 52 | 48.0% |
+| 17 | `TurnOnSinkFaucet` | 37 | 63 | 37.0% |
+| all | `target_atomic_seen18` | 967 | 833 | 53.7% |
+
+이 결과는 rollout-level success/failure label과 GR00T N1.6 latent feature가 함께 저장된 producer artifact다. Detector 성능 claim은 아직 이 18-task collection에 대해 새 split, train, calibration, evaluation을 수행한 뒤에만 업데이트한다.
+
+초기 latent-space diagnostic artifact도 생성했다. Aggregation은 최종 SAFE-LSTM 입력과 같은 `horizon_idx_rel=mean`, `diff_idx_rel=concat-2`이며, per-step feature는 `[T, 2048]`이다.
+
+| projection | source points | output |
+|---|---:|---|
+| PCA | 54,582 timestep | `outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_100ep/visualizations/feature_space/safe_style_visualize_features/all_hmean_dconcat_2-pca-target_atomic_seen18_100ep_full` |
+| t-SNE | 20,000 sampled timestep | `outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_100ep/visualizations/feature_space/safe_style_visualize_features/all_hmean_dconcat_2-tsne-target_atomic_seen18_100ep_sample20k-sample20000` |
+
+원본 `[T, 2048]` feature 기준 군집도 진단도 생성했다. Silhouette은 5,000 timestep sample, kNN purity는 20,000 timestep sample로 계산했다.
+
+| diagnostic | label | value | baseline / note |
+|---|---|---:|---|
+| silhouette, euclidean | success/failure | 0.0128 | near-zero separation |
+| silhouette, euclidean | task id | -0.1173 | weak global task cluster by silhouette |
+| silhouette, mahalanobis shrinkage | success/failure | 0.0041 | near-zero separation |
+| silhouette, mahalanobis shrinkage | task id | -0.0920 | weak global task cluster by silhouette |
+| kNN purity, k=10 | task id | 0.2238 | random same-label baseline 0.0587 |
+| kNN purity, k=10 | success/failure | 0.6132 | random same-label baseline 0.5693 |
+
+따라서 18-task feature에는 local task-neighborhood signal이 있지만, static success/failure cluster separation은 약하다. Success/failure 분석은 정적 2D embedding보다 rollout trajectory, SAFE-LSTM score, CP threshold crossing 기준으로 해석한다.
+
 ## Detector 학습
 
 SAFE repo에 GR00T N1.6 dataset loader/config를 추가했다.
