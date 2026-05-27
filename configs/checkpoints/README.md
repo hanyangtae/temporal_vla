@@ -102,4 +102,4 @@ eval 스크립트의 `make_*_processors(action_type=..., gripper_threshold=...)`
 
 ## 온보딩 절차
 
-새 체크포인트 추가 시에는 `vla-checkpoint-manager` 에이전트를 호출하거나 `docs/adding_checkpoint.md` 체크리스트를 따른다.
+새 체크포인트 추가 시에는 `docs/adding_checkpoint.md` 체크리스트를 따른다. 별도 에이전트 호출은 사용자가 명시적으로 요청한 경우에만 수행한다.
