@@ -25,6 +25,7 @@ outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector
 
 ## RoboCasa Reference
 
+- [GR00T N1.6 RoboCasa Scenario Reproduction](groot/groot_n16_robocasa_env_reproduction.md): `scenario_seed`와 `ep_meta` manifest 기반 scene composition replay 기준.
 - [RoboCasa Task Name Mapping](robocasa_task_name_mapping.md): RoboCasa v0.2 (`robocasa_v02`) task와 robocasa365 v1.0 task 이름 대응.
 
 ## TTT Methodology
