@@ -1,4 +1,4 @@
-# pi0.5 CALVIN SFT — 로컬 체크포인트 /temporal_vla/checkpoints/pi05-calvin-sft.
+# pi0.5 CALVIN SFT — 로컬 체크포인트 /cache/checkpoints/pi05-calvin-sft.
 # RLinf (InternRobotics) 의 외부 체크포인트 구조: lerobot config.json 없이
 # model.safetensors + 하위 디렉토리에 norm_stats.json.
 
@@ -6,7 +6,7 @@ name: lerobot_pi05__calvin_sft
 base_model: lerobot
 checkpoint_source:
   type: local
-  id: /temporal_vla/checkpoints/pi05-calvin-sft
+  id: /cache/checkpoints/pi05-calvin-sft
 compatible_benchmarks: [calvin]
 
 action_type: relative
