@@ -9,6 +9,7 @@
 - `--seed S`는 RoboCasa env construction까지 전달되어 `env.rng = np.random.default_rng(S)`를 만든다.
 - `--ep-meta-dir`가 있으면 `(env_name, scenario_seed)`에 대응하는 `ep_meta` JSON manifest를 import/export한다.
 - pkl payload에는 `seed`, `scenario_seed`, `ep_meta`가 함께 저장된다.
+- 같은 RoboCasa/robosuite commit, 같은 dependency, 같은 asset에서는 `ep_meta`가 없어도 같은 `(env_name, scenario_seed)`로 같은 scene composition을 다시 생성할 수 있다.
 - 같은 manifest를 import하면 같은 layout/style, object identity, texture, fixture reference, robot base pose를 재사용한다.
 
 현재 수집 경로는 **bit-identical initial sim state**를 보장하지 않는다.
@@ -176,7 +177,11 @@ pkl 전체를 옮기면 SAFE feature analysis까지 바로 가능하다. scene c
 
 ### 5.3 seed만 있는 경우
 
-manifest 없이 `scenario_seed`만 있으면 같은 code/asset/env에서 같은 scenario를 다시 생성할 수 있다. 그러나 코드 path나 RNG 소비 순서가 바뀌면 object placement 등 세부 상태가 달라질 수 있다. PC 간 장기 재현은 manifest를 기준으로 한다.
+manifest 없이 `scenario_seed`만 있어도 현재 collector는 seed를 env construction에 넣는다. 따라서 같은 RoboCasa/robosuite commit, 같은 dependency, 같은 asset, 같은 `env_name`에서는 PC가 달라도 같은 scene composition을 다시 생성할 수 있다.
+
+이 mode는 동일한 실험 환경을 복원할 수 있을 때 충분하다. 그러나 seed-only replay는 RoboCasa 내부 sampling 순서와 code path가 그대로 유지된다는 가정에 의존한다. RoboCasa/robosuite commit, object config 생성 순서, texture sampling 순서, wrapper reset 흐름이 바뀌면 같은 seed에서도 scene composition이나 세부 placement가 달라질 수 있다.
+
+PC 간 전달, 장기 보존, 코드 변경 뒤 replay는 manifest를 기준으로 한다. `ep_meta` manifest는 실제 생성된 scenario 기록을 저장하고 replay 시 명시적으로 주입하므로 seed-only보다 code-path drift에 강하다.
 
 ## 6. 검증 방법
 
