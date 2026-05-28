@@ -38,3 +38,37 @@ def pkl_path(split_root: Path, row: dict[str, str]) -> Path:
 def load_pkl(path: Path) -> dict[str, Any]:
     with path.open("rb") as f:
         return pickle.load(f)
+
+
+# ---- seen18 pooled-feature cache (npz from cache_pooled_features.py) ----
+
+def load_feature_cache(path: Path):
+    """np.load the pooled-feature npz (allow_pickle for object task_names)."""
+    return np.load(path, allow_pickle=True)
+
+
+def reconstruct_rollouts(cache) -> tuple[list[dict[str, Any]], dict[int, str]]:
+    """Canonical per-rollout reconstruction from the pooled-feature cache.
+
+    Accepts a path or an already-loaded npz. Returns:
+      rollouts : list of {"z": ndarray[T, D] (step-sorted), "succ": int, "task": int}
+      names    : {task_id: task_name}
+    Replaces the per-script reconstruct() copies; output `r["z"]` is compatible
+    with core.aggregation.aggregate().
+    """
+    if not hasattr(cache, "files"):
+        cache = load_feature_cache(cache)
+    feats = cache["feats"].astype(np.float64)
+    step_idx, rollout_idx = cache["step_idx"], cache["rollout_idx"]
+    ep_success, ep_task = cache["ep_success"], cache["ep_task_id"]
+    names = {int(t): str(n) for t, n in zip(cache["ep_task_id"], cache["task_names"])}
+    order = np.lexsort((step_idx, rollout_idx))
+    rid = rollout_idx[order]
+    uniq = np.unique(rollout_idx)
+    starts = np.searchsorted(rid, uniq, side="left")
+    ends = np.searchsorted(rid, uniq, side="right")
+    rollouts = [
+        {"z": feats[order[a:b]], "succ": int(ep_success[int(r)]), "task": int(ep_task[int(r)])}
+        for r, a, b in zip(uniq, starts, ends)
+    ]
+    return rollouts, names

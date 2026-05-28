@@ -1,0 +1,4 @@
+# vendored plotly.js (4.4MB) — html3d falls back to CDN when absent
+vendor/
+# python bytecode
+__pycache__/
