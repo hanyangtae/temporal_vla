@@ -1,8 +1,21 @@
-# GR00T-N1.6 x RoboCasa Scenario Reproduction
+# GR00T N1.6 RoboCasa — Scenario Reproduction
 
 이 문서는 `scripts/safe/groot_n16/robocasa/collect/collect_rollout.py` 수집 경로에서 RoboCasa scenario seed와 `ep_meta` manifest가 어떤 재현 범위를 보장하는지 정리한다. 기준 환경은 `robocasa365` (`src/benchmarks/robocasa`) + `robosuite` (`src/benchmarks/robosuite`) + GR00T N1.6 SAFE feature collection이다.
 
-## 0. 결론
+> 관련 문서 (N1.6 reading order)
+> - [Doc map](README.md)
+> - [01 Fine-Tuning](n16_01_finetune.md)
+> - [02 Evaluation](n16_02_eval.md)
+> - [03 SAFE Overview](n16_03_safe_overview.md)
+> - [04 SAFE Collection](n16_04_safe_collection.md)
+> - **05 Scenario Reproduction (이 문서)**
+> - [06 Inference Datapoint Semantics](n16_06_safe_inference_semantics.md)
+> - [07 SAFE Detector](n16_07_safe_detector.md)
+> - [08 SAFE Visualization](n16_08_safe_visualization.md)
+> - [09 SAFE Parity](n16_09_safe_parity.md)
+> - [10 SAFE Report](n16_10_safe_report.md)
+
+## 결론
 
 현재 수집 경로의 재현 단위는 **scene composition**이다.
 
@@ -18,7 +31,7 @@
 - replay에서도 placement sampler가 다시 호출되므로 object 좌표는 미세하게 달라질 수 있다.
 - rendering pixel, model hidden state, policy trajectory bit equality는 GPU, renderer, model determinism에 따라 달라진다.
 
-## 1. 용어
+## 용어
 
 | 용어 | 의미 |
 |---|---|
@@ -29,9 +42,9 @@
 | manifest | `--ep-meta-dir` 아래 저장되는 seed-keyed `ep_meta` JSON |
 | bit-identical sim state | object/fixture pose, qpos/qvel까지 완전히 같은 초기 simulator state |
 
-## 2. 현재 수집 계약
+## 현재 수집 계약
 
-### 2.1 단일 collector
+### 단일 collector
 
 `collect_rollout.py`는 env를 직접 만든다.
 
@@ -47,7 +60,7 @@ self.rng = np.random.default_rng(seed)
 
 를 만든다. RoboCasa layout/object/placement/robot spawn sampling은 이 `env.rng`를 사용한다.
 
-### 2.2 task-set wrapper
+### task-set wrapper
 
 `collect_task_set_via_docker_exec.sh`는 task마다 episode를 하나씩 collector에 넘긴다.
 
@@ -70,15 +83,15 @@ ep99 -> scenario_seed 100099
 
 로 수집된다. 같은 task 안의 100개 episode는 서로 다른 deterministic scenario다.
 
-### 2.3 `collect_rollout.py --n-episodes K` 직접 호출
+### `collect_rollout.py --n-episodes K` 직접 호출
 
 collector를 직접 `--n-episodes 3 --seed 100000`으로 호출하면 세 episode 모두 같은 `scenario_seed=100000`을 쓴다. 이 모드는 같은 scenario에서 policy rollout stochasticity나 execution variance를 반복 관찰할 때 사용한다. production 100ep 수집은 wrapper가 `--n-episodes 1`로 collector를 반복 호출하므로 seed가 episode마다 증가한다.
 
-## 3. `ep_meta` import/export 동작
+## `ep_meta` import/export 동작
 
 `--ep-meta-dir`를 지정하고 `--seed S`가 있으면 collector는 다음 순서로 동작한다.
 
-### 3.1 manifest가 없을 때
+### manifest가 없을 때
 
 ```text
 seed S로 env 생성
@@ -91,7 +104,7 @@ pkl에 ep_meta 저장
 
 로그에는 `ep_meta=exported`가 찍힌다.
 
-### 3.2 manifest가 있을 때
+### manifest가 있을 때
 
 ```text
 seed S로 env 생성
@@ -104,13 +117,13 @@ pkl에 manifest ep_meta 저장
 
 로그에는 `ep_meta=imported`가 찍힌다. RoboCasa reset 중 `ep_meta` dict 내부 일부가 in-place로 바뀔 수 있으므로, collector는 `set_ep_meta()`에 deepcopy를 넘기고 pkl에는 manifest 원본을 JSON-safe 형태로 저장한다.
 
-### 3.3 `--seed`가 없을 때
+### `--seed`가 없을 때
 
 manifest key가 없으므로 import/export를 하지 않는다. 그래도 pkl에는 해당 run에서 캡처한 `ep_meta`를 저장한다.
 
-## 4. 보장 범위
+## 보장 범위
 
-### 4.1 보장하는 것
+### 보장하는 것
 
 같은 코드/asset/env에서 같은 `(env_name, scenario_seed)` 또는 같은 manifest를 쓰면 다음 수준이 재현된다.
 
@@ -126,7 +139,7 @@ manifest key가 없으므로 import/export를 하지 않는다. 그래도 pkl에
 
 이 범위가 본 repo의 SAFE rollout comparison에서 말하는 “같은 scenario”다.
 
-### 4.2 보장하지 않는 것
+### 보장하지 않는 것
 
 | 항목 | 이유 |
 |---|---|
@@ -139,9 +152,9 @@ manifest key가 없으므로 import/export를 하지 않는다. 그래도 pkl에
 
 정확한 object pose까지 비교해야 하면 첫 reset 직후 `object_placements` 또는 `sim.data.qpos/qvel`을 별도 artifact로 저장해서 비교한다.
 
-## 5. PC 간 replay 절차
+## PC 간 replay 절차
 
-### 5.1 수집 PC
+### 수집 PC
 
 전체 task 수집은 wrapper가 manifest를 자동 저장한다.
 
@@ -161,7 +174,7 @@ bash scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh
 <OUT_ROOT>/_ep_metas/<Task>/<env-name>--seed<scenario_seed>.json
 ```
 
-### 5.2 다른 PC
+### 다른 PC
 
 같은 task scenario를 replay하려면 다음을 맞춘다.
 
@@ -175,7 +188,7 @@ bash scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh
 
 pkl 전체를 옮기면 SAFE feature analysis까지 바로 가능하다. scene composition replay만 필요하면 `_ep_metas` manifest만 옮겨도 된다.
 
-### 5.3 seed만 있는 경우
+### seed만 있는 경우
 
 manifest 없이 `scenario_seed`만 있어도 현재 collector는 seed를 env construction에 넣는다. 따라서 같은 RoboCasa/robosuite commit, 같은 dependency, 같은 asset, 같은 `env_name`에서는 PC가 달라도 같은 scene composition을 다시 생성할 수 있다.
 
@@ -183,9 +196,9 @@ manifest 없이 `scenario_seed`만 있어도 현재 collector는 seed를 env con
 
 PC 간 전달, 장기 보존, 코드 변경 뒤 replay는 manifest를 기준으로 한다. `ep_meta` manifest는 실제 생성된 scenario 기록을 저장하고 replay 시 명시적으로 주입하므로 seed-only보다 code-path drift에 강하다.
 
-## 6. 검증 방법
+## 검증 방법
 
-### 6.0 정적 검증
+### 정적 검증
 
 collector와 task-set wrapper를 수정한 뒤 먼저 host에서 정적 검증을 실행한다.
 
@@ -205,7 +218,7 @@ docker exec \
   "cd /temporal_vla && python scripts/safe/groot_n16/robocasa/collect/collect_rollout.py --help | grep -E 'seed|ep-meta'"
 ```
 
-### 6.1 manifest와 pkl ep_meta 비교
+### manifest와 pkl ep_meta 비교
 
 ```bash
 docker exec \
@@ -229,7 +242,7 @@ for path in sorted((root / task).glob('*.pkl')):
 PY"
 ```
 
-### 6.2 object placement drift 확인
+### object placement drift 확인
 
 같은 manifest replay 뒤 object pose 차이를 보고 싶으면 first reset 직후 다음 정보를 별도 dump한다.
 
@@ -244,7 +257,7 @@ for name, (pos, quat, _obj) in env.object_placements.items():
 
 object class/cfg가 같고 pos 차이가 작은 수준이면 같은 scene composition의 다른 placement sample로 본다. object class나 fixture reference가 달라지면 manifest import/export 누락을 의심한다.
 
-## 7. 검증된 smoke run
+## 검증된 smoke run
 
 2026-05-28에 `CloseFridge`로 실제 collection smoke를 수행했다.
 
@@ -283,6 +296,6 @@ outputs/eval/robocasa/groot_n16/scenario_replay_smoke_3ep/raw_rollouts/CloseFrid
 
 세 pkl의 `scenario_seed=100000`이고, 세 pkl의 `ep_meta`는 `_ep_metas/CloseFridge/robocasa_panda_omron_CloseFridge_PandaOmron_Env--seed100000.json` manifest와 일치했다. 이 검증은 collection path와 manifest import/export의 runtime smoke이며, hidden_state bit identity 검증은 아니다.
 
-## 8. 기존 collection의 한계
+## 기존 collection의 한계
 
 이 변경 전 수집된 rollout pkl에는 `ep_meta` manifest가 없을 수 있다. 그런 collection은 hidden_states/actions/video/success label artifact로는 유효하지만, 같은 scenario를 manifest 기반으로 replay할 수 없다. 필요한 경우 현재 collector로 재수집한다.

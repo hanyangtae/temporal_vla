@@ -6,16 +6,22 @@
 
 - [Docker Guide](docker_guide.md): 컨테이너 빌드, 실행, GPU, VNC/X11, troubleshooting.
 - [Adding Checkpoint](adding_checkpoint.md): 새 VLA 체크포인트를 profile/serve/eval 경로에 붙이는 체크리스트.
-- [GR00T N1.6 RoboCasa Eval](groot/n16_robocasa_eval.md): GR00T N1.6 RoboCasa ZMQ evaluation 기준 문서.
-- [GR00T N1.6 RoboCasa Fine-Tuning](groot/n16_robocasa_finetune.md): GR00T N1.6 RoboCasa fine-tuning 기준 문서.
-- [GR00T N1.5 RoboCasa Eval](groot/n15_robocasa_eval.md): GR00T N1.5 전용 eval 문서.
-- [GR00T N1.5 RoboCasa Fine-Tuning](groot/n15_robocasa_finetune.md): GR00T N1.5 전용 fine-tuning 문서.
+- [GR00T RoboCasa Docs](groot/README.md): N1.6/N1.5 학습·평가, SAFE feature export, detector 재현 문서의 통합 맵 (번호 prefix로 reading order 표현).
 
-## SAFE Wiring
+## GR00T N1.6 Reading Order
 
-- [SAFE x GR00T N1.6 RoboCasa Report](safe/groot_n16_robocasa_safe_report.md): SAFE 논문식 failure detection을 GR00T N1.6 RoboCasa에 축소 재현한 기술 보고서.
-- [SAFE x GR00T N1.6 RoboCasa Wiring](safe/groot_n16_robocasa_wiring.md): GR00T N1.6 base checkpoint와 SAFE detector를 연결하는 현재 기준 문서. 최종 SAFE-LSTM 운영점은 `split_cp`, `alpha=0.2`, `neg_success`, threshold `0.5301596522331238`; functional CP band 결과도 함께 저장한다.
-- [ADR 0001](adr/0001-dedicated-safe-groot-n16-zmq-server.md): SAFE GR00T N1.6에 dedicated ZMQ feature server를 두기로 한 결정.
+1. [Fine-Tuning](groot/n16_01_finetune.md)
+2. [Evaluation](groot/n16_02_eval.md)
+3. [SAFE Overview](groot/n16_03_safe_overview.md)
+4. [SAFE Collection](groot/n16_04_safe_collection.md) — ah8/ah16 mode 포함
+5. [Scenario Reproduction](groot/n16_05_safe_env_reproduction.md) — scenario seed + ep_meta
+6. [Inference Datapoint Semantics](groot/n16_06_safe_inference_semantics.md) — 한 datapoint 의미
+7. [SAFE Detector](groot/n16_07_safe_detector.md) — split + LSTM + CP 운영점
+8. [SAFE Visualization](groot/n16_08_safe_visualization.md) — t-SNE/silhouette
+9. [SAFE Parity](groot/n16_09_safe_parity.md) — ZMQ official baseline parity + HTTP `/act` parity
+10. [SAFE Reproduction Report](groot/n16_10_safe_report.md) — 축소 재현 결과 보고서
+
+관련 ADR: [0001 Dedicated SAFE GR00T N1.6 ZMQ server](adr/0001-dedicated-safe-groot-n16-zmq-server.md).
 
 최종 detector artifact:
 
@@ -23,9 +29,13 @@
 outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector
 ```
 
+## GR00T N1.5 Reading Order
+
+1. [N1.5 Fine-Tuning](groot/n15_01_finetune.md)
+2. [N1.5 Evaluation](groot/n15_02_eval.md)
+
 ## RoboCasa Reference
 
-- [GR00T N1.6 RoboCasa Scenario Reproduction](groot/groot_n16_robocasa_env_reproduction.md): `scenario_seed`와 `ep_meta` manifest 기반 scene composition replay 기준.
 - [RoboCasa Task Name Mapping](robocasa_task_name_mapping.md): RoboCasa v0.2 (`robocasa_v02`) task와 robocasa365 v1.0 task 이름 대응.
 
 ## TTT Methodology
@@ -40,7 +50,7 @@ outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector
 
 ## Legacy / Older Setup Notes
 
-- [GR00T Legacy Fine-Tuning Setup](groot/legacy_robocasa_finetune_setup.md): 초기 GR00T x RoboCasa fine-tuning setup. 현행 N1.6 기준은 `groot/n16_robocasa_finetune.md`다.
+- [GR00T Legacy Fine-Tuning Setup](groot/_legacy/robocasa_finetune_setup.md): 초기 GR00T x RoboCasa fine-tuning setup. 현행 N1.6 기준은 `groot/n16_01_finetune.md`다.
 
 ## Paper References
 
@@ -54,7 +64,7 @@ outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector
 ## Organization Rule
 
 - GR00T 실행 절차는 `groot/` 아래에 둔다.
+- GR00T N1.6 SAFE feature export, detector, visualization 문서는 `groot/n16_03_safe_overview.md`부터 `groot/n16_10_safe_report.md`까지 번호 prefix 문서로 둔다.
 - TTT 연구 방법론, phase 진행 기록, loop analysis는 `ttt/` 아래에 둔다.
 - 장기 결정은 `adr/`에 둔다.
-- SAFE 관련 wiring, split, visualization 문서는 `safe/` 아래에 둔다.
 - 논문 PDF와 외부 reference는 `references/` 아래에 둔다.
