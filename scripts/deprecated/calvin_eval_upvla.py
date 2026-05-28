@@ -13,9 +13,9 @@ docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval_upvla.py
 
 # 실제 평가 (full dataset)
 docker compose run --rm calvin python /temporal_vla/scripts/calvin_eval_upvla.py \
-  --dataset-path /temporal_vla/data/calvin/task_ABC_D \
+  --dataset-path /cache/datasets/calvin/task_ABC_D \
   --num-sequences 1000 \
-  --video-dir /temporal_vla/data/calvin/task_ABC_D/video
+  --video-dir /cache/datasets/calvin/task_ABC_D/video
   --num-videos 10
 
 upvla 서버(serve_upvla.py)가 먼저 실행 중이어야 한다.

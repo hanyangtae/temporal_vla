@@ -12,12 +12,15 @@ services:
     # Mount Workspace
     volumes:
       - .:/temporal_vla:rw
+      # 체크포인트/데이터셋 cache (호스트 ~/.cache/temporal_vla → 컨테이너 /cache)
+      - ${VLA_CACHE_ROOT:-${HOME}/.cache/temporal_vla}:/cache:rw
       # GUI 디스플레이 설정은 docker-compose.override.yml에서 환경에 맞게 구성
       # - 로컬 사용자: /tmp/.X11-unix 마운트 추가
       # - SSH 사용자: VNC 포트 노출
     environment:
-      - HF_HOME=/temporal_vla/data/huggingface # HF 모델/데이터 캐시 경로 변경
-      - LIBERO_DATA_DIR=/temporal_vla/data/libero # LIBERO 데이터 경로
+      - VLA_CACHE_ROOT=/cache
+      - HF_HOME=/cache/datasets/huggingface # HF 모델/데이터 캐시 경로 변경
+      - LIBERO_DATA_DIR=/cache/datasets/libero # LIBERO 데이터 경로
       - PYTHONPATH=/temporal_vla:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite:/temporal_vla/scripts/utils
     deploy:
       resources:
@@ -53,10 +56,13 @@ services:
         GROUP_ID: ${GROUP_ID}
     volumes:
       - .:/temporal_vla:rw
+      # 체크포인트/데이터셋 cache (호스트 ~/.cache/temporal_vla → 컨테이너 /cache)
+      - ${VLA_CACHE_ROOT:-${HOME}/.cache/temporal_vla}:/cache:rw
       # /D/temporal_vla_data 등 환경별 데이터 마운트는 docker-compose.override.yml 에서 추가.
       # HF cache 는 NTFS(/D) 가 chmod 를 지원 안 해서 호스트 ext4 홈을 직접 bind mount.
       - ${HOME}/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface:rw
     environment:
+      - VLA_CACHE_ROOT=/cache
       - HF_HOME=/home/${USER_NAME}/.cache/huggingface
       - HF_TRUST_REMOTE_CODE=1
       - HF_TOKEN=${HF_TOKEN}
@@ -89,10 +95,13 @@ services:
         GROUP_ID: ${GROUP_ID}
     volumes:
       - .:/temporal_vla:rw
+      # 체크포인트/데이터셋 cache (호스트 ~/.cache/temporal_vla → 컨테이너 /cache)
+      - ${VLA_CACHE_ROOT:-${HOME}/.cache/temporal_vla}:/cache:rw
       # /D/temporal_vla_data 등 환경별 데이터 마운트는 docker-compose.override.yml 에서 추가.
       # HF cache 는 NTFS(/D) 가 chmod 미지원 → 호스트 ext4 홈을 직접 bind mount.
       - ${HOME}/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface:rw
     environment:
+      - VLA_CACHE_ROOT=/cache
       - HF_HOME=/home/${USER_NAME}/.cache/huggingface
       - HF_TRUST_REMOTE_CODE=1
       - HF_TOKEN=${HF_TOKEN}
@@ -123,9 +132,12 @@ services:
     user: "${USER_ID}:${GROUP_ID}"
     volumes:
       - .:/temporal_vla:rw
+      # 체크포인트/데이터셋 cache (호스트 ~/.cache/temporal_vla → 컨테이너 /cache)
+      - ${VLA_CACHE_ROOT:-${HOME}/.cache/temporal_vla}:/cache:rw
     environment:
+      - VLA_CACHE_ROOT=/cache
       - HOME=/tmp
-      - HF_HOME=/temporal_vla/data/huggingface
+      - HF_HOME=/cache/datasets/huggingface
       - HF_TRUST_REMOTE_CODE=1
       - HF_TOKEN=${HF_TOKEN}
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
@@ -158,8 +170,11 @@ services:
         GROUP_ID: ${GROUP_ID}
     volumes:
       - .:/temporal_vla:rw
+      # 체크포인트/데이터셋 cache (호스트 ~/.cache/temporal_vla → 컨테이너 /cache)
+      - ${VLA_CACHE_ROOT:-${HOME}/.cache/temporal_vla}:/cache:rw
       # /D/temporal_vla_data 등 환경별 데이터 마운트는 docker-compose.override.yml 에서 추가.
     environment:
+      - VLA_CACHE_ROOT=/cache
       - HF_HOME=/home/${USER_NAME}/.cache/huggingface
       - HF_TRUST_REMOTE_CODE=1
       - PYTHONPATH=/temporal_vla/lerobot/src:/temporal_vla:/temporal_vla/scripts/utils
@@ -187,10 +202,13 @@ services:
         GROUP_ID: ${GROUP_ID}
     volumes:
       - .:/temporal_vla:rw
+      # 체크포인트/데이터셋 cache (호스트 ~/.cache/temporal_vla → 컨테이너 /cache)
+      - ${VLA_CACHE_ROOT:-${HOME}/.cache/temporal_vla}:/cache:rw
       # /D/temporal_vla_data 등 환경별 데이터 마운트는 docker-compose.override.yml 에서 추가.
       # HF cache 는 NTFS(/D) 가 chmod 미지원 → 호스트 ext4 홈을 직접 bind mount.
       - ${HOME}/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface:rw
     environment:
+      - VLA_CACHE_ROOT=/cache
       - HF_HOME=/home/${USER_NAME}/.cache/huggingface
       - HF_TRUST_REMOTE_CODE=1
       - HF_TOKEN=${HF_TOKEN}
@@ -220,8 +238,11 @@ services:
         GROUP_ID: ${GROUP_ID}
     volumes:
       - .:/temporal_vla:rw
+      # 체크포인트/데이터셋 cache (호스트 ~/.cache/temporal_vla → 컨테이너 /cache)
+      - ${VLA_CACHE_ROOT:-${HOME}/.cache/temporal_vla}:/cache:rw
     environment:
-      - HF_HOME=/temporal_vla/data/huggingface
+      - VLA_CACHE_ROOT=/cache
+      - HF_HOME=/cache/datasets/huggingface
       - PYTHONPATH=/temporal_vla:/temporal_vla/src/benchmarks/calvin
       - PYOPENGL_PLATFORM=egl # headless PyBullet/pyrender via EGL
     deploy:
@@ -248,10 +269,13 @@ services:
         GROUP_ID: ${GROUP_ID}
     volumes:
       - .:/temporal_vla:rw
+      # 체크포인트/데이터셋 cache (호스트 ~/.cache/temporal_vla → 컨테이너 /cache)
+      - ${VLA_CACHE_ROOT:-${HOME}/.cache/temporal_vla}:/cache:rw
       # /D/temporal_vla_data 등 환경별 데이터 마운트는 docker-compose.override.yml 에서 추가.
       # HF cache 는 NTFS(/D) 가 chmod 를 지원 안 해서 호스트 ext4 홈을 직접 bind mount.
       - ${HOME}/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface:rw
     environment:
+      - VLA_CACHE_ROOT=/cache
       - HF_HOME=/home/${USER_NAME}/.cache/huggingface
       - HF_TRUST_REMOTE_CODE=1
       - HF_TOKEN=${HF_TOKEN}
@@ -285,8 +309,11 @@ services:
         GROUP_ID: ${GROUP_ID}
     volumes:
       - .:/temporal_vla:rw
+      # 체크포인트/데이터셋 cache (호스트 ~/.cache/temporal_vla → 컨테이너 /cache)
+      - ${VLA_CACHE_ROOT:-${HOME}/.cache/temporal_vla}:/cache:rw
     environment:
-      - HF_HOME=/temporal_vla/data/huggingface
+      - VLA_CACHE_ROOT=/cache
+      - HF_HOME=/cache/datasets/huggingface
       - PYTHONPATH=/temporal_vla/src/policies/UP-VLA
     deploy:
       resources:

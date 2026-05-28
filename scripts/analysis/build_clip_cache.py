@@ -22,12 +22,13 @@ from tqdm import tqdm
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
+from scripts.path_setup import DATA_ROOT
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_root", type=str, default="data/bridge_v2_lerobot")
+    parser.add_argument("--data_root", type=str, default=str(DATA_ROOT / "bridge_v2_lerobot"))
     parser.add_argument("--repo_id", type=str, default="FedorX8/bridge_v2_lerobot")
     parser.add_argument("--image_key", type=str, default="observation.images.primary")
     parser.add_argument("--clip_model", type=str, default="ViT-B-32")
@@ -35,7 +36,7 @@ def main():
     parser.add_argument("--task_keywords", type=str, nargs="+",
                         default=["put", "place", "pick"])
     parser.add_argument("--save_path", type=str,
-                        default="data/bridge_v2_pick_place_clip_embeddings.pt")
+                        default=str(DATA_ROOT / "bridge_v2_pick_place_clip_embeddings.pt"))
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--batch_size", type=int, default=64,
                         help="CLIP visual encoder 배치 크기")

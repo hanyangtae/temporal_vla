@@ -15,7 +15,7 @@ GR00T 의 ``ShardedSingleStepDataset`` 은 sample 마다 frame t 단위 obs+acti
 Usage (from ``scripts/train/launch_finetune_ttt.py``)::
 
     from src.ttt.integrations.dataset_patch import setup_ttt_dataset_patch
-    setup_ttt_dataset_patch(eagle_cache_root="/temporal_vla/data/robocasa_eagle_pre_llm")
+    setup_ttt_dataset_patch(eagle_cache_root="/cache/datasets/robocasa_eagle_pre_llm")
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ _TTT_DATA_CONFIG: dict = {
 
 
 def _task_name_from_dataset_path(dataset_path: str) -> str:
-    """``/temporal_vla/data/robocasa/v1.0/pretrain/atomic/OpenDrawer/20250819/lerobot``
+    """``/cache/datasets/robocasa/v1.0/pretrain/atomic/OpenDrawer/20250819/lerobot``
     → ``"OpenDrawer"``.
 
     Convention: dataset_path 의 부모 3 level 가 ``<atomic_root>/<TaskName>/<date>/lerobot``.

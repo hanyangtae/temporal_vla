@@ -9,7 +9,7 @@ set -e
 cd /temporal_vla
 
 N_EPISODES=${1:-20}
-MODEL_PATH=${MODEL_PATH:-"/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B"}
+MODEL_PATH=${MODEL_PATH:-"/cache/checkpoints/nvidia/GR00T-N1.6-3B"}
 SAVE_DIR="/temporal_vla/outputs/trajectories"
 ANALYSIS_DIR="/temporal_vla/outputs/analysis"
 

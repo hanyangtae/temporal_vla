@@ -4,7 +4,7 @@ RoboCasa 데이터셋 재생 + 성공률 평가 스크립트
 사용법:
   # 단일 데이터셋 (빠른 모드: 최종 상태 체크)
   python scripts/robocasa_playback_eval.py \
-    --dataset /temporal_vla/data/datasets/v1.0/pretrain/atomic/TurnOnToaster/20250820/lerobot
+    --dataset /cache/datasets/datasets/v1.0/pretrain/atomic/TurnOnToaster/20250820/lerobot
 
   # 액션 재생 모드 (open-loop, 궤적 발산 확인용)
   python scripts/robocasa_playback_eval.py --dataset <path> --use-actions
@@ -58,7 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--dataset", type=str, help="평가할 lerobot 데이터셋 경로 (단일)")
     mode.add_argument("--all", action="store_true", help="지정 split의 모든 데이터셋 평가")
 
-    p.add_argument("--base-path", default="/temporal_vla/data/datasets/v1.0",
+    p.add_argument("--base-path", default="/cache/datasets/datasets/v1.0",
                    help="데이터셋 루트 경로")
     p.add_argument("--split", default="pretrain", choices=["pretrain", "target"])
     p.add_argument("--task-type", default=None, choices=["atomic", "composite"])

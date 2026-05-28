@@ -12,16 +12,17 @@ set -euo pipefail
 
 # ---------- paths (adjust to your environment) ----------
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+source "${REPO_ROOT}/scripts/utils/cache_env.sh"
 ROBOCASA_DATASET="${ROBOCASA_DATASET:-${REPO_ROOT}/src/benchmarks/robocasa/datasets/v1.0/pretrain/atomic/PickPlaceSinkToCounter/20250819/lerobot}"
-SAVE_CHECKPOINT_PATH="${REPO_ROOT}/checkpoints/dreamvla_robocasa"
-VIT_CHECKPOINT_PATH="${REPO_ROOT}/checkpoints/dreamvla/mae_pretrain_vit_base.pth"
+SAVE_CHECKPOINT_PATH="${VLA_CHECKPOINTS_ROOT}/dreamvla_robocasa"
+VIT_CHECKPOINT_PATH="${VLA_CHECKPOINTS_ROOT}/dreamvla/mae_pretrain_vit_base.pth"
 
 # Auxiliary feature paths (extracted by scripts/extract/extract_sam_robocasa.py / extract_cotrack_robocasa.py)
 SAM_FEATURE_PATH="${SAM_FEATURE_PATH:-${REPO_ROOT}/src/benchmarks/robocasa/datasets/features/sam}"
 TRACK_LABEL_PATH="${TRACK_LABEL_PATH:-${REPO_ROOT}/src/benchmarks/robocasa/datasets/features/tracks}"
 
 # DreamVLA pretrained checkpoint (Calvin pretrained)
-PRETRAINED_CKPT="${PRETRAINED_CKPT:-${REPO_ROOT}/checkpoints/dreamvla/dreamvla_dynamic_depth_semantic-001.pth}"
+PRETRAINED_CKPT="${PRETRAINED_CKPT:-${VLA_CHECKPOINTS_ROOT}/dreamvla/dreamvla_dynamic_depth_semantic-001.pth}"
 
 # ---------- distributed ----------
 NODE=1

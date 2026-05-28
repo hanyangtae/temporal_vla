@@ -22,8 +22,11 @@ import torch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_DATA_ROOT = REPO_ROOT / "data/robocasa/v1.0/pretrain/atomic"
-DEFAULT_CACHE_ROOT = REPO_ROOT / "data/robocasa_eagle_pre_llm"
+sys.path.insert(0, str(REPO_ROOT))
+from scripts.path_setup import DATA_ROOT
+
+DEFAULT_DATA_ROOT = DATA_ROOT / "robocasa/v1.0/pretrain/atomic"
+DEFAULT_CACHE_ROOT = DATA_ROOT / "robocasa_eagle_pre_llm"
 
 DEFAULT_TASKS = [
     # 기존 10

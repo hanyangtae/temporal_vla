@@ -13,8 +13,8 @@ Or direct CLI::
     docker compose exec -T groot bash -lc \\
         'cd /temporal_vla/src/policies/Isaac-GR00T && \\
          python /temporal_vla/scripts/train/launch_finetune_ttt.py \\
-            --base_model_path /temporal_vla/outputs/checkpoints/GR00T-N1.6-3B \\
-            --dataset_path /temporal_vla/data/datasets/robocasa_10tasks_lerobot_v21 \\
+            --base_model_path /cache/checkpoints/nvidia/GR00T-N1.6-3B \\
+            --dataset_path /cache/datasets/datasets/robocasa_10tasks_lerobot_v21 \\
             --embodiment_tag ROBOCASA_PANDA_OMRON \\
             --modality_config_path /temporal_vla/configs/policies/groot_robocasa_panda_omron_config.py \\
             --ttt_predictor_path /temporal_vla/outputs/train/phase1_groot_robocasa/<run>/phase1_final.pt \\
@@ -66,7 +66,7 @@ class TTTFinetuneConfig(FinetuneConfig):
     ttt_predictor_proj_dim: int = 2048
     ttt_predictor_inner_model: str = "linear"
     ttt_predictor_eta_base: float = 0.1
-    ttt_eagle_cache_root: str = ""  # ex: /temporal_vla/data/robocasa_eagle_pre_llm
+    ttt_eagle_cache_root: str = ""  # ex: /cache/datasets/robocasa_eagle_pre_llm
 
 
 def load_modality_config(modality_config_path: str) -> None:

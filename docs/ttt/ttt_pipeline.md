@@ -101,7 +101,7 @@ docker exec lerobot env | grep WANDB_API  # WANDB_API_KEY 가 .env → override 
 bash scripts/utils/download_robocasa_pretrain_human.sh           # 10 task 전체
 # 또는 선택적: bash ... OpenDrawer CloseDrawer
 ```
-출력: `data/robocasa/v1.0/pretrain/atomic/<Task>/20250819/lerobot/`
+출력: `<cache>/datasets/robocasa/v1.0/pretrain/atomic/<Task>/20250819/lerobot/`
 
 ### Step 1: progress 컬럼 in-place 추가
 
@@ -127,7 +127,7 @@ docker exec groot python /temporal_vla/scripts/extract/verify_eagle_extraction.p
 # OK: all 10 tasks verified (253,971 frames total).
 ```
 
-출력: `data/robocasa_eagle_pre_llm/<Task>/embeddings.pt`
+출력: `<cache>/datasets/robocasa_eagle_pre_llm/<Task>/embeddings.pt`
 
 ### Step 3: Phase 1 학습 (TTT + ProgressHead 메타학습)
 
@@ -155,7 +155,7 @@ docker exec groot bash /temporal_vla/scripts/train/groot_ttt_robocasa_finetune.s
 
 기본값:
 - `TTT_PREDICTOR_PATH=outputs/train/phase1_groot_robocasa/20260511_1040/epoch_08.pt`
-- `TTT_EAGLE_CACHE_ROOT=data/robocasa_eagle_pre_llm`
+- `TTT_EAGLE_CACHE_ROOT=<cache>/datasets/robocasa_eagle_pre_llm`
 - `TTT_UPDATE_IN_TRAIN=True`
 - `DATASET_PATH=...10 atomic paths joined by :`
 - `MAX_STEPS=20000`, `SAVE_STEPS=5000`, `SAVE_TOTAL_LIMIT=4`
@@ -256,7 +256,7 @@ Phase 1 학습 은 `meta_forward` (functional) 라 OK. 하지만 Phase 2 의 **s
 - 컨테이너의 `~/.cache/huggingface` 가 host의 claude/user `$HOME/.cache/huggingface` bind mount source를 바라본다. 이 디렉토리 권한이 root 면 컨테이너 안 user 가 write 못함 → HF download 실패. **해결**: `docker exec lerobot sudo chown -R $(id -u):$(id -g) ~/.cache/huggingface` (lerobot 의 NOPASSWD sudo 이용).
 
 ### GR00T ckpt
-- `outputs/checkpoints/GR00T-N1.6-3B/` — 6.2 GB, HF 에서 `huggingface-cli download nvidia/GR00T-N1.6-3B --local-dir ...`.
+- `<cache>/checkpoints/nvidia/GR00T-N1.6-3B/` — 6.2 GB, HF 에서 `huggingface-cli download nvidia/GR00T-N1.6-3B --local-dir ...`.
 
 ---
 

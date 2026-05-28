@@ -3,14 +3,14 @@
 Originally targets the per-task LeRobot v2.1 pretrain datasets downloaded by
 ``scripts/utils/download_robocasa_pretrain_human.sh`` to:
 
-    data/robocasa/v1.0/pretrain/atomic/<Task>/20250819/lerobot
+    <cache>/datasets/robocasa/v1.0/pretrain/atomic/<Task>/20250819/lerobot
 
 The same config also works with the merged dataset at
-``data/datasets/robocasa_10tasks_lerobot_v21`` since they share the same
-``meta/modality.json`` schema (state/action/video/language keys identical).
+``<cache>/datasets/datasets/robocasa_10tasks_lerobot_v21`` since they share the
+same ``meta/modality.json`` schema (state/action/video/language keys identical).
 It also works with the target atomic-seen 15-task datasets under:
 
-    data/robocasa/v1.0/target/atomic/<Task>/<date>/lerobot
+    <cache>/datasets/robocasa/v1.0/target/atomic/<Task>/<date>/lerobot
 
 Used via N1.5's ``new_embodiment`` route (N1.5's EmbodimentTag enum has no
 ``ROBOCASA_PANDA_OMRON`` entry — that exists only in N1.6). N1.6 pretrained
@@ -21,8 +21,8 @@ Usage:
     PYTHONPATH=$REPO_ROOT/src/policies/Isaac-GR00T-N1.5:$REPO_ROOT/configs/policies \\
     python $REPO_ROOT/src/policies/Isaac-GR00T-N1.5/scripts/gr00t_finetune.py \\
         --dataset-path \\
-            $REPO_ROOT/data/robocasa/v1.0/pretrain/atomic/OpenDrawer/20250819/lerobot \\
-            $REPO_ROOT/data/robocasa/v1.0/pretrain/atomic/CloseDrawer/20250819/lerobot \\
+            $VLA_DATASETS_ROOT/robocasa/v1.0/pretrain/atomic/OpenDrawer/20250819/lerobot \\
+            $VLA_DATASETS_ROOT/robocasa/v1.0/pretrain/atomic/CloseDrawer/20250819/lerobot \\
             ... \\
         --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \\
         --embodiment_tag new_embodiment \\

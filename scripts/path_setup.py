@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -9,6 +10,18 @@ ROBOCASA_ROOT = REPO_ROOT / "src" / "benchmarks" / "robocasa"
 ROBOSUITE_ROOT = REPO_ROOT / "src" / "benchmarks" / "robosuite"
 DREAMVLA_ROOT = REPO_ROOT / "src" / "policies" / "dreamvla"
 DATASETS_ROOT = REPO_ROOT / "src" / "datasets"
+
+# ── Cache roots (체크포인트/데이터셋 물리 저장소) ──────────────────────
+# 체크포인트와 데이터셋은 repo 트리 밖 cache 로 분리한다. 컨테이너 안에서는
+# docker-compose 가 호스트 cache 를 /cache 로 bind-mount 하고 VLA_CACHE_ROOT=/cache
+# 를 주입한다. 호스트(uv venv 등)에서는 기본값 ~/.cache/temporal_vla 를 쓴다.
+#   - CHECKPOINTS_ROOT: 베이스/사전학습/모듈 체크포인트 (학습 산출물은 outputs/ 에 둠)
+#   - DATA_ROOT       : robocasa/datasets/eagle 등 학습·추출 데이터셋
+CACHE_ROOT = Path(
+    os.environ.get("VLA_CACHE_ROOT", Path.home() / ".cache" / "temporal_vla")
+)
+CHECKPOINTS_ROOT = CACHE_ROOT / "checkpoints"
+DATA_ROOT = CACHE_ROOT / "datasets"
 
 
 def _prepend(path: Path) -> None:

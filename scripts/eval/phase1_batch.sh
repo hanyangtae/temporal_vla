@@ -8,15 +8,15 @@
 set -e
 cd /temporal_vla
 
-# CKPT_LINEAR="checkpoints/phase1/20260403_0457"
-CKPT_MLP="checkpoints/phase1/20260403_0910"
+# CKPT_LINEAR="/cache/checkpoints/phase1/20260403_0457"
+CKPT_MLP="/cache/checkpoints/phase1/20260403_0910"
 
 EPOCHS="005 015 030 050"
 
 COMMON_ARGS="
-    --data_root     data/bridge_v2_lerobot
+    --data_root     /cache/datasets/bridge_v2_lerobot
     --repo_id       FedorX8/bridge_v2_lerobot
-    --embed_cache   data/bridge_v2_lerobot_clip_embeddings.pt
+    --embed_cache   /cache/datasets/bridge_v2_lerobot_clip_embeddings.pt
     --train_episodes 2986
     --val_episodes   287
     --split_seed     42

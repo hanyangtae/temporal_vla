@@ -8,12 +8,15 @@ import json
 import math
 import os
 import shutil
+import sys
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.path_setup import DATA_ROOT
 
 DEFAULT_TASKS = [
     "OpenDrawer",
@@ -323,7 +326,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("data/datasets/robocasa_10tasks_lerobot_v21"),
+        default=DATA_ROOT / "datasets/robocasa_10tasks_lerobot_v21",
     )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(

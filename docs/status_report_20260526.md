@@ -256,7 +256,7 @@ def silhouette_safe(
   - `rollouts_n16_seen5_20ep_upstream_video_20260519/{Task}/task#--ep#--succ{0,1}.pkl`
   - `safe_split_seen4_unseen2_openDrawer_pnpCab_100ep/` → `manifest.tsv`, `summary.tsv` (split 정의). 총 600 rollouts / 6 tasks / task당 100.
   - `safe_feature_vis/seen4_unseen2_.../` → 다수 `*.tsv` 분석 산출물(cluster, silhouette, online_detection 등).
-- 파일 개수: `*.pkl` = 1204개 (rollout feature). `*.npz` = 1061개 — 단 이건 `data/robocasa/v1.0/pretrain/.../extras/episode_*/states.npz` (RoboCasa env state, array 이름 `['states']`)이며 hidden state 아님.
+- 파일 개수: `*.pkl` = 1204개 (rollout feature). `*.npz` = 1061개 — 단 이건 `<cache>/datasets/robocasa/v1.0/pretrain/.../extras/episode_*/states.npz` (RoboCasa env state, array 이름 `['states']`)이며 hidden state 아님.
 - pkl 한 개 구조 (`PnPCounterToStove/task4--ep59--succ1.pkl`):
   ```python
   {

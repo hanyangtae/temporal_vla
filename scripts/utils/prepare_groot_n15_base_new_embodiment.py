@@ -22,6 +22,7 @@ sys.path.insert(0, str(REPO_ROOT / "configs/policies"))
 sys.path.insert(0, str(REPO_ROOT / "src/policies/Isaac-GR00T-N1.5"))
 sys.path.insert(0, str(REPO_ROOT))
 
+from scripts.path_setup import DATA_ROOT  # noqa: E402
 from gr00t.data.dataset import LeRobotMixtureDataset, LeRobotSingleDataset  # noqa: E402
 from gr00t.data.embodiment_tags import EmbodimentTag  # noqa: E402
 from gr00t.experiment.data_config import load_data_config  # noqa: E402
@@ -51,14 +52,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--base-model",
         type=Path,
-        default=REPO_ROOT
-        / "data/huggingface/hub/models--nvidia--GR00T-N1.5-3B"
+        default=DATA_ROOT
+        / "huggingface/hub/models--nvidia--GR00T-N1.5-3B"
         / "snapshots/869830fc749c35f34771aa5209f923ac57e4564e",
     )
     parser.add_argument(
         "--target-root",
         type=Path,
-        default=REPO_ROOT / "data/robocasa/v1.0/target/atomic",
+        default=DATA_ROOT / "robocasa/v1.0/target/atomic",
     )
     parser.add_argument(
         "--output",

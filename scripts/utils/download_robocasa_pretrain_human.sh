@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# RoboCasa pretrain × human × atomic 데이터 10개 task 를 data/robocasa/ 로 다운로드.
+# RoboCasa pretrain × human × atomic 데이터 10개 task 를 cache datasets/robocasa/ 로 다운로드.
 #
-# 출력 구조: data/robocasa/v1.0/pretrain/atomic/<Task>/<date>/lerobot/
-# robocasa.macros.DATASET_BASE_PATH 를 data/robocasa 로 두면 그대로 인식됨.
+# 출력 구조: <cache>/datasets/robocasa/v1.0/pretrain/atomic/<Task>/<date>/lerobot/
+# robocasa.macros.DATASET_BASE_PATH 를 <cache>/datasets/robocasa 로 두면 그대로 인식됨.
 #
 # Box 공유 링크 변환 규칙: https://utexas.box.com/s/<id> -> https://utexas.box.com/shared/static/<id>.tar
 # 출처: src/benchmarks/robocasa/robocasa/scripts/download_datasets.py
@@ -10,7 +10,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-BASE_DIR="${REPO_ROOT}/data/robocasa/v1.0/pretrain/atomic"
+source "${REPO_ROOT}/scripts/utils/cache_env.sh"
+BASE_DIR="${VLA_DATASETS_ROOT}/robocasa/v1.0/pretrain/atomic"
 mkdir -p "${BASE_DIR}"
 
 # task | date | box-id  (human pretrain atomic)

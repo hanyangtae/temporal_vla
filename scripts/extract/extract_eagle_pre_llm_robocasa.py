@@ -76,11 +76,12 @@ from tqdm import tqdm
 # absent here, since v3.0 lerobot rejects our v2.1 datasets).
 sys.path.insert(0, "/temporal_vla/src/policies/Isaac-GR00T")
 
+from scripts.path_setup import CHECKPOINTS_ROOT, DATA_ROOT
 
 REPO_ROOT = Path("/temporal_vla")
-DEFAULT_BASE = REPO_ROOT / "data/robocasa/v1.0/pretrain/atomic"
-DEFAULT_SAVE = REPO_ROOT / "data/robocasa_eagle_pre_llm"
-DEFAULT_MODEL_PATH = REPO_ROOT / "outputs/checkpoints/GR00T-N1.6-3B"
+DEFAULT_BASE = DATA_ROOT / "robocasa/v1.0/pretrain/atomic"
+DEFAULT_SAVE = DATA_ROOT / "robocasa_eagle_pre_llm"
+DEFAULT_MODEL_PATH = CHECKPOINTS_ROOT / "nvidia/GR00T-N1.6-3B"
 DEFAULT_MODALITY_CONFIG = REPO_ROOT / "configs/policies/groot_robocasa_panda_omron_config.py"
 
 # RoboCasa LeRobot parquet 컬럼은 'observation.images.<modality_key>' 형태.

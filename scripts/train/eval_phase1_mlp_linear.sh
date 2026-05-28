@@ -9,7 +9,7 @@
 set -e
 cd /temporal_vla
 
-EMBED_CACHE="data/bridge_v2_pick_place_clip_embeddings.pt"
+EMBED_CACHE="/cache/datasets/bridge_v2_pick_place_clip_embeddings.pt"
 
 # ============================================
 # 0. Pick-and-place 임베딩 캐시 생성 (없으면)
@@ -26,7 +26,7 @@ if [ ! -f "$EMBED_CACHE" ]; then
 fi
 
 TRAIN_COMMON="
-    --data_root      data/bridge_v2_lerobot
+    --data_root      /cache/datasets/bridge_v2_lerobot
     --repo_id        FedorX8/bridge_v2_lerobot
     --embed_cache_path $EMBED_CACHE
     --task_keywords  put place pick
@@ -44,11 +44,11 @@ TRAIN_COMMON="
     --log_interval   10
     --num_workers    0
     --device         cuda
-    --save_dir       checkpoints/phase1
+    --save_dir       /cache/checkpoints/phase1
 "
 
 EVAL_COMMON="
-    --data_root      data/bridge_v2_lerobot
+    --data_root      /cache/datasets/bridge_v2_lerobot
     --repo_id        FedorX8/bridge_v2_lerobot
     --embed_cache    $EMBED_CACHE
     --task_keywords  put place pick
@@ -82,7 +82,7 @@ python scripts/train/phase1_predictor.py \
     $TRAIN_COMMON
 
 # 학습 완료 후 가장 최근 생성된 mlp 폴더 찾기
-CKPT_MLP=$(ls -td checkpoints/phase1/*_mlp | head -1)
+CKPT_MLP=$(ls -td /cache/checkpoints/phase1/*_mlp | head -1)
 echo "MLP checkpoint dir: ${CKPT_MLP}"
 
 # ============================================
@@ -97,7 +97,7 @@ python scripts/train/phase1_predictor.py \
     --wandb_run_name phase1_vita_full_traj_linear \
     $TRAIN_COMMON
 
-CKPT_LINEAR=$(ls -td checkpoints/phase1/*_linear | head -1)
+CKPT_LINEAR=$(ls -td /cache/checkpoints/phase1/*_linear | head -1)
 echo "Linear checkpoint dir: ${CKPT_LINEAR}"
 
 # ============================================
