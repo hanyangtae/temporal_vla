@@ -80,7 +80,7 @@ uv run python -c "import gr00t; from gr00t.data.embodiment_tags import Embodimen
 
 ## 3. 체크포인트 (GR00T-N1.6-3B base) 준비
 
-> Legacy note: 이 문서는 초기 fine-tuning runbook이다. 현재 N1.6 RoboCasa fine-tuning 기준 문서는 `docs/groot/n16_robocasa_finetune.md`다. 체크포인트 위치는 현재 repo 규칙에 맞춰 `<cache>/checkpoints/nvidia/GR00T-N1.6-3B`를 사용한다.
+> Legacy note: 이 문서는 초기 fine-tuning runbook이다. 현재 N1.6 RoboCasa fine-tuning 기준 문서는 `docs/groot/n16_01_finetune.md`다. 체크포인트 위치는 현재 repo 규칙에 맞춰 `<cache>/checkpoints/nvidia/GR00T-N1.6-3B`를 사용한다.
 
 ```bash
 # Hugging Face 토큰 (gated repo 아니지만 다운로드 속도 ↑)

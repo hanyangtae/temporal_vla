@@ -1,6 +1,19 @@
-# GR00T N1.6 RoboCasa fine-tuning setup
+# GR00T N1.6 RoboCasa — Fine-Tuning
 
 Isaac-GR00T `n1.6-release` 기반으로 RoboCasa PandaOmron per-task LeRobot v2.1 mixture 를 학습하고, GR00T fine-tuning을 host 또는 Docker에서 실행하기 위한 runbook이다.
+
+> 관련 문서 (N1.6 reading order)
+> - [Doc map](README.md)
+> - **01 Fine-Tuning (이 문서)**
+> - [02 Evaluation](n16_02_eval.md)
+> - [03 SAFE Overview](n16_03_safe_overview.md)
+> - [04 SAFE Collection](n16_04_safe_collection.md)
+> - [05 Scenario Reproduction](n16_05_safe_env_reproduction.md)
+> - [06 Inference Datapoint Semantics](n16_06_safe_inference_semantics.md)
+> - [07 SAFE Detector](n16_07_safe_detector.md)
+> - [08 SAFE Visualization](n16_08_safe_visualization.md)
+> - [09 SAFE Parity](n16_09_safe_parity.md)
+> - [10 SAFE Report](n16_10_safe_report.md)
 
 이 문서는 두 학습 scope를 구분한다.
 
@@ -15,7 +28,7 @@ Isaac-GR00T `n1.6-release` 기반으로 RoboCasa PandaOmron per-task LeRobot v2.
 - `launch_finetune.py`, `finetune_config.py`, model setup 등 upstream GR00T 핵심 학습 코드는 수정하지 않는다.
 - 여러 RoboCasa task는 `--dataset-path` 하나에 `:`로 join해서 넘긴다. mirror entry가 이를 task별 dataset path로 split해서 mixture를 만든다.
 - `ROBOCASA_PANDA_OMRON` enum 존재만으로는 충분하지 않다. 학습 시 `configs/policies/groot_robocasa_panda_omron_config.py`를 `--modality_config_path`로 import해서 modality config를 등록해야 한다.
-- 학습 직후 확인할 eval quickstart는 이 문서에 포함한다. 자세한 eval 조건, 로그 저장, SR 계산, troubleshooting은 `docs/groot/n16_robocasa_eval.md`를 기준으로 한다.
+- 학습 직후 확인할 eval quickstart는 이 문서에 포함한다. 자세한 eval 조건, 로그 저장, SR 계산, troubleshooting은 `n16_02_eval.md`를 기준으로 한다.
 - Full DiT fine-tuning은 16GB GPU에서 OOM이 난다. 관찰된 실행에서는 약 36GB VRAM을 사용했고, 20,000 step은 약 2시간 걸렸다.
 
 ## 필요한 파일
@@ -190,7 +203,7 @@ meta/{episodes.jsonl, episodes_stats.jsonl, info.json, modality.json, stats.json
 
 - Dataset은 task별 LeRobot directory를 유지하고, 학습 시 `DATASET_PATH`를 `:`로 join해서 mixture로 넘긴다.
 - Upstream N1.6 `launch_finetune.py`의 `--dataset_path`는 단일 문자열이므로 여러 path를 그대로 나열하지 않는다. Multi-path 처리는 `scripts/train/launch_finetune_ttt.py`의 `:` split로 한다.
-- Fine-tuned checkpoint 평가는 `docs/groot/n16_robocasa_eval.md`의 ZMQ server/client workflow를 기준으로 한다. `scripts/serve/groot.py` + `scripts/eval/robocasa_eval.py` 조합은 legacy workflow다.
+- Fine-tuned checkpoint 평가는 `n16_02_eval.md`의 ZMQ server/client workflow를 기준으로 한다. `scripts/serve/groot.py` + `scripts/eval/robocasa_eval.py` 조합은 legacy workflow다.
 
 ## modality config
 
@@ -429,11 +442,11 @@ checkpoint_source:
   id: /temporal_vla/outputs/groot_robocasa_target_15tasks/checkpoint-20000
 ```
 
-Docker 평가는 `docs/groot/n16_robocasa_eval.md`의 ZMQ workflow를 사용한다. 즉 `groot` container에서 `MODEL_PATH=/temporal_vla/outputs/groot_robocasa_target_15tasks/checkpoint-20000`로 server를 띄우고, `robocasa` container에서 `client-target15`를 실행한다. 기존 pretrain 10-task baseline을 평가할 때만 `client-train10`을 쓴다.
+Docker 평가는 `n16_02_eval.md`의 ZMQ workflow를 사용한다. 즉 `groot` container에서 `MODEL_PATH=/temporal_vla/outputs/groot_robocasa_target_15tasks/checkpoint-20000`로 server를 띄우고, `robocasa` container에서 `client-target15`를 실행한다. 기존 pretrain 10-task baseline을 평가할 때만 `client-train10`을 쓴다.
 
 ## 학습 후 Eval Quickstart
 
-상세한 평가 조건, 로그 저장, SR 계산, observation key alias 설명은 `docs/groot/n16_robocasa_eval.md`를 본다. 여기서는 학습 직후 base와 fine-tuned checkpoint를 같은 target atomic-seen 15-task 조건으로 비교하는 최소 명령만 둔다.
+상세한 평가 조건, 로그 저장, SR 계산, observation key alias 설명은 `n16_02_eval.md`를 본다. 여기서는 학습 직후 base와 fine-tuned checkpoint를 같은 target atomic-seen 15-task 조건으로 비교하는 최소 명령만 둔다.
 
 최초 1회 준비:
 

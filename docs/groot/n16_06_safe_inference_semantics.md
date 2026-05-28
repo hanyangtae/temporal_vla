@@ -1,9 +1,19 @@
-# GR00T-N1.6 × RoboCasa: 한 datapoint가 의미하는 것
+# GR00T N1.6 RoboCasa — Inference Datapoint Semantics
 
-이 문서는 우리가 latent 분석에 사용하는 SAFE rollout pkl의 한 datapoint
-(이전 표현 "frame") 가 실제로 GR00T-N1.6과 RoboCasa 환경에서 어떤 단위에
-대응하는지 정리한다. "latent space 점 1개가 무엇인가?" 를 명확히 하지
-않고 분석/시각화 결과를 해석하면 시간 단위가 혼동되기 쉬워 작성.
+이 문서는 우리가 latent 분석에 사용하는 SAFE rollout pkl의 한 datapoint (이전 표현 "frame") 가 실제로 GR00T N1.6과 RoboCasa 환경에서 어떤 단위에 대응하는지 정리한다. "latent space 점 1개가 무엇인가?"를 명확히 하지 않고 분석/시각화 결과를 해석하면 시간 단위가 혼동되기 쉬워 작성.
+
+> 관련 문서 (N1.6 reading order)
+> - [Doc map](README.md)
+> - [01 Fine-Tuning](n16_01_finetune.md)
+> - [02 Evaluation](n16_02_eval.md)
+> - [03 SAFE Overview](n16_03_safe_overview.md)
+> - [04 SAFE Collection](n16_04_safe_collection.md)
+> - [05 Scenario Reproduction](n16_05_safe_env_reproduction.md)
+> - **06 Inference Datapoint Semantics (이 문서)**
+> - [07 SAFE Detector](n16_07_safe_detector.md)
+> - [08 SAFE Visualization](n16_08_safe_visualization.md)
+> - [09 SAFE Parity](n16_09_safe_parity.md)
+> - [10 SAFE Report](n16_10_safe_report.md)
 
 > **표기 원칙**: 본 문서와 코드 옵션에서 "frame" 이라는 용어는 사용하지 않는다.
 > 한 datapoint는 1회의 **GR00T inference** 출력이고, rollout 길이는 inference
@@ -24,7 +34,7 @@
 | 1 rollout 시간 | **8.8 sec ~ 36 sec** simulated time (success ~13.6 sec, failure 36 sec timeout) |
 | wall-clock 시간 | 보장되지 않음 (GPU/시뮬레이션 부하에 따라 다름) |
 
-## 1. GR00T-N1.6 추론 사이클 1회
+## GR00T N1.6 추론 사이클 1회
 
 `scripts/safe/groot_n16/robocasa/collect/collect_rollout.py:333-340, 372-374`,
 `scripts/safe/groot_n16/robocasa/serve/feature_server.py:96-117` 기준.
@@ -61,7 +71,7 @@ loop until terminated/truncated:
   (`n_action_steps = 16`, `src/policies/Isaac-GR00T/gr00t/eval/rollout_policy.py:61`)
 - 16번 실행이 끝나야 다음 inference
 
-## 2. 시간 단위
+## 시간 단위
 
 RoboCasa Kitchen env는 `control_freq = 20` Hz (default,
 `src/benchmarks/robocasa/robocasa/environments/kitchen/kitchen.py:381`).
@@ -83,7 +93,7 @@ RoboCasa Kitchen env는 `control_freq = 20` Hz (default,
 **중요한 구분**: 위 시간은 모두 **simulated time** (kitchen 안 시계).
 Wall-clock은 GPU 추론 + MuJoCo step + rendering 부하에 따라 보통 분 단위로 더 김.
 
-## 3. Captured feature `[K, H, D]`의 의미
+## Captured feature `[K, H, D]`의 의미
 
 `feature_kind = "groot_n16_dit_valid_action_tokens_pre_velocity"`,
 `feature_axes = ['denoising_step', 'valid_action_step', 'feature_dim']`.
@@ -103,7 +113,7 @@ Wall-clock은 GPU 추론 + MuJoCo step + rendering 부하에 따라 보통 분 �
 - **D**: 각 token의 1024-D feature. action decoder가 받기 직전 (pre-velocity)
   의 hidden — SAFE 논문에서 detector 학습용으로 권장하는 위치
 
-## 4. 분석 시 aggregation 선택
+## 분석 시 aggregation 선택
 
 원본 `[T_inf, K, H, D]` → 분석용 `[T_inf, D]` 또는 `[D]` 로 압축할 때
 어디서 무엇을 잃는지.
@@ -139,7 +149,7 @@ Wall-clock은 GPU 추론 + MuJoCo step + rendering 부하에 따라 보통 분 �
 | `z_mean` (rollout-level, inference축 평균) | "이 rollout 동안 model이 평균적으로 어디를 향해 plan 했는가" |
 | `h_T_inf` (LSTM 마지막 hidden) | "model의 11~45개 plan summary 시퀀스 전체를 LSTM이 비선형 압축한 256-D 요약" |
 
-## 5. LSTM detector 와 cadence
+## LSTM detector 와 cadence
 
 SAFE-LSTM detector는 GR00T와 **같은 cadence (1.25 Hz)** 로 작동:
 
@@ -156,7 +166,7 @@ SAFE-LSTM detector는 GR00T와 **같은 cadence (1.25 Hz)** 로 작동:
 - LSTM hidden state가 시간적 history를 누적 — model 입력에 history가 없는 한계를 보완
 - rollout 시작 시 hidden state zero로 reset
 
-## 6. 발표/문서/코드 표기 원칙
+## 발표/문서/코드 표기 원칙
 
 - "frame" 이라는 단어는 **사용하지 않음**. 한 datapoint는 **inference 1회의 결과**
 - rollout 길이는 **`n_inferences`** 또는 **`T_inf`** 로 표기 (옛 `T`, `T_env` 대체)
@@ -174,7 +184,7 @@ SAFE-LSTM detector는 GR00T와 **같은 cadence (1.25 Hz)** 로 작동:
 | `--feature h_T_inf` | LSTM hidden after all inferences |
 | `--truncate-t N` | 처음 N inference만 사용 (rollout-level feature에 직교) |
 
-## 7. 참고 source
+## 참고 source
 
 | 항목 | 경로 |
 |---|---|
@@ -183,4 +193,4 @@ SAFE-LSTM detector는 GR00T와 **같은 cadence (1.25 Hz)** 로 작동:
 | Feature capture hook (DiT forward) | `scripts/safe/groot_n16/robocasa/serve/feature_server.py:96-117` |
 | Rollout 수집 루프 | `scripts/safe/groot_n16/robocasa/collect/collect_rollout.py:344-408` |
 | SAFE detector 학습 config | `outputs/eval/robocasa/groot_n16/safe_train_logs/.../config.yaml` |
-| SAFE detector 모델 정의 | `failure_prob/model/lstm.py` in `/home/dongkyu/pkt_ws/SAFE` |
+| SAFE detector 모델 정의 | `failure_prob/model/lstm.py` in `/home/dongkyu/pdk_ws/SAFE` |

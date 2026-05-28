@@ -1,4 +1,19 @@
-# SAFE x GR00T N1.6 RoboCasa Reproduction Report
+# SAFE x GR00T N1.6 RoboCasa — Reproduction Report
+
+SAFE 논문식 failure detection을 GR00T N1.6 RoboCasa에 맞춰 축소 재현한 end-to-end 결과 보고서다. 절차 runbook은 [04 Collection](n16_04_safe_collection.md), [07 Detector](n16_07_safe_detector.md), [08 Visualization](n16_08_safe_visualization.md), [09 Parity](n16_09_safe_parity.md)을, 전체 wiring 개요는 [03 Overview](n16_03_safe_overview.md)를 본다.
+
+> 관련 문서 (N1.6 reading order)
+> - [Doc map](README.md)
+> - [01 Fine-Tuning](n16_01_finetune.md)
+> - [02 Evaluation](n16_02_eval.md)
+> - [03 SAFE Overview](n16_03_safe_overview.md)
+> - [04 SAFE Collection](n16_04_safe_collection.md)
+> - [05 Scenario Reproduction](n16_05_safe_env_reproduction.md)
+> - [06 Inference Datapoint Semantics](n16_06_safe_inference_semantics.md)
+> - [07 SAFE Detector](n16_07_safe_detector.md)
+> - [08 SAFE Visualization](n16_08_safe_visualization.md)
+> - [09 SAFE Parity](n16_09_safe_parity.md)
+> - **10 SAFE Report (이 문서)**
 
 ## 범위
 
@@ -131,7 +146,7 @@ SAFE loader는 이 feature를 읽은 뒤 detector train/eval config에서 aggreg
 Base checkpoint는 GR00T N1.6 RoboCasa PandaOmron checkpoint다.
 
 ```text
-/home/dongkyu/pdk_ws/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B
+/home/dongkyu/.cache/temporal_vla/checkpoints/nvidia/GR00T-N1.6-3B
 ```
 
 GR00T N1.6 success-rate 기준선은 upstream GR00T ZMQ evaluation path로 둔다. HTTP `/act` path는 observation/action parity 검증 후 SR 지표에 편입한다.
@@ -465,7 +480,7 @@ g_\phi(h_{1:t}) \to \mathbf{1}[t \ge t_{onset}]
 
 ## 관련 파일
 
-- [SAFE wiring runbook](groot_n16_robocasa_wiring.md)
+- [SAFE wiring overview](n16_03_safe_overview.md) (related: [04 collection](n16_04_safe_collection.md), [07 detector](n16_07_safe_detector.md), [08 visualization](n16_08_safe_visualization.md), [09 parity](n16_09_safe_parity.md))
 - [Dedicated ZMQ feature server ADR](../adr/0001-dedicated-safe-groot-n16-zmq-server.md)
 - `scripts/safe/groot_n16/robocasa/run_config.py`
 - `scripts/safe/groot_n16/robocasa/run_config.sh`

@@ -1,8 +1,21 @@
-# GR00T N1.6 RoboCasa Evaluation
+# GR00T N1.6 RoboCasa — Evaluation
 
-`docs/groot/n16_robocasa_finetune.md`의 후속 문서다. GR00T N1.6 fine-tuned checkpoint 또는 base checkpoint를 RoboCasa simulator에서 평가하는 방법을 정리한다.
+`n16_01_finetune.md`의 후속 문서다. GR00T N1.6 fine-tuned checkpoint 또는 base checkpoint를 RoboCasa simulator에서 평가하는 방법을 정리한다.
 
-N1.5 평가는 `docs/groot/n15_robocasa_eval.md`를 사용한다. N1.5와 N1.6은 container, entrypoint, embodiment/data config가 다르다.
+> 관련 문서 (N1.6 reading order)
+> - [Doc map](README.md)
+> - [01 Fine-Tuning](n16_01_finetune.md)
+> - **02 Evaluation (이 문서)**
+> - [03 SAFE Overview](n16_03_safe_overview.md)
+> - [04 SAFE Collection](n16_04_safe_collection.md)
+> - [05 Scenario Reproduction](n16_05_safe_env_reproduction.md)
+> - [06 Inference Datapoint Semantics](n16_06_safe_inference_semantics.md)
+> - [07 SAFE Detector](n16_07_safe_detector.md)
+> - [08 SAFE Visualization](n16_08_safe_visualization.md)
+> - [09 SAFE Parity](n16_09_safe_parity.md)
+> - [10 SAFE Report](n16_10_safe_report.md)
+
+N1.5 평가는 `n15_02_eval.md`를 사용한다. N1.5와 N1.6은 container, entrypoint, embodiment/data config가 다르다.
 
 사용 파일:
 
