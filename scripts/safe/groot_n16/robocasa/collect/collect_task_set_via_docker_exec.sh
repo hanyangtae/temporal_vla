@@ -93,7 +93,7 @@ for task_id in "${!TASKS[@]}"; do
             -e MUJOCO_GL=egl \
             -e PYTHONPATH="${CONTAINER_REPO_ROOT}/src/policies/Isaac-GR00T:${CONTAINER_REPO_ROOT}/src/benchmarks/robocasa:${CONTAINER_REPO_ROOT}/src/benchmarks/robosuite:${CONTAINER_REPO_ROOT}" \
             "${ROBOCASA_CONTAINER}" \
-            bash -lc "python '${CONTAINER_REPO_ROOT}/scripts/safe/groot_n16/robocasa/collect/collect_rollout.py' \
+            bash -lc "set -o pipefail; python '${CONTAINER_REPO_ROOT}/scripts/safe/groot_n16/robocasa/collect/collect_rollout.py' \
                 --policy-client-host '${HOST}' \
                 --policy-client-port '${PORT}' \
                 --env-name '${env_name}' \
