@@ -145,7 +145,7 @@ gr00t/eval/sim/robocasa/robocasa_uv/.venv/bin/python gr00t/eval/rollout_policy.p
 cd /temporal_vla/src/policies/Isaac-GR00T
 
 UV_CACHE_DIR=/tmp/uv-cache \
-HF_HOME=/temporal_vla/data/huggingface \
+HF_HOME=/cache/datasets/huggingface \
 HF_MODULES_CACHE=/tmp/hf_modules \
 NO_ALBUMENTATIONS_UPDATE=1 \
 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \

@@ -77,7 +77,7 @@ N1.6 RoboCasa fine-tuning과 ZMQ 평가 server에 사용합니다.
 | 서버 포트 | 8100 |
 | 활성화 | `--profile xvla` 필요 |
 
-LeRobot v3.0 형식의 데이터셋을 사용합니다 (`data/datasets_v3/`).
+LeRobot v3.0 형식의 데이터셋을 사용합니다 (`<cache>/datasets/datasets_v3/`).
 
 ### 2.5 dreamvla
 

@@ -5,6 +5,7 @@
 ## Current Runbooks
 
 - [Docker Guide](docker_guide.md): 컨테이너 빌드, 실행, GPU, VNC/X11, troubleshooting.
+- [Cache Paths](cache_paths.md): 체크포인트·데이터셋 cache 위치(`~/.cache/temporal_vla`, 컨테이너 `/cache`)와 코드에서 참조하는 단일 소스 규칙.
 - [Adding Checkpoint](adding_checkpoint.md): 새 VLA 체크포인트를 profile/serve/eval 경로에 붙이는 체크리스트.
 - [GR00T N1.6 RoboCasa Eval](groot/n16_robocasa_eval.md): GR00T N1.6 RoboCasa ZMQ evaluation 기준 문서.
 - [GR00T N1.6 RoboCasa Fine-Tuning](groot/n16_robocasa_finetune.md): GR00T N1.6 RoboCasa fine-tuning 기준 문서.
