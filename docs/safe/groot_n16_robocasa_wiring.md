@@ -240,6 +240,8 @@ python scripts/safe/groot_n16/robocasa/collect/verify_rollout_collection.py \
 - verifier: `status=ok`
 - total SR: `967/1800 = 53.7%`
 
+> **재현 주의:** seed는 기록 라벨일 뿐, env 생성 시 전달되지 않아 scene을 고정하지 못한다 — 이 collection은 seed로 재현 불가. 메커니즘·fix는 [robocasa_env_reproducibility.md](../robocasa_env_reproducibility.md) §11 참조.
+
 Verifier summary:
 
 ```text

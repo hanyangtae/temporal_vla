@@ -197,6 +197,8 @@ completed at: 2026-05-27 04:02:09 KST
 
 동일 `episode_idx`는 모든 task에서 같은 seed를 사용한다. 예를 들어 각 task의 `episode_idx=0`은 seed `100000`, `episode_idx=99`는 seed `100099`다. Seed 기록은 `raw_rollouts/collection_summary.tsv`에 남아 있다.
 
+> **재현 주의:** 이 collection은 env **생성 시 seed가 전달되지 않아** 기록된 seed로 scene이 고정되지 않는다. 따라서 이 데이터(2026-05-27 수집)는 seed로 재현 불가하다 (수집된 feature 자체는 유효). 메커니즘·fix는 [robocasa_env_reproducibility.md](../robocasa_env_reproducibility.md) §11 참조.
+
 Total SR은 `967/1800 = 53.7%`다.
 
 | task id | RoboCasa365 task | success | failure | SR |
