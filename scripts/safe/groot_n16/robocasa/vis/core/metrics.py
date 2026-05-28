@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import numpy as np
+from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, silhouette_score
+from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 
 from .distance import l2_normalize
@@ -117,3 +119,60 @@ def logistic_auc(
     clf = LogisticRegression(max_iter=5000, C=C, random_state=random_state).fit(Xtr, labels[train_mask])
     proba = clf.predict_proba(Xte)[:, 1]
     return float(roc_auc_score(labels[test_mask], proba))
+
+
+def cv_auroc(X, y, *, n_perm: int = 0, k: int = 5, pca_dim: int = 30, seed: int = 0):
+    """Held-out k-fold CV logistic AUROC of binary y (PCA-reduced features).
+
+    Unifies the per-script CV variants. Returns ``(auroc, null)``:
+      - auroc : float held-out CV AUROC (None if classes/folds insufficient).
+      - null  : ndarray[n_perm] of label-permuted CV AUROCs (chance baseline) if
+                n_perm>0, else None.
+    """
+    X = np.asarray(X); y = np.asarray(y)
+    if len(np.unique(y)) < 2 or np.bincount(y).min() < k:
+        return None, None
+    d = min(pca_dim, X.shape[1], X.shape[0] - 1)
+    Xr = PCA(n_components=d, random_state=seed).fit_transform(X)
+    splits = list(StratifiedKFold(k, shuffle=True, random_state=seed).split(Xr, y))
+
+    def _auroc(yy):
+        a = []
+        for tr, te in splits:
+            if len(np.unique(yy[tr])) < 2 or len(np.unique(yy[te])) < 2:
+                continue
+            sc = StandardScaler().fit(Xr[tr])
+            clf = LogisticRegression(max_iter=2000).fit(sc.transform(Xr[tr]), yy[tr])
+            a.append(roc_auc_score(yy[te], clf.predict_proba(sc.transform(Xr[te]))[:, 1]))
+        return float(np.mean(a)) if a else None
+
+    real = _auroc(y)
+    if n_perm <= 0:
+        return real, None
+    rng = np.random.default_rng(seed)
+    null = [v for v in (_auroc(rng.permutation(y)) for _ in range(n_perm)) if v is not None]
+    return real, np.asarray(null)
+
+
+def centroid_spread_ratio(X, succ, task, min_class: int = 8):
+    """Cross-task centroid-spread ratio fail/succ in the given (e.g. whitened) space.
+
+    Per (task, outcome) centroid; mean pairwise distance among fail-centroids vs
+    succ-centroids. ratio<1 => failures converge across tasks more than successes.
+    Returns (spread_succ, spread_fail, ratio, n_task_used).
+    """
+    from scipy.spatial.distance import pdist
+    succ = np.asarray(succ); task = np.asarray(task)
+    sc, fc = [], []
+    for t in np.unique(task):
+        ms = (task == t) & (succ == 1)
+        mf = (task == t) & (succ == 0)
+        if ms.sum() >= min_class:
+            sc.append(X[ms].mean(0))
+        if mf.sum() >= min_class:
+            fc.append(X[mf].mean(0))
+    if len(sc) < 2 or len(fc) < 2:
+        return None, None, None, min(len(sc), len(fc))
+    ss = float(pdist(np.asarray(sc)).mean())
+    sf = float(pdist(np.asarray(fc)).mean())
+    return ss, sf, (sf / ss if ss > 0 else None), min(len(sc), len(fc))
