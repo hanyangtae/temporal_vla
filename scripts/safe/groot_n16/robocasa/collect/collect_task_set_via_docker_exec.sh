@@ -43,8 +43,11 @@ if [[ -z "${OUT_ROOT_CONTAINER:-}" ]]; then
         OUT_ROOT_CONTAINER="${RUN_ROOT_CONTAINER}/raw_rollouts"
     fi
 fi
+EP_META_ROOT="${EP_META_ROOT:-${OUT_ROOT}/_ep_metas}"
+EP_META_ROOT_CONTAINER="${EP_META_ROOT_CONTAINER:-${OUT_ROOT_CONTAINER}/_ep_metas}"
 
 mkdir -p "${OUT_ROOT}"
+mkdir -p "${EP_META_ROOT}"
 SUMMARY="${OUT_ROOT}/collection_summary.tsv"
 if [[ ! -f "${SUMMARY}" ]]; then
     printf "task_id\ttask\tepisode_idx\tseed\texit_code\tpkl\n" > "${SUMMARY}"
@@ -55,13 +58,17 @@ echo "Server: ${HOST}:${PORT}"
 echo "Task set: ${TASK_SET} (${#TASKS[@]} tasks)"
 echo "RoboCasa env source: ${ROBOCASA_ENV_SOURCE}"
 echo "Episodes per task: ${EPISODES_PER_TASK}, episode_idx: ${EPISODE_START_IDX}..$((EPISODE_START_IDX + EPISODES_PER_TASK - 1)), seeds: ${SEED_START}..$((SEED_START + EPISODES_PER_TASK - 1))"
+echo "Ep meta manifests: ${EP_META_ROOT}"
 
 for task_id in "${!TASKS[@]}"; do
     task="${TASKS[${task_id}]}"
     env_name="robocasa_panda_omron/${task}_PandaOmron_Env"
     task_dir="${OUT_ROOT}/${task}"
     task_dir_container="${OUT_ROOT_CONTAINER}/${task}"
+    ep_meta_dir="${EP_META_ROOT}/${task}"
+    ep_meta_dir_container="${EP_META_ROOT_CONTAINER}/${task}"
     mkdir -p "${task_dir}"
+    mkdir -p "${ep_meta_dir}"
 
     for local_episode_idx in $(seq 0 $((EPISODES_PER_TASK - 1))); do
         episode_idx=$((EPISODE_START_IDX + local_episode_idx))
@@ -94,6 +101,7 @@ for task_id in "${!TASKS[@]}"; do
                 --episode-start-idx '${episode_idx}' \
                 --n-episodes 1 \
                 --seed '${seed}' \
+                --ep-meta-dir '${ep_meta_dir_container}' \
                 2>&1 | tee '${task_dir_container}/ep${episode_idx}.log'"; then
             exit_code=0
         else
