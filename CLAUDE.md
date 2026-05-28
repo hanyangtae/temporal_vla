@@ -87,6 +87,20 @@ VLA 잠재공간에서 **실패 latent와 성공 latent를 구분**하고, 추�
 -출력: `outputs`
 -모델 추론 결과 출력: `outputs/eval/{benchmark}/{model}/{yymmddhhmmss}/`
 
+## 체크포인트·데이터셋 경로 (cache)
+
+체크포인트와 데이터셋은 repo 트리 밖 cache 에 둔다 (git 추적 안 함).
+
+- 호스트: `~/.cache/temporal_vla/` 아래 `checkpoints/`, `datasets/`.
+- 컨테이너: docker-compose 가 위 cache 를 `/cache` 로 bind-mount + `VLA_CACHE_ROOT=/cache` 주입 → `/cache/checkpoints/...`, `/cache/datasets/...`.
+- 베이스 모델: `checkpoints/nvidia/GR00T-N1.6-3B`. 데이터셋: `datasets/robocasa/...`, `datasets/robocasa_eagle_pre_llm/...` 등 (구 repo `data/` 내용을 그대로 옮김).
+- 학습 산출물(파인튜닝 ckpt, rollout 등)은 이동 대상이 아니라 `outputs/` 에 그대로 둔다.
+
+경로 참조 규칙 (단일 소스 — 하드코딩 금지):
+- Python: `from scripts.path_setup import CHECKPOINTS_ROOT, DATA_ROOT` (repo root 가 sys.path 에 있을 때).
+- Shell: `source "${REPO_ROOT}/scripts/utils/cache_env.sh"` 후 `${VLA_CHECKPOINTS_ROOT}` / `${VLA_DATASETS_ROOT}`. 컨테이너 전용 스크립트는 `/cache/...` 리터럴 사용 가능.
+- `configs/checkpoints/*.yaml` 의 로컬 체크포인트 경로도 `/cache/...` 기준.
+
 ## 개발 컨벤션
 
 - **브랜치**: `feat/`, `fix/`, `exp/`, `refactor/` 접두사. `dev`에서 분기, PR은 `dev`로.
@@ -153,5 +167,5 @@ LeRobotDataset → scripts/extract/extract_cotrack_robocasa.py → {save_path}/r
 
 ## 주의사항
 
-- serve 스크립트는 Docker 컨테이너 내에서 실행됨. 경로는 `/temporal_vla/...` 기준.
+- serve 스크립트는 Docker 컨테이너 내에서 실행됨. repo 코드 경로는 `/temporal_vla/...`, 체크포인트·데이터셋은 `/cache/...` 기준.
 - action 차원은 모델마다 다를 수 있음 (7, 14 등). 벤치마크에서 환경에 맞게 매핑.
