@@ -353,6 +353,28 @@ python scripts/safe/groot_n16/robocasa/collect/verify_rollout_collection.py \
   --expected-n-action-steps 16
 ```
 
+Smoke validation (2026-05-28):
+
+```text
+ah8 smoke:
+outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_ah8_smoke/raw_rollouts/CloseFridge
+
+ah16 smoke:
+outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_ah16_smoke/raw_rollouts/CloseFridge
+
+shared scenario manifests:
+outputs/eval/robocasa/groot_n16/scenario_manifests/target_atomic_seen18_seed100000_100099/CloseFridge
+```
+
+검증 결과:
+
+| mode | task | seeds | result | pkl `hidden_states` | pkl `actions` | ep_meta mode |
+|---|---|---|---|---|---|---|
+| `ah8` | `CloseFridge` | `100000..100002` | 3/3 success, verifier `status=ok` | `[4,8,1024]` | decoded 16-step chunk 전체 | exported |
+| `ah16` | `CloseFridge` | `100000..100002` | 3/3 success, verifier `status=ok` | `[4,16,1024]` | decoded 16-step chunk 전체 | imported |
+
+ah8/ah16 GR00T 서버를 동시에 올리면 16GB GPU에서 CUDA OOM이 날 수 있다. Smoke와 full collection은 하나의 GR00T feature server만 띄운 상태에서 ah8, ah16을 순차 실행한다.
+
 이 mode는 RoboCasa365 (`src/benchmarks/robocasa`)를 사용한다. RoboCasa v0.2 (`robocasa_v02`) 기준 6-task SAFE split과 달리 `CloseBlenderLid`, `NavigateKitchen`, `OpenStandMixerHead` 같은 RoboCasa365 task가 포함되므로 `ROBOCASA_ENV_SOURCE=robocasa365`가 자동으로 선택된다. 기본 저장 위치는 아래다.
 
 ```text
