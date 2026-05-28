@@ -215,6 +215,15 @@ outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_ah16
 
 `ah8`는 GR00T model-level action tokens 50개 중 leading 8개를 SAFE feature로 저장하고, decoded action chunk 16개 중 leading 8개만 RoboCasa에 실행한다. pkl의 `actions`에는 decoded action chunk 전체 16개를 유지한다. SAFE point는 inference 1회당 1점으로 유지한다. `ah16`은 같은 manifest root를 import해서 같은 scene composition에서 기존 16-step cadence를 재수집하는 paired baseline이다. 이전 `target_atomic_seen18_ckpt120000_robocasa365_100ep` collection은 `scenario_seed`와 `ep_meta` manifest가 없으므로 historical reference로만 사용한다.
 
+지원 mode:
+
+| mode | server export | collector execution | pkl `hidden_states` | pkl `actions` |
+|---|---|---|---|---|
+| `ah8` | `--feature-action-horizon 8` | `N_ACTION_STEPS=8` | `[4,8,1024]` | decoded 16-step chunk 전체 |
+| `ah16` | omit `--feature-action-horizon` or set `16` | `N_ACTION_STEPS=16` | `[4,16,1024]` | decoded 16-step chunk 전체 |
+
+`exported_action_token_count`와 `n_action_steps`가 다르면 collector가 pkl 쓰기 전에 실패한다. 따라서 ah8/ah16 모두 server export horizon과 collector execution horizon을 같은 값으로 맞춘다.
+
 `ah8` 서버:
 
 ```bash
@@ -293,6 +302,55 @@ python scripts/safe/groot_n16/robocasa/collect/verify_rollout_collection.py \
   --expected-hidden-shape 4,8,1024 \
   --expected-feature-action-horizon 8 \
   --expected-n-action-steps 8
+```
+
+`ah16` paired collection은 같은 canonical manifest root를 import한다. 서버는 `--feature-action-horizon`을 생략하면 decoded valid horizon 16을 export한다.
+
+`ah16` 서버:
+
+```bash
+cd /temporal_vla/src/policies/Isaac-GR00T
+
+UV_CACHE_DIR=/tmp/uv-cache \
+HF_HOME=/temporal_vla/data/huggingface \
+HF_MODULES_CACHE=/tmp/hf_modules \
+NO_ALBUMENTATIONS_UPDATE=1 \
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+uv run --no-sync python /temporal_vla/scripts/safe/groot_n16/robocasa/serve/feature_server.py \
+  --profile /temporal_vla/configs/checkpoints/groot__robocasa365_ckpt120000.yaml \
+  --host '*' \
+  --port 5557 \
+  --device cuda \
+  --feature-dtype float16 \
+  --feature-slice valid
+```
+
+`ah16` 100ep/task collection:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+ROBOCASA_SAFE_RUN_ID=target_atomic_seen18_ckpt120000_robocasa365_ah16_100ep \
+TASK_SET=target_atomic_seen18 \
+EPISODES_PER_TASK=100 \
+SEED_START=100000 \
+EPISODE_START_IDX=0 \
+N_ACTION_STEPS=16 \
+EP_META_ROOT=/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/scenario_manifests/target_atomic_seen18_seed100000_100099 \
+EP_META_ROOT_CONTAINER=/temporal_vla/outputs/eval/robocasa/groot_n16/scenario_manifests/target_atomic_seen18_seed100000_100099 \
+HOST=127.0.0.1 \
+PORT=5557 \
+bash scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh
+```
+
+`ah16` 최종 검증:
+
+```bash
+python scripts/safe/groot_n16/robocasa/collect/verify_rollout_collection.py \
+  outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_ah16_100ep/raw_rollouts \
+  --expected-hidden-shape 4,16,1024 \
+  --expected-feature-action-horizon 16 \
+  --expected-n-action-steps 16
 ```
 
 이 mode는 RoboCasa365 (`src/benchmarks/robocasa`)를 사용한다. RoboCasa v0.2 (`robocasa_v02`) 기준 6-task SAFE split과 달리 `CloseBlenderLid`, `NavigateKitchen`, `OpenStandMixerHead` 같은 RoboCasa365 task가 포함되므로 `ROBOCASA_ENV_SOURCE=robocasa365`가 자동으로 선택된다. 기본 저장 위치는 아래다.
