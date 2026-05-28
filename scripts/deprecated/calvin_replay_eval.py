@@ -6,14 +6,14 @@
 
 실행 (calvin 컨테이너):
     docker compose exec calvin python /temporal_vla/scripts/calvin_replay_eval.py \\
-        --data-dir /temporal_vla/data/calvin_lerobot/fywang_ABCD_D \\
+        --data-dir /cache/datasets/calvin_lerobot/fywang_ABCD_D \\
         --env-path /temporal_vla/src/benchmarks/calvin/dataset/calvin_debug_dataset/validation \\
         --num-episodes 20 \\
         --seed 42
 
     # 특정 에피소드 지정:
     docker compose exec calvin python /temporal_vla/scripts/calvin_replay_eval.py \\
-        --data-dir /temporal_vla/data/calvin_lerobot/fywang_ABCD_D \\
+        --data-dir /cache/datasets/calvin_lerobot/fywang_ABCD_D \\
         --env-path /temporal_vla/src/benchmarks/calvin/dataset/calvin_debug_dataset/validation \\
         --episodes 22966 22980 23001
 

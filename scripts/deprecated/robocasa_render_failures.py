@@ -14,7 +14,7 @@
 
   # 데이터셋 직접 지정 + 에피소드 번호 수동 지정
   python scripts/robocasa_render_failures.py \
-    --dataset /temporal_vla/data/datasets/v1.0/pretrain/atomic/TurnOnToaster/20250820/lerobot \
+    --dataset /cache/datasets/datasets/v1.0/pretrain/atomic/TurnOnToaster/20250820/lerobot \
     --episodes 3,7,12,25 \
     --output-dir /temporal_vla/outputs/failures
 

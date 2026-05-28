@@ -24,6 +24,7 @@ expand_home() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 REPO_ROOT="$(expand_home "${REPO_ROOT:-${DEFAULT_REPO_ROOT}}")"
+source "${REPO_ROOT}/scripts/utils/cache_env.sh"
 ISAAC_GR00T_DIR="$(expand_home "${ISAAC_GR00T_DIR:-${REPO_ROOT}/src/policies/Isaac-GR00T}")"
 
 cd "${ISAAC_GR00T_DIR}"
@@ -43,7 +44,7 @@ fi
 NUM_GPUS="${NUM_GPUS:-1}"
 MASTER_PORT="${MASTER_PORT:-29500}"
 
-LOCAL_BASE_MODEL_PATH="${REPO_ROOT}/outputs/checkpoints/GR00T-N1.6-3B"
+LOCAL_BASE_MODEL_PATH="${VLA_CHECKPOINTS_ROOT}/nvidia/GR00T-N1.6-3B"
 if [ -z "${BASE_MODEL_PATH:-}" ]; then
     if [ -f "${LOCAL_BASE_MODEL_PATH}/config.json" ]; then
         BASE_MODEL_PATH="${LOCAL_BASE_MODEL_PATH}"
@@ -53,7 +54,7 @@ if [ -z "${BASE_MODEL_PATH:-}" ]; then
 fi
 
 # Per-task mixture: 10 atomic task 경로를 ":" 로 join. launch_finetune_ttt 가 split.
-ATOMIC_ROOT="${ATOMIC_ROOT:-${REPO_ROOT}/data/robocasa/v1.0/pretrain/atomic}"
+ATOMIC_ROOT="${ATOMIC_ROOT:-${VLA_DATASETS_ROOT}/robocasa/v1.0/pretrain/atomic}"
 DATE_TAG="${DATE_TAG:-20250819}"
 DATASET_PATH="${DATASET_PATH:-\
 ${ATOMIC_ROOT}/OpenDrawer/${DATE_TAG}/lerobot:\

@@ -5,7 +5,7 @@ rollout_policy.py의 환경/모델 셋업을 재사용하되,
 
 사용법 (groot 컨테이너 내부):
     MUJOCO_GL=egl python /temporal_vla/scripts/analysis/collect_groot_trajectories.py \
-        --model_path /temporal_vla/outputs/checkpoints/GR00T-N1.6-3B \
+        --model_path /cache/checkpoints/nvidia/GR00T-N1.6-3B \
         --env_name robocasa_panda_omron/PnPCounterToCab_PandaOmron_Env \
         --n_episodes 20 \
         --save_dir /temporal_vla/outputs/trajectories

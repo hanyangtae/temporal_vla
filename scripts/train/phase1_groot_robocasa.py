@@ -36,13 +36,14 @@ import wandb
 # repo root 를 PYTHONPATH 에
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from scripts.path_setup import DATA_ROOT
 from src.datasets.phase1_v21_dataset import Phase1V21EpisodicDataset
 from src.ttt.predictor import ProgressPredictor
 
 
 REPO_ROOT = Path("/temporal_vla")
-DEFAULT_DATA_ROOT = REPO_ROOT / "data/robocasa/v1.0/pretrain/atomic"
-DEFAULT_CACHE_ROOT = REPO_ROOT / "data/robocasa_eagle_pre_llm"
+DEFAULT_DATA_ROOT = DATA_ROOT / "robocasa/v1.0/pretrain/atomic"
+DEFAULT_CACHE_ROOT = DATA_ROOT / "robocasa_eagle_pre_llm"
 DEFAULT_SAVE_DIR = REPO_ROOT / "outputs/train/phase1_groot_robocasa"
 
 DEFAULT_TASKS = [

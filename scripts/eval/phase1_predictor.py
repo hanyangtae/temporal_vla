@@ -36,6 +36,7 @@ from tqdm import tqdm
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from scripts.path_setup import DATA_ROOT
 from src.datasets.robocasa_v21_reader import RoboCasaV21Reader
 from src.ttt.predictor import ProgressPredictor
 
@@ -439,9 +440,9 @@ def main():
                              "미지정 시 모두 --inner_model_type 값 사용.")
     # Dataset (학습과 동일하게)
     parser.add_argument("--data_root", type=str,
-                        default=str(REPO_ROOT / "data/robocasa/v1.0/pretrain/atomic"))
+                        default=str(DATA_ROOT / "robocasa/v1.0/pretrain/atomic"))
     parser.add_argument("--cache_root", type=str,
-                        default=str(REPO_ROOT / "data/robocasa_eagle_pre_llm"))
+                        default=str(DATA_ROOT / "robocasa_eagle_pre_llm"))
     parser.add_argument("--tasks", type=str, nargs="+", default=DEFAULT_TASKS)
     parser.add_argument("--train_frac", type=float, default=0.9)
     parser.add_argument("--split_seed", type=int, default=42)

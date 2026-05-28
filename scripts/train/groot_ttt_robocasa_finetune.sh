@@ -18,10 +18,10 @@ cd /temporal_vla/src/policies/Isaac-GR00T
 
 NUM_GPUS="${NUM_GPUS:-1}"
 MASTER_PORT="${MASTER_PORT:-29500}"
-BASE_MODEL_PATH="${BASE_MODEL_PATH:-/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B}"
+BASE_MODEL_PATH="${BASE_MODEL_PATH:-/cache/checkpoints/nvidia/GR00T-N1.6-3B}"
 
 # Per-task mixture — 10 atomic task 경로를 ":" 로 join. launch_finetune_ttt 가 split.
-ATOMIC_ROOT="/temporal_vla/data/robocasa/v1.0/pretrain/atomic"
+ATOMIC_ROOT="/cache/datasets/robocasa/v1.0/pretrain/atomic"
 DATE_TAG="20250819"
 DATASET_PATH="${DATASET_PATH:-\
 ${ATOMIC_ROOT}/OpenDrawer/${DATE_TAG}/lerobot:\
@@ -42,7 +42,7 @@ OUTPUT_DIR="${OUTPUT_DIR:-/temporal_vla/outputs/groot_ttt_robocasa_10tasks}"
 TTT_PREDICTOR_PATH="${TTT_PREDICTOR_PATH:-/temporal_vla/outputs/train/phase1_groot_robocasa/20260511_1040/epoch_08.pt}"
 TTT_UPDATE_IN_TRAIN="${TTT_UPDATE_IN_TRAIN:-True}"
 # Eagle pre-LLM cache root (per-task subdir 에 embeddings.pt). 비우면 single-frame fallback.
-TTT_EAGLE_CACHE_ROOT="${TTT_EAGLE_CACHE_ROOT:-/temporal_vla/data/robocasa_eagle_pre_llm}"
+TTT_EAGLE_CACHE_ROOT="${TTT_EAGLE_CACHE_ROOT:-/cache/datasets/robocasa_eagle_pre_llm}"
 
 # Isaac-GR00T 공식 FinetuneConfig default 와 동일 (batch=64, lr=1e-4, ...).
 # MAX_STEPS=20000, 5k 마다 체크포인트 (총 4 개: step_05000 ~ step_20000). 1개 ≈ 22GB,

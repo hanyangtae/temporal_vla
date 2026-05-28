@@ -12,14 +12,14 @@ set -e
 cd /temporal_vla
 
 python scripts/train/phase1_predictor.py \
-    --data_root     data/bridge_v2_lerobot \
+    --data_root     /cache/datasets/bridge_v2_lerobot \
     --repo_id       FedorX8/bridge_v2_lerobot \
     --image_key     observation.images.primary \
     --window_size   8 \
     --max_windows_per_episode 8 \
     --train_episodes 2986 \
     --val_episodes   287 \
-    --embed_cache_path data/bridge_v2_lerobot_clip_embeddings.pt \
+    --embed_cache_path /cache/datasets/bridge_v2_lerobot_clip_embeddings.pt \
     \
     --input_dim     1024 \
     --proj_dim      64 \
@@ -37,6 +37,6 @@ python scripts/train/phase1_predictor.py \
     --embed_device  cuda \
     \
     --device        cuda \
-    --save_dir      checkpoints/phase1 \
+    --save_dir      /cache/checkpoints/phase1 \
     --wandb_project temporal-vla \
     --wandb_run_name phase1_vita_full_traj_w8_k8_5ep
