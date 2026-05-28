@@ -15,6 +15,7 @@ HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-5557}"
 EPISODE_START_IDX="${EPISODE_START_IDX:-0}"
 EPISODES_PER_TASK="${EPISODES_PER_TASK:-1}"
+N_ACTION_STEPS="${N_ACTION_STEPS:-16}"
 TASK_SET="${TASK_SET:-safe_seen6}"
 if [[ -z "${RUN_ID:-}" ]]; then
     if [[ "${TASK_SET}" == "safe_seen6" ]]; then
@@ -57,6 +58,7 @@ echo "Output: ${OUT_ROOT}"
 echo "Server: ${HOST}:${PORT}"
 echo "Task set: ${TASK_SET} (${#TASKS[@]} tasks)"
 echo "RoboCasa env source: ${ROBOCASA_ENV_SOURCE}"
+echo "Action steps per inference: ${N_ACTION_STEPS}"
 echo "Episodes per task: ${EPISODES_PER_TASK}, episode_idx: ${EPISODE_START_IDX}..$((EPISODE_START_IDX + EPISODES_PER_TASK - 1)), seeds: ${SEED_START}..$((SEED_START + EPISODES_PER_TASK - 1))"
 echo "Ep meta manifests: ${EP_META_ROOT}"
 
@@ -100,6 +102,7 @@ for task_id in "${!TASKS[@]}"; do
                 --task-id '${task_id}' \
                 --episode-start-idx '${episode_idx}' \
                 --n-episodes 1 \
+                --n_action_steps '${N_ACTION_STEPS}' \
                 --seed '${seed}' \
                 --ep-meta-dir '${ep_meta_dir_container}' \
                 2>&1 | tee '${task_dir_container}/ep${episode_idx}.log'"; then

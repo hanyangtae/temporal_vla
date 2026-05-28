@@ -241,6 +241,7 @@ class N16SafeCollectingPolicyClient:
         self.feature_axes: list[str] | None = None
         self.feature_slice: str | None = None
         self.exported_action_token_count: int | None = None
+        self.feature_action_horizon: int | None = None
         self.valid_action_horizon: int | None = None
         self.model_action_horizon: int | None = None
         self.num_inference_timesteps: int | None = None
@@ -264,6 +265,7 @@ class N16SafeCollectingPolicyClient:
         self.feature_axes = None
         self.feature_slice = None
         self.exported_action_token_count = None
+        self.feature_action_horizon = None
         self.valid_action_horizon = None
         self.model_action_horizon = None
         self.num_inference_timesteps = None
@@ -295,6 +297,9 @@ class N16SafeCollectingPolicyClient:
         self.feature_slice = response.get("feature_slice", self.feature_slice)
         self.exported_action_token_count = response.get(
             "exported_action_token_count", self.exported_action_token_count
+        )
+        self.feature_action_horizon = response.get(
+            "feature_action_horizon", self.feature_action_horizon
         )
         self.valid_action_horizon = response.get("valid_action_horizon", self.valid_action_horizon)
         self.model_action_horizon = response.get("model_action_horizon", self.model_action_horizon)
@@ -564,9 +569,16 @@ def _write_safe_triplet(
     env_name: str,
     upstream_video_path: Path | None,
     ep_meta: dict[str, Any],
+    n_action_steps: int,
 ) -> None:
     if not policy.records:
         raise RuntimeError("No feature records were collected during rollout")
+    if policy.exported_action_token_count != n_action_steps:
+        raise RuntimeError(
+            "SAFE feature export horizon must match executed action steps: "
+            f"exported_action_token_count={policy.exported_action_token_count}, "
+            f"n_action_steps={n_action_steps}"
+        )
 
     for old_path in output_dir.glob(f"task{task_id}--ep{episode_idx}--succ*.*"):
         old_path.unlink()
@@ -599,6 +611,8 @@ def _write_safe_triplet(
         "feature_axes": policy.feature_axes,
         "feature_slice": policy.feature_slice,
         "exported_action_token_count": policy.exported_action_token_count,
+        "feature_action_horizon": policy.feature_action_horizon,
+        "n_action_steps": n_action_steps,
         "valid_action_horizon": policy.valid_action_horizon,
         "model_action_horizon": policy.model_action_horizon,
         "num_inference_timesteps": policy.num_inference_timesteps,
@@ -631,6 +645,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--task-description", default=None)
     parser.add_argument("--episode-start-idx", type=int, default=0)
     parser.add_argument("--n-episodes", type=int, default=1)
+    parser.add_argument(
+        "--n_action_steps",
+        type=int,
+        default=16,
+        help="Number of leading decoded actions to execute per policy inference.",
+    )
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument(
         "--ep-meta-dir",
@@ -643,6 +663,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.n_action_steps <= 0:
+        raise ValueError(f"--n_action_steps must be positive: {args.n_action_steps}")
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -674,6 +696,7 @@ def main() -> None:
         wrapper_configs = WrapperConfigs(
             video=VideoConfig(video_dir=str(upstream_video_dir)),
             multistep=MultiStepConfig(
+                n_action_steps=args.n_action_steps,
                 terminate_on_success=True,
             ),
         )
@@ -712,12 +735,14 @@ def main() -> None:
             env_name=args.env_name,
             upstream_video_path=results[3],
             ep_meta=results[4],
+            n_action_steps=args.n_action_steps,
         )
         shutil.rmtree(upstream_video_dir, ignore_errors=True)
         print(
             f"wrote {stem}: steps={len(policy.records)} success={int(success)} "
             f"scenario_seed={scenario_seed} feature_kind={policy.feature_kind} "
-            f"ep_meta={ep_meta_mode} video_source=groot_upstream"
+            f"n_action_steps={args.n_action_steps} ep_meta={ep_meta_mode} "
+            f"video_source=groot_upstream"
         )
 
 

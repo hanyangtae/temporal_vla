@@ -97,6 +97,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", type=Path, help="raw_rollouts directory to verify")
     parser.add_argument("--task-set", choices=sorted(TASK_SETS), default="target_atomic_seen18")
+    parser.add_argument(
+        "--tasks-override",
+        nargs="+",
+        default=None,
+        help="Task names to verify instead of the named task set; mirrors collection TASKS_OVERRIDE.",
+    )
     parser.add_argument("--episodes-per-task", type=int, default=100)
     parser.add_argument("--allow-partial", action="store_true")
     parser.add_argument("--expected-env-source", default="robocasa365")
@@ -108,13 +114,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--expected-action-dim", type=int, default=12)
     parser.add_argument("--expected-model-horizon", type=int, default=50)
     parser.add_argument("--expected-valid-horizon", type=int, default=16)
+    parser.add_argument("--expected-feature-action-horizon", type=int, default=None)
+    parser.add_argument("--expected-n-action-steps", type=int, default=None)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     root: Path = args.root
-    tasks = TASK_SETS[args.task_set]
+    tasks = tuple(args.tasks_override) if args.tasks_override else TASK_SETS[args.task_set]
     expected_total = len(tasks) * args.episodes_per_task
 
     if not root.is_dir():
@@ -184,6 +192,25 @@ def main() -> None:
             errors.append(
                 f"valid horizon mismatch for {path}: {payload.get('valid_action_horizon')}"
             )
+        if args.expected_feature_action_horizon is not None:
+            if payload.get("feature_action_horizon") != args.expected_feature_action_horizon:
+                errors.append(
+                    "feature action horizon mismatch for "
+                    f"{path}: {payload.get('feature_action_horizon')}"
+                )
+            if (
+                payload.get("exported_action_token_count")
+                != args.expected_feature_action_horizon
+            ):
+                errors.append(
+                    "exported action token count mismatch for "
+                    f"{path}: {payload.get('exported_action_token_count')}"
+                )
+        if (
+            args.expected_n_action_steps is not None
+            and payload.get("n_action_steps") != args.expected_n_action_steps
+        ):
+            errors.append(f"n_action_steps mismatch for {path}: {payload.get('n_action_steps')}")
 
         count_by_task[task_id] += 1
         success_by_task[task_id] += int(payload.get("episode_success", 0))

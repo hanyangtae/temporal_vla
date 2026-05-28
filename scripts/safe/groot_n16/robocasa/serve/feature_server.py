@@ -5,12 +5,14 @@ The SAFE feature exported here is the flow-matching action-token tensor
 immediately before the embodiment-specific Action Decoder projects it to the
 velocity field:
 
-    model_output[:, -model_action_horizon:, :][:, :valid_action_horizon, :]
+    model_output[:, -model_action_horizon:, :][:, :feature_action_horizon, :]
 
 Across denoising steps this is serialized as ``[K, H, D]`` per rollout step.
 For RoboCasa PandaOmron, the GR00T N1.6 checkpoint has a model-level max action
 horizon of 50, while the embodiment's decoded action horizon is 16. The default
-SAFE export keeps only those 16 valid action-token positions.
+SAFE export keeps only those 16 valid action-token positions. Use
+``--feature-action-horizon`` to export a leading subset for action-horizon
+ablations.
 """
 
 from __future__ import annotations
@@ -70,6 +72,7 @@ class SafeN16FeaturePolicy:
         sim_policy: Any,
         feature_dtype: str = "float16",
         feature_slice: str = "valid",
+        feature_action_horizon: int | None = None,
     ):
         self.sim_policy = sim_policy
         self.policy = sim_policy.policy
@@ -77,6 +80,9 @@ class SafeN16FeaturePolicy:
         if feature_slice not in {"valid", "all"}:
             raise ValueError(f"Unsupported feature slice: {feature_slice}")
         self.feature_slice = feature_slice
+        if feature_action_horizon is not None and feature_action_horizon <= 0:
+            raise ValueError(f"feature_action_horizon must be positive: {feature_action_horizon}")
+        self.feature_action_horizon = feature_action_horizon
 
     def reset(self, options: dict[str, Any] | None = None) -> dict[str, Any]:
         return self.sim_policy.reset(options)
@@ -93,12 +99,34 @@ class SafeN16FeaturePolicy:
         modality_configs = self.sim_policy.get_modality_config()
         return len(modality_configs["action"].delta_indices)
 
+    def _resolved_feature_action_horizon(
+        self,
+        *,
+        model_action_horizon: int,
+        valid_action_horizon: int,
+    ) -> int:
+        max_export_horizon = (
+            valid_action_horizon if self.feature_slice == "valid" else model_action_horizon
+        )
+        feature_action_horizon = self.feature_action_horizon or max_export_horizon
+        if feature_action_horizon > max_export_horizon:
+            raise ValueError(
+                "feature_action_horizon exceeds exportable horizon: "
+                f"{feature_action_horizon} > {max_export_horizon} "
+                f"(feature_slice={self.feature_slice})"
+            )
+        return feature_action_horizon
+
     def _get_action_and_safe_features(
         self, observation: dict[str, Any], options: dict[str, Any] | None = None
-    ) -> tuple[dict[str, Any], torch.Tensor, int, int]:
+    ) -> tuple[dict[str, Any], torch.Tensor, int, int, int]:
         action_head = self.policy.model.action_head
         model_action_horizon = int(action_head.action_horizon)
         valid_action_horizon = self._valid_action_horizon()
+        feature_action_horizon = self._resolved_feature_action_horizon(
+            model_action_horizon=model_action_horizon,
+            valid_action_horizon=valid_action_horizon,
+        )
         safe_features: list[torch.Tensor] = []
 
         def capture_dit_output(_module: Any, _inputs: tuple[Any, ...], output: Any) -> None:
@@ -106,9 +134,9 @@ class SafeN16FeaturePolicy:
             action_tokens = model_output[:, -model_action_horizon:]
             if self.feature_slice == "valid":
                 # decode_action uses only the embodiment's valid leading action steps.
-                safe_features.append(action_tokens[:, :valid_action_horizon].detach())
+                safe_features.append(action_tokens[:, :feature_action_horizon].detach())
             else:
-                safe_features.append(action_tokens.detach())
+                safe_features.append(action_tokens[:, :feature_action_horizon].detach())
 
         handle = action_head.model.register_forward_hook(capture_dit_output)
         try:
@@ -118,15 +146,25 @@ class SafeN16FeaturePolicy:
 
         if not safe_features:
             raise RuntimeError("Failed to capture GR00T N1.6 DiT SAFE features")
-        return action, torch.stack(safe_features, dim=1), model_action_horizon, valid_action_horizon
+        return (
+            action,
+            torch.stack(safe_features, dim=1),
+            model_action_horizon,
+            valid_action_horizon,
+            feature_action_horizon,
+        )
 
     def get_action_with_features(
         self, observation: dict[str, Any], options: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         with torch.inference_mode():
-            action, safe_feature_tensor, model_action_horizon, valid_action_horizon = (
-                self._get_action_and_safe_features(observation, options)
-            )
+            (
+                action,
+                safe_feature_tensor,
+                model_action_horizon,
+                valid_action_horizon,
+                feature_action_horizon,
+            ) = self._get_action_and_safe_features(observation, options)
 
         safe_features = _cast_feature_tensor(safe_feature_tensor, self.feature_dtype)
         feature_kind = (
@@ -143,6 +181,7 @@ class SafeN16FeaturePolicy:
             "feature_slice": self.feature_slice,
             "exported_action_token_count": int(safe_features.shape[2]),
             "action_horizon": int(safe_features.shape[2]),
+            "feature_action_horizon": feature_action_horizon,
             "valid_action_horizon": valid_action_horizon,
             "model_action_horizon": model_action_horizon,
             "num_inference_timesteps": int(safe_features.shape[1]),
@@ -176,6 +215,16 @@ def parse_args() -> argparse.Namespace:
             "all exports the model-level max action-token horizon."
         ),
     )
+    parser.add_argument(
+        "--feature-action-horizon",
+        type=int,
+        default=None,
+        help=(
+            "Optional leading action-token count to export. Defaults to the valid "
+            "decoded horizon for --feature-slice valid, or the model horizon for "
+            "--feature-slice all."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -189,6 +238,7 @@ def main() -> None:
         loaded.policy,
         feature_dtype=args.feature_dtype,
         feature_slice=args.feature_slice,
+        feature_action_horizon=args.feature_action_horizon,
     )
     server = PolicyServer(safe_policy, host=args.host, port=args.port, api_token=args.api_token)
     server.register_endpoint("get_action_with_features", safe_policy.get_action_with_features)
