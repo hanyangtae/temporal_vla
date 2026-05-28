@@ -13,6 +13,8 @@ from __future__ import annotations
 import argparse
 import csv
 from collections import defaultdict
+from copy import deepcopy
+import json
 import os
 from pathlib import Path
 import pickle
@@ -68,7 +70,6 @@ from gr00t.eval.rollout_policy import (  # noqa: E402
     MultiStepConfig,
     VideoConfig,
     WrapperConfigs,
-    get_gym_env,
 )
 from gr00t.eval.sim.wrapper.multistep_wrapper import MultiStepWrapper  # noqa: E402
 from gr00t.eval.sim.wrapper.video_recording_wrapper import (  # noqa: E402
@@ -322,6 +323,98 @@ def _find_latest_upstream_video(wrapper_configs: WrapperConfigs) -> Path | None:
     return videos[-1] if videos else None
 
 
+def _make_robocasa_env(env_name: str, scenario_seed: int | None) -> gym.Env:
+    import robocasa  # noqa: F401
+    from robocasa.utils.gym_utils import GrootRoboCasaEnv  # noqa: F401
+    import robosuite  # noqa: F401
+
+    os.environ["MUJOCO_GL"] = "egl"
+    return gym.make(env_name, enable_render=True, seed=scenario_seed)
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, np.ndarray):
+        return _json_safe(value.tolist())
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def _safe_manifest_stem(env_name: str, scenario_seed: int) -> str:
+    safe_env_name = "".join(c if c.isalnum() else "_" for c in env_name).strip("_")
+    return f"{safe_env_name}--seed{scenario_seed}"
+
+
+def _ep_meta_manifest_path(ep_meta_dir: Path, env_name: str, scenario_seed: int) -> Path:
+    return ep_meta_dir / f"{_safe_manifest_stem(env_name, scenario_seed)}.json"
+
+
+def _load_ep_meta_manifest(path: Path, env_name: str, scenario_seed: int) -> dict[str, Any]:
+    with path.open() as f:
+        payload = json.load(f)
+    if payload.get("env_name") != env_name:
+        raise ValueError(f"ep_meta manifest env mismatch: {path}")
+    if payload.get("scenario_seed") != scenario_seed:
+        raise ValueError(f"ep_meta manifest seed mismatch: {path}")
+    ep_meta = payload.get("ep_meta")
+    if not isinstance(ep_meta, dict):
+        raise ValueError(f"ep_meta manifest is missing ep_meta dict: {path}")
+    return ep_meta
+
+
+def _write_ep_meta_manifest(
+    path: Path,
+    env_name: str,
+    scenario_seed: int,
+    ep_meta: dict[str, Any],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "format": "robocasa_ep_meta_manifest.v1",
+        "env_name": env_name,
+        "robocasa_env_source": ROBOCASA_ENV_SOURCE,
+        "scenario_seed": scenario_seed,
+        "ep_meta": _json_safe(ep_meta),
+    }
+    with path.open("w") as f:
+        json.dump(payload, f, indent=2, sort_keys=True)
+
+
+def _get_robocasa_ep_meta(env: gym.Env) -> dict[str, Any]:
+    current: Any = env
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, gym.Wrapper):
+            current = current.env
+            continue
+        get_ep_meta = getattr(current, "get_ep_meta", None)
+        if callable(get_ep_meta):
+            return get_ep_meta()
+        current = getattr(current, "env", None)
+    raise RuntimeError("Could not find a RoboCasa env with get_ep_meta() in the wrapper stack")
+
+
+def _set_robocasa_ep_meta(env: gym.Env, ep_meta: dict[str, Any]) -> None:
+    current: Any = env
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, gym.Wrapper):
+            current = current.env
+            continue
+        set_ep_meta = getattr(current, "set_ep_meta", None)
+        if callable(set_ep_meta):
+            set_ep_meta(deepcopy(ep_meta))
+            return
+        current = getattr(current, "env", None)
+    raise RuntimeError("Could not find a RoboCasa env with set_ep_meta() in the wrapper stack")
+
+
 class SafeVideoObservationFilter(gym.ObservationWrapper):
     """Keep the upstream recorder on the three canonical RoboCasa camera views."""
 
@@ -349,8 +442,10 @@ def _create_safe_eval_env(
     env_idx: int,
     total_n_envs: int,
     wrapper_configs: WrapperConfigs,
+    scenario_seed: int | None,
 ) -> gym.Env:
-    env = get_gym_env(env_name, env_idx, total_n_envs)
+    del env_idx, total_n_envs
+    env = _make_robocasa_env(env_name, scenario_seed=scenario_seed)
     if wrapper_configs.video.video_dir is not None:
         env = SafeVideoObservationFilter(env)
         video_recorder = VideoRecorder.create_h264(
@@ -385,8 +480,9 @@ def _run_single_rollout(
     env_name: str,
     policy: N16SafeCollectingPolicyClient,
     wrapper_configs: WrapperConfigs,
-    seed: int | None,
-) -> tuple[str, list[bool], dict[str, list[Any]], Path | None]:
+    scenario_seed: int | None,
+    replay_ep_meta: dict[str, Any] | None,
+) -> tuple[str, list[bool], dict[str, list[Any]], Path | None, dict[str, Any]]:
     env = gym.vector.SyncVectorEnv(
         [
             lambda: _create_safe_eval_env(
@@ -394,6 +490,7 @@ def _run_single_rollout(
                 env_idx=0,
                 total_n_envs=1,
                 wrapper_configs=wrapper_configs,
+                scenario_seed=scenario_seed,
             )
         ]
     )
@@ -402,9 +499,14 @@ def _run_single_rollout(
     current_length = 0
     episode_infos: dict[str, list[Any]] = defaultdict(list)
     upstream_video_path: Path | None = None
+    ep_meta: dict[str, Any] | None = None
 
     try:
-        observations, _ = env.reset(seed=seed)
+        if replay_ep_meta is not None:
+            _set_robocasa_ep_meta(env.envs[0], replay_ep_meta)
+        observations, _ = env.reset(seed=scenario_seed)
+        captured_ep_meta = _get_robocasa_ep_meta(env.envs[0])
+        ep_meta = _json_safe(replay_ep_meta) if replay_ep_meta is not None else captured_ep_meta
         policy.reset()
 
         pbar = tqdm(total=1, desc="Episodes")
@@ -445,7 +547,9 @@ def _run_single_rollout(
     finally:
         env.close()
 
-    return env_name, [current_success], dict(episode_infos), upstream_video_path
+    if ep_meta is None:
+        raise RuntimeError("RoboCasa ep_meta was not captured during rollout reset")
+    return env_name, [current_success], dict(episode_infos), upstream_video_path, ep_meta
 
 
 def _write_safe_triplet(
@@ -455,10 +559,11 @@ def _write_safe_triplet(
     task_id: int,
     task_description: str,
     episode_idx: int,
-    seed: int | None,
+    scenario_seed: int | None,
     episode_success: bool,
     env_name: str,
     upstream_video_path: Path | None,
+    ep_meta: dict[str, Any],
 ) -> None:
     if not policy.records:
         raise RuntimeError("No feature records were collected during rollout")
@@ -480,8 +585,10 @@ def _write_safe_triplet(
         "task_id": task_id,
         "task_description": task_description,
         "episode_idx": episode_idx,
-        "seed": seed,
+        "seed": scenario_seed,
+        "scenario_seed": scenario_seed,
         "episode_success": int(episode_success),
+        "ep_meta": _json_safe(ep_meta),
         "hidden_states": [record["hidden_state"] for record in policy.records],
         "actions": [record["action"] for record in policy.records],
         "action_vectors": np.stack(
@@ -525,6 +632,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--episode-start-idx", type=int, default=0)
     parser.add_argument("--n-episodes", type=int, default=1)
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument(
+        "--ep-meta-dir",
+        type=Path,
+        default=None,
+        help="Optional directory for seed-keyed RoboCasa ep_meta JSON import/export.",
+    )
     return parser.parse_args()
 
 
@@ -535,7 +648,25 @@ def main() -> None:
 
     for local_ep_idx in range(args.n_episodes):
         episode_idx = args.episode_start_idx + local_ep_idx
-        episode_seed = None if args.seed is None else args.seed + local_ep_idx
+        scenario_seed = args.seed
+        ep_meta_manifest_path = None
+        replay_ep_meta = None
+        ep_meta_mode = "none"
+        if args.ep_meta_dir is not None and scenario_seed is not None:
+            ep_meta_manifest_path = _ep_meta_manifest_path(
+                args.ep_meta_dir,
+                args.env_name,
+                scenario_seed,
+            )
+            if ep_meta_manifest_path.exists():
+                replay_ep_meta = _load_ep_meta_manifest(
+                    ep_meta_manifest_path,
+                    env_name=args.env_name,
+                    scenario_seed=scenario_seed,
+                )
+                ep_meta_mode = "imported"
+            else:
+                ep_meta_mode = "exported"
         upstream_video_dir = output_dir / ".groot_video_tmp" / f"task{args.task_id}--ep{episode_idx}"
         if upstream_video_dir.exists():
             shutil.rmtree(upstream_video_dir)
@@ -556,8 +687,16 @@ def main() -> None:
             env_name=args.env_name,
             policy=policy,
             wrapper_configs=wrapper_configs,
-            seed=episode_seed,
+            scenario_seed=scenario_seed,
+            replay_ep_meta=replay_ep_meta,
         )
+        if ep_meta_manifest_path is not None and replay_ep_meta is None:
+            _write_ep_meta_manifest(
+                ep_meta_manifest_path,
+                env_name=args.env_name,
+                scenario_seed=scenario_seed,
+                ep_meta=results[4],
+            )
         success = bool(results[1][0]) if results[1] else False
         task_description = args.task_description or policy.task_description or args.env_name
         stem = f"task{args.task_id}--ep{episode_idx}--succ{int(success)}"
@@ -568,16 +707,17 @@ def main() -> None:
             task_id=args.task_id,
             task_description=task_description,
             episode_idx=episode_idx,
-            seed=episode_seed,
+            scenario_seed=scenario_seed,
             episode_success=success,
             env_name=args.env_name,
             upstream_video_path=results[3],
+            ep_meta=results[4],
         )
         shutil.rmtree(upstream_video_dir, ignore_errors=True)
         print(
             f"wrote {stem}: steps={len(policy.records)} success={int(success)} "
-            f"seed={episode_seed} feature_kind={policy.feature_kind} "
-            f"video_source=groot_upstream"
+            f"scenario_seed={scenario_seed} feature_kind={policy.feature_kind} "
+            f"ep_meta={ep_meta_mode} video_source=groot_upstream"
         )
 
 
