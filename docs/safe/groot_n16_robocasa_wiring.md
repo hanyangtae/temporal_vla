@@ -200,6 +200,101 @@ EPISODE_START_IDX=0 \
 bash scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh
 ```
 
+Action-horizon paired ablation:
+
+```text
+canonical scenario manifests:
+outputs/eval/robocasa/groot_n16/scenario_manifests/target_atomic_seen18_seed100000_100099
+
+ah8 run:
+outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_ah8_100ep/raw_rollouts
+
+ah16 paired run:
+outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_ah16_100ep/raw_rollouts
+```
+
+`ah8`는 GR00T model-level action tokens 50개 중 leading 8개를 SAFE feature로 저장하고, decoded action chunk 16개 중 leading 8개만 RoboCasa에 실행한다. pkl의 `actions`에는 decoded action chunk 전체 16개를 유지한다. SAFE point는 inference 1회당 1점으로 유지한다. `ah16`은 같은 manifest root를 import해서 같은 scene composition에서 기존 16-step cadence를 재수집하는 paired baseline이다. 이전 `target_atomic_seen18_ckpt120000_robocasa365_100ep` collection은 `scenario_seed`와 `ep_meta` manifest가 없으므로 historical reference로만 사용한다.
+
+`ah8` 서버:
+
+```bash
+cd /temporal_vla/src/policies/Isaac-GR00T
+
+UV_CACHE_DIR=/tmp/uv-cache \
+HF_HOME=/temporal_vla/data/huggingface \
+HF_MODULES_CACHE=/tmp/hf_modules \
+NO_ALBUMENTATIONS_UPDATE=1 \
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+uv run --no-sync python /temporal_vla/scripts/safe/groot_n16/robocasa/serve/feature_server.py \
+  --profile /temporal_vla/configs/checkpoints/groot__robocasa365_ckpt120000.yaml \
+  --host '*' \
+  --port 5557 \
+  --device cuda \
+  --feature-dtype float16 \
+  --feature-slice valid \
+  --feature-action-horizon 8
+```
+
+`ah8` smoke는 `CloseFridge` 3 episodes로 실행한다. 같은 canonical manifest root에 seed `100000..100002`가 먼저 export된다.
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+ROBOCASA_SAFE_RUN_ID=target_atomic_seen18_ckpt120000_robocasa365_ah8_smoke \
+TASK_SET=target_atomic_seen18 \
+TASKS_OVERRIDE=CloseFridge \
+EPISODES_PER_TASK=3 \
+SEED_START=100000 \
+EPISODE_START_IDX=0 \
+N_ACTION_STEPS=8 \
+EP_META_ROOT=/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/scenario_manifests/target_atomic_seen18_seed100000_100099 \
+EP_META_ROOT_CONTAINER=/temporal_vla/outputs/eval/robocasa/groot_n16/scenario_manifests/target_atomic_seen18_seed100000_100099 \
+HOST=127.0.0.1 \
+PORT=5557 \
+bash scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh
+```
+
+`ah8` smoke 검증:
+
+```bash
+python scripts/safe/groot_n16/robocasa/collect/verify_rollout_collection.py \
+  outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_ah8_smoke/raw_rollouts \
+  --tasks-override CloseFridge \
+  --episodes-per-task 3 \
+  --allow-partial \
+  --expected-hidden-shape 4,8,1024 \
+  --expected-feature-action-horizon 8 \
+  --expected-n-action-steps 8
+```
+
+`ah8` 100ep/task collection:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+ROBOCASA_SAFE_RUN_ID=target_atomic_seen18_ckpt120000_robocasa365_ah8_100ep \
+TASK_SET=target_atomic_seen18 \
+EPISODES_PER_TASK=100 \
+SEED_START=100000 \
+EPISODE_START_IDX=0 \
+N_ACTION_STEPS=8 \
+EP_META_ROOT=/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/scenario_manifests/target_atomic_seen18_seed100000_100099 \
+EP_META_ROOT_CONTAINER=/temporal_vla/outputs/eval/robocasa/groot_n16/scenario_manifests/target_atomic_seen18_seed100000_100099 \
+HOST=127.0.0.1 \
+PORT=5557 \
+bash scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh
+```
+
+`ah8` 최종 검증:
+
+```bash
+python scripts/safe/groot_n16/robocasa/collect/verify_rollout_collection.py \
+  outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_ah8_100ep/raw_rollouts \
+  --expected-hidden-shape 4,8,1024 \
+  --expected-feature-action-horizon 8 \
+  --expected-n-action-steps 8
+```
+
 이 mode는 RoboCasa365 (`src/benchmarks/robocasa`)를 사용한다. RoboCasa v0.2 (`robocasa_v02`) 기준 6-task SAFE split과 달리 `CloseBlenderLid`, `NavigateKitchen`, `OpenStandMixerHead` 같은 RoboCasa365 task가 포함되므로 `ROBOCASA_ENV_SOURCE=robocasa365`가 자동으로 선택된다. 기본 저장 위치는 아래다.
 
 ```text

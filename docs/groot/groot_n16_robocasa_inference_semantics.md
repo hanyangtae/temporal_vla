@@ -9,19 +9,23 @@
 > 한 datapoint는 1회의 **GR00T inference** 출력이고, rollout 길이는 inference
 > 횟수(`n_inferences` 또는 `T_inf`)로 표기한다.
 
+기본 수치는 `ah16` collection 기준이다. `ah8` ablation에서는 같은 inference 1회를
+SAFE point 1개로 유지하되, SAFE feature 원천은 `[K=4, H=8, D=1024]`이고
+`n_action_steps=8`로 RoboCasa에 8 raw sim step만 실행한다.
+
 ## TL;DR — 한 datapoint의 정의
 
 > **한 datapoint = 현재 이미지 3장 + 로봇 state + language instruction +
-> 미래 action 16개 정보를 GR00T 가 1회 처리한 결과**.
+> 미래 action-token 정보를 GR00T 가 1회 처리한 결과**.
 > rollout 당 **11 ~ 45개** 생성되고, sim_timestep 환산 **176 ~ 720 step**,
 > 시뮬레이션 내부 시간 **8.8 초 ~ 36 초**.
 
 | 항목 | 값 |
 |---|---|
-| 1 datapoint (= `hidden_states[t]`) | **GR00T inference 1회** 의 DiT action-token latent `[K=4, H=16, D=1024]` |
-| 1 rollout 내 datapoint 수 (`n_inferences`) | **11 ~ 45** (success 평균 17.6, failure 항상 45) |
-| 1 datapoint 사이 시간 | **16 raw sim step = 0.8 sec** simulated time |
-| 1 rollout 시간 | **8.8 sec ~ 36 sec** simulated time (success ~13.6 sec, failure 36 sec timeout) |
+| 1 datapoint (= `hidden_states[t]`) | **GR00T inference 1회** 의 DiT action-token latent. 기본 `ah16`: `[K=4, H=16, D=1024]`; `ah8`: `[K=4, H=8, D=1024]` |
+| 1 rollout 내 datapoint 수 (`n_inferences`) | `ah16`: **11 ~ 45** (기존 success 평균 17.6, failure 항상 45); `ah8`: 최대 **90** |
+| 1 datapoint 사이 시간 | `ah16`: **16 raw sim step = 0.8 sec**; `ah8`: **8 raw sim step = 0.4 sec** simulated time |
+| 1 rollout 시간 | 최대 **36 sec** simulated time (`max_episode_steps=720`); success 시간은 collection별로 측정 |
 | wall-clock 시간 | 보장되지 않음 (GPU/시뮬레이션 부하에 따라 다름) |
 
 ## 1. GR00T-N1.6 추론 사이클 1회
@@ -33,7 +37,7 @@
 loop until terminated/truncated:
     obs    ← env (현재 시점 단일 observation)
     actions, hidden_state ← policy.get_action(obs)          # 1 inference
-    env.step(actions)                                        # 16 raw sim step (MultiStepWrapper)
+    env.step(actions)                                        # ah16: 16 raw sim step; ah8: 8 raw sim step
 ```
 
 ### 입력 (1 inference 당)
@@ -49,17 +53,19 @@ loop until terminated/truncated:
 
 ### 출력 (1 inference 당)
 
-- `actions`: **미래 16 step짜리 action chunk** (`valid_action_horizon = 16`,
-  RoboCasa는 GR00T의 native `model_action_horizon = 50` 중 앞 16개만 사용)
+- `actions`: **미래 16 step짜리 decoded action chunk** (`valid_action_horizon = 16`,
+  RoboCasa PandaOmron policy output은 GR00T의 native `model_action_horizon = 50` 중 앞 16개만 decode)
+- pkl의 `actions`에는 decoded action chunk 전체 16 step을 저장한다.
+- `ah8` ablation은 저장된 decoded action chunk 중 앞 8개만 실행하고, SAFE feature도 앞 8 action-token만 저장한다.
 - 각 step은 7-D (`action.end_effector_position[3] + .end_effector_rotation[3] + .gripper_close[1]`)
   로 환경에 전달됨
 - 내부 표현: **DiT action-token latent `[K=4, H=16, D=1024]`** — 이게 우리가 pkl에 저장하는 feature
 
 ### 실행
 
-- `MultiStepWrapper`가 위 16 action을 한꺼번에 받아 **raw env step 16번** 실행
-  (`n_action_steps = 16`, `src/policies/Isaac-GR00T/gr00t/eval/rollout_policy.py:61`)
-- 16번 실행이 끝나야 다음 inference
+- `MultiStepWrapper`가 decoded action chunk의 leading action들을 한꺼번에 받아 실행
+  (`ah16`: `n_action_steps=16`, `ah8`: `n_action_steps=8`)
+- 지정된 action step 실행이 끝나야 다음 inference
 
 ## 2. 시간 단위
 
@@ -69,16 +75,16 @@ RoboCasa Kitchen env는 `control_freq = 20` Hz (default,
 | 단위 | 환산 |
 |---|---|
 | 1 raw env step | **50 ms** simulated time |
-| 1 inference cycle (16 step) | **0.8 sec** simulated time |
-| Inference frequency | **1.25 Hz** |
+| 1 inference cycle | `ah16`: **16 step = 0.8 sec**; `ah8`: **8 step = 0.4 sec** simulated time |
+| Inference frequency | `ah16`: **1.25 Hz**; `ah8`: **2.5 Hz** |
 | `max_episode_steps` (rollout 상한) | **720 raw step = 36 sec** |
-| Max inferences per rollout | 720 / 16 = **45** |
+| Max inferences per rollout | `ah16`: 720 / 16 = **45**; `ah8`: 720 / 8 = **90** |
 
 따라서:
 
-- Failure rollout이 모두 `n_inferences = 45` 인 이유 = **timeout (36 sec)** 까지 도달
-- Success rollout 평균 `n_inferences ≈ 17.6` = 평균 **14 sec simulated time** 만에 성공
-- Success min `n_inferences = 11` = **8.8 sec** (가장 빠른 성공)
+- 기존 `ah16` failure rollout이 모두 `n_inferences = 45` 인 이유 = **timeout (36 sec)** 까지 도달
+- 기존 `ah16` success rollout 평균 `n_inferences ≈ 17.6` = 평균 **14 sec simulated time** 만에 성공
+- 기존 `ah16` success min `n_inferences = 11` = **8.8 sec** (가장 빠른 성공)
 
 **중요한 구분**: 위 시간은 모두 **simulated time** (kitchen 안 시계).
 Wall-clock은 GPU 추론 + MuJoCo step + rendering 부하에 따라 보통 분 단위로 더 김.
@@ -91,14 +97,15 @@ Wall-clock은 GPU 추론 + MuJoCo step + rendering 부하에 따라 보통 분 �
 | 축 | 의미 | 크기 |
 |---|---|---|
 | K | flow-matching denoising step | 4 |
-| H | valid action horizon (미래 step) | 16 |
+| H | exported action-token horizon (미래 step) | 기본 `ah16`: 16; `ah8`: 8 |
 | D | DiT output feature dimension | 1024 |
 
 - **K**: GR00T-N1.6은 flow-matching이라 한 번에 plan을 안 풀고 4번 반복 적분.
   K=0은 거의 noise, K=3은 final action에 가까움.
-- **H**: 미래 16 step 동안 각 step에 해당하는 action을 표현하는 token.
+- **H**: export된 미래 action step마다 해당 action을 표현하는 token.
   - `token 0` = 지금 실행할 action — state-dominant
-  - `token 15` = 0.75 sec 뒤 action — goal-dominant
+  - 기본 `ah16`의 `token 15` = 0.75 sec 뒤 action — goal-dominant
+  - `ah8`의 마지막 token은 `token 7` = 0.35 sec 뒤 action
   - 정의상 token `i` 는 `i * 50ms` 뒤 action 의 representation
 - **D**: 각 token의 1024-D feature. action decoder가 받기 직전 (pre-velocity)
   의 hidden — SAFE 논문에서 detector 학습용으로 권장하는 위치
