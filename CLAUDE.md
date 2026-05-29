@@ -34,7 +34,8 @@ VLA 모델의 **실패 루프 탈출** 문제를 연구하는 프로젝트.
 
 - **모델 서버** (`scripts/serve/*.py`): FastAPI + uvicorn. 통일 API (`/act`, `/reset`, `/health`).
 - **벤치마크 평가** (`scripts/eval/*.py`): 모델 무관. `VLAClient`로 통신.
-- **Processor Pipeline** (`src/processor/`): **추론(eval)용**. 벤치마크별 env↔통일API obs/action 변환.
+- **Processor Pipeline** (`src/processor/`): **추론(eval)용**. generic 벤치마크 env↔통일API obs/action 변환.
+- **GR00T RoboCasa IO adapter** (`src/policies/groot/robocasa_io.py`): `GrootRoboCasaEnv` native key↔HTTP GR00T 변환. GR00T upstream parity / SAFE wiring 경로는 `src/processor/`를 우회.
 - **Dataset + Adapter** (`src/datasets/`): **학습(train)용**. 벤치마크별 generic dataset + 모델별 adapter.
 - **통일 클라이언트** (`scripts/utils/vla_client.py`): `VLAClient` 클래스 1개.
 - **Docker**: `docker-compose.yml`에 5개 서비스. 모두 `network_mode: host`.
@@ -78,6 +79,10 @@ VLA 모델의 **실패 루프 탈출** 문제를 연구하는 프로젝트.
 ```
 env obs → ObsProcessor (통일 키 변환) → VLAClient (HTTP) → 모델 서버 → VLAClient → ActionProcessor (env 포맷) → env.step
 ```
+
+GR00T `--use-groot-env` 평가와 SAFE wiring은 위 generic pipeline이 아니라
+`src/policies/groot/robocasa_io.py`를 사용한다. 이 경로는 `GrootRoboCasaEnv`
+native observation/action key를 유지해 upstream GR00T eval과 맞춘다.
 
 ## Dataset + Adapter (학습용)
 

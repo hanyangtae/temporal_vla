@@ -28,10 +28,11 @@
 
 - 모델 서버는 한 컨테이너에 하나의 process 로 떠 있고, 벤치마크는 `--vla-server http://localhost:<port>` 만 바꿔서 같은 모델을 여러 벤치로 평가하거나 한 벤치를 여러 모델로 비교한다.
 - `n_action_steps` 와 `action_type` 은 `/health` 가 알리고, 벤치 측 `ActionProcessor` 가 그에 맞춰 chunk 를 소비한다.
+- 일반 벤치마크 경로는 `src/processor/` 의 processor pipeline 이 env-native obs/action 을 통일 HTTP schema 로 바꾼다. GR00T `GrootRoboCasaEnv` native-key 경로(`robocasa_eval.py --use-groot-env`, SAFE wiring)는 `make_groot_robocasa_processors()` 를 쓰고, 실제 key mapping 은 `src.policies.groot.robocasa_io` adapter 를 단일 출처로 둔다.
 
 ## Endpoint 계약
 
-모든 모델 서버는 다음 endpoint 를 같은 의미로 노출한다.
+모든 모델 서버는 `/act`, `/reset`, `/health` 를 같은 의미로 노출한다. `/act_with_features` 는 features 지원 모델만 노출한다.
 
 | Endpoint | Method | 역할 |
 |---|---|---|
@@ -211,6 +212,8 @@ actions, features, latency_ms = client.predict_with_features(
 
 새 모델/벤치 조합을 붙일 때는 **모델의 emit 조합이 벤치의 소비 조합을 부분집합으로 포함**해야 한다. 그렇지 않으면 프로파일의 `rotation_encoding` / `allow_conversions` 로 자동 변환을 선언한다.
 
+GR00T `robocasa_eval.py --use-groot-env` 와 SAFE collection 은 위 generic RoboCasa `ActionProcessor` 대신 `src/processor/action/groot_robocasa.py` 를 사용한다. 이 processor 는 `src.policies.groot.robocasa_io` 를 감싸서 `GrootRoboCasaEnv` native action key 로 되돌린 뒤 `env.step()` 또는 SAFE rollout wrapper 에 전달한다.
+
 ## SAFE features
 
 GR00T HTTP 서버는 `/act_with_features` 를 통해 DiT pre-velocity action token 을 export 한다. 같은 데이터를 ZMQ `get_action_with_features` 로도 export 한다 (upstream GR00T SAFE collector msgpack 호환). 둘 다 같은 `src/policies/groot/safe_features.py` 의 `capture_dit_features` 를 사용해 텐서 정의가 일치한다.
@@ -267,7 +270,7 @@ for url in http://localhost:8100 http://localhost:8200; do
 done
 ```
 
-### 4. SAFE feature 수집 (HTTP 단일 경로)
+### 4. SAFE feature 수집 (HTTP 경로)
 
 ```bash
 docker compose exec groot python /temporal_vla/scripts/serve/groot.py \
@@ -276,7 +279,7 @@ docker compose exec groot python /temporal_vla/scripts/serve/groot.py \
 # 클라이언트는 vla_client.VLAClient.predict_with_features() 로 features.hidden_states 까지 수신
 ```
 
-GR00T 의 경우 upstream collector 와의 호환이 필요하면 ZMQ 경로 (`scripts/safe/groot_n16/.../feature_server.py`) 를 사용한다. HTTP `/act_with_features` 와 ZMQ `get_action_with_features` 는 같은 hidden state 정의를 export 한다.
+GR00T 의 기본 SAFE rollout 재현 경로는 upstream collector 호환을 위해 ZMQ 경로 (`scripts/safe/groot_n16/.../feature_server.py`) 를 유지한다. HTTP `/act_with_features` 는 Project FastAPI evaluation interface 로 SAFE feature 를 수집해야 할 때 쓰는 supported transport 이며, ZMQ `get_action_with_features` 와 같은 hidden state 정의를 export 한다.
 
 ### 5. 새 체크포인트/모델 붙이기
 

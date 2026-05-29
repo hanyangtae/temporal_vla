@@ -40,8 +40,9 @@ SAFE point 1개로 유지하되, SAFE feature 원천은 `[K=4, H=8, D=1024]`이�
 
 ## GR00T N1.6 추론 사이클 1회
 
-`scripts/safe/groot_n16/robocasa/collect/collect_rollout.py:333-340, 372-374`,
-`scripts/safe/groot_n16/robocasa/serve/feature_server.py:96-117` 기준.
+`scripts/safe/groot_n16/robocasa/collect/collect_env.py`의 `run_single_rollout`,
+`scripts/safe/groot_n16/robocasa/collect/collect_policy_clients.py`의 policy client,
+`scripts/safe/groot_n16/robocasa/serve/feature_server.py`의 feature capture 기준.
 
 ```
 loop until terminated/truncated:
@@ -197,7 +198,9 @@ SAFE-LSTM detector는 GR00T와 **같은 cadence (1.25 Hz)** 로 작동:
 |---|---|
 | MultiStepConfig / WrapperConfigs defaults | `src/policies/Isaac-GR00T/gr00t/eval/rollout_policy.py:49-67` |
 | Kitchen env default control_freq=20 | `src/benchmarks/robocasa/robocasa/environments/kitchen/kitchen.py:381` |
-| Feature capture hook (DiT forward) | `scripts/safe/groot_n16/robocasa/serve/feature_server.py:96-117` |
-| Rollout 수집 루프 | `scripts/safe/groot_n16/robocasa/collect/collect_rollout.py:344-408` |
+| Feature capture hook (DiT forward) | `scripts/safe/groot_n16/robocasa/serve/feature_server.py` |
+| Rollout 수집 루프 | `scripts/safe/groot_n16/robocasa/collect/collect_rollout.py` |
+| ZMQ/HTTP feature client transports | `scripts/safe/groot_n16/robocasa/collect/collect_policy_clients.py` |
+| RoboCasa/HTTP/SAFE schema conversion | `scripts/safe/groot_n16/robocasa/collect/collect_schema.py` |
 | SAFE detector 학습 config | `outputs/eval/robocasa/groot_n16/safe_train_logs/.../config.yaml` |
 | SAFE detector 모델 정의 | `failure_prob/model/lstm.py` in `/home/dongkyu/pdk_ws/SAFE` |

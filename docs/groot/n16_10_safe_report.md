@@ -518,7 +518,6 @@ HTTP feature collection path도 ZMQ SAFE pkl contract에 맞춰 1-step capped ro
 - [SAFE wiring overview](n16_03_safe_overview.md) (related: [04 collection](n16_04_safe_collection.md), [07 detector](n16_07_safe_detector.md), [08 visualization](n16_08_safe_visualization.md), [09 parity](n16_09_safe_parity.md), [11 HTTP act changes](n16_11_http_act_changes.md))
 - [Dedicated ZMQ feature server ADR](../adr/0001-dedicated-safe-groot-n16-zmq-server.md)
 - `scripts/serve/groot.py` (HTTP `/act` + `/act_with_features`, port 8500)
-- `scripts/serve/run_groot_http_smoke.sh`
 - `scripts/utils/vla_client.py` (`predict_with_features`)
 - `src/policies/groot/safe_features.py` (HTTP/ZMQ 공유 DiT capture)
 - `scripts/safe/groot_n16/robocasa/run_config.py`
@@ -526,6 +525,8 @@ HTTP feature collection path도 ZMQ SAFE pkl contract에 맞춰 1-step capped ro
 - `scripts/safe/groot_n16/robocasa/safe_feature_vectors.py`
 - `scripts/safe/groot_n16/robocasa/serve/feature_server.py`
 - `scripts/safe/groot_n16/robocasa/collect/collect_rollout.py`
+- `scripts/safe/groot_n16/robocasa/collect/collect_policy_clients.py`
+- `scripts/safe/groot_n16/robocasa/collect/collect_schema.py`
 - `scripts/safe/groot_n16/robocasa/collect/collect_task_set_in_container.sh`
 - `scripts/safe/groot_n16/robocasa/collect/collect_task_set_official_uv_host.sh`
 - `scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh`

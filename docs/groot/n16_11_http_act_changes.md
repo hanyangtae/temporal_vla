@@ -77,6 +77,8 @@ ZMQ `SafeN16FeaturePolicy.get_action_with_features` 와 HTTP `/act_with_features
 `scripts/eval/robocasa_eval.py`와 `scripts/utils/vla_client.py`가 HTTP GR00T path를 더 명확히 다룬다.
 
 - `robocasa_eval.py --use-groot-env`는 기본 VLA server를 `http://localhost:8500`으로 둔다.
+- `--use-groot-env`는 `src.processor.factory.make_groot_robocasa_processors()`를 통해 `GrootRoboCasaEnv` native keys를 HTTP payload/action으로 변환한다. 이 processor adapter의 실제 key mapping은 `src.policies.groot.robocasa_io`가 단일 출처다.
+- generic RoboCasa eval path는 기존처럼 `src.processor.factory.make_robocasa_processors()`를 사용한다. 이 경로는 arbitrary VLA server 비교용 Project FastAPI evaluation이고, GR00T upstream parity 경로가 아니다.
 - GR00T env mode는 raw RoboCasa camera key와 new/old instruction key를 모두 처리한다.
 - `--seed`는 GrootRoboCasaEnv construction (`gym.make(..., seed=seed)`)과 rollout reset (`env.reset(seed=seed + rollout_i)`)에 들어간다.
 - `--ep-meta-dir`는 `(env_name, scenario_seed)` key의 `robocasa_ep_meta_manifest.v1` JSON을 import/export한다. 이 옵션은 `--use-groot-env`와 `--seed`가 필요하다.
@@ -87,17 +89,6 @@ ZMQ `SafeN16FeaturePolicy.get_action_with_features` 와 HTTP `/act_with_features
 - response에 action key가 없으면 받은 key 목록과 함께 실패한다.
 - `VLAClient.predict(..., inference_seed=...)`와 `VLAClient.predict_with_features(..., inference_seed=...)`가 seed를 payload에 실어 보낸다.
 - `VLAClient.predict_with_features(images, states, instruction, inference_seed=None)` 가 `/act_with_features` 를 호출해 `(action_dict, features_dict, latency_ms)` 를 반환한다. `features_dict["hidden_states"]` 는 서버 shape 그대로 복원된 numpy array.
-
-### Smoke tooling
-
-`scripts/utils/smoke_test_serve.py`와 `scripts/serve/run_groot_http_smoke.sh`가 GR00T HTTP smoke 경로다.
-
-- smoke tool은 profile `base_model`에 따라 default URL을 고른다. GR00T는 `http://localhost:8500`이다.
-- GR00T smoke payload는 required state alias를 항상 포함한다.
-- guarded wrapper는 active SAFE ZMQ collection/server process 또는 큰 GPU compute process가 있으면 HTTP smoke 시작을 거절한다.
-- host smoke client는 repo logger가 `/temporal_vla`에 쓸 수 없는 환경에서 standard logging으로 fallback한다.
-- wrapper는 HTTP server의 HuggingFace dynamic module cache를 `/temporal_vla/data/huggingface`로 고정한다.
-- wrapper가 띄운 HTTP smoke container는 smoke 후 cleanup한다.
 
 ## What Did Not Change
 
@@ -115,7 +106,7 @@ ZMQ `SafeN16FeaturePolicy.get_action_with_features` 와 HTTP `/act_with_features
 |---|---|
 | HTTP serve | `scripts/serve/groot.py` |
 | SAFE feature 공유 모듈 | `src/policies/groot/safe_features.py` (new), `scripts/safe/groot_n16/robocasa/serve/feature_server.py` (refactored to share) |
-| Smoke/run guard | `scripts/utils/smoke_test_serve.py`, `scripts/serve/run_groot_http_smoke.sh` |
+| SAFE collection | `scripts/safe/groot_n16/robocasa/collect/collect_rollout.py`, `scripts/safe/groot_n16/robocasa/collect/collect_env.py`, `scripts/safe/groot_n16/robocasa/collect/collect_artifacts.py`, `scripts/safe/groot_n16/robocasa/collect/collect_policy_clients.py`, `scripts/safe/groot_n16/robocasa/collect/collect_schema.py` |
 | HTTP client | `scripts/utils/vla_client.py` |
 | GR00T schema/load | `src/policies/groot/schema.py`, `src/policies/groot/loader.py` |
 | RoboCasa eval | `scripts/eval/robocasa_eval.py` |
@@ -135,42 +126,41 @@ timeout 180 python -m pytest \
   tests/test_groot_loader.py \
   tests/test_groot_safe_features.py \
   tests/test_serve_groot.py \
-  tests/test_smoke_test_serve.py \
   tests/test_safe_groot_feature_server.py \
   tests/test_safe_groot_collect.py \
   tests/test_robocasa_eval_groot_http.py \
   tests/test_vla_client.py -q
 ```
 
-Latest related-suite result (post `/act_with_features` 추가):
+Latest host regression after architecture cleanup:
 
 ```text
-117 passed, 5 skipped
+182 passed, 6 skipped
 ```
-
-세 실패 (`TestGrootServeMain::test_device_arg_*`, `TestSmokeTestServeRuntime::test_main_falls_back_when_repo_logger_path_is_unwritable`) 는 host 환경의 `colorlog` 미설치로 인한 pre-existing import 실패이며 이번 변경과 무관 (stash 후에도 동일 실패).
 
 Also verified:
 
 - `git diff --check`
 - host `py_compile` for changed Python files
+- focused processor/GR00T IO/eval/SAFE collect tests: `70 passed, 4 skipped`
+- focused GR00T schema/loader/feature/replay tests: `36 passed`
+- focused GR00T serve/feature/collect tests: `17 passed, 6 skipped`
 - `groot` Docker service import/py_compile for HTTP serve files
-- `scripts/serve/run_groot_http_smoke.sh` syntax
-- guarded smoke wrapper refuses to start while active SAFE collection/server is running
-- `tests/test_smoke_test_serve.py` after wrapper/client cleanup changes: `7 passed`
-- HTTP-focused test subset after logger fallback: `43 passed`
-- HTTP seed/replay focused subset after `inference_seed` and `--ep-meta-dir`: `41 passed`
+- `robocasa` container `python tests/test_safe_groot_collect.py`: `4 tests OK`
+- `robocasa` container `collect_rollout.py --help` import/CLI check
 
 Runtime verified:
 
 ```bash
-bash scripts/serve/run_groot_http_smoke.sh
+python scripts/utils/smoke_test_serve.py \
+  --profile configs/checkpoints/groot__robocasa_panda_omron.yaml \
+  --url http://127.0.0.1:8500
 ```
 
 Result:
 
 ```text
-[DONE] GR00T HTTP smoke passed
+[SMOKE TEST PASS]
 ```
 
 Server log evidence:
@@ -184,8 +174,7 @@ POST /act HTTP/1.1" 200 OK
 Post-smoke cleanup was also verified:
 
 - no listener remained on port `8500`
-- no `run_groot_http_smoke`, `smoke_test_serve.py`, `scripts/serve/groot.py`, or SAFE feature server process remained
-- no temporary `groot-http-smoke-*` container remained
+- no `smoke_test_serve.py`, `scripts/serve/groot.py`, or SAFE feature server process remained
 - GPU memory returned to idle baseline
 
 Runtime action parity and replay validation are intentionally not duplicated here. The canonical result table, artifact paths, and remaining replay limitation live in [09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29). The replay semantics live in [05 Scenario Reproduction](n16_05_safe_env_reproduction.md#보장-범위).
@@ -206,7 +195,9 @@ Still not covered:
 ## How To Run Runtime Validation
 
 ```bash
-bash scripts/serve/run_groot_http_smoke.sh
+python scripts/utils/smoke_test_serve.py \
+  --profile configs/checkpoints/groot__robocasa_panda_omron.yaml \
+  --url http://127.0.0.1:8500
 ```
 
 Expected success path:
@@ -216,7 +207,4 @@ Expected success path:
 /reset OK
 /act OK
 [SMOKE TEST PASS]
-[DONE] GR00T HTTP smoke passed
 ```
-
-If the wrapper refuses to start, keep the refusal as the source of truth: another SAFE/GPU process is still active or the GPU/port state could not be verified safely.

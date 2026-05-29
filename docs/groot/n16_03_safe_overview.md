@@ -77,13 +77,25 @@ python -c "import sys; sys.path.insert(0, 'scripts/safe/groot_n16/robocasa'); im
 
 이 디렉터리의 파일은 아래 순서로 읽으면 된다. 각 step은 앞 step의 artifact를 입력으로 삼는다.
 
+Layer boundary:
+
+- `src/policies/groot/`: GR00T policy adapter library shared by serving, eval, and SAFE workflows. It must not import from `scripts/`; SAFE workflow pkl/CSV collection contracts do not live here.
+- `src/policies/groot/robocasa_io.py`: GR00T RoboCasa IO adapter for `GrootRoboCasaEnv` native keys. GR00T HTTP eval and SAFE wiring use this instead of the generic benchmark processor pipeline.
+- `src/processor/`: generic benchmark processor pipeline for Project FastAPI evaluation. It remains the path for non-GR00T-native RoboCasa/Calvin/LIBERO eval scripts, not the home for GR00T native key conversion.
+- `scripts/`: executable workflow entrypoints and runtime wiring. Scripts may import `src/policies/groot/`.
+- `scripts/safe/groot_n16/robocasa/collect/`: RoboCasa SAFE collection orchestration, transport clients, and collector pkl/CSV schema helpers.
+
 | order | file | purpose | main input -> output |
 |---:|---|---|---|
 | 0 | `run_config.py` | Python-side shared run identity, paths, final detector selection | constants -> Python defaults |
 | 0 | `run_config.sh` | Bash-side shared run identity adapter | env/defaults -> shell variables |
 | 0 | `safe_feature_vectors.py` | `[K,H,D]` Flow-matching SAFE feature를 timestep-level SAFE feature vector로 aggregate | rollout pkl + aggregation command -> `[T,D]` features |
 | 1 | `serve/feature_server.py` | ZMQ feature server exposing `get_action_with_features` | GR00T checkpoint -> action + unpooled feature |
-| 2 | `collect/collect_rollout.py` | one-task/one-range rollout collector | ZMQ feature server + RoboCasa env -> SAFE-readable pkl/mp4/csv |
+| 2 | `collect/collect_rollout.py` | one-task/one-range rollout collector entrypoint | feature client + RoboCasa env -> SAFE-readable pkl/mp4/csv |
+| 2 | `collect/collect_env.py` | RoboCasa env construction, video wrapper, one-episode rollout loop | env name + scenario replay -> rollout result |
+| 2 | `collect/collect_artifacts.py` | SAFE rollout artifact writer | feature records + ep_meta + video -> pkl/mp4/csv |
+| 2 | `collect/collect_policy_clients.py` | ZMQ/HTTP feature policy client transports | ZMQ `get_action_with_features` or HTTP `/act_with_features` -> action + feature records |
+| 2 | `collect/collect_schema.py` | SAFE collection schema helpers derived from `src/policies/groot/schema.py` | observation/action/features -> collector pkl schema |
 | 2 | `collect/collect_task_set_official_uv_host.sh` | preferred host-side task-set collection wrapper using official `robocasa_uv` env | task set + seeds -> raw rollout directories |
 | 2 | `collect/collect_task_set_in_container.sh` | collection wrapper for already-running container shell context | task set + seeds -> raw rollout directories |
 | 2 | `collect/collect_task_set_via_docker_exec.sh` | host wrapper that enters the Docker container for collection | task set + seeds -> raw rollout directories |
@@ -112,6 +124,8 @@ ZMQ SAFE:
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/safe_feature_vectors.py`
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/serve/feature_server.py`
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/collect/collect_rollout.py`
+- `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/collect/collect_policy_clients.py`
+- `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/collect/collect_schema.py`
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/collect/collect_task_set_in_container.sh`
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/collect/collect_task_set_official_uv_host.sh`
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh`
@@ -138,7 +152,6 @@ Final detector artifacts:
 HTTP:
 
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/serve/groot.py` (port 8500, `/act` + `/act_with_features`)
-- `/home/dongkyu/pdk_ws/temporal_vla/scripts/serve/run_groot_http_smoke.sh`
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/utils/vla_client.py` (`predict`, `predict_with_features`)
 - `/home/dongkyu/pdk_ws/temporal_vla/src/policies/groot/safe_features.py` (HTTP/ZMQ 공유 DiT capture)
 - `/home/dongkyu/pdk_ws/temporal_vla/configs/checkpoints/groot__robocasa365_ckpt120000.yaml`

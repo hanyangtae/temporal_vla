@@ -233,17 +233,17 @@ docker exec \
 import json
 import pickle
 from pathlib import Path
-from scripts.safe.groot_n16.robocasa.collect.collect_rollout import _json_safe
+from src.policies.groot.scenario_replay import json_safe
 
 root = Path('outputs/eval/robocasa/groot_n16/<run>/raw_rollouts')
 task = 'CloseFridge'
 manifest_path = next((root / '_ep_metas' / task).glob('*.json'))
 manifest = json.load(open(manifest_path))
-manifest_digest = json.dumps(_json_safe(manifest['ep_meta']), sort_keys=True)
+manifest_digest = json.dumps(json_safe(manifest['ep_meta']), sort_keys=True)
 
 for path in sorted((root / task).glob('*.pkl')):
     payload = pickle.load(open(path, 'rb'))
-    digest = json.dumps(_json_safe(payload['ep_meta']), sort_keys=True)
+    digest = json.dumps(json_safe(payload['ep_meta']), sort_keys=True)
     print(path.name, payload['scenario_seed'], digest == manifest_digest)
 PY"
 ```

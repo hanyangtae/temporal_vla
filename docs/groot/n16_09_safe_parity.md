@@ -116,16 +116,6 @@ python scripts/utils/smoke_test_serve.py \
   --url http://127.0.0.1:8500
 ```
 
-One-command smoke wrapper:
-
-```bash
-bash scripts/serve/run_groot_http_smoke.sh
-```
-
-The wrapper refuses to start while the SAFE ZMQ collection/server path is
-active, starts only its own HTTP server process, and stops that process after
-the smoke test.
-
 역할:
 
 - HTTP는 heterogeneous VLA serving 경로다.

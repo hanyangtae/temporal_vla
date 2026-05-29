@@ -108,7 +108,7 @@ outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_ah16
 
 ## HTTP `/act_with_features` SAFE Feature Collection
 
-HTTP transport는 같은 collector에서 `--policy-transport http`로 선택한다. 이 경로는 FastAPI `/act_with_features` 응답을 unified action sub-key에서 GR00T native action key로 되돌리고, `features.hidden_states` blob을 기존 SAFE pkl의 `hidden_states` list로 저장한다.
+HTTP transport는 같은 collector에서 `--policy-transport http`로 선택한다. 이 경로는 `scripts/safe/groot_n16/robocasa/collect/collect_policy_clients.py`가 `make_groot_robocasa_processors(action_mode="chunk")`를 통해 FastAPI `/act_with_features` 응답을 unified action sub-key에서 GR00T native action key로 되돌리고, `scripts/safe/groot_n16/robocasa/collect/collect_schema.py` helper를 통해 `features.hidden_states` blob을 기존 SAFE pkl의 `hidden_states` list로 저장한다. GR00T key mapping은 `src/policies/groot/schema.py`와 `src/policies/groot/robocasa_io.py`를 source of truth로 둔다.
 
 Smoke command:
 
