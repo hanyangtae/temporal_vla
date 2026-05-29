@@ -1,8 +1,12 @@
-"""RoboCasa 환경 observation processor.
+"""Generic RoboCasa observation processor for Project FastAPI evaluation.
 
 robosuite obs dict에서 개별 observable 키를 사용하여 state를
 ``observation.state.*`` sub-key로 분리 출력한다.
 모델 서버가 필요한 성분만 골라 쓰고, 변환(quat→euler 등)도 모델 쪽에서 수행.
+
+GR00T `GrootRoboCasaEnv` native observation conversion is intentionally kept
+out of this generic processor; use `obs.groot_robocasa` for that pipeline
+adapter.
 
 Python 3.8 compatible.
 """

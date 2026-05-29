@@ -11,9 +11,11 @@ from typing import Tuple
 
 from .base import DataProcessorPipeline
 from .obs.calvin import CalvinObsProcessor
+from .obs.groot_robocasa import GrootRoboCasaObsProcessor
 from .obs.libero import LIBEROObsProcessor
 from .obs.robocasa import RoboCasaObsProcessor
 from .action.calvin import CalvinActionProcessor
+from .action.groot_robocasa import GrootRoboCasaActionProcessor
 from .action.libero import LIBEROActionProcessor
 from .action.robocasa import RoboCasaActionProcessor
 
@@ -128,5 +130,32 @@ def make_robocasa_processors(
     action_pipeline = DataProcessorPipeline(
         steps=[RoboCasaActionProcessor(arm_dim=arm_dim)],
         name="robocasa_action",
+    )
+    return obs_pipeline, action_pipeline
+
+
+def make_groot_robocasa_processors(
+    strict: bool = True,
+    action_mode: str = "step",
+    image_size: int = 256,
+    action_horizon: int = 16,
+) -> Tuple[DataProcessorPipeline, DataProcessorPipeline]:
+    """GR00T GrootRoboCasaEnv용 (obs_pipeline, action_pipeline) 생성.
+
+    Generic robosuite RoboCasa processor와 달리 GrootRoboCasaEnv native keys를
+    ``src.policies.groot.robocasa_io`` adapter contract에 맞춰 처리한다.
+    """
+    obs_pipeline = DataProcessorPipeline(
+        steps=[GrootRoboCasaObsProcessor(strict=strict, image_size=image_size)],
+        name="groot_robocasa_obs",
+    )
+    action_pipeline = DataProcessorPipeline(
+        steps=[
+            GrootRoboCasaActionProcessor(
+                mode=action_mode,
+                action_horizon=action_horizon,
+            )
+        ],
+        name="groot_robocasa_action",
     )
     return obs_pipeline, action_pipeline
