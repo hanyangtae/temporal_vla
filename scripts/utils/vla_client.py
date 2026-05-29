@@ -11,13 +11,30 @@
       "observation.state.eef_pos": [float, float, float],
       "observation.state.eef_quat": [float x4],
       "observation.state.joint_pos": [float x7],
+      "observation.state.eef_pos_rel": [float x3],      # GR00T RoboCasa
+      "observation.state.eef_quat_rel": [float x4],     # GR00T RoboCasa
+      "observation.state.base_position": [float x3],    # GR00T RoboCasa
+      "observation.state.base_rotation": [float x4],    # GR00T RoboCasa
       ...
       "task": "str"
     }
-    응답: {
-      "action": [[float...], ...],   ← 항상 2D
-      "latency_ms": float
-    }
+    응답:
+      신규 sub-keyed:
+      {
+        "action.eef_pos": [[float x3], ...],
+        "action.eef_axisangle": [[float x3], ...],
+        "action.gripper": [[float x1], ...],
+        "latency_ms": float
+      }
+      하위호환 flat:
+      {
+        "action": [[float...], ...],
+        "latency_ms": float
+      }
+
+  POST /act_with_features
+    요청: /act 와 동일
+    응답: /act sub-keyed 응답 + features.hidden_states base64 blob + metadata
 
   POST /reset   ← 에피소드 시작 시 히스토리 초기화 (모델이 필요 없으면 no-op)
   GET  /health  ← 서버 상태 확인 + feature 정보
@@ -32,6 +49,13 @@ import time
 import numpy as np
 import requests
 from PIL import Image
+
+
+def _decode_feature_blob(blob: dict) -> np.ndarray:
+    """``features.hidden_states`` 의 base64+shape+dtype dict 를 numpy 로 복원."""
+    raw = base64.b64decode(blob["data"])
+    arr = np.frombuffer(raw, dtype=np.dtype(blob["dtype"]))
+    return arr.reshape(blob["shape"]).copy()
 
 
 def encode_image(img: np.ndarray) -> str:
@@ -56,23 +80,31 @@ class VLAClient:
         self.url = url.rstrip("/")
         self.timeout = timeout
 
-    def health_check(self) -> dict | None:
+    def health_check(self, timeout: float = 5.0) -> dict | None:
         try:
-            r = requests.get(f"{self.url}/health", timeout=5)
+            r = requests.get(f"{self.url}/health", timeout=timeout)
             if r.status_code == 200:
                 return r.json()
             return None
-        except requests.ConnectionError:
+        except (requests.RequestException, ValueError):
             return None
 
     def wait_until_ready(self, max_wait: float = 180.0, poll_interval: float = 3.0):
         """서버가 준비될 때까지 대기."""
-        start = time.time()
-        while time.time() - start < max_wait:
-            info = self.health_check()
+        deadline = time.time() + max_wait
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+
+            info = self.health_check(timeout=min(5.0, remaining))
             if info and info.get("status") == "ok":
                 return info
-            time.sleep(poll_interval)
+
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            time.sleep(min(poll_interval, remaining))
         raise TimeoutError(f"Server at {self.url} not ready after {max_wait}s")
 
     def reset(self):
@@ -80,11 +112,78 @@ class VLAClient:
         r = requests.post(f"{self.url}/reset", timeout=self.timeout)
         r.raise_for_status()
 
+    def _build_payload(
+        self,
+        images: dict[str, np.ndarray],
+        states: dict[str, np.ndarray] | None,
+        instruction: str,
+        inference_seed: int | None = None,
+    ) -> dict:
+        payload: dict = {}
+        for k, v in images.items():
+            payload[f"observation.images.{k}"] = encode_image(v)
+        payload["task"] = instruction
+        if inference_seed is not None:
+            payload["inference_seed"] = int(inference_seed)
+        if states is not None:
+            for k, v in states.items():
+                payload[k] = v.tolist() if isinstance(v, np.ndarray) else v
+        return payload
+
+    def _post_and_decode(self, path: str, payload: dict) -> tuple[dict, float]:
+        t0 = time.time()
+        r = requests.post(f"{self.url}{path}", json=payload, timeout=self.timeout)
+        latency_ms = (time.time() - t0) * 1000
+
+        try:
+            result = r.json()
+        except ValueError:
+            result = None
+
+        try:
+            r.raise_for_status()
+        except requests.HTTPError as exc:
+            if isinstance(result, dict):
+                message = result.get("error") or result.get("detail")
+                if message:
+                    raise RuntimeError(f"VLA server error: {message}") from exc
+            raise
+
+        if not isinstance(result, dict):
+            raise RuntimeError("VLA server response must be a JSON object")
+
+        if "error" in result:
+            raise RuntimeError(f"VLA server error: {result['error']}")
+
+        return result, latency_ms
+
+    def _parse_action(self, result: dict) -> dict | np.ndarray:
+        """sub-keyed dict 우선, 없으면 flat ``action`` array."""
+        action_keys = [k for k in result if k.startswith("action.")]
+        if action_keys:
+            action_dict = {}
+            for k in action_keys:
+                arr = np.array(result[k], dtype=np.float32)
+                if arr.ndim == 1:
+                    arr = arr[np.newaxis, :]
+                action_dict[k] = arr
+            return action_dict
+
+        if "action" not in result:
+            keys = ", ".join(sorted(result)) or "<empty>"
+            raise RuntimeError(f"VLA server response missing action keys: {keys}")
+
+        actions = np.array(result["action"], dtype=np.float32)
+        if actions.ndim == 1:
+            actions = actions[np.newaxis, :]
+        return actions
+
     def predict(
         self,
         images: dict[str, np.ndarray],
         states: dict[str, np.ndarray] | None = None,
         instruction: str = "",
+        inference_seed: int | None = None,
     ):
         """모델 서버에 액션 예측 요청.
 
@@ -93,6 +192,7 @@ class VLAClient:
                     키 이름은 "static", "wrist" 등 벤치마크가 정하는 이름.
             states: observation.state.* 키 → numpy 배열 딕셔너리.
                     예: {"observation.state.eef_pos": np.array([...]), ...}
+                    GR00T RoboCasa는 eef_pos_rel/eef_quat_rel/base_* 키를 사용.
                     None이면 state 관련 키를 전송하지 않음.
             instruction: 태스크 언어 지시문.
 
@@ -105,88 +205,50 @@ class VLAClient:
               - Flat (하위호환): np.ndarray [N, action_dim]
                 예: [N, 7]
         """
-        payload = self._build_payload(images, states, instruction)
-
-        t0 = time.time()
-        r = requests.post(f"{self.url}/act", json=payload, timeout=self.timeout)
-        r.raise_for_status()
-        latency_ms = (time.time() - t0) * 1000
-
-        return self._parse_actions(r.json()), latency_ms
+        payload = self._build_payload(images, states, instruction, inference_seed)
+        result, latency_ms = self._post_and_decode("/act", payload)
+        return self._parse_action(result), latency_ms
 
     def predict_with_features(
         self,
         images: dict[str, np.ndarray],
         states: dict[str, np.ndarray] | None = None,
         instruction: str = "",
+        inference_seed: int | None = None,
     ):
-        """SAFE 수집용: /act_with_features 호출. predict() 와 인자 동일.
+        """``/act_with_features`` 호출. action sub-key dict + features dict 반환.
 
         Returns:
             (actions, features, latency_ms)
-
-            actions: predict() 와 동일(sub-keyed dict 또는 flat ndarray).
-            features: dict | None — 정책이 이번 step 에 새 추론을 돌렸을 때만 채워짐.
-              {"hidden_states": ndarray ([K,H,D] flow-matching | [1,n_tokens,D] pi0_fast),
-               "feature_kind": str, "feature_axes": list[str],
-               "num_inference_timesteps": int|None, ...}
-              버퍼된 action 만 반환한 step(queue pop)에서는 None.
+              actions: ``predict`` 와 같은 sub-keyed dict[str, np.ndarray]
+                       (서버가 sub-keyed 응답을 보장 — GR00T HTTP serve 한정)
+              features: dict
+                hidden_states: np.ndarray (``[B, K, H, D]`` 등 서버 shape 그대로)
+                kind: str   (e.g. "groot_n16_dit_valid_action_tokens_pre_velocity")
+                axes: list[str]
+                slice: str  ("valid" | "all")
+                feature_action_horizon: int
+                valid_action_horizon: int
+                model_action_horizon: int
+                num_inference_timesteps: int
         """
-        payload = self._build_payload(images, states, instruction)
+        payload = self._build_payload(images, states, instruction, inference_seed)
+        result, latency_ms = self._post_and_decode("/act_with_features", payload)
+        actions = self._parse_action(result)
 
-        t0 = time.time()
-        r = requests.post(f"{self.url}/act_with_features", json=payload, timeout=self.timeout)
-        r.raise_for_status()
-        latency_ms = (time.time() - t0) * 1000
-
-        result = r.json()
-        actions = self._parse_actions(result)
-
-        features = None
-        if result.get("has_feature"):
-            features = {"hidden_states": _decode_ndarray(result["hidden_states_b64"])}
-            for k in (
-                "feature_kind",
-                "feature_axes",
-                "num_inference_timesteps",
-                "action_horizon",
-                "feature_dim",
-                "n_action_tokens",
-            ):
-                if k in result:
-                    features[k] = result[k]
+        blob = result.get("features.hidden_states")
+        if not isinstance(blob, dict):
+            raise RuntimeError(
+                "/act_with_features response missing features.hidden_states blob"
+            )
+        features = {
+            "hidden_states": _decode_feature_blob(blob),
+            "kind": result.get("features.kind"),
+            "axes": result.get("features.axes"),
+            "slice": result.get("features.slice"),
+            "feature_action_horizon": result.get("features.feature_action_horizon"),
+            "valid_action_horizon": result.get("features.valid_action_horizon"),
+            "model_action_horizon": result.get("features.model_action_horizon"),
+            "num_inference_timesteps": result.get("features.num_inference_timesteps"),
+        }
         return actions, features, latency_ms
-
-    @staticmethod
-    def _build_payload(
-        images: dict[str, np.ndarray],
-        states: dict[str, np.ndarray] | None,
-        instruction: str,
-    ) -> dict:
-        payload: dict = {}
-        for k, v in images.items():
-            payload[f"observation.images.{k}"] = encode_image(v)
-        payload["task"] = instruction
-        if states is not None:
-            for k, v in states.items():
-                payload[k] = v.tolist() if isinstance(v, np.ndarray) else v
-        return payload
-
-    @staticmethod
-    def _parse_actions(result: dict):
-        # Sub-keyed 포맷 감지: "action.*" 키가 하나라도 있으면 dict 반환
-        action_keys = [k for k in result if k.startswith("action.")]
-        if action_keys:
-            action_dict = {}
-            for k in action_keys:
-                arr = np.array(result[k], dtype=np.float32)
-                if arr.ndim == 1:
-                    arr = arr[np.newaxis, :]
-                action_dict[k] = arr
-            return action_dict
-
-        # 하위호환: flat "action" 배열
-        actions = np.array(result["action"], dtype=np.float32)
-        if actions.ndim == 1:
-            actions = actions[np.newaxis, :]
-        return actions
