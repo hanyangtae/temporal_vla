@@ -10,7 +10,7 @@
 set -e
 
 DREAMVLA_DIR="/temporal_vla/src/policies/dreamvla"
-DATA_DIR="${DATA_DIR:-/temporal_vla/data/datasets_dreamvla}"
+DATA_DIR="${DATA_DIR:-/cache/datasets/datasets_dreamvla}"
 OUTPUT_DIR="${OUTPUT_DIR:-/temporal_vla/outputs/dreamvla_robocasa}"
 BATCH_SIZE="${BATCH_SIZE:-2}"
 LR="${LR:-1e-4}"

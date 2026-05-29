@@ -24,8 +24,8 @@ N_EPOCHS="${N_EPOCHS:-10}"
 BATCH_SIZE="${BATCH_SIZE:-32}"
 LR="${LR:-1e-4}"
 MAX_WINDOWS_PER_EPISODE="${MAX_WINDOWS_PER_EPISODE:-24}"
-DATA_ROOT="${DATA_ROOT:-data/robocasa/v1.0/pretrain/atomic}"
-CACHE_ROOT="${CACHE_ROOT:-data/robocasa_eagle_pre_llm}"
+DATA_ROOT="${DATA_ROOT:-/cache/datasets/robocasa/v1.0/pretrain/atomic}"
+CACHE_ROOT="${CACHE_ROOT:-/cache/datasets/robocasa_eagle_pre_llm}"
 MAX_EPISODES_PER_TASK="${MAX_EPISODES_PER_TASK:-}"   # 빈 값 = 전체 사용
 
 # default = pretrain/atomic 30 task. TASKS env (공백 구분) 로 override.

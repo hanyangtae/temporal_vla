@@ -31,13 +31,13 @@ N1.5 base model은 repository-local Hugging Face cache에 있다.
 
 ```text
 host:
-data/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e
+<cache>/datasets/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e
 
 container:
-/temporal_vla/data/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e
+/cache/datasets/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e
 ```
 
-`groot_n15` service의 `HF_HOME`은 `/temporal_vla/data/huggingface`로 둔다. 따라서 `nvidia/GR00T-N1.5-3B` repo id도 이 cache에서 해석될 수 있지만, eval 명령에서는 네트워크 접근을 피하기 위해 snapshot path를 직접 넘긴다.
+`groot_n15` service의 `HF_HOME`은 `/cache/datasets/huggingface`로 둔다. 따라서 `nvidia/GR00T-N1.5-3B` repo id도 이 cache에서 해석될 수 있지만, eval 명령에서는 네트워크 접근을 피하기 위해 snapshot path를 직접 넘긴다.
 
 PandaOmron `new_embodiment` baseline은 base snapshot을 그대로 넘기지 않는다. N1.5 base snapshot의 `experiment_cfg/metadata.json`에는 `gr1`, `oxe_droid`, `agibot_genie1` metadata만 있고 `new_embodiment` metadata가 없다. Base weights를 그대로 쓰되 PandaOmron target-15 metadata를 붙인 local wrapper checkpoint를 먼저 만든다.
 
@@ -68,7 +68,7 @@ N15_PANDA_BASE_MODEL=/temporal_vla/outputs/checkpoints/groot_n15_base_pandaomron
 PYTHONPATH=/temporal_vla/configs/policies:/temporal_vla/src/policies/Isaac-GR00T-N1.5:$PYTHONPATH \
 python3 src/policies/Isaac-GR00T-N1.5/scripts/eval_policy.py \
   --model-path "$N15_PANDA_BASE_MODEL" \
-  --dataset-path /temporal_vla/data/robocasa/v1.0/target/atomic/OpenCabinet/20250813/lerobot \
+  --dataset-path /cache/datasets/robocasa/v1.0/target/atomic/OpenCabinet/20250813/lerobot \
   --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
   --embodiment-tag new_embodiment \
   --modality-keys base_motion control_mode end_effector_position end_effector_rotation gripper_close \
@@ -84,7 +84,7 @@ docker compose exec groot_n15 bash -lc '
 PYTHONPATH=/temporal_vla/configs/policies:/temporal_vla/src/policies/Isaac-GR00T-N1.5:$PYTHONPATH \
 python3 src/policies/Isaac-GR00T-N1.5/scripts/eval_policy.py \
   --model-path /temporal_vla/outputs/train/groot_n1_5/<RUN>/checkpoint-<STEP> \
-  --dataset-path /temporal_vla/data/robocasa/v1.0/target/atomic/OpenCabinet/20250813/lerobot \
+  --dataset-path /cache/datasets/robocasa/v1.0/target/atomic/OpenCabinet/20250813/lerobot \
   --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
   --embodiment-tag new_embodiment \
   --modality-keys base_motion control_mode end_effector_position end_effector_rotation gripper_close \
@@ -240,7 +240,7 @@ Base model server:
 
 ```bash
 docker compose exec groot_n15 bash -lc '
-N15_BASE_MODEL=/temporal_vla/data/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e
+N15_BASE_MODEL=/cache/datasets/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e
 python3 src/policies/Isaac-GR00T-N1.5/scripts/inference_service.py --server \
   --model-path "$N15_BASE_MODEL" \
   --embodiment-tag gr1 \

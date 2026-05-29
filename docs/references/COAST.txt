@@ -1,0 +1,2632 @@
+Contrastive Conceptor Activation Steering (COAST):
+Unlocking Vision-Language-Action Models through
+Hidden States
+Miranda Muqing Miao∗ ∗ Subin Kim∗ Brandon Yang Lyle Ungar
+University of Pennsylvania
+Abstract
+Vision-Language-Action (VLA) models leverage powerful perceptual priors from
+web-scale Vision-Language Model (VLM) pre-training, yet they remain surpris-
+ingly brittle in practice, frequently failing at simple robotic tasks. To mitigate this,
+we propose Contrastive Conceptor Activation Steering (COAST). COAST builds
+on the notion of a “conceptor”, a linear operator that soft-projects data into the
+principal components of a target distribution. COAST uses conceptors to identify
+success-critical subspaces for a target robotic task from a few examples of success
+and failure rollouts. At inference time, it steers VLA latents into these identified
+success subspaces to improve task outcomes. Across three architecturally distinct
+neural policies (flow-matching VLA, autoregressive VLA, and Diffusion Policy),
+COAST improves absolute mean simulation and real-robot task success rate by
+over 20 and 40% respectively. The activation subspace geometry reveals that fail-
+ure modes share substantial structure across tasks while success representations
+remain largely task-specific. When tasks share similar failure modes, this struc-
+ture enables previously fitted conceptors to improve performance on new tasks
+without refitting. Ultimately, our results suggest that current VLAs retain sub-
+stantial task-relevant knowledge in their latent representations, and that the action
+expert’s decoding bottleneck could be mitigated by steering its residual stream to-
+ward task-relevant subspaces. COAST provides a lightweight, training-free path
+to unlocking these latent capabilities by steering the model towards its own “suc-
+cess” distributions.
+1 Introduction
+Today’s predominant paradigm for developing generalist robotic policies is to train Vision-
+Language-Action (VLA) models on multi-modal datasets at scale (Black et al., 2026, 2025; NVIDIA
+et al., 2025). VLAs have been shown to enable robots to interpret natural language commands in
+rich visual contexts and execute complex behaviors, exhibiting improved generalization (Kim et al.,
+2024; O’Neill et al., 2024). Yet, it is challenging to pre-train on the exhaustive distribution of
+all possible deployment conditions, and in practice these policies frequently fail to execute down-
+stream tasks reliably (Liu et al., 2026; Kim et al., 2025). Approaches such as post-training and
+fine-tuning (Yuan et al., 2024; Wagenmaker et al., 2025) and contrastive representation regulariza-
+tion (Kim et al., 2025) have attempted to solve this problem. However, such remedies are costly and
+conceptually misaligned, as they attempt to relearn behaviors rather than trying to maximize the use
+of generalization ability that the model already learned from large-scale pre-training.
+A natural point of comparison for VLAs is large language models (LLMs), where a growing body of
+work onactivation steeringhas shown that lightweight, closed-form interventions on intermediate
+∗Equal contribution. Corresponding author:miaom@seas.upenn.edu.
+Preprint.
+arXiv:2605.17144v1  [cs.RO]  16 May 2026
+representations can recover correct behavior without retraining. Subramani et al. (2022) and Miao
+et al. (2026) show that latent steering vectors can be extracted from frozen model weights. Turner
+et al. (2024) introduced activation addition using contrastive prompt pairs, Rimsky et al. (2024)
+generalized this to contrastive activation addition across positive and negative examples. These
+methods steer along a single direction, which limits their reach when the relevant signal is distributed
+across multiple dimensions. Zou et al. (2025) and Postmus & Abreu (2024) broadened these single-
+direction methods into a subspace-level framework.
+VLAs consist of a frozen vision-language backbone, which inherits rich perceptual and seman-
+tic representations from web-scale pretraining, and a separately trained action expert that decodes
+these representations into motor commands. We hypothesize that the action expert is the primary
+bottleneck. Its intermediate hidden states preserve much of the backbone’s high-dimensional task
+understanding, but its final action outputs fail to fully exploit this information. If so, targeted in-
+terventions on the action expert’s residual stream should be able to recover performance without
+modifying either the backbone or the expert’s weights. Prior works have explored steering VLAs
+through their internal representations, but focus on the VLM backbone rather than the action expert.
+H¨aon et al. (2025) identify semantically meaningful neurons in the backbone’s FFN layers through
+token projection, and Huben et al. (2024) and Khan et al. (2025) train sparse autoencoders on VLA
+hidden states to isolate useful features. However, these interventions steer individual backbone fea-
+tures and have not reported comprehensive improvements in overall task success rates. By contrast,
+COAST intervenes directly on the action expert’s residual stream, where the decoding bottleneck
+resides.
+Motivated by this, we introduceCOAST (C ontrastive Conceptor Activation Steering), a plug-
+and-play framework that steers frozen VLA policies at inference time by applying a multiplica-
+tive gate to residual-stream activations. Conceptors were originally developed for recurrent net-
+works (Jaeger, 2014) and recently applied to LLM steering (Postmus & Abreu, 2024, 2025; Tri-
+antafyllopoulos et al., 2026). We adapt this machinery to VLA action experts, using Boolean sub-
+space algebra to construct contrastive conceptors from success and failure rollouts. The resulting
+operator isolates high-variance, outcome-critical directions while suppressing shared low-variance
+noise, and multiplicatively gates the residual stream during action generation. Unlike prior VLA ac-
+tivation steering methods that require learned auxiliary models, gradient computation, or per-feature
+interventions, COAST operates through closed-form operators with efficient parameter selections.
+We validate COAST across flow-matching VLAs, autoregressive VLAs, and Diffusion Policy, and
+find that it consistently and significantly outperforms existing steering approaches across all three
+architecture families.
+Our main contributions are:
+•Lightweight Training-Free Policy Steering.We apply conceptor-based subspace gating, previ-
+ously used only in NLP, to VLA action experts for the first time. The resulting method, COAST,
+constructs a closed-form multiplicative gate from Boolean conceptor algebra over success and
+failure rollouts, improving mean simulation and real-robot task success rate by 20% and 40%
+respectively.
+•Mechanistic Insight.Upon analysis to discover the sources of these large gains, we find that the
+eigenvalue structure of VLA action experts is well-suited for conceptor-based steering. Outcome-
+relevant representations occupy a low-rank but not rank-one subspace, explaining why conceptors
+outperform single-direction additive methods. We further show that COAST reshapes latent-space
+activations toward the success subspace.
+•Plug-And-Play Improvements.We validate COAST across three architecturally distinct robot
+policy backbones (flow-matching VLAs, autoregressive VLAs, and Diffusion Policy), three simu-
+lation benchmarks of increasing complexity, cross-task conceptor transfer, and real-robot deploy-
+ment, establishing that the method and the geometric structure it exploits are not specific to any
+single architecture, benchmark, task, or environment.
+2 Related Work
+Inference-time steering of robot policies.Recent work adapts frozen VLA policies at deploy-
+ment through reward-guided steering (Liu et al., 2026), latent substitution with auxiliary world
+models (Das et al., 2025), or VLM-based planning and verification (Liu et al., 2026; Song et al.,
+2
+COAST: Contrastive Conceptor Activation Steering
+Method overview — offline fitting + inference-time multiplicative gating
+Success Failure Steering
+OFFLINE  ·  fit once per task INFERENCE
+1 Rollout Collection
+Success Rollouts
+✓ τ⁺ = {τᵢ}
+N₊ trajectories
+Failure Rollouts
+✗ τ⁻ = {τᵢ}
+N₋ trajectories
+2
+ Frozen Policy
+Layer
+Layer ℓ
+Layer
+extract @ layer ℓ
+Layer
+Layer ℓ
+Layer
+transformer backbone
+3 Activation Extraction
+Success Activations
+h⁺ ∈ ℝ^(N₊×d)
+Failure Activations
+h⁻ ∈ ℝ^(N₋×d)
+4 Conceptor Fitting
+Success Conceptor    C⁺
+C⁺= R(R+α⁻²I)⁻¹
+R = E[h⁺ h⁺ᵀ]
+Failure Conceptor    C⁻
+C⁻= R(R+α⁻²I)⁻¹
+R = E[h⁻h⁻ᵀ]
+5 Boolean Composition
+Contrastive
+Conceptor
+C_steer
+= C⁺ ∧ ¬C⁻
+Negate
+¬C⁻ = I − C⁻
+6 Inference-Time Steering
+Multiplicative Gate
+M = (1−β)I + β C_steer
+h
+ ×
+ h'
+per-token residual at layer ℓ
+inject @ ℓ
+obs & instruction
+Frozen Policy
+Layer
+Layer
+Layer
+Layer ℓ
+Layer
+Layer
+Layer
+transformer backbone
+Steered Actions
+~ ~
+~ ~
+h' = hMᵀ
+Figure 1:Overview of COAST.COAST steers a frozen robot policy at inference time by multi-
+plicatively gating its residual stream with a contrastive conceptor fit from rollout activations.Of-
+fline,success and failure rollouts yield layer-ℓactivations, from which closed-form conceptorsC +
+andC − are fit and composed via Boolean subspace algebra intoC steer =C + ∧ ¬C −.Inference,
+the residualhat layerℓis gated byM= (1−β)I+β C steer to produceh ′ =hM ⊤, which flows
+through the rest of the frozen model. No gradient computation or weight modification is required.
+2026; Shah et al., 2025; Wu et al., 2026). Other approaches instead modify the policy itself by
+contrastively updating representations (Kim et al., 2025), training explicit steering interfaces (Chen
+et al., 2026), or selectively fine-tuning model components (Mitra et al., 2025). Unlike these ap-
+proaches, COAST does not require external foundation models, runtime search, or gradient-based
+optimization, operating instead via a closed-form linear intervention. We compare COAST against
+internal baselines, while still showing that it surpasses gradient-update techniques like SFT in task
+performance (Sec. 4.2). Please refer to App. A.1 for a more in-depth analysis.
+Reward-based policy improvement.A separate line of work improves VLA and diffusion poli-
+cies through reinforcement learning rather than activation steering. Wagenmaker et al. (2025) opti-
+mize a reward function in the latent noise space of a diffusion policy, while Pfrommer et al. (2025)
+train flow-matching policies via reward-weighted regression and group relative policy optimization.
+These methods require an explicit reward signal and gradient-based optimization of policy param-
+eters or auxiliary modules. In contrast, COAST leaves the policy weights frozen and requires no
+reward beyond binary success/failure labels used to partition rollouts.
+Conceptors.Conceptors are closed-form multiplicative gates on activation subspaces, introduced
+by Jaeger (2014) for recurrent networks. We introduce their technical details in Section 3.1. Post-
+mus & Abreu (2024) applied them to LLM steering additively as steering vectors, and Postmus &
+Abreu (2025) extended the framework to optimal affine steering, showing that conceptor-based in-
+tervention outperforms additive methods and that Boolean composition of conceptors outperforms
+naive vector combination. In concurrent work with overlapping authors, Triantafyllopoulos et al.
+(2026) apply contrastive conceptors to steer LLM semantic outputs, confirming the effectiveness of
+Boolean conceptor algebra for NLP tasks. We extend these insights to VLAs, applying contrastive
+subspace construction via Boolean negation and multiplicative residual-stream gating to VLA action
+experts. To our knowledge, this is the first use of conceptors for embodied policy steering.
+3 Activation Steering with Contrastive Conceptor
+COAST builds on existing conceptor algebra (Jaeger, 2014; Postmus & Abreu, 2024) and adapts
+it to VLA action experts. The key observation motivating this adaptation is that a VLA’s hidden
+states during task execution contain both task-critical and task-irrelevant features. When comparing
+successes and failures, the irrelevant features remain largely unchanged and naturally exhibit low
+variance within collected samples, while task-relevant and outcome-critical states tend to manifest
+high variance. Conceptors are well-suited for this setting because they capture these highly vari-
+able and discriminative directions by suppressing shared low-variance noise, effectively steering the
+model toward the representations essential for task completion.
+3
+3.1 Background: Contrastive Conceptors For Identifying Task-Relevant State Space
+Building Conceptors.A conceptor matrixCis a positive semi-definite linear operator that captures
+the principal directions and variances of a set of neural activations (Jaeger, 2014). Given an activa-
+tion matrixX∈R N×d whose rows are individual hidden states, let ˜Xdenote the mean-centered
+matrix with rows˜xi =x i −¯x, where¯x= 1
+N
+P
+i xi.Cminimizes a regularized reconstruction
+objective
+min
+C
+1
+N ∥ ˜X− ˜XC∥ 2
+F +α −2∥C∥2
+F .(1)
+The first term ensuresCpreserves the variance structure of the activations, while the second,
+controlled by the apertureα >0, penalizes complexity. We follow the convention of Jaeger
+(2014), where largerαyields a less regularized conceptor that faithfully reconstructs the data,
+while smallerαfavors a more compressed, generalized representation. The closed-form solution
+isC=R(R+α −2I) −1, whereR= ˜X ⊤ ˜X/Nis the covariance matrix. Crucially, this allows us to
+compute C directly via simple matrix multiplication and inversion, bypassing the need for gradient
+descent.
+Conceptors as filters.Applying a conceptorCto a new samplexto produce˜x=x T Ccan be seen
+as “filtering” the sample. The eigenvalue structure ofCmakes this filtering behavior transparent. If
+Rhas eigenvalues{λ i}, the corresponding eigenvalues ofCare
+µi = λi
+λi +α −2 .(2)
+Directions of high variance (λ i ≫α −2) receiveµ i ≈1and pass through nearly unchanged, while
+low-variance directions (λ i ≪α −2) are suppressed toward zero. The conceptor thus acts as a
+soft, variance-adaptive filter on the activation space. This way, a conceptor scales each direction
+differently based on the discovered subspace structure.
+Contrastive Conceptor.A conceptor as described above captures the principal subspace of the
+activation distribution, but effective steering requires discriminating success from failure distribu-
+tions. This can be captured by first computing separate conceptorsC success andC failure for success
+and failure samples following Equation 1, and then appropriatelycomposingthem.
+Conceptors compose conveniently under a soft Boolean algebra (Jaeger, 2014; Postmus & Abreu,
+2024). In particular, NOT is defined as¬C=I−C, and AND is defined as
+A∧B=
+ 
+A−1 +B −1 −I
+−1
+.(3)
+following the canonical conceptor algebra of Jaeger (2014) and Postmus & Abreu (2024). Intu-
+itively, AND computes the soft intersection of two subspaces: directions that both operands retain
+receive high weight, while directions retained by only one are attenuated. Thus, a “contrastive con-
+ceptor” that separates success and failure states may be composed as:
+Csteer =C success ∧ ¬Cfailure.(4)
+The AND-NOT operation retains directions present in the success subspace and absent from the
+failure subspace. Shared directions, which carry outcome-irrelevant computation, are suppressed.
+What remains is the thin residual subspace that differentiates the two outcomes.
+3.2 Steering VLAs with Contrastive Conceptors
+At inference time, we use the contrastive conceptor as a soft projection that reweights the action
+expert’s activations without overwriting them, giving direct control over the model’s latent state.
+This gently steers hidden states toward the success-associated subspace while suppressing directions
+linked to failure. Because the intervention acts only on a small, outcome-critical subspace, it is more
+efficient and less disruptive than manipulating the full representation.
+Activation extraction.We focus on activations rather than other residual hidden states because they
+more cleanly capture the network’s task-relevant dynamics as a structured, low-dimensional mani-
+fold (Jaeger, 2014). The VLA policies we evaluate share a common backbone-expert architecture in
+which a frozen vision-language model produces a conditioning representation and a trainable action
+4
+expert generates actions through either flow-matching denoising (Black et al., 2025; NVIDIA et al.,
+2025) or autoregressive token prediction (Pertsch et al., 2025). Diffusion Policy (Chi et al., 2025)
+shares the flow-matching denoising architecture. We extract activations from the action expert’s
+residual stream at a single layerℓ, mean-pooling across action tokens to obtain one vectorh∈R d
+per denoising or autoregressive step. We roll outNsamples, where success and failure are deter-
+mined either by simulation or by real world outcomes. StackingNsuch vectors yields the matrix
+X= [h 1;. . .;h N]∈R N×d from which the conceptors in Section 3.1 are constructed. Details of
+the extraction procedure for each model family are in Appendix A.7.
+Multiplicative Gating.At inference time, we apply the contrastive conceptor as a multiplicative
+gate on the residual stream. The gating matrix is
+M= (1−β)I+β C steer.(5)
+whereβ∈[0,1]controls the steering strength. Each residual activationhat layerℓis replaced by
+h′ =hM ⊤ before continuing through the remaining layers of the frozen model. The interpolation
+with the identity ensures that the gate acts as a soft projection. Atβ= 0the forward pass is
+unmodified, atβ= 1the full conceptor is applied, and intermediate values blend the original and
+steered activations. The interpolation with the identity is important because even thoughC steer is
+already a soft projection (its eigenvalues are fractional rather than binary), applying it at full strength
+can still be too aggressive. Theβparameter provides an additional degree of control, allowing the
+gate to attenuate directions according to their discriminative value while preserving enough of the
+original activation to keep the policy’s downstream computation stable.
+Steering strategies.We evaluate three variants of conceptor steering.Globalsteering fits a single
+contrastive conceptorC steer =C success ∧ ¬Cfailure from activations pooled across all denoising steps
+and applies the same gate at every step. This is the simplest strategy and assumes the discriminative
+subspace is stable throughout the denoising process.Per-stepsteering instead fits a separate con-
+trastive conceptor for each denoising step from activations collected at that step alone, allowing the
+gate to track shifts in the discriminative subspace as the action is progressively refined from noise
+to a clean action chunk.Positive-onlysteering setsC steer =C success, omitting the failure subtraction
+entirely. This variant requires only successful demonstrations and serves as a test of whether the
+contrastive operation is necessary or whether projecting toward the success subspace alone suffices.
+We also introduce a highly efficient hyperparameter selection heuristic by identifying the optimal
+layer through conceptor quota and narrowing the aperture range via success-failure overlap. This
+recovers 93% of oracle performance while evaluating under 3-8% of the full configuration grid
+(App. A.10.2). Additionally, we test the latency of COAST and find it to be minimal and in-line
+with existing steering methods (App. B.2).
+4 Experiments
+In our experiments, we aim to evaluate the following questions. (1)Performance.Does COAST
+reliably improve task success across diverse VLA models and benchmarks? (2)Mechanism & In-
+terpretability.How does conceptor steering geometrically reshape internal activations? (3)Shared
+Failure Geometry.Do tasks share failure-mode structure, and if so, can a conceptor fitted on one
+task improve a different task without refitting?
+4.1 Experimental Setup
+Environments.We evaluate across three simulation benchmarks and three real-world tasks chosen
+to span a range of task complexity, from short-horizon single-object manipulation to long-horizon
+multi-step reasoning in visually diverse scenes. Further setups can be found in App. A.8.
+•MetaWorld ML45(Yu et al., 2021) comprises 45 tabletop robotic manipulation tasks spanning a
+broad spectrum of motor skills, each with randomized goal positions per episode.
+•LIBERO-10(Liu et al., 2023) consists of 10 long-horizon manipulation tasks in tabletop kitchen
+scenes, each requiring multi-step object interactions such as picking, placing, and opening across
+semantically diverse objects including containers, utensils, and appliances.
+5
+MetaWorld-ML45 LIBERO-10 RoboCasa Open Drawer Close Microwave Put Duck on Cabinet
+Figure 2:Overview of Environment Setup.We evaluate on three simulation benchmarks of in-
+creasing difficulty, MetaWorld ML45 (Yu et al., 2021), LIBERO-10 (Liu et al., 2023), and a select
+RoboCasa (Nasiriany et al., 2024) subset, plus three real-robot tasks on the DROID platform.
+•RoboCasa(Nasiriany et al., 2024) covers 7 atomic-seen tasks. Every episode re-samples the
+kitchen layout, object instances, placements, textures, and lighting, producing a combinatorially
+large state space that demands strong generalization across visually and physically diverse config-
+urations unseen during training.
+•Real-world validation.We use the DROID platform (Khazatsky et al., 2024), evaluated on three
+tasks:Open Drawer,Close Microwave, andPut Duck in Cabinetover 15 independent tri-
+als per task. Success is defined strictly by task completion: drawer fully extended, microwave
+door latched, or duck inside the cabinet. Further details can be found in App. A.12.
+Evaluated Policies.We evaluate several backbone policies across our environments:
+π0.5 (Black et al., 2025) (Metaworld, LIBERO, Robocasa),π 0-FAST (Pertsch et al., 2025) (Meta-
+world, LIBERO), GR00T N1.5 (NVIDIA et al., 2025) (Robocasa) and Diffusion Policy (Chi et al.,
+2025) (Robocasa). By showing that our method also works with DP, we demonstrate our method’s
+scalability to the diffusion/flow-matching family of policies other than VLA models. All VLA
+models are also evaluated on real-world tasks. VLA models achieve very high success rates on
+MetaWorld and LIBERO when fully trained, so we use early fine-tuning checkpoints that produce
+the mix of successes and failures needed for contrastive fitting. For RoboCasa, the fully trained
+checkpoints for both GR00T N1.5 and Diffusion Policy exhibit sufficient failure rates, so no early
+stopping is required. We show that our method is robust across different checkpoints and parameters
+in App. A.6.
+Baselines.We evaluate COAST against two activation steering baselines and one Supervised Fine-
+Tuning (SFT) baseline. We compare against Contrastive Activation Addition (CAA) (Rimsky et al.,
+2024) to represent single-direction additive steering, and Sparse Autoencoder (SAE) steering (Khan
+et al., 2025) to represent feature-based steering. Furthermore, we evaluate SFT with LoRA (Hu
+et al., 2022) using the exact same 15 trajectories utilized for COAST. Implementation details for
+each baseline can be found in App. A.19, App. A.20, and App. A.13 respectively. Finally, aperture
+αand steering strengthβare optimized on gathered rollouts (Sec. A.10.2).
+Evaluation Protocol.For each task, we use a strict train/test split: 15 training rollouts to extract
+conceptors and select hyperparameters, and 30 held-out test rollouts with entirely unseen environ-
+ment configurations for final evaluation (see App. A.8 for details).
+4.2 Does COAST reliably improve task success across diverse VLA models and
+benchmarks?
+Across all model-benchmark pairs, COAST produces statistically significant improvements over the
+unsteered baseline, with contrastive strategies (global and per-step) consistently outperforming both
+additive (CAA) and feature-based (SAE) steering as well as supervised fine-tuning (Table 1). The
+gains are largest where the baseline is weakest and where success and failure subspaces overlap most
+heavily, consistent with the mechanistic analysis in Section 4.3. We summarize the key patterns per
+benchmark below and return to cross-benchmark observations at the end of this subsection.
+MetaWorld ML45.Conceptor steering improvesπ 0.5 mean success rate from 0.57 to 0.82 under
+per-step contrastive steering (+0.25,p < .001), with individual tasks showing dramatic success
+rate recoveries:pick-place-wallfrom 0.20 to 1.00 andstick-pushfrom 0.20 to 0.73 (Table 1;
+6
+RoboCasa
+Task π0.5 GR00T N1.5 Diffusion Policy
+Baselines COAST Baselines COAST Baselines COAST
+Base +SFT +SAE +CAA+Glob. +Per. +Pos.Base +SFT +SAE +CAA+Glob. +Per. +Pos.Base +SAE +CAA+Glob. +Per. +Pos.
+Close Fridge0.20 0.030.470.27 0.470.40 0.400.67 0.43 0.73 0.800.931.000.870.43 0.53 0.530.56 0.600.50Coffee Mug0.13 0.23 0.330.13 0.33 0.33 0.530.20 0.10 0.40 0.130.270.33 0.330.13 0.200.16 0.230.16 0.16Open Drawer0.53 0.47 0.600.53 0.670.530.67 0.53 0.57 0.67 0.730.800.53 0.670.10 0.20 0.230.330.30 0.23Stand Mixer0.67 0.30 0.53 0.530.73 0.800.53 0.60 0.77 0.73 0.800.800.800.930.630.830.63 0.83 0.83 0.83PP Cabinet0.60 0.50 0.670.67 0.74 0.740.670.730.63 0.73 0.530.80 0.800.730.30 0.530.40 0.460.560.46PP Stove0.33 0.43 0.53 0.530.530.670.60 0.73 0.600.87 0.870.870.750.870.100.100.10 0.13 0.130.10Kettle 0.33 0.20 0.27 0.270.40 0.40 0.530.67 0.37 0.73 0.470.800.730.730.56 0.56 0.500.60 0.660.46
+Mean 0.40 0.31 0.49 0.420.55 0.55 0.560.59 0.50 0.69 0.620.750.710.730.32 0.42 0.360.45 0.460.39∆ –−0.09 +0.09 +0.02+0.15+0.15+0.16– -0.09 +0.10 +0.03+0.16+0.12+0.14– +0.10 +0.04+0.13+0.14+0.07pt –.195.172.642 .002∗∗ .009∗∗ .044∗ –0.89.006∗∗ .690.002∗∗ .039∗ .011∗ –.025∗ .151.004∗∗ .006∗∗ .123pz –.101.211.779 .014∗ .014∗ .009∗∗ –0.92.113.672 .006∗∗ .046∗ .014∗ –.134.512 .058.035∗ .289
+LIBERO-10
+Task π0.5 π0-FAST†
+Baselines COAST Baselines COASTBase +SFT +SAE +CAA+Glob. +Per. +Pos.Base +SFT +SAE +CAA+Glob. +Per. +Pos.Stove+Moka0.53 0.63 0.67 0.670.930.87 0.800.80 0.73 0.80 0.731.000.87 0.80Bowl+Drawer0.40 0.20 0.800.47 0.73 0.80 0.870.67 0.60 0.870.73 0.93 0.930.80Mug+Micro0.13 0.10 0.20 0.130.40 0.600.33 0.47 0.47 0.670.800.73 0.800.73Two Mokas0.20 0.07 0.13 0.070.47 0.530.13 0.33 0.10 0.33 0.270.53 0.530.40Soup+Cheese0.80 0.43 0.73 0.800.93 1.000.93 0.67 0.73 0.80 0.800.87 0.87 1.00Soup+Tomato0.40 0.530.800.530.80 0.800.60 0.67 0.770.930.800.87 0.930.73Cheese+Butter0.60 0.67 0.80 0.600.93 0.930.87 1.000.90– – – –1.00Mugs+Plates0.07 0.13 0.330.07 0.60 0.600.20 0.60 0.730.870.800.87 0.870.80Mug+Choc0.53 0.57 0.730.60 0.87 0.870.67 0.73 0.77 0.870.67 0.93 0.930.87Book+Caddy0.67 0.70 0.87 0.800.93 1.000.93 0.60 0.43 0.73 0.800.87 0.870.73Mean 0.43 0.40 0.61 0.470.76 0.80 0.630.65 0.62 0.76 0.710.84 0.84 0.79∆ –−0.03 +0.17 +0.04+0.33+0.37+0.20–−0.03+0.15 +0.10+0.23+0.23+0.13pt –.562.009∗∗ .157< .001∗∗∗< .001∗∗∗ .001∗∗ –.425.002∗∗ .074< .001∗∗∗< .001∗∗∗.004∗∗
+pz –.118.003∗∗ .487< .001∗∗∗< .001∗∗∗< .001∗∗∗ – 0.672.009∗∗ .094< .001∗∗∗< .001∗∗∗.009∗∗
+MetaWorld ML45
+Task π0.5 π0-FASTBaselines COAST Baselines COASTBase +SFT +SAE +CAA+Glob. +Per. +Pos.Base +SFT +SAE +CAA+Glob. +Per. +Pos.coffee-push0.80 0.631.000.871.00 1.00 1.00 0.88 0.87 0.881.000.94 0.94 0.94push 0.930.80 0.930.93 1.00 1.000.93 0.75 0.83 0.880.75 0.940.88 0.75pick-place0.870.87 0.80 0.871.00 1.000.80 0.69 0.67 0.62 0.750.88 0.880.81plate-slide-back0.60 0.37 0.53 0.530.93 0.930.73 0.88 0.930.56 0.750.88 0.880.94faucet-close0.80 0.671.000.931.000.93 0.930.44 0.801.000.500.69 0.69 0.81pick-place-wall0.20 0.23 0.33 0.400.87 1.000.47 0.69 0.500.880.690.81 0.75 0.75reach 0.930.73 0.931.00 0.93 0.93 1.000.810.770.690.810.81 0.81 0.81coffee-pull0.930.671.00 1.000.93 0.93 1.000.620.60 0.620.50 0.690.62 0.69disassemble0.60 0.10 0.80 0.730.93 0.930.87 0.56 0.700.810.560.69 0.56 0.75stick-push0.20 0.20 0.40 0.600.800.73 0.400.81 0.901.000.810.88 0.88 0.88Mean 0.69 0.53 0.77 0.790.94 0.94 0.810.71 0.76 0.79 0.710.82 0.79 0.81∆ –−0.16 +0.08+0.10+0.25+0.25+0.13– +0.05 +0.08 +0.00+0.11+0.08+0.10pt –.011∗ .064.039∗ .008∗∗ .012∗ .006∗∗ –.358.315.968 .003∗∗ .023∗ .018∗
+pz –< .001∗∗∗.029∗ .004∗∗< .001∗∗∗< .001∗∗∗< .001∗∗∗ – 0.0118.092.300< .001∗∗∗< .001∗∗∗< .001∗∗∗
+0.00 0.25 0.50 0.75 1.00
+Success Rate
+Open DrawerClose MicrowavePut Duck on Cabinet
+0.86
+0.46
+0.40
+0.33
+0.06
+0.13
+0.26
+0.06
+0.13
+0.00
+0.06
+0.06
+Real Robot Results
+pi05+COAST
+Pi05
+Pi0FAST
+GROOT
+Table 1:Contrastive conceptors deliver the largest and most consistent gains across every
+model–benchmark pair.We evaluate three conceptor steering strategies (+Glob., +Per., +Pos.)
+defined in Section 3.2 and compare against +CAA (linear contrastive activation addition), a fine-
+tuning baseline (+SFT), and a +SAE baseline (TopK SAE feature selection; per-task bestαover
+the grid{0.25,0.5,1.0,2.0}) (Khan et al., 2025). LIBERO-10 task names describe the manipulated
+objects (e.g., Stove+Moka = turn on stove and place moka pot; full names in App. A.8).∆: mean
+gain over unsteered baseline.p t: pairedt-test across tasks;p z: pooled two-proportionz-test. ∗p <
+0.05, ∗∗p <0.01, ∗∗∗p <0.001.Bold: best method per row; underline : second-best. †The
+Cheese+Butter task has zero failures under theπ 0-FAST checkpoint, so no contrastive conceptor
+can be fitted; means and∆for that column are over 9 contrastive-eligible tasks.(Right)Real-robot
+success rates on three manipulation tasks. We compareπ 0.5+COAST,π 0.5,π 0-FAST, and GR00T
+on 3 three real-world robot tasks.
+per-task detail in Table 7).π 0-FAST shows a consistent but smaller improvement, rising from 0.57
+to 0.69 under global steering (+0.13,p < .001).
+LIBERO-10.LIBERO produces the largest absolute gains of any benchmark. Per-step steering
+liftsπ 0.5 from 0.43 to 0.80 (+0.37,p < .001), with the strongest recoveries onLR5(0.07→0.60)
+andKS3(0.53→0.93).π 0-FAST improves from 0.62 to 0.84 (+0.23,p < .001). Both CAA and
+SFT falter here, showing only minimal gains (+0.04and−0.03forπ 0.5, respectively); We attribute
+this to long-horizon dynamics, where small early deviations compound across steps and explicitly
+suppressing failure modes prevents this accumulation.
+RoboCasa.RoboCasa requires generalization across randomized placements, textures, and clut-
+tered scenes—the hardest setting. Steering nonetheless yields significant gains across models.π 0.5
+reaches 0.56 (+0.17,p z =.009) and GR00T N1.5 achieves 0.75 (+0.16,p z =.006), showing
+sharp recoveries onStand Mixer. While Diffusion Policy also improves (0.32→0.46,+0.14), its
+7
+absolute gains are slightly lower than those of the VLA models; this suggests that while steerable
+success geometry exists in continuous diffusion representations, the inherited caches from VLM-
+backbones of VLAs might offer more robust decodability for activation steering. That all strategies
+remain significant confirms this geometry persists even under high visual variability.
+Real World.To evaluate whether our method transfers beyond simulation, we test on three real-
+robot manipulation tasks:Open Drawer,Close Microwave, andPut Duck on Cabinet. We
+highlight that these tasks each have very different dynamics, and also were done onπ 0.5-DROID
+policy that was not fine-tuned on any demos. Across all three tasks,π 0.5+COAST achieves the
+highest success rate with a 40% average improvement, with the largest gain on the challengingOpen
+Drawertask. We also note that with just a single successful rollout, we were able to increase the
+success rate to 46% on theClose Microwavetask. Visual examples of rollouts are in Fig. 8.
+Comparison against baselines.COAST outperforms CAA because CAA applies a strictly ad-
+ditive shift along a single direction, while conceptors act as subspace-aware filters that selectively
+scale task-relevant directions and suppress irrelevant ones. COAST also outperforms SAE steering:
+SAE methods select features in a sparse basis but collapse them back into a single additive direction,
+inheriting CAA’s lack of subspace-aware scaling and adding a reconstruction bottleneck on top. SFT
+underperforms the base policy on five environments because fine-tuning on a strictly limited budget
+of just 15 rollouts per task often induces overfitting, degrading the model’s pre-trained robustness.
+Cross-benchmark patterns.Three patterns hold across all benchmarks and architectures. First,
+contrastive steering (global or per-step) consistently outperforms positive-only steering, confirming
+that the failure-subtraction operation contributes meaningfully beyond simply projecting toward suc-
+cess. Second, per-step steering matches or exceeds global steering on long-horizon tasks (LIBERO,
+RoboCasa) but offers little additional benefit on short-horizon tasks (MetaWorld), suggesting that
+the discriminative subspace shifts during denoising primarily in settings where multi-step reason-
+ing is required. Third, gains scale inversely with baseline success rate. Tasks where the unsteered
+policy struggles most show the largest absolute improvements, while near-ceiling tasks show more
+moderate improvements.
+4.3 How does conceptor steering geometrically reshape internal activations?
+The gains reported in Section 4.2 raise a natural question. What property of the residual stream
+lets a single closed-form gate produce double-digit success-rate improvements? We identify three
+geometric facts about the action expert’s hidden states (Fig. 3 and Fig. 4) to shed light on the effect.
+50 100 150 200
+Eigenvalue index
+10 4
+10 3
+10 2
+10 1
+100
+j
+(A)
+C+
+C
+0.4 0.6 0.8
+Overlap
+0.2
+0.0
+0.2
+0.4
+0.6
+0.8
+SR (C  baseline)
+ =0.59
+p=0.002
+(B)
+0
+1
+1
+2
+2
+3
+3
+4
+4
+5
+5
+6
+6
+7
+7
+8
+8
+9
+Transition t t+1
+0.90
+0.92
+0.94
+0.96
+0.98
+1.00
+cos(C(t)
+steer, C(t + 1)
+steer )
+(C)
+Figure 3:The contrastive subspace is low-rank
+and predictive. (A)Eigenvalue spectra of success
+(C+, solid) and failure (C −, dashed) conceptors
+on MetaWorld ML45 decay rapidly.(B)Per-task
+steering gain∆SRagainst overlapsim(C +,C −).
+Spearmanρ= 0.59,p= 0.002.
+Outcome-relevant computation is low-rank,
+but not rank-one.Although the residual
+stream of theπ 0.5 model operates in a 1024-
+dimensional space, the eigenvalue spectra of
+both the success (C +) and failure (C −) con-
+ceptors decay sharply across all steered Meta-
+World ML45 tasks (Figure 3A). By applying
+the Boolean contrastive operation (C+ ∧¬C−),
+the conceptor cancels out dimensions shared by
+both outcomes, reducing the effective steering
+subspace to roughly one percent of the total
+hidden dimension. This low-rank structure en-
+ables a closed-form operator to isolate success-
+relevant directions without disrupting the pol-
+icy’s overall computation. However, this discriminative subspace is strictly multi-dimensional,
+rather than rank-one. Additive steering along a single mean-difference vector recovers only par-
+tial gains (illustrated by the CAA baseline in Table 1), confirming that rank-one methods cannot
+fully capture this compact, multi-dimensional outcome geometry.
+Subspace overlap predicts steering efficacy.The magnitude of steering gain depends heavily on
+how much the success and failure subspaces overlap. Plotting per-task improvement (∆SR) against
+8
+Disc. PC 1
+Disc. PC 2
+Mug+Pudding on Plate
+Disc. PC 1
+Soup+Cheese in Basket
+Disc. PC 1
+Bowl in Drawer
+Disc. PC 1
+Stove + Moka
+Disc. PC 1
+Book in Caddy
+Disc. PC 1
+Cheese+Butter in Basket
+0.00 0.25 0.50 0.75 1.00
+Norm. trajectory time
+−8
+−6
+−4
+−2
+0
+Projection onto v1(C)
+0.00 0.25 0.50 0.75 1.00
+Norm. trajectory time
+−4
+−2
+0
+2
+4
+6
+8
+0.00 0.25 0.50 0.75 1.00
+Norm. trajectory time
+−5
+−4
+−3
+−2
+−1
+0
+0.00 0.25 0.50 0.75 1.00
+Norm. trajectory time
+0
+2
+4
+6
+8
+0.00 0.25 0.50 0.75 1.00
+Norm. trajectory time
+−3
+−2
+−1
+0
+1
+2
+3
+4
+5
+0.00 0.25 0.50 0.75 1.00
+Norm. trajectory time
+0
+2
+4
+6
+8
+10
+(A)
+(B)
+Baseline success Baseline failure Steered success Steered failure
+Figure 4:Conceptor steering pulls activations toward the success region. (A)Per-step activa-
+tions projected onto the top two eigenvectors ofC steer, the subspace maximally separating baseline
+success from failure. Solid ellipses: baseline2σregions; dashed: steered; large markers: centroids.
+(B)Projection ontov 1(Csteer)over normalized trajectory time (means±1σ).
+(a)π0.5LIBERO (b)π0.5RoboCasa
+Target Self Top-1 Top-2 Target Self Top-1 Top-2
+Stove+Moka+0.40Two Mokas (PS) +0.60Soup+Tomato (G) +0.33CloseFridge+0.27 PPStove (PS) +0.07 OpenDrawer (PS)−0.20Bowl+Drawer+0.40Soup+Tomato (PS) +0.20 Mug+Pudding (PS) +0.14CoffeeSetup+0.20 Kettle (G) +0.00 OpenDrawer (PS)−0.20Mug+Micro+0.47 Two Mokas (PS) +0.20 Mug+Pudding (G)−0.13OpenDrawer+0.14CoffeeSetup (PS) +0.60CoffeeSetup (PS) +0.47Two Mokas+0.40Mugs+Plates (PS) +0.40 Mug+Pudding (PS)−0.06StandMixer+0.13CoffeeSetup (G) +0.54 CoffeeSetup (G) +0.53Soup+Cheese+0.20 Two Mokas (G) +0.67Soup+Tomato (G) +0.47PPCabinet+0.13CoffeeSetup (PS) +0.54CoffeeSetup (G) +0.47Soup+Tomato+0.40Bowl+Drawer (PS) +0.27 Bowl+Drawer (PS) +0.27PPStove +0.34CoffeeSetup (G) +0.40 CoffeeSetup (PS) +0.34Cheese+Butter+0.33 Mug+Micro (G) +0.80 Soup+Tomato (PS) +0.60Kettle +0.07CoffeeSetup (PS) +0.14 CloseFridge (PS) +0.07Mugs+Plates+0.60 Mug+Micro (G) +0.60Soup+Tomato (PS) +0.40Mug+Pudding+0.34 Mug+Micro (G) +0.67Soup+Tomato (PS) +0.40Book+Caddy+0.33Soup+Tomato (PS) +0.53Soup+Tomato (G) +0.47
+Table 2: Transfer experiment across benchmarks. For each target task, we report the best self-
+steered result (Self) and the top-2 transfer sources. Each transfer cell showssource (strategy) SR
+delta, indicating the change in success rate compared to the target task’s unsteered baseline. G =
+global strategy, PS = per-step strategy. Values with SR delta≥+0.50are shown inbold. LIBERO
+task names follow Table 1.
+the success-failure overlapsim(C +,C −) = tr(C +C−)/
+p
+tr((C+)2) tr((C−)2)yields a strong
+positive correlation (ρ= 0.59,p= 0.002; Figure 3B). When success and failure subspaces are
+nearly disjoint, the policy has already separated the two outcomes geometrically and there is little
+contrastive signal to amplify. When they overlap heavily, the thin residual directions distinguishing
+them are exactly what the Boolean AND-NOT operation isolates. Because overlap requires only
+a single matrix product and no rollouts, it also serves as a cheap diagnostic for predicting where
+steering will be most effective (App. A.10.2).
+Steering reshapes the activation geometry toward success.Figure 4 visualizes the interven-
+tion’s geometric effect. Panel A projects per-step activations onto the top two eigenvectors of each
+task’sCsteer, the directions along which success and failure are maximally separated. Green and red
+points denote individual steered-success and steered-failure activations respectively. The key obser-
+vation is not simply that steered activations fall within the baseline-success ellipse, but that their
+centroids shifttoward the baseline-success centroid and away from the baseline-failure centroid. In
+Panel B, this shift is visible over trajectory time. Steered successes consistently track the baseline-
+success mean throughout the rollout, while steered failures either sustain a partial shift or revert
+to the baseline-failure trajectory entirely. The fact that the physical outcome (success or failure)
+closely tracks which distribution the activations align with confirms that these geometric regions are
+not merely descriptive but linked to task execution.
+4.4 Do tasks share failure geometry, and does it enable cross-task steering?
+The self-steering results above prompt a natural follow-up question about the structure of the repre-
+sentations COAST exploits. Examining the activation geometry across tasks reveals an asymmetry.
+9
+20
+10
+0
+10
+20
+Joint PC2
+Failure activation ellipses (2 )
+K3 stove+moka
+K4 bowl drawer
+K6 mug micro
+K8 2×moka
+LR1 soup+cheese
+LR2 soup+tomato
+LR2 cheese+butter
+LR5 mugs+plates
+LR6 mug+choc
+S1 book caddy
+20
+ 10
+ 0 10 20
+Joint PC1
+20
+10
+0
+10
+20
+Joint PC2
+Success activation ellipses (2 )
+0.74 0.76 0.78 0.80 0.82 0.84 0.86 0.88
+0.25
+0.00
+0.25
+0.50
+LIBERO
+r = 0.30  (p = 4.5e 03)
+= 0.31
+n = 90
+LR1_soup_cheese LR2_cheese_butter
+LR2_cheese_butter LR1_soup_cheese
+0.65 0.70 0.75 0.80
+RoboCasa
+r = 0.49  (p = 1.1e 03)
+= 0.45
+n = 42
+OpenDrawer CoffeeSetup
+CoffeeSetup OpenDrawer
+0.65 0.70 0.75 0.80 0.85 0.90
+0.25
+0.00
+0.25
+0.50
+r = 0.06  (p = 5.6e 01)
+= 0.05
+n = 90
+LR1_soup_cheese LR2_cheese_butter
+LR2_cheese_butter LR1_soup_cheese
+0.50 0.60 0.70 0.80 0.90
+r = 0.12  (p = 4.4e 01)
+= 0.10
+n = 42
+OpenDrawer CoffeeSetup
+CoffeeSetup OpenDrawer
+SR (transfer  baseline)
+failure-subspace containment
+success-subspace containment
+Figure 5:Tasks share failure geometry but not success geometry, enabling cross-task steer-
+ing.Left:Joint PCA of layer-11 activations onπ 0.5 LIBERO,2σellipses per task. Failure acti-
+vations (top) spread into task-specific regions whose overlap varies; success activations (bottom)
+cluster uniformly across tasks.Right:Each dot is one source→target pair on LIBERO or Robo-
+Casa. Failure-subspace containmenttr(C f
+srcC f
+tgt)/tr((C f
+src)2)correlates with transfer success-rate
+gain (top;r=0.30and0.49,p<0.005); success containment does not (bottom;|r|<0.13,p>0.4).
+Success activations cluster tightly and uniformly across tasks, while failure activations spread into
+distinct, task-specific regions (Figure 5, left). In other words, many tasks share overlapping failure
+modes even though their success representations remain largely disjoint.
+This asymmetry has a practical consequence. Because the contrastive conceptor from Section 3
+acts subtractively along failure directions, a conceptor fitted on one source task should also help
+a different target task whenever their failure subspaces overlap. We test this by fitting conceptors
+on a source task and applying them to a different target within the same benchmark (Table 2).
+Transferred conceptors retain most of the gain of the self-fit configuration, and in several cases a
+transferred conceptor matches or exceeds it.
+We quantify this effect by measuring failure-subspace containmenttr(C f
+srcC f
+tgt)/tr((C f
+src)2)be-
+tween source and target conceptors atL=11. Across off-diagonal source/target pairs, containment
+correlates with the transfer success-rate gain over baseline (Pearsonr=0.30,p=4.5e−3on LIBERO;
+r=0.49,p=1.1e−3on RoboCasa; Figure 5, top right). The analogous success-subspace contain-
+ment shows no such relationship (both|r|<0.13,p>0.4; bottom right), ruling out the simpler ex-
+planation that tasks just share geometry in general. This confirms that shared failure structure, not
+shared success structure, is the driver of cross-task steering gains.
+5 Limitations, Broad Impact, and Conclusion
+Limitations.Contrastive conceptors require both success and failure rollouts, which means uni-
+formly successful tasks might fall back to positive-only steering, which is safe but could be less
+effective than its contrastive counterpart (App. A.4). Furthermore, tasks with nearly disjoint suc-
+cess and failure subspaces show smaller gains, as the overlap-efficacy relationship predicts. Lastly,
+whether the geometric hyperparameter selection generalizes beyond the architectures tested here
+remains open.
+Broader Impact.COAST lowers the cost of adapting frozen robot policies to new tasks, replac-
+ing finetuning with a small number of rollouts and a closed-form computation. This accessibility is
+a double-edged sword. Because steering acts on internal activations rather than outputs, a steered
+policy is difficult to distinguish from an unmodified one based on action traces alone, and the same
+operator could be constructed to steer toward failure-aligned behavior. We recommend that deploy-
+ments log applied conceptors as part of the policy specification and pair them with output-level
+monitoring.
+Conclusion.Frozen action experts in VLA models already encode the information needed to dis-
+tinguish successful from failed behavior. COAST recovers it effectively through a simple closed-
+form operator, improving mean simulation and real robot success rate by over 20% and 40% re-
+spectively. We find that the geometric structure that enables steering, low-rank subspaces with con-
+10
+trastively separable success and failure directions, is not specific to any single architecture. Instead,
+it persists across flow-matching diffusion, autoregressive policies, and Diffusion Policy, suggest-
+ing it is a general property of how neural networks encode task-relevant information. We also find
+that failures tend to share geometric structure across tasks while success representations remain
+task-specific, and that this shared failure geometry enables a conceptor fitted on one task to im-
+prove performance on related tasks without refitting. More broadly, VLA execution failure could be
+mitigated without retraining if the policy’s internal representations already encode the information
+needed for success, and a closed-form geometric operator is sufficient to surface it.
+References
+Kevin Black, Noah Brown, James Darpinian, Karan Dhabalia, Danny Driess, Adnan Esmail,
+Michael Robert Equi, Chelsea Finn, Niccolo Fusai, Manuel Y . Galliker, Dibya Ghosh, Lachy
+Groom, Karol Hausman, brian ichter, Szymon Jakubczak, Tim Jones, Liyiming Ke, Devin
+LeBlanc, Sergey Levine, Adrian Li-Bell, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Allen Z.
+Ren, Lucy Xiaoyang Shi, Laura Smith, Jost Tobias Springenberg, Kyle Stachowicz, James Tan-
+ner, Quan Vuong, Homer Walke, Anna Walling, Haohuan Wang, Lili Yu, and Ury Zhilinsky.
+π0.5: a vision-language-action model with open-world generalization. In Joseph Lim, Shuran
+Song, and Hae-Won Park (eds.),Proceedings of The 9th Conference on Robot Learning, volume
+305 ofProceedings of Machine Learning Research, pp. 17–40. PMLR, 27–30 Sep 2025. URL
+https://proceedings.mlr.press/v305/black25a.html.
+Kevin Black, Noah Brown, Danny Driess, Adnan Esmail, Michael Equi, Chelsea Finn, Niccolo
+Fusai, Lachy Groom, Karol Hausman, Brian Ichter, Szymon Jakubczak, Tim Jones, Liyiming Ke,
+Sergey Levine, Adrian Li-Bell, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Lucy Xiaoyang Shi,
+James Tanner, Quan Vuong, Anna Walling, Haohuan Wang, and Ury Zhilinsky.π 0: A vision-
+language-action flow model for general robot control, 2026. URLhttps://arxiv.org/abs/
+2410.24164.
+Hugo Buurmeijer, Carmen Amo Alonso, Aiden Swann, and Marco Pavone. Observing and control-
+ling features in vision-language-action models, 2026. URLhttps://arxiv.org/abs/2603.
+05487.
+William Chen, Jagdeep Singh Bhatia, Catherine Glossop, Nikhil Mathihalli, Ria Doshi, Andy Tang,
+Danny Driess, Karl Pertsch, and Sergey Levine. Steerable vision-language-action policies for
+embodied reasoning and hierarchical control, 2026. URLhttps://arxiv.org/abs/2602.
+13193.
+Cheng Chi, Zhenjia Xu, Siyuan Feng, Eric Cousineau, Yilun Du, Benjamin Burchfiel, Russ Tedrake,
+and Shuran Song. Diffusion policy: Visuomotor policy learning via action diffusion.The Inter-
+national Journal of Robotics Research, 44(10-11):1684–1704, 2025.
+Satyajeet Das, Darren Chiu, Zhehui Huang, Lars Lindemann, and Gaurav S. Sukhatme. Latent
+activation editing: Inference-time refinement of learned policies for safer multirobot navigation,
+2025. URLhttps://arxiv.org/abs/2509.20623.
+Leo Gao, Tom Dupr´e la Tour, Henk Tillman, Gabriel Goh, Rajan Troll, Alec Radford, Ilya Sutskever,
+Jan Leike, and Jeffrey Wu. Scaling and evaluating sparse autoencoders, 2024. URLhttps:
+//arxiv.org/abs/2406.04093.
+Bear H ¨aon, Kaylene Stocking, Ian Chuang, and Claire Tomlin. Mechanistic interpretability for
+steering vision-language-action models, 2025. URLhttps://arxiv.org/abs/2509.00328.
+Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Liang
+Wang, Weizhu Chen, et al. Lora: Low-rank adaptation of large language models.Iclr, 1(2):3,
+2022.
+Robert Huben, Hoagy Cunningham, Logan Riggs Smith, Aidan Ewart, and Lee Sharkey. Sparse
+autoencoders find highly interpretable features in language models. InThe Twelfth International
+Conference on Learning Representations, 2024. URLhttps://openreview.net/forum?id=
+F76bwRSLeK.
+11
+Herbert Jaeger. Controlling recurrent neural networks by conceptors, 2014. URLhttps://arxiv.
+org/abs/1403.3369.
+Momin Ahmad Khan, Novak Boskov, Fatima M. Anwar, and Manzoor A. Khan. Controlling vi-
+sion–language–action policies through sparse latent directions. InMechanistic Interpretability
+Workshop at NeurIPS 2025, 2025. URLhttps://openreview.net/forum?id=wtf3ww1EOL.
+Alexander Khazatsky, Karl Pertsch, Suraj Nair, Ashwin Balakrishna, Sudeep Dasari, Siddharth
+Karamcheti, Soroush Nasiriany, Mohan Kumar Srirama, Lawrence Yunliang Chen, Kirsty Ellis,
+Peter David Fagan, Joey Hejna, Masha Itkina, Marion Lepert, Yecheng Jason Ma, Patrick Tree
+Miller, Jimmy Wu, Suneel Belkhale, Shivin Dass, Huy Ha, Arhan Jain, Abraham Lee, Young-
+woon Lee, Marius Memmel, Sungjae Park, Ilija Radosavovic, Kaiyuan Wang, Albert Zhan, Kevin
+Black, Cheng Chi, Kyle Beltran Hatch, Shan Lin, Jingpei Lu, Jean Mercat, Abdul Rehman, Pan-
+nag R Sanketi, Archit Sharma, Cody Simpson, Quan Vuong, Homer Rich Walke, Blake Wulfe,
+Ted Xiao, Jonathan Heewon Yang, Arefeh Yavary, Tony Z. Zhao, Christopher Agia, Rohan Bai-
+jal, Mateo Guaman Castro, Daphne Chen, Qiuyu Chen, Trinity Chung, Jaimyn Drake, Ethan Paul
+Foster, Jensen Gao, David Antonio Herrera, Minho Heo, Kyle Hsu, Jiaheng Hu, Donovon Jack-
+son, Charlotte Le, Yunshuang Li, Xinyu Lin, Zehan Ma, Abhiram Maddukuri, Suvir Mirchan-
+dani, Daniel Morton, Tony Khuong Nguyen, Abigail O’Neill, Rosario Scalise, Derick Seale,
+Victor Son, Stephen Tian, Emi Tran, Andrew E. Wang, Yilin Wu, Annie Xie, Jingyun Yang,
+Patrick Yin, Yunchu Zhang, Osbert Bastani, Glen Berseth, Jeannette Bohg, Ken Goldberg, Abhi-
+nav Gupta, Abhishek Gupta, Dinesh Jayaraman, Joseph J Lim, Jitendra Malik, Roberto Mart ´ın-
+Mart´ın, Subramanian Ramamoorthy, Dorsa Sadigh, Shuran Song, Jiajun Wu, Michael C. Yip,
+Yuke Zhu, Thomas Kollar, Sergey Levine, and Chelsea Finn. DROID: A large-scale in-the-wild
+robot manipulation dataset. InRSS 2024 Workshop: Data Generation for Robotics, 2024. URL
+https://openreview.net/forum?id=Ml2pTYLNLi.
+Moo Jin Kim, Karl Pertsch, Siddharth Karamcheti, Ted Xiao, Ashwin Balakrishna, Suraj Nair,
+Rafael Rafailov, Ethan Foster, Grace Lam, Pannag Sanketi, Quan Vuong, Thomas Kollar, Ben-
+jamin Burchfiel, Russ Tedrake, Dorsa Sadigh, Sergey Levine, Percy Liang, and Chelsea Finn.
+Openvla: An open-source vision-language-action model, 2024. URLhttps://arxiv.org/
+abs/2406.09246.
+Taeyoung Kim, Jimin Lee, Myungkyu Koo, Dongyoung Kim, Kyungmin Lee, Changyeon Kim,
+Younggyo Seo, and Jinwoo Shin. Contrastive representation regularization for vision-language-
+action models, 2025. URLhttps://arxiv.org/abs/2510.01711.
+Bo Liu, Yifeng Zhu, Chongkai Gao, Yihao Feng, qiang liu, Yuke Zhu, and Peter Stone. LIBERO:
+Benchmarking knowledge transfer for lifelong robot learning. InThirty-seventh Conference on
+Neural Information Processing Systems Datasets and Benchmarks Track, 2023. URLhttps:
+//openreview.net/forum?id=xzEtNSuDJk.
+Shuo Liu, Ishneet Sukhvinder Singh, Yiqing Xu, Jiafei Duan, and Ranjay Krishna. Vls: Steering
+pretrained robot policies via vision-language models, 2026. URLhttps://arxiv.org/abs/
+2602.03973.
+Miranda Muqing Miao, Young-Min Cho, and Lyle Ungar. Correctness-optimized residual activation
+lens (coral): Transferrable and calibration-aware inference-time steering, 2026. URLhttps:
+//arxiv.org/abs/2602.06022.
+Chancharik Mitra, Yusen Luo, Raj Saravanan, Dantong Niu, Anirudh Pai, Jesse Thomason, Trevor
+Darrell, Abrar Anwar, Deva Ramanan, and Roei Herzig. Mechanistic finetuning of vision-
+language-action models via few-shot demonstrations, 2025. URLhttps://arxiv.org/abs/
+2511.22697.
+Soroush Nasiriany, Abhiram Maddukuri, Lance Zhang, Adeet Parikh, Aaron Lo, Abhishek Joshi,
+Ajay Mandlekar, and Yuke Zhu. Robocasa: Large-scale simulation of everyday tasks for gener-
+alist robots, 2024. URLhttps://arxiv.org/abs/2406.02523.
+NVIDIA, :, Johan Bjorck, Fernando Casta ˜neda, Nikita Cherniadev, Xingye Da, Runyu Ding,
+Linxi ”Jim” Fan, Yu Fang, Dieter Fox, Fengyuan Hu, Spencer Huang, Joel Jang, Zhenyu Jiang,
+Jan Kautz, Kaushil Kundalia, Lawrence Lao, Zhiqi Li, Zongyu Lin, Kevin Lin, Guilin Liu,
+12
+Edith Llontop, Loic Magne, Ajay Mandlekar, Avnish Narayan, Soroush Nasiriany, Scott Reed,
+You Liang Tan, Guanzhi Wang, Zu Wang, Jing Wang, Qi Wang, Jiannan Xiang, Yuqi Xie, Yinzhen
+Xu, Zhenjia Xu, Seonghyeon Ye, Zhiding Yu, Ao Zhang, Hao Zhang, Yizhou Zhao, Ruijie Zheng,
+and Yuke Zhu. Gr00t n1: An open foundation model for generalist humanoid robots, 2025. URL
+https://arxiv.org/abs/2503.14734.
+Abby O’Neill, Abdul Rehman, Abhiram Maddukuri, and et al Gupta. Open x-embodiment:
+Robotic learning datasets and rt-x models : Open x-embodiment collaboration0. In2024 IEEE
+International Conference on Robotics and Automation (ICRA), pp. 6892–6903, 2024. doi:
+10.1109/ICRA57147.2024.10611477.
+Karl Pertsch, Kyle Stachowicz, Brian Ichter, Danny Driess, Suraj Nair, Quan Vuong, Oier Mees,
+Chelsea Finn, and Sergey Levine. Fast: Efficient action tokenization for vision-language-action
+models, 2025. URLhttps://arxiv.org/abs/2501.09747.
+Samuel Pfrommer, Yixiao Huang, and Somayeh Sojoudi. Reinforcement learning for flow-matching
+policies.arXiv preprint arXiv:2507.15073, 2025. URLhttps://arxiv.org/abs/2507.
+15073.
+Joris Postmus and Steven Abreu. Steering large language models using conceptors: Improving
+addition-based activation engineering. InMINT: Foundation Model Interventions, 2024. URL
+https://openreview.net/forum?id=gyAnAq16HC.
+Joris Postmus and Steven Abreu. Steering large language models using conceptors: Improving
+addition-based activation engineering, 2025. URLhttps://arxiv.org/abs/2410.16314.
+Nina Rimsky, Nick Gabrieli, Julian Schulz, Meg Tong, Evan Hubinger, and Alexander Turner.
+Steering llama 2 via contrastive activation addition. In Lun-Wei Ku, Andre Martins, and
+Vivek Srikumar (eds.),Proceedings of the 62nd Annual Meeting of the Association for Com-
+putational Linguistics (Volume 1: Long Papers), pp. 15504–15522, Bangkok, Thailand, August
+2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.acl-long.828. URL
+https://aclanthology.org/2024.acl-long.828/.
+Ameesh Shah, William Chen, Adwait Godbole, Federico Mora, Sanjit A. Seshia, and Sergey Levine.
+Learning affordances at inference-time for vision-language-action models, 2025. URLhttps:
+//arxiv.org/abs/2510.19752.
+Yunzhou Song, Long Le, Yong-Hyun Park, Jie Wang, Junyao Shi, Lingjie Liu, Jiatao Gu, Eric Eaton,
+Dinesh Jayaraman, and Kostas Daniilidis. Omniguide: Universal guidance fields for enhancing
+generalist robot policies.arXiv preprint arXiv:2603.10052, 2026.
+Nishant Subramani, Nivedita Suresh, and Matthew Peters. Extracting latent steering vectors from
+pretrained language models. In Smaranda Muresan, Preslav Nakov, and Aline Villavicencio
+(eds.),Findings of the Association for Computational Linguistics: ACL 2022, pp. 566–581,
+Dublin, Ireland, May 2022. Association for Computational Linguistics. doi: 10.18653/v1/2022.
+findings-acl.48. URLhttps://aclanthology.org/2022.findings-acl.48/.
+Ilias Triantafyllopoulos, Young-Min Cho, Ren Tao, Miranda Muqing Miao, Sunny Rai, Lyle Ungar,
+Sharath Chandra Guntuku, Neville Ryant, and Jo ˜ao Sedoc. Conceptors for semantic steering,
+2026. URLhttps://arxiv.org/abs/2605.04980.
+Alexander Matt Turner, Lisa Thiergart, Gavin Leech, David Udell, Juan J. Vazquez, Ulisse Mini,
+and Monte MacDiarmid. Steering language models with activation engineering, 2024. URL
+https://arxiv.org/abs/2308.10248.
+Andrew Wagenmaker, Mitsuhiko Nakamoto, Yunchu Zhang, Seohong Park, Waleed Yagoub,
+Anusha Nagabandi, Abhishek Gupta, and Sergey Levine. Steering your diffusion policy with
+latent space reinforcement learning, 2025. URLhttps://arxiv.org/abs/2506.15799.
+Yilin Wu, Anqi Li, Tucker Hermans, Fabio Ramos, Andrea Bajcsy, and Claudia P ´erez-D’Arpino.
+Do what you say: Steering vision-language-action models via runtime reasoning-action alignment
+verification, 2026. URLhttps://arxiv.org/abs/2510.16281.
+13
+Siyuan Yang, Yang Zhang, Haoran He, Ling Pan, Xiu Li, Chenjia Bai, and Xuelong Li. Steering
+vision-language-action models as anti-exploration: A test-time scaling approach.arXiv preprint
+arXiv:2512.02834, 2025.
+Tianhe Yu, Deirdre Quillen, Zhanpeng He, Ryan Julian, Avnish Narayan, Hayden Shively, Adithya
+Bellathur, Karol Hausman, Chelsea Finn, and Sergey Levine. Meta-world: A benchmark and
+evaluation for multi-task and meta reinforcement learning, 2021. URLhttps://arxiv.org/
+abs/1910.10897.
+Xiu Yuan, Tongzhou Mu, Stone Tao, Yunhao Fang, Mengke Zhang, and Hao Su. Policy decorator:
+Model-agnostic online refinement for large policy model, 2024. URLhttps://arxiv.org/
+abs/2412.13630.
+Andy Zou, Long Phan, Sarah Chen, James Campbell, Phillip Guo, Richard Ren, Alexander
+Pan, Xuwang Yin, Mantas Mazeika, Ann-Kathrin Dombrowski, Shashwat Goel, Nathaniel Li,
+Michael J. Byun, Zifan Wang, Alex Mallen, Steven Basart, Sanmi Koyejo, Dawn Song, Matt
+Fredrikson, J. Zico Kolter, and Dan Hendrycks. Representation engineering: A top-down ap-
+proach to ai transparency, 2025. URLhttps://arxiv.org/abs/2310.01405.
+14
+A Appendix
+This appendix provides supplementary results, technical details, and reproducibility information.
+App. A.1 provides an extended related work section that categorizes prior adaptation baselines
+by their deployment burdens, justifying our focus on training-free, self-contained steering meth-
+ods. App. A.2 reports per-task results with optimal hyperparameters for all model-benchmark pairs.
+App. A.3 presents linear and random-direction ablations isolating the contribution of the contrastive
+subspace and the multiplicative form. App. A.4 tests positive-only conceptor steering on high-
+baseline tasks to verify it does not degrade performance. App. A.5 tests failure-only steering with
+¬C f on tasks with 0% baseline success. App. A.6 evaluates steering across multiple Diffusion
+Policy training epochs, network layers, and hyperparameters to demonstrate that performance gains
+are consistent and not an artifact of checkpoint or layer selection. App. A.7 details the activation
+extraction procedure for each model family. App. A.8 describes the rollout collection protocol per
+benchmark. App. A.9 covers conceptor computation, steering application, runtime overhead, nu-
+merical precision, and memory requirements. App. A.10 specifies the full hyperparameter sweep
+grid and the geometric selection procedure. App. A.11 provides checkpoint and training details for
+all models. App. A.12 describes the real-world evaluation hardware setup. App. A.19 and App. A.20
+contain the implementations details for the contrastive activation addition and the sparse autoencoder
+baselines respectively. App. B contains the activation dataset composition, showing the success vs.
+failure counts in the15training rollouts. App. B.2 includes analyses on COAST’s steering overhead
+compared with other steering baselines.
+A.1 Baseline Analysis
+Table 3: Comparison of COAST against existing VLA adaptation paradigms. COAST is the only
+method that achieves holistic, multi-dimensional steering without requiring gradient updates, exter-
+nal models, or computationally expensive test-time search.
+Method
+Training-
+Free
+Self-
+Contained
+Single-
+Pass
+Fine-Tuning / SFT Yuan et al. (2024)×✓ ✓
+VLM Search / VLS Liu et al. (2026)✓× ×
+Test-Time Search / TACO Yang et al. (2025)✓× ×
+SAE Steering Huben et al. (2024)×✓ ✓
+Activation Addition Turner et al. (2024)✓ ✓ ✓
+COAST (Ours)✓ ✓ ✓
+To contextualize our contribution, Table 3 compares COAST against recent methods for inference-
+time adaptation and steering of robot policies. Because the computational requirements and oper-
+ational paradigms of these methods vary significantly, we categorize them along four distinct axes
+that define their deployment burden. Below are the definitions of each comparison criterion:
+Training-Free.A method is considered training-free if it does not require gradient updates to the
+policy weights, auxiliary model weights, or any explicitly learned parameter modules. Approaches
+such as supervised fine-tuning (SFT) (Yuan et al., 2024; Mitra et al., 2025) and explicitly trained
+steering interfaces (Chen et al., 2026; Das et al., 2025) require offline retraining or the optimization
+of auxiliary modules, thus incurring a high computational cost before deployment. Contrastive Rep-
+resentation Regularization (Kim et al., 2025) similarly modifies the core policy weights. Conversely,
+COAST relies on closed-form Boolean subspace algebra computed directly from rollouts (Postmus
+& Abreu, 2024), bypassing gradient-based optimization entirely.
+Self-Contained.A method is self-contained if it does not rely on querying external foundation
+models (e.g., Vision-Language Models) or explicit external reward models at inference time. Several
+15
+recent inference-time adaptation frameworks rely on VLM-based planning, scoring, or verification
+to guide the robot’s actions. For example, VLS (Liu et al., 2026) relies on external VLM-based
+rewards for steering, while Shah et al. (2025) and Wu et al. (2026) use VLMs for runtime reason-
+ing and action alignment verification. These external dependencies introduce significant latency
+and point-of-failure risks. COAST is purely internal, operating exclusively on the native residual
+stream of the frozen VLA. We exclude methods like VLS (Liu et al., 2026) and TACO (Yang et al.,
+2025) because their reliance on external VLMs or multi-sample search makes their operational cost
+structurally incomparable to COAST’s single-pass, negligible-overhead execution (App. A.1).
+Single-Pass.A single-pass method alters the model’s behavior without requiring multi-sample
+search, Monte Carlo sampling, or iterative refinement loops during action generation. Methods that
+rely on test-time search or trajectory sampling, such as TACO (Yang et al., 2025) or VLM-guided
+rollout evaluation, multiply the inference latency of the policy by the number of samples required.
+COAST is applied as a fixed multiplicative gate to the hidden states during the standard forward
+pass, yielding effectively zero latency overhead.
+Subspace Control.This criterion distinguishes methods that intervene on multi-dimensional,
+outcome-relevant geometric structures from those that intervene on isolated directions. Standard
+Activation Addition (CAA) (Turner et al., 2024; Rimsky et al., 2024) shifts activations along a sin-
+gle rank-one vector. Similarly, Sparse Autoencoder (SAE) steering (Huben et al., 2024; Buurmeijer
+et al., 2026; Khan et al., 2025) isolates and scales individual, disentangled features. While effective
+for localized semantic concepts (H ¨aon et al., 2025), these methods offer only partial, constrained
+control. Drawing on conceptor theory (Jaeger, 2014; Postmus & Abreu, 2025), COAST leverages
+a continuous, high-dimensional subspace (Zou et al., 2025) that explicitly separates successful and
+failed behaviors. This structure enables holistic, multi-dimensional steering rather than feature-by-
+feature manipulation.
+By satisfying all four criteria, COAST uniquely addresses the representation bottleneck in VLA
+policies without the latency of external VLM queries (Liu et al., 2026), the computational cost of
+test-time search (Yang et al., 2025), or the partial control of single-feature interventions (Khan et al.,
+2025). We view this framing as essential for standardizing how inference-time adaptation methods
+are evaluated in embodied AI, as matched-cost comparisons (e.g., COAST vs. Activation Addition)
+yield significantly more rigorous insights into the geometry of policy latent spaces than comparing
+single-pass internal methods against multi-sample external searches.
+A.2 Results by Tasks With Optimal Parameters
+Tables 4–9 report the per-task success rate on held-out test rollouts for the steering configuration
+that achieved the highest success rate on the fitting rollouts, under the full hyperparameter sweep
+described in Appendix A.10. For each entry, we also list the layerℓ, apertureα, and steering strength
+βof the selected configuration. These tables back the aggregated numbers in Table 1 and expose
+two patterns that recur across model–benchmark pairs. First, the oracle-optimal layer concentrates
+in a narrow band:ℓ=11(of 18) for theπ 0.5 action expert andℓ=10(of 16) for the GR00T DiT,
+with occasional shifts toℓ=5on LIBERO tasks where the discriminative subspace forms earlier.
+This aligns with the quota peak used in Stage 1 of our geometric selection procedure (Sec. A.10.2).
+Second, small steering strengths dominate:β∈ {0.1,0.3}attains the best fitting-set success rate in
+over 90% of cells, withβ=0.5preferred only on a handful of tasks where the baseline is already
+high and the conceptor acts as a light nudge. Together these tables justify the pruned grid used by
+geometric selection and show that the same small configuration neighborhood recovers near-oracle
+performance across tasks.
+A.3 Linear and Random Conceptor Ablation Analysis
+Table 10 isolates two questions the main results in Table 1 leave open. Thelinearbaseline replaces
+the multiplicative conceptor gate with the additive steering vectorh ′ =h+α·v, wherevis the
+unit mean-difference direction between success and failure activations. This is the standard con-
+trastive activation-addition recipe (Rimsky et al., 2024; Postmus & Abreu, 2024) and asks whether
+the multiplicative, subspace-level form of the conceptor is load-bearing or whether a single-direction
+additive shift suffices. Therandombaseline replaces the conceptor’s eigenvectors with a random or-
+16
+Table 4: Conceptor-based activation steering results ofπ 0.5on LIBERO-10 with layer sweep in
+∈ {5,11}. Each condition is evaluated over 30 held-out test rollouts.
+Task Global Per-Step Pos.-Only
+KS3: Turn On The Stove And Put The Moka Pot On It0.93(L5,α=0.5,β=0.1)0.87(L5,α=10.0,β=0.3)0.80(L11,α=1.0,β=0.1)
+KS4: Put The Black Bowl In The Bottom Drawer Of...0.73(L5,α=1.0,β=0.1)0.80(L5,α=0.1,β=0.1)0.87(L5,α=1.0,β=0.1)
+KS6: Put The Yellow And White Mug In The Microw...0.40(L11,α=0.1,β=0.3)0.60(L11,α=0.5,β=0.3)0.33(L5,α=1.0,β=0.1)
+KS8: Put Both Moka Pots On The Stove0.47(L5,α=1.0,β=0.1)0.53(L11,α=2.0,β=0.3)0.13(L5,α=1.0,β=0.1)
+LR1: Put Both The Alphabet Soup And The Cream C...0.93(L11,α=0.5,β=0.3)1.00(L11,α=2.0,β=0.1)0.93(L5,α=1.0,β=0.1)
+LR2: Put Both The Alphabet Soup And The Tomato...0.80(L11,α=0.5,β=0.3)0.80(L5,α=2.0,β=0.1)0.60(L5,α=1.0,β=0.3)
+LR2: Put Both The Cream Cheese Box And The Butt...0.93(L5,α=0.5,β=0.1)0.93(L5,α=0.1,β=0.3)0.87(L5,α=0.5,β=0.1)
+LR5: Put The White Mug On The Left Plate And Pu...0.60(L11,α=0.5,β=0.5)0.60(L11,α=2.0,β=0.5)0.20(L11,α=0.5,β=0.1)
+LR6: Put The White Mug On The Plate And Put The...0.87(L5,α=0.5,β=0.1)0.87(L5,α=0.1,β=0.1)0.67(L5,α=0.5,β=0.3)
+ST1: Pick Up The Book And Place It In The Back...0.93(L5,α=0.5,β=0.1)1.00(L5,α=0.5,β=0.1)0.93(L5,α=0.5,β=0.1)
+Mean 0.76 0.80 0.63
+Table 5: Conceptor-based activation steering results ofπ 0-FAST on LIBERO-10. LR2 (cream
+cheese & butter) hasn fail = 0under this checkpoint, so contrastive conceptors (Global, Per-Step)
+cannot be constructed; means are computed over the 9 contrastive-eligible tasks.Each condition is
+evaluated over 30 held-out test rollouts.
+Task Global Per-Step Pos.-Only
+KS3: Turn On The Stove And Put The Moka Pot On It1.00(α=0.1,β=0.02)0.87(α=0.1,β=0.3)0.80(α=0.1,β=0.05)
+KS4: Put The Black Bowl In The Bottom Drawer Of...0.93(α=2.0,β=0.1)0.93(α=0.1,β=0.2)0.80(α=0.5,β=0.1)
+KS6: Put The Yellow And White Mug In The Microw...0.73(α=10.0,β=0.3)0.80(α=0.5,β=0.1)0.73(α=2.0,β=0.1)
+KS8: Put Both Moka Pots On The Stove0.53(α=5.0,β=0.15)0.53(α=3.0,β=0.2)0.40(α=3.0,β=0.01)
+LR1: Put Both The Alphabet Soup And The Cream C...0.87(α=10.0,β=0.2)0.87(α=0.1,β=0.2)1.00(α=0.1,β=0.1)
+LR2: Put Both The Alphabet Soup And The Tomato...0.87(α=2.0,β=0.2)0.93(α=0.1,β=0.2)0.73(α=0.2,β=0.05)
+LR2: Put Both The Cream Cheese Box And The Butt...–(noCfail)–(noC fail)1.00(α=0.5,β=0.1)
+LR5: Put The White Mug On The Left Plate And Pu...0.87(α=1.0,β=0.2)0.87(α=0.1,β=0.3)0.80(α=0.1,β=0.05)
+LR6: Put The White Mug On The Plate And Put The...0.93(α=1.0,β=0.1)0.93(α=0.3,β=0.05)0.87(α=0.1,β=0.1)
+ST1: Pick Up The Book And Place It In The Back...0.87(α=10.0,β=0.3)0.87(α=0.07,β=0.1)0.73(α=0.07,β=0.12)
+Mean 0.84 0.84 0.79
+Table 6: Conceptor-based activation steering results ofπ 0.5 on RoboCasa with layer sweep∈
+{5,11}. Each condition is evaluated over 30 held-out test rollouts.
+Task Global Per-Step Pos.-Only
+Close Fridge0.47(L11,α=0.5,β=0.3)0.40(t=0, L11,α=0.1,β=0.5)0.40(L5,α=2.0,β=0.1)
+Coffee Setup Mug0.33(L11,α=0.1,β=0.1)0.33(t=0, L5,α=0.5,β=0.1)0.53(L5,α=0.5,β=0.5)
+Open Drawer0.67(L11,α=0.5,β=0.1)0.53(t=0, L5,α=0.5,β=0.1)0.67(L5,α=1.0,β=0.3)
+Open Stand Mixer Head0.73(L11,α=0.5,β=0.1)0.80(t=9, L11,α=1.0,β=0.1)0.53(L5,α=0.1,β=0.3)
+Pick Place Counter To Cabinet0.73(L5,α=0.1,β=0.1)0.73(t=0, L5,α=0.5,β=0.1)0.67(L5,α=10.0,β=0.3)
+Pick Place Counter To Stove0.53(L11,α=0.1,β=0.1)0.67(t=0, L11,α=1.0,β=0.1)0.60(L5,α=0.5,β=0.1)
+Turn On Electric Kettle0.40(L11,α=0.5,β=0.1)0.40(t=0, L11,α=2.0,β=0.1)0.53(L5,α=0.5,β=0.3)
+Mean 0.55 0.55 0.56
+thonormal basis while preserving the eigenvalue spectrum, so the spectral filtering shape is matched
+but the identified directions are not. This asks whether gains come from any low-rank multiplicative
+gate or specifically from the contrastive success-minus-failure subspace that Csteer identifies.
+Both ablations underperform the contrastive conceptor on every benchmark we tested. On GR00T
+N1.5 RoboCasa, the contrastive global gate improves mean success by+0.16over the unsteered
+baseline, while linear steering reaches only+0.03and random-direction steering moves the mean
+down by0.02. Onπ 0.5 MetaWorld ML45 the gap widens: contrastive adds+0.22over the 26
+steered tasks, compared to+0.10for linear and−0.03for random. The per-task cells show the
+same ordering with occasional inversions: linear outperforms random on some RoboCasa tasks and
+trails on others, but neither baseline wins a single row against the contrastive gate. The random
+baseline tracking the unsteered baseline rules out the hypothesis that any low-rank multiplicative
+perturbation helps, and the linear baseline recovering roughly half of the contrastive gain shows
+that the mean-difference direction captures part of the discriminative signal but misses the higher-
+variance subspace directions that Boolean negation isolates. Taken together, both the multiplicative
+form and the specific contrastive subspace are necessary for the gains reported in Section 4.1.
+17
+Table 7:Conceptor steering results ofπ 0.5on MetaWorld ML45 (all 26 steered tasks).For
+each task and steering strategy, we report the best success rate over a hyperparameter sweep of
+α∈ {0.1,0.5,1.0}andβ∈ {0.1,0.3,0.5}at layer 11.Global: contrastive conceptor (C succ∧¬Cfail)
+applied uniformly across denoise steps.Per-Step: contrastive conceptor applied independently at
+each denoise step.Pos.-Only: success conceptor without failure subtraction. Best hyperparameters
+shown in parentheses. Each condition is evaluated over 30 held-out test rollouts.
+Task Baseline Global Per-Step Pos.-Only
+assembly0.271.00(α= 0.5,β= 0.1)0.80(α= 0.5,β= 0.1)0.27(α= 0.1,β= 0.5)
+basketball0.400.47(α= 0.1,β= 0.1)0.60(α= 0.1,β= 0.1)0.60(α= 0.5,β= 0.1)
+coffee-pull0.93 0.93(α= 0.1,β= 0.1)0.93(α= 1.0,β= 0.1)1.00(α= 0.1,β= 0.3)
+coffee-push0.801.00(α= 1.0,β= 0.1)1.00(α= 0.5,β= 0.1)1.00(α= 0.1,β= 0.1)
+disassemble0.600.93(α= 0.1,β= 0.1)0.93(α= 0.1,β= 0.1)0.87(α= 0.5,β= 0.5)
+door-open0.931.00(α= 0.1,β= 0.1)1.00(α= 0.1,β= 0.1)1.00(α= 0.1,β= 0.1)
+faucet-close0.801.00(α= 1.0,β= 0.1)0.93(α= 0.1,β= 0.1)0.93(α= 0.1,β= 0.1)
+hammer0.330.87(α= 0.5,β= 0.1)0.87(α= 0.1,β= 0.1)0.40(α= 0.1,β= 0.1)
+handle-pull-side0.200.47(α= 0.1,β= 0.1)0.33(α= 0.5,β= 0.1)0.53(α= 0.5,β= 0.1)
+handle-pull0.47 0.47(α= 0.1,β= 0.1)0.60(α= 0.1,β= 0.1)0.53(α= 0.1,β= 0.1)
+lever-pull0.270.60(α= 0.1,β= 0.1)0.67(α= 0.1,β= 0.3)0.73(α= 0.5,β= 0.3)
+peg-insert-side0.330.47(α= 0.1,β= 0.3)0.67(α= 0.1,β= 0.3)0.53(α= 0.1,β= 0.3)
+pick-out-of-hole0.200.27(α= 0.1,β= 0.3)0.47(α= 0.1,β= 0.1)0.47(α= 1.0,β= 0.1)
+pick-place0.871.00(α= 0.5,β= 0.1)1.00(α= 0.1,β= 0.1)0.80(α= 0.1,β= 0.3)
+pick-place-wall0.200.87(α= 0.5,β= 0.1)1.00(α= 0.1,β= 0.1)0.47(α= 1.0,β= 0.3)
+plate-slide-back-side0.600.93(α= 1.0,β= 0.1)1.00(α= 0.1,β= 0.3)0.60(α= 1.0,β= 0.1)
+plate-slide-back0.600.93(α= 0.1,β= 0.1)0.93(α= 1.0,β= 0.1)0.73(α= 0.1,β= 0.1)
+push-back0.670.93(α= 0.1,β= 0.1)0.87(α= 1.0,β= 0.3)0.87(α= 0.1,β= 0.3)
+push0.931.00(α= 0.1,β= 0.1)1.00(α= 1.0,β= 0.1)0.93(α= 1.0,β= 0.1)
+reach0.93 0.93(α= 0.1,β= 0.1)0.93(α= 0.1,β= 0.1)1.00(α= 0.1,β= 0.1)
+shelf-place0.730.93(α= 0.5,β= 0.1)0.93(α= 0.5,β= 0.1)0.93(α= 0.1,β= 0.3)
+soccer0.270.40(α= 0.1,β= 0.3)0.40(α= 1.0,β= 0.5)0.40(α= 0.1,β= 0.5)
+stick-pull0.730.87(α= 1.0,β= 0.1)0.87(α= 0.1,β= 0.1)0.87(α= 0.1,β= 0.1)
+stick-push0.200.80(α= 0.1,β= 0.1)0.73(α= 1.0,β= 0.1)0.40(α= 0.1,β= 0.3)
+sweep-into0.730.87(α= 0.5,β= 0.1)0.87(α= 0.1,β= 0.1)0.93(α= 1.0,β= 0.1)
+sweep0.931.00(α= 1.0,β= 0.1)1.00(α= 0.5,β= 0.1)1.00(α= 0.1,β= 0.1)
+Steered tasks (26)0.57 0.81 0.82 0.72
+∆vs. Baseline — +0.23 +0.25 +0.15
+A.4 Positive-Only Conceptor Steering on High-Baseline Tasks
+A natural concern is that conceptor steering might only help on tasks with mixed outcomes, where
+a contrastive conceptorC succ ∧ ¬Cfail can separate successes from failures. On tasks where the base
+policy already succeeds every rollout, there is no failure set to contrast against. We therefore test
+whether thepositive-onlyconceptorC succ can be applied safely to such tasks without eroding their
+success rate.
+Setup.We runπ 0.5 on the 18 MetaWorld-ML45 tasks whose unsteered baseline is
+≥0.67over 15 rollouts. Conceptors are fit on layer-11 activations from the
+brandonyang/ml45-activations-15dataset. We sweep apertureα∈ {0.1,0.5,1.0}at fixed
+β= 0.2, and compare a singleglobalconceptor against aper-stepconceptor tied to each of the
+10 denoising steps (6 configurations per task). Each is evaluated over 30 rollouts with a 300-step
+horizon. As a control, we additionally run a matched-quotarandomconceptor that projects onto a
+random subspace of the same trace asC succ.
+Results.Table 11 reports, per task, the baseline success rate and the best rate across the six
+positive-only configurations. Positive-only steeringnever regressesbelow the baseline and strictly
+18
+Table 8:Conceptor steering results forπ 0-FAST on MetaWorld ML45 (all 27 steered tasks).
+For each task and steering strategy, we report the best success rate over an extended hyperparameter
+sweep at layer 17. The grids areα global ∈ {0.1,0.5,1,2,10},α per-step ∈ {0.1,0.5,1},α pos.-only ∈
+{0.1,0.5,1,2}, andβ∈ {0.1,0.2,0.3,0.5}.Global: contrastive conceptor (C succ ∧ ¬Cfail) applied
+uniformly across denoise steps.Per-Step: contrastive conceptor applied independently at each de-
+noise step.Pos.-Only: success conceptor without failure subtraction. Best hyperparameters shown
+in parentheses. Each condition is evaluated over 16 rollouts. Bold marks values strictly above the
+unsteered baseline.
+Task Baseline Global Per-Step Pos.-Only
+basketball0.62 0.62(α= 10,β= 0.1)0.69(α= 0.1,β= 0.1)0.75(α= 0.1,β= 0.2)
+coffee-pull0.620.69(α= 1.0,β= 0.3)0.62(α= 0.1,β= 0.2)0.69(α= 0.5,β= 0.2)
+coffee-push0.880.94(α= 1.0,β= 0.3)0.94(α= 0.1,β= 0.2)0.94(α= 2.0,β= 0.1)
+disassemble0.560.69(α= 1.0,β= 0.3)0.56(α= 0.1,β= 0.1)0.75(α= 0.5,β= 0.5)
+door-close0.810.94(α= 2.0,β= 0.3)0.94(α= 0.1,β= 0.1)1.00(α= 0.1,β= 0.3)
+faucet-close0.440.69(α= 0.5,β= 0.1)0.69(α= 0.1,β= 0.5)0.81(α= 0.1,β= 0.1)
+faucet-open0.810.94(α= 2.0,β= 0.5)0.88(α= 0.5,β= 0.2)0.88(α= 2.0,β= 0.3)
+hammer0.69 0.69(α= 0.5,β= 0.2)0.62(α= 0.1,β= 0.2)0.62(α= 2.0,β= 0.3)
+handle-press-side0.941.00(α= 1.0,β= 0.1)1.00(α= 0.1,β= 0.2)1.00(α= 0.5,β= 0.2)
+handle-pull-side0.120.25(α= 0.5,β= 0.5)0.25(α= 0.5,β= 0.2)0.19(α= 0.5,β= 0.1)
+lever-pull0.190.56(α= 0.5,β= 0.5)0.44(α= 0.1,β= 0.5)0.56(α= 0.5,β= 0.2)
+peg-insert-side0.190.31(α= 0.5,β= 0.1)0.31(α= 1.0,β= 0.3)0.19(α= 1.0,β= 0.1)
+peg-unplug-side0.691.00(α= 2.0,β= 0.5)0.94(α= 0.1,β= 0.2)0.81(α= 0.5,β= 0.2)
+pick-place0.690.88(α= 0.5,β= 0.5)0.88(α= 1.0,β= 0.3)0.81(α= 0.5,β= 0.1)
+pick-place-wall0.690.81(α= 1.0,β= 0.1)0.75(α= 0.1,β= 0.3)0.75(α= 0.1,β= 0.1)
+plate-slide-back0.88 0.88(α= 0.5,β= 0.3)0.88(α= 1.0,β= 0.3)0.94(α= 0.5,β= 0.1)
+push-back0.620.69(α= 2.0,β= 0.2)0.62(α= 0.1,β= 0.3)0.69(α= 1.0,β= 0.3)
+push0.750.94(α= 2.0,β= 0.3)0.88(α= 0.1,β= 0.3)0.75(α= 0.5,β= 0.3)
+push-wall0.060.19(α= 10,β= 0.2)0.25(α= 1.0,β= 0.3)0.25(α= 0.5,β= 0.1)
+reach0.81 0.81(α= 1.0,β= 0.1)0.81(α= 0.1,β= 0.1)0.81(α= 0.5,β= 0.1)
+reach-wall0.560.69(α= 2.0,β= 0.2)0.69(α= 0.5,β= 0.3)0.75(α= 0.1,β= 0.5)
+shelf-place0.190.56(α= 2.0,β= 0.3)0.56(α= 1.0,β= 0.3)0.44(α= 1.0,β= 0.1)
+soccer0.560.62(α= 1.0,β= 0.1)0.56(α= 0.5,β= 0.1)0.56(α= 2.0,β= 0.1)
+stick-pull0.250.44(α= 2.0,β= 0.1)0.38(α= 0.5,β= 0.5)0.44(α= 2.0,β= 0.3)
+stick-push0.810.88(α= 0.1,β= 0.2)0.88(α= 0.5,β= 0.3)0.88(α= 0.5,β= 0.1)
+sweep-into0.440.56(α= 10,β= 0.1)0.56(α= 0.5,β= 0.1)0.50(α= 1.0,β= 0.3)
+sweep0.440.50(α= 1.0,β= 0.3)0.50(α= 1.0,β= 0.3)0.56(α= 1.0,β= 0.2)
+Steered tasks (27)0.57 0.70 0.67 0.68
+∆vs. Baseline — +0.13 +0.10 +0.11
+improves two tasks that were not already at ceiling:FAUCET-OPEN-V3 (0.93→1.00) andPEG-
+UNPLUG-SIDE-V3 (0.67→1.00).
+Discussion.Two patterns stand out. The most frequently selected configuration is the gentlest —
+a single global conceptor atα= 0.1— which matches the intuition that when activations already
+lie inside the success manifold, only a light projection is needed. The two tasks where stronger
+or temporally-resolved steering helped are precisely the two whose baselines were below ceiling,
+suggesting the per-step conceptor is most useful when the policy has genuine failure modes to correct
+at specific denoising steps. Overall, positive-only conceptor steering behaves as a safe default: a no-
+op on saturated tasks and a rescue operator on borderline ones.
+19
+Table 9: Conceptor-based activation steering results on RoboCasa with GR00T N1.5, showing the
+selected layer, apertureα, and mixing weightβfor the best configuration of each strategy.Bold
+indicates the best performance. Each condition is evaluated over 30 held-out test rollouts.
+Task Global Per-Step Pos.-Only
+Close Fridge0.93(L10,α=1.0,β=0.1)1.00(L10,β=0.2)0.87(L10,α=0.1,β=0.1)
+Coffee Setup Mug0.27(L10,α=0.5,β=0.1)0.33(L10,β=0.2)0.33(L10,α=1.0,β=0.3)
+Open Drawer0.80(L10,α=0.5,β=0.1)0.53(L10,β=0.1)0.67(L10,α=0.1,β=0.3)
+Open Stand Mixer Head0.80(L10,α=0.1,β=0.1)0.80(L10,β=0.1)0.93(L10,α=0.1,β=0.3)
+Pick Place Counter To Cabinet0.80(L10,α=0.3,β=0.5)0.80(L10,β=0.5)0.73(L10,α=0.1,β=0.3)
+Pick Place Counter To Stove0.87(L10,α=0.1,β=0.1)0.75(L10,β=0.1)0.87(L10,α=1.0,β=0.3)
+Turn On Electric Kettle0.80(L10,α=0.8,β=0.08)0.73(L10,β=0.08)0.73(L10,α=0.8,β=0.05)
+Mean 0.750.71 0.73
+Table 10:Contrastive conceptors outperform both linear additive steering and random-
+direction controls on every cell where both baselines were run.For each task we report the
+best success rate over a hyperparameter sweep (15 rollouts per cell).Global: contrastive conceptor
+Csucc ∧ ¬C fail, shown as a reference for the main method (full results in Table 1).Linear: ad-
+ditive activation steering using the difference of mean success and failure activations.Random:
+random-direction conceptor with matched eigenvalue spectrum but random orthonormal eigenvec-
+tors, controlling for spectral filtering shape.Boldmarks the best of the two ablated baselines per
+row.
+(a) GR00T N1.5 on RoboCasa
+Task Base Global Linear Random
+Close Fridge 0.67 0.93 0.800.85
+Coffee Mug 0.20 0.27 0.130.23
+Open Drawer 0.53 0.800.730.67
+Stand Mixer 0.60 0.800.800.60
+PP Cabinet 0.73 0.80 0.530.67
+PP Stove 0.73 0.870.870.60
+Kettle 0.67 0.800.47 0.47
+Mean 0.59 0.75 0.62 0.58
+∆ – +0.16 +0.03 -0.02
+(b)π 0.5 on MetaWorld ML45
+Task Base Global Linear Random
+pick-place-wall 0.20 0.87 0.400.47
+assembly 0.27 1.00 0.000.60
+stick-push 0.20 0.80 0.600.73
+hammer 0.33 0.87 0.330.80
+lever-pull 0.27 0.600.800.40
+plate-slide-bs 0.60 0.93 0.600.87
+disassemble 0.60 0.930.730.67
+plate-slide-b 0.60 0.93 0.530.87
+handle-pull-s 0.20 0.470.470.33
+peg-insert-s 0.33 0.470.530.33
+Steered (26) 0.58 0.80 0.68 0.55
+∆ – +0.22 +0.10 −0.03
+All (45) 0.73 0.86 0.79 0.72
+∆ – +0.13 +0.06 −0.01
+A.5 Failure-only ablation: does suppressing failure directions alone recover success?
+The contrastive conceptorC con =C s ∧ ¬Cf combines a positive projection onto success directions
+with a negation of failure directions. A natural question is how much of the observed gain comes
+from each component. We isolate the failure-suppression term by steering with¬C f alone, fit on
+the failure trajectories from theπ 0-FAST MetaWorld activation rollouts, on four tasks where the
+baseline checkpoint succeeds zero out of sixteen episodes. With no success examples in the dataset,
+C s cannot be fit, so any gain in this setting is attributable entirely to suppression of failure geometry.
+Three of four tasks lift off zero under failure-only steering, withdial-turn-v3reaching 38% from
+a 0% baseline. The result is consistent with the transfer analysis in Section 4.4: failure geometry
+carries substantial task-relevant structure, and suppressing it can recover competent behavior without
+ever specifying where the policy should go. The effect is partial rather than complete, which matches
+the role ofC s in the full contrastive operator. We do not read this as evidence that failure suppression
+alone is sufficient in general, but as evidence that the negation term is doing nontrivial work within
+the contrastive recipe.
+20
+Task Baseline Best Pos-Only Best Configuration
+button-press-topdown-v3 1.00 1.00 global,α=0.1
+button-press-topdown-wall-v3 1.00 1.00 global,α=0.1
+button-press-v3 1.00 1.00 global,α=0.1
+button-press-wall-v3 1.00 1.00 global,α=0.1
+coffee-button-v3 1.00 1.00 global,α=0.1
+door-close-v3 1.00 1.00 global,α=0.1
+drawer-close-v3 1.00 1.00 global,α=0.1
+drawer-open-v3 1.00 1.00 global,α=0.1
+faucet-open-v3 0.931.00global,α=0.1
+handle-press-side-v3 1.00 1.00 per-step,α=0.1
+handle-press-v3 1.00 1.00 global,α=0.1
+peg-unplug-side-v3 0.671.00per-step,α=1.0
+plate-slide-side-v3 1.00 1.00 global,α=0.1
+plate-slide-v3 1.00 1.00 global,α=0.1
+push-wall-v3 1.00 1.00 per-step,α=1.0
+reach-wall-v3 1.00 1.00 global,α=0.5
+window-close-v3 1.00 1.00 global,α=0.1
+window-open-v3 1.00 1.00 global,α=0.1
+Mean 0.98 1.00—
+Table 11: Positive-only conceptor steering on 18 high-baseline MetaWorld-ML45 tasks. Suc-
+cess rates are over 15 rollouts. “Best Pos-Only” is the maximum across six configurations (α∈
+{0.1,0.5,1.0},β= 0.2, global vs. per-step). Bold entries mark strict improvements over baseline.
+Table 12: Failure-only steering with¬C f onπ 0-FAST MetaWorld tasks at zero baseline. Each row
+reports the best success rate across an(α, β)sweep atL=11, with the winning condition listed.
+Three of four tasks recover nonzero success without ever observing a successful trajectory.
+Task Baseline Best¬C f Condition
+assembly-v30% 0% —
+dial-turn-v30% 38%α∈{0.5,1.0},β=0.5
+handle-pull-v30% 12%α=0.5,β=0.2
+pick-out-of-hole-v30% 6% multiple
+RoboCasa
+Task 300 600 900 1200 1500
+Base Best Base Best Base Best Base Best Base Best
+CloseFridge 0.570.53(globalL5a2.0b0.3) 0.270.30(perstepL5a2.0b0.1) 0.400.47(globalL5a2.0b0.1) 0.400.43(globalL5a2.0b0.1) 0.430.60(perstepds0L5a2.0b0.1)CoffeeSetupMug 0.00 – 0.030.03(globalL5a0.1b0.1) 0.030.07(globalL5a0.1b0.1) 0.130.20(globalL5a2.0b0.1) 0.13 0.23(globalL5a1.0b0.1)OpenDrawer 0.070.17(globalL5a0.1b0.3) 0.030.17(globalL11a0.1b0.3) 0.030.10(perstepds0L8a0.1b0.3)0.070.20(globalL5a0.1b0.3) 0.10 0.33(globalL5a0.1b0.3)OpenStandMixerHead0.600.83(perstepds0L5a2.0b0.1)0.630.87(globalL5a2.0b0.1) 0.570.80(globalL5a2.0b0.1) 0.530.87(perstepds0L5a2.0b0.1)0.63 0.87(linearL5la1.0)PickPlaceCounterToCabinet0.200.30(globalL5a2.0b0.1) 0.130.23(globalL5a1.0b0.3) 0.200.40(globalL5a2.0b0.3) 0.300.53(globalL5a1.0b0.3) 0.300.57(perstepds0L5a2.0b0.3)PickPlaceCounterToStove0.130.10(globalL5a0.5b0.1) 0.070.10(globalL5a0.5b0.1) 0.100.07(globalL5a0.5b0.1) 0.130.13(globalL5a0.5b0.1) 0.10 0.13(globalL5a0.5b0.1)TurnOnElectricKettle0.370.50(perstepds0L5a10.0b0.3)0.400.63(perstepds0L5a2.0b0.3)0.330.57(perstepds0L5a2.0b0.3)0.600.67(perstepds0L5a10.0b0.3)0.570.67(perstepds0L5a10.0b0.1)
+Table 13:Task performance across training steps.We evaluate the base vs. best configuration at
+epochs 300, 600, 900, 1200, and 1500.
+A.6 Robustness Across Checkpoints, Layers, and Hyperparameters
+A natural concern is that the gains from steering could depend on a favorable checkpoint, layer, or
+hyperparameter choice rather than reflecting a robust, generalized effect. To rule this out, we eval-
+uate our steering mechanism across multiple stages of training, intervention layers, and parameter
+grids, comparing COAST against both its unsteered base policy and internal baselines under the
+same evaluation protocol.
+Setup.We consider five Diffusion Policy checkpoints saved at epochs 300, 600, 900, 1200, and
+1500. For each checkpoint, we run the unsteered base policy on the 7 RoboCasa tasks and sepa-
+rately report the best steered result obtained from the same checkpoint under our steering sweep.
+This produces a per-epoch comparison between the base policy and its strongest steered variant. Im-
+portantly, the checkpoint set is fixed in advance and spans the training trajectory uniformly, ensuring
+the analysis does not rely on post hoc checkpoint cherry-picking.
+21
+0 1 2 3 4 5 6 7 8 9 10 11
+Layer
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0Normalized SR (mean top-3)
+OpenDrawer
+(raw range 0.03 0.37)
+0 1 2 3 4 5 6 7 8 9 10 11
+Layer
+CoffeeSetupMug
+(raw range 0.03 0.30)
+0 1 2 3 4 5 6 7 8 9 10 11
+Layer
+PickPlaceCounterToStove
+(raw range 0.00 0.23)
+0 1 2 3 4 5 6 7 8 9 10 11
+Layer
+OpenStandMixerHead
+(raw range 0.57 0.93)
+0 1 2 3 4 5 6 7 8 9 10 11
+Layer
+TurnOnElectricKettle
+(raw range 0.33 0.73)
+Steering performance per layer  per-task min-max scaled, line = mean of top-3 /  (band = top-3 min max)
+baseline
+CAA
+SAE
+conceptor
+(a) Normalized Success Rate (SR) using the top-3 parameter combinations.
+0 1 2 3 4 5 6 7 8 9 10 11
+Layer
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0Success Rate
+OpenDrawer
+0 1 2 3 4 5 6 7 8 9 10 11
+Layer
+CoffeeSetupMug
+0 1 2 3 4 5 6 7 8 9 10 11
+Layer
+PickPlaceCounterToStove
+0 1 2 3 4 5 6 7 8 9 10 11
+Layer
+OpenStandMixerHead
+0 1 2 3 4 5 6 7 8 9 10 11
+Layer
+TurnOnElectricKettle
+Performance of different steering mechanisms across tasks
+baseline
+CAA
+SAE
+conceptor
+(b) Absolute peak Success Rate achieved across all combinations.
+Figure 6:Steering Performance by Layer. (a)Normalized SR using the top-3 parameter combi-
+nations per method at each layer. The solid line represents the mean of the top-3 configurations,
+while the shaded band shows the spread (min-max). COAST was evaluated over 12 combinations
+(α, β,strategy), CAA over 3 (α), and SAE over 2 (α).(b)Absolute peak Success Rate achieved at
+each layer. COAST consistently outperforms both the unsteered baseline and the CAA/SAE steering
+methods across different tasks and layers, demonstrating low variance and high robustness to layer
+selection.
+Additionally, to evaluate robustness across network depth, we swept over a grid of parameters
+for each method at every layer (0 to 11) for epoch 1500. For Contrastive Activation Addition
+(CAA), we evaluatedα∈ {0.1,0.5,1.0}. For Sparse Autoencoder (SAE) steering, we evalu-
+atedα∈ {0.5,1.0,2.0}. For COAST, we swept apertureα∈ {0.5,1.0,2.0}, steering strength
+β∈ {0.1,0.3}, and strategy∈ {global,per-step}, resulting in 12 candidate combinations per layer.
+Results.Table 13 shows that the improvement from steering is not isolated to one stage of train-
+ing. Across all evaluated epochs, the steered policy consistently matches or improves upon the
+corresponding base checkpoint. This is especially important because the absolute base performance
+varies substantially with the epoch, yet the relative advantage of steering remains present across the
+entire sweep.
+Furthermore, COAST demonstrates strong performance robustness across different model layers.
+As shown in Figure 6a, plotting the mean and variance of the top-3 parameter combinations at each
+layer reveals that COAST not only achieves a higher normalized success rate than CAA and SAE
+across almost all layers, but also maintains a highly stable performance band. Figure 6b visualizes
+the absolute maximum success rate achieved at each layer. Across five distinct RoboCasa tasks,
+COAST consistently outperforms the baselines, and the performance variance between adjacent
+layers is relatively small.
+Discussion.These results strengthen the claim that the steering effect is genuine and broadly ap-
+plicable. Because every checkpoint is evaluated independently against its own base model, the gains
+shown across early, middle, and late checkpoints confirm that the intervention is compatible with the
+learned policy throughout training. Similarly, the layer and hyperparameter analysis indicates that
+conceptor-based steering is not overly brittle or sensitive to the exact layer of intervention, provided
+our efficient hyperparameter selection heuristic (Sec. A.10.2) is applied. Together, these findings
+demonstrate that COAST provides holistic, resilient improvements independent of specific model
+configurations.
+22
+Algorithm 1Steering on a Generic DiT Action Head
+Require:Conditioning tokensc, robot states, denoising/flow stepsK, transformer layersL, hook
+layerℓ hook, conceptorC steer, strengthβ
+1:M←(1−β)I+βC steer
+2:x∼ N(0, I), t←1,∆t← −1/K
+3:fork= 1, . . . , Kdo
+4:h 0 ←ϕ in(x, s, t)
+5:forℓ= 1, . . . , Ldo
+6:u ℓ ←Attn ℓ(hℓ−1, c)
+7:h ℓ ←MLP ℓ(uℓ)▷layer output
+8:ifℓ=ℓ hook then
+9:h ℓ ←h ℓM ⊤
+10:end if
+11:end for
+12:v t ←ϕ out(hL)
+13:x←Step(x, v t, t,∆t)
+14:t←t+ ∆t
+15:end for
+16:returnˆa←x
+A.7 Activation Extraction Details
+We extract intermediate activations from three model families:pi0.5(a PaLI-Gemma 2 backbone
+with a Gemma 2 action-expert suffix) andGR00T N1.5(an SigLIP/T5 vision-language backbone
+with a DiT action head). Both are flow-matching diffusion policies that produce action chunks via
+an Euler denoising loop. Below we detail the extraction procedure for each.
+A.7.1 pi0.5 (MetaWorld, LIBERO, RoboCasa)
+Architecture context.pi0.5 is a two-tower model. A frozen PaLI-Gemma 2 backbone encodes
+images and language into a prefix KV cache. A trainableGemma 2 action expert(18 decoder
+layers, hidden dimensiond=1024) operates on a suffix sequence whose tokens represent the current
+proprioceptive state and a noised action chunk. The expert layers use Adaptive RMS normalization
+(AdaRMS), where a pooled conditioning vector gates each layer’s input-layernorm (attention) and
+post-attention-layernorm (MLP) via learned scale factors.
+Denoising loop.Inference runs 10 Euler denoising steps. At each stepk∈ {0, . . . ,9}, the noise
+schedule is a linear interpolation fromt=1(pure noise) tot=0(clean actions), with uniform step
+size∆t=−1/10:
+xk+1 =x k + ∆t·v θ(xk, tk), t k = 1 +k∆t.(6)
+All 10 steps are executed; no early stopping is used.
+Hook registration (V1, used for conceptor fitting).The model method
+sample actions with intermediatesregisters PyTorch forward hooks on the action-expert de-
+coder layerspaligemma with expert.gemma expert.model.layers[i]fori∈ {0,5,11,17}
+(four equally-spaced layers spanning the full 18-layer stack). Two hooks per layer:
+1.Residual stream(output hook onexpert layers[i]): captures the full layer output
+h(out)
+i ∈R B×S×1024 . If the output is a tuple, only the first element (hidden state) is re-
+tained.
+2.MLP hidden state(output hook onexpert layers[i].mlp.down projthat captures
+theinputto that module): captures the post-GELU expanded activationm i ∈R B×S×4096 ,
+i.e. the input to the down-projection linear layer.
+All hooks capture ateverydenoising step and move tensors to CPU immediately via
+.detach().cpu().
+23
+Hook registration (V2, selective).A second extraction variant,
+sample actions with intermediates v2, adds two additional activation types and sup-
+ports selective step collection:
+1.Attention weights: A forward pre-hook injectsoutput attentions=Trueinto the
+layer’s kwargs, and a forward output hook captures the attention weight matrixA i ∈
+RB×H×S×S (whereHis the number of heads).
+2.AdaRMS gates: Forward hooks onexpert layers[i].input layernorm(attention
+gate) andexpert layers[i].post attention layernorm(MLP gate) capture the per-
+token gating vectorg i ∈R B×1×1024. These are collected forall18 expert layers. Non-
+adaptive layers (if any) produce zero tensors.
+V2 only records intermediates at user-specified denoising steps (default{0,4,9}) to reduce storage;
+the full 10-step loop still runs.
+AdaRMS conditioning vector.The AdaRMS conditioning vectorc∈R B×1024 is computed from
+the proprioceptive state and the current timestep embedding insideembed suffix. In V1 it is
+captured at every denoising step; in V2 only the step-0 value is saved (it is deterministic given fixed
+observations and noise).
+Mean-pooling.Before computing conceptors, activations are mean-pooled over the token dimen-
+sion. Forpi0.5 on MetaWorld / LIBERO, the suffix sequence containsS=10action-horizon tokens
+(no padding); the mean is over all 10 positions. Forpi0.5 on RoboCasa,Sdepends on the config’s
+action horizon. No padding mask is applied because all suffix tokens are valid action tokens. After
+pooling, each inference step yields one vector ¯h∈R 1024 per layer per denoising step.
+GR00T N1.5 token pooling.For GR00T N1.5 (see below), the self-attention sequence hasS=49
+tokens (1 state token+32 future tokens+16 action tokens). Mean-pooling is over all 49 positions.
+Precision.pi0.5 runs inference in the model’s nativebfloat16precision. Residual-stream and
+MLP-hidden activations are cast tofloat32before being written as NumPy arrays. The denoising
+trajectory(x t, vt)is alwaysfloat32. AdaRMS conditioning and attention weights are also stored
+infloat32.
+Conceptor covariance matricesR= ˜X ⊤ ˜X/Nare computed infloat64(NumPy’s default) and
+stored asfloat32in the compressed.npzfile. No eigenvalue truncation is applied; the fulld×d
+matrix is retained.
+A.7.2 GR00T N1.5 (RoboCasa)
+Architecture context.GR00T N1.5 uses a SigLIP + T5 vision-language backbone that produces
+a variable-length context sequence, followed by a 16-layer DiT (Diffusion Transformer) action
+head with hidden dimensiond=1536and feed-forward inner dimensionF=6144. Unlike pi0.5’s
+AdaRMS, GR00T conditions the DiT on the backbone viacross-attentionfrom a full VL sequence
+computed once per inference call.
+Denoising loop.GR00T uses 4 Euler denoising steps with uniform step size∆t= 1/4. Timesteps
+are discretized into buckets for the DiT’s learned timestep embedding.
+Hook registration.The function get action with intermediatesingroot adapter.py
+registers two hooks per DiT layer (head.model.transformer blocks[i],i∈ {0, . . . ,15}):
+1.Residual stream(output hook on eachtransformer blocks[i]): capturesh (out)
+i ∈
+RB×49×1536.
+2.MLP hidden state(output hook ontransformer blocks[i].ff.net[2]that captures
+theinput): captures the post-GELU expanded activationm i ∈R B×49×6144.
+Both hook types fire at all 4 denoising steps.
+24
+Backbone features.The VL backbone output vl embs∈R B×Svl×1536 (whereS vl is the variable
+VL sequence length) is saved once per inference call asbackbone cond.npz. This is GR00T’s
+analog of pi0.5’s AdaRMS conditioning, but differs architecturally: pi0.5 produces apooled1024-
+dim vector per denoising step, while GR00T produces a variable-length sequence used via cross-
+attention.
+Precision.GR00T runs undertorch.autocast(dtype=bfloat16)on CUDA. DiT hidden
+states and MLP hidden states are cast tofloat16before writing. Denoising trajectories and back-
+bone features follow the samefloat32/float16convention as pi0.5.
+On-disk storage schema (both models).Each inference step’s activations are saved under a di-
+rectory tree:
+<output_dir>/<checkpoint_step>/<task_name>/
+episode_NNN_env_NNN/
+metadata.json # episode_success, total_reward, ...
+rewards.npz # per_step_reward, cumulative_reward, success_at_step
+step_NNNN/
+metadata.json # step, inference_step, cumulative_reward, ...
+denoising.npz # all_x_t (D,H,A), all_v_t (D,H,A) fp32
+suffix_residual.npz # (D,L,S,1024) fp32 [pi0.5]
+suffix_mlp_hidden.npz# (D,L,S,4096) fp32 [pi0.5]
+adarms_cond.npz # (D,1024) fp32 [pi0.5 V1]
+dit_hidden_states.npz# (D,L,S,1536) fp16 [GR00T]
+dit_mlp_hidden.npz # (D,L,S,6144) fp16 [GR00T]
+backbone_cond.npz # (S_vl,1536) fp16 [GR00T]
+whereD=denoising steps,L=layers,S=sequence length,H=action horizon,A=action dimen-
+sion.
+A.8 Rollout Collection Protocol
+Activation data for conceptor fitting is collected by executing the policy in each environment and
+saving intermediate activations at every inference step. For every (model, checkpoint, benchmark)
+combination, we collect two strictly disjoint sets of rollouts: 15fittingrollouts per task, used to
+construct conceptors and select hyperparameters, and 30testrollouts per task, used exclusively to
+evaluate the selected steering configuration. The two sets use different environment seeds, object
+placements, and initial conditions, and share no overlap in episode identifiers. All success rates
+reported in the main paper are computed on the test rollouts only. Below we describe the per-
+benchmark details.
+A.8.1 Common infrastructure
+All environments use a server–client WebSocket architecture. The policy server loads the model
+and serves actions; the environment client sends observations and receives actions. For activation
+collection, the server is started incollection mode, which wraps the policy in aCollectingPolicy
+that:
+1. Rejects plain inference requests (ensures the server cannot accidentally serve evaluation
+traffic).
+2. Requires each request to carry a collect payload (per-step metadata: task name,
+episode id, env id, step counter, cumulative reward) or a finalize episode payload
+(episode-level metadata: total reward, success flag, per-step rewards).
+3. Callsinfer with intermediateson the underlying model, which runs the denoising
+loop with forward hooks registered.
+4. Writes per-step.npzfiles and per-episodemetadata.json/rewards.npz.
+A.8.2 MetaWorld (pi0.5 andπ 0-FAST)
+•Tasks: 45 ML45 training tasks (or individual tasks).
+25
+•Fitting rollouts: 15 parallel environments (--num envs 15), each run for up to 300 envi-
+ronment steps (replan every 32 steps⇒ ∼10 inference steps per episode). These rollouts
+provide the success and failure activations from which conceptors are constructed and hy-
+perparameters are selected.
+•Test rollouts: 30 rollouts per task per steering condition, collected with fresh environment
+seeds disjoint from the fitting set. All success rates in Table 1 and Tables 7–8 are computed
+on these rollouts only.
+•Initial conditions: MetaWorld’s built-in random initialization per environment seed. Seeds
+are set by theenv idindex.
+•Success labeling: MetaWorld’s native per-stepinfo["success"]flag. An episode is
+labeled successful if any step achievessuccess=True.
+•Checkpoint used:/openpi-metaworld-5000(gradient step 5,000 of 30,000 total), an
+early checkpoint with mixed success/failure outcomes, necessary for contrastive conceptor
+fitting.
+•Typical success/failure split: Varies by task; the early checkpoint yields approximately
+30–60% success rate on most ML45 training tasks, ensuring both classes are represented.
+A.8.3 LIBERO-10 (pi0.5 andπ 0-FAST)
+•Tasks: 10 LIBERO-10 tasks (see Table in Appendix F for the full list).
+•Fitting rollouts: 15 episodes per task (--num episodes 15). These provide the activa-
+tions for conceptor construction and hyperparameter selection.
+•Test rollouts: 30 episodes per task per steering condition, collected with fresh seeds dis-
+joint from the fitting set.
+•Initial conditions: LIBERO’s built-in per-task initial state distribution. The environment
+is reset with sequential episode seeds.
+•Success labeling: LIBERO’s nativeinfo["is success"]flag. An episode is labeled
+successful if the final step’s success flag isTrue.
+•Checkpoint used:/openpi-libero-2000(gradient step 2,000 of 30,000 total), chosen
+as the first checkpoint exhibiting nonzero success across most tasks.
+•Typical success/failure split: The early checkpoint yields 20–60% success across
+LIBERO-10 tasks. Tasks with fewer than 3 successes or 3 failures are excluded from con-
+trastive conceptor construction.
+•Pre-collected dataset: Available at/pi05-libero-activations-v1-2000-15env
+(HuggingFace Datasets).
+A.8.4 RoboCasa (pi0.5, GR00T N1.5 and Diffusion Policy)
+•Tasks: 7 atomic-seen tasks (CloseFridge,CoffeeSetupMug,OpenDrawer,
+OpenStandMixerHead,PickPlaceCounterToCabinet,PickPlaceCounterToStove,
+TurnOnElectricKettle).
+•Fitting rollouts: 15 episodes per task (--num episodes 15). These provide the activa-
+tions for conceptor construction and hyperparameter selection.
+•Test rollouts: 30 episodes per task per steering condition, collected with fresh seeds dis-
+joint from the fitting set.
+•Initial conditions: RoboCasa’s randomized object placement and kitchen layout per its
+default--split pretraindistribution.
+•Success labeling: Environment’s native success flag.
+•pi0.5 checkpoint:robocasa/robocasa365 checkpoints→
+pi05 pretrain human300/multitask learning/75000(fully trained on 365-task
+RoboCasa). This is the production checkpoint, not an early one.
+•GR00T N1.5 checkpoint:robocasa/robocasa365 checkpoints→
+gr00t n1-5/multitask learning/checkpoint-120000(365-task multitask pre-
+training; reported atomic-seen mean 43.0%).
+26
+•Diffusion Policy checkpoint:robocasa/robocasa365 checkpoints→
+diffusion policy/17.40.09 train diffusion transformer hybrid
+pretrain human300/latest.ckpt
+•Pre-collected datasets: Available at/pi05-robocasa-activations-v1-75000-15env
+(pi0.5) and/groot n15-robocasa-activations-v1-15env(GR00T N1.5).
+A.8.5 Separation of fitting and evaluation data
+Rollouts used for conceptorfitting(success/failure activation datasets and hyperparameter selection)
+are entirely separate from those used for steeredevaluation. Fitting data consists of 15 rollouts
+per task, collected once per (model, checkpoint, benchmark) tuple and stored to disk. Evaluation
+data consists of 30 rollouts per task per steering condition, collected with fresh environment resets
+that use different seeds, object placements, and initial conditions from the fitting set. No episode
+identifiers or seeds are shared between the two sets. Hyperparameter configurations (layerℓ, aperture
+α, steering strengthβ, and strategy) are selected by maximizing success rate on the fitting rollouts.
+The selected configuration is then run on the evaluation rollouts, and only the evaluation success
+rates are reported in the paper.
+A.9 Conceptor Computation Details
+A.9.1 Conceptor construction from activations
+Given a set of activation vectors{h 1, . . . , hN } ⊂R d (one per inference step, after mean-pooling
+over the token dimension), the conceptorC α at apertureαis computed as follows:
+1.Mean-center: ¯h= 1
+N
+P
+i hi, ˜hi =h i − ¯h.
+2.Correlation matrix:R= 1
+N
+P
+i
+˜hi˜h⊤
+i = 1
+N
+˜H ⊤ ˜H, where ˜H∈R N×d .
+3.Conceptor:C α =R(R+α −2I) −1.
+The contrastive conceptor (“success AND NOT failure”) is computed via the Boolean AND-NOT
+operation defined in Section 3:
+Ccontr =C s ∧ ¬Cf =
+ 
+C −1
+s + (I−C f)−1 −I
+−1
+,(7)
+whereC s andC f are the success and failure conceptors at the same layer and apertureα. The result
+is a valid conceptor (symmetric, positive semi-definite, with eigenvalues in[0,1]). For reference, the
+general Boolean AND between two arbitrary conceptorsAandBis:
+A∧B=
+ 
+A−1 +B −1 −I
+−1
+.(8)
+This form is the canonical conceptor algebra of Jaeger (2014), derived from De Morgan’s lawA∧
+B=¬(¬A∨ ¬B)applied to the OR operationC 1 ∨C 2 = (R1 +R 2)(R1 +R 2 +α −2I) −1. In
+implementation, we use the Moore–Penrose pseudoinverse(·) † to handle near-singular conceptors
+that arise at small apertures.
+Pseudocode.
+def compute_conceptor(X, alpha):
+"""X: (N, d) float64 activation matrix."""
+Xc = X - X.mean(axis=0) # mean-center
+R = (Xc.T @ Xc) / max(1, N) # correlation matrix
+C = R @ inv(R + alpha**(-2) * I) # conceptor
+return C
+def contrastive_conceptor(X_succ, X_fail, alpha):
+C_s = compute_conceptor(X_succ, alpha)
+C_f = compute_conceptor(X_fail, alpha)
+not_C_f = I - C_f
+# Boolean AND-NOT via canonical form:
+27
+# C_s AND (NOT C_f) = (C_s^-1 + (I - C_f)^-1 - I)^-1
+# Use pseudoinverse for numerical stability with near-singular conceptors
+C_contr = pinv(pinv(C_s) + pinv(not_C_f) - I)
+return C_s, C_f, C_contr
+A.9.2 Steering application
+At inference time, the steering transformation is applied as a forward hook on the selected action-
+expert layer’s output:
+h′ =h·M ⊤, M= (1−β)I+β C contr.(9)
+The matrixM∈R d×d is pre-computed once (infloat32on GPU) and applied via a single matrix
+multiply per denoising step. The hook fires at every denoising step for the “global” strategy, or uses
+a differentC contr per step for the “per-step” strategy.
+A.9.3 Runtime overhead
+•Conceptor construction(one-time cost per task): Dominated by thed×dmatrix inverse.
+For pi0.5 (d=1024), this takes<1 second per (task, layer,α) combination on a single CPU
+core. For GR00T N1.5 (d=1536), it takes∼2–3 seconds.
+•Full NPZ construction: Building conceptors for all tasks, layers, and alphas takes∼5–15
+minutes depending on the number of layers (4 for pi0.5 at selected layers, 16 for GR00T at
+all layers).
+•Per-step steering overhead: The matrix multiplyh·M ⊤ forB=1,S=10,d=1024adds
+<0.1 ms per denoising step on an NVIDIA A100, negligible compared to the∼50 ms trans-
+former forward pass. Total inference overhead is<1% wall-clock time.
+A.9.4 Numerical precision
+• All correlation matrices and matrix inverses are computed infloat64(NumPy’s default)
+to avoid numerical issues in the(R+α −2I) −1 solve.
+• The resulting conceptor matrices are stored asfloat32in compressed.npzfiles.
+• At inference time, the steering matrixMis loaded asfloat32and cast to the model’s
+working dtype (bfloat16) just before the matrix multiply.
+• No eigenvalue truncation is applied. The fulld×dconceptor matrix is stored and used. For
+diagnostic visualization, we compute eigenvalues via SVD of the mean-centered activation
+matrix (σ2
+j from ˜H=UΣV ⊤), then derive conceptor eigenvalues asγj =σ 2
+j /(σ2
+j +α −2).
+• Boolean AND is computed via the canonical form(A −1 +B −1 −I) −1 using the Moore–
+Penrose pseudoinverse to handle near-singular conceptors at small apertures. We observed
+no numerical issues across all(α,layer)combinations in our sweep grid.
+A.9.5 Memory and storage
+•Conceptor matrix size:d 2 ×4bytes (float32). Ford=1024: 4 MB per matrix. For
+d=1536: 9 MB.
+•Full NPZ size: The LIBERO conceptor NPZ (10 tasks×4 layers×5 alphas×3 matrices
++ per-step variants) is∼200 MB compressed. The GR00T NPZ (7 tasks×16 layers×
+5–10 alphas) is∼1 GB.
+•GPU memory: At inference time, only oned×dmatrixMis held on GPU per steered
+layer, adding at most 4 MB for pi0.5 or 9 MB for GR00T. This is negligible compared to
+the∼3 GB model weights.
+A.10 Hyperparameter Sweep Ranges and Selection
+A.10.1 Full grid specification
+Strategies.
+28
+Table 14: Hyperparameter sweep grid per model–benchmark combination.
+Parameter pi0.5 MetaWorld pi0.5 LIBERO pi0.5 RoboCasa GR00T RoboCasa
+Layersℓ{0,5,11,17} {0,5,11,17} {0,5,11,17} {0,5,10,15}
+Apertureα{0.1,0.5,1,2,10} {0.1,0.5,1,2,10} {0.1,0.5,1,2,10} {0.1,0.3,0.5,0.8,1,
+1.5,2,3,5,10}
+Strengthβ{0.1,0.3,0.5} {0.1,0.3,0.5} {0.1,0.3,0.5} {0.1,0.3,0.5}
+Strategy global, per-step, global, per-step, global, per-step global, per-step,
+positive-only, linear positive-only, linear positive-only, linear
+Full grid / task4×5×3×4 = 240 4×5×3×4 = 240 4×5×3×2 = 120 4×5×3×4 = 240
+L5 L11 L17
+Layer
+0.00
+0.02
+0.04
+0.06
+0.08
+0.10
+0.12
+0.14
+Conceptor Quota q(C)
+(a)
+Quota and Success per Layer
+0.67 0.81 0.88 0.94 0.95
+Overlap sim(Cs; Cf) at L = 11
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6Mean Success Rate
+®= \!10 ®= \!2
+®= \!1 ®= \!0.5 ®= \!0.1
+(b)
+Overlap vs. Success
+0.1 0.5 1 2 10
+Aperture ®
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+Overlap sim(Cs; Cf)
+(c)
+Aperture Controls Overlap
+Layer
+L0
+L5
+L11
+L17
+0.95 0.94 0.88 0.81 0.67
+mean overlap at L = 11
+0.1 0.5 1 2 10
+Aperture ®
+0.1
+0.3
+0.5
+Steering Strength ¯
+0.53 0.61 0.58 0.54 0.51
+0.57 0.61 0.64 0.51 0.53
+0.46 0.37 0.38 0.30 0.30
+(d) Success at L = 11
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+Mean Success Rate
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Success Rate
+Figure 7:Three-stage hyperparameter selection, validated on LIBERO-10 withπ 0.5. (A)Quota
+q(C)across layers (boxes) and mean steered success (red) both peak atL=11, so quota alone
+identifies the correct layer.(B)Mean success versus overlap atL=11. Success rises as overlap
+decreases, then saturates.(C)Overlap decreases monotonically with apertureα, so selecting the
+overlap band determines a narrowαrange with no rollouts.(D)Success heatmap overα×βat
+L=11, confirming that smallβvalues perform comparably, leaving 2–3 configurations to evaluate
+per task.
+Table 15: Oracle gap analysis. Geometric selection achieves 86–93% of oracle performance while
+evaluating only a small fraction of the full configuration grid. Selected parameters: GR00T N1.5
+RoboCasa usesℓ=10,α=0.1;π 0.5 RoboCasa usesℓ=11,α=0.5;π 0.5 LIBERO usesℓ=11,α∈
+{0.5,1.0}. All benchmarks useβ∈ {0.1,0.3}.
+Benchmark Tasks
+Full
+Grid
+Selected
+Grid
+% Grid
+Evaluated
+% of Oracle
+SR
+GR00T N1.5 RoboCasa 7 240 7 2.9% 92.8%
+π0.5 RoboCasa 7 120 10 8.3% 93.4%
+π0.5 LIBERO 10 240 18 7.5% 92.1%
+•Global: A single contrastive conceptorC contr applied identically at all denoising steps.
+•Per-step: A separate contrastive conceptor per denoising step, fitted from activations at
+that specific step.
+•Positive-only: UsesC s directly (no contrastive NOT operation), i.e.M= (1−β)I+β C s.
+•Linear (ActAdd):h ′ =h+α·v, wherev=unit( ¯hs − ¯hf)is the unit mean-difference
+direction. Hereαcontrols the perturbation magnitude.
+•Random: Random PSD matrix baseline to control for any generic projection effect.
+A.10.2 Efficiently Selecting Hyperparameters with Minimal Rollouts
+COAST introduces three hyperparameters: the injection layerℓ, the apertureα, and the steering
+strengthβ. A naive grid search across our ranges costs up to 152 configurations per task (Table 15),
+which scales poorly across the dozens of tasks in our benchmarks. The same geometric quanti-
+ties that explain the mechanism in Section 4.3 also select these hyperparameters in closed form,
+narrowing the search to a small number of configurations at negligible additional GPU cost.
+29
+Stage 1: Layer selection via quota.Both conceptor quotaq(C) = 1
+dtr(C)and steered success
+are unimodal in depth, peaking at layer 11 (Figure 7A). Early layers encode features too generic
+to form a discriminative subspace, while late layers encode features too state-specific for a global
+conceptor to pool cleanly. Because quota aligns with success across the full sweep, we select the
+layer from quota alone and fixℓ ⋆ = 11at zero GPU cost.
+For each candidate layerℓ, compute the mean contrastive-conceptorquotaacross tasks:
+q(ℓ) = 1
+|T |
+X
+t∈T
+1
+d tr(C(t,ℓ,α0)
+contr ),(10)
+using the largest apertureα 0=10(which gives the sharpest conceptor). Select the layer with the
+highest mean quota:ℓ ∗ = arg maxℓ q(ℓ).
+Stage 2: Aperture selection via overlap.With the layer fixed, aperture selection follows from the
+overlap finding of Section 4.3. Figure 7B shows that steered success rises as overlap decreases from
+near-identity and then saturates. Below the saturation point the contrastive signal destabilizes the
+policy, and above it the two conceptors are nearly identical so the signal vanishes. Because overlap
+decreases monotonically with aperture (Figure 7C), the target overlap band determines a narrowα
+range, and computing overlap at each candidateαrequires a singled×dmatrix product with no
+rollouts.
+At the selected layerℓ ∗, compute the mean success–failure overlap for eachα:
+overlap(α) = 1
+|T |
+X
+t∈T
+tr(C(t)
+s ·C (t)
+f )q
+tr((C(t)
+s )2) tr((C (t)
+f )2)
+.(11)
+Retain alphas whose mean overlap falls in a “sweet spot” band[0.85,0.95]. If no alpha falls in the
+band, take the closest one.
+Stage 3: Steering strength via narrow sweep.Onlyβremains. Figure 7D confirms that large
+βdegrades performance uniformly while small values perform comparably, leaving at most two or
+three configurations to evaluate per task. This is the only stage that requires rollouts.
+Universally dropβ=0.5(which was found to be harmful across all benchmarks in preliminary ex-
+periments) and keepβ∈ {0.1,0.3}.
+Validation: oracle gap analysis.To quantify the practical value of geometric selection, we com-
+pare the configuration chosen by the three-stage procedure against the best configuration found by
+exhaustive sweep across the full hyperparameter grid (Table 15). Across all three benchmark–model
+pairs, geometric selection recovers 93% of oracle success rate while evaluating only 3–8% of the
+grid. These results confirm that the geometric quantities from Section 4.3—quota for layer se-
+lection, overlap for aperture selection—are not merely descriptive but operationally sufficient for
+near-optimal configuration at an order-of-magnitude reduction in evaluation cost.
+To avoid evaluating the full grid (which requires>100 rollouts per task), we use a three-step geo-
+metric selection procedure based solely on the pre-computed conceptor matrices:
+Grid reduction.This procedure reduces the sweep from (e.g.)240conditions/task to∼4–12
+conditions/task (a20×–60×reduction), making per-task evaluation tractable.
+Table 16: Selected parameters per model–benchmark (geometric procedure).
+Model–Benchmark Layerℓ ∗ Alphas Betas
+pi0.5 LIBERO-10 11{0.5,1.0} {0.1,0.3}
+pi0.5 RoboCasa 11{0.5} {0.1,0.3}
+GR00T N1.5 RoboCasa 10{0.1} {0.1,0.3}
+A.10.3 Per-task selected hyperparameters
+Table 17 shows the per-task oracle-selected hyperparameters (best rollout success rate) for LIBERO-
+10.
+30
+Table 17: Per-task oracle-selected hyperparameters for pi0.5 LIBERO-10.
+Task (abbreviated) Layerα β
+KITCHEN SCENE3 (stove + moka pot) 5 0.5 0.1
+KITCHEN SCENE4 (bowl in drawer) 5 1.0 0.1
+KITCHEN SCENE6 (mug in microwave) 11 0.1 0.3
+KITCHEN SCENE8 (two moka pots) 5 1.0 0.1
+LIVING ROOM1 (soup + cheese in basket) 11 0.5 0.3
+LIVING ROOM2 (soup + tomato sauce in basket) 11 0.5 0.3
+LIVING ROOM2 (cheese + butter in basket) 5 0.5 0.1
+LIVING ROOM5 (two mugs on plates) 11 0.5 0.5
+LIVING ROOM6 (mug + pudding) 5 0.5 0.1
+STUDY SCENE1 (book in caddy) 5 0.5 0.1
+Geometric vs. oracle gap.The geometric procedure selects layer 11 withα∈ {0.5,1.0}and
+β∈ {0.1,0.3}. This matches the oracle layer for 5/10 tasks (those where layer 11 is also oracle-
+optimal). For the remaining 5 tasks where the oracle prefers layer 5, the geometric procedure’s
+choice of layer 11 may yield slightly lower success rates, but the gap is typically<5 percentage
+points because the layer-5 and layer-11 conceptors have similar quotas.
+A.10.4 Diagnostic quantities
+Table 18: Layer quotas (mean across tasks,α=10) for pi0.5 LIBERO.
+Layer 0 Layer 5 Layer 11 Layer 17
+Mean quota 0.016 0.0590.0920.082
+Table 19: Mean success–failure overlap at layer 11 for pi0.5 LIBERO.
+α0.1 0.5 1.0 2.0 10.0
+Overlap 0.9550.937 0.8820.808 0.670
+A.11 Checkpoint and Training Details
+A.11.1 pi0.5 on MetaWorld
+•Base pretrained checkpoint:gs://openpi-assets/checkpoints/pi05 base/params
+(Physical Intelligence’s released pi0.5 base weights).
+•Fine-tuning dataset:/metaworld ml45(LeRobot format).
+•Config name:pi05 metaworld.
+•Optimizer: AdamW with gradient clipping (max norm 1.0).
+•Learning rate: Cosine decay schedule with 1,000 warmup steps, peak LR5×10 −5,
+decaying to5×10 −6 over 29,000 decay steps.
+•Batch size: 128.
+•EMA decay: 0.999.
+•Total gradient steps: 30,000.
+•Action horizon: 32.
+•Checkpoint used for activation collection: Step 5,000 (/openpi-metaworld-5000), an
+early checkpoint chosen because it exhibits mixed success/failure outcomes necessary for
+contrastive conceptor construction.
+•Fully trained checkpoint: Step 25,000 (/openpi-metaworld-25000).
+31
+A.11.2 pi0.5 on LIBERO-10
+•Base pretrained checkpoint:gs://openpi-assets/checkpoints/pi05 base/params.
+•Fine-tuning dataset:physical-intelligence/libero(LeRobot format).
+•Config name:pi05 libero.
+•Optimizer: AdamW with gradient clipping (max norm 1.0).
+•Learning rate: Cosine decay schedule with 10,000 warmup steps, peak LR5×10 −5,
+decaying to5×10 −5 (constant after warmup) over 1,000,000 decay steps.
+•Batch size: 256 across 4 FSDP devices.
+•EMA decay: 0.999.
+•Total gradient steps: 30,000.
+•Action horizon: 10.
+•Checkpoint used for activation collection: Step 2,000 (/openpi-libero-2000), the
+earliest checkpoint exhibiting nonzero success across most LIBERO-10 tasks.
+•Released checkpoints: Steps 2,000, 3,000, and 9,000
+(/openpi-libero-{2000,3000,9000}).
+A.11.3 pi0.5 on RoboCasa
+•Checkpoint:robocasa/robocasa365 checkpoints→
+pi05 pretrain human300/multitask learning/75000.
+•Config name:pi05 robocasa.
+•Training recipe: This is the fully trained production checkpoint from the RoboCasa-365
+benchmark, trained on 365 tasks using thepi05 pretrain human300multi-task learning
+recipe at gradient step 75,000.
+•Action horizon: Config-dependent (RoboCasa standard).
+•Reason for checkpoint choice: Unlike MetaWorld and LIBERO where early checkpoints
+provide the mixed outcomes needed for contrastive conceptor fitting, the RoboCasa fully-
+trained checkpoint already exhibits sufficient failure rates on most atomic-seen tasks (mean
+39–43% success) to provide both success and failure episodes.
+A.11.4 GR00T N1.5 on RoboCasa
+•Checkpoint:robocasa/robocasa365 checkpoints→
+gr00t n1-5/multitask learning/checkpoint-120000.
+•Architecture: NVIDIA Isaac GR00T N1.5 (3B parameters), consisting of a SigLIP + T5
+vision-language backbone and a 16-layer DiT action head (d=1536).
+•Training recipe: 365-task multitask pre-training on RoboCasa. Published atomic-seen
+mean: 43.0%.
+•Action horizon: 16 action steps. The client usesreplan steps=5, so 11 of 16 predicted
+steps are discarded at each replan.
+•Denoising steps: 4 (NVIDIA’s default configuration).
+•Image resolution: N1.5 expects256×256images. The openpi RoboCasa client sends
+224×224(pi0.5’s resolution); the adapter upscales via bilinear interpolation before infer-
+ence.
+•Cameras: Three views (agentview left, agentview right, eye in hand). The client sends
+all three; if agentview right is unavailable, the left view is duplicated as a fallback.
+A.12 Real World Evaluation Hardware Setup
+We used the DROID robot setup (Khazatsky et al., 2024), which consists of a 7 DoF Franka Emika
+Panda Robot Arm, a Robotiq 2F-85 parallel-jaw gripper, a wrist-mounted ZED Mini RGB-D camera
+and two side-mounted ZED 2 stereo cameras. The DROID set-up enables the usage of the generalist
+VLA policies, specifically theπ 0.5-DROID checkpoint (Black et al., 2025).
+32
+Open
+step 1
+ step 2
+ step 3
+ step 4
+ step 5
+ step 6
+ step 7
+Close
+step 1
+ step 2
+ step 3
+ step 4
+ step 5
+ step 6
+ step 7
+Duck
+step 1
+ step 2
+ step 3
+ step 4
+ step 5
+ step 6
+ step 7
+Figure 8:Successful Real World Rollouts ofπ 0.5-COAST.We evaluate on three different tasks:
+Open Drawer,Close Microwave, andPut Duck in Cabinetover 15 independent trials per
+task. This is an example trajectory of COAST in each of the tasks.
+A.13 Filtered Behavioral Cloning Baseline (SFT)
+As a parametric counterpart to our inference-time activation-steering intervention, we run a Filtered
+Behavioral Cloning (filtered-BC) supervised fine-tuning (SFT) baseline that consumes thesame
+per-task data budget (30 on-policy rollouts) but spends it on weight updates rather than on a steering
+hook. We follow the recipe of Hu et al. (2022); Black et al. (2025) of self-distilling a base policy
+on its own successful trajectories. The implementation coversπ 0.5 on three simulators (MetaWorld,
+LIBERO, RoboCasa) and lives inexperiments/filtered bc/.
+A.14 Pipeline
+For every task in the evaluation split we run, in order:
+1.On-policy rollout.Roll outN=30episodes with the baseπ 0.5 checkpointπ θ on the target
+task. At every replan step, the policy emits an action chunk of lengthH(H=32for Meta-
+World,10for LIBERO, and50for RoboCasa). We log the observation–action-chunk pair
+(ot, at:t+H)that produced each chunk.
+2.Success filtering.Keep only the(o t, at:t+H)pairs from episodes that the env’s success
+detector flagged as successful. All samples from unsuccessful episodes are discarded.
+3.LoRA SFT.Fine-tuneπ θ on the filtered buffer with the standardπ 0.5 flow-matching loss
+(Sec. 3) using a LoRA adapter parameterization (Sec. A.15).
+4.Adapter merge.Fold the trained LoRA matrices back into the dense base weights to obtain
+a single merged checkpointπ θ′. The merged model has identical inference cost toπ θ.
+5.Evaluation.Roll out 30 held-out episodes (different seeds) ofπ θ′ on the same task and
+report success rate.
+The procedure is repeated independently per task: each task gets its own LoRA fine-tune and its own
+merged checkpoint. This gives filtered-BC a strict per-task advantage over our steering intervention,
+which uses a single set of activations rather than per-task gradient updates.
+A.15 Training objective
+LetD τ ={(o i, ai)}Mτ
+i=1 be the filtered buffer for taskτ, where eacha i ∈R H×d a is an action chunk.
+Withθthe baseπ 0.5 parameters and∆θthe LoRA-parameterized update, we minimize theπ 0.5
+flow-matching loss
+LFM(∆θ;D τ) =E (o,a)∼Dτ , t∼U(0,1), ϵ∼N(0,I)
+h vθ+∆θ(o, at, t)−(a−ϵ)
+2
+2
+i
+,(12)
+wherea t =t·a+ (1−t)·ϵis the noisy action chunk along the flow path andv θ+∆θ is the velocity
+field predicted by the LoRA-adapted policy. Only∆θ(and a small set of action/time projection
+heads, see Sec. A.16) receives gradients.
+33
+A.16 What is trainable
+The LoRA configuration follows the standard openpi recipe:
+•LoRA on PaliGemma (LM backbone).Rank-16 adapters withα=16on every attention
+and feed-forward projection.
+•LoRA on theπ 0.5 action expert.Rank-32 adapters withα=32on every attention and
+feed-forward projection of the 300M-parameter action expert.
+•Action / time projection heads.The denseaction in proj,action out proj,
+time mlp in, andtime mlp outlayers are fully trainable.
+•Frozen.PaliGemma dense LM weights, action-expert dense weights, and the SigLIP vision
+tower. The freeze filter is the union of the model’s standard LoRA freeze filter and a regex
+.*img.*that catches all SigLIP parameters.
+The vision tower is frozen because, at the small per-task data budget (∼150samples for MetaWorld,
+∼600for LIBERO/RoboCasa), leaving SigLIP trainable was the dominant source of catastrophic
+post-merge regression in our preliminary sweeps (e.g.coffee-push-v3dropped from83%rollout
+success to0%post-merge eval).
+A.17 Hyperparameters
+Sec. 20 lists the hyperparameters used for all three simulators. They are deliberately shared: in
+early ablations the post-merge eval cliff was step-driven (Adam momentum / gradient-norm growth
+past∼300 steps), not epoch-driven, so the more sample-rich envs reuse the MetaWorld schedule for
+safety rather than training longer.
+Hyperparameter Value
+Optimizer AdamW (β 1=0.9,β 2=0.95), grad-norm clip1.0
+LR schedule Cosine, warmup20steps, peak5×10 −5, decay to5×10 −6 over200steps
+Training steps200
+Batch size8
+EMA disabled
+Flow-matching timestept∼ U(0,1)(defaultπ 0.5)
+Per-task rollout budget30episodes
+Replan stride10(MetaWorld),5(LIBERO, RoboCasa)
+Eval episodes30(held-out seeds)
+Table 20: Filtered-BC hyperparameters. Identical across MetaWorld, LIBERO, and RoboCasa.
+A.18 Implementation notes
+The MetaWorld variant runs entirely in-process: the basePolicyis loaded once, rollout and eval-
+uation share anAsyncVectorEnv, and the merged model is rebuilt as a PyTorch module on GPU
+for evaluation. The LIBERO and RoboCasa variants use a server–client split because their env li-
+braries require incompatible Python versions (3.8 and 3.11 respectively): per task we spawn aπ 0.5
+policy server, run rollouts via a WebSocket client in the env’s own venv, train + merge in JAX, write
+the merged checkpoint to a scratch directory, then spawn a fresh server for evaluation. The same
+merged-checkpoint contract makes the two execution modes interchangeable from the orchestrator’s
+perspective.
+If the success filter yields zero positive samples for a task (the base policy never solves it within the
+rollout budget), that task is recorded asskipped no successesand excluded from the aggregate
+success-rate numbers reported in Sec. 4.1 for the filtered-BC column.
+A.19 Linear Contrastive Activation Addition (CAA)
+We re-implement the contrastive activation-addition baseline of Rimsky et al. (2024). For each task,
+we collect residual-stream activations from a fixed set of rollouts and partition them by terminal
+34
+episode outcome into a success setH + and a failure setH −. The steering direction is the unit-norm
+difference of class means,
+v=
+¯h+ − ¯h−
+∥¯h+ − ¯h−∥2
+, ¯h± = 1
+|H±|
+X
+h∈H±
+h,
+and it is injected at every forward pass through the chosen intervention layer viah←h+αv. The
+two policy families differ only in where activations are pooled.
+•Flow-matching policy (π 0.5).We capture the residual stream of the action expert at layer
+index11for every action token of every denoising step. Within each rollout we mean-pool
+across the action-token axis, yielding one1024-d vector per(episode,denoising step). The
+class means ¯h± are computed over all such vectors. We also fit per-denoising-step variants
+v(t) fort∈ {0, . . . ,9}from the matching subset, but report only the single-vector variant
+in the main results.
+•Autoregressive policy (π 0-FAST).We capture the pre-LM-head hidden state (2048-d) at
+every generated action token. There is no denoising-step axis, so each token contributes
+one sample, and ¯h± are computed by pooling all tokens in each class.
+A task is eligible only if it has at least three episodes per class; tasks with a single observed outcome
+are skipped. Steering vectors are computed offline and stored once per task, then loaded by the
+eval-time hook so that no model weights are modified.
+Hyperparameter sweep.We fix the intervention layer to layer11forπ 0.5, the best-performing
+captured layer in our preliminary screen, and to the unique pre-LM-head intervention point for
+π0-FAST. The only swept hyperparameter is the steering strengthα∈ {0.25,0.5,0.75,1.0}. Be-
+causevis unit-normalized,αhas the same effective scale across tasks. We evaluate each(task, α)
+condition on30episodes with the same seeds as the unsteered baseline, and select the per-task best
+αpost hoc on this evaluation set.
+A.20 Sparse-Autoencoder Steering (SAE)
+As a more expressive contrastive baseline, we replace the raw residual-stream mean difference with a
+sparse-feature-space mean difference, mediated by a per-task TopK sparse autoencoder (SAE) (Gao
+et al., 2024). The class- and feature-selection rule follows Khan et al. (2025): instead of picking a
+small top-Kof features by effect size, we keepallfeatures that pass a rarity filter and a bilateral-
+activity filter, then inject the average decoder-space difference over the surviving features.
+TopK SAE.For a residual-stream activationh∈R d, the encoder produces a non-negative,k-
+sparse code via
+f= TopK
+ 
+ReLU(Wenc(h−b dec) +b enc)
+
+, ˆh=W ⊤
+decf+b dec,
+whereTopK(·)retains theklargest entries and zeros the rest. We unit-normalize each decoder
+column after every optimizer step. The ReLU before the TopK guaranteesf≥0, an assumption
+the bilateral filter below relies on. We train one SAE per task on the same captured activations used
+for CAA, hold out5%as a reconstruction-quality gate, and drop any task whose hold-out variance-
+explained falls below0.80from the SAE arm of the comparison.
+Steering vector via class means in feature space.After training, we encode every captured ac-
+tivation through the frozen SAE and split the resulting codes by episode outcome. For each feature
+indexkwe compute
+µ+
+k =E f∈F +
+
+fk
+
+, µ −
+k =E f∈F −
+
+fk
+
+, r k = #{f∈ F + ∪ F − :f k >0}
+|F+|+|F −| .
+We then apply the two feature filters of Khan et al. (2025):
+•Filter A (rarity).Keepkifr k ≥0.005. This drops the long dead-feature tail that any
+TopK SAE produces. Below this fire rate, the estimates ofµ ±
+k are statistically unreliable.
+35
+•Filter B (bilateral activity).Keepkifmin(µ +
+k , µ−
+k )/max(µ +
+k , µ−
+k )≤0.5. Features
+that fire similarly in both classes carry no contrastive signal.
+LetSdenote the surviving feature set. The latent-space contrast isv lat
+k = (µ+
+k −µ −
+k )⊮[k∈ S], and
+the residual-stream steering vector is its image through the decoder, unit-normalized:
+˜vSAE =W ⊤
+dec vlat,v SAE = ˜vSAE /∥ ˜vSAE∥2.
+At eval time,vSAE is injected via the same additive hook as CAA,h←h+αv SAE, at the same inter-
+vention point. Unit-normalization matters because the number of surviving features, and therefore
+the raw norm of ˜vSAE, varies substantially across tasks. Without it, identicalαwould correspond to
+different effective intervention strengths per task.
+Hyperparameters.The SAE width isd SAE = 4d(4096forπ 0.5,8192forπ 0-FAST) and the TopK
+sparsity isk= 64. Optimization uses AdamW with learning rate3×10 −4,β= (0.9,0.999), batch
+size4096, for30,000steps. The encoder is initialized from the unit-normalized decoder transpose.
+We do not sweep overk,d SAE, or expansion factor: in line with the recipe of Khan et al. (2025),k
+is set by the rarity filter rather than tuned, and the only knob exposed to the eval-time sweep is the
+steering strength.
+Sweep.We sweepα∈ {0.25,0.5,1.0,2.0}, deliberately wider than the CAA grid becausev SAE
+is constructed from a sparse set of decoder columns and may need a different effective magnitude
+than the dense CAA mean difference. As with CAA, the intervention layer is fixed (layer11for
+π0.5, pre-LM-head hidden state forπ 0-FAST), each condition is evaluated on30episodes, and the
+per-task bestαis selected post hoc. We do not implement featureclamping, overwritingf k to a
+target value and re-decoding. The additive form above is the simplest faithful instantiation of the
+Khan et al. (2025) recipe and cleanly compares to CAA, which differs only in the basis used to
+compute the contrast.
+B Activation Dataset Composition
+For each model-benchmark cell of Table 1, we fit conceptors and SAE steering vectors from a
+singleN-episode rollout of the corresponding policy checkpoint. Success and failure labels come
+from each simulator’s task-completion criterion, recorded asepisode successin each episode’s
+metadata.json. Tables 21 through 23 report per-task success and failure counts.
+The contrastive fit requires only MIN PER CLASS=3episodes per class to produce a usable
+Ccontrastive orv contrastive. This low bar is what makes the recipe practical at the checkpoint scales
+we evaluate. Many tasks at ourπ 0.5 checkpoints (LIBEROt=2,000, RoboCasat=75,000) suc-
+ceed on only 1 to 3 of 15 rollouts, and those handful of success trajectories are exactly what the
+contrastive operation needs. Section B.1 characterizes this low-success regime quantitatively.
+Table 21: LIBERO-10 activation dataset composition.N=15episodes per task; cells report success
+/ failure counts.
+Taskπ 0.5 (S/F)π 0-FAST (S/F)
+KS3 8 / 7 12 / 3
+KS4 6 / 9 10 / 5
+KS6 2 / 13 7 / 8
+KS8 3 / 12 5 / 10
+LR1 12 / 3 10 / 5
+LR2a 6 / 9 10 / 5
+LR2b 9 / 6 15 / 0
+LR5 1 / 14 9 / 6
+LR6 8 / 7 11 / 4
+ST1 10 / 5 9 / 6
+Total65 / 85 ( SR=.43) 98 / 52 ( SR=.65)
+36
+Table 22: MetaWorld ML45 activation dataset composition for the 10 paper-table tasks.N=16
+episodes per task (16 parallel envs×1 episode each).
+Taskπ 0-FAST (S/F)
+coffee-pull-v3 10 / 6
+coffee-push-v3 14 / 2
+disassemble-v3 9 / 7
+faucet-close-v3 7 / 9
+pick-place-v3 11 / 5
+pick-place-wall-v3 11 / 5
+plate-slide-back-v3 14 / 2
+push-v3 12 / 4
+reach-v3 13 / 3
+stick-push-v3 13 / 3
+Total114 / 46 ( SR=.71)
+Table 23: RoboCasa activation dataset composition.N=15episodes per task; cells report success /
+failure counts.
+Taskπ 0.5 (S/F)GR00T N1.5(S/F)
+Close Fridge 2 / 13 12 / 3
+Coffee Mug 4 / 11 3 / 10
+Open Drawer 9 / 6 8 / 7
+Stand Mixer 10 / 5 11 / 4
+PP Cabinet 7 / 8 11 / 4
+PP Stove 7 / 8 9 / 6
+Kettle 2 / 13 7 / 8
+Total41 / 64 ( SR=.39) 61 / 42 ( SR=.59)
+B.1 Steering gains are largest under low-success regimes
+A practical concern with any contrastive recipe is whether enough success trajectories exist to fit a
+usable contrastive direction. At ourπ 0.5 checkpoints this concern is acute. Of the 17 LIBERO-10
+and RoboCasa tasks underπ 0.5 in Tables 21 and 23, six have at most three successful episodes
+(S≤3), and another four haveS≤6. Over half of these tasks therefore sit barely above the
+MIN PER CLASS=3threshold.
+These same low-success tasks produce the largest absolute gains from steering in Table 1:
+•LR5(π 0.5 LIBERO; 1 / 14, baseline.07): +Glob..60, +Per..60, a+.53gain from a
+contrastive direction fit on a single success trajectory.
+•KS6(π 0.5 LIBERO; 2 / 13, baseline.13): +Per..60,+.47gain.
+•KS8(π 0.5 LIBERO; 3 / 12, baseline.20): +Per..53,+.33gain.
+•Close Fridge(π 0.5 RoboCasa; 2 / 13, baseline.20): +Glob..47,+.27gain.
+•Kettle(π 0.5 RoboCasa; 2 / 13, baseline.33): +Pos..53,+.20gain.
+The pattern is consistent across both benchmarks and across all three conceptor variants. Two factors
+plausibly contribute. First, the contrastive operationC s · ¬C f remains well-defined whenSis
+small, because the failure subspace is estimated fromn≥12trajectories and contributes most of the
+discriminative geometry. Second, low-baseline tasks leave more absolute headroom for steering to
+recover.
+The complementary observation appears in the high-baseline regime. On MetaWorld underπ 0-
+FAST (SR=.71) and on the success-rich RoboCasa GR00T tasks such asClose Fridge(.80),
+absolute gains shrink toward zero or saturate near the ceiling. Taken together, these results indicate
+that the contrastive recipe is most valuable in the regime where it is most needed: a handful of
+success trajectories on a struggling checkpoint suffice, and the relative value of conceptor steering
+grows as the underlying baseline degrades.
+37
+B.2 Computational Overhead of COAST at Inference Time
+A natural concern about COAST is that its multiplicative gate multiplies the residual stream by a
+d×dmatrix at every denoising step, where additive baselines such as CAA and SAE only add ad-
+vector. We show that at the dimensionalities current VLA policies operate at, this gap is empirically
+invisible: COAST’s per-call latency is statistically indistinguishable from the additive baselines.
+Setup.We benchmarkπ 0.5 on LIBERO on a single NVIDIA B200, with the forward hook reg-
+istered on the action expert at layerL=11, the same intervention point used in our main results.
+For each of four conditions (no steering, CAA, SAE, COAST), we discard10warmup calls and
+then timeN=200subsequentpolicy.infer(obs)calls gated bytorch.cuda.synchronize()
+on both ends. cuDNN benchmarking is disabled and the same observation is reused across calls
+so we measure raw overhead rather than data-dependent variance. All steering conditions use the
+global variant; per-step variants have identical per-call latency since the hook fires the same number
+of times perinfer().
+All three steering methods add similar overhead.COAST adds30.85ms (median) to a
+127.12ms baseline forward pass. The additive CAA and SAE baselines add31.47ms and30.29ms
+respectively. The three steering methods are statistically indistinguishable: all three medians lie
+within1.2ms of each other, well inside the per-condition IQR. The implication is that the overhead
+reported in Table 24 is not the cost of COAST’s matmul; it is the fixed cost of registering and dis-
+patching a PyTorch forward hook, paid identically by every hook-based steering method. Replacing
+COAST with the cheapest possible additive baseline would not save measurable inference time.
+Method Median (ms) IQR (ms)∆(ms)∆(%)
+no steering127.12 1.05— —
+CAA (global)158.58 5.42 +31.47 +24.75%
+SAE (global)157.40 3.03 +30.29 +23.82%
+COAST (global)157.97 3.25+30.85+24.27%
+Table 24:Per-call inference latency on one B200,π 0.5 LIBERO,L=11.Median overN=200
+infer()calls after10warmup calls; cuDNN benchmarking disabled. Eachinfer()runs all10
+denoising steps; the steering hook fires once per step. COAST’s median latency is within1.2ms of
+both additive baselines, well inside their IQRs.
+Offline cost.The COAST steering artifact is computed once per task offline, in seconds, by a
+single eigendecomposition of a1024×1024activation covariance matrix. CAA reduces to two
+class-conditional means and is similarly free. SAE is the outlier at training time, approximately
+one GPU-hour per task to fit the per-task TopK autoencoder, but this cost is amortized across all
+evaluation runs that use the resultingv SAE. None of these offline costs are paid at deployment time.
+38
+NeurIPS Paper Checklist
+1.Claims
+Question: Do the main claims made in the abstract and introduction accurately reflect the
+paper’s contributions and scope?
+Answer: [Yes]
+Justification: The abstract and introduction state three contributions (method, mechanis-
+tic insight, generalization) that are directly supported by the experimental results in Sec-
+tions 4.1–4.4 and the appendix. The claimed 20.2 percentage point improvement is com-
+puted from Table 1. Limitations are discussed in Section 5.
+Guidelines:
+• The answer [N/A] means that the abstract and introduction do not include the claims
+made in the paper.
+• The abstract and/or introduction should clearly state the claims made, including the
+contributions made in the paper and important assumptions and limitations. A [No] or
+[N/A] answer to this question will not be perceived well by the reviewers.
+• The claims made should match theoretical and experimental results, and reflect how
+much the results can be expected to generalize to other settings.
+• It is fine to include aspirational goals as motivation as long as it is clear that these
+goals are not attained by the paper.
+2.Limitations
+Question: Does the paper discuss the limitations of the work performed by the authors?
+Answer: [Yes]
+Justification: Section 5 contains a dedicated Limitations paragraph discussing the require-
+ment for both success and failure rollouts, reduced efficacy when subspaces are nearly
+disjoint, and the need for per-architecture hyperparameter selection.
+Guidelines:
+• The answer [N/A] means that the paper has no limitation while the answer [No] means
+that the paper has limitations, but those are not discussed in the paper.
+• The authors are encouraged to create a separate “Limitations” section in their paper.
+• The paper should point out any strong assumptions and how robust the results are to
+violations of these assumptions (e.g., independence assumptions, noiseless settings,
+model well-specification, asymptotic approximations only holding locally). The au-
+thors should reflect on how these assumptions might be violated in practice and what
+the implications would be.
+• The authors should reflect on the scope of the claims made, e.g., if the approach was
+only tested on a few datasets or with a few runs. In general, empirical results often
+depend on implicit assumptions, which should be articulated.
+• The authors should reflect on the factors that influence the performance of the ap-
+proach. For example, a facial recognition algorithm may perform poorly when image
+resolution is low or images are taken in low lighting. Or a speech-to-text system might
+not be used reliably to provide closed captions for online lectures because it fails to
+handle technical jargon.
+• The authors should discuss the computational efficiency of the proposed algorithms
+and how they scale with dataset size.
+• If applicable, the authors should discuss possible limitations of their approach to ad-
+dress problems of privacy and fairness.
+• While the authors might fear that complete honesty about limitations might be used by
+reviewers as grounds for rejection, a worse outcome might be that reviewers discover
+limitations that aren’t acknowledged in the paper. The authors should use their best
+judgment and recognize that individual actions in favor of transparency play an impor-
+tant role in developing norms that preserve the integrity of the community. Reviewers
+will be specifically instructed to not penalize honesty concerning limitations.
+3.Theory assumptions and proofs
+39
+Question: For each theoretical result, does the paper provide the full set of assumptions and
+a complete (and correct) proof?
+Answer: [N/A]
+Justification: The paper does not include formal theoretical results or proofs. The conceptor
+formulation follows established closed-form derivations from Jaeger (2014) and Postmus
+& Abreu (2024), which are cited accordingly.
+Guidelines:
+• The answer [N/A] means that the paper does not include theoretical results.
+• All the theorems, formulas, and proofs in the paper should be numbered and cross-
+referenced.
+• All assumptions should be clearly stated or referenced in the statement of any theo-
+rems.
+• The proofs can either appear in the main paper or the supplemental material, but if
+they appear in the supplemental material, the authors are encouraged to provide a
+short proof sketch to provide intuition.
+• Inversely, any informal proof provided in the core of the paper should be comple-
+mented by formal proofs provided in appendix or supplemental material.
+• Theorems and Lemmas that the proof relies upon should be properly referenced.
+4.Experimental result reproducibility
+Question: Does the paper fully disclose all the information needed to reproduce the main
+experimental results of the paper to the extent that it affects the main claims and/or conclu-
+sions of the paper (regardless of whether the code and data are provided or not)?
+Answer: [Yes]
+Justification: The paper provides complete details on activation extraction (App. A.7),
+rollout collection protocol (App. A.8), conceptor computation including pseudocode
+(App. A.9), hyperparameter sweep grids (App. A.10), and checkpoint/training details
+(App. A.11). Pre-collected activation datasets are available on HuggingFace.
+Guidelines:
+• The answer [N/A] means that the paper does not include experiments.
+• If the paper includes experiments, a [No] answer to this question will not be per-
+ceived well by the reviewers: Making the paper reproducible is important, regardless
+of whether the code and data are provided or not.
+• If the contribution is a dataset and/or model, the authors should describe the steps
+taken to make their results reproducible or verifiable.
+• Depending on the contribution, reproducibility can be accomplished in various ways.
+For example, if the contribution is a novel architecture, describing the architecture
+fully might suffice, or if the contribution is a specific model and empirical evaluation,
+it may be necessary to either make it possible for others to replicate the model with
+the same dataset, or provide access to the model. In general. releasing code and data
+is often one good way to accomplish this, but reproducibility can also be provided via
+detailed instructions for how to replicate the results, access to a hosted model (e.g., in
+the case of a large language model), releasing of a model checkpoint, or other means
+that are appropriate to the research performed.
+• While NeurIPS does not require releasing code, the conference does require all sub-
+missions to provide some reasonable avenue for reproducibility, which may depend
+on the nature of the contribution. For example
+(a) If the contribution is primarily a new algorithm, the paper should make it clear
+how to reproduce that algorithm.
+(b) If the contribution is primarily a new model architecture, the paper should describe
+the architecture clearly and fully.
+(c) If the contribution is a new model (e.g., a large language model), then there should
+either be a way to access this model for reproducing the results or a way to re-
+produce the model (e.g., with an open-source dataset or instructions for how to
+construct the dataset).
+40
+(d) We recognize that reproducibility may be tricky in some cases, in which case au-
+thors are welcome to describe the particular way they provide for reproducibility.
+In the case of closed-source models, it may be that access to the model is limited in
+some way (e.g., to registered users), but it should be possible for other researchers
+to have some path to reproducing or verifying the results.
+5.Open access to data and code
+Question: Does the paper provide open access to the data and code, with sufficient instruc-
+tions to faithfully reproduce the main experimental results, as described in supplemental
+material?
+Answer: [Yes]
+Justification: Code and pre-collected activation datasets will be released publicly. Acti-
+vation datasets are hosted on HuggingFace (dataset identifiers provided in App. A.8). An
+anonymized code repository will be provided at submission time.
+Guidelines:
+• The answer [N/A] means that paper does not include experiments requiring code.
+• Please see the NeurIPS code and data submission guidelines (https://neurips.
+cc/public/guides/CodeSubmissionPolicy) for more details.
+• While we encourage the release of code and data, we understand that this might not
+be possible, so [No] is an acceptable answer. Papers cannot be rejected simply for not
+including code, unless this is central to the contribution (e.g., for a new open-source
+benchmark).
+• The instructions should contain the exact command and environment needed to run to
+reproduce the results. See the NeurIPS code and data submission guidelines (https:
+//neurips.cc/public/guides/CodeSubmissionPolicy) for more details.
+• The authors should provide instructions on data access and preparation, including how
+to access the raw data, preprocessed data, intermediate data, and generated data, etc.
+• The authors should provide scripts to reproduce all experimental results for the new
+proposed method and baselines. If only a subset of experiments are reproducible, they
+should state which ones are omitted from the script and why.
+• At submission time, to preserve anonymity, the authors should release anonymized
+versions (if applicable).
+• Providing as much information as possible in supplemental material (appended to the
+paper) is recommended, but including URLs to data and code is permitted.
+6.Experimental setting/details
+Question: Does the paper specify all the training and test details (e.g., data splits, hyperpa-
+rameters, how they were chosen, type of optimizer) necessary to understand the results?
+Answer: [Yes]
+Justification: Section 4.1 describes the experimental setup. Full hyperparameter sweep
+grids are in App. A.10, per-task optimal configurations in App. A.2, checkpoint and training
+details in App. A.11, and the separation of fitting and evaluation data in App. A.8.
+Guidelines:
+• The answer [N/A] means that the paper does not include experiments.
+• The experimental setting should be presented in the core of the paper to a level of
+detail that is necessary to appreciate the results and make sense of them.
+• The full details can be provided either with the code, in appendix, or as supplemental
+material.
+7.Experiment statistical significance
+Question: Does the paper report error bars suitably and correctly defined or other appropri-
+ate information about the statistical significance of the experiments?
+Answer: [Yes]
+Justification: Table 1 reports both pairedt-tests (pt) across tasks and pooled two-proportion
+z-tests (p z) over all episodes for every model-benchmark pair and steering strategy, with
+significance levels marked atp <0.05,p <0.01, andp <0.001.
+41
+Guidelines:
+• The answer [N/A] means that the paper does not include experiments.
+• The authors should answer [Yes] if the results are accompanied by error bars, confi-
+dence intervals, or statistical significance tests, at least for the experiments that support
+the main claims of the paper.
+• The factors of variability that the error bars are capturing should be clearly stated (for
+example, train/test split, initialization, random drawing of some parameter, or overall
+run with given experimental conditions).
+• The method for calculating the error bars should be explained (closed form formula,
+call to a library function, bootstrap, etc.)
+• The assumptions made should be given (e.g., Normally distributed errors).
+• It should be clear whether the error bar is the standard deviation or the standard error
+of the mean.
+• It is OK to report 1-sigma error bars, but one should state it. The authors should prefer-
+ably report a 2-sigma error bar than state that they have a 96% CI, if the hypothesis of
+Normality of errors is not verified.
+• For asymmetric distributions, the authors should be careful not to show in tables or fig-
+ures symmetric error bars that would yield results that are out of range (e.g., negative
+error rates).
+• If error bars are reported in tables or plots, the authors should explain in the text how
+they were calculated and reference the corresponding figures or tables in the text.
+8.Experiments compute resources
+Question: For each experiment, does the paper provide sufficient information on the com-
+puter resources (type of compute workers, memory, time of execution) needed to reproduce
+the experiments?
+Answer: [Yes]
+Justification: App. A.9 reports per-step steering overhead (<0.1 ms on A100) and concep-
+tor construction time (<1 s ford=1024). The full project used approximately 500 GPU
+hours on a combination of NVIDIA A100 and B200 GPUs, covering rollout collection,
+hyperparameter sweeps, and evaluation.
+Guidelines:
+• The answer [N/A] means that the paper does not include experiments.
+• The paper should indicate the type of compute workers CPU or GPU, internal cluster,
+or cloud provider, including relevant memory and storage.
+• The paper should provide the amount of compute required for each of the individual
+experimental runs as well as estimate the total compute.
+• The paper should disclose whether the full research project required more compute
+than the experiments reported in the paper (e.g., preliminary or failed experiments
+that didn’t make it into the paper).
+9.Code of ethics
+Question: Does the research conducted in the paper conform, in every respect, with the
+NeurIPS Code of Ethicshttps://neurips.cc/public/EthicsGuidelines?
+Answer: [Yes]
+Justification: The research uses publicly available models and simulation benchmarks, in-
+volves no human subjects, and conforms with the NeurIPS Code of Ethics.
+Guidelines:
+• The answer [N/A] means that the authors have not reviewed the NeurIPS Code of
+Ethics.
+• If the authors answer [No], they should explain the special circumstances that require
+a deviation from the Code of Ethics.
+• The authors should make sure to preserve anonymity (e.g., if there is a special consid-
+eration due to laws or regulations in their jurisdiction).
+42
+10.Broader impacts
+Question: Does the paper discuss both potential positive societal impacts and negative
+societal impacts of the work performed?
+Answer: [Yes]
+Justification: Broader societal impacts are discussed in Section 5. The method improves
+robot policy reliability without retraining, which has positive implications for safe deploy-
+ment; potential risks of steering methods applied to embodied agents are acknowledged.
+Guidelines:
+• The answer [N/A] means that there is no societal impact of the work performed.
+• If the authors answer [N/A] or [No], they should explain why their work has no soci-
+etal impact or why the paper does not address societal impact.
+• Examples of negative societal impacts include potential malicious or unintended uses
+(e.g., disinformation, generating fake profiles, surveillance), fairness considerations
+(e.g., deployment of technologies that could make decisions that unfairly impact spe-
+cific groups), privacy considerations, and security considerations.
+• The conference expects that many papers will be foundational research and not tied
+to particular applications, let alone deployments. However, if there is a direct path to
+any negative applications, the authors should point it out. For example, it is legitimate
+to point out that an improvement in the quality of generative models could be used to
+generate Deepfakes for disinformation. On the other hand, it is not needed to point out
+that a generic algorithm for optimizing neural networks could enable people to train
+models that generate Deepfakes faster.
+• The authors should consider possible harms that could arise when the technology is
+being used as intended and functioning correctly, harms that could arise when the
+technology is being used as intended but gives incorrect results, and harms following
+from (intentional or unintentional) misuse of the technology.
+• If there are negative societal impacts, the authors could also discuss possible mitiga-
+tion strategies (e.g., gated release of models, providing defenses in addition to attacks,
+mechanisms for monitoring misuse, mechanisms to monitor how a system learns from
+feedback over time, improving the efficiency and accessibility of ML).
+11.Safeguards
+Question: Does the paper describe safeguards that have been put in place for responsible
+release of data or models that have a high risk for misuse (e.g., pre-trained language models,
+image generators, or scraped datasets)?
+Answer: [N/A]
+Justification: The paper releases activation datasets and steering code for robotic manipu-
+lation in simulation. These do not pose risks of misuse comparable to generative models or
+scraped datasets.
+Guidelines:
+• The answer [N/A] means that the paper poses no such risks.
+• Released models that have a high risk for misuse or dual-use should be released with
+necessary safeguards to allow for controlled use of the model, for example by re-
+quiring that users adhere to usage guidelines or restrictions to access the model or
+implementing safety filters.
+• Datasets that have been scraped from the Internet could pose safety risks. The authors
+should describe how they avoided releasing unsafe images.
+• We recognize that providing effective safeguards is challenging, and many papers do
+not require this, but we encourage authors to take this into account and make a best
+faith effort.
+12.Licenses for existing assets
+Question: Are the creators or original owners of assets (e.g., code, data, models), used in
+the paper, properly credited and are the license and terms of use explicitly mentioned and
+properly respected?
+43
+Answer: [Yes]
+Justification: All models (π 0.5,π 0-FAST, GR00T N1.5), benchmarks (MetaWorld,
+LIBERO, RoboCasa), and the DROID platform are cited with their original publications.
+All assets are used in accordance with their respective licenses.
+Guidelines:
+• The answer [N/A] means that the paper does not use existing assets.
+• The authors should cite the original paper that produced the code package or dataset.
+• The authors should state which version of the asset is used and, if possible, include a
+URL.
+• The name of the license (e.g., CC-BY 4.0) should be included for each asset.
+• For scraped data from a particular source (e.g., website), the copyright and terms of
+service of that source should be provided.
+• If assets are released, the license, copyright information, and terms of use in the pack-
+age should be provided. For popular datasets,paperswithcode.com/datasetshas
+curated licenses for some datasets. Their licensing guide can help determine the li-
+cense of a dataset.
+• For existing datasets that are re-packaged, both the original license and the license of
+the derived asset (if it has changed) should be provided.
+• If this information is not available online, the authors are encouraged to reach out to
+the asset’s creators.
+13.New assets
+Question: Are new assets introduced in the paper well documented and is the documenta-
+tion provided alongside the assets?
+Answer: [Yes]
+Justification: Pre-collected activation datasets are released on HuggingFace with documen-
+tation. The on-disk storage schema is fully described in App. A.7, and code for conceptor
+construction and steering will be released with the submission.
+Guidelines:
+• The answer [N/A] means that the paper does not release new assets.
+• Researchers should communicate the details of the dataset/code/model as part of their
+submissions via structured templates. This includes details about training, license,
+limitations, etc.
+• The paper should discuss whether and how consent was obtained from people whose
+asset is used.
+• At submission time, remember to anonymize your assets (if applicable). You can
+either create an anonymized URL or include an anonymized zip file.
+14.Crowdsourcing and research with human subjects
+Question: For crowdsourcing experiments and research with human subjects, does the pa-
+per include the full text of instructions given to participants and screenshots, if applicable,
+as well as details about compensation (if any)?
+Answer: [N/A]
+Justification: The paper does not involve crowdsourcing or research with human subjects.
+Guidelines:
+• The answer [N/A] means that the paper does not involve crowdsourcing nor research
+with human subjects.
+• Including this information in the supplemental material is fine, but if the main contri-
+bution of the paper involves human subjects, then as much detail as possible should
+be included in the main paper.
+• According to the NeurIPS Code of Ethics, workers involved in data collection, cura-
+tion, or other labor should be paid at least the minimum wage in the country of the
+data collector.
+44
+15.Institutional review board (IRB) approvals or equivalent for research with human
+subjects
+Question: Does the paper describe potential risks incurred by study participants, whether
+such risks were disclosed to the subjects, and whether Institutional Review Board (IRB)
+approvals (or an equivalent approval/review based on the requirements of your country or
+institution) were obtained?
+Answer: [N/A]
+Justification: The paper does not involve research with human subjects.
+Guidelines:
+• The answer [N/A] means that the paper does not involve crowdsourcing nor research
+with human subjects.
+• Depending on the country in which research is conducted, IRB approval (or equiva-
+lent) may be required for any human subjects research. If you obtained IRB approval,
+you should clearly state this in the paper.
+• We recognize that the procedures for this may vary significantly between institutions
+and locations, and we expect authors to adhere to the NeurIPS Code of Ethics and the
+guidelines for their institution.
+• For initial submissions, do not include any information that would break anonymity
+(if applicable), such as the institution conducting the review.
+16.Declaration of LLM usage
+Question: Does the paper describe the usage of LLMs if it is an important, original, or
+non-standard component of the core methods in this research? Note that if the LLM is used
+only for writing, editing, or formatting purposes and doesnotimpact the core methodology,
+scientific rigor, or originality of the research, declaration is not required.
+Answer: [N/A]
+Justification: LLMs are not used as a component of the core method. COAST is a closed-
+form linear algebra operation that does not involve LLMs.
+Guidelines:
+• The answer [N/A] means that the core method development in this research does not
+involve LLMs as any important, original, or non-standard components.
+• Please refer to our LLM policy in the NeurIPS handbook for what should or should
+not be described.
+45

@@ -27,7 +27,7 @@ LR=1e-4
 LAMBDA_SELF=0.5
 WINDOW_SIZE=8
 MAX_WINDOWS=8
-EMBED_CACHE="data/bridge_v2_pnp_5000_clip_embeddings.pt"
+EMBED_CACHE="/cache/datasets/bridge_v2_pnp_5000_clip_embeddings.pt"
 TASK_KEYWORDS="put place pick"
 
 # episodic은 epoch 기반, window는 step 기반
@@ -60,7 +60,7 @@ run_experiment() {
         --val_episodes ${VAL_EPISODES}
         --embed_cache_path ${EMBED_CACHE}
         --task_keywords ${TASK_KEYWORDS}
-        --save_dir checkpoints/phase1
+        --save_dir /cache/checkpoints/phase1
         --save_suffix "${LABEL}"
         --wandb_run_name "phase1_${LABEL}"
     )
@@ -74,7 +74,7 @@ run_experiment() {
     python scripts/train/phase1_predictor.py "${TRAIN_ARGS[@]}"
 
     # ── 체크포인트 찾기 ──
-    LATEST_CKPT_DIR=$(ls -dt checkpoints/phase1/*_${LABEL} 2>/dev/null | head -1)
+    LATEST_CKPT_DIR=$(ls -dt /cache/checkpoints/phase1/*_${LABEL} 2>/dev/null | head -1)
     FINAL_CKPT="${LATEST_CKPT_DIR}/phase1_final.pt"
 
     if [ ! -f "${FINAL_CKPT}" ]; then

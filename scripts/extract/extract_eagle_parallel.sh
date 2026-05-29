@@ -27,8 +27,8 @@ MAX_CONCURRENT="${MAX_CONCURRENT:-${WAVE_SIZE:-5}}"
 BATCH="${BATCH:-32}"
 CPU_WORKERS="${CPU_WORKERS:-4}"
 LOG_DIR="${LOG_DIR:-/temporal_vla/outputs/eagle_logs}"
-DATA_ROOT="${DATA_ROOT:-/temporal_vla/data/robocasa/v1.0/pretrain/atomic}"
-SAVE_PATH="${SAVE_PATH:-/temporal_vla/data/robocasa_eagle_pre_llm}"
+DATA_ROOT="${DATA_ROOT:-/cache/datasets/robocasa/v1.0/pretrain/atomic}"
+SAVE_PATH="${SAVE_PATH:-/cache/datasets/robocasa_eagle_pre_llm}"
 MAX_EPISODES="${MAX_EPISODES:-}"   # 빈 값이면 전체 episode 추출
 
 # default — 30 task. 이미 cache 있는 기존 10 도 list 에 있지만 extract script 가 skip.

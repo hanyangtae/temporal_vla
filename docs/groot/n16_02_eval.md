@@ -57,7 +57,7 @@ src/policies/Isaac-GR00T/gr00t/eval/rollout_policy.py
 Base checkpoint:
 
 ```text
-/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B
+/cache/checkpoints/nvidia/GR00T-N1.6-3B
 ```
 
 Fine-tuned checkpoint:
@@ -107,7 +107,7 @@ Server:
 
 ```bash
 docker exec -it groot bash -lc '
-MODEL_PATH=/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B \
+MODEL_PATH=/cache/checkpoints/nvidia/GR00T-N1.6-3B \
 PORT=5556 \
 bash /temporal_vla/scripts/eval/groot_robocasa.sh server
 '

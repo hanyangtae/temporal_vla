@@ -76,7 +76,7 @@ dataset schema:
 
 ```text
 dataset (per-task, target × human × atomic, 15 task):
-data/robocasa/v1.0/target/atomic/<Task>/<date>/lerobot
+<cache>/datasets/robocasa/v1.0/target/atomic/<Task>/<date>/lerobot
 
 다운로드 스크립트:
 scripts/utils/download_robocasa_target_human.sh
@@ -126,7 +126,7 @@ annotation.human.task_description
 ```bash
 export REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "${REPO_ROOT}"
-export HF_HOME="${REPO_ROOT}/data/huggingface"
+export HF_HOME="${VLA_DATASETS_ROOT}/huggingface"
 export PYTHONPATH="${REPO_ROOT}/configs/policies:${PYTHONPATH:-}"
 ```
 
@@ -135,7 +135,7 @@ export PYTHONPATH="${REPO_ROOT}/configs/policies:${PYTHONPATH:-}"
 N1.5 base model cache:
 
 ```text
-data/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e
+<cache>/datasets/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e
 ```
 
 ### Smoke 1 — data config import
@@ -155,7 +155,7 @@ upstream `load_dataset.py` 는 `--data-config` 옵션이 없고 dataset `meta/mo
 ```bash
 conda run -n gr00t --no-capture-output python \
   src/policies/Isaac-GR00T-N1.5/scripts/load_dataset.py \
-  --dataset-path $PWD/data/robocasa/v1.0/target/atomic/CloseFridge/20250816/lerobot \
+  --dataset-path ${VLA_DATASETS_ROOT}/robocasa/v1.0/target/atomic/CloseFridge/20250816/lerobot \
   --embodiment-tag new_embodiment
 ```
 
@@ -192,11 +192,11 @@ read -s WANDB_API_KEY; export WANDB_API_KEY
 ```bash
 export REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "${REPO_ROOT}"
-export HF_HOME="${REPO_ROOT}/data/huggingface"
+export HF_HOME="${VLA_DATASETS_ROOT}/huggingface"
 export PYTHONPATH="${REPO_ROOT}/configs/policies:${PYTHONPATH:-}"
 TS=$(date +%y%m%d%H%M%S)
 OUT="${REPO_ROOT}/outputs/train/groot_n1_5/${TS}"
-N15_BASE_MODEL="${REPO_ROOT}/data/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e"
+N15_BASE_MODEL="${VLA_DATASETS_ROOT}/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e"
 
 CUDA_VISIBLE_DEVICES=2 \
 WANDB_ENTITY=rnlgksclsrn9868-hanyang-university \
@@ -204,7 +204,7 @@ WANDB_PROJECT=finetune-gr00t-n1d5 \
 WANDB_NAME=target15_$TS \
 conda run -n gr00t --no-capture-output python \
   src/policies/Isaac-GR00T-N1.5/scripts/gr00t_finetune.py \
-  --dataset-path "${REPO_ROOT}"/data/robocasa/v1.0/target/atomic/*/*/lerobot \
+  --dataset-path "${VLA_DATASETS_ROOT}"/robocasa/v1.0/target/atomic/*/*/lerobot \
   --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
   --base-model-path "$N15_BASE_MODEL" \
   --output-dir $OUT \
@@ -274,11 +274,11 @@ step → epoch / 시간 환산 (per-step ≈ 1.8 s 기준):
 ```bash
 export REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "${REPO_ROOT}"
-export HF_HOME="${REPO_ROOT}/data/huggingface"
+export HF_HOME="${VLA_DATASETS_ROOT}/huggingface"
 export PYTHONPATH="${REPO_ROOT}/configs/policies:${PYTHONPATH:-}"
 TS=$(date +%y%m%d%H%M%S)
 OUT="${REPO_ROOT}/outputs/train/groot_n1_5/${TS}-subset200"
-N15_BASE_MODEL="${REPO_ROOT}/data/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e"
+N15_BASE_MODEL="${VLA_DATASETS_ROOT}/huggingface/hub/models--nvidia--GR00T-N1.5-3B/snapshots/869830fc749c35f34771aa5209f923ac57e4564e"
 
 CUDA_VISIBLE_DEVICES=2 \
 MAX_EPISODES_PER_DATASET=200 \
@@ -287,7 +287,7 @@ WANDB_PROJECT=finetune-gr00t-n1d5 \
 WANDB_NAME=target15_subset200_$TS \
 conda run -n gr00t --no-capture-output python \
   scripts/train/gr00t_n15_finetune_subset.py \
-  --dataset-path "${REPO_ROOT}"/data/robocasa/v1.0/target/atomic/*/*/lerobot \
+  --dataset-path "${VLA_DATASETS_ROOT}"/robocasa/v1.0/target/atomic/*/*/lerobot \
   --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
   --base-model-path "$N15_BASE_MODEL" \
   --output-dir $OUT \
@@ -327,7 +327,7 @@ image:          temporal-vla:groot-n15
 Dockerfile:     src/policies/Isaac-GR00T-N1.5/Dockerfile
 working_dir:    /temporal_vla
 PYTHONPATH:     /temporal_vla/src/policies/Isaac-GR00T-N1.5:/temporal_vla/configs/policies:/temporal_vla
-HF_HOME:        /temporal_vla/data/huggingface
+HF_HOME:        /cache/datasets/huggingface
 ```
 
 일회성 실행으로 쓰고 싶으면:
@@ -339,7 +339,7 @@ docker compose run --rm groot_n15 bash
 메모:
 
 - `groot_n15`는 N1.5 submodule의 공식 Dockerfile을 build context로 쓴다.
-- compose service는 repo root를 `/temporal_vla`로 mount하고, HF cache는 repository-local `/temporal_vla/data/huggingface`를 사용한다.
+- compose service는 repo root를 `/temporal_vla`로 mount하고, HF cache는 repository-local `/cache/datasets/huggingface`를 사용한다.
 - `user: "${USER_ID}:${GROUP_ID}"`로 실행하므로 output file owner가 host 사용자로 남는다. 컨테이너 안에서 추가 `pip install`이 필요하면 별도 image를 다시 빌드하는 편이 낫다.
 - GPU pinning이 필요하면 `docker-compose.override.yml`에서 `groot_n15`의 `device_ids`를 지정한다. 기본 service는 모든 GPU를 visible로 둔다.
 
@@ -356,7 +356,7 @@ export PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T-N1.5:/temporal_vla/conf
 
 CUDA_VISIBLE_DEVICES=0 python \
   src/policies/Isaac-GR00T-N1.5/scripts/gr00t_finetune.py \
-  --dataset-path /temporal_vla/data/robocasa/v1.0/pretrain/atomic/CloseFridge/20250819/lerobot \
+  --dataset-path /cache/datasets/robocasa/v1.0/pretrain/atomic/CloseFridge/20250819/lerobot \
   --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
   --embodiment_tag new_embodiment \
   --output-dir /temporal_vla/outputs/train/groot_n1_5/docker_smoke \
@@ -668,7 +668,7 @@ docker compose exec groot_n15 bash -lc '
 PYTHONPATH=/temporal_vla/configs/policies:/temporal_vla/src/policies/Isaac-GR00T-N1.5:$PYTHONPATH \
 python3 src/policies/Isaac-GR00T-N1.5/scripts/eval_policy.py \
   --model-path /temporal_vla/outputs/train/groot_n1_5/<RUN>/checkpoint-<STEP> \
-  --dataset-path /temporal_vla/data/robocasa/v1.0/target/atomic/OpenCabinet/20250813/lerobot \
+  --dataset-path /cache/datasets/robocasa/v1.0/target/atomic/OpenCabinet/20250813/lerobot \
   --data-config robocasa_n15_panda_omron_data_config:RobocasaPandaOmron10TaskDataConfig \
   --embodiment-tag new_embodiment \
   --modality-keys base_motion control_mode end_effector_position end_effector_rotation gripper_close \

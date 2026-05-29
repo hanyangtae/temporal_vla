@@ -74,7 +74,7 @@ z_t = L2-normalize([φ_v(o_t) ; φ_g(g)]) ∈ R^1024
   φ_g: OpenCLIP ViT-B/32 text encoder (frozen)
 ```
 
-- 초기화 시 전체 에피소드 임베딩 precompute → `data/bridge_v2_lerobot_clip_embeddings.pt` 캐싱 (775MB)
+- 초기화 시 전체 에피소드 임베딩 precompute → `<cache>/datasets/bridge_v2_lerobot_clip_embeddings.pt` 캐싱 (775MB)
 - 이후 실행부터는 캐시에서 즉시 로드, CLIP 모델 불필요
 
 ### Dissimilarity-based Window Sampling (VITA Eq. 5)
@@ -135,7 +135,7 @@ L_ssl  = SSL self-supervised loss (TTT inner update용)
 
 - 컨테이너: `lerobot` (Docker)
 - PYTHONPATH: `/temporal_vla`
-- 임베딩 캐시 경로: `data/bridge_v2_lerobot_clip_embeddings.pt`
+- 임베딩 캐시 경로: `<cache>/datasets/bridge_v2_lerobot_clip_embeddings.pt`
 
 ### 관찰된 이슈
 
@@ -165,7 +165,7 @@ L_ssl  = SSL self-supervised loss (TTT inner update용)
 | unseen | final | 0.0755 | 0.2105 | 0.595 | 0.559 |
 
 **결론: step 50k 체크포인트가 val/unseen 일반화 성능이 더 좋음 (Early stopping 기준).**  
-→ Phase 2에 사용할 체크포인트: `checkpoints/phase1/step_0050000.pt`
+→ Phase 2에 사용할 체크포인트: `<cache>/checkpoints/phase1/step_0050000.pt`
 
 ### 해석
 
@@ -194,7 +194,7 @@ scripts/
 ├── train_phase1_predictor.sh   ← 실행 스크립트 (VITA 하이퍼파라미터)
 └── eval_phase1_predictor.py    ← 평가 스크립트 (MSE/MAE/Pearson r/Mono rate)
 
-checkpoints/phase1/
+<cache>/checkpoints/phase1/
 ├── step_0010000.pt ~ step_0100000.pt
 └── phase1_final.pt     ← 100k step 최종
 

@@ -36,11 +36,11 @@ python scripts/train/phase1_predictor.py \
     --val_episodes ${VAL_EPISODES} \
     --val_interval ${VAL_INTERVAL} \
     --save_interval ${SAVE_INTERVAL} \
-    --save_dir checkpoints/phase1 \
+    --save_dir /cache/checkpoints/phase1 \
     --save_suffix ${SAVE_SUFFIX} \
     --wandb_run_name "phase1_window_nofilter_${INNER_MODEL}_${TOTAL_STEPS}"
 
-LATEST_CKPT_DIR=$(ls -dt checkpoints/phase1/*_${SAVE_SUFFIX} 2>/dev/null | head -1)
+LATEST_CKPT_DIR=$(ls -dt /cache/checkpoints/phase1/*_${SAVE_SUFFIX} 2>/dev/null | head -1)
 FINAL_CKPT="${LATEST_CKPT_DIR}/phase1_final.pt"
 
 if [ ! -f "${FINAL_CKPT}" ]; then

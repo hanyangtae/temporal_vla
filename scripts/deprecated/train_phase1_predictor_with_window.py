@@ -125,7 +125,7 @@ def main():
     parser = argparse.ArgumentParser(description="Phase 1 ProgressPredictor training")
 
     # Data
-    parser.add_argument("--data_root", type=str, default="data/bridge_v2_lerobot")
+    parser.add_argument("--data_root", type=str, default="/cache/datasets/bridge_v2_lerobot")
     parser.add_argument("--repo_id", type=str, default="FedorX8/bridge_v2_lerobot")
     parser.add_argument("--image_key", type=str, default="observation.images.primary")
     parser.add_argument("--window_size", type=int, default=8,
@@ -136,7 +136,7 @@ def main():
     parser.add_argument("--val_episodes", type=int, default=287)
     parser.add_argument("--split_seed", type=int, default=42)
     parser.add_argument("--embed_cache_path", type=str,
-                        default="data/bridge_v2_lerobot_clip_embeddings.pt")
+                        default="/cache/datasets/bridge_v2_lerobot_clip_embeddings.pt")
     parser.add_argument("--task_keywords", type=str, nargs="+",
                         default=["put", "place", "pick"],
                         help="task description 필터링 키워드 (OR 조건). "
@@ -164,7 +164,7 @@ def main():
 
     # Misc
     parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--save_dir", type=str, default="checkpoints/phase1")
+    parser.add_argument("--save_dir", type=str, default="/cache/checkpoints/phase1")
     parser.add_argument("--wandb_project", type=str, default="temporal-vla")
     parser.add_argument("--wandb_run_name", type=str, default=None)
     parser.add_argument("--resume_ckpt", type=str, default=None)

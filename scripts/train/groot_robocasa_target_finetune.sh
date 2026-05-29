@@ -17,14 +17,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
+source "${REPO_ROOT}/scripts/utils/cache_env.sh"
 
-# In-container 기본 경로. 호스트 직접 실행 시 REPO_ROOT 로 보정.
-if [ -d "/temporal_vla/data/robocasa/v1.0/target/atomic" ]; then
-    ATOMIC_ROOT_DEFAULT="/temporal_vla/data/robocasa/v1.0/target/atomic"
-else
-    ATOMIC_ROOT_DEFAULT="${REPO_ROOT}/data/robocasa/v1.0/target/atomic"
-fi
-ATOMIC_ROOT="${ATOMIC_ROOT:-${ATOMIC_ROOT_DEFAULT}}"
+# 데이터셋은 cache 로 분리됨 (컨테이너=/cache/datasets, 호스트=~/.cache/temporal_vla/datasets).
+ATOMIC_ROOT="${ATOMIC_ROOT:-${VLA_DATASETS_ROOT}/robocasa/v1.0/target/atomic}"
 
 # 각 task 의 demo 생성 date (디스크 검사로 확인된 값).
 TASK_DATE_PAIRS=(

@@ -13,22 +13,26 @@ Claude Code 세션에서는 `.agents/agent_spec.md`를 repo-local 운영 규칙�
 
 ## 프로젝트 개요
 
-VLA 모델의 **실패 루프 탈출** 문제를 연구하는 프로젝트.
-성공 데이터로만 학습된 VLA 모델이 실패 시 같은 trajectory를 반복하는 문제를,
-외부 모듈(TTA 기반 progress predictor)을 통해 VLA 백본 추가학습 없이 해결하는 것이 목표.
+VLA 모델의 **latent steering**을 연구하는 프로젝트.
+VLA 잠재공간에서 **실패 latent와 성공 latent를 구분**하고, 추론 시 활성화를 성공 쪽으로
+**steer**하여 Success Rate를 올리는 것이 목표 (VLA 백본 추가학습 없음).
+
+배경 동기: 성공 데이터로만 학습된 VLA가 실패 시 같은 trajectory를 반복하는 문제
+(이전 "실패 루프 탈출" 프레이밍). 현재는 이를 latent steering 관점에서 접근한다.
 
 인프라: Docker 컨테이너로 모델과 벤치마크(RoboCasa, Calvin)를 분리하고, 통일 HTTP API로 통신.
 
 ## 연구 방향
 
-- **실패 감지**: VITA(ICLR 2026) 기반 TTA adaptation module → task 진행률(0~1) 예측, 단조증가 이탈 시 실패 판단
-- **Action 변형** (실험 후보):
-  - LLM 출력 head 직전에 TTA hidden state projection add
-  - VLA 출력 Logit shifting (이산화 출력 모델)
-  - Diffusion action expert에 FiLM condition 입력
-  - Input 토큰 추가
+- **메인 method — latent steering**: succ/fail 활성화 분포에서 contrastive conceptor
+  `C_steer = C_success ∧ ¬C_failure` 등을 fit하고, 추론 시 활성화를 성공 부분공간 쪽으로
+  steer (`h' = h·Mᵀ`)하여 SR을 올린다 (COAST 계열). 단일벡터 additive가 아니라
+  multi-dim contrastive 연산자가 맞다 (실험으로 확인됨).
+- **표현 분석**: succ/fail latent의 분리 가능성을 검증 (SAFE식 feature-space 시각화/score).
+  **길이 confound 통제 필수** — 실패는 항상 timeout이라 시간-pooled 분리는 아티팩트.
+- **TTA (VITA 기반 progress predictor)**: **무기한 연기**됨. (구 방향, 메인 아님)
 - **Baseline 모델**: pi0, groot
-- **Metric**: Success Rate 상승
+- **Metric**: Success Rate 상승. 인과 검증은 steering intervention 후 ΔSR 재측정.
 
 ## 핵심 아키텍처
 
@@ -64,6 +68,20 @@ VLA 모델의 **실패 루프 탈출** 문제를 연구하는 프로젝트.
 - 벤치마크 소스 (submodule): `src/benchmarks/robocasa/`, `src/benchmarks/robosuite/`, `src/benchmarks/calvin/`, `lerobot/`
 -출력: `outputs`
 -모델 추론 결과 출력: `outputs/eval/{benchmark}/{model}/{yymmddhhmmss}/`
+
+## 체크포인트·데이터셋 경로 (cache)
+
+체크포인트와 데이터셋은 repo 트리 밖 cache 에 둔다 (git 추적 안 함).
+
+- 호스트: `~/.cache/temporal_vla/` 아래 `checkpoints/`, `datasets/`.
+- 컨테이너: docker-compose 가 위 cache 를 `/cache` 로 bind-mount + `VLA_CACHE_ROOT=/cache` 주입 → `/cache/checkpoints/...`, `/cache/datasets/...`.
+- 베이스 모델: `checkpoints/nvidia/GR00T-N1.6-3B`. 데이터셋: `datasets/robocasa/...`, `datasets/robocasa_eagle_pre_llm/...` 등 (구 repo `data/` 내용을 그대로 옮김).
+- 학습 산출물(파인튜닝 ckpt, rollout 등)은 이동 대상이 아니라 `outputs/` 에 그대로 둔다.
+
+경로 참조 규칙 (단일 소스 — 하드코딩 금지):
+- Python: `from scripts.path_setup import CHECKPOINTS_ROOT, DATA_ROOT` (repo root 가 sys.path 에 있을 때).
+- Shell: `source "${REPO_ROOT}/scripts/utils/cache_env.sh"` 후 `${VLA_CHECKPOINTS_ROOT}` / `${VLA_DATASETS_ROOT}`. 컨테이너 전용 스크립트는 `/cache/...` 리터럴 사용 가능.
+- `configs/checkpoints/*.yaml` 의 로컬 체크포인트 경로도 `/cache/...` 기준.
 
 ## 개발 컨벤션
 
@@ -135,5 +153,5 @@ LeRobotDataset → scripts/extract/extract_cotrack_robocasa.py → {save_path}/r
 
 ## 주의사항
 
-- serve 스크립트는 Docker 컨테이너 내에서 실행됨. 경로는 `/temporal_vla/...` 기준.
+- serve 스크립트는 Docker 컨테이너 내에서 실행됨. repo 코드 경로는 `/temporal_vla/...`, 체크포인트·데이터셋은 `/cache/...` 기준.
 - action 차원은 모델마다 다를 수 있음 (7, 14 등). 벤치마크에서 환경에 맞게 매핑.

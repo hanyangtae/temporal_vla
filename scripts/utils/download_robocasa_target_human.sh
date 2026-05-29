@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# RoboCasa target × human × atomic 데이터 15 task 를 data/robocasa/ 로 다운로드.
+# RoboCasa target × human × atomic 데이터 15 task 를 cache datasets/robocasa/ 로 다운로드.
 #
-# 출력 구조: data/robocasa/v1.0/target/atomic/<Task>/<date>/lerobot/
+# 출력 구조: <cache>/datasets/robocasa/v1.0/target/atomic/<Task>/<date>/lerobot/
 # pretrain 다운로드와 같은 구조의 target split.
 #
 # Box id 출처: src/benchmarks/robocasa/robocasa/models/assets/box_links/box_links_ds.json
@@ -10,7 +10,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-BASE_DIR="${REPO_ROOT}/data/robocasa/v1.0/target/atomic"
+source "${REPO_ROOT}/scripts/utils/cache_env.sh"
+BASE_DIR="${VLA_DATASETS_ROOT}/robocasa/v1.0/target/atomic"
 
 mkdir -p "${BASE_DIR}"
 

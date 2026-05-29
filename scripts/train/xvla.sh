@@ -10,7 +10,7 @@
 set -e
 
 # ── 설정 ─────────────────────────────────────────
-DATASET_PATH="${DATASET_PATH:-/temporal_vla/data/datasets_v3/v1.0/pretrain}"
+DATASET_PATH="${DATASET_PATH:-/cache/datasets/datasets_v3/v1.0/pretrain}"
 MODEL_PATH="${MODEL_PATH:-lerobot/xvla-base}"
 OUTPUT_DIR="${OUTPUT_DIR:-/temporal_vla/outputs/xvla_robocasa}"
 BATCH_SIZE="${BATCH_SIZE:-4}"

@@ -19,7 +19,7 @@
 - `processor_config.json` — GR00T 계열 modality config
 - `*.safetensors` / `*.bin` — 모델 최종 레이어에서 action tensor shape 확인
 
-HF repo 이면 모델 카드 텍스트 + local cache (`data/huggingface/hub/models--<org>--<name>/`) 동시 확인.
+HF repo 이면 모델 카드 텍스트 + local cache (`<cache>/datasets/huggingface/hub/models--<org>--<name>/`) 동시 확인.
 
 ## 2. 프로파일 7항목 확정
 

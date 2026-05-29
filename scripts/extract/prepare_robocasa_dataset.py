@@ -40,7 +40,9 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-DEFAULT_BASE_TPL = "/temporal_vla/data/robocasa/v1.0/{split}/atomic"
+from scripts.path_setup import DATA_ROOT
+
+DEFAULT_BASE_TPL = str(DATA_ROOT / "robocasa/v1.0/{split}/atomic")
 
 # LeRobot scalar-feature convention: shape=[1] with no `names`.
 PROGRESS_FEATURE = {"dtype": "float32", "shape": [1], "names": None}

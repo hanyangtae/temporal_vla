@@ -255,7 +255,7 @@ docker compose run --rm xvla \
 # DreamVLA 서버 (port 8200)
 docker compose run --rm dreamvla \
   python /temporal_vla/scripts/serve/dreamvla.py \
-    --checkpoint /temporal_vla/checkpoints/dreamvla/checkpoint.pt \
+    --checkpoint /cache/checkpoints/dreamvla/checkpoint.pt \
     --precision bf16
 
 # UP-VLA 서버 (port 8300)
@@ -279,7 +279,7 @@ docker compose exec robocasa python /temporal_vla/scripts/eval/robocasa_eval.py 
 
 # Calvin 평가 (모델 무관)
 docker compose exec calvin python /temporal_vla/scripts/eval/calvin.py \
-  --dataset-path /temporal_vla/data/calvin/task_ABC_D \
+  --dataset-path /cache/datasets/calvin/task_ABC_D \
   --server-url http://localhost:8300 --act-step 10
 
 # 전체 pretrain 데이터셋 재생 평가 (데이터 품질 확인용)

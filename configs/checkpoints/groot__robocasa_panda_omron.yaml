@@ -15,7 +15,7 @@ name: groot__robocasa_panda_omron
 base_model: groot
 checkpoint_source:
   type: local
-  id: /temporal_vla/outputs/checkpoints/GR00T-N1.6-3B
+  id: /cache/checkpoints/nvidia/GR00T-N1.6-3B
 compatible_benchmarks: [robocasa]
 
 action_type: relative

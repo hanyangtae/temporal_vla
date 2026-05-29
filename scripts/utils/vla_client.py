@@ -41,6 +41,11 @@ def encode_image(img: np.ndarray) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
+def _decode_ndarray(b64_str: str) -> np.ndarray:
+    """base64(np.save bytes) → ndarray (서버 _encode_ndarray 의 역변환)."""
+    return np.load(io.BytesIO(base64.b64decode(b64_str)), allow_pickle=False)
+
+
 class VLAClient:
     """통일 VLA 추론 클라이언트.
 
@@ -100,22 +105,75 @@ class VLAClient:
               - Flat (하위호환): np.ndarray [N, action_dim]
                 예: [N, 7]
         """
-        payload = {}
-        for k, v in images.items():
-            payload[f"observation.images.{k}"] = encode_image(v)
-        payload["task"] = instruction
-
-        if states is not None:
-            for k, v in states.items():
-                payload[k] = v.tolist() if isinstance(v, np.ndarray) else v
+        payload = self._build_payload(images, states, instruction)
 
         t0 = time.time()
         r = requests.post(f"{self.url}/act", json=payload, timeout=self.timeout)
         r.raise_for_status()
         latency_ms = (time.time() - t0) * 1000
 
-        result = r.json()
+        return self._parse_actions(r.json()), latency_ms
 
+    def predict_with_features(
+        self,
+        images: dict[str, np.ndarray],
+        states: dict[str, np.ndarray] | None = None,
+        instruction: str = "",
+    ):
+        """SAFE 수집용: /act_with_features 호출. predict() 와 인자 동일.
+
+        Returns:
+            (actions, features, latency_ms)
+
+            actions: predict() 와 동일(sub-keyed dict 또는 flat ndarray).
+            features: dict | None — 정책이 이번 step 에 새 추론을 돌렸을 때만 채워짐.
+              {"hidden_states": ndarray ([K,H,D] flow-matching | [1,n_tokens,D] pi0_fast),
+               "feature_kind": str, "feature_axes": list[str],
+               "num_inference_timesteps": int|None, ...}
+              버퍼된 action 만 반환한 step(queue pop)에서는 None.
+        """
+        payload = self._build_payload(images, states, instruction)
+
+        t0 = time.time()
+        r = requests.post(f"{self.url}/act_with_features", json=payload, timeout=self.timeout)
+        r.raise_for_status()
+        latency_ms = (time.time() - t0) * 1000
+
+        result = r.json()
+        actions = self._parse_actions(result)
+
+        features = None
+        if result.get("has_feature"):
+            features = {"hidden_states": _decode_ndarray(result["hidden_states_b64"])}
+            for k in (
+                "feature_kind",
+                "feature_axes",
+                "num_inference_timesteps",
+                "action_horizon",
+                "feature_dim",
+                "n_action_tokens",
+            ):
+                if k in result:
+                    features[k] = result[k]
+        return actions, features, latency_ms
+
+    @staticmethod
+    def _build_payload(
+        images: dict[str, np.ndarray],
+        states: dict[str, np.ndarray] | None,
+        instruction: str,
+    ) -> dict:
+        payload: dict = {}
+        for k, v in images.items():
+            payload[f"observation.images.{k}"] = encode_image(v)
+        payload["task"] = instruction
+        if states is not None:
+            for k, v in states.items():
+                payload[k] = v.tolist() if isinstance(v, np.ndarray) else v
+        return payload
+
+    @staticmethod
+    def _parse_actions(result: dict):
         # Sub-keyed 포맷 감지: "action.*" 키가 하나라도 있으면 dict 반환
         action_keys = [k for k in result if k.startswith("action.")]
         if action_keys:
@@ -125,10 +183,10 @@ class VLAClient:
                 if arr.ndim == 1:
                     arr = arr[np.newaxis, :]
                 action_dict[k] = arr
-            return action_dict, latency_ms
+            return action_dict
 
         # 하위호환: flat "action" 배열
         actions = np.array(result["action"], dtype=np.float32)
         if actions.ndim == 1:
             actions = actions[np.newaxis, :]
-        return actions, latency_ms
+        return actions

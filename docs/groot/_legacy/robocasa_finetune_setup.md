@@ -86,10 +86,10 @@ uv run python -c "import gr00t; from gr00t.data.embodiment_tags import Embodimen
 # Hugging Face 토큰 (gated repo 아니지만 다운로드 속도 ↑)
 export HF_TOKEN=<token>
 
-# repo 루트에 outputs/checkpoints/ 디렉토리
-mkdir -p outputs/checkpoints
+# cache 루트에 <cache>/checkpoints/nvidia/ 디렉토리
+mkdir -p <cache>/checkpoints/nvidia
 huggingface-cli download nvidia/GR00T-N1.6-3B \
-    --local-dir outputs/checkpoints/GR00T-N1.6-3B
+    --local-dir <cache>/checkpoints/nvidia/GR00T-N1.6-3B
 ```
 
 용량: ~7 GB. 우리 프로파일 `configs/checkpoints/groot__robocasa_panda_omron.yaml` 의 `checkpoint_source.id` 가 이 경로를 가리킴.
@@ -105,8 +105,8 @@ NVIDIA 가 RoboCasa atomic + composite task 의 GR00T LeRobot v2 데이터를 HF
 ```bash
 # (현재 머신에서) 학습 서버로 복사
 rsync -avhP \
-    /path/to/temporal_vla/data/huggingface/hub/datasets--nvidia--PhysicalAI-Robotics-Kitchen-Sim-Demos/ \
-    user@training-server:/path/to/temporal_vla/data/huggingface/hub/datasets--nvidia--PhysicalAI-Robotics-Kitchen-Sim-Demos/
+    <cache>/datasets/huggingface/hub/datasets--nvidia--PhysicalAI-Robotics-Kitchen-Sim-Demos/ \
+    user@training-server:<cache>/datasets/huggingface/hub/datasets--nvidia--PhysicalAI-Robotics-Kitchen-Sim-Demos/
 ```
 
 > ⚠️ snapshot 트리는 비어 있고 blob 만 있는 상태일 수 있음 (이전 다운로드가 symlink 까지 안 만들어준 케이스). 다음 4.3 단계에서 어차피 tar 를 직접 풀 거라 무관.
@@ -116,8 +116,8 @@ rsync -avhP \
 cache 옮기는 게 어려우면, 우리 10 task 만 골라 받기:
 
 ```bash
-mkdir -p data/huggingface
-export HF_HOME=$(pwd)/data/huggingface
+mkdir -p ${VLA_DATASETS_ROOT}/huggingface
+export HF_HOME=${VLA_DATASETS_ROOT}/huggingface
 
 python - <<'PY'
 from huggingface_hub import snapshot_download
@@ -143,12 +143,12 @@ cache 의 blob 들은 POSIX tar archive 들 (`lerobot/data/...`, `lerobot/meta/.
 
 ```bash
 # 추출 대상 루트
-mkdir -p data/groot_robocasa_train
+mkdir -p <cache>/datasets/groot_robocasa_train
 
 # (다음 절에 추가될) 추출 스크립트 — TODO: scripts/data/extract_kitchen_sim_demos.py
 python scripts/data/extract_kitchen_sim_demos.py \
-    --hf-cache data/huggingface/hub/datasets--nvidia--PhysicalAI-Robotics-Kitchen-Sim-Demos \
-    --output   data/groot_robocasa_train \
+    --hf-cache <cache>/datasets/huggingface/hub/datasets--nvidia--PhysicalAI-Robotics-Kitchen-Sim-Demos \
+    --output   <cache>/datasets/groot_robocasa_train \
     --tasks    OpenDrawer CloseDrawer OpenCabinet CloseCabinet \
                OpenFridge CloseFridge OpenMicrowave CloseMicrowave \
                PickPlaceCounterToStove PickPlaceCounterToSink
@@ -156,7 +156,7 @@ python scripts/data/extract_kitchen_sim_demos.py \
 
 추출 후 디렉토리 구조 (예: OpenDrawer):
 ```
-data/groot_robocasa_train/OpenDrawer/
+<cache>/datasets/groot_robocasa_train/OpenDrawer/
 ├── data/chunk-000/episode_000000.parquet ...
 ├── videos/chunk-000/observation.images.<view>/episode_000000.mp4 ...
 └── meta/{episodes.jsonl, modality.json, info.json, tasks.jsonl, stats.json, ...}
@@ -176,8 +176,8 @@ source .venv/bin/activate
 
 CUDA_VISIBLE_DEVICES=0 uv run python \
     gr00t/experiment/launch_finetune.py \
-    --base-model-path /path/to/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B \
-    --dataset-path    /path/to/temporal_vla/data/groot_robocasa_train/OpenDrawer \
+    --base-model-path <cache>/checkpoints/nvidia/GR00T-N1.6-3B \
+    --dataset-path    <cache>/datasets/groot_robocasa_train/OpenDrawer \
     --embodiment-tag  ROBOCASA_PANDA_OMRON \
     --num-gpus        1 \
     --output-dir      /path/to/temporal_vla/outputs/train/groot/smoke_opendrawer \
@@ -209,18 +209,18 @@ uv run python gr00t/experiment/launch_finetune.py --help | grep -A 1 dataset-pat
 NUM_GPUS=4
 torchrun --nproc-per-node=$NUM_GPUS \
     gr00t/experiment/launch_finetune.py \
-    --base-model-path /path/to/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B \
+    --base-model-path <cache>/checkpoints/nvidia/GR00T-N1.6-3B \
     --dataset-path \
-        /path/to/data/groot_robocasa_train/OpenDrawer \
-        /path/to/data/groot_robocasa_train/CloseDrawer \
-        /path/to/data/groot_robocasa_train/OpenCabinet \
-        /path/to/data/groot_robocasa_train/CloseCabinet \
-        /path/to/data/groot_robocasa_train/OpenFridge \
-        /path/to/data/groot_robocasa_train/CloseFridge \
-        /path/to/data/groot_robocasa_train/OpenMicrowave \
-        /path/to/data/groot_robocasa_train/CloseMicrowave \
-        /path/to/data/groot_robocasa_train/PickPlaceCounterToStove \
-        /path/to/data/groot_robocasa_train/PickPlaceCounterToSink \
+        <cache>/datasets/groot_robocasa_train/OpenDrawer \
+        <cache>/datasets/groot_robocasa_train/CloseDrawer \
+        <cache>/datasets/groot_robocasa_train/OpenCabinet \
+        <cache>/datasets/groot_robocasa_train/CloseCabinet \
+        <cache>/datasets/groot_robocasa_train/OpenFridge \
+        <cache>/datasets/groot_robocasa_train/CloseFridge \
+        <cache>/datasets/groot_robocasa_train/OpenMicrowave \
+        <cache>/datasets/groot_robocasa_train/CloseMicrowave \
+        <cache>/datasets/groot_robocasa_train/PickPlaceCounterToStove \
+        <cache>/datasets/groot_robocasa_train/PickPlaceCounterToSink \
     --embodiment-tag    ROBOCASA_PANDA_OMRON \
     --num-gpus          $NUM_GPUS \
     --output-dir        /path/to/outputs/train/groot/n16_robocasa_10task_$(date +%Y%m%d) \
@@ -282,7 +282,7 @@ base 모델 기준 (`examples/robocasa/README.md`) average 66.22% 와 비교해�
 |---|---|
 | `gym.make("robocasa_panda_omron/...")` 시 `composite_controller None` | `src/benchmarks/robocasa` submodule pointer 가 `fda28d0` 이상인지 확인. 우리 fork (`hanyangtae/robocasa`, `temporal_vla` 브랜치) 의 fix 필요. |
 | 학습 중 OOM | `--global-batch-size` 줄이기 / `--gradient-accumulation-steps` 늘리기 / `--bf16` (이미 default) 유지. |
-| `embodiment_id.json` not found | 체크포인트 경로 잘못. `outputs/checkpoints/GR00T-N1.6-3B/embodiment_id.json` 존재 확인. |
+| `embodiment_id.json` not found | 체크포인트 경로 잘못. `<cache>/checkpoints/nvidia/GR00T-N1.6-3B/embodiment_id.json` 존재 확인. |
 | LeRobot dataset load 실패 | `meta/modality.json` 누락 가능성. NVIDIA Kitchen-Sim-Demos 는 GR00T-flavored 라 들어 있어야 함. tar 추출이 incomplete 한지 확인. |
 | 학습 step/sec 너무 느림 | `--dataloader-num-workers` ↑, video decode bottleneck 이면 미리 frame 추출하는 옵션 검토. |
 
