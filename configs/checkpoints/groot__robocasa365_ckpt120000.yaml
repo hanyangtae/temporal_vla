@@ -28,7 +28,7 @@ normalization:
 
 observation_requirements:
   images: [side_0, side_1, wrist_0]
-  state: [eef_pos, eef_quat, gripper_qpos, joint_pos]
+  state: [eef_pos_rel, eef_quat_rel, gripper_qpos, base_position, base_rotation]
   allow_conversions: []
 
 n_action_steps: 16

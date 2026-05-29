@@ -120,7 +120,7 @@ dev 에서 분기. push 안 함. 시간순:
 ### 에이전트 인프라
 - 정의: `.claude/agents/vla-checkpoint-manager.md`
 - 메모리 디렉토리: `.claude/agent-memory/vla-checkpoint-manager/` (이 파일 위치)
-- 가이드: `docs/adding_checkpoint.md` (한글 체크리스트)
+- 가이드: `docs/03_adding_checkpoint.md` (한글 체크리스트)
 - CLAUDE.md 에 "새 체크포인트 추가" 절 포함
 
 ## 재개 체크리스트

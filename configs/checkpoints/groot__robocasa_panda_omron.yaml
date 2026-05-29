@@ -41,7 +41,7 @@ normalization:
 observation_requirements:
   # GR00T ROBOCASA_PANDA_OMRON KeyConverter: agentview_left → side_0, agentview_right → side_1, eye_in_hand → wrist_0.
   images: [side_0, side_1, wrist_0]
-  state: [eef_pos, eef_quat, gripper_qpos, joint_pos]
+  state: [eef_pos_rel, eef_quat_rel, gripper_qpos, base_position, base_rotation]
   allow_conversions: []
 
 # n_action_steps 는 modality_configs["action"].delta_indices 길이로 동적 결정.
