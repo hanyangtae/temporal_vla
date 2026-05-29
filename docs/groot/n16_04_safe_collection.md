@@ -19,6 +19,8 @@ ZMQ SAFE feature server를 띄우고 RoboCasa rollout pkl/mp4/csv triplet을 수
 
 목적: official RoboCasa eval 환경을 유지하면서 SAFE 학습용 pkl schema를 만든다.
 
+`feature_server.py`는 DiT pre-velocity capture 로직을 `src/policies/groot/safe_features.py` 의 `capture_dit_features` 에 위임한다. HTTP `/act_with_features` ([n16_11](n16_11_http_act_changes.md)) 도 같은 함수를 호출하므로, 두 경로가 같은 hidden state 정의를 보장한다.
+
 서버:
 
 ```bash
@@ -174,6 +176,18 @@ PORT=5557 \
 bash scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh
 ```
 
+### Headless Render Failure Recovery
+
+`Default framebuffer is not complete` 또는 `Current sensor for observable ..._image is invalid`는 GR00T policy/SAFE feature server가 아니라 RoboCasa/robosuite의 MuJoCo offscreen camera render context 실패다. Collector는 done 이후 `SyncVectorEnv`의 자동 reset을 사용하지 않는다. 이 reset은 다음 observation을 만들기 위한 카메라 render를 추가로 발생시키지만, SAFE collection은 episode 종료 후 그 observation을 사용하지 않는다. `collect_task_set_via_docker_exec.sh`는 Docker collector에 `MUJOCO_GL=egl`과 `PYOPENGL_PLATFORM=egl`을 함께 전달하고, episode마다 기본 2회 시도한다.
+
+같은 run을 이어갈 때는 원래 collection command를 그대로 다시 실행한다. 이미 pkl/mp4가 완성된 episode는 skip되고, 실패한 episode부터 다시 수집된다. 시도 횟수만 늘릴 때는 wrapper env로 조정한다.
+
+```bash
+COLLECTION_MAX_ATTEMPTS=3 \
+COLLECTION_RETRY_SLEEP_SEC=10 \
+bash scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh
+```
+
 `ah8` 최종 검증:
 
 ```bash
@@ -315,6 +329,7 @@ Per-task SR은 [SAFE reproduction report](n16_10_safe_report.md#robocasa365-18-t
 
 SAFE feature contract:
 
+- transport: ZMQ `PolicyServer` endpoint, not FastAPI HTTP
 - endpoint: `get_action_with_features`
 - default feature kind: `groot_n16_dit_valid_action_tokens_pre_velocity`
 - feature source: DiT output immediately before velocity/action projection

@@ -149,7 +149,7 @@ Base checkpoint는 GR00T N1.6 RoboCasa PandaOmron checkpoint다.
 /home/dongkyu/pdk_ws/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B
 ```
 
-GR00T N1.6 success-rate 기준선은 upstream GR00T ZMQ evaluation path로 둔다. HTTP `/act` path는 observation/action parity 검증 후 SR 지표에 편입한다.
+GR00T N1.6 success-rate 기준선은 upstream GR00T ZMQ evaluation path로 둔다. HTTP serving 경로(`scripts/serve/groot.py`, port `:8500`, `/act` + `/act_with_features`)는 같은 RoboCasa observation에서 ZMQ SAFE action과 parity를 확인했다 ([09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29)). HTTP closed-loop SR은 아직 별도 평가 후 지표에 편입한다. HTTP `/act_with_features` 는 SAFE feature 를 일반 벤치마크에서도 회수할 수 있게 ZMQ feature server 의 정의를 `src/policies/groot/safe_features.py` 공유 모듈로 단일화한 결과다 (자세한 변경은 [n16_11_http_act_changes.md](n16_11_http_act_changes.md)).
 
 SAFE rollout collection은 dedicated ZMQ feature server로 수행했다. Feature endpoint는 normal action path를 유지하면서 action과 feature를 함께 저장한다. Official direct policy action과 SAFE feature path action의 동등성은 action key별 비교에서 `max_abs=0.0`으로 확인했다.
 
@@ -471,15 +471,20 @@ g_\phi(h_{1:t}) \to \mathbf{1}[t \ge t_{onset}]
 
 다음 단계:
 
-1. HTTP-vs-ZMQ observation/action parity를 검증한 뒤 HTTP `/act` SR을 통합 지표로 편입한다.
+1. Same-observation HTTP-vs-ZMQ action parity는 검증됐으므로 HTTP `/act` (port `:8500`) closed-loop SR과 HTTP `/act_with_features` 기반 SAFE feature collection을 통합 지표로 편입한다.
 2. Proactive intervention이 목표라면 inference-step-level onset/intervention label을 수집하거나 정의한다.
-3. `--feature-slice all`로 model-level `H=50` feature를 수집해 current `H=16` valid-horizon export와 비교할 수 있다.
-4. Taskwise score-trajectory plot을 추가해 CP threshold crossing이 어느 phase에서 발생하는지 더 명확히 본다.
+3. Paired closed-loop trace equality가 필요하면 `ep_meta` 외에 reset-time full sim state (`qpos/qvel` 등) replay artifact를 추가한다.
+4. `--feature-slice all`로 model-level `H=50` feature를 수집해 current `H=16` valid-horizon export와 비교할 수 있다.
+5. Taskwise score-trajectory plot을 추가해 CP threshold crossing이 어느 phase에서 발생하는지 더 명확히 본다.
 
 ## 관련 파일
 
-- [SAFE wiring overview](n16_03_safe_overview.md) (related: [04 collection](n16_04_safe_collection.md), [07 detector](n16_07_safe_detector.md), [08 visualization](n16_08_safe_visualization.md), [09 parity](n16_09_safe_parity.md))
+- [SAFE wiring overview](n16_03_safe_overview.md) (related: [04 collection](n16_04_safe_collection.md), [07 detector](n16_07_safe_detector.md), [08 visualization](n16_08_safe_visualization.md), [09 parity](n16_09_safe_parity.md), [11 HTTP act changes](n16_11_http_act_changes.md))
 - [Dedicated ZMQ feature server ADR](../adr/0001-dedicated-safe-groot-n16-zmq-server.md)
+- `scripts/serve/groot.py` (HTTP `/act` + `/act_with_features`, port 8500)
+- `scripts/serve/run_groot_http_smoke.sh`
+- `scripts/utils/vla_client.py` (`predict_with_features`)
+- `src/policies/groot/safe_features.py` (HTTP/ZMQ 공유 DiT capture)
 - `scripts/safe/groot_n16/robocasa/run_config.py`
 - `scripts/safe/groot_n16/robocasa/run_config.sh`
 - `scripts/safe/groot_n16/robocasa/safe_feature_vectors.py`

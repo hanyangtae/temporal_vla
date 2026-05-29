@@ -16,6 +16,7 @@
 8. [08 SAFE Visualization](n16_08_safe_visualization.md) — t-SNE / overlay / silhouette 진단
 9. [09 SAFE Parity](n16_09_safe_parity.md) — ZMQ official baseline parity + HTTP `/act` parity
 10. [10 SAFE Report](n16_10_safe_report.md) — 축소 재현 end-to-end 결과 보고서
+11. [11 HTTP Act Changes](n16_11_http_act_changes.md) — 이번 HTTP `/act` wiring 변경점과 검증 상태
 
 ## N1.5 Reading Order
 
@@ -27,8 +28,13 @@
 | Area | Canonical docs | Role |
 |---|---|---|
 | N1.6 train/eval | `n16_01_finetune.md`, `n16_02_eval.md` | GR00T N1.6 PandaOmron checkpoint 학습과 ZMQ 평가 |
-| N1.6 SAFE pipeline | `n16_03_safe_overview.md`..`n16_10_safe_report.md` | feature export, split, detector, visualization, report |
-| N1.6 SAFE reference | `n16_05_safe_env_reproduction.md`, `n16_06_safe_inference_semantics.md` | scenario reproduction + datapoint semantics |
+| N1.6 SAFE pipeline overview | `n16_03_safe_overview.md` | 현재 결론, run config, pipeline order, 다음 단계 |
+| N1.6 SAFE collection | `n16_04_safe_collection.md` | ZMQ feature server와 rollout 수집 runbook |
+| N1.6 replay semantics | `n16_05_safe_env_reproduction.md` | `scenario_seed` / `ep_meta` 보장 범위와 PC 간 replay 절차 |
+| N1.6 feature semantics | `n16_06_safe_inference_semantics.md` | datapoint, time axis, feature/action horizon 의미 |
+| N1.6 detector/visualization/report | `n16_07_safe_detector.md`, `n16_08_safe_visualization.md`, `n16_10_safe_report.md` | detector 학습, 시각화 진단, 결과 보고 |
+| N1.6 parity validation | `n16_09_safe_parity.md` | ZMQ/HTTP action parity, runtime validation 수치, 남은 replay 한계의 단일 출처 |
+| N1.6 HTTP implementation changelog | `n16_11_http_act_changes.md` | HTTP `/act` / `/act_with_features` 코드 계약과 변경점. 검증 수치는 `n16_09`로 링크 |
 | N1.5 | `n15_01_finetune.md`, `n15_02_eval.md` | Isaac-GR00T N1.5 GR1/PandaOmron reference workflow |
 | Legacy | `_legacy/robocasa_finetune_setup.md` | 초기 setup note. 현행 runbook의 기준이 아니다 |
 

@@ -152,6 +152,12 @@ manifest key가 없으므로 import/export를 하지 않는다. 그래도 pkl에
 
 정확한 object pose까지 비교해야 하면 첫 reset 직후 `object_placements` 또는 `sim.data.qpos/qvel`을 별도 artifact로 저장해서 비교한다.
 
+### 2026-05-29 HTTP replay validation note
+
+HTTP eval path도 `--ep-meta-dir` import/export와 `--inference-seed`를 지원한다. Runtime 검증에서는 import/export 경로가 동작하는 것이 확인됐지만, `ep_meta`가 full reset state replay artifact가 아니라는 결론도 같이 확인됐다. 상세 수치와 artifact는 [09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29)에 둔다.
+
+따라서 “같은 scenario”는 layout/style/object config/texture/fixture/instruction 수준의 의미다. Closed-loop action trace equality 또는 PC 간 bit-level replay가 필요하면 `ep_meta`에 더해 reset 직후 full MuJoCo state (`qpos/qvel` 등)를 별도 manifest로 저장하고 복원해야 한다.
+
 ## PC 간 replay 절차
 
 ### 수집 PC

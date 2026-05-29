@@ -152,7 +152,7 @@ export PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T  # docker-compose에 �
 | `scripts/analysis/analyze_loop_patterns.py` | Loop 패턴 분석 (cosine sim, stagnation, gripper) |
 | `scripts/analysis/collect_and_analyze_groot.sh` | 수집 + 분석 배치 스크립트 |
 | `outputs/checkpoints/GR00T-N1.6-3B/` | 모델 체크포인트 (로컬) |
-| `docs/ttt/legacy_groot_loop_analysis_plan.md` | 이 문서 |
+| `docs/ttt/_legacy/groot_loop_analysis_plan.md` | 이 문서 |
 
 ## 주의사항
 

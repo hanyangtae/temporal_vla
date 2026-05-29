@@ -2,6 +2,8 @@
 
 새 VLA 체크포인트를 추가할 때 사용하는 repo-local 체크리스트. 사람이 직접 할 때도 이 순서 그대로.
 
+> 통일 HTTP API 계약과 모델 × 벤치마크 호환 매트릭스는 [`01_serving_interface.md`](01_serving_interface.md) 참조. 프로파일 YAML 스키마는 [`configs/checkpoints/README.md`](../configs/checkpoints/README.md). 컨테이너 운영은 [`02_docker_guide.md`](02_docker_guide.md).
+
 ## 0. 사전 확인
 
 - **대상 벤치마크**: Calvin / RoboCasa / LIBERO 중 어디서 평가할지

@@ -203,7 +203,7 @@ meta/{episodes.jsonl, episodes_stats.jsonl, info.json, modality.json, stats.json
 
 - Dataset은 task별 LeRobot directory를 유지하고, 학습 시 `DATASET_PATH`를 `:`로 join해서 mixture로 넘긴다.
 - Upstream N1.6 `launch_finetune.py`의 `--dataset_path`는 단일 문자열이므로 여러 path를 그대로 나열하지 않는다. Multi-path 처리는 `scripts/train/launch_finetune_ttt.py`의 `:` split로 한다.
-- Fine-tuned checkpoint 평가는 `n16_02_eval.md`의 ZMQ server/client workflow를 기준으로 한다. `scripts/serve/groot.py` + `scripts/eval/robocasa_eval.py` 조합은 legacy workflow다.
+- Fine-tuned checkpoint 평가는 두 경로가 있다. SR 기준선 산출은 `n16_02_eval.md`의 ZMQ server/client workflow를 기준으로 하고, 통일 HTTP API 회귀 (`/act`, `/act_with_features`) 는 `scripts/serve/groot.py` (port 8500) + `scripts/eval/robocasa_eval.py --use-groot-env` 조합을 사용한다. 자세한 wiring은 [`n16_09_safe_parity.md`](n16_09_safe_parity.md) / [`n16_11_http_act_changes.md`](n16_11_http_act_changes.md) 참조.
 
 ## modality config
 
