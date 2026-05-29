@@ -1,6 +1,6 @@
 # SAFE x GR00T N1.6 RoboCasa — Collection
 
-ZMQ SAFE feature server를 띄우고 RoboCasa rollout pkl/mp4/csv triplet을 수집한다. ah8/ah16 action-horizon mode와 task-set 정의도 함께 둔다.
+ZMQ SAFE feature server 또는 HTTP `/act_with_features`를 통해 RoboCasa rollout pkl/mp4/csv triplet을 수집한다. ah8/ah16 action-horizon mode와 task-set 정의도 함께 둔다.
 
 > 관련 문서 (N1.6 reading order)
 > - [Doc map](README.md)
@@ -105,6 +105,42 @@ outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_ah16
 | `ah16` | omit `--feature-action-horizon` or set `16` | `N_ACTION_STEPS=16` | `[4,16,1024]` | decoded 16-step chunk 전체 |
 
 `exported_action_token_count`와 `n_action_steps`가 다르면 collector가 pkl 쓰기 전에 실패한다. 따라서 ah8/ah16 모두 server export horizon과 collector execution horizon을 같은 값으로 맞춘다.
+
+## HTTP `/act_with_features` SAFE Feature Collection
+
+HTTP transport는 같은 collector에서 `--policy-transport http`로 선택한다. 이 경로는 FastAPI `/act_with_features` 응답을 unified action sub-key에서 GR00T native action key로 되돌리고, `features.hidden_states` blob을 기존 SAFE pkl의 `hidden_states` list로 저장한다.
+
+Smoke command:
+
+```bash
+# 1) groot container/process에서 HTTP server를 먼저 띄운다.
+cd /temporal_vla
+python scripts/serve/groot.py \
+  --profile configs/checkpoints/groot__robocasa365_ckpt120000.yaml \
+  --host 127.0.0.1 \
+  --port 8500 \
+  --feature-dtype float32 \
+  --feature-action-horizon 16
+
+# 2) robocasa env에서 HTTP feature collection smoke.
+cd /temporal_vla
+python scripts/safe/groot_n16/robocasa/collect/collect_rollout.py \
+  --policy-transport http \
+  --policy-client-host 127.0.0.1 \
+  --policy-client-port 8500 \
+  --env-name robocasa_panda_omron/CloseFridge_PandaOmron_Env \
+  --robocasa-env-source robocasa365 \
+  --output-dir outputs/tmp/groot_http_act_features_safe_collect_20260529/http_rollout \
+  --task-id 0 \
+  --n-episodes 1 \
+  --n_action_steps 16 \
+  --max-episode-steps 1 \
+  --seed 100000 \
+  --inference-seed 424242 \
+  --ep-meta-dir outputs/tmp/groot_http_act_features_safe_collect_20260529/ep_meta
+```
+
+검증된 smoke artifact와 SAFE loader 결과는 [10 SAFE Report](n16_10_safe_report.md#http-act_with_features-safe-collection-smoke-2026-05-29)에 기록한다.
 
 `ah8` 서버:
 

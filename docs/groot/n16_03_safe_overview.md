@@ -22,7 +22,7 @@
 - `HTTP /act` + `HTTP /act_with_features`: 프로젝트 공통 serving API로 유지한다 (port `:8500`, `scripts/serve/groot.py`). GR00T N1.6 RoboCasa 성공률 기준선은 ZMQ official eval로 두고, HTTP 경로는 일반 벤치마크가 같은 모델을 호출하거나 (`/act`) SAFE feature를 회수할 때 (`/act_with_features`) 사용한다. DiT pre-velocity feature 정의는 ZMQ feature server와 HTTP `/act_with_features` 가 `src/policies/groot/safe_features.py` 의 `capture_dit_features` 를 공유한다 ([n16_11 변경 일지](n16_11_http_act_changes.md)).
 - RoboCasa365 `target_atomic_seen18` 100ep/task collection은 완료됐다. `target_atomic_seen18_ckpt120000_robocasa365_100ep`는 `18 x 100 = 1800` episode triplet을 포함하고, seed range는 task별 `100000..100099`, verifier 기준 `status=ok`, total SR `967/1800 = 53.7%`다.
 
-HTTP 경로는 프로젝트 공통 serving API로 유지한다. Same-observation HTTP `/act` vs ZMQ SAFE action parity는 확인됐다 ([09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29)). HTTP closed-loop SR은 별도 평가 후 지표로 편입한다.
+HTTP 경로는 프로젝트 공통 serving API로 유지한다. Same-observation HTTP `/act` vs ZMQ SAFE action parity는 확인됐다 ([09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29)). HTTP `/act_with_features` -> SAFE pkl -> SAFE loader smoke도 통과했다 ([10 SAFE Report](n16_10_safe_report.md#http-act_with_features-safe-collection-smoke-2026-05-29)). HTTP closed-loop SR은 별도 평가 후 지표로 편입한다.
 
 ## Checkpoint And Env
 

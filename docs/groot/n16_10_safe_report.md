@@ -149,7 +149,7 @@ Base checkpoint는 GR00T N1.6 RoboCasa PandaOmron checkpoint다.
 /home/dongkyu/pdk_ws/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B
 ```
 
-GR00T N1.6 success-rate 기준선은 upstream GR00T ZMQ evaluation path로 둔다. HTTP serving 경로(`scripts/serve/groot.py`, port `:8500`, `/act` + `/act_with_features`)는 같은 RoboCasa observation에서 ZMQ SAFE action과 parity를 확인했다 ([09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29)). HTTP closed-loop SR은 아직 별도 평가 후 지표에 편입한다. HTTP `/act_with_features` 는 SAFE feature 를 일반 벤치마크에서도 회수할 수 있게 ZMQ feature server 의 정의를 `src/policies/groot/safe_features.py` 공유 모듈로 단일화한 결과다 (자세한 변경은 [n16_11_http_act_changes.md](n16_11_http_act_changes.md)).
+GR00T N1.6 success-rate 기준선은 upstream GR00T ZMQ evaluation path로 둔다. HTTP serving 경로(`scripts/serve/groot.py`, port `:8500`, `/act` + `/act_with_features`)는 같은 RoboCasa observation에서 ZMQ SAFE action과 parity를 확인했다 ([09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29)). HTTP closed-loop SR은 아직 별도 평가 후 지표에 편입한다. HTTP `/act_with_features` 는 SAFE feature 를 일반 벤치마크에서도 회수할 수 있게 ZMQ feature server 의 정의를 `src/policies/groot/safe_features.py` 공유 모듈로 단일화한 결과이며, SAFE pkl/loader smoke도 통과했다 ([아래 smoke](#http-act_with_features-safe-collection-smoke-2026-05-29)).
 
 SAFE rollout collection은 dedicated ZMQ feature server로 수행했다. Feature endpoint는 normal action path를 유지하면서 action과 feature를 함께 저장한다. Official direct policy action과 SAFE feature path action의 동등성은 action key별 비교에서 `max_abs=0.0`으로 확인했다.
 
@@ -465,13 +465,49 @@ g_\phi(h_{1:t}) \to \mathbf{1}[t \ge t_{onset}]
 
 따라서 failed rollout의 중후반부에서 failure score가 상승하는 현상은 prefix가 점점 failed rollout class score를 높이는 것으로 읽는다. Proactive intervention 평가는 onset/intervention label을 추가한 뒤 별도 protocol로 다룬다.
 
+## HTTP `/act_with_features` SAFE Collection Smoke (2026-05-29)
+
+HTTP feature collection path도 ZMQ SAFE pkl contract에 맞춰 1-step capped rollout으로 검증했다. 목적은 full SR 평가가 아니라 `/act_with_features` 응답이 SAFE rollout artifact로 변환되고 기존 SAFE loader가 읽을 수 있는지 확인하는 것이다.
+
+검증 조건:
+
+- profile: `groot__robocasa365_ckpt120000`
+- env: `robocasa_panda_omron/CloseFridge_PandaOmron_Env`
+- RoboCasa env source: `robocasa365`
+- scenario seed: `100000`
+- inference seed: `424242`
+- HTTP serve: `--feature-dtype float32 --feature-action-horizon 16`
+- collection: `--policy-transport http --n_action_steps 16 --max-episode-steps 1`
+
+저장 artifact:
+
+- validation summary: `outputs/tmp/groot_http_act_features_safe_collect_20260529/http_feature_collection_validation.json`
+- rollout pkl: `outputs/tmp/groot_http_act_features_safe_collect_20260529/http_rollout/task0--ep0--succ0.pkl`
+- rollout csv/mp4: same stem under `outputs/tmp/groot_http_act_features_safe_collect_20260529/http_rollout/`
+- SAFE loader manifest: `outputs/tmp/groot_http_act_features_safe_collect_20260529/safe_loader_split/manifest.tsv`
+- ep_meta manifest: `outputs/tmp/groot_http_act_features_safe_collect_20260529/ep_meta/`
+
+결과:
+
+| Check | Result |
+|---|---:|
+| pkl/csv/mp4 written | pass |
+| `feature_kind` | `groot_n16_dit_valid_action_tokens_pre_velocity` |
+| `feature_axes` | `["denoising_step", "valid_action_step", "feature_dim"]` |
+| `hidden_states[0]` shape | `[4, 16, 1024]` |
+| `pooled_hidden_states(... mean/mean)` shape | `[1, 1024]` |
+| `load_scope_features(...)` shape | `[1, 1024]` |
+| `exported_action_token_count == n_action_steps` | `16 == 16` |
+
+결론: HTTP `/act_with_features` feature response는 SAFE pkl schema, hidden-state metadata, existing SAFE loader path와 호환된다. Full-scale HTTP SAFE dataset collection은 필요하면 같은 `--policy-transport http` 경로로 확장한다.
+
 ## 한계와 다음 단계
 
 다음 개선 축은 early separability다. CP는 threshold를 calibration하고, rollout 초반의 detector score separability가 early signal 품질을 결정한다.
 
 다음 단계:
 
-1. Same-observation HTTP-vs-ZMQ action parity는 검증됐으므로 HTTP `/act` (port `:8500`) closed-loop SR과 HTTP `/act_with_features` 기반 SAFE feature collection을 통합 지표로 편입한다.
+1. Same-observation HTTP-vs-ZMQ action parity는 검증됐으므로 HTTP `/act` (port `:8500`) closed-loop SR을 통합 지표로 편입한다. HTTP `/act_with_features` 기반 SAFE feature collection은 schema/loader smoke를 통과했으며, 대량 수집이 필요하면 같은 transport로 확장한다.
 2. Proactive intervention이 목표라면 inference-step-level onset/intervention label을 수집하거나 정의한다.
 3. Paired closed-loop trace equality가 필요하면 `ep_meta` 외에 reset-time full sim state (`qpos/qvel` 등) replay artifact를 추가한다.
 4. `--feature-slice all`로 model-level `H=50` feature를 수집해 current `H=16` valid-horizon export와 비교할 수 있다.

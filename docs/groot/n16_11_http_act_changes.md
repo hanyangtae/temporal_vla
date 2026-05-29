@@ -190,6 +190,14 @@ Post-smoke cleanup was also verified:
 
 Runtime action parity and replay validation are intentionally not duplicated here. The canonical result table, artifact paths, and remaining replay limitation live in [09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29). The replay semantics live in [05 Scenario Reproduction](n16_05_safe_env_reproduction.md#보장-범위).
 
+HTTP `/act_with_features` SAFE collection smoke was also validated on 2026-05-29:
+
+- collector path: `scripts/safe/groot_n16/robocasa/collect/collect_rollout.py --policy-transport http`
+- result summary: `outputs/tmp/groot_http_act_features_safe_collect_20260529/http_feature_collection_validation.json`
+- pkl schema and metadata: `feature_kind=groot_n16_dit_valid_action_tokens_pre_velocity`, `feature_axes=["denoising_step", "valid_action_step", "feature_dim"]`
+- hidden-state shape: `[4, 16, 1024]`
+- SAFE loader check: `load_scope_features(...) -> [1, 1024]`
+
 Still not covered:
 
 - HTTP SR evaluation
