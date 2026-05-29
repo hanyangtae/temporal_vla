@@ -1,6 +1,6 @@
 # GR00T N1.5 RoboCasa Evaluation
 
-`n15_01_finetune.md`의 후속 문서다. N1.5 평가는 N1.6 평가와 실행 경로가 다르므로 `n16_02_eval.md`와 분리한다.
+`n15_01_finetune.md`의 후속 문서다. N1.5 평가는 N1.6 평가와 실행 경로가 다르므로 `n16_02_eval.md`와 분리한다. N1.5는 ZMQ-only protocol을 사용하며, 통일 HTTP API (`/act`, `/act_with_features`) 는 N1.6 전용이다 (참고: [`n16_11_http_act_changes.md`](n16_11_http_act_changes.md), [`../01_serving_interface.md`](../01_serving_interface.md)).
 
 ## Scope
 
