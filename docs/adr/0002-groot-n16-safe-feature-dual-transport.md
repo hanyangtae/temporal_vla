@@ -9,9 +9,10 @@ wiring. That was the right compatibility path while reproducing upstream
 GR00T RoboCasa behavior and collecting the first SAFE artifacts.
 
 The codebase now also supports the project FastAPI evaluation interface for
-GR00T N1.6. The HTTP server exposes `/act` and `/act_with_features`, accepts
-per-call `inference_seed`, and shares the DiT pre-velocity feature capture
-implementation with the ZMQ feature server through `src.policies.groot`.
+GR00T N1.6. The HTTP server exposes `/act` and `/act_with_features`, and both
+HTTP and ZMQ feature transports accept optional per-call `inference_seed`.
+Both transports share the DiT pre-velocity feature capture implementation
+through `src.policies.groot`.
 
 ## Decision
 
@@ -34,6 +35,7 @@ SAFE pkl schema:
 - exported action-token count
 - feature, valid, and model action horizons
 - denoising-step count
+- optional call-local inference seed semantics
 
 GR00T RoboCasa observation/action key conversion, scenario replay, and feature
 metadata normalization live under `src.policies.groot`. Script entrypoints may

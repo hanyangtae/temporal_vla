@@ -15,7 +15,7 @@
 | RoboCasa cameras | res256 GR00T key 중심 | res256 key와 raw RoboCasa camera key를 둘 다 HTTP alias로 수용 |
 | Language key | 일부 경로는 `annotation.human.action.task_description`만 사용 | old/new language key를 모두 채움 |
 | Error handling | `/act` model-not-loaded가 HTTP 200 body error로 보일 수 있음 | `/act`/`/act_with_features` model-not-loaded는 503, invalid feature slice는 400 |
-| Per-call inference RNG | HTTP payload가 seed를 전달하지 않음 | `/act`와 `/act_with_features`가 optional `inference_seed`를 받아 call-local `numpy`/`torch`/CUDA RNG를 고정하고 원래 RNG state를 복원 |
+| Per-call inference RNG | HTTP payload와 ZMQ SAFE collection request가 seed를 전달하지 않음 | `/act`, `/act_with_features`, ZMQ `get_action_with_features`가 optional `inference_seed`를 받아 call-local `numpy`/`torch`/CUDA RNG를 고정하고 원래 RNG state를 복원 |
 | RoboCasa replay | HTTP eval은 env seed만 받음 | `--use-groot-env`에서 `--ep-meta-dir` import/export와 `--inference-seed`를 지원 |
 | Smoke execution | model별 기본 URL/GR00T dummy state가 부족 | profile base_model별 기본 URL, GR00T required state payload, repo-local log/cache path 보강 |
 | Runtime safety | active SAFE collection 중 실수로 두 번째 GR00T model을 띄울 수 있음 | guarded wrapper가 active SAFE/GPU 상태에서 HTTP smoke 시작을 거절하고, smoke container를 cleanup |
@@ -32,7 +32,7 @@
 - `/act`는 model이 load되지 않았으면 `503 {"error": "model not loaded"}`를 반환한다.
 - response는 profile `emits_subkeys`에 맞춰 `action.eef_pos`, `action.eef_axisangle`, `action.gripper`, `action.base_motion`, `action.control_mode`를 보존한다.
 - policy output에 `base_motion`이나 `control_mode`가 없으면 profile/action fallback dimension에 맞춰 zero를 채운다.
-- request payload에 `inference_seed`가 있으면 그 call 동안 `numpy`, `torch`, CUDA RNG를 해당 seed로 고정하고, call 종료 후 원래 RNG state를 복원한다.
+- request payload에 `inference_seed`가 있으면 그 call 동안 `numpy`, `torch`, CUDA RNG를 해당 seed로 고정하고, call 종료 후 원래 RNG state를 복원한다. 같은 call-local RNG helper를 ZMQ SAFE feature server도 사용한다.
 - `/health`는 action keys, language keys, `supports_features`, `supports_inference_seed`, 그리고 현재 `feature_kind`/`feature_axes`/`feature_slice`/`feature_dtype`/`feature_action_horizon` 메타를 노출한다.
 
 ### `/act_with_features` (GR00T 특정)
@@ -54,7 +54,7 @@
 - `feature_metadata(slice)` — `feature_kind` / `feature_axes` 페어 반환.
 - `encode_features_to_base64(tensor, dtype)` / `decode_features_from_base64(blob)` — JSON-safe 직렬화/복원.
 
-ZMQ `SafeN16FeaturePolicy.get_action_with_features` 와 HTTP `/act_with_features` 모두 이 함수를 호출한다.
+ZMQ `SafeN16FeaturePolicy.get_action_with_features` 와 HTTP `/act_with_features` 모두 이 함수를 호출한다. ZMQ request의 `options.inference_seed`와 HTTP payload의 `inference_seed`는 같은 call-local RNG path로 들어간다.
 
 ### Schema helpers
 
@@ -83,6 +83,7 @@ ZMQ `SafeN16FeaturePolicy.get_action_with_features` 와 HTTP `/act_with_features
 - `--seed`는 GrootRoboCasaEnv construction (`gym.make(..., seed=seed)`)과 rollout reset (`env.reset(seed=seed + rollout_i)`)에 들어간다.
 - `--ep-meta-dir`는 `(env_name, scenario_seed)` key의 `robocasa_ep_meta_manifest.v1` JSON을 import/export한다. 이 옵션은 `--use-groot-env`와 `--seed`가 필요하다.
 - `--inference-seed`는 HTTP `/act` 요청마다 `inference_seed + rollout_i * num_steps + step_i`로 전달된다.
+- SAFE collector의 `--inference-seed`도 ZMQ/HTTP feature transport 양쪽에 적용된다. 각 policy call은 base seed에 collected policy-step index를 더해 전달한다.
 - `VLAClient.health_check()`는 request/json failure를 `None`으로 정리한다.
 - `VLAClient.wait_until_ready()`는 `max_wait`를 넘겨 sleep하지 않는다.
 - `/act` HTTP error body의 `error` 또는 `detail`은 `RuntimeError`로 전달한다.
@@ -94,7 +95,7 @@ ZMQ `SafeN16FeaturePolicy.get_action_with_features` 와 HTTP `/act_with_features
 
 - SAFE rollout collection 의 기본 경로는 여전히 ZMQ `PolicyServer` endpoint `get_action_with_features` (upstream GR00T collector 의 msgpack 호환을 위해 유지).
 - SAFE feature server default port는 `5557`.
-- ZMQ SAFE feature payload contract (`action`, `hidden_states`, `feature_kind`, `feature_axes`, horizon metadata) 는 유지. HTTP `/act_with_features` 는 같은 metadata 를 `features.*` namespace 로 JSON-safe 직렬화해 export.
+- ZMQ SAFE feature response contract (`action`, `hidden_states`, `feature_kind`, `feature_axes`, horizon metadata) 는 유지. Request `options.inference_seed`만 optional input으로 추가됐다. HTTP `/act_with_features` 는 같은 metadata 를 `features.*` namespace 로 JSON-safe 직렬화해 export.
 - GR00T N1.6 RoboCasa SR 기준선은 upstream/ZMQ official eval path.
 - HTTP endpoint action parity와 SR 상태의 단일 출처는 [09 SAFE Parity](n16_09_safe_parity.md)다.
 - Active collection을 HTTP smoke를 위해 kill하거나 재사용하지 않음.
@@ -177,9 +178,9 @@ Post-smoke cleanup was also verified:
 - no `smoke_test_serve.py`, `scripts/serve/groot.py`, or SAFE feature server process remained
 - GPU memory returned to idle baseline
 
-Runtime action parity and replay validation are intentionally not duplicated here. The canonical result table, artifact paths, and remaining replay limitation live in [09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29). The replay semantics live in [05 Scenario Reproduction](n16_05_safe_env_reproduction.md#보장-범위).
+Runtime action parity와 replay validation 상세는 이 문서에서 반복하지 않는다. 결과 table, artifact path, replay limitation은 [09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29)에 두고, replay semantics는 [05 Scenario Reproduction](n16_05_safe_env_reproduction.md#보장-범위)을 기준으로 한다.
 
-HTTP `/act_with_features` SAFE collection smoke was also validated on 2026-05-29:
+HTTP `/act_with_features` SAFE collection smoke도 2026-05-29에 검증했다:
 
 - collector path: `scripts/safe/groot_n16/robocasa/collect/collect_rollout.py --policy-transport http`
 - result summary: `outputs/tmp/groot_http_act_features_safe_collect_20260529/http_feature_collection_validation.json`
@@ -187,10 +188,12 @@ HTTP `/act_with_features` SAFE collection smoke was also validated on 2026-05-29
 - hidden-state shape: `[4, 16, 1024]`
 - SAFE loader check: `load_scope_features(...) -> [1, 1024]`
 
-Still not covered:
+ZMQ/HTTP SAFE transport smoke도 동일 `ep_meta`와 per-call inference seed schedule로 검증했다. 두 transport는 같은 success/failure 결과와 유효한 SAFE artifact를 냈다. Seed별 결과와 artifact path는 [09 SAFE Parity](n16_09_safe_parity.md#closed-loop-safe-transport-smoke)에 둔다.
 
-- HTTP SR evaluation
-- closed-loop action trace equality with full sim-state replay
+아직 포함하지 않은 범위:
+
+- full benchmark HTTP SR
+- full sim-state replay 기반 closed-loop action trace equality
 
 ## How To Run Runtime Validation
 

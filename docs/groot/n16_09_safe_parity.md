@@ -5,9 +5,9 @@
 | 목적 | 문서 |
 |---|---|
 | Fine-tuned 또는 base checkpoint의 task 성능 측정 (Docker workflow) | [02 Evaluation](n16_02_eval.md) |
-| (1) SAFE feature server가 공식 RoboCasa eval과 같은 action을 내는지 (2) HTTP `/act`가 ZMQ와 parity 맞는지 | **이 문서** |
+| SAFE feature server, HTTP `/act`, HTTP `/act_with_features`의 transport parity | **이 문서** |
 
-ZMQ official baseline과 HTTP common serving path 모두 유지한다. SR 기준선은 ZMQ로 둔다. HTTP는 같은 observation에서의 action parity와 per-call inference RNG 정렬은 확인됐지만, closed-loop SR 지표는 아직 별도 평가가 필요하다.
+ZMQ official eval과 HTTP common serving path는 모두 유지한다. GR00T N1.6 RoboCasa SR 기준선은 ZMQ official eval이다. HTTP 경로는 동일 observation에서의 action parity, per-call inference RNG, 짧은 closed-loop SAFE transport smoke까지 확인했다. 전체 benchmark HTTP SR은 아직 산출하지 않았다.
 
 > 관련 문서 (N1.6 reading order)
 > - [Doc map](README.md)
@@ -67,7 +67,7 @@ gr00t/eval/sim/robocasa/robocasa_uv/.venv/bin/python gr00t/eval/rollout_policy.p
 
 이 결과를 pretrained PandaOmron baseline 정상 동작 기준선으로 둔다.
 
-## HTTP Path And SR Recovery
+## HTTP Path And Parity
 
 목적: 프로젝트 공통 VLA serving/eval API를 유지하고, ZMQ official 기준선과 action parity를 맞춘다.
 
@@ -80,9 +80,7 @@ docker compose run --rm groot \
   --port 8500
 ```
 
-Use the `groot` Docker service for this HTTP path. The Isaac-GR00T eval venv is
-for the official ZMQ/eval workflow and does not own the FastAPI serve
-dependencies.
+이 HTTP 경로는 `groot` Docker service에서 실행한다. Isaac-GR00T eval venv는 official ZMQ/eval workflow용이며 FastAPI serve dependency를 소유하지 않는다.
 
 API:
 
@@ -91,21 +89,11 @@ API:
 - `POST /reset`
 - `GET /health`
 
-HTTP serve exposes both `/act` (action only) and `/act_with_features` (action +
-DiT pre-velocity hidden states under the `features.*` namespace). Both
-endpoints share a single loaded model on the same port. `--feature-slice`,
-`--feature-dtype`, `--feature-action-horizon` CLI flags control the export
-shape — defaults are `valid` slice, `float16`, full embodiment horizon.
+HTTP serve는 같은 port에서 `/act`와 `/act_with_features`를 함께 노출한다. `/act`는 action만 반환하고, `/act_with_features`는 `features.*` namespace 아래에 DiT pre-velocity hidden state를 함께 반환한다. `--feature-slice`, `--feature-dtype`, `--feature-action-horizon` CLI flag로 export shape을 제어하며, 기본값은 `valid` slice, `float16`, full embodiment horizon이다.
 
-The dedicated ZMQ `get_action_with_features` endpoint
-([04 SAFE Collection](n16_04_safe_collection.md#zmq-safe-feature-collection))
-is still the canonical SAFE rollout-collection path because the upstream
-GR00T collector talks msgpack over ZMQ. HTTP `/act_with_features` is the
-benchmark-agnostic feature surface for new consumers (e.g. Calvin SAFE), and
-shares the same DiT capture logic via `src/policies/groot/safe_features.py`.
+전용 ZMQ `get_action_with_features` endpoint([04 SAFE Collection](n16_04_safe_collection.md#zmq-safe-feature-collection))는 upstream GR00T collector의 msgpack protocol과 호환되는 canonical SAFE rollout-collection path로 유지한다. HTTP `/act_with_features`는 benchmark-agnostic feature surface이며, `src/policies/groot/safe_features.py`를 통해 ZMQ path와 같은 DiT capture logic을 공유한다.
 
-If a SAFE rollout collection is already using port 5557, keep that process
-running. Start HTTP `/act` parity checks on a separate port such as 8500.
+SAFE rollout collection이 이미 port `5557`을 사용 중이면 그 process는 그대로 둔다. HTTP `/act` parity check는 `8500`처럼 별도 port에서 실행한다.
 
 Health check:
 
@@ -118,12 +106,16 @@ python scripts/utils/smoke_test_serve.py \
 
 역할:
 
-- HTTP는 heterogeneous VLA serving 경로다.
+- HTTP는 프로젝트 공통 VLA serving 경로다.
 - GR00T N1.6 RoboCasa SR 기준선은 ZMQ official eval이다.
-- HTTP endpoint action parity는 확인됐다. HTTP SR은 별도 closed-loop 평가 후 SAFE/GR00T N1.6 성능 지표에 편입한다.
+- HTTP endpoint action parity는 확인됐다.
+- HTTP/ZMQ SAFE transport의 closed-loop smoke도 통과했다.
+- 전체 benchmark HTTP SR은 아직 산출하지 않았다.
 - 낮은 HTTP SR에서는 wiring/runner/schema mismatch를 우선 점검한다.
 
 ## Runtime Validation 2026-05-29
+
+### Endpoint Action Parity
 
 검증 환경:
 
@@ -135,7 +127,7 @@ python scripts/utils/smoke_test_serve.py \
 - saved observation: `outputs/tmp/groot_http_zmq_actual_obs.pkl`
 - result root: `outputs/tmp/groot_http_zmq_runtime_verify_20260529/`
 
-같은 actual RoboCasa observation에서 HTTP `/act`와 ZMQ SAFE feature path action을 비교했다. ZMQ path는 `SafeN16FeaturePolicy.get_action_with_features`와 같은 action + feature extraction code path를 사용했다.
+동일 RoboCasa observation에서 HTTP `/act`와 ZMQ SAFE feature path action을 비교했다. ZMQ path는 `SafeN16FeaturePolicy.get_action_with_features`와 같은 action + feature extraction code path를 사용했다.
 
 | Check | Result |
 |---|---|
@@ -163,6 +155,42 @@ HTTP server health also reports:
 
 따라서 transport/schema/policy RNG 관점의 endpoint action parity는 통과다.
 
+### Closed-Loop SAFE Transport Smoke
+
+같은 robocasa365 env, 같은 `ep_meta`, 같은 per-call `inference_seed` schedule로 ZMQ `get_action_with_features`와 HTTP `/act_with_features` collection을 각각 10 episode 실행했다.
+
+검증 조건:
+
+- profile: `groot__robocasa365_ckpt120000`
+- env: `robocasa_panda_omron/CloseFridge_PandaOmron_Env`
+- seeds: `100000..100009`
+- inference seed base: `424242`
+- action horizon: `n_action_steps=16`
+- max episode steps: `720`
+- ep_meta import root: `outputs/tmp/groot_closefridge_zmq_10x_20260529/ep_meta`
+- ZMQ artifact root: `outputs/tmp/groot_closefridge_zmq_seeded_10x_20260529/rollouts`
+- HTTP artifact root: `outputs/tmp/groot_closefridge_http_seeded_10x_20260529/rollouts`
+
+결과:
+
+| Transport | Success | Failure | Max-step episodes | Notes |
+|---|---:|---:|---:|---|
+| ZMQ SAFE | 8/10 | 2/10 | 2 | seeds `100000`, `100004` failed at cap |
+| HTTP SAFE | 8/10 | 2/10 | 2 | ZMQ와 같은 success/failure set |
+
+Episode-level 비교:
+
+| Check | Result |
+|---|---:|
+| success/failure match | `10/10` |
+| step-count match | `9/10` |
+| first-action match | `9/10` |
+| pkl/csv/mp4 schema | `ok` |
+
+한 episode는 성공 여부는 같았지만 closed-loop 길이가 달랐다. Seed `100007`에서 ZMQ는 21 policy step, HTTP는 40 policy step에 성공했고, 첫 action 차이는 `max_abs=0.00390625` (`L2=0.0045017307`)였다. 따라서 이 검증은 두 transport가 같은 성공/실패 결과를 내는지 확인하는 smoke이며, trajectory identity 검증은 아니다.
+
+두 transport 모두 pkl/csv/mp4 artifact schema를 만족했다. Hidden state shape은 `[4, 16, 1024]`, action vector dim은 `12`이고, `ep_meta`와 non-empty video/CSV도 확인됐다.
+
 HTTP closed-loop eval replay path도 smoke 수준으로 확인했다.
 
 | Check | Artifact |
@@ -188,7 +216,7 @@ action.control_mode = 0.0
 - 같은 seed만으로 reset 두 번: checked state keys all `max_abs=0.0`
 - 같은 seed + `set_ep_meta(...)` 후 reset: eef relative state differs (`eef_pos_rel max_abs=0.020762`, `eef_quat_rel max_abs=0.030109`)
 
-즉 `ep_meta`는 scenario/layout/style/config replay artifact이고, reset 직후 full sim state/qpos까지 고정하는 artifact가 아니다. Closed-loop action trace까지 byte-level로 맞추려면 reset 직후 `sim.data.qpos/qvel` 또는 full MuJoCo state를 별도 artifact로 저장/복원해야 한다.
+즉 `ep_meta`는 scenario/layout/style/config replay artifact이고, reset 직후 full sim state/qpos까지 고정하는 artifact가 아니다. Closed-loop action trace까지 완전히 맞추려면 reset 직후 `sim.data.qpos/qvel` 또는 full MuJoCo state를 별도 artifact로 저장/복원해야 한다.
 
 현재 HTTP와 ZMQ 비교에는 transport 이외의 차이가 함께 있다.
 
@@ -196,16 +224,16 @@ action.control_mode = 0.0
 - ZMQ official 경로는 `src/policies/Isaac-GR00T/external_dependencies/robocasa`의 RoboCasa v0.2 (`robocasa_v02`) 환경을 사용한다.
 - transport, env version, task class name, observation schema, action application 방식 차이가 함께 섞여 있다.
 
-공통 task로 고른 5개는 v0.2와 v1.0 사이에서 의미적으로 대응되는 task다. `OpenSingleDoor`/`OpenCabinet`처럼 official SR이 높은 task에서 HTTP SR이 크게 낮으면 policy wiring을 먼저 점검한다.
+공통 task로 고른 5개는 v0.2와 v1.0 사이에서 의미적으로 대응되는 task다. `OpenSingleDoor`/`OpenCabinet`처럼 official SR이 높은 task에서 HTTP SR이 크게 낮으면 policy wiring을 우선 의심한다.
 
-HTTP SR 회복을 위한 검증 순서:
+현재 해석:
 
-1. Same-observation HTTP `/act` vs ZMQ SAFE action parity를 기준으로 둔다. 2026-05-29 기준 `max_abs_all=0.0`.
-2. 같은 env에서 HTTP action application loop만 교체해서 SR을 본다.
-3. action은 같은데 SR만 낮으면 action consumption, reset, termination, wrapper, env version 차이를 본다.
-4. closed-loop trace equality가 필요하면 `ep_meta`만 쓰지 말고 reset 직후 full sim state/qpos replay artifact를 추가한다.
+- 동일 observation 기준 HTTP `/act`와 ZMQ SAFE action은 `max_abs_all=0.0`이다.
+- 같은 robocasa365 env에서 HTTP/ZMQ SAFE transport의 success/failure 결과도 smoke 범위에서는 일치한다.
+- 이후 SR 차이가 나타나면 action value보다 action consumption, reset timing, termination, wrapper, env version 차이를 우선 본다.
+- `ep_meta`는 scenario replay artifact다. Closed-loop trace identity에는 reset 직후 full sim state/qpos replay artifact가 필요하다.
 
-우선순위가 높은 체크포인트:
+낮은 SR 진단 기준:
 
 - image keys: `side_0`, `side_1`, `wrist_0`가 GR00T의 `res256_image_*` 계열과 동일 의미인지 확인한다.
 - state keys: HTTP payload의 `eef_pos_rel`, `eef_quat_rel`, `gripper_qpos`, `base_position`, `base_rotation`이 GR00T native relative/base state key로 들어가며 batch/time dimension이 official wrapper와 같은지 확인한다.
