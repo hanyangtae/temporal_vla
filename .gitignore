@@ -15,7 +15,7 @@ src/policies/UP-VLA/showlab/
 lerobot/tests/**
 wandb/**
 temp/**
-
+.understand-anything/**
 # AI Assistant
 CLAUDE.md
 GEMINI.md
@@ -41,3 +41,4 @@ CONTEXT.md
 
 # MuJoCo
 MUJOCO_LOG.TXT
+.antigravitycli/*

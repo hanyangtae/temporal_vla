@@ -4,6 +4,8 @@ VLA 체크포인트별 **정규화 · action sub-key 매핑 · state 요구사�
 
 `scripts/serve/*.py` 는 `--profile configs/checkpoints/<name>.yaml` 으로 프로파일을 로드해 동작을 결정한다. 즉 serve 스크립트에는 **모델 아키텍처 고유 코드**(weight 로딩, forward) 만 남고, 체크포인트별 가정(LIBERO 180° rotation, gripper sign flip, unnorm_key 등)은 모두 프로파일로 분리된다.
 
+> 통일 HTTP API 계약과 모델 × 벤치마크 호환 매트릭스는 [`docs/01_serving_interface.md`](../../docs/01_serving_interface.md) 가 단일 출처다. 이 README 는 YAML 스키마/필드 정의만 담당한다. 새 체크포인트를 붙이는 절차는 [`docs/03_adding_checkpoint.md`](../../docs/03_adding_checkpoint.md).
+
 ## 파일명 규칙
 
 ```
@@ -90,16 +92,12 @@ python scripts/utils/checkpoint_profile.py configs/checkpoints/<name>.yaml
 
 ## 벤치마크 측 계약
 
-프로파일의 `emits_subkeys` 가 해당 벤치 ActionProcessor 의 소비 가능한 조합을 **반드시 포함**해야 한다.
-
-| 벤치 | 파일 | 필요 sub-key 조합 |
-|---|---|---|
-| Calvin | `src/processor/action/calvin.py` | `action.eef_pos` + (`action.eef_euler` \| `action.eef_rot6d` \| `action.eef_quat`) + `action.gripper` |
-| RoboCasa | `src/processor/action/robocasa.py` | `action.eef_pos` + `action.eef_euler` + `action.gripper` |
-| LIBERO | (OpenVLA-OFT 기준) | `action.eef_pos` + `action.eef_euler` + `action.gripper` (relative) |
+프로파일의 `emits_subkeys` 가 해당 벤치 ActionProcessor 의 소비 가능한 조합을 **반드시 포함**해야 한다. 벤치별 소비 가능 조합과 모델별 emit 조합 매트릭스는 [`docs/01_serving_interface.md`](../../docs/01_serving_interface.md#model--benchmark-호환-매트릭스) 에 정리한다.
 
 eval 스크립트의 `make_*_processors(action_type=..., gripper_threshold=...)` 호출은 프로파일과 일치시켜야 한다. 일반적으로 `action_type=relative` 면 `gripper_threshold=0.0`, `absolute` 면 `0.8` (X-VLA 패턴).
 
+GR00T RoboCasa 프로파일은 HTTP 입력 state로 `eef_pos_rel`, `eef_quat_rel`, `gripper_qpos`, `base_position`, `base_rotation`을 사용한다. 이 키들은 `scripts/serve/groot.py`에서 GR00T native relative/base state key로 매핑된다.
+
 ## 온보딩 절차
 
-새 체크포인트 추가 시에는 `docs/adding_checkpoint.md` 체크리스트를 따른다. 별도 에이전트 호출은 사용자가 명시적으로 요청한 경우에만 수행한다.
+새 체크포인트 추가 시에는 `docs/03_adding_checkpoint.md` 체크리스트를 따른다. 별도 에이전트 호출은 사용자가 명시적으로 요청한 경우에만 수행한다.

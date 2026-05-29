@@ -1,6 +1,8 @@
 # Docker 사용 가이드 (temporal_vla)
 
-이 프로젝트의 Docker 환경을 이해하고 사용하기 위한 가이드입니다.
+이 프로젝트의 Docker 환경을 이해하고 사용하기 위한 가이드입니다. 컨테이너 구조와 실행/운영 절차에 초점을 둡니다.
+
+> 통일 HTTP API 계약 (endpoint, sub-key, 모델 × 벤치마크 호환 매트릭스, 운영 패턴) 은 [`01_serving_interface.md`](01_serving_interface.md) 가 단일 출처입니다. 이 문서는 그 위에서 컨테이너를 어떻게 띄우고 관리하는지를 다룹니다.
 
 ---
 

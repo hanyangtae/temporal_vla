@@ -135,6 +135,26 @@ class CalvinActionProcessor(ActionProcessorStep):
     def _process_flat(self, action: Any) -> np.ndarray:
         """Flat 7D ndarray → gripper 이산화. 컨벤션은 _process_subkeyed 와 동일."""
         action = np.array(action, dtype=np.float32).copy()
+        if action.ndim == 1:
+            if action.shape[-1] != 7:
+                raise ValueError(
+                    "CalvinActionProcessor: expected 7D action, got {}D".format(
+                        action.shape[-1]
+                    )
+                )
+        elif action.ndim == 2:
+            if action.shape[-1] != 7:
+                raise ValueError(
+                    "CalvinActionProcessor: expected [N, 7] actions, got shape {}".format(
+                        action.shape
+                    )
+                )
+        else:
+            raise ValueError(
+                "CalvinActionProcessor: expected 1D or 2D action, got shape {}".format(
+                    action.shape
+                )
+            )
         if self.gripper_invert:
             # high = close
             if action.ndim == 1:

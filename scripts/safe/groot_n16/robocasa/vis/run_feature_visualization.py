@@ -29,6 +29,7 @@ from run_config import (  # noqa: E402
     FEATURE_SPACE_ROOT,
     FINAL_DIFF_IDX_REL,
     FINAL_HORIZON_IDX_REL,
+    REPO_ROOT,
     SAFE_ROOT,
     SAFE_SUBSET_NAME,
     SPLIT_ROOT,

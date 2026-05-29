@@ -38,39 +38,21 @@ VLA 잠재공간에서 **실패 latent와 성공 latent를 구분**하고, 추�
 
 - **모델 서버** (`scripts/serve/*.py`): FastAPI + uvicorn. 통일 API (`/act`, `/reset`, `/health`).
 - **벤치마크 평가** (`scripts/eval/*.py`): 모델 무관. `VLAClient`로 통신.
-- **Processor Pipeline** (`src/processor/`): **추론(eval)용**. 벤치마크별 env↔통일API obs/action 변환.
+- **Processor Pipeline** (`src/processor/`): **추론(eval)용**. generic 벤치마크 env↔통일API obs/action 변환.
+- **GR00T RoboCasa IO adapter** (`src/policies/groot/robocasa_io.py`): `GrootRoboCasaEnv` native key↔HTTP GR00T 변환. GR00T upstream parity / SAFE wiring 경로는 `src/processor/`를 우회.
 - **Dataset + Adapter** (`src/datasets/`): **학습(train)용**. 벤치마크별 generic dataset + 모델별 adapter.
 - **통일 클라이언트** (`scripts/utils/vla_client.py`): `VLAClient` 클래스 1개.
 - **Docker**: `docker-compose.yml`에 5개 서비스. 모두 `network_mode: host`.
 
 ## 통일 API 규격
 
-`scripts/utils/vla_client.py` 참고. 핵심 규칙:
+통일 HTTP API (endpoint, sub-key 네임스페이스, `/act_with_features`, 모델 × 벤치마크 호환 매트릭스, 운영 패턴) 의 단일 출처는 [`docs/01_serving_interface.md`](docs/01_serving_interface.md). 아래는 자주 쓰는 사실만 요약.
 
-### Observation (요청)
-- state sub-keys는 벤치마크마다 존재하는 키가 다름. 모델 서버는 필요한 키만 꺼내 쓰고, 없으면 변환(quat→euler 등)을 자체 수행.
-- 이미지는 base64 PNG.
-- 예: `observation.images.static`, `observation.state.eef_pos`, `observation.state.eef_euler`, `task`
-
-### Action (응답) — Sub-key 방식
-- 모델 서버는 자신의 native format을 **action sub-key**로 분리하여 반환.
-- 벤치마크 측 ActionProcessor가 자신에게 필요한 포맷으로 변환.
-- action sub-key 값은 항상 2D list `[n_steps, dim]`.
-
-```
-// relative 모델 (DreamVLA, UP-VLA 등)
-{"action.eef_pos": [[dx,dy,dz],...], "action.eef_euler": [[r,p,y],...], "action.gripper": [[g],...]}
-
-// absolute 모델 (X-VLA 등)
-{"action.eef_pos": [[x,y,z],...], "action.eef_rot6d": [[6D],...], "action.gripper": [[g],...]}
-```
-
-표준 action sub-key: `action.eef_pos`, `action.eef_euler`, `action.eef_rot6d`, `action.eef_quat`, `action.gripper`, `action.joint_pos`
-
-### /health 응답
-- `action_type`: `"relative"` | `"absolute"` — 모든 서버 필수.
-- `action_keys`: 서버가 반환하는 action sub-key 목록.
-- `n_action_steps`: 예측당 반환 action 수.
+- 클라이언트는 `scripts/utils/vla_client.py` 의 `VLAClient` 한 개. `predict()` 와 `predict_with_features()`.
+- 요청: `observation.images.<view>` (base64 PNG), `observation.state.<key>` (float list), `task` (str).
+- 응답: `action.<subkey>` (2D list `[n_steps, dim]`) + `latency_ms`. `/act_with_features` 는 추가로 `features.hidden_states` (base64 blob), `features.kind/axes/...` 노출.
+- 표준 action sub-key: `action.eef_pos`, `action.eef_euler` | `action.eef_rot6d` | `action.eef_quat` | `action.eef_axisangle`, `action.gripper`, `action.joint_pos`. GR00T 전용: `action.base_motion`, `action.control_mode`.
+- `/health` 필수 필드: `status`, `action_type` (`"relative"` | `"absolute"`), `action_keys`, `n_action_steps`. `/act_with_features` 지원 시 `supports_features`, `feature_kind`, `feature_axes` 도 노출.
 
 ## 주요 파일 경로
 
@@ -116,6 +98,10 @@ VLA 잠재공간에서 **실패 latent와 성공 latent를 구분**하고, 추�
 env obs → ObsProcessor (통일 키 변환) → VLAClient (HTTP) → 모델 서버 → VLAClient → ActionProcessor (env 포맷) → env.step
 ```
 
+GR00T `--use-groot-env` 평가와 SAFE wiring은 위 generic pipeline이 아니라
+`src/policies/groot/robocasa_io.py`를 사용한다. 이 경로는 `GrootRoboCasaEnv`
+native observation/action key를 유지해 upstream GR00T eval과 맞춘다.
+
 ## Dataset + Adapter (학습용)
 
 `src/datasets/` 참고. 학습 시 데이터 흐름:
@@ -157,7 +143,7 @@ LeRobotDataset → scripts/extract/extract_cotrack_robocasa.py → {save_path}/r
 3. `python scripts/utils/checkpoint_profile.py configs/checkpoints/<name>.yaml` 로 로드 검증.
 4. eval 스크립트에서 serve 기동 시 `--profile` 경로 지정.
 
-상세 절차: `docs/adding_checkpoint.md`. 반복 작업도 해당 체크리스트를 기준으로 수행하고, 별도 에이전트 호출은 사용자가 명시적으로 요청한 경우에만 수행한다.
+상세 절차: `docs/03_adding_checkpoint.md`. 반복 작업도 해당 체크리스트를 기준으로 수행하고, 별도 에이전트 호출은 사용자가 명시적으로 요청한 경우에만 수행한다.
 
 ### 새 벤치마크 추가
 

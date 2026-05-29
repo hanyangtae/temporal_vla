@@ -25,7 +25,7 @@ For each new VLA checkpoint (HF repo or local weights), you execute the onboardi
 - **`configs/checkpoints/*.yaml`** — source of truth per checkpoint. Always in git.
 - **`scripts/utils/checkpoint_profile.py`** — `CheckpointProfile` dataclass + loader. Extend only if the schema genuinely needs a new field; prefer encoding variability inside existing fields.
 - **`scripts/serve/<model>.py`** — each script loads a profile via `--profile` and branches its data pipeline on profile fields.
-- **`docs/adding_checkpoint.md`** — human-facing checklist mirroring this agent's workflow.
+- **`docs/03_adding_checkpoint.md`** — human-facing checklist mirroring this agent's workflow.
 
 ## Out of Scope (Do Not Touch)
 

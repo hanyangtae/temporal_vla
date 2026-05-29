@@ -146,7 +146,7 @@ class TestRoboCasaObsProcessor(unittest.TestCase):
             ),
         }
         if with_state:
-            obs["robot0_proprio-state"] = np.random.randn(32).astype(np.float32)
+            obs["robot0_proprio-state"] = np.random.randn(68).astype(np.float32)
         return obs
 
     def test_key_remapping(self):
@@ -155,7 +155,10 @@ class TestRoboCasaObsProcessor(unittest.TestCase):
 
         self.assertIn("observation.images.static", result)
         self.assertIn("observation.images.wrist", result)
-        self.assertIn("observation.state", result)
+        self.assertIn("observation.state.eef_pos", result)
+        self.assertIn("observation.state.eef_quat", result)
+        self.assertIn("observation.state.gripper_qpos", result)
+        self.assertIn("observation.state.joint_pos", result)
 
         # 원본 이미지가 그대로 전달되는지
         np.testing.assert_array_equal(
@@ -170,8 +173,10 @@ class TestRoboCasaObsProcessor(unittest.TestCase):
     def test_state_float32(self):
         obs = self._make_obs()
         result = self.proc.process_observation(obs)
-        self.assertEqual(result["observation.state"].dtype, np.float32)
-        self.assertEqual(result["observation.state"].shape, (32,))
+        self.assertEqual(result["observation.state.eef_pos"].dtype, np.float32)
+        self.assertEqual(result["observation.state.eef_pos"].shape, (3,))
+        self.assertEqual(result["observation.state.eef_quat"].shape, (4,))
+        self.assertEqual(result["observation.state.gripper_qpos"].shape, (2,))
 
     def test_missing_cameras_fallback(self):
         """카메라 누락 시 zero 이미지로 fallback."""
@@ -188,7 +193,7 @@ class TestRoboCasaObsProcessor(unittest.TestCase):
         """state 키가 없으면 결과에 state 미포함."""
         obs = self._make_obs(with_state=False)
         result = self.proc.process_observation(obs)
-        self.assertNotIn("observation.state", result)
+        self.assertFalse(any(k.startswith("observation.state.") for k in result))
 
     def test_custom_camera_names(self):
         proc = RoboCasaObsProcessor(
@@ -197,19 +202,26 @@ class TestRoboCasaObsProcessor(unittest.TestCase):
         obs = {
             "cam_a_image": np.zeros((224, 224, 3), dtype=np.uint8),
             "cam_b_image": np.zeros((224, 224, 3), dtype=np.uint8),
-            "my_state": np.zeros(32, dtype=np.float32),
+            "my_state": np.zeros(68, dtype=np.float32),
         }
         result = proc.process_observation(obs)
         self.assertIn("observation.images.static", result)
         self.assertIn("observation.images.wrist", result)
-        self.assertIn("observation.state", result)
+        self.assertIn("observation.state.eef_pos", result)
+        self.assertIn("observation.state.joint_pos", result)
 
     def test_transform_features(self):
         features = {}
         result = self.proc.transform_features(features)
         obs_feats = result[PipelineFeatureType.OBSERVATION]
         self.assertEqual(
-            obs_feats["observation.state"].shape, (32,)
+            obs_feats["observation.state.eef_pos"].shape, (3,)
+        )
+        self.assertEqual(
+            obs_feats["observation.state.eef_quat"].shape, (4,)
+        )
+        self.assertEqual(
+            obs_feats["observation.state.joint_pos"].shape, (7,)
         )
         self.assertEqual(
             obs_feats["observation.images.static"].shape, (224, 224, 3)
@@ -382,6 +394,26 @@ class TestRoboCasaActionProcessor(unittest.TestCase):
     def test_get_config(self):
         config = self.proc.get_config()
         self.assertEqual(config["arm_dim"], 6)
+
+    def test_subkeyed_groot_action_with_base_motion(self):
+        action = {
+            "action.eef_pos": np.array([0.1, 0.2, 0.3], dtype=np.float32),
+            "action.eef_axisangle": np.array([0.4, 0.5, 0.6], dtype=np.float32),
+            "action.gripper": np.array([0.8], dtype=np.float32),
+            "action.base_motion": np.array([0.01, 0.02, 0.03, 0.04], dtype=np.float32),
+            "action.control_mode": np.array([1.0], dtype=np.float32),
+        }
+
+        result = self.proc.process_action(action)
+
+        self.assertEqual(result.shape, (12,))
+        np.testing.assert_array_almost_equal(
+            result,
+            np.array(
+                [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 0.8, 0.01, 0.02, 0.03, 0.04],
+                dtype=np.float32,
+            ),
+        )
 
 
 # ============================================================================
@@ -593,13 +625,15 @@ class TestFactory(unittest.TestCase):
             "robot0_eye_in_hand_image": np.random.randint(
                 0, 256, (224, 224, 3), dtype=np.uint8
             ),
-            "robot0_proprio-state": np.random.randn(32).astype(np.float32),
+            "robot0_proprio-state": np.random.randn(68).astype(np.float32),
         }
         obs_result = obs_p({TransitionKey.OBSERVATION: obs})
         processed_obs = obs_result[TransitionKey.OBSERVATION]
         self.assertIn("observation.images.static", processed_obs)
-        self.assertIn("observation.state", processed_obs)
-        self.assertEqual(processed_obs["observation.state"].shape, (32,))
+        self.assertIn("observation.state.eef_pos", processed_obs)
+        self.assertIn("observation.state.eef_quat", processed_obs)
+        self.assertIn("observation.state.gripper_qpos", processed_obs)
+        self.assertEqual(processed_obs["observation.state.eef_pos"].shape, (3,))
 
         # action 변환 (7D → 12D)
         model_action = np.array(

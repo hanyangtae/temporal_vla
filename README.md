@@ -33,55 +33,33 @@ RoboCasa/Calvin 시뮬레이션 환경에서 다양한 VLA 모델(pi0, groot, Dr
 모델 서버와 벤치마크 스크립트는 **통일 API**를 사용하여 모델-벤치마크 조합을 자유롭게 변경할 수 있습니다.
 
 ```
-┌─────────────────────────────┐       통일 API (HTTP)
-│  robocasa / calvin          │       POST /act, /reset
-│  벤치마크 + 평가             │──────────────────────────────┐
-│                             │─────────────┐                │
-│  ObsProcessor → VLAClient   │             │                │
-│  ActionProcessor ← 응답     │             │                │
-└─────────────────────────────┘             ▼                ▼
-                                    ┌──────────┐  ┌───────────┐  ┌──────────┐
-                                    │   xvla   │  │ dreamvla  │  │  upvla   │
-                                    │  :8100   │  │  :8200    │  │  :8300   │
-                                    └──────────┘  └───────────┘  └──────────┘
+┌──────────────────────────────────┐    통일 API (HTTP)
+│  robocasa / calvin (/ libero)    │    POST /act, /act_with_features,
+│  벤치마크 + 평가                  │         /reset, GET /health
+│                                  │────────────────────────────────┐
+│  ObsProcessor → VLAClient        │                                │
+│  ActionProcessor ← response      │                                │
+└──────────────────────────────────┘                                ▼
+        ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌─────────────┐ ┌─────────┐ ┌─────────┐
+        │  xvla   │ │ dreamvla │ │  upvla   │ │ openvla_oft │ │ lerobot │ │  groot  │
+        │  :8100  │ │  :8200   │ │  :8300   │ │   :8400     │ │  :8400  │ │  :8500  │
+        └─────────┘ └──────────┘ └──────────┘ └─────────────┘ └─────────┘ └─────────┘
 
-모든 컨테이너: ./  →  /temporal_vla (볼륨 마운트)
+모든 컨테이너: ./ → /temporal_vla (볼륨 마운트), network_mode: host
 ```
+
+세부 사항은 [`docs/01_serving_interface.md`](docs/01_serving_interface.md) 참조.
 
 ### 통일 API 규격
 
-모든 모델 서버(`serve_*.py`)가 동일한 엔드포인트와 요청/응답 형식을 따릅니다.
+모든 모델 서버(`scripts/serve/*.py`)와 벤치마크 평가 스크립트가 같은 HTTP 계약을 따릅니다. 엔드포인트(`/act`, `/act_with_features`, `/reset`, `/health`), 요청 payload 의 sub-key 네임스페이스, 응답 sub-key 표준, 모델 × 벤치마크 호환 매트릭스, 운영 패턴은 [`docs/01_serving_interface.md`](docs/01_serving_interface.md) 단일 문서를 단일 출처(single source of truth)로 두고 정리합니다.
 
-| Endpoint | 설명 |
-|----------|------|
-| `POST /act` | 액션 예측 |
-| `POST /reset` | 에피소드 시작 시 히스토리 초기화 (필요 없는 모델은 no-op) |
-| `GET /health` | 서버 상태 + `action_type`, `action_keys`, `n_action_steps` |
+요약:
 
-**요청 (Observation)**: 벤치마크가 env obs를 sub-key로 분리하여 전송.
-```json
-{
-  "observation.images.static": "base64png",
-  "observation.images.wrist": "base64png",
-  "observation.state.eef_pos": [x, y, z],
-  "observation.state.eef_euler": [r, p, y],
-  "task": "pick up the red block"
-}
-```
-
-**응답 (Action)**: 모델 서버가 자신의 native format을 action sub-key로 분리하여 반환. 벤치마크 측 ActionProcessor가 env에 맞게 변환.
-```json
-// relative 모델 (DreamVLA, UP-VLA 등)
-{"action.eef_pos": [[dx,dy,dz],...], "action.eef_euler": [[r,p,y],...], "action.gripper": [[g],...]}
-
-// absolute 모델 (X-VLA 등)
-{"action.eef_pos": [[x,y,z],...], "action.eef_rot6d": [[6D],...], "action.gripper": [[g],...]}
-```
-
-표준 action sub-key: `action.eef_pos`, `action.eef_euler`, `action.eef_rot6d`, `action.eef_quat`, `action.gripper`, `action.joint_pos`
-
-벤치마크 스크립트는 `VLAClient`(`scripts/utils/vla_client.py`)와 `ProcessorPipeline`(`src/processor/`)을 사용합니다.
-`--vla-server` URL만 바꾸면 어떤 모델이든 평가할 수 있으며, obs/action 변환은 벤치마크별 Processor가 처리합니다.
+- `/act` 는 sub-keyed action dict 를 반환합니다. 모델은 자신의 native 출력을 표준 sub-key (`action.eef_pos`, `action.eef_euler` / `action.eef_rot6d` / ..., `action.gripper` 등) 로 분리해 보내고, 벤치마크 측 ActionProcessor 가 env 포맷으로 합쳐 `env.step()` 에 넘깁니다.
+- `/act_with_features` 는 `/act` 와 같은 응답에 `features.*` namespace (hidden states base64 blob + 메타) 를 더해 반환합니다 (모델이 features 를 지원할 때만).
+- 벤치마크 스크립트는 `VLAClient` (`scripts/utils/vla_client.py`) 와 generic `ProcessorPipeline` (`src/processor/`) 만 사용하므로, `--vla-server` URL 만 바꾸면 같은 벤치에 다른 모델을 붙일 수 있습니다. GR00T `GrootRoboCasaEnv` native-key 경로는 예외적으로 `src/policies/groot/robocasa_io.py` adapter를 사용해 upstream parity와 SAFE wiring을 맞춥니다.
+- 새 체크포인트/모델/벤치를 붙이는 절차는 [`docs/03_adding_checkpoint.md`](docs/03_adding_checkpoint.md) 와 [`configs/checkpoints/README.md`](configs/checkpoints/README.md) 를 참조합니다.
 
 ### Containers
 
@@ -89,9 +67,15 @@ RoboCasa/Calvin 시뮬레이션 환경에서 다양한 VLA 모델(pi0, groot, Dr
 |-----------|------|--------|------|
 | robocasa | RoboCasa 시뮬레이션 + 평가 + GUI (KasmVNC/X11) | 3.11 | 8444 (VNC) |
 | calvin | Calvin 벤치마크 + 평가 (headless EGL) | 3.8 | - |
-| xvla | X-VLA 학습/추론 서버 (LeRobot) | 3.10 | 8100 |
+| xvla | X-VLA 학습/추론 서버 | 3.10 | 8100 |
 | dreamvla | DreamVLA 학습/추론 서버 | 3.10 | 8200 |
 | upvla | UP-VLA 추론 서버 | 3.10 | 8300 |
+| openvla_oft | OpenVLA-OFT 추론 서버 (LIBERO/Calvin) | 3.10 | 8400 |
+| lerobot | pi0 / pi05 추론 서버 (LeRobot stack) | 3.10 | 8400 |
+| groot | GR00T N1.6 학습/추론 서버 + SAFE features | 3.10 | 8500 |
+| groot_n15 | GR00T N1.5 fine-tuning | 3.10 | - |
+
+`openvla_oft` 와 `lerobot` 은 다른 컨테이너이므로 같은 호스트 포트 `8400` 을 동시에 띄우진 않습니다. 모델 × 벤치마크 호환 매트릭스는 [`docs/01_serving_interface.md`](docs/01_serving_interface.md#model--benchmark-호환-매트릭스) 참조.
 
 ## Prerequisites
 
@@ -321,4 +305,4 @@ Multi-GPU 서버에서는 각 컨테이너에 서로 다른 GPU를 할당할 수
 
 ## Documentation
 
-- [Docker 사용 가이드](docs/docker_guide.md) — Docker에 익숙하지 않은 팀원을 위한 상세 가이드
+- [Docker 사용 가이드](docs/02_docker_guide.md) — Docker에 익숙하지 않은 팀원을 위한 상세 가이드
