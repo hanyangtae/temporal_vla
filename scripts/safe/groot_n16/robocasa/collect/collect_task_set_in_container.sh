@@ -69,6 +69,7 @@ for task_id in "${!TASKS[@]}"; do
 
         if ROBOCASA_ENV_SOURCE="${ROBOCASA_ENV_SOURCE}" \
             MUJOCO_GL=egl \
+            PYOPENGL_PLATFORM=egl \
             PYTHONPATH="${CONTAINER_REPO_ROOT}/src/policies/Isaac-GR00T:${CONTAINER_REPO_ROOT}/src/benchmarks/robocasa:${CONTAINER_REPO_ROOT}/src/benchmarks/robosuite:${CONTAINER_REPO_ROOT}" \
             python "${CONTAINER_REPO_ROOT}/scripts/safe/groot_n16/robocasa/collect/collect_rollout.py" \
                 --policy-client-host "${HOST}" \

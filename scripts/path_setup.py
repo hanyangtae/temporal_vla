@@ -10,6 +10,8 @@ ROBOCASA_ROOT = REPO_ROOT / "src" / "benchmarks" / "robocasa"
 ROBOSUITE_ROOT = REPO_ROOT / "src" / "benchmarks" / "robosuite"
 DREAMVLA_ROOT = REPO_ROOT / "src" / "policies" / "dreamvla"
 DATASETS_ROOT = REPO_ROOT / "src" / "datasets"
+GROOT_ROOT = REPO_ROOT / "src" / "policies" / "Isaac-GR00T"
+GROOT_ROBOCASA_V02_ROOT = GROOT_ROOT / "external_dependencies" / "robocasa"
 
 # ── Cache roots (체크포인트/데이터셋 물리 저장소) ──────────────────────
 # 체크포인트와 데이터셋은 repo 트리 밖 cache 로 분리한다. 컨테이너 안에서는
@@ -30,12 +32,18 @@ def _prepend(path: Path) -> None:
         sys.path.insert(0, path_str)
 
 
+def prepend_path(path: Path | str) -> None:
+    _prepend(Path(path))
+
+
 def configure_repo_paths(
     *,
     include_script_utils: bool = False,
     include_robocasa: bool = False,
     include_dreamvla: bool = False,
     include_datasets: bool = False,
+    include_groot: bool = False,
+    include_groot_robocasa_v02: bool = False,
 ) -> Path:
     _prepend(REPO_ROOT)
 
@@ -51,5 +59,11 @@ def configure_repo_paths(
 
     if include_datasets:
         _prepend(DATASETS_ROOT)
+
+    if include_groot:
+        _prepend(GROOT_ROOT)
+
+    if include_groot_robocasa_v02:
+        _prepend(GROOT_ROBOCASA_V02_ROOT)
 
     return REPO_ROOT

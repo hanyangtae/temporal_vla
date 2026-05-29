@@ -19,10 +19,10 @@
 
 - `ZMQ official eval`: GR00T N1.6 RoboCasa 성공률을 판단하는 기준 경로.
 - `ZMQ SAFE feature server`: SAFE rollout 수집 기준 경로. official RoboCasa 클라이언트 환경을 쓰면서 action과 feature를 함께 저장한다.
-- `HTTP /act` + `HTTP /act_with_features`: 프로젝트 공통 serving API로 유지한다 (port `:8500`, `scripts/serve/groot.py`). GR00T N1.6 RoboCasa 성공률 기준선은 ZMQ official eval로 두고, HTTP 경로는 일반 벤치마크가 같은 모델을 호출하거나 (`/act`) SAFE feature를 회수할 때 (`/act_with_features`) 사용한다. DiT pre-velocity feature 정의는 ZMQ feature server와 HTTP `/act_with_features` 가 `src/policies/groot/safe_features.py` 의 `capture_dit_features` 를 공유한다 ([n16_11 변경 일지](n16_11_http_act_changes.md)).
+- `HTTP /act` + `HTTP /act_with_features`: 프로젝트 공통 serving API로 유지한다 (port `:8500`, `scripts/serve/groot.py`). HTTP 경로는 일반 벤치마크가 같은 모델을 호출하거나 (`/act`) SAFE feature를 회수할 때 (`/act_with_features`) 사용한다. DiT pre-velocity feature 정의는 ZMQ feature server와 HTTP `/act_with_features` 가 `src/policies/groot/safe_features.py` 의 `capture_dit_features` 를 공유한다. Endpoint action parity, SAFE pkl/loader smoke, 짧은 closed-loop transport smoke까지 통과했다 ([09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29), [10 SAFE Report](n16_10_safe_report.md#http-act_with_features-safe-collection-smoke-2026-05-29), [n16_11 변경 일지](n16_11_http_act_changes.md)).
 - RoboCasa365 `target_atomic_seen18` 100ep/task collection은 완료됐다. `target_atomic_seen18_ckpt120000_robocasa365_100ep`는 `18 x 100 = 1800` episode triplet을 포함하고, seed range는 task별 `100000..100099`, verifier 기준 `status=ok`, total SR `967/1800 = 53.7%`다.
 
-HTTP 경로는 프로젝트 공통 serving API로 유지한다. Same-observation HTTP `/act` vs ZMQ SAFE action parity는 확인됐다 ([09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29)). HTTP `/act_with_features` -> SAFE pkl -> SAFE loader smoke도 통과했다 ([10 SAFE Report](n16_10_safe_report.md#http-act_with_features-safe-collection-smoke-2026-05-29)). HTTP closed-loop SR은 별도 평가 후 지표로 편입한다.
+전체 task-set HTTP benchmark SR은 아직 산출하지 않았다. 현재 HTTP 검증 범위는 action parity, feature schema, transport smoke다.
 
 ## Checkpoint And Env
 
@@ -170,9 +170,9 @@ Validation utilities:
 - `/home/dongkyu/pdk_ws/temporal_vla/docs/groot/n16_09_safe_parity.md`
 - `/home/dongkyu/pdk_ws/temporal_vla/docs/groot/n16_10_safe_report.md`
 
-## Next Steps
+## 남은 항목
 
-1. Run HTTP closed-loop SR evaluation now that same-observation HTTP-vs-ZMQ action equivalence is validated.
-2. If proactive intervention is the goal, define or collect inference-step-level failure onset/intervention labels.
-3. If paired closed-loop trace equality is required, add reset-time full sim-state replay (`qpos/qvel` etc.) because `ep_meta` alone does not guarantee it.
-4. Optionally compare `--feature-slice all` (`H=50`) against the current valid-horizon (`H=16`) export.
+1. HTTP benchmark SR: 전체 task-set closed-loop 평가는 아직 남아 있다. 현재 HTTP/ZMQ SAFE transport smoke는 wiring과 schema 검증 범위다.
+2. Proactive intervention: inference-step-level failure onset/intervention label protocol이 아직 없다.
+3. Paired trace identity: `ep_meta`만으로는 부족하며 reset-time full sim-state replay (`qpos/qvel` 등)가 필요하다.
+4. Feature axis ablation: `--feature-slice all` (`H=50`)과 current valid-horizon (`H=16`) export 비교가 남아 있다.

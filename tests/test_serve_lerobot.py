@@ -1,6 +1,6 @@
-"""serve_lerobot.py 유닛 테스트 (TDD).
+"""scripts/serve/lerobot.py 유닛 테스트 (TDD).
 
-Docker 없이 로컬에서 실행 가능. serve_lerobot.py 구현 전에 인터페이스를 명세한다.
+Docker 없이 로컬에서 실행 가능. LeRobot serving interface를 명세한다.
 
 실행:
   python3 -m pytest tests/test_serve_lerobot.py -v
@@ -10,19 +10,24 @@ from __future__ import annotations
 
 import base64
 import io
-import os
 import sys
 import unittest
 from unittest.mock import MagicMock
+from pathlib import Path
 
 import numpy as np
 import torch
 from PIL import Image
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "scripts" / "utils"))
 
-from serve_lerobot import STATE_KEY_ORDER, _build_remap_config, parse_payload
+from scripts.serve import lerobot as serve_lerobot
+
+STATE_KEY_ORDER = serve_lerobot.STATE_KEY_ORDER
+_build_remap_config = serve_lerobot._build_remap_config
+parse_payload = serve_lerobot.parse_payload
 
 # ─── 헬퍼 ────────────────────────────────────────────────────────────────────
 
@@ -200,7 +205,7 @@ class TestApplyInputRemap(unittest.TestCase):
     """_apply_input_remap: 카메라 키 리맵핑 + state 차원 슬라이싱."""
 
     def setUp(self):
-        import serve_lerobot as srv
+        from scripts.serve import lerobot as srv
 
         self.srv = srv
         # 각 테스트 전에 globals 초기화
@@ -373,15 +378,47 @@ def _make_mock_processors():
     return pre, post
 
 
+class _ActionDim:
+    def __init__(self, name: str, dims: int):
+        self.name = name
+        self.dims = dims
+
+
+class _MockProfile:
+    name = "lerobot_test"
+    action_type = "relative"
+    emits_subkeys = [
+        "action.eef_pos",
+        "action.eef_axisangle",
+        "action.gripper",
+    ]
+    action_layout = [
+        _ActionDim("eef_pos", 3),
+        _ActionDim("eef_axisangle", 3),
+        _ActionDim("gripper", 1),
+    ]
+
+    def dim_slice(self, name: str) -> slice:
+        offset = 0
+        for item in self.action_layout:
+            if item.name == name:
+                return slice(offset, offset + item.dims)
+            offset += item.dims
+        raise KeyError(name)
+
+
 class TestActEndpoint(unittest.TestCase):
     """POST /act 엔드포인트."""
 
     def setUp(self):
-        import serve_lerobot as srv
+        from scripts.serve import lerobot as srv
         from fastapi.testclient import TestClient
 
         srv.policy = _make_mock_policy(action_dim=7)
         srv.preprocessor, srv.postprocessor = _make_mock_processors()
+        srv._profile = _MockProfile()
+        srv._policy_type = "lerobot_test"
+        srv._n_action_steps = 1
         self.client = TestClient(srv.app)
         self.srv = srv
 
@@ -394,29 +431,33 @@ class TestActEndpoint(unittest.TestCase):
         return r.json()
 
     def test_response_has_action_and_latency(self):
-        """응답에 action, latency_ms 키 존재."""
+        """응답에 action subkeys, latency_ms 키 존재."""
         data = self._act()
-        self.assertIn("action", data)
+        self.assertIn("action.eef_pos", data)
+        self.assertIn("action.eef_axisangle", data)
+        self.assertIn("action.gripper", data)
         self.assertIn("latency_ms", data)
 
     def test_action_is_2d(self):
-        """action은 항상 2D array [[...]]."""
+        """action subkey는 항상 2D array [[...]]."""
         data = self._act()
-        action = np.array(data["action"])
-        self.assertEqual(action.ndim, 2)
+        for key in _MockProfile.emits_subkeys:
+            self.assertEqual(np.array(data[key]).ndim, 2)
 
     def test_action_dim(self):
-        """action shape: [n_steps, 7]."""
+        """action subkey dims add up to the 7D profile layout."""
         data = self._act()
-        action = np.array(data["action"])
-        self.assertEqual(action.shape[1], 7)
+        dim = sum(np.array(data[key]).shape[1] for key in _MockProfile.emits_subkeys)
+        self.assertEqual(dim, 7)
 
     def test_multi_step_action(self):
-        """policy가 [N, 7] 반환 시 그대로 2D로 응답."""
+        """policy가 [N, 7] 반환 시 subkey도 N-step으로 응답."""
         self.srv.policy = _make_mock_policy(action_dim=7, n_action_steps=10)
+        self.srv._n_action_steps = 10
         data = self._act()
-        action = np.array(data["action"])
-        self.assertEqual(action.shape, (10, 7))
+        self.assertEqual(np.array(data["action.eef_pos"]).shape, (10, 3))
+        self.assertEqual(np.array(data["action.eef_axisangle"]).shape, (10, 3))
+        self.assertEqual(np.array(data["action.gripper"]).shape, (10, 1))
 
     def test_latency_ms_is_positive_float(self):
         data = self._act()
@@ -439,12 +480,13 @@ class TestResetEndpoint(unittest.TestCase):
     """POST /reset 엔드포인트."""
 
     def setUp(self):
-        import serve_lerobot as srv
+        from scripts.serve import lerobot as srv
         from fastapi.testclient import TestClient
 
         self.mock_policy = _make_mock_policy()
         srv.policy = self.mock_policy
         srv.preprocessor, srv.postprocessor = _make_mock_processors()
+        srv._profile = _MockProfile()
         self.client = TestClient(srv.app)
 
     def test_reset_returns_ok(self):
@@ -462,11 +504,14 @@ class TestHealthEndpoint(unittest.TestCase):
     """GET /health 엔드포인트."""
 
     def setUp(self):
-        import serve_lerobot as srv
+        from scripts.serve import lerobot as srv
         from fastapi.testclient import TestClient
 
         srv.policy = _make_mock_policy()
         srv.preprocessor, srv.postprocessor = _make_mock_processors()
+        srv._profile = _MockProfile()
+        srv._policy_type = "lerobot_test"
+        srv._n_action_steps = 1
         self.client = TestClient(srv.app)
         self.srv = srv
 
@@ -494,11 +539,10 @@ class TestHealthEndpoint(unittest.TestCase):
         self.assertIn("n_action_steps", r.json())
         self.assertIsInstance(r.json()["n_action_steps"], int)
 
-    def test_health_has_action_dim(self):
-        """응답에 action_dim 필드 존재 (calvin_eval.py가 action 차원 검증에 사용)."""
+    def test_health_has_action_keys(self):
+        """응답에 action_keys 필드 존재."""
         r = self.client.get("/health")
-        self.assertIn("action_dim", r.json())
-        self.assertIsInstance(r.json()["action_dim"], int)
+        self.assertEqual(r.json()["action_keys"], list(_MockProfile.emits_subkeys))
 
 
 if __name__ == "__main__":

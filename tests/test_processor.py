@@ -31,10 +31,16 @@ from processor.types import (
 )
 from processor.base import DataProcessorPipeline
 from processor.obs.calvin import CalvinObsProcessor
+from processor.obs.groot_robocasa import GrootRoboCasaObsProcessor
 from processor.obs.robocasa import RoboCasaObsProcessor
 from processor.action.calvin import CalvinActionProcessor
+from processor.action.groot_robocasa import GrootRoboCasaActionProcessor
 from processor.action.robocasa import RoboCasaActionProcessor
-from processor.factory import make_calvin_processors, make_robocasa_processors
+from processor.factory import (
+    make_calvin_processors,
+    make_groot_robocasa_processors,
+    make_robocasa_processors,
+)
 
 
 # ============================================================================
@@ -234,6 +240,60 @@ class TestRoboCasaObsProcessor(unittest.TestCase):
 
 
 # ============================================================================
+# GrootRoboCasaObsProcessor
+# ============================================================================
+
+def _make_groot_robocasa_obs():
+    return {
+        "video.robot0_agentview_left": np.full((1, 2, 8, 8, 3), 1, dtype=np.uint8),
+        "video.robot0_agentview_right": np.full((1, 2, 8, 8, 3), 2, dtype=np.uint8),
+        "video.robot0_eye_in_hand": np.full((1, 2, 8, 8, 3), 3, dtype=np.uint8),
+        "state.base_position": np.ones((1, 2, 3), dtype=np.float32),
+        "state.base_rotation": np.ones((1, 2, 4), dtype=np.float32) * 2,
+        "state.end_effector_position_relative": np.ones((1, 2, 3), dtype=np.float32) * 3,
+        "state.end_effector_rotation_relative": np.ones((1, 2, 4), dtype=np.float32) * 4,
+        "state.gripper_qpos": np.ones((1, 2, 2), dtype=np.float32) * 5,
+        "annotation.human.task_description": ("open the cabinet",),
+    }
+
+
+class TestGrootRoboCasaObsProcessor(unittest.TestCase):
+    """GrootRoboCasaEnv native obs -> 통일 HTTP payload."""
+
+    def test_native_obs_to_http_payload_keys(self):
+        proc = GrootRoboCasaObsProcessor(strict=True)
+        result = proc.process_observation(_make_groot_robocasa_obs())
+
+        self.assertEqual(
+            set(k for k in result if k.startswith("observation.images.")),
+            {
+                "observation.images.left",
+                "observation.images.right",
+                "observation.images.wrist",
+            },
+        )
+        self.assertEqual(result["observation.images.left"].shape, (8, 8, 3))
+        self.assertIn("observation.state.eef_pos_rel", result)
+        self.assertIn("observation.state.base_rotation", result)
+        self.assertEqual(result["task"], "open the cabinet")
+
+    def test_pipeline_integration(self):
+        proc = GrootRoboCasaObsProcessor(strict=True)
+        result = proc({TransitionKey.OBSERVATION: _make_groot_robocasa_obs()})
+
+        self.assertIn("task", result[TransitionKey.OBSERVATION])
+
+    def test_transform_features(self):
+        proc = GrootRoboCasaObsProcessor(strict=True, image_size=256)
+        result = proc.transform_features({})
+        obs_feats = result[PipelineFeatureType.OBSERVATION]
+
+        self.assertEqual(obs_feats["observation.images.left"].shape, (256, 256, 3))
+        self.assertEqual(obs_feats["observation.state.eef_quat_rel"].shape, (4,))
+        self.assertEqual(obs_feats["task"].type, FeatureType.LANGUAGE)
+
+
+# ============================================================================
 # CalvinActionProcessor
 # ============================================================================
 
@@ -417,6 +477,59 @@ class TestRoboCasaActionProcessor(unittest.TestCase):
 
 
 # ============================================================================
+# GrootRoboCasaActionProcessor
+# ============================================================================
+
+class TestGrootRoboCasaActionProcessor(unittest.TestCase):
+    """HTTP sub-keyed action -> GrootRoboCasaEnv native action."""
+
+    def _make_http_actions(self):
+        return {
+            "action.eef_pos": np.arange(48, dtype=np.float32).reshape(16, 3),
+            "action.eef_axisangle": np.ones((16, 3), dtype=np.float32) * 2,
+            "action.gripper": np.ones((16, 1), dtype=np.float32) * 3,
+            "action.base_motion": np.zeros((16, 4), dtype=np.float32),
+            "action.control_mode": np.ones((16, 1), dtype=np.float32),
+        }
+
+    def test_step_mode_converts_first_step_to_native_keys(self):
+        proc = GrootRoboCasaActionProcessor(mode="step")
+        result = proc.process_action(self._make_http_actions())
+
+        np.testing.assert_array_equal(
+            result["action.end_effector_position"],
+            np.array([0.0, 1.0, 2.0], dtype=np.float32),
+        )
+        self.assertEqual(result["action.end_effector_rotation"].shape, (3,))
+        self.assertEqual(result["action.gripper_close"].shape, (1,))
+        self.assertEqual(result["action.base_motion"].shape, (4,))
+        self.assertEqual(result["action.control_mode"].shape, (1,))
+
+    def test_chunk_mode_keeps_batched_action_chunk(self):
+        proc = GrootRoboCasaActionProcessor(mode="chunk", action_horizon=16)
+        result = proc.process_action(self._make_http_actions())
+
+        self.assertEqual(result["action.end_effector_position"].shape, (1, 16, 3))
+        self.assertEqual(result["action.base_motion"].shape, (1, 16, 4))
+
+    def test_requires_subkeyed_actions(self):
+        proc = GrootRoboCasaActionProcessor()
+
+        with self.assertRaisesRegex(RuntimeError, "sub-keyed HTTP actions"):
+            proc.process_action(np.zeros((1, 7), dtype=np.float32))
+
+    def test_transform_features(self):
+        proc = GrootRoboCasaActionProcessor(mode="chunk", action_horizon=8)
+        result = proc.transform_features({})
+        action_feats = result[PipelineFeatureType.ACTION]
+
+        self.assertEqual(
+            action_feats["action.end_effector_position"].shape,
+            (1, 8, 3),
+        )
+
+
+# ============================================================================
 # DataProcessorPipeline
 # ============================================================================
 
@@ -586,6 +699,20 @@ class TestFactory(unittest.TestCase):
         )
         self.assertEqual(obs_p.steps[0].static_cam, "cam_x")
         self.assertEqual(act_p.steps[0].arm_dim, 7)
+
+    def test_make_groot_robocasa_processors(self):
+        obs_p, act_p = make_groot_robocasa_processors(
+            strict=False,
+            action_mode="chunk",
+            action_horizon=8,
+        )
+        self.assertEqual(obs_p.name, "groot_robocasa_obs")
+        self.assertEqual(act_p.name, "groot_robocasa_action")
+        self.assertIsInstance(obs_p.steps[0], GrootRoboCasaObsProcessor)
+        self.assertIsInstance(act_p.steps[0], GrootRoboCasaActionProcessor)
+        self.assertFalse(obs_p.steps[0].strict)
+        self.assertEqual(act_p.steps[0].mode, "chunk")
+        self.assertEqual(act_p.steps[0].action_horizon, 8)
 
     def test_calvin_end_to_end(self):
         """Calvin 전체 파이프라인 end-to-end 테스트."""

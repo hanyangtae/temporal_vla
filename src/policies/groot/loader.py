@@ -12,12 +12,25 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _prepend_existing_path(path: Path) -> None:
+    path_str = str(path)
+    if path.exists() and path_str not in sys.path:
+        sys.path.insert(0, path_str)
+
+
 # Isaac-GR00T submodule 경로 보장 (gr00t.* import 가능하도록).
-_GR00T_PATH = "/temporal_vla/src/policies/Isaac-GR00T"
-if _GR00T_PATH not in sys.path:
-    sys.path.insert(0, _GR00T_PATH)
+# docker 안의 /temporal_vla와 host checkout 경로를 모두 지원한다.
+for _path in (
+    Path("/temporal_vla/src/policies/Isaac-GR00T"),
+    _REPO_ROOT / "src" / "policies" / "Isaac-GR00T",
+):
+    _prepend_existing_path(_path)
 
 if TYPE_CHECKING:
     from checkpoint_profile import CheckpointProfile
@@ -44,6 +57,35 @@ class LoadedGrootModel:
     device: str
 
 
+def resolve_model_path(model_path: str) -> str:
+    """container profile path를 현재 checkout path로 보정한다.
+
+    checkpoint profile은 docker 기준 `/temporal_vla/...` 절대 경로를 쓰는 경우가 많다.
+    host에서 같은 repo checkout을 직접 실행하면 그 경로가 없으므로, 현재 checkout 아래
+    대응 경로가 존재할 때만 치환한다. 이미 존재하는 경로나 HF repo id는 그대로 둔다.
+    """
+    path = Path(model_path)
+    if path.exists() or not path.is_absolute():
+        return model_path
+
+    try:
+        rel = path.relative_to("/temporal_vla")
+    except ValueError:
+        return model_path
+
+    local_path = _REPO_ROOT / rel
+    if local_path.exists():
+        return str(local_path)
+    return model_path
+
+
+def resolve_device(model_specific: dict[str, Any], device: Optional[str] = None) -> str:
+    """명시 device 인자를 profile default보다 우선한다."""
+    if device is not None:
+        return device
+    return str(model_specific.get("device", "cuda"))
+
+
 def load_state_dims_from_statistics(model_path: str, embodiment_value: str) -> dict[str, int]:
     """`{model_path}/statistics.json` 에서 embodiment 의 state key dim map 추출.
 
@@ -53,6 +95,7 @@ def load_state_dims_from_statistics(model_path: str, embodiment_value: str) -> d
     각 state key 의 mean 길이가 dim. fallback zero state 채울 때 사용.
     파일이 없거나 파싱 실패하면 빈 dict 반환 (warning).
     """
+    model_path = resolve_model_path(model_path)
     stats_path = os.path.join(model_path, "statistics.json")
     if not os.path.exists(stats_path):
         logger.warning("statistics.json not found under %s", model_path)
@@ -90,8 +133,8 @@ def load_groot_policy(
 
     ms = profile.model_specific or {}
     embodiment_tag = EmbodimentTag[ms["embodiment_tag"]]
-    resolved_device = ms.get("device", device or "cuda")
-    model_path = profile.checkpoint_source.id
+    resolved_device = resolve_device(ms, device)
+    model_path = resolve_model_path(profile.checkpoint_source.id)
     strict = not bool(ms.get("no_strict", False))
 
     logger.info(

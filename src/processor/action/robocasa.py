@@ -1,6 +1,8 @@
-"""RoboCasa 환경 action processor.
+"""Generic RoboCasa action processor for Project FastAPI evaluation.
 
 VLA 모델의 action을 PandaMobile의 12D action으로 매핑한다.
+GR00T `GrootRoboCasaEnv` native action conversion is intentionally handled by
+`action.groot_robocasa`, not this generic benchmark processor.
 
 지원하는 입력 형식:
   1. Sub-keyed dict:

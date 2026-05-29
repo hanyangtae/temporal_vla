@@ -16,6 +16,8 @@ PORT="${PORT:-5557}"
 EPISODE_START_IDX="${EPISODE_START_IDX:-0}"
 EPISODES_PER_TASK="${EPISODES_PER_TASK:-1}"
 N_ACTION_STEPS="${N_ACTION_STEPS:-16}"
+COLLECTION_MAX_ATTEMPTS="${COLLECTION_MAX_ATTEMPTS:-2}"
+COLLECTION_RETRY_SLEEP_SEC="${COLLECTION_RETRY_SLEEP_SEC:-5}"
 TASK_SET="${TASK_SET:-safe_seen6}"
 if [[ -z "${RUN_ID:-}" ]]; then
     if [[ "${TASK_SET}" == "safe_seen6" ]]; then
@@ -59,6 +61,7 @@ echo "Server: ${HOST}:${PORT}"
 echo "Task set: ${TASK_SET} (${#TASKS[@]} tasks)"
 echo "RoboCasa env source: ${ROBOCASA_ENV_SOURCE}"
 echo "Action steps per inference: ${N_ACTION_STEPS}"
+echo "Collection attempts per episode: ${COLLECTION_MAX_ATTEMPTS}"
 echo "Episodes per task: ${EPISODES_PER_TASK}, episode_idx: ${EPISODE_START_IDX}..$((EPISODE_START_IDX + EPISODES_PER_TASK - 1)), seeds: ${SEED_START}..$((SEED_START + EPISODES_PER_TASK - 1))"
 echo "Ep meta manifests: ${EP_META_ROOT}"
 
@@ -88,28 +91,38 @@ for task_id in "${!TASKS[@]}"; do
         echo
         echo "== task${task_id} ${task} ep ${episode_idx} seed ${seed} =="
 
-        if docker exec \
-            -e ROBOCASA_ENV_SOURCE="${ROBOCASA_ENV_SOURCE}" \
-            -e MUJOCO_GL=egl \
-            -e PYTHONPATH="${CONTAINER_REPO_ROOT}/src/policies/Isaac-GR00T:${CONTAINER_REPO_ROOT}/src/benchmarks/robocasa:${CONTAINER_REPO_ROOT}/src/benchmarks/robosuite:${CONTAINER_REPO_ROOT}" \
-            "${ROBOCASA_CONTAINER}" \
-            bash -lc "set -o pipefail; python '${CONTAINER_REPO_ROOT}/scripts/safe/groot_n16/robocasa/collect/collect_rollout.py' \
-                --policy-client-host '${HOST}' \
-                --policy-client-port '${PORT}' \
-                --env-name '${env_name}' \
-                --robocasa-env-source '${ROBOCASA_ENV_SOURCE}' \
-                --output-dir '${task_dir_container}' \
-                --task-id '${task_id}' \
-                --episode-start-idx '${episode_idx}' \
-                --n-episodes 1 \
-                --n_action_steps '${N_ACTION_STEPS}' \
-                --seed '${seed}' \
-                --ep-meta-dir '${ep_meta_dir_container}' \
-                2>&1 | tee '${task_dir_container}/ep${episode_idx}.log'"; then
-            exit_code=0
-        else
-            exit_code=$?
-        fi
+        exit_code=1
+        for attempt in $(seq 1 "${COLLECTION_MAX_ATTEMPTS}"); do
+            echo "-- attempt ${attempt}/${COLLECTION_MAX_ATTEMPTS} --"
+            if docker exec \
+                -e ROBOCASA_ENV_SOURCE="${ROBOCASA_ENV_SOURCE}" \
+                -e MUJOCO_GL=egl \
+                -e PYOPENGL_PLATFORM=egl \
+                -e PYTHONPATH="${CONTAINER_REPO_ROOT}/src/policies/Isaac-GR00T:${CONTAINER_REPO_ROOT}/src/benchmarks/robocasa:${CONTAINER_REPO_ROOT}/src/benchmarks/robosuite:${CONTAINER_REPO_ROOT}" \
+                "${ROBOCASA_CONTAINER}" \
+                bash -lc "set -o pipefail; echo '[collect] attempt ${attempt}/${COLLECTION_MAX_ATTEMPTS}'; python '${CONTAINER_REPO_ROOT}/scripts/safe/groot_n16/robocasa/collect/collect_rollout.py' \
+                    --policy-client-host '${HOST}' \
+                    --policy-client-port '${PORT}' \
+                    --env-name '${env_name}' \
+                    --robocasa-env-source '${ROBOCASA_ENV_SOURCE}' \
+                    --output-dir '${task_dir_container}' \
+                    --task-id '${task_id}' \
+                    --episode-start-idx '${episode_idx}' \
+                    --n-episodes 1 \
+                    --n_action_steps '${N_ACTION_STEPS}' \
+                    --seed '${seed}' \
+                    --ep-meta-dir '${ep_meta_dir_container}' \
+                    2>&1 | tee -a '${task_dir_container}/ep${episode_idx}.log'"; then
+                exit_code=0
+                break
+            else
+                exit_code=$?
+            fi
+            if [[ "${attempt}" != "${COLLECTION_MAX_ATTEMPTS}" ]]; then
+                echo "WARN: collection attempt ${attempt}/${COLLECTION_MAX_ATTEMPTS} failed for ${task} episode ${episode_idx}; retrying after ${COLLECTION_RETRY_SLEEP_SEC}s" >&2
+                sleep "${COLLECTION_RETRY_SLEEP_SEC}"
+            fi
+        done
 
         pkl="$(find "${task_dir}" -maxdepth 1 -type f -name "task${task_id}--ep${episode_idx}--succ*.pkl" | head -n 1 || true)"
         printf "%s\t%s\t%s\t%s\t%s\t%s\n" "${task_id}" "${task}" "${episode_idx}" "${seed}" "${exit_code}" "${pkl}" | tee -a "${SUMMARY}"

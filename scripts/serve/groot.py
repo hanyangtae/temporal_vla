@@ -1,290 +1,178 @@
-"""
-GR00T N1.6 추론 서버 (통일 API, port 8500).
+"""GR00T N1.6 inference server for the project FastAPI interface."""
 
-프로파일 기반 동작: embodiment_tag, device 등은 configs/checkpoints/*.yaml 에 선언.
-
-groot 컨테이너에서 실행:
-  docker compose run --rm groot \
-    python /temporal_vla/scripts/serve/groot.py \
-    --profile /temporal_vla/configs/checkpoints/groot__robocasa_panda_omron.yaml
-
-통일 API:
-  POST /act     ← {"observation.images.*": b64png, "observation.state.*": [...],
-                    "task": "..."}
-                → 프로파일 emits_subkeys 규약에 따른 sub-key dict 반환
-  POST /reset   ← 에피소드 시작 시 policy state 초기화
-  GET  /health  ← 프로파일 + 모델 modality_configs 반영
-"""
+from __future__ import annotations
 
 import argparse
 import logging
 import sys
-import time
-from typing import Optional
+from pathlib import Path
 
-import numpy as np
 import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
-# 프로파일 로더 (scripts/utils 는 PYTHONPATH 에 포함)
-from checkpoint_profile import CheckpointProfile, load_profile  # noqa: E402
+# Keep direct script execution aligned with the docker PYTHONPATH.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_SCRIPTS_ROOT = _REPO_ROOT / "scripts"
+if str(_SCRIPTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_ROOT))
 
-# 학습 adapter 와 공유하는 GR00T helper (src/policies/groot/).
-sys.path.insert(0, "/temporal_vla")
-from src.policies.groot.preprocess import (  # noqa: E402
-    FINAL_IMAGE_RESOLUTION,
-    decode_b64_image,
-    process_img,
+from path_setup import configure_repo_paths  # noqa: E402
+
+configure_repo_paths(include_script_utils=True, include_groot=True)
+
+from checkpoint_profile import load_profile  # noqa: E402
+from src.policies.groot.safe_features import FEATURE_DTYPES, FEATURE_SLICES  # noqa: E402
+from src.policies.groot.schema import build_video_mapping  # noqa: E402
+from src.policies.groot.service import (  # noqa: E402
+    GrootFeatureConfig,
+    GrootModelNotLoadedError,
+    GrootPolicyService,
+    temporary_inference_seed,
 )
-from src.policies.groot.schema import (  # noqa: E402
-    GROOT_TO_UNIFIED_ACTION,
-    UNIFIED_TO_STATE_KEY,
-    build_video_mapping,
-    normalize_modality_key,
-)
-from src.policies.groot.loader import load_groot_policy  # noqa: E402
+
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="GR00T N1.6 Inference Server")
+_service = GrootPolicyService()
 
-# ─── 글로벌 ──────────────────────────────────────────────────────────────────
 
-_policy = None
-_embodiment_tag = None
-_modality_configs = None
-_profile: Optional[CheckpointProfile] = None
-_device = "cuda"
+def _apply_runtime_args() -> None:
+    _service.feature_config = GrootFeatureConfig.from_args(getattr(app.state, "args", None))
 
-_warned_missing_video_keys: set = set()
-_warned_missing_state_keys: set = set()
-# embodiment 별 state key → dim. statistics.json 에서 모델 로드 시 채워짐.
-_state_dims: dict = {}
-# 통일 API 이미지 키 → GR00T video 키. 로드된 모델의 modality_configs 로 동적 구성
-# (pretrain ckpt 의 res256_image_* 와 finetune ckpt 의 robot0_agentview_* 둘 다 흡수).
-_video_key_mapping: dict[str, str] = {}
+
+# Backward-compatible private helpers used by tests and ad-hoc notebooks.
+def _language_keys_from_modality_config() -> list[str]:
+    return _service.language_keys()
 
 
 def _build_groot_obs(payload: dict) -> dict:
-    """통일 API payload → Gr00tSimPolicyWrapper 입력 형식.
-
-    video:    np.ndarray(B=1, T=1, H, W, C) uint8
-    state:    np.ndarray(B=1, T=1, D) float32
-    language: tuple[str] (B,)
-
-    GR00T 가 modality_configs 로 요구하는 video/state 키가 payload 에 없으면
-    zero image / zero state 로 fallback (strict assert 통과용). 첫 누락 시 warning.
-    """
-    obs = {}
-
-    for unified_key, groot_key in _video_key_mapping.items():
-        b64 = payload.get(unified_key)
-        if b64 is None or groot_key in obs:
-            continue
-        np_img = process_img(decode_b64_image(b64))
-        obs[groot_key] = np_img[np.newaxis, np.newaxis, ...]
-
-    for unified_key, groot_key in UNIFIED_TO_STATE_KEY.items():
-        val = payload.get(unified_key)
-        if val is not None:
-            arr = np.array(val, dtype=np.float32).flatten()
-            obs[groot_key] = arr[np.newaxis, np.newaxis, :]
-
-    # modality_configs 에 선언된 필수 video/state 키 중 누락 분 zero fallback.
-    if _modality_configs is not None:
-        h, w = FINAL_IMAGE_RESOLUTION
-        zero_img = np.zeros((1, 1, h, w, 3), dtype=np.uint8)
-
-        for vk_raw in _modality_configs["video"].modality_keys:
-            vk = normalize_modality_key(vk_raw, "video")
-            if vk not in obs:
-                obs[vk] = zero_img
-                if vk not in _warned_missing_video_keys:
-                    logger.warning(
-                        "video key %s missing → zero image fallback", vk,
-                    )
-                    _warned_missing_video_keys.add(vk)
-
-        for sk_raw in _modality_configs["state"].modality_keys:
-            sk = normalize_modality_key(sk_raw, "state")
-            if sk not in obs:
-                # state dim 은 statistics.json 에서 가져옴, 없으면 1D
-                local = sk[len("state."):]
-                dim = _state_dims.get(local, 1)
-                obs[sk] = np.zeros((1, 1, dim), dtype=np.float32)
-                if sk not in _warned_missing_state_keys:
-                    logger.warning(
-                        "state key %s missing → zero(%dD) fallback", sk, dim,
-                    )
-                    _warned_missing_state_keys.add(sk)
-
-    obs["annotation.human.action.task_description"] = (payload.get("task", ""),)
-    return obs
+    return _service.build_groot_obs(payload)
 
 
-# ─── 모델 로딩 ───────────────────────────────────────────────────────────────
+def _convert_native_action_to_subkeys(action_dict: dict, profile, latency_ms: float) -> dict:
+    if _service.profile is None:
+        _service.profile = profile
+    return _service.convert_native_action_to_subkeys(action_dict, latency_ms)
+
+
+def _log_debug_call(out: dict, payload: dict) -> None:
+    _service._log_debug_call(out, payload)
+
+
+def _feature_config() -> dict:
+    cfg = GrootFeatureConfig.from_args(getattr(app.state, "args", None))
+    return {
+        "slice": cfg.feature_slice,
+        "dtype": cfg.feature_dtype,
+        "horizon": cfg.feature_action_horizon,
+    }
+
+
+_temporary_inference_seed = temporary_inference_seed
 
 
 @app.on_event("startup")
-def load_model():
+def load_model() -> None:
     try:
         _load_model_impl()
     except Exception:
         import traceback
+
         sys.stderr.write("=== load_model FAILED ===\n")
         traceback.print_exc(file=sys.stderr)
         sys.stderr.flush()
         raise
 
 
-def _load_model_impl():
-    global _policy, _embodiment_tag, _modality_configs, _device, _state_dims
-    global _video_key_mapping
-
+def _load_model_impl() -> None:
     args = app.state.args
-    profile = _profile
-    assert profile is not None, "profile must be set before load_model"
-
-    loaded = load_groot_policy(profile, device=args.device)
-    _policy = loaded.policy
-    _embodiment_tag = loaded.embodiment_tag
-    _modality_configs = loaded.modality_configs
-    _state_dims = loaded.state_dims
-    _device = loaded.device
-
-    # TTT 분기 — 프로파일 model_specific.predictor_path 가 있으면
-    # 로드된 base Gr00tN1d6 를 Gr00tN1d6WithTTT 로 in-place 승격.
-    ms = profile.model_specific or {}
-    predictor_path = ms.get("predictor_path")
-    if predictor_path:
-        from src.ttt.integrations.groot_wrapper import attach_ttt_to_groot
-
-        base_model = _policy.policy.model  # Gr00tSimPolicyWrapper.policy(=Gr00tPolicy).model
-        ttt_model = attach_ttt_to_groot(
-            base_model,
-            predictor_state_path=predictor_path,
-            predictor_input_dim=int(ms.get("predictor_input_dim", 2048)),
-            predictor_proj_dim=int(ms.get("predictor_proj_dim", 2048)),
-            predictor_inner_model=ms.get("predictor_inner_model", "linear"),
-            predictor_eta_base=float(ms.get("predictor_eta_base", 0.1)),
-            ttt_update_in_train=False,
-            # default True — 추론 시 매 frame 마다 TTT inner-loop adaptation
-            # (사용자 의도: "test time train 진행"). episode 시작 reset 은 /reset 이 처리.
-            ttt_update_at_inference=bool(ms.get("ttt_update_at_inference", True)),
-        )
-        _policy.policy.model = ttt_model
-        logger.info(
-            "[ttt] base GR00T → Gr00tN1d6WithTTT (predictor=%s)", predictor_path,
-        )
-
-    # 통일 API video 키 매핑 동적 구성 (pretrain/finetune ckpt 둘 다 흡수).
-    video_modality_keys = list(_modality_configs["video"].modality_keys)
-    _video_key_mapping = build_video_mapping(video_modality_keys)
-    logger.info(
-        "[video] modality_keys=%s → mapping=%s",
-        video_modality_keys, _video_key_mapping,
-    )
-
-
-# ─── FastAPI 엔드포인트 ──────────────────────────────────────────────────────
+    _service.load_policy(device=args.device)
 
 
 @app.post("/reset")
 async def reset():
-    if _policy is not None:
-        _policy.reset()
-        # TTT wrapper 의 inner state 도 episode 시작 시점에 θ_init 으로 복원.
-        # Gr00tPolicy.reset 자체는 no-op 이라 여기서 직접 호출.
-        inner = getattr(_policy, "policy", None)
-        model = getattr(inner, "model", None) if inner is not None else None
-        if model is not None and hasattr(model, "reset_predictor"):
-            model.reset_predictor()
-    return {"status": "reset"}
+    return _service.reset()
 
 
 @app.post("/act")
 async def predict_action(payload: dict):
-    if _policy is None:
-        return {"error": "model not loaded"}
+    _apply_runtime_args()
+    try:
+        return _service.act(payload)
+    except GrootModelNotLoadedError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=503)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
 
-    t0 = time.time()
-    profile = _profile
-    assert profile is not None
 
-    groot_obs = _build_groot_obs(payload)
-    action_dict, info = _policy.get_action(groot_obs)
-    latency_ms = (time.time() - t0) * 1000
-
-    # GR00T native action dict → 통일 sub-key dict.
-    # action_dict 의 key 는 "end_effector_position" 또는 "action.end_effector_position" 형태로 들어올 수 있음.
-    # 이름 정규화 후 GROOT_TO_UNIFIED_ACTION 으로 매핑.
-    out = {"latency_ms": latency_ms}
-    for k_raw, arr in action_dict.items():
-        k = k_raw[len("action."):] if k_raw.startswith("action.") else k_raw
-        unified = GROOT_TO_UNIFIED_ACTION.get(k)
-        if unified is None:
-            # 알 수 없는 키 → action. 접두사 유지하여 그대로 보존
-            unified = "action.{}".format(k)
-        if arr.ndim == 3:
-            arr = arr[0]   # (B, T, D) → (T, D)
-        elif arr.ndim == 1:
-            arr = arr[np.newaxis, :]
-        elif arr.ndim == 0:
-            arr = arr.reshape(1, 1)
-        out[unified] = arr.tolist()
-
-    # 프로파일이 emits_subkeys 로 선언한 키가 빠졌으면 빈 array 라도 채워주기 (디버깅 명확성)
-    horizon = len(_modality_configs["action"].delta_indices) if _modality_configs else 1
-    for sk in profile.emits_subkeys:
-        if sk not in out:
-            local = sk[len("action."):]
-            if local in {a.name for a in profile.action_layout}:
-                dim = profile.dim_slice(local).stop - profile.dim_slice(local).start
-            else:
-                dim = 1
-            out[sk] = [[0.0] * dim for _ in range(horizon)]
-            logger.warning("emit sub-key %s missing from GR00T output, filled zeros", sk)
-
-    # 디버그 (첫 5 호출)
-    step_count = getattr(app.state, "_step", 0) + 1
-    app.state._step = step_count
-    if step_count <= 5:
-        logger.info(
-            "call=%d horizon=%d pos=%s grip=%s task=%r",
-            step_count, horizon,
-            np.array(out.get("action.eef_pos", [[0]*3]))[0].round(4).tolist(),
-            np.array(out.get("action.gripper", [[0]]))[0].round(4).tolist(),
-            payload.get("task", "")[:40],
-        )
-
-    return out
+@app.post("/act_with_features")
+async def predict_action_with_features(payload: dict):
+    _apply_runtime_args()
+    try:
+        return _service.act_with_features(payload)
+    except GrootModelNotLoadedError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=503)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
 
 
 @app.get("/health")
 async def health():
-    if _profile is None:
-        return {"status": "not_loaded", "model": "groot"}
-    horizon = (
-        len(_modality_configs["action"].delta_indices)
-        if _modality_configs is not None else _profile.n_action_steps
+    _apply_runtime_args()
+    return _service.health()
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="GR00T N1.6 inference server (port 8500)")
+    parser.add_argument(
+        "--profile",
+        type=str,
+        required=True,
+        help="Checkpoint profile YAML path (configs/checkpoints/*.yaml)",
     )
-    return {
-        "status": "ok" if _policy is not None else "not_loaded",
-        "model": "groot-n1.6",
-        "profile": _profile.name,
-        "embodiment_tag": _embodiment_tag.value if _embodiment_tag else None,
-        "n_action_steps": horizon,
-        "action_type": _profile.action_type,
-        "action_keys": list(_profile.emits_subkeys),
-    }
+    parser.add_argument("--host", type=str, default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=8500)
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="Override profile model_specific.device only when needed",
+    )
+    parser.add_argument(
+        "--model-path-override",
+        type=str,
+        default=None,
+        help="Override profile.checkpoint_source.id with an explicit path",
+    )
+    parser.add_argument(
+        "--feature-slice",
+        type=str,
+        choices=FEATURE_SLICES,
+        default="valid",
+        help=(
+            "/act_with_features DiT pre-velocity slice. "
+            "valid=embodiment decoded horizon, all=model horizon"
+        ),
+    )
+    parser.add_argument(
+        "--feature-dtype",
+        type=str,
+        choices=FEATURE_DTYPES,
+        default="float16",
+        help="/act_with_features hidden_states serialization dtype",
+    )
+    parser.add_argument(
+        "--feature-action-horizon",
+        type=int,
+        default=None,
+        help="Leading action-token count to export. Defaults to the feature-slice horizon.",
+    )
+    return parser
 
 
-# ─── Entry point ─────────────────────────────────────────────────────────────
-
-
-def main():
-    global _profile
-
+def main() -> None:
     try:
         from src.utils.common.logger import create_module_logger
 
@@ -292,24 +180,20 @@ def main():
     except ImportError:
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
-    parser = argparse.ArgumentParser(description="GR00T N1.6 추론 서버 (port 8500)")
-    parser.add_argument(
-        "--profile", type=str, required=True,
-        help="체크포인트 프로파일 YAML 경로 (configs/checkpoints/*.yaml)",
-    )
-    parser.add_argument("--host", type=str, default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8500)
-    parser.add_argument("--device", type=str, default="cuda")
-    args = parser.parse_args()
+    args = build_parser().parse_args()
 
-    _profile = load_profile(args.profile)
-    logger.info("Loaded profile %s from %s", _profile.name, args.profile)
-    assert _profile.base_model == "groot", (
-        f"profile.base_model={_profile.base_model!r}, but this server is groot"
+    profile = load_profile(args.profile)
+    if args.model_path_override is not None:
+        profile.checkpoint_source.id = args.model_path_override
+    logger.info("Loaded profile %s from %s", profile.name, args.profile)
+    assert profile.base_model == "groot", (
+        f"profile.base_model={profile.base_model!r}, but this server is groot"
     )
 
+    _service.profile = profile
+    _service.feature_config = GrootFeatureConfig.from_args(args)
+    _service.step_count = 0
     app.state.args = args
-    app.state._step = 0
     uvicorn.run(app, host=args.host, port=args.port)
 
 

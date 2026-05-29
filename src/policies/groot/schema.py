@@ -13,6 +13,10 @@ robocasa native 카메라 ↔ GR00T modality key 대응:
 
 from __future__ import annotations
 
+from typing import Any
+
+import numpy as np
+
 # 통일 API 이미지 키 → GR00T video 키 (PandaOmron 기준).
 # `static`/`left` 는 2-camera 모델 호환 alias. side_0/side_1/wrist_0 는
 # GR00T schema 정합 alias.
@@ -50,6 +54,50 @@ GROOT_TO_UNIFIED_ACTION: dict[str, str] = {
     "base_motion":           "action.base_motion",
     "control_mode":          "action.control_mode",
 }
+
+GROOT_TO_UNIFIED_STATE: dict[str, str] = {
+    groot_key: unified_key for unified_key, groot_key in UNIFIED_TO_STATE_KEY.items()
+}
+
+UNIFIED_TO_GROOT_ACTION: dict[str, str] = {
+    unified_key: f"action.{groot_key}"
+    for groot_key, unified_key in GROOT_TO_UNIFIED_ACTION.items()
+}
+
+# GrootRoboCasaEnv observation key → HTTP VLAClient camera alias.
+# The official/SAFE path may expose either res256 GR00T keys or RoboCasa raw
+# camera names, depending on the loaded checkpoint/embodiment.
+GROOT_ENV_VIDEO_TO_UNIFIED_CAM: dict[str, str] = {
+    "video.res256_image_side_0": "left",
+    "video.res256_image_side_1": "right",
+    "video.res256_image_wrist_0": "wrist",
+    "video.robot0_agentview_left": "left",
+    "video.robot0_agentview_right": "right",
+    "video.robot0_eye_in_hand": "wrist",
+}
+
+GROOT_ENV_LANGUAGE_KEYS: tuple[str, ...] = (
+    "annotation.human.action.task_description",
+    "annotation.human.task_description",
+)
+
+
+def first_text(value: Any) -> str | None:
+    if isinstance(value, np.ndarray):
+        return first_text(value.reshape(-1)[0]) if value.size else None
+    if isinstance(value, (list, tuple)):
+        return first_text(value[0]) if value else None
+    if value is None:
+        return None
+    return str(value)
+
+
+def extract_groot_instruction(observation: dict[str, Any]) -> str:
+    for key in GROOT_ENV_LANGUAGE_KEYS:
+        text = first_text(observation.get(key))
+        if text:
+            return text
+    return ""
 
 
 def normalize_modality_key(key: str, prefix: str) -> str:

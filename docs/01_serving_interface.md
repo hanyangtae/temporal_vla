@@ -218,6 +218,8 @@ GR00T `robocasa_eval.py --use-groot-env` 와 SAFE collection 은 위 generic Rob
 
 GR00T HTTP 서버는 `/act_with_features` 를 통해 DiT pre-velocity action token 을 export 한다. 같은 데이터를 ZMQ `get_action_with_features` 로도 export 한다 (upstream GR00T SAFE collector msgpack 호환). 둘 다 같은 `src/policies/groot/safe_features.py` 의 `capture_dit_features` 를 사용해 텐서 정의가 일치한다.
 
+GR00T의 call-local RNG control은 transport별 위치만 다르다. HTTP `/act`/`/act_with_features`는 request payload의 `inference_seed`를 쓰고, ZMQ SAFE `get_action_with_features`는 request `options.inference_seed`를 쓴다. HTTP/ZMQ parity 검증에서는 같은 base seed에 policy-step index를 더한 schedule을 사용한다.
+
 GR00T N1.6 특정 사항은 [`groot/n16_11_http_act_changes.md`](groot/n16_11_http_act_changes.md) 와 [`groot/n16_09_safe_parity.md`](groot/n16_09_safe_parity.md) 참조.
 
 새 모델이 features 를 노출할 때 따를 일반 계약:

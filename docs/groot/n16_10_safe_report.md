@@ -149,7 +149,7 @@ Base checkpoint는 GR00T N1.6 RoboCasa PandaOmron checkpoint다.
 /home/dongkyu/pdk_ws/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B
 ```
 
-GR00T N1.6 success-rate 기준선은 upstream GR00T ZMQ evaluation path로 둔다. HTTP serving 경로(`scripts/serve/groot.py`, port `:8500`, `/act` + `/act_with_features`)는 같은 RoboCasa observation에서 ZMQ SAFE action과 parity를 확인했다 ([09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29)). HTTP closed-loop SR은 아직 별도 평가 후 지표에 편입한다. HTTP `/act_with_features` 는 SAFE feature 를 일반 벤치마크에서도 회수할 수 있게 ZMQ feature server 의 정의를 `src/policies/groot/safe_features.py` 공유 모듈로 단일화한 결과이며, SAFE pkl/loader smoke도 통과했다 ([아래 smoke](#http-act_with_features-safe-collection-smoke-2026-05-29)).
+GR00T N1.6 success-rate 기준선은 upstream GR00T ZMQ evaluation path로 둔다. HTTP serving 경로(`scripts/serve/groot.py`, port `:8500`, `/act` + `/act_with_features`)는 ZMQ SAFE path와 action parity 및 SAFE transport smoke를 확인했다 ([09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29)). 전체 benchmark HTTP closed-loop SR은 아직 산출하지 않았다. HTTP `/act_with_features` 는 SAFE feature 를 일반 벤치마크에서도 회수할 수 있게 ZMQ feature server 의 정의를 `src/policies/groot/safe_features.py` 공유 모듈로 단일화한 결과이며, SAFE pkl/loader smoke도 통과했다 ([아래 smoke](#http-act_with_features-safe-collection-smoke-2026-05-29)).
 
 SAFE rollout collection은 dedicated ZMQ feature server로 수행했다. Feature endpoint는 normal action path를 유지하면서 action과 feature를 함께 저장한다. Official direct policy action과 SAFE feature path action의 동등성은 action key별 비교에서 `max_abs=0.0`으로 확인했다.
 
@@ -501,19 +501,19 @@ HTTP feature collection path도 ZMQ SAFE pkl contract에 맞춰 1-step capped ro
 | `load_scope_features(...)` shape | `[1, 1024]` |
 | `exported_action_token_count == n_action_steps` | `16 == 16` |
 
-결론: HTTP `/act_with_features` feature response는 SAFE pkl schema, hidden-state metadata, existing SAFE loader path와 호환된다. Full-scale HTTP SAFE dataset collection은 필요하면 같은 `--policy-transport http` 경로로 확장한다.
+같은 collector를 HTTP/ZMQ 양쪽 transport로 실행한 closed-loop smoke도 통과했다. 상세 조건, artifact path, seed별 결과는 [09 SAFE Parity](n16_09_safe_parity.md#closed-loop-safe-transport-smoke)에 둔다.
 
-## 한계와 다음 단계
+결론: HTTP `/act_with_features` feature response는 SAFE pkl schema, hidden-state metadata, existing SAFE loader path와 호환된다. 대량 HTTP SAFE dataset collection도 같은 `--policy-transport http` 경로를 사용한다.
+
+## 한계와 남은 항목
 
 다음 개선 축은 early separability다. CP는 threshold를 calibration하고, rollout 초반의 detector score separability가 early signal 품질을 결정한다.
 
-다음 단계:
-
-1. Same-observation HTTP-vs-ZMQ action parity는 검증됐으므로 HTTP `/act` (port `:8500`) closed-loop SR을 통합 지표로 편입한다. HTTP `/act_with_features` 기반 SAFE feature collection은 schema/loader smoke를 통과했으며, 대량 수집이 필요하면 같은 transport로 확장한다.
-2. Proactive intervention이 목표라면 inference-step-level onset/intervention label을 수집하거나 정의한다.
-3. Paired closed-loop trace equality가 필요하면 `ep_meta` 외에 reset-time full sim state (`qpos/qvel` 등) replay artifact를 추가한다.
-4. `--feature-slice all`로 model-level `H=50` feature를 수집해 current `H=16` valid-horizon export와 비교할 수 있다.
-5. Taskwise score-trajectory plot을 추가해 CP threshold crossing이 어느 phase에서 발생하는지 더 명확히 본다.
+1. HTTP benchmark SR: 전체 task-set closed-loop 평가는 아직 남아 있다. Runtime validation 범위는 action parity, HTTP `/act_with_features` schema/loader smoke, 짧은 HTTP/ZMQ SAFE transport smoke다.
+2. Proactive intervention: inference-step-level onset/intervention label protocol이 아직 없다.
+3. Paired trace identity: `ep_meta`만으로는 부족하며 reset-time full sim state (`qpos/qvel` 등) replay artifact가 필요하다.
+4. Feature axis ablation: `--feature-slice all` model-level `H=50` feature와 current `H=16` valid-horizon export 비교가 남아 있다.
+5. Taskwise score-trajectory plot: CP threshold crossing phase를 더 명확히 기록한다.
 
 ## 관련 파일
 

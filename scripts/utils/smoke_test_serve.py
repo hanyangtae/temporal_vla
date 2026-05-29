@@ -38,6 +38,8 @@ _EMIT_DIM = {
     "action.eef_rot6d": 6,
     "action.gripper": 1,
     "action.joint_pos": 7,
+    "action.base_motion": 4,
+    "action.control_mode": 1,
 }
 
 # state sub-key 에 대한 dummy 값 (payload 조립용)
@@ -46,10 +48,14 @@ _DUMMY_STATE = {
     "eef_euler": [0.0, 0.0, 0.0],
     "eef_quat": [0.0, 0.0, 0.0, 1.0],
     "eef_axisangle": [0.0, 0.0, 0.0],
+    "eef_pos_rel": [0.0, 0.0, 0.0],
+    "eef_quat_rel": [0.0, 0.0, 0.0, 1.0],
     "gripper_qpos": [0.0, 0.0],
     "gripper_action": [0.0],
     "gripper_opening": [0.0],
     "joint_pos": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "base_position": [0.0, 0.0, 0.0],
+    "base_rotation": [0.0, 0.0, 0.0, 1.0],
 }
 
 

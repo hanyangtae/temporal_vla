@@ -21,6 +21,8 @@ ZMQ SAFE feature server 또는 HTTP `/act_with_features`를 통해 RoboCasa roll
 
 `feature_server.py`는 DiT pre-velocity capture 로직을 `src/policies/groot/safe_features.py` 의 `capture_dit_features` 에 위임한다. HTTP `/act_with_features` ([n16_11](n16_11_http_act_changes.md)) 도 같은 함수를 호출하므로, 두 경로가 같은 hidden state 정의를 보장한다.
 
+`collect_rollout.py --inference-seed`는 ZMQ와 HTTP transport 양쪽에 적용된다. ZMQ에서는 request `options.inference_seed`, HTTP에서는 request payload `inference_seed`로 전달된다. Transport parity run은 base seed에 policy-step index를 더한 schedule을 사용한다.
+
 서버:
 
 ```bash
@@ -140,7 +142,7 @@ python scripts/safe/groot_n16/robocasa/collect/collect_rollout.py \
   --ep-meta-dir outputs/tmp/groot_http_act_features_safe_collect_20260529/ep_meta
 ```
 
-검증된 smoke artifact와 SAFE loader 결과는 [10 SAFE Report](n16_10_safe_report.md#http-act_with_features-safe-collection-smoke-2026-05-29)에 기록한다.
+Smoke artifact와 SAFE loader 결과는 [10 SAFE Report](n16_10_safe_report.md#http-act_with_features-safe-collection-smoke-2026-05-29)에 기록한다. HTTP/ZMQ transport parity 결과는 [09 SAFE Parity](n16_09_safe_parity.md#closed-loop-safe-transport-smoke)에 둔다.
 
 `ah8` 서버:
 

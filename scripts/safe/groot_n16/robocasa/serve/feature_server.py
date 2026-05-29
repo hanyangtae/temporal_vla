@@ -27,19 +27,25 @@ import torch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
-sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, str(REPO_ROOT / "scripts/utils"))
-sys.path.insert(0, str(REPO_ROOT / "src/policies/Isaac-GR00T"))
+SCRIPTS_ROOT = REPO_ROOT / "scripts"
+if str(SCRIPTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_ROOT))
+
+from path_setup import configure_repo_paths  # noqa: E402
+
+configure_repo_paths(include_script_utils=True, include_groot=True)
 
 from checkpoint_profile import load_profile  # noqa: E402
 from gr00t.policy.server_client import PolicyServer  # noqa: E402
 from src.policies.groot.loader import load_groot_policy  # noqa: E402
-
-
-SAFE_FEATURE_KIND_VALID = "groot_n16_dit_valid_action_tokens_pre_velocity"
-SAFE_FEATURE_KIND_ALL = "groot_n16_dit_all_action_tokens_pre_velocity"
-SAFE_FEATURE_AXES_VALID = ["denoising_step", "valid_action_step", "feature_dim"]
-SAFE_FEATURE_AXES_ALL = ["denoising_step", "model_action_token", "feature_dim"]
+from src.policies.groot.rng import temporary_inference_seed  # noqa: E402
+from src.policies.groot.safe_features import (  # noqa: E402
+    SAFE_FEATURE_AXES_ALL,
+    SAFE_FEATURE_AXES_VALID,
+    SAFE_FEATURE_KIND_ALL,
+    SAFE_FEATURE_KIND_VALID,
+    SafeFeatureExtractor,
+)
 
 
 def _to_numpy_tree(value: Any) -> Any:
@@ -58,14 +64,6 @@ def _to_numpy_tree(value: Any) -> Any:
     return value
 
 
-def _cast_feature_tensor(tensor: torch.Tensor, dtype_name: str) -> torch.Tensor:
-    if dtype_name == "float32":
-        return tensor.float()
-    if dtype_name == "float16":
-        return tensor.half()
-    raise ValueError(f"Unsupported feature dtype: {dtype_name}")
-
-
 class SafeN16FeaturePolicy:
     def __init__(
         self,
@@ -76,13 +74,12 @@ class SafeN16FeaturePolicy:
     ):
         self.sim_policy = sim_policy
         self.policy = sim_policy.policy
-        self.feature_dtype = feature_dtype
-        if feature_slice not in {"valid", "all"}:
-            raise ValueError(f"Unsupported feature slice: {feature_slice}")
-        self.feature_slice = feature_slice
-        if feature_action_horizon is not None and feature_action_horizon <= 0:
-            raise ValueError(f"feature_action_horizon must be positive: {feature_action_horizon}")
-        self.feature_action_horizon = feature_action_horizon
+        self.extractor = SafeFeatureExtractor(
+            sim_policy,
+            feature_dtype=feature_dtype,
+            feature_slice=feature_slice,
+            feature_action_horizon=feature_action_horizon,
+        )
 
     def reset(self, options: dict[str, Any] | None = None) -> dict[str, Any]:
         return self.sim_policy.reset(options)
@@ -95,96 +92,18 @@ class SafeN16FeaturePolicy:
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         return self.sim_policy.get_action(observation, options)
 
-    def _valid_action_horizon(self) -> int:
-        modality_configs = self.sim_policy.get_modality_config()
-        return len(modality_configs["action"].delta_indices)
-
-    def _resolved_feature_action_horizon(
-        self,
-        *,
-        model_action_horizon: int,
-        valid_action_horizon: int,
-    ) -> int:
-        max_export_horizon = (
-            valid_action_horizon if self.feature_slice == "valid" else model_action_horizon
-        )
-        feature_action_horizon = self.feature_action_horizon or max_export_horizon
-        if feature_action_horizon > max_export_horizon:
-            raise ValueError(
-                "feature_action_horizon exceeds exportable horizon: "
-                f"{feature_action_horizon} > {max_export_horizon} "
-                f"(feature_slice={self.feature_slice})"
-            )
-        return feature_action_horizon
-
-    def _get_action_and_safe_features(
-        self, observation: dict[str, Any], options: dict[str, Any] | None = None
-    ) -> tuple[dict[str, Any], torch.Tensor, int, int, int]:
-        action_head = self.policy.model.action_head
-        model_action_horizon = int(action_head.action_horizon)
-        valid_action_horizon = self._valid_action_horizon()
-        feature_action_horizon = self._resolved_feature_action_horizon(
-            model_action_horizon=model_action_horizon,
-            valid_action_horizon=valid_action_horizon,
-        )
-        safe_features: list[torch.Tensor] = []
-
-        def capture_dit_output(_module: Any, _inputs: tuple[Any, ...], output: Any) -> None:
-            model_output = output[0] if isinstance(output, tuple) else output
-            action_tokens = model_output[:, -model_action_horizon:]
-            if self.feature_slice == "valid":
-                # decode_action uses only the embodiment's valid leading action steps.
-                safe_features.append(action_tokens[:, :feature_action_horizon].detach())
-            else:
-                safe_features.append(action_tokens[:, :feature_action_horizon].detach())
-
-        handle = action_head.model.register_forward_hook(capture_dit_output)
-        try:
-            action, _ = self.sim_policy.get_action(observation, options)
-        finally:
-            handle.remove()
-
-        if not safe_features:
-            raise RuntimeError("Failed to capture GR00T N1.6 DiT SAFE features")
-        return (
-            action,
-            torch.stack(safe_features, dim=1),
-            model_action_horizon,
-            valid_action_horizon,
-            feature_action_horizon,
-        )
-
     def get_action_with_features(
         self, observation: dict[str, Any], options: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        with torch.inference_mode():
-            (
-                action,
-                safe_feature_tensor,
-                model_action_horizon,
-                valid_action_horizon,
-                feature_action_horizon,
-            ) = self._get_action_and_safe_features(observation, options)
-
-        safe_features = _cast_feature_tensor(safe_feature_tensor, self.feature_dtype)
-        feature_kind = (
-            SAFE_FEATURE_KIND_VALID if self.feature_slice == "valid" else SAFE_FEATURE_KIND_ALL
-        )
-        feature_axes = (
-            SAFE_FEATURE_AXES_VALID if self.feature_slice == "valid" else SAFE_FEATURE_AXES_ALL
-        )
+        inference_seed = None if options is None else options.get("inference_seed")
+        with temporary_inference_seed(inference_seed):
+            captured = self.extractor.capture(observation, options=options)
+        metadata = captured.metadata
         return {
-            "action": _to_numpy_tree(action),
-            "hidden_states": safe_features.cpu().numpy(),
-            "feature_kind": feature_kind,
-            "feature_axes": feature_axes,
-            "feature_slice": self.feature_slice,
-            "exported_action_token_count": int(safe_features.shape[2]),
-            "action_horizon": int(safe_features.shape[2]),
-            "feature_action_horizon": feature_action_horizon,
-            "valid_action_horizon": valid_action_horizon,
-            "model_action_horizon": model_action_horizon,
-            "num_inference_timesteps": int(safe_features.shape[1]),
+            "action": _to_numpy_tree(captured.action),
+            "hidden_states": captured.hidden_states.cpu().numpy(),
+            **metadata.asdict(),
+            "action_horizon": metadata.exported_action_token_count,
         }
 
 

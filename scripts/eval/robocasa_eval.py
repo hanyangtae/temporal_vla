@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 import traceback
 from pathlib import Path
@@ -43,14 +44,35 @@ from path_setup import configure_repo_paths
 configure_repo_paths(include_script_utils=True, include_robocasa=True)
 
 import numpy as np
-import robosuite
-from robosuite import load_part_controller_config
-from robocasa.utils.dataset_registry import TASK_SET_REGISTRY
-from tqdm import tqdm
+_HELP_ONLY = any(arg in {"-h", "--help"} for arg in sys.argv[1:])
+if _HELP_ONLY:
+    robosuite = None
+    load_part_controller_config = None
+    TASK_SET_REGISTRY = {}
+    tqdm = lambda iterable, **_kwargs: iterable
+else:
+    import robosuite
+    from robosuite import load_part_controller_config
+    from robocasa.utils.dataset_registry import TASK_SET_REGISTRY
+    from tqdm import tqdm
 
-from src.utils.common.logger import create_module_logger
-from src.processor.factory import make_robocasa_processors
+try:
+    from src.utils.common.logger import create_module_logger
+except ModuleNotFoundError:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
+    def create_module_logger(name: str):
+        return logging.getLogger(name)
+
+from src.processor.factory import make_groot_robocasa_processors, make_robocasa_processors
 from src.processor.types import TransitionKey
+from src.policies.groot.scenario_replay import (
+    ep_meta_manifest_path as _ep_meta_manifest_path,
+    get_robocasa_ep_meta as _get_robocasa_ep_meta,
+    load_ep_meta_manifest as _load_ep_meta_manifest,
+    set_robocasa_ep_meta as _set_robocasa_ep_meta,
+    write_ep_meta_manifest as _write_ep_meta_manifest,
+)
 
 logger = create_module_logger("robocasa_vla_eval")
 
@@ -105,28 +127,16 @@ def _check_success(env) -> bool:
     return bool(result.get("task", False)) if isinstance(result, dict) else bool(result)
 
 
-# GR00T env 모드 매핑: GrootRoboCasaEnv 의 obs/action schema ↔ 통일 API sub-key.
-# - obs (env → vla_client): GR00T schema 키를 통일 API 의 의미 명확한 sub-key 로 rename.
-# - action (vla_client → env): 통일 sub-key 를 GR00T native action_dict 키로 rename.
-GROOT_VIDEO_TO_UNIFIED_CAM = {
-    "video.res256_image_side_0": "left",
-    "video.res256_image_side_1": "right",
-    "video.res256_image_wrist_0": "wrist",
-}
-GROOT_STATE_TO_UNIFIED = {
-    "state.end_effector_position_relative": "observation.state.eef_pos_rel",
-    "state.end_effector_rotation_relative": "observation.state.eef_quat_rel",
-    "state.gripper_qpos":                   "observation.state.gripper_qpos",
-    "state.base_position":                  "observation.state.base_position",
-    "state.base_rotation":                  "observation.state.base_rotation",
-}
-UNIFIED_ACTION_TO_GROOT = {
-    "action.eef_pos":         "action.end_effector_position",
-    "action.eef_axisangle":   "action.end_effector_rotation",
-    "action.gripper":         "action.gripper_close",
-    "action.base_motion":     "action.base_motion",
-    "action.control_mode":    "action.control_mode",
-}
+def _split_vla_observation(processed_obs: dict) -> tuple[dict, dict, str]:
+    images = {}
+    states = {}
+    for key, value in processed_obs.items():
+        if key.startswith("observation.images."):
+            images[key.split("observation.images.", 1)[1]] = value
+        elif key.startswith("observation.state."):
+            states[key] = value
+    instruction = processed_obs.get("task", "")
+    return images, states, "" if instruction is None else str(instruction)
 
 
 def run_vla_rollouts_groot(
@@ -135,11 +145,19 @@ def run_vla_rollouts_groot(
     num_rollouts: int,
     num_steps: int,
     video_path: str | None = None,
+    seed: int | None = None,
+    env_name: str | None = None,
+    ep_meta_dir: Path | None = None,
+    inference_seed: int | None = None,
+    obs_pipeline=None,
+    action_pipeline=None,
 ) -> dict:
-    """GrootRoboCasaEnv 기반 rollout — KeyConverter 가 obs/action 을 native 와 동일 schema 로 변환.
-
-    obs/action processor 우회. 통일 API 통신 layer 만 거침.
-    """
+    """GrootRoboCasaEnv 기반 rollout."""
+    if obs_pipeline is None or action_pipeline is None:
+        obs_pipeline, action_pipeline = make_groot_robocasa_processors(
+            strict=False,
+            action_mode="step",
+        )
     video_writer = None
     if video_path is not None:
         try:
@@ -151,30 +169,66 @@ def run_vla_rollouts_groot(
 
     results = []
     num_success = 0
+    if ep_meta_dir is not None:
+        if seed is None:
+            raise ValueError("--ep-meta-dir requires --seed in groot env mode")
+        if env_name is None:
+            raise ValueError("env_name is required when ep_meta_dir is set")
 
     for rollout_i in tqdm(range(num_rollouts), desc="롤아웃 평가 (groot env)"):
-        obs, _info = env.reset()
-        instruction = obs.get("annotation.human.action.task_description", "")
-        if isinstance(instruction, (list, tuple)):
-            instruction = instruction[0] if instruction else ""
+        reset_seed = seed + rollout_i if seed is not None else None
+        ep_meta_manifest = None
+        ep_meta_mode = "none"
+        replay_ep_meta = None
+        if ep_meta_dir is not None and reset_seed is not None:
+            ep_meta_manifest = _ep_meta_manifest_path(ep_meta_dir, env_name, reset_seed)
+            if ep_meta_manifest.exists():
+                replay_ep_meta = _load_ep_meta_manifest(
+                    ep_meta_manifest,
+                    env_name=env_name,
+                    scenario_seed=reset_seed,
+                )
+                _set_robocasa_ep_meta(env, replay_ep_meta)
+                ep_meta_mode = "imported"
+            else:
+                ep_meta_mode = "exported"
+        if reset_seed is None:
+            obs, _info = env.reset()
+        else:
+            obs, _info = env.reset(seed=reset_seed)
+        if ep_meta_manifest is not None and replay_ep_meta is None:
+            _write_ep_meta_manifest(
+                ep_meta_manifest,
+                env_name=env_name,
+                scenario_seed=reset_seed,
+                ep_meta=_get_robocasa_ep_meta(env),
+            )
+        processed = obs_pipeline({TransitionKey.OBSERVATION: obs})
+        _images, _states, instruction = _split_vla_observation(
+            processed[TransitionKey.OBSERVATION]
+        )
         vla_client.reset()
 
         latencies = []
         first_success_step = None
         step_i = 0
         for step_i in range(num_steps):
-            # obs (GR00T schema) → 통일 sub-key rename
-            images = {}
-            for groot_k, unified_cam in GROOT_VIDEO_TO_UNIFIED_CAM.items():
-                if groot_k in obs:
-                    images[unified_cam] = obs[groot_k]
-            states = {}
-            for groot_k, unified_k in GROOT_STATE_TO_UNIFIED.items():
-                if groot_k in obs:
-                    val = obs[groot_k]
-                    states[unified_k] = np.asarray(val, dtype=np.float32).flatten()
+            processed = obs_pipeline({TransitionKey.OBSERVATION: obs})
+            processed_obs = processed[TransitionKey.OBSERVATION]
+            images, states, processed_instruction = _split_vla_observation(processed_obs)
+            if not instruction and processed_instruction:
+                instruction = processed_instruction
 
-            actions, latency_ms = vla_client.predict(images, states or None, instruction)
+            call_inference_seed = (
+                None if inference_seed is None
+                else inference_seed + rollout_i * num_steps + step_i
+            )
+            actions, latency_ms = vla_client.predict(
+                images,
+                states or None,
+                instruction,
+                inference_seed=call_inference_seed,
+            )
             latencies.append(latency_ms)
 
             # DEBUG: action 통계 dump (VLA_ACTION_DUMP=path env 로 활성).
@@ -185,25 +239,22 @@ def run_vla_rollouts_groot(
                     rec = {k: (v.tolist() if hasattr(v, "tolist") else v) for k, v in actions.items()}
                     f.write(json.dumps(rec) + "\n")
 
-            # 통일 sub-key (action.eef_pos 등) → GR00T action_dict (action.end_effector_position 등)
-            if not isinstance(actions, dict):
-                raise RuntimeError(
-                    "groot env mode 는 sub-keyed action 필요 — flat ndarray 받음"
-                )
-            groot_action = {}
-            for unified_k, groot_k in UNIFIED_ACTION_TO_GROOT.items():
-                if unified_k in actions:
-                    arr = actions[unified_k]
-                    # action chunk 의 첫 step 만 적용 (n_action_steps=16 chunk → 1 step apply)
-                    groot_action[groot_k] = np.asarray(arr[0], dtype=np.float32)
+            processed_act = action_pipeline({TransitionKey.ACTION: actions})
+            groot_action = processed_act[TransitionKey.ACTION]
 
             obs, _reward, terminated, truncated, info = env.step(groot_action)
 
             if video_writer is not None:
                 # GrootRoboCasaEnv 의 obs 의 high-res frame 또는 256x256 frame 사용.
-                frame = obs.get("video.res256_image_side_0_512x512") or obs.get(
-                    "video.res256_image_side_0"
-                )
+                frame = None
+                for frame_key in (
+                    "video.res256_image_side_0_512x512",
+                    "video.res256_image_side_0",
+                    "video.robot0_agentview_left",
+                ):
+                    if frame_key in obs:
+                        frame = obs[frame_key]
+                        break
                 if frame is not None:
                     video_writer.append_data(np.asarray(frame, dtype=np.uint8))
 
@@ -217,6 +268,13 @@ def run_vla_rollouts_groot(
 
         results.append({
             "rollout": rollout_i,
+            "seed": reset_seed,
+            "scenario_seed": reset_seed,
+            "inference_seed": (
+                None if inference_seed is None else inference_seed + rollout_i * num_steps
+            ),
+            "ep_meta_mode": ep_meta_mode,
+            "ep_meta_manifest": str(ep_meta_manifest) if ep_meta_manifest else None,
             "success": first_success_step is not None,
             "first_success_step": first_success_step,
             "steps": step_i + 1,
@@ -274,14 +332,7 @@ def run_vla_rollouts(
             processed = obs_pipeline({TransitionKey.OBSERVATION: obs})
             processed_obs = processed[TransitionKey.OBSERVATION]
 
-            images = {}
-            states = {}
-            for k, v in processed_obs.items():
-                if k.startswith("observation.images."):
-                    cam_name = k.split("observation.images.")[-1]
-                    images[cam_name] = v
-                elif k.startswith("observation.state"):
-                    states[k] = v
+            images, states, _processed_instruction = _split_vla_observation(processed_obs)
 
             actions, latency_ms = vla_client.predict(images, states or None, instruction)
             # sub-keyed dict 또는 flat ndarray 양쪽 지원
@@ -357,12 +408,19 @@ def evaluate_task(
     video_path: str | None = None,
     seed: int | None = None,
     use_groot_env: bool = False,
+    ep_meta_dir: Path | None = None,
+    inference_seed: int | None = None,
 ) -> dict:
     """단일 태스크 평가."""
     logger.info("태스크: %s (rollouts=%d, steps=%d, groot_env=%s)",
                 task_name, num_rollouts, num_steps, use_groot_env)
 
     if use_groot_env:
+        if obs_pipeline is None or action_pipeline is None:
+            obs_pipeline, action_pipeline = make_groot_robocasa_processors(
+                strict=False,
+                action_mode="step",
+            )
         # GrootRoboCasaEnv (KeyConverter 통한 schema 변환) 사용.
         # task_name 형식이 "PnPCounterToCab" 같으면 namespace 자동 prefix.
         env_id = (
@@ -373,10 +431,23 @@ def evaluate_task(
         import robocasa  # noqa: F401  (env 등록 trigger)
         from robocasa.utils.gym_utils import GrootRoboCasaEnv  # noqa: F401
         import robosuite  # noqa: F401
-        env = gym.make(env_id, enable_render=True)
+        env_kwargs = {"enable_render": True}
+        if seed is not None:
+            env_kwargs["seed"] = seed
+        env = gym.make(env_id, **env_kwargs)
         try:
             info = run_vla_rollouts_groot(
-                env, vla_client, num_rollouts, num_steps, video_path,
+                env,
+                vla_client,
+                num_rollouts,
+                num_steps,
+                video_path,
+                seed=seed,
+                env_name=env_id,
+                ep_meta_dir=ep_meta_dir,
+                inference_seed=inference_seed,
+                obs_pipeline=obs_pipeline,
+                action_pipeline=action_pipeline,
             )
         finally:
             env.close()
@@ -480,23 +551,44 @@ def save_summary(all_summaries: list[dict], output_dir: Path):
 
 # ── CLI ────────────────────────────────────────────────────────────────────
 
+def _default_vla_server(use_groot_env: bool) -> str:
+    return "http://localhost:8500" if use_groot_env else "http://localhost:8200"
+
+
+def _task_set_help() -> str:
+    if not TASK_SET_REGISTRY:
+        return "태스크셋 이름 (--list-tasks는 RoboCasa target env에서 확인)"
+    return f"태스크셋 이름: {', '.join(TASK_SET_REGISTRY.keys())}"
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="VLA closed-loop 평가 (robocasa, 모델 무관)")
 
     mode = p.add_mutually_exclusive_group()
     mode.add_argument("--task", type=str, help="평가할 태스크 이름 (예: TurnOnMicrowave)")
-    mode.add_argument("--task-set", type=str,
-                       help=f"태스크셋 이름: {', '.join(TASK_SET_REGISTRY.keys())}")
+    mode.add_argument("--task-set", type=str, help=_task_set_help())
     mode.add_argument("--list-tasks", action="store_true",
                        help="사용 가능한 태스크셋 목록 출력")
 
-    p.add_argument("--vla-server", type=str, default="http://localhost:8200",
-                   help="DreamVLA 서버 URL")
+    p.add_argument("--vla-server", type=str, default=None,
+                   help="VLA 서버 URL (default: --use-groot-env이면 :8500, 아니면 :8200)")
     p.add_argument("--num-rollouts", type=int, default=50,
                    help="태스크당 롤아웃 수 (기본: 50)")
     p.add_argument("--num-steps", type=int, default=400,
                    help="롤아웃당 최대 스텝 수 (기본: 400)")
     p.add_argument("--seed", type=int, default=None, help="환경 시드")
+    p.add_argument(
+        "--inference-seed",
+        type=int,
+        default=None,
+        help="HTTP /act 요청별 policy RNG seed 시작값 (groot env 모드)",
+    )
+    p.add_argument(
+        "--ep-meta-dir",
+        type=Path,
+        default=None,
+        help="seed-keyed RoboCasa ep_meta JSON import/export 디렉토리 (groot env 모드)",
+    )
     p.add_argument("--output-dir", type=str, default=None)
     p.add_argument("--video-dir", type=str, default=None,
                    help="롤아웃 영상 저장 디렉토리")
@@ -506,7 +598,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="3-camera 모드 (left+right agentview + wrist). pi0.5 등 3-camera 모델용")
     p.add_argument("--use-groot-env", action="store_true",
                    help="GrootRoboCasaEnv (KeyConverter schema) 사용. groot 체크포인트 평가용 — "
-                        "ObsProcessor/ActionProcessor 우회하고 native 와 동일 schema 보장.")
+                        "GR00T RoboCasa processor adapter로 native schema 보장.")
     return p
 
 
@@ -522,6 +614,15 @@ def main():
         print("--task 또는 --task-set 중 하나를 지정하세요. --list-tasks로 목록 확인.")
         sys.exit(1)
 
+    if args.vla_server is None:
+        args.vla_server = _default_vla_server(args.use_groot_env)
+    if args.ep_meta_dir is not None and not args.use_groot_env:
+        logger.error("--ep-meta-dir 는 --use-groot-env 모드에서만 지원합니다.")
+        sys.exit(1)
+    if args.ep_meta_dir is not None and args.seed is None:
+        logger.error("--ep-meta-dir 를 쓰려면 --seed 를 지정해야 합니다.")
+        sys.exit(1)
+
     output_dir = Path(args.output_dir) if args.output_dir else None
     video_dir = Path(args.video_dir) if args.video_dir else None
 
@@ -532,9 +633,11 @@ def main():
     logger.info("VLA 서버 연결 완료: %s", server_info)
 
     # Processor pipeline (벤치마크별 obs/action 변환).
-    # use_groot_env 모드는 GrootRoboCasaEnv 가 schema 변환을 직접 담당하므로 None.
     if args.use_groot_env:
-        obs_pipeline, action_pipeline = None, None
+        obs_pipeline, action_pipeline = make_groot_robocasa_processors(
+            strict=False,
+            action_mode="step",
+        )
     else:
         obs_pipeline, action_pipeline = make_robocasa_processors(
             static_cam2="robot0_agentview_right" if args.three_cameras else None,
@@ -571,6 +674,8 @@ def main():
                 video_path=video_path,
                 seed=args.seed,
                 use_groot_env=args.use_groot_env,
+                ep_meta_dir=args.ep_meta_dir,
+                inference_seed=args.inference_seed,
             )
             log_summary(summary)
             all_summaries.append(summary)
