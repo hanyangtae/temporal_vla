@@ -16,9 +16,13 @@
 #   REMOTE_USER=kimseungjun  REMOTE_HOST=166.104.146.37  REMOTE_PORT=11112
 #   REMOTE_REPO=~/workspace/temporal_vla
 #
-# 원격 env 제약 (2026-06-05 기준): base python3 + numpy 1.21.5 + matplotlib 3.5.1.
-#   scipy 없음, conda env(hyundai_aigs) 없음. → scipy 의존 코드는 원격 실행 불가.
-#   분석/fit 무거운 numpy 는 OMP/OPENBLAS_NUM_THREADS 로 cap 한다(공유 노드 예의).
+# 원격 env 제약 (2026-06-05 기준):
+#   - base python3: numpy 1.21.5 + matplotlib 3.5.1, 단 **torch·scipy 없음**.
+#   - rollout pkl 은 torch 텐서를 담고 있어 unpickle 에 torch 필요 → 분석/fit 은
+#     **${REMOTE_PYTHON} (=~/anaconda3/bin/python, torch+numpy+matplotlib 보유)** 으로 돌린다.
+#   - scipy 는 어느 python 에도 없음 → scipy 의존 코드는 원격 실행 불가.
+#   - 무거운 numpy 는 OMP/OPENBLAS_NUM_THREADS 로 cap(공유 노드 예의).
+#   run/run-bg 안에서 python 호출은 ${REMOTE_PYTHON} 변수를 export 해 두니 그걸 쓴다.
 #
 # 사용 예:
 #   bash scripts/utils/remote_compute.sh sync-code feat/vl-pathway-steering
@@ -34,6 +38,8 @@ REMOTE_HOST="${REMOTE_HOST:-166.104.146.37}"
 REMOTE_PORT="${REMOTE_PORT:-11112}"
 REMOTE_REPO="${REMOTE_REPO:-~/workspace/temporal_vla}"
 REMOTE_THREADS="${REMOTE_THREADS:-8}"
+# rollout pkl 이 torch 텐서라 unpickle 에 torch 필요 → anaconda python (torch 보유) 기본.
+REMOTE_PYTHON="${REMOTE_PYTHON:-~/anaconda3/bin/python}"
 
 LOCAL_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SSH=(ssh -p "${REMOTE_PORT}" "${REMOTE_USER}@${REMOTE_HOST}")
@@ -45,9 +51,9 @@ usage() {
   exit "${1:-0}"
 }
 
-# 원격에서 thread cap + repo cd 후 명령 실행.
+# 원격에서 thread cap + REMOTE_PYTHON export + repo cd 후 명령 실행.
 _remote_exec() {  # $@ = command
-  local caps="export OMP_NUM_THREADS=${REMOTE_THREADS} OPENBLAS_NUM_THREADS=${REMOTE_THREADS} MKL_NUM_THREADS=${REMOTE_THREADS} NUMEXPR_NUM_THREADS=${REMOTE_THREADS}"
+  local caps="export OMP_NUM_THREADS=${REMOTE_THREADS} OPENBLAS_NUM_THREADS=${REMOTE_THREADS} MKL_NUM_THREADS=${REMOTE_THREADS} NUMEXPR_NUM_THREADS=${REMOTE_THREADS} REMOTE_PYTHON=${REMOTE_PYTHON}"
   "${SSH[@]}" "cd ${REMOTE_REPO} && ${caps} && $*"
 }
 
@@ -90,7 +96,7 @@ cmd_run_bg() {  # <logname> <command...>
   [ "$#" -ge 2 ] || { echo "run-bg <logname> <command...> 필요"; exit 2; }
   local name="$1"; shift
   local log="${REMOTE_LOG_DIR}/${name}.log"
-  _remote_exec "mkdir -p ${REMOTE_LOG_DIR} && nohup bash -lc 'export OMP_NUM_THREADS=${REMOTE_THREADS} OPENBLAS_NUM_THREADS=${REMOTE_THREADS} MKL_NUM_THREADS=${REMOTE_THREADS}; cd ${REMOTE_REPO}; $*' > ${log} 2>&1 & echo \"[run-bg] pid=\$! log=${log}\""
+  _remote_exec "mkdir -p ${REMOTE_LOG_DIR} && nohup bash -lc 'export OMP_NUM_THREADS=${REMOTE_THREADS} OPENBLAS_NUM_THREADS=${REMOTE_THREADS} MKL_NUM_THREADS=${REMOTE_THREADS} REMOTE_PYTHON=${REMOTE_PYTHON}; cd ${REMOTE_REPO}; $*' > ${log} 2>&1 & echo \"[run-bg] pid=\$! log=${log}\""
 }
 
 cmd_tail() {  # <logname>

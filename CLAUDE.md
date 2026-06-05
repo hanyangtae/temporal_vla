@@ -109,9 +109,12 @@ condition pair 끼리 ΔSR 비교 가능).
 - 워크플로우: 로컬 브랜치 작업 → `sync-code`(push + 원격 checkout) → 원격에서 `run`/`run-bg` →
   `pull-results`로 산출물만 회수. 로컬 데이터를 올릴 땐 `push-data`.
 - 원격 노드 (기본값, env로 override): `kimseungjun@166.104.146.37:11112`, repo `~/workspace/temporal_vla`.
-- **원격 env 제약**: base `python3` + `numpy` 1.21.5 + `matplotlib` 3.5.1. **scipy 없음, conda env 없음.**
-  → scipy 의존 코드는 원격 실행 불가. 무거운 numpy 는 `OMP/OPENBLAS_NUM_THREADS` cap(공유 노드).
-- SR eval(robocasa Docker)은 원격이 아니라 **로컬 전용**. 원격은 분석·fit 까지만.
+- 전용 오케스트레이터 agent: **`remote-compute`** (`.claude/agents/remote-compute.md`).
+- **원격 env 제약**: rollout pkl 은 torch 텐서를 담아 unpickle 에 torch 필요 →
+  분석·fit 은 **`~/anaconda3/bin/python`** (torch+numpy+matplotlib 보유)으로 돌린다
+  (helper `REMOTE_PYTHON` 기본값). base `python3` 는 torch 없음. **scipy 는 어느 python 에도 없음.**
+  무거운 numpy 는 `OMP/OPENBLAS_NUM_THREADS` cap(공유 노드).
+- SR eval(robocasa Docker)·수집은 원격이 아니라 **로컬 전용**. 원격은 분석·fit 까지만.
 
 ## 개발 컨벤션
 
