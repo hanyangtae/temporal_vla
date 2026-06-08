@@ -34,6 +34,23 @@ VLA 잠재공간에서 **실패 latent와 성공 latent를 구분**하고, 추�
 - **Baseline 모델**: pi0, groot
 - **Metric**: Success Rate 상승. 인과 검증은 steering intervention 후 ΔSR 재측정.
 
+## 평가 표준 (2026-06-05 확정)
+
+이후 모든 robocasa eval 은 아래 표준으로 통일한다 (조건 간 baseline noise 제거 → 같은
+condition pair 끼리 ΔSR 비교 가능).
+
+- **고정 EVAL_SEED = 100000** (= 동료(do-dong-park) collection seed 표준,
+  `scripts/safe/groot_n16/robocasa/collect/task_sets.sh` 의 `ROBOCASA_SEED_START_FOR_TASK_SET`).
+  `eval_steer_compare.sh` default, `EVAL_SEED` 환경변수로 override.
+  - `gym.make(env_name, seed=EVAL_SEED + env_idx)` 로 robocasa kitchen `env.rng` 고정.
+  - `env.reset(seed=[EVAL_SEED, EVAL_SEED+1, ...])` 로 첫 reset 결정적.
+  - 같은 (env, EVAL_SEED) → 같은 episode 시리즈 (layout/style/object/instruction).
+  - 동료 collection (seed 100000..100099) 의 episode 와 매칭 → eval/collection 일관성 유지.
+- **GPU 양보 default**: `GPUS="4 5 6 4 5 6"` (GPU 0-3 동료용). 3 GPU × 2 server = 6 worker.
+- **per-episode logging**: `groot_robocasa_zmq_eval.py` 가 video-dir/per_episode.tsv 출력
+  (`episode_idx`, `success`, `language` — instruction variant 별 SR 분석용).
+- **N_ENVS=2, N_EP=20 per condition** — wall-time 과 binomial noise 의 균형점.
+
 ## 핵심 아키텍처
 
 - **모델 서버** (`scripts/serve/*.py`): FastAPI + uvicorn. 통일 API (`/act`, `/reset`, `/health`).
@@ -82,6 +99,22 @@ VLA 잠재공간에서 **실패 latent와 성공 latent를 구분**하고, 추�
 - Python: `from scripts.path_setup import CHECKPOINTS_ROOT, DATA_ROOT` (repo root 가 sys.path 에 있을 때).
 - Shell: `source "${REPO_ROOT}/scripts/utils/cache_env.sh"` 후 `${VLA_CHECKPOINTS_ROOT}` / `${VLA_DATASETS_ROOT}`. 컨테이너 전용 스크립트는 `/cache/...` 리터럴 사용 가능.
 - `configs/checkpoints/*.yaml` 의 로컬 체크포인트 경로도 `/cache/...` 기준.
+
+## 원격 compute 노드
+
+대용량 rollout(`raw_rollouts`)은 원격 노드에 쌓여 있고, 분석·conceptor fit 같은 순수 CPU·numpy
+작업은 데이터가 있는 원격에서 돌리고 결과(NPZ/plot/JSON, 소용량)만 회수한다(34GB 재전송 회피).
+코드 동기화는 git 브랜치로 한다(scp 금지). 단일 출처 헬퍼: `scripts/utils/remote_compute.sh`.
+
+- 워크플로우: 로컬 브랜치 작업 → `sync-code`(push + 원격 checkout) → 원격에서 `run`/`run-bg` →
+  `pull-results`로 산출물만 회수. 로컬 데이터를 올릴 땐 `push-data`.
+- 원격 노드 (기본값, env로 override): `kimseungjun@166.104.146.37:11112`, repo `~/workspace/temporal_vla`.
+- 전용 오케스트레이터 agent: **`remote-compute`** (`.claude/agents/remote-compute.md`).
+- **원격 env 제약**: rollout pkl 은 torch 텐서를 담아 unpickle 에 torch 필요 →
+  분석·fit 은 **`~/anaconda3/bin/python`** (torch+numpy+matplotlib 보유)으로 돌린다
+  (helper `REMOTE_PYTHON` 기본값). base `python3` 는 torch 없음. **scipy 는 어느 python 에도 없음.**
+  무거운 numpy 는 `OMP/OPENBLAS_NUM_THREADS` cap(공유 노드).
+- SR eval(robocasa Docker)·수집은 원격이 아니라 **로컬 전용**. 원격은 분석·fit 까지만.
 
 ## 개발 컨벤션
 

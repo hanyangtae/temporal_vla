@@ -49,7 +49,10 @@ def write_safe_triplet(
 ) -> None:
     if not policy.records:
         raise RuntimeError("No feature records were collected during rollout")
-    if policy.exported_action_token_count != n_action_steps:
+    # multilayer pooled feature(COAST Stage1 layer sweep)는 action-token 축이 없어
+    # per-token export 불변식이 적용되지 않는다(env step당 [L,D] 한 점).
+    is_multilayer = bool(policy.feature_kind) and policy.feature_kind.endswith("_multilayer")
+    if not is_multilayer and policy.exported_action_token_count != n_action_steps:
         raise RuntimeError(
             "SAFE feature export horizon must match executed action steps: "
             f"exported_action_token_count={policy.exported_action_token_count}, "
@@ -96,6 +99,12 @@ def write_safe_triplet(
         "robocasa_env_source": robocasa_env_source,
         "video_source": "groot_upstream_video_recording_wrapper",
     }
+    # VL(goal) pathway feature (multilayer --capture-vl). 모든 step 에 있을 때만 기록.
+    if all("vl_hidden_state" in record for record in policy.records):
+        payload["vl_hidden_states"] = [record["vl_hidden_state"] for record in policy.records]
+        payload["vl_feature_kind"] = getattr(policy, "vl_feature_kind", None)
+        payload["vl_feature_axes"] = getattr(policy, "vl_feature_axes", None)
+        payload["vl_feature_dim"] = getattr(policy, "vl_feature_dim", None)
     with pkl_path.open("wb") as f:
         pickle.dump(payload, f)
 

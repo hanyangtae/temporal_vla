@@ -39,10 +39,15 @@ OBS_ALIASES = {
 
 
 class AliasedPolicyClient:
-    def __init__(self, host: str, port: int):
+    def __init__(self, host: str, port: int, inference_seed_base: int | None = None):
         self.client = PolicyClient(host=host, port=port)
+        # inference_seed_base: get_action 호출마다 inference_seed = base + call_idx 자동 주입.
+        # None 이면 비결정 (server flow-matching noise 매번 다름).
+        self.inference_seed_base = inference_seed_base
+        self._call_idx = 0
 
     def reset(self, options=None):
+        self._call_idx = 0
         return self.client.reset(options=options)
 
     def get_action(self, observation, options=None):
@@ -50,7 +55,11 @@ class AliasedPolicyClient:
         for src, dst in OBS_ALIASES.items():
             if src in aliased and dst not in aliased:
                 aliased[dst] = aliased[src]
-        return self.client.get_action(aliased, options=options)
+        opts = dict(options) if options else {}
+        if self.inference_seed_base is not None and "inference_seed" not in opts:
+            opts["inference_seed"] = int(self.inference_seed_base) + self._call_idx
+        self._call_idx += 1
+        return self.client.get_action(aliased, options=opts or None)
 
 
 def parse_args() -> argparse.Namespace:
@@ -63,6 +72,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-action-steps", type=int, default=8)
     parser.add_argument("--max-episode-steps", type=int, default=720)
     parser.add_argument("--video-dir", type=str, default=None)
+    parser.add_argument(
+        "--eval-seed",
+        type=int,
+        default=None,
+        help="고정 seed (env_idx 별 [seed, seed+1, ...]). 같은 (env, seed) 는 같은 episode 시리즈.",
+    )
+    parser.add_argument(
+        "--per-episode-csv",
+        type=str,
+        default=None,
+        help="per-episode success+language tsv 출력 경로. 미지정 시 video-dir/per_episode.tsv.",
+    )
     return parser.parse_args()
 
 
@@ -85,17 +106,33 @@ def main() -> None:
             terminate_on_success=True,
         ),
     )
-    policy = AliasedPolicyClient(args.policy_client_host, args.policy_client_port)
+    policy = AliasedPolicyClient(
+        args.policy_client_host,
+        args.policy_client_port,
+        inference_seed_base=args.eval_seed,
+    )
     results = run_rollout_gymnasium_policy(
         env_name=args.env_name,
         policy=policy,
         wrapper_configs=wrapper_configs,
         n_episodes=args.n_episodes,
         n_envs=args.n_envs,
+        eval_seed=args.eval_seed,
     )
+    env_name, successes, infos = results
     print("Video saved to: ", video_dir)
     print("results: ", results)
-    print("success rate: ", np.mean(results[1]) if results[1] else 0.0)
+    print("success rate: ", np.mean(successes) if successes else 0.0)
+
+    # per-episode tsv: episode_idx, success, language (instruction)
+    per_ep_csv = args.per_episode_csv or str(Path(video_dir) / "per_episode.tsv")
+    Path(per_ep_csv).parent.mkdir(parents=True, exist_ok=True)
+    langs = infos.get("language", [""] * len(successes))
+    with open(per_ep_csv, "w") as f:
+        f.write("episode_idx\tsuccess\tlanguage\n")
+        for idx, (s, lang) in enumerate(zip(successes, langs)):
+            f.write(f"{idx}\t{int(bool(s))}\t{str(lang)}\n")
+    print(f"per-episode tsv saved to: {per_ep_csv}")
 
 
 if __name__ == "__main__":

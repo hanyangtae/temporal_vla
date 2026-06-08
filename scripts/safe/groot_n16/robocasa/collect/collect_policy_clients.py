@@ -64,6 +64,10 @@ class SafeFeatureRecordMixin:
         self.valid_action_horizon: int | None = None
         self.model_action_horizon: int | None = None
         self.num_inference_timesteps: int | None = None
+        # VL(goal) pathway feature metadata (multilayer endpoint --capture-vl 시).
+        self.vl_feature_kind: str | None = None
+        self.vl_feature_axes: list[str] | None = None
+        self.vl_feature_dim: int | None = None
 
     def _reset_safe_feature_records(self) -> None:
         self.records.clear()
@@ -76,6 +80,9 @@ class SafeFeatureRecordMixin:
         self.valid_action_horizon = None
         self.model_action_horizon = None
         self.num_inference_timesteps = None
+        self.vl_feature_kind = None
+        self.vl_feature_axes = None
+        self.vl_feature_dim = None
 
     def reset(self, options: dict[str, Any] | None = None) -> dict[str, Any]:
         del options
@@ -98,6 +105,10 @@ class SafeFeatureRecordMixin:
         self.num_inference_timesteps = (
             metadata.num_inference_timesteps or self.num_inference_timesteps
         )
+        # VL pathway metadata (multilayer --capture-vl). 없으면 그대로 None 유지.
+        self.vl_feature_kind = payload.get("vl_feature_kind") or self.vl_feature_kind
+        self.vl_feature_axes = payload.get("vl_feature_axes") or self.vl_feature_axes
+        self.vl_feature_dim = payload.get("vl_feature_dim") or self.vl_feature_dim
 
 
 class N16SafeCollectingPolicyClient(SafeFeatureRecordMixin):
@@ -159,6 +170,11 @@ class N16SafeCollectingPolicyClient(SafeFeatureRecordMixin):
             "groot_action_vector": _extract_groot_action_vector(action),
             "action": _to_pickleable_numpy(action),
         }
+        vl_hidden = response.get("vl_hidden_states")
+        if vl_hidden is not None:
+            record["vl_hidden_state"] = torch.from_numpy(
+                np.ascontiguousarray(np.asarray(vl_hidden))
+            )
         self._update_safe_feature_metadata(response)
         self.records.append(record)
         return action, {}

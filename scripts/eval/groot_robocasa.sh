@@ -150,6 +150,10 @@ case "$MODE" in
 
     export MUJOCO_GL=egl
 
+    # EVAL_SEED: 환경변수로 재현가능 평가 (env_idx 별 [seed, seed+1, ...]).
+    # 미지정 시 빈 인자 → 비결정적 sampling.
+    EVAL_SEED_ARG=""
+    [ -n "${EVAL_SEED:-}" ] && EVAL_SEED_ARG="--eval-seed ${EVAL_SEED}"
     python /temporal_vla/scripts/eval/groot_robocasa_zmq_eval.py \
         --policy-client-host "${POLICY_CLIENT_HOST}" \
         --policy-client-port "${PORT}" \
@@ -158,7 +162,8 @@ case "$MODE" in
         --n-envs "${N_ENVS}" \
         --n-action-steps "${N_ACTION_STEPS}" \
         --max-episode-steps "${MAX_STEPS}" \
-        --video-dir "${CLIENT_VIDEO_DIR}"
+        --video-dir "${CLIENT_VIDEO_DIR}" \
+        ${EVAL_SEED_ARG}
     ;;
 
   # ── 전체 벤치마크 (실패 많은 task 위주, ZMQ 클라이언트) ──
