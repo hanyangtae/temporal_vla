@@ -52,6 +52,14 @@ not make every path pass. The strongest new signal is the N1.6 split: HTTP succe
 For RoboCasa365 checkpoint-120000, the ZMQ server should be launched with
 `EMBODIMENT_TAG=NEW_EMBODIMENT`; rerun closed-loop ZMQ after that setting before making a final SR claim.
 
+후속 확인 (`outputs/eval/n16_zmq_new_emb_3ep_20260609_212237`): 같은
+RoboCasa365 checkpoint-120000을 ZMQ server에서 `EMBODIMENT_TAG=NEW_EMBODIMENT`로
+띄우면 `CloseFridge_PandaOmron_Env` 3ep/720은 `[False, False, True]` (`1/3`),
+`OpenFridge_PandaOmron_Env` 3ep/720도 `[False, False, True]` (`1/3`)로 끝났다.
+따라서 이전 N1.6 ZMQ `0/3`은 checkpoint 자체의 action 반환 불능이라기보다
+server embodiment mismatch 영향으로 보는 것이 맞다. 다만 이 결과는 3-episode smoke라
+task-level SR 기준선은 target task set으로 더 크게 다시 산출해야 한다.
+
 ## N1.6 Reading Order
 
 1. [01 Fine-Tuning](n16_01_finetune.md) — Isaac-GR00T `n1.6-release` 기반 PandaOmron fine-tuning runbook
