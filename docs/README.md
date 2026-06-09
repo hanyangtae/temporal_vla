@@ -53,7 +53,8 @@ GR00T 학습·평가·SAFE feature export 문서는 [`groot/`](groot/README.md) 
 
 처음 구조를 파악할 때는 [GR00T Flow Map](groot/00_groot_flow_map.md)을 먼저 본다. 이 문서는
 LeRobot/native, RoboCasa365, ZMQ/HTTP entry point가 어떤 파일과 함수를 지나 어떤 값을 전달하는지
-초보자용 call chain으로 정리한다.
+초보자용 call chain으로 정리한다. 같은 흐름을 latent steering 수식과 함께 화면에서 훑을 때는
+[GR00T Latent Steering Explorer](groot/00_groot_steering_explorer.html)를 연다.
 
 ### N1.6
 1. [Fine-Tuning](groot/n16_01_finetune.md)
@@ -96,6 +97,9 @@ succ/fail latent 구분 → steer 로 SR↑ (COAST 계열). 메인 method 의 �
 8. [Phase 3 DiT32 Separation](steering/08_phase3_dit32_separation.md) — DiT 32-layer pre-failure 분리력
 9. [Phase 3 VL vs DiT Comparison](steering/09_phase3_vl_dit_comparison.md) — VL(goal) vs DiT(motor) pathway 비교와 Phase 4 target
 10. [Session Handoff](steering/10_session_handoff.md) — 최신 연구 현황, 다음 세션 우선순위, 주요 파일 위치
+
+한 화면 요약: [GR00T Latent Steering Explorer](groot/00_groot_steering_explorer.html) — GR00T runtime flow와
+conceptor/hidden-state steering 수식, VL/DiT pathway 상태를 함께 보는 self-contained HTML.
 
 ## TTT / Progress Predictor Archive
 

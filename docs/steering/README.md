@@ -24,6 +24,8 @@ pathway를 steering하여 Success Rate를 올리는 것이다. 실패하더라�
 3. 다음 steering 방법론 후보를 정할 때는 `07`을 보고, 최신 pathway 결과는 `08` → `09`에서 본다.
 4. 새 세션을 이어받을 때는 `10_session_handoff.md`를 먼저 보고, 필요한 세부 근거로 역추적한다.
 5. LeRobot/멀티벤치 SAFE 수집 확장은 `05`를 별도 track으로 본다.
+6. 코드 흐름과 수식을 한 화면에서 볼 때는
+   [GR00T Latent Steering Explorer](../groot/00_groot_steering_explorer.html)를 연다.
 
 ## Reading Order
 
