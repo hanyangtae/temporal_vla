@@ -42,14 +42,15 @@ outputs/eval/recheck_720_3ep_20260609_202347
 |---|---|---:|---|
 | LeRobot pi0.5 + LIBERO HTTP | `libero_10`, task 0, 3 trials, `max_steps=720` | 3/3 | terminated steps: 249, 249, 241. First run downloaded LIBERO assets into the container user cache. |
 | Native GR00T N1.5 ZMQ + RoboCasa365 | `robocasa/OpenFridge`, `split=target`, 3 episodes, `--max-episode-steps 720` | 2/3 | Results: `[True, False, True]`. Videos saved under `native_groot_n15_zmq/videos`. |
-| Native GR00T N1.6 ZMQ + RoboCasa365 | `robocasa_panda_omron/OpenFridge_PandaOmron_Env`, 3 episodes, `MAX_STEPS=720` | 0/3 | `per_episode.tsv` records all three failures. This means the earlier ZMQ failure is not explained only by the previous 400-step cap. |
+| Native GR00T N1.6 ZMQ + RoboCasa365 | `robocasa_panda_omron/OpenFridge_PandaOmron_Env`, 3 episodes, `MAX_STEPS=720` | 0/3 | `per_episode.tsv` records all three failures. The server log shows this run loaded the RoboCasa365 checkpoint with `ROBOCASA_PANDA_OMRON`, while the checkpoint profile expects `NEW_EMBODIMENT`. |
 | Native GR00T N1.6 HTTP + RoboCasa365 | `OpenFridge`, `--use-groot-env`, 3 rollouts, `--num-steps 720`, seed 0 | 2/3 | Success at steps 652 and 458; seed 2 reached 720 without success. Combined video: `native_groot_n16_http/videos/OpenFridge.mp4`. |
 | LeRobot GR00T N1.5 HTTP + RoboCasa365 | `robocasa/OpenFridge`, `split=target`, 3 episodes, `--max-episode-steps 720`, seed 0 | 3/3 | Success steps: 204, 355, 253. Videos saved under `lerobot_groot_n15_http/videos`. |
 
 Operational conclusion: the `720` horizon fixes the interpretation of the earlier short smoke, but it does
-not make every path pass. The strongest new signal is the N1.6 split: HTTP succeeds 2/3 while ZMQ
-fails 0/3 on the same checkpoint family and task. Further diagnosis should compare the N1.6 HTTP
-processor/action path against the N1.6 ZMQ rollout helper rather than focusing only on max-step length.
+not make every path pass. The strongest new signal is the N1.6 split: HTTP succeeds 2/3 with
+`new_embodiment`, while ZMQ failed 0/3 after starting the same checkpoint with `ROBOCASA_PANDA_OMRON`.
+For RoboCasa365 checkpoint-120000, the ZMQ server should be launched with
+`EMBODIMENT_TAG=NEW_EMBODIMENT`; rerun closed-loop ZMQ after that setting before making a final SR claim.
 
 ## N1.6 Reading Order
 
