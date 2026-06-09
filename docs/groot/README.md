@@ -23,6 +23,11 @@
 
 1. [N1.5 01 Fine-Tuning](n15_01_finetune.md)
 2. [N1.5 02 Evaluation](n15_02_eval.md)
+3. [N1.5 03 LeRobot RoboCasa365 Pipeline — Overview & Status](n15_03_lerobot_robocasa365.md) — serve→HTTP→robocasa365→analysis UI 4-stage map, 검증 상태/향후 계획
+4. [N1.5 04 Serve Adapter Spec](n15_04_lerobot_serve_adapter.md) — stage [1]: checkpoint 형식, profile 필드 명세, serve/smoke, 구현 구조
+5. [N1.5 05 Closed-loop Obs Bridge Spec](n15_05_lerobot_obs_bridge.md) — stage [2][3]: 카메라/state 키 매핑 명세, gap 분석, 수정안
+6. [N1.5 07 Native ZMQ OpenFridge Smoke](n15_07_native_zmq_openfridge.md) — LeRobot mismatch 분리용 Isaac-GR00T N1.5 ZMQ comparison note
+7. [N1.5 08 LeRobot Internal Parity](n15_08_lerobot_internal_parity.md) — SR가 아닌 checkpoint-load 검증과 historical internal evidence
 
 ## 문서 경계
 
@@ -37,7 +42,9 @@
 | N1.6 parity validation | `n16_09_safe_parity.md` | ZMQ/HTTP action parity, SAFE transport parity, runtime validation 수치, 남은 replay 한계의 단일 출처 |
 | N1.6 HTTP implementation changelog | `n16_11_http_act_changes.md` | HTTP `/act` / `/act_with_features` 코드 계약과 변경점. 검증 수치는 `n16_09`로 링크 |
 | N1.6 RoboCasa refactor architecture | `n16_12_robocasa_refactor_report.md` | GR00T RoboCasa 전용 processor, HTTP/ZMQ transport, shared contract 책임 경계 |
-| N1.5 | `n15_01_finetune.md`, `n15_02_eval.md` | Isaac-GR00T N1.5 GR1/PandaOmron reference workflow |
+| N1.5 reference | `n15_01_finetune.md`, `n15_02_eval.md` | Isaac-GR00T N1.5 GR1/PandaOmron reference workflow (ZMQ) |
+| N1.5 LeRobot pipeline | `n15_03`(overview/status), `n15_04`(serve spec), `n15_05`(obs bridge spec) | LeRobot serve→HTTP→robocasa365→analysis UI 4-stage. n15_03이 map, 04~05가 stage별 명세 |
+| N1.5 native/internal comparison | `n15_07_native_zmq_openfridge.md`, `n15_08_lerobot_internal_parity.md` | native Isaac-GR00T N1.5 ZMQ smoke와 SR 외 내부값 parity 검증 |
 | Legacy | `_legacy/robocasa_finetune_setup.md` | 초기 setup note. 현행 runbook의 기준이 아니다 |
 
 SAFE 관련 script는 계속 `scripts/safe/groot_n16/robocasa/` 아래에 둔다. 문서는 `docs/groot/`에서 번호 prefix로 reading order를 표현한다.

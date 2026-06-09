@@ -98,9 +98,11 @@ environment:
 
 HuggingFace hub 캐시는 이번 이동의 1차 대상이 아니다.
 
-- 모델 서버 컨테이너(groot/lerobot/dreamvla/openvla_oft/xvla): `HF_HOME=~/.cache/huggingface`
+- 모델 서버 컨테이너(groot/dreamvla/openvla_oft/xvla): `HF_HOME=~/.cache/huggingface`
   (호스트 HF 캐시를 그대로 bind-mount). 베이스 GR00T-N1.6-3B 는 HF 가 아니라 위 로컬
   `/cache/checkpoints/nvidia/GR00T-N1.6-3B` 를 canonical 로 쓴다.
+- lerobot 통합 컨테이너: `./data`를 `/cache`에 mount하고 `HF_HOME=/cache/huggingface`를
+  사용한다.
 - robocasa/calvin/groot_n15/upvla: 과거 `/temporal_vla/data/huggingface` 를 쓰던 것을
   `HF_HOME=/cache/datasets/huggingface` 로 옮겼다(faithful swap). 필요하면 추후 통일 가능.
 
