@@ -309,6 +309,110 @@
     .hidden {
       display: none !important;
     }
+
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    .summary-item {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdff;
+      padding: 12px;
+    }
+
+    .summary-item strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 6px;
+      padding: 2px 7px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #eef2f7;
+      color: var(--slate);
+    }
+
+    .status.done { background: #dff5e8; color: #176b3a; }
+    .status.next { background: #fff3d6; color: #8a5a00; }
+    .status.gate { background: #e7f0ff; color: #174ea6; }
+
+    .plain-list {
+      padding-left: 20px;
+    }
+
+    .plain-list li {
+      margin: 6px 0;
+    }
+
+    .choice-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0;
+    }
+
+    .choice {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #ffffff;
+      color: var(--slate);
+      padding: 7px 10px;
+      cursor: pointer;
+    }
+
+    .choice[aria-pressed="true"] {
+      border-color: var(--blue);
+      color: #ffffff;
+      background: var(--blue);
+    }
+
+    .dynamic-panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdff;
+      padding: 14px;
+      min-height: 150px;
+    }
+
+    .dynamic-panel h3 {
+      margin-top: 0;
+    }
+
+    .artifact-map {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+      margin: 14px 0;
+    }
+
+    .artifact-node {
+      min-height: 74px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      color: var(--ink);
+      padding: 10px;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .artifact-node[aria-pressed="true"] {
+      border-color: var(--amber);
+      box-shadow: 0 0 0 3px rgba(183, 121, 31, 0.16);
+    }
+
+    .artifact-node strong {
+      display: block;
+      margin-bottom: 4px;
+    }
   </style>
 </head>
 <body>
@@ -323,13 +427,16 @@
       </div>
       <div class="controls">
         <nav class="tabs" aria-label="Explorer sections">
-          <button class="tab" data-tab="flow" aria-selected="true">GR00T Flow</button>
+          <button class="tab" data-tab="flow" aria-selected="true">Start Here</button>
+          <button class="tab" data-tab="core" aria-selected="false">Core Method</button>
           <button class="tab" data-tab="theory" aria-selected="false">Steering Theory</button>
+          <button class="tab" data-tab="plan" aria-selected="false">UltraPlan</button>
           <button class="tab" data-tab="steering" aria-selected="false">Steering Status</button>
+          <button class="tab" data-tab="codemap" aria-selected="false">Code Map</button>
           <button class="tab" data-tab="trace" aria-selected="false">Trace Recipes</button>
-          <button class="tab" data-tab="files" aria-selected="false">Files</button>
+          <button class="tab" data-tab="files" aria-selected="false">File Index</button>
         </nav>
-        <input id="search" class="search" placeholder="filter: http, zmq, lerobot, safe, vl, dit, conceptor, artifact">
+        <input id="search" class="search" placeholder="filter: core, plan, artifact, http, zmq, lerobot, safe, vl, dit, conceptor">
       </div>
     </div>
   </header>
@@ -338,7 +445,46 @@
     <section id="flow" class="section active">
       <div class="wide-grid">
         <article class="panel searchable" data-keywords="groot flow native lerobot robocasa365 http zmq profile server client adapter">
-          <h2>한 화면 구조</h2>
+          <h2>먼저 이렇게 읽는다</h2>
+          <p>
+            이 파일은 runbook을 대체하지 않는다. GR00T runtime, latent steering 방법론, 수식,
+            코드 산출물의 관계를 빠르게 잡기 위한 입구다.
+          </p>
+          <div class="summary-strip">
+            <div class="summary-item">
+              <strong>1. 무엇이 움직이나</strong>
+              profile → server → client → adapter → policy → action/artifact 흐름을 본다.
+            </div>
+            <div class="summary-item">
+              <strong>2. 핵심 방법은 뭔가</strong>
+              failure type에 맞춰 VL(goal) 또는 DiT(motor) latent를 conceptor로 steer한다.
+            </div>
+            <div class="summary-item">
+              <strong>3. 왜 가능한가</strong>
+              success/failure activation 부분공간을 추정하고 hidden state에 선형 gate를 건다.
+            </div>
+            <div class="summary-item">
+              <strong>4. 어디를 보면 되나</strong>
+              <code>Code Map</code>에서 fit, hook, eval, analysis 산출물의 소비 관계를 확인한다.
+            </div>
+          </div>
+        </article>
+
+        <aside class="panel searchable" data-keywords="legend terms naive native">
+          <h2>한 줄 결론</h2>
+          <p>
+            현재 주력 방법은 <b>type-matched latent steering</b>이다. CP threshold detector가 아니라,
+            VL/DiT pathway에서 성공 방향의 conceptor gate를 직접 주입해 closed-loop SR 변화를 본다.
+          </p>
+          <p class="muted">
+            성능 claim은 반드시 rollout ΔSR로만 말하고, action smoke·시각화·AUROC는 각각 다른 증거로 분리한다.
+          </p>
+        </aside>
+      </div>
+
+      <div class="wide-grid">
+        <article class="panel searchable" data-keywords="groot flow native lerobot robocasa365 http zmq profile server client adapter">
+          <h2>GR00T Runtime Skeleton</h2>
           <p>
             전체 흐름은 <code>profile</code>에서 시작해 server/model loader, eval 또는 collector client,
             observation adapter, policy inference, action adapter, <code>env.step()</code> 또는 SAFE artifact writer로 내려간다.
@@ -452,6 +598,93 @@ scripts/eval/groot_n15_robocasa_zmq_eval.py
       </div>
     </section>
 
+    <section id="core" class="section">
+      <div class="wide-grid">
+        <article class="panel searchable" data-keywords="core method type matched latent steering vl dit conceptor goal motor">
+          <h2>핵심 방법: Type-Matched Latent Steering</h2>
+          <p>
+            실패 rollout을 하나의 detector score로만 보지 않고, 실패 타입을 <b>goal semantics</b>와
+            <b>motor program</b>으로 나눠 본다. 그런 다음 해당 타입에 맞는 pathway의 hidden state를
+            success conceptor 방향으로 변환한다.
+          </p>
+          <div class="flow">
+            <div class="step">
+              <div class="step-title">1. Failure type 가설</div>
+              <div>VL pathway는 “무엇을 해야 하는가”, DiT pathway는 “어떻게 움직일 것인가”에 가깝다.</div>
+            </div>
+            <div class="step safe">
+              <div class="step-title">2. Evidence collection</div>
+              <div>같은 rollout에서 <code>vl_hidden_states</code>와 DiT <code>hidden_states</code>를 함께 저장해 task별 succ/fail 분리력을 비교한다.</div>
+            </div>
+            <div class="step steer">
+              <div class="step-title">3. Conceptor fit</div>
+              <div><code>C_success</code>와 <code>C_failure</code>를 pathway별로 fit하고 <code>C_steer = C_success ∧ ¬C_failure</code>를 만든다.</div>
+            </div>
+            <div class="step steer">
+              <div class="step-title">4. Closed-loop intervention</div>
+              <div><code>feature_server.py</code>에 steering hook을 걸고 baseline/VL/DiT 조건의 rollout SR을 비교한다.</div>
+            </div>
+          </div>
+        </article>
+
+        <aside class="panel searchable" data-keywords="not cp not action postprocess boundary">
+          <h2>헷갈리면 안 되는 경계</h2>
+          <ul class="plain-list">
+            <li><b>아님:</b> CP threshold 기반 failure alarm을 잘 맞추는 프로젝트.</li>
+            <li><b>아님:</b> action output을 후처리해서 gripper/axisangle만 고치는 프로젝트.</li>
+            <li><b>아님:</b> LeRobot wrapper 자체 성능을 개선하는 프로젝트.</li>
+            <li><b>맞음:</b> frozen GR00T 내부 activation을 pathway별로 개입해 policy behavior가 바뀌는지 검증하는 프로젝트.</li>
+          </ul>
+        </aside>
+      </div>
+
+      <div class="panel searchable" data-keywords="interactive selector baseline vl dit pathway hook artifact">
+        <h2>Pathway Selector</h2>
+        <p>조건을 눌러서 각 실험 조건의 의미와 코드 진입점을 확인한다.</p>
+        <div class="choice-row" role="group" aria-label="Pathway selector">
+          <button class="choice method-choice" data-method="baseline" aria-pressed="true">Baseline</button>
+          <button class="choice method-choice" data-method="vl" aria-pressed="false">VL Goal Steering</button>
+          <button class="choice method-choice" data-method="dit" aria-pressed="false">DiT Motor Steering</button>
+        </div>
+        <div id="method-detail" class="dynamic-panel" aria-live="polite"></div>
+      </div>
+
+      <div class="grid">
+        <article class="card searchable" data-keywords="goal failure vl slide dishwasher toaster">
+          <h3>Goal-Type Candidate</h3>
+          <div class="tag-row"><span class="tag steer">VL</span><span class="tag">goal</span></div>
+          <p>언어/목표 해석이 틀어졌다고 의심되는 task. VL AUROC가 이른 시점에서 강하면 우선 VL steering을 본다.</p>
+          <table>
+            <tr><th>Task</th><th>근거</th><th>Steering target</th></tr>
+            <tr><td>SlideDishwasherRack</td><td>VL AUROC 0.931, B/C quadrant 검증 후보</td><td><code>action_head.vlln</code></td></tr>
+            <tr><td>CloseToasterOvenDoor</td><td>VL 우위 후보</td><td><code>action_head.vlln</code></td></tr>
+          </table>
+        </article>
+
+        <article class="card searchable" data-keywords="motor failure dit open cabinet drawer pnp">
+          <h3>Motor-Type Candidate</h3>
+          <div class="tag-row"><span class="tag steer">DiT</span><span class="tag">motor</span></div>
+          <p>목표는 맞지만 동작 생성이 무너진다고 의심되는 task. DiT block feature가 강하면 DiT steering을 본다.</p>
+          <table>
+            <tr><th>Task</th><th>근거</th><th>Steering target</th></tr>
+            <tr><td>OpenCabinet / OpenDrawer</td><td>DiT-dominant motor-type 후보</td><td>DiT block 24/31 또는 selected layer</td></tr>
+            <tr><td>PickPlace tasks</td><td>DiT AUROC가 강한 후보</td><td>DiT block selected by quota/eval</td></tr>
+          </table>
+        </article>
+
+        <article class="card searchable" data-keywords="proof success rate delta sr evidence gates">
+          <h3>최종 증거 기준</h3>
+          <p>이 방법이 “된다”고 말하려면 아래 순서가 모두 필요하다.</p>
+          <ol>
+            <li>같은 task/seed family에서 baseline SR 확보</li>
+            <li>VL/DiT conceptor NPZ와 metadata 생성</li>
+            <li>동일 evaluator 조건에서 baseline/VL/DiT SR 비교</li>
+            <li>type-matched condition이 unmatched보다 나은지 확인</li>
+          </ol>
+        </article>
+      </div>
+    </section>
+
     <section id="theory" class="section">
       <div class="wide-grid">
         <article class="panel searchable" data-keywords="theory equations conceptor coast latent steering alpha beta hidden intervention">
@@ -546,6 +779,100 @@ all:   ["denoising_step", "model_action_token", "feature_dim"]</pre>
       </details>
     </section>
 
+    <section id="plan" class="section">
+      <div class="panel searchable" data-keywords="ultraplan plan roadmap gates deliverables evidence">
+        <h2>UltraPlan: 연구-코드-검증 게이트</h2>
+        <p>
+          계획의 핵심은 “좋아 보이는 feature”가 아니라, 각 단계의 산출물이 다음 단계의 입력으로
+          정확히 연결되는지 확인하는 것이다. 아래 표에서 <span class="status done">DONE</span>은
+          repo에 코드/문서가 있는 상태, <span class="status next">NEXT</span>는 다음 실험 축,
+          <span class="status gate">GATE</span>는 완료 claim 전에 필요한 증거다.
+        </p>
+        <table>
+          <tr>
+            <th>Stage</th>
+            <th>산출물</th>
+            <th>검증 증거</th>
+            <th>다음 입력</th>
+            <th>Status</th>
+          </tr>
+          <tr>
+            <td>0. Runtime baseline</td>
+            <td>GR00T N1.6/N1.5 HTTP/ZMQ action path, RoboCasa eval scripts</td>
+            <td><code>docs/groot/README.md</code> 최근 실행 결과, rollout videos/results</td>
+            <td>같은 evaluator 조건에서 steering 조건 비교</td>
+            <td><span class="status done">DONE</span></td>
+          </tr>
+          <tr>
+            <td>1. Aligned latent capture</td>
+            <td>DiT <code>hidden_states</code>, VL <code>vl_hidden_states</code>, ep metadata</td>
+            <td><code>feature_server.py --capture-vl</code>, pathway analysis docs</td>
+            <td>Pathway별 succ/fail feature matrix</td>
+            <td><span class="status done">DONE</span></td>
+          </tr>
+          <tr>
+            <td>2. Failure typing</td>
+            <td>VL/DiT AUROC, LDA quadrant, representative videos</td>
+            <td><code>pathway_separation.py</code>, <code>vl_dit_lda_analysis.py</code>, <code>docs/steering/09...</code></td>
+            <td>Task별 VL-first / DiT-first steering target</td>
+            <td><span class="status done">DONE</span></td>
+          </tr>
+          <tr>
+            <td>3. Conceptor fit</td>
+            <td><code>conceptors.npz</code>, <code>metadata.json</code> per task/pathway</td>
+            <td><code>fit_conceptor_steering.py --pathway vl|dit --per-task</code></td>
+            <td>Steering hook runtime input</td>
+            <td><span class="status next">NEXT</span></td>
+          </tr>
+          <tr>
+            <td>4. Closed-loop SR eval</td>
+            <td><code>steer_eval/&lt;RUN_TAG&gt;/results.tsv</code>, videos, logs</td>
+            <td><code>eval_steer_pathways.sh</code> baseline + VL β + DiT β</td>
+            <td>type-matched vs unmatched ΔSR claim</td>
+            <td><span class="status gate">GATE</span></td>
+          </tr>
+          <tr>
+            <td>5. Paper-ready interpretation</td>
+            <td>task별 success/failure video evidence, method limitation, ablation table</td>
+            <td>SR table + B/C quadrant qualitative audit + seed/eval protocol</td>
+            <td>main method section and result section</td>
+            <td><span class="status gate">GATE</span></td>
+          </tr>
+        </table>
+      </div>
+
+      <div class="grid">
+        <article class="card searchable" data-keywords="minimum viable proof mvp proof">
+          <h3>Minimum Viable Proof</h3>
+          <p>가장 작은 “된다/안된다” 판정은 한 task family에서 아래 5조건을 같은 horizon/seed protocol로 돌리는 것이다.</p>
+          <pre>baseline
+VL_b01, VL_b03
+DiT_b01, DiT_b03</pre>
+          <p class="muted">실행 entry: <code>scripts/safe/groot_n16/robocasa/steer/eval_steer_pathways.sh</code></p>
+        </article>
+
+        <article class="card searchable" data-keywords="success criteria matched unmatched delta sr">
+          <h3>성공 기준</h3>
+          <ul class="plain-list">
+            <li>Goal-type 후보에서 VL steering ΔSR이 DiT steering보다 높다.</li>
+            <li>Motor-type 후보에서 DiT steering ΔSR이 VL steering보다 높다.</li>
+            <li>평균만이 아니라 task별 failure mode 설명과 비디오가 맞아야 한다.</li>
+            <li>효과가 없으면 “failure-type classifier는 남는가”를 최소 산출물로 평가한다.</li>
+          </ul>
+        </article>
+
+        <article class="card searchable" data-keywords="risk claims confound baseline seed evaluator">
+          <h3>주요 리스크</h3>
+          <ul class="plain-list">
+            <li>성공/실패 rollout 길이 confound가 latent 분리를 과장할 수 있다.</li>
+            <li>OpenFridge 같은 단일 task smoke는 baseline 성능 claim이 아니다.</li>
+            <li>HTTP/ZMQ transport 차이와 steering 효과를 섞어 말하면 안 된다.</li>
+            <li>NPZ의 <code>truncated_w</code>, task id, pathway가 eval script와 일치해야 한다.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
     <section id="steering" class="section">
       <div class="panel searchable" data-keywords="steering status safe coast notall vl dit phase">
         <h2>Steering 연구 흐름</h2>
@@ -587,8 +914,8 @@ all:   ["denoising_step", "model_action_token", "feature_dim"]</pre>
         <article class="card searchable" data-keywords="next work phase4 conceptor fit eval steer pathways">
           <h3>다음 구현/실험 축</h3>
           <ul>
-            <li><code>fit_conceptor_steering.py</code>에 <code>--pathway vl</code> 지원.</li>
-            <li><code>feature_server.py</code>에서 <code>--steering-pathway vl</code>로 VL hook 적용.</li>
+            <li><code>fit_conceptor_steering.py --pathway vl|dit --per-task</code>로 task별 NPZ/metadata 생성.</li>
+            <li><code>feature_server.py --steering-pathway vl|dit</code>로 동일 hook 경로 검증.</li>
             <li><code>eval_steer_pathways.sh</code>로 baseline + VL β + DiT β 비교.</li>
             <li>B/C quadrant video를 정성 검증해 goal/motor 해석을 확인.</li>
           </ul>
@@ -603,6 +930,83 @@ all:   ["denoising_step", "model_action_token", "feature_dim"]</pre>
             <li>시각화 결과는 geometry 진단이고, steering 성능 주장은 rollout ΔSR이 필요하다.</li>
           </ul>
         </article>
+      </div>
+    </section>
+
+    <section id="codemap" class="section">
+      <div class="wide-grid">
+        <article class="panel searchable" data-keywords="code map artifacts pipeline capture analysis fit hook eval docs">
+          <h2>Code Artifact Pipeline</h2>
+          <p>
+            아래 노드는 실제 코드 산출물의 흐름이다. 한 노드를 누르면 입력, 출력, 검증, 대표 파일이 바뀐다.
+            목표는 “어떤 파일을 열어야 하는가”보다 “어떤 산출물이 다음 산출물의 입력인가”를 먼저 이해하는 것이다.
+          </p>
+          <div class="artifact-map" role="group" aria-label="Artifact pipeline">
+            <button class="artifact-node" data-artifact="capture" aria-pressed="true">
+              <strong>1. Capture</strong>
+              hidden states
+            </button>
+            <button class="artifact-node" data-artifact="analysis" aria-pressed="false">
+              <strong>2. Analysis</strong>
+              AUROC / LDA
+            </button>
+            <button class="artifact-node" data-artifact="fit" aria-pressed="false">
+              <strong>3. Fit</strong>
+              conceptor NPZ
+            </button>
+            <button class="artifact-node" data-artifact="hook" aria-pressed="false">
+              <strong>4. Hook</strong>
+              runtime steering
+            </button>
+            <button class="artifact-node" data-artifact="eval" aria-pressed="false">
+              <strong>5. Eval</strong>
+              SR comparison
+            </button>
+            <button class="artifact-node" data-artifact="docs" aria-pressed="false">
+              <strong>6. Docs</strong>
+              claim boundary
+            </button>
+          </div>
+        </article>
+
+        <aside id="artifact-detail" class="panel searchable" data-keywords="artifact detail input output proof files" aria-live="polite"></aside>
+      </div>
+
+      <div class="panel searchable" data-keywords="artifact table files contracts outputs">
+        <h2>산출물 계약 표</h2>
+        <table>
+          <tr><th>Layer</th><th>입력</th><th>출력</th><th>대표 파일</th></tr>
+          <tr>
+            <td>Feature capture</td>
+            <td>RoboCasa obs + GR00T checkpoint</td>
+            <td><code>hidden_states</code>, <code>vl_hidden_states</code>, action chunk</td>
+            <td><a href="../../scripts/safe/groot_n16/robocasa/serve/feature_server.py">feature_server.py</a></td>
+          </tr>
+          <tr>
+            <td>Pathway analysis</td>
+            <td>aligned rollout pkl</td>
+            <td><code>pathway_separation.json</code>, LDA quadrant summaries, videos</td>
+            <td><a href="../../scripts/safe/groot_n16/robocasa/analyze/pathway_separation.py">pathway_separation.py</a></td>
+          </tr>
+          <tr>
+            <td>Conceptor fit</td>
+            <td>succ/fail feature matrix</td>
+            <td><code>conceptors.npz</code>, <code>metadata.json</code></td>
+            <td><a href="../../scripts/safe/groot_n16/robocasa/steer/fit_conceptor_steering.py">fit_conceptor_steering.py</a></td>
+          </tr>
+          <tr>
+            <td>Runtime hook</td>
+            <td>conceptor NPZ + β + pathway</td>
+            <td>modified hidden state <code>h′</code></td>
+            <td><a href="../../scripts/serve/steering_hooks.py">steering_hooks.py</a></td>
+          </tr>
+          <tr>
+            <td>Closed-loop eval</td>
+            <td>baseline/VL/DiT condition matrix</td>
+            <td><code>results.tsv</code>, videos, logs</td>
+            <td><a href="../../scripts/safe/groot_n16/robocasa/steer/eval_steer_pathways.sh">eval_steer_pathways.sh</a></td>
+          </tr>
+        </table>
       </div>
     </section>
 
@@ -684,6 +1088,88 @@ all:   ["denoising_step", "model_action_token", "feature_dim"]</pre>
     const tabs = Array.from(document.querySelectorAll(".tab"));
     const sections = Array.from(document.querySelectorAll(".section"));
     const search = document.getElementById("search");
+    const methodChoices = Array.from(document.querySelectorAll(".method-choice"));
+    const methodDetail = document.getElementById("method-detail");
+    const artifactNodes = Array.from(document.querySelectorAll(".artifact-node"));
+    const artifactDetail = document.getElementById("artifact-detail");
+
+    const methodDetails = {
+      baseline: {
+        title: "Baseline: no latent intervention",
+        tags: ["control", "SR reference"],
+        body: [
+          "Steering hook을 등록하지 않고 같은 evaluator, 같은 horizon, 같은 seed protocol로 실행한다.",
+          "VL/DiT 조건의 효과는 이 baseline 대비 ΔSR로만 말한다."
+        ],
+        file: "scripts/safe/groot_n16/robocasa/steer/eval_steer_pathways.sh",
+        output: "steer_eval/<RUN_TAG>/results.tsv baseline row"
+      },
+      vl: {
+        title: "VL Goal Steering",
+        tags: ["goal semantics", "action_head.vlln", "D=2048"],
+        body: [
+          "Goal-type failure 후보에서 먼저 본다. 주입 지점은 action_head.vlln 출력이며 전체 VL token에 M을 적용한다.",
+          "입력 NPZ는 fit_conceptor_steering.py --pathway vl --per-task 산출물이다."
+        ],
+        file: "scripts/serve/steering_hooks.py, feature_server.py --steering-pathway vl",
+        output: "analysis/conceptor_steering_vl/.../conceptors.npz"
+      },
+      dit: {
+        title: "DiT Motor Steering",
+        tags: ["motor program", "transformer block", "action tokens"],
+        body: [
+          "Motor-type failure 후보에서 먼저 본다. 주입 지점은 selected DiT block 또는 pre-velocity output이다.",
+          "token window, layer, truncated_w가 fit/eval 양쪽에서 맞아야 한다."
+        ],
+        file: "scripts/serve/steering_hooks.py, feature_server.py --steering-pathway dit",
+        output: "analysis/conceptor_steering_dit/layer*/.../conceptors.npz"
+      }
+    };
+
+    const artifactDetails = {
+      capture: {
+        title: "1. Capture",
+        input: "RoboCasa observation, GR00T checkpoint profile, feature-slice config",
+        output: "per-step action + hidden_states + optional vl_hidden_states",
+        proof: "pkl schema, feature tensor shape, smoke test logs",
+        files: ["scripts/safe/groot_n16/robocasa/serve/feature_server.py", "src/policies/groot/safe_features.py"]
+      },
+      analysis: {
+        title: "2. Analysis",
+        input: "aligned rollout pkl with success/failure labels",
+        output: "pathway_separation.json, lda_summary.json, qualitative video list",
+        proof: "length-confound controlled AUROC and LDA quadrant summaries",
+        files: ["scripts/safe/groot_n16/robocasa/analyze/pathway_separation.py", "scripts/safe/groot_n16/robocasa/analyze/vl_dit_lda_analysis.py"]
+      },
+      fit: {
+        title: "3. Fit",
+        input: "success/failure feature matrix for a task/pathway",
+        output: "conceptors.npz and metadata.json",
+        proof: "selected alpha, quota, overlap, recommended beta metadata",
+        files: ["scripts/safe/groot_n16/robocasa/steer/fit_conceptor_steering.py", "src/conceptor/core.py"]
+      },
+      hook: {
+        title: "4. Hook",
+        input: "conceptor NPZ, beta, pathway, optional DiT layer",
+        output: "runtime hidden state h' = hM^T",
+        proof: "server log with steering path and finite action output",
+        files: ["scripts/serve/steering_hooks.py", "scripts/safe/groot_n16/robocasa/serve/feature_server.py"]
+      },
+      eval: {
+        title: "5. Eval",
+        input: "baseline/VL/DiT conditions with matched eval protocol",
+        output: "results.tsv, videos, logs",
+        proof: "closed-loop SR per task/condition, not action smoke",
+        files: ["scripts/safe/groot_n16/robocasa/steer/eval_steer_pathways.sh", "scripts/eval/groot_robocasa.sh"]
+      },
+      docs: {
+        title: "6. Docs",
+        input: "SR table, pathway diagnostics, qualitative videos",
+        output: "claim boundary, limitation, next experiment plan",
+        proof: "docs distinguish diagnostic evidence from intervention performance",
+        files: ["docs/steering/09_phase3_vl_dit_comparison.md", "docs/steering/10_session_handoff.md"]
+      }
+    };
 
     function selectTab(name) {
       tabs.forEach((tab) => {
@@ -710,10 +1196,49 @@ all:   ["denoising_step", "model_action_token", "feature_dim"]</pre>
       });
     }
 
+    function renderMethod(name) {
+      if (!methodDetail || !methodDetails[name]) return;
+      const info = methodDetails[name];
+      methodChoices.forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.method === name));
+      });
+      methodDetail.innerHTML = `
+        <h3>${info.title}</h3>
+        <div class="tag-row">${info.tags.map((tag) => `<span class="tag steer">${tag}</span>`).join("")}</div>
+        <ul class="plain-list">${info.body.map((line) => `<li>${line}</li>`).join("")}</ul>
+        <p><b>Code:</b> <code>${info.file}</code></p>
+        <p><b>Artifact:</b> <code>${info.output}</code></p>
+      `;
+    }
+
+    function renderArtifact(name) {
+      if (!artifactDetail || !artifactDetails[name]) return;
+      const info = artifactDetails[name];
+      artifactNodes.forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.artifact === name));
+      });
+      artifactDetail.innerHTML = `
+        <h2>${info.title}</h2>
+        <p><b>Input:</b> ${info.input}</p>
+        <p><b>Output:</b> ${info.output}</p>
+        <p><b>Proof:</b> ${info.proof}</p>
+        <p><b>Files:</b></p>
+        <ul class="plain-list">${info.files.map((file) => `<li><code>${file}</code></li>`).join("")}</ul>
+      `;
+    }
+
     tabs.forEach((tab) => {
       tab.addEventListener("click", () => selectTab(tab.dataset.tab));
     });
+    methodChoices.forEach((button) => {
+      button.addEventListener("click", () => renderMethod(button.dataset.method));
+    });
+    artifactNodes.forEach((button) => {
+      button.addEventListener("click", () => renderArtifact(button.dataset.artifact));
+    });
     search.addEventListener("input", applyFilter);
+    renderMethod("baseline");
+    renderArtifact("capture");
   </script>
 </body>
 </html>
