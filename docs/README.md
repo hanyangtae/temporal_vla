@@ -39,6 +39,9 @@ outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector
 ### N1.5
 1. [N1.5 Fine-Tuning](groot/n15_01_finetune.md)
 2. [N1.5 Evaluation](groot/n15_02_eval.md)
+3. [N1.5 LeRobot RoboCasa365 Pipeline](groot/n15_03_lerobot_robocasa365.md) — serve→HTTP→robocasa365→analysis UI 4-stage. overview/status(`n15_03`) + stage별 명세 `n15_04`(serve) `n15_05`(obs bridge)
+4. [N1.5 Native ZMQ OpenFridge Smoke](groot/n15_07_native_zmq_openfridge.md) — LeRobot wrapper mismatch를 분리하기 위한 Isaac-GR00T N1.5 native baseline
+5. [N1.5 LeRobot Internal Parity](groot/n15_08_lerobot_internal_parity.md) — SR 외 checkpoint-load 검증과 historical internal evidence
 
 ## Latent Steering (메인 연구 라인)
 

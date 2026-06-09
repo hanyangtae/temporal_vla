@@ -185,10 +185,10 @@ actions, features, latency_ms = client.predict_with_features(
 | `xvla` | xvla | 8100 | `xvla__calvin_abc_d` (abs / 30) | — | — |
 | `dreamvla` | dreamvla | 8200 | `dreamvla__calvin_dynamic_depth_semantic` (rel / 1) | — | — |
 | `upvla` | upvla | 8300 | — | — | — |
-| `lerobot` (pi0/pi05) | lerobot | 8400 | `lerobot_pi05__calvin_sft` (rel / 50) | — | — |
+| `lerobot` (pi0/pi05/groot) | lerobot | 8400 | `lerobot_pi05__calvin_sft` (rel / 50) | `lerobot_groot_n15__robocasa365_ckpt120000` (abs / 16) | — |
 | `openvla_oft` | openvla_oft | 8400 | `openvla_oft__rlinf_calvin_sft` (rel / 8) | — | `openvla_oft__moojink_libero_spatial/object/goal/10` (rel / 8) |
 | `groot` (N1.6) | groot | 8500 | — | `groot__robocasa_panda_omron`, `groot__robocasa365_ckpt120000`, `groot_ttt__robocasa_panda_omron` (rel / 16) | — |
-| `groot_n15` | groot_n15 | — | — | — (별도 fine-tuning 진행 중) | — |
+| `groot_n15` | groot_n15 | — | — | ZMQ reference path only (`docs/groot/n15_02_eval.md`) | — |
 
 각 셀의 sub-key emit 조합은 다음 절을 참조한다.
 
@@ -199,6 +199,7 @@ actions, features, latency_ms = client.predict_with_features(
 | `xvla` | `action.eef_pos`, `action.eef_rot6d`, `action.gripper` |
 | `dreamvla` | `action.eef_pos`, `action.eef_euler`, `action.gripper` |
 | `lerobot` (pi05) | `action.eef_pos`, `action.eef_euler`, `action.gripper` |
+| `lerobot` (groot N1.5) | `action.eef_pos`, `action.eef_axisangle`, `action.gripper`, `action.base_motion`, `action.control_mode` |
 | `openvla_oft` | `action.eef_pos`, `action.eef_euler`, `action.gripper` |
 | `groot` (N1.6) | `action.eef_pos`, `action.eef_axisangle`, `action.gripper`, `action.base_motion`, `action.control_mode` |
 
