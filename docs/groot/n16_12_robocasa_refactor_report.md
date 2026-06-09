@@ -16,6 +16,7 @@
 
 - Generic RoboCasa processor는 그대로 generic robosuite RoboCasa env용으로 남긴다.
 - GR00T RoboCasa 전용 변환은 `src.policies.groot.robocasa_io`를 단일 출처로 둔다.
+- GR00T native rollout wrapper는 `src.policies.groot.robocasa_env_wrappers`로 공유해 ZMQ eval과 SAFE collection의 3-view video contract를 같이 유지한다.
 - `src.processor`에는 GR00T 전용 processor를 추가해 기존 eval/collection 코드가 같은 `(obs_pipeline, action_pipeline)` 형태를 사용할 수 있게 했다.
 - SAFE collection의 transport 차이는 client adapter에 가두고, pkl schema와 feature metadata는 HTTP/ZMQ가 같은 의미를 갖도록 맞췄다.
 - HTTP `/act`, HTTP `/act_with_features`, ZMQ `get_action_with_features`는 같은 checkpoint/profile, 같은 schema, 같은 optional `inference_seed` 의미를 공유한다.
@@ -93,7 +94,8 @@ flowchart TD
 |---|---|---|---|
 | Entry | [scripts/eval/robocasa_eval.py](../../scripts/eval/robocasa_eval.py) | HTTP eval 진입점 | `--use-groot-env`에서 GR00T 전용 env/processor 경로 선택 |
 | Entry | [scripts/safe/groot_n16/robocasa/collect/collect_rollout.py](../../scripts/safe/groot_n16/robocasa/collect/collect_rollout.py) | SAFE collection 진입점 | HTTP/ZMQ transport 선택, episode 단위 수집 조율 |
-| Local loop | [scripts/safe/groot_n16/robocasa/collect/collect_env.py](../../scripts/safe/groot_n16/robocasa/collect/collect_env.py) | env 실행 | `GrootRoboCasaEnv`, wrapper stack, `scenario_seed`, `ep_meta`, `env.step()` 관리 |
+| Local loop | [scripts/eval/groot_robocasa_zmq_eval.py](../../scripts/eval/groot_robocasa_zmq_eval.py) | ZMQ eval 진입점 | upstream rollout helper를 유지하면서 `robocasa_io.py` 관측 adapter와 shared env wrapper 사용 |
+| Local loop | [scripts/safe/groot_n16/robocasa/collect/collect_env.py](../../scripts/safe/groot_n16/robocasa/collect/collect_env.py) | env 실행 | `GrootRoboCasaEnv`, shared wrapper stack, `scenario_seed`, `ep_meta`, `env.step()` 관리 |
 | Local loop | [src/processor/factory.py](../../src/processor/factory.py) | processor 생성 | `make_groot_robocasa_processors()`로 obs/action pipeline 제공 |
 | Local loop | [src/processor/obs/groot_robocasa.py](../../src/processor/obs/groot_robocasa.py) | obs 변환 | native observation을 HTTP payload 형태로 변환 |
 | Local loop | [src/processor/action/groot_robocasa.py](../../src/processor/action/groot_robocasa.py) | action 변환 | HTTP action sub-key를 native GR00T action dict로 변환 |
@@ -102,6 +104,7 @@ flowchart TD
 | HTTP | [scripts/serve/groot.py](../../scripts/serve/groot.py), [src/policies/groot/service.py](../../src/policies/groot/service.py) | HTTP serving | FastAPI endpoint, GR00T policy load, action/feature response 생성 |
 | ZMQ | [scripts/safe/groot_n16/robocasa/serve/feature_server.py](../../scripts/safe/groot_n16/robocasa/serve/feature_server.py) | ZMQ serving | `get_action_with_features` endpoint와 upstream `PolicyServer` 호환 |
 | Shared contract | [src/policies/groot/robocasa_io.py](../../src/policies/groot/robocasa_io.py), [src/policies/groot/schema.py](../../src/policies/groot/schema.py) | key contract | native key와 unified key 변환의 단일 출처 |
+| Shared contract | [src/policies/groot/robocasa_env_wrappers.py](../../src/policies/groot/robocasa_env_wrappers.py) | rollout wrapper | res256 3-view video recording filter와 upstream `MultiStepWrapper` 적용 |
 | Shared contract | [src/policies/groot/safe_features.py](../../src/policies/groot/safe_features.py), [src/policies/groot/rng.py](../../src/policies/groot/rng.py) | feature/RNG contract | hidden-state metadata와 call-local inference RNG 의미 통일 |
 | Output | [scripts/safe/groot_n16/robocasa/collect/collect_artifacts.py](../../scripts/safe/groot_n16/robocasa/collect/collect_artifacts.py) | artifact 저장 | SAFE pkl/csv/mp4/manifest 저장 |
 
@@ -136,19 +139,32 @@ flowchart TD
 - GR00T action vector 추출
 - numpy/pickle 직렬화 helper
 
-### 3. HTTP client는 기존 `VLAClient`를 상속
+ZMQ eval client도 이 경계를 따른다. `scripts/eval/groot_robocasa_zmq_eval.py`는 더 이상 자체 `OBS_ALIASES`를 갖지 않고 `prepare_groot_robocasa_observation()`으로 policy payload를 만든다. 따라서 HTTP eval, SAFE HTTP, SAFE ZMQ, N1.6 ZMQ eval은 같은 native observation alias와 required-key 검증을 공유한다.
+
+### 3. Native rollout wrapper 공유
+
+`GrootRoboCasaEnv`는 3개 카메라를 `res256`과 `res512` 두 해상도로 함께 노출할 수 있다. upstream `VideoRecordingWrapper`는 observation key에 `"video"`가 들어간 항목을 모두 이어 붙이므로, 별도 필터가 없으면 저장 영상이 3-view가 아니라 6-view가 된다.
+
+이 wrapper 책임은 transport와 무관하므로 `src.policies.groot.robocasa_env_wrappers`로 분리했다.
+
+- `CanonicalRoboCasaVideoObservationFilter`: video recorder가 볼 observation을 `video.res256_image_side_0/1/wrist_0` 세 개로 제한
+- `wrap_groot_robocasa_eval_env()`: upstream `VideoRecordingWrapper`와 `MultiStepWrapper` 적용
+
+이 helper는 N1.6 ZMQ eval과 SAFE collection이 같이 사용한다. HTTP path의 payload/action 변환은 이미 `make_groot_robocasa_processors()` -> `robocasa_io.py`를 타므로, HTTP eval이 upstream video/multistep wrapper를 직접 쓰는 경우에만 이 env wrapper를 같이 쓰면 된다.
+
+### 4. HTTP client는 기존 `VLAClient`를 상속
 
 HTTP SAFE collection client는 [scripts/utils/vla_client.py](../../scripts/utils/vla_client.py)의 `VLAClient`를 상속한다. 따라서 HTTP request 구성, `/act_with_features` 호출, `inference_seed` 전달은 기존 HTTP client contract를 재사용한다.
 
 ZMQ client는 upstream GR00T `PolicyServer` request/response 형식을 유지해야 하므로 별도 transport adapter로 남긴다. 다만 SAFE record 저장, metadata 갱신, call-local seed schedule은 HTTP/ZMQ client가 같은 mixin과 규칙을 쓴다.
 
-### 4. HTTP/ZMQ feature extraction contract 통일
+### 5. HTTP/ZMQ feature extraction contract 통일
 
 HTTP `/act_with_features`와 ZMQ `get_action_with_features`는 같은 `SafeFeatureExtractor` 계열 로직을 사용한다. 기본 feature scope는 embodiment decoded horizon 기준의 valid action-token slice이며, RoboCasa N1.6 PandaOmron에서는 기본 `H=16`이다.
 
 `--feature-action-horizon`을 쓰면 ah8/ah16 같은 action-horizon ablation을 같은 축 의미로 수집할 수 있다. 이때 server export horizon과 collector `--n_action_steps`가 맞지 않으면 collection 검증 단계에서 실패하는 것이 정상이다.
 
-### 5. Inference seed 의미 통일
+### 6. Inference seed 의미 통일
 
 HTTP와 ZMQ 모두 optional call-local `inference_seed`를 지원한다.
 

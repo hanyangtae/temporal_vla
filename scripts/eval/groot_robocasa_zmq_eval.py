@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """RoboCasa eval client for a remote GR00T ZMQ policy server.
 
-The fine-tuned RoboCasa checkpoint uses the training modality keys
-``robot0_agentview_left/right`` and ``robot0_eye_in_hand``.  The upstream
-GrootRoboCasaEnv emits the GR00T sim aliases ``res256_image_side_0/1`` and
-``res256_image_wrist_0``.  This client keeps upstream rollout logic but aliases
-those keys before sending observations to the ZMQ policy server.
+The RoboCasa365 checkpoint may select either the upstream
+``robocasa_panda_omron`` branch or the fine-tuned ``new_embodiment`` branch.
+This client keeps upstream rollout logic, but reuses the project-local
+GR00T/RoboCasa IO adapter so policy payloads stay on the required 3-camera
+contract while rollout videos record only the canonical res256 views.
 """
 
 from __future__ import annotations
@@ -22,21 +22,29 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src/benchmarks/rob
 
 import numpy as np
 
+import gr00t.eval.rollout_policy as rollout_policy  # noqa: E402
 from gr00t.eval.rollout_policy import (  # noqa: E402
     MultiStepConfig,
     VideoConfig,
     WrapperConfigs,
-    run_rollout_gymnasium_policy,
 )
 from gr00t.policy.server_client import PolicyClient  # noqa: E402
+from src.policies.groot.robocasa_env_wrappers import wrap_groot_robocasa_eval_env  # noqa: E402
+from src.policies.groot.robocasa_io import (  # noqa: E402
+    prepare_groot_robocasa_observation,
+)
 
 
-OBS_ALIASES = {
-    "video.res256_image_side_0": "video.robot0_agentview_left",
-    "video.res256_image_side_1": "video.robot0_agentview_right",
-    "video.res256_image_wrist_0": "video.robot0_eye_in_hand",
-    "annotation.human.action.task_description": "annotation.human.task_description",
-}
+def create_three_view_eval_env(
+    env_name: str,
+    env_idx: int,
+    total_n_envs: int,
+    wrapper_configs: WrapperConfigs,
+) -> object:
+    """Variant of upstream eval env creation with 3-view video recording."""
+
+    env = rollout_policy.get_gym_env(env_name, env_idx, total_n_envs)
+    return wrap_groot_robocasa_eval_env(env, wrapper_configs)
 
 
 class AliasedPolicyClient:
@@ -52,15 +60,12 @@ class AliasedPolicyClient:
         return self.client.reset(options=options)
 
     def get_action(self, observation, options=None):
-        aliased = dict(observation)
-        for src, dst in OBS_ALIASES.items():
-            if src in aliased and dst not in aliased:
-                aliased[dst] = aliased[src]
+        filtered = prepare_groot_robocasa_observation(observation, strict=True)
         opts = dict(options) if options else {}
         if self.inference_seed_base is not None and "inference_seed" not in opts:
             opts["inference_seed"] = int(self.inference_seed_base) + self._call_idx
         self._call_idx += 1
-        return self.client.get_action(aliased, options=opts or None)
+        return self.client.get_action(filtered, options=opts or None)
 
 
 def parse_args() -> argparse.Namespace:
@@ -119,9 +124,15 @@ def main() -> None:
         "n_episodes": args.n_episodes,
         "n_envs": args.n_envs,
     }
-    if "eval_seed" in inspect.signature(run_rollout_gymnasium_policy).parameters:
+    run_rollout = rollout_policy.run_rollout_gymnasium_policy
+    if "eval_seed" in inspect.signature(run_rollout).parameters:
         rollout_kwargs["eval_seed"] = args.eval_seed
-    results = run_rollout_gymnasium_policy(**rollout_kwargs)
+    original_create_eval_env = rollout_policy.create_eval_env
+    rollout_policy.create_eval_env = create_three_view_eval_env
+    try:
+        results = run_rollout(**rollout_kwargs)
+    finally:
+        rollout_policy.create_eval_env = original_create_eval_env
     env_name, successes, infos = results
     print("Video saved to: ", video_dir)
     print("results: ", results)
