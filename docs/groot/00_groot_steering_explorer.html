@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GR00T Latent Steering Explorer</title>
+  <style>
+    :root {
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --ink: #18202c;
+      --muted: #657184;
+      --line: #d8dee9;
+      --blue: #1f6feb;
+      --green: #238636;
+      --red: #b42318;
+      --amber: #b7791f;
+      --violet: #6f42c1;
+      --slate: #334155;
+      --code: #eef2f7;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    a {
+      color: var(--blue);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      background: #ffffff;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+
+    .bar {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 18px 24px;
+      display: grid;
+      gap: 14px;
+    }
+
+    h1 {
+      font-size: 28px;
+      margin: 0;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      margin: 2px 0 0;
+      max-width: 960px;
+      font-size: 14px;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    button, input {
+      font: inherit;
+    }
+
+    .tab {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--slate);
+      border-radius: 6px;
+      padding: 7px 10px;
+      cursor: pointer;
+    }
+
+    .tab[aria-selected="true"] {
+      color: #ffffff;
+      background: var(--slate);
+      border-color: var(--slate);
+    }
+
+    .search {
+      flex: 1 1 280px;
+      min-width: 240px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+      background: #fbfdff;
+      color: var(--ink);
+    }
+
+    main {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .section {
+      display: none;
+    }
+
+    .section.active {
+      display: block;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin: 16px 0 24px;
+    }
+
+    .wide-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+      gap: 16px;
+      margin: 16px 0 24px;
+    }
+
+    @media (max-width: 860px) {
+      .wide-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .card {
+      padding: 16px;
+    }
+
+    .panel {
+      padding: 18px;
+    }
+
+    .card h3, .panel h2, .panel h3 {
+      margin-top: 0;
+      letter-spacing: 0;
+    }
+
+    .panel h2 {
+      font-size: 22px;
+      margin-bottom: 8px;
+    }
+
+    .card h3 {
+      font-size: 17px;
+      margin-bottom: 8px;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 10px 0;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 2px 8px;
+      background: #eef2f7;
+      color: #334155;
+      font-size: 12px;
+      border: 1px solid #dbe3ee;
+    }
+
+    .tag.http { background: #e7f0ff; color: #174ea6; border-color: #cfe0ff; }
+    .tag.zmq { background: #f3e8ff; color: #6f42c1; border-color: #e2ccff; }
+    .tag.safe { background: #e7f8ef; color: #176b3a; border-color: #c8efd8; }
+    .tag.steer { background: #fff3d6; color: #8a5a00; border-color: #f7dea3; }
+    .tag.warn { background: #ffe8e6; color: #9f1c12; border-color: #ffc9c4; }
+
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+    }
+
+    code {
+      background: var(--code);
+      border-radius: 5px;
+      padding: 1px 5px;
+    }
+
+    pre {
+      overflow-x: auto;
+      background: #101827;
+      color: #eef2ff;
+      padding: 12px;
+      border-radius: 8px;
+      margin: 10px 0;
+    }
+
+    .flow {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .step {
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--blue);
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px;
+    }
+
+    .step.safe { border-left-color: var(--green); }
+    .step.zmq { border-left-color: var(--violet); }
+    .step.steer { border-left-color: var(--amber); }
+    .step.warn { border-left-color: var(--red); }
+
+    .step-title {
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .eq {
+      background: #fbfdff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      margin: 12px 0;
+    }
+
+    .formula {
+      font-size: 17px;
+      font-weight: 700;
+      color: #172033;
+      margin: 4px 0 8px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+
+    .note {
+      border-left: 4px solid var(--amber);
+      background: #fff8e5;
+      padding: 12px 14px;
+      border-radius: 6px;
+      margin: 14px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      font-size: 14px;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 8px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: #eef2f7;
+    }
+
+    details {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #ffffff;
+      margin: 10px 0;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <div>
+        <h1>GR00T Latent Steering Explorer</h1>
+        <p class="subtitle">
+          GR00T N1.6/N1.5, LeRobot/native, RoboCasa365, ZMQ/HTTP, SAFE feature collection,
+          COAST/conceptor latent steering 흐름을 한 파일에서 따라가기 위한 repo-local HTML 지도.
+        </p>
+      </div>
+      <div class="controls">
+        <nav class="tabs" aria-label="Explorer sections">
+          <button class="tab" data-tab="flow" aria-selected="true">GR00T Flow</button>
+          <button class="tab" data-tab="theory" aria-selected="false">Steering Theory</button>
+          <button class="tab" data-tab="steering" aria-selected="false">Steering Status</button>
+          <button class="tab" data-tab="trace" aria-selected="false">Trace Recipes</button>
+          <button class="tab" data-tab="files" aria-selected="false">Files</button>
+        </nav>
+        <input id="search" class="search" placeholder="filter: http, zmq, lerobot, safe, vl, dit, conceptor, artifact">
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section id="flow" class="section active">
+      <div class="wide-grid">
+        <article class="panel searchable" data-keywords="groot flow native lerobot robocasa365 http zmq profile server client adapter">
+          <h2>한 화면 구조</h2>
+          <p>
+            전체 흐름은 <code>profile</code>에서 시작해 server/model loader, eval 또는 collector client,
+            observation adapter, policy inference, action adapter, <code>env.step()</code> 또는 SAFE artifact writer로 내려간다.
+          </p>
+          <div class="flow">
+            <div class="step">
+              <div class="step-title">1. Profile</div>
+              <div><code>configs/checkpoints/*.yaml</code>가 checkpoint 위치, <code>base_model</code>, image/state/action layout, <code>n_action_steps</code>, GR00T embodiment를 고정한다.</div>
+            </div>
+            <div class="step">
+              <div class="step-title">2. Server</div>
+              <div><code>scripts/serve/groot.py</code>는 native GR00T N1.6, <code>scripts/serve/lerobot.py</code>는 LeRobot policy wrapper를 FastAPI로 serve한다.</div>
+            </div>
+            <div class="step zmq">
+              <div class="step-title">3. Transport</div>
+              <div>HTTP는 <code>VLAClient</code> JSON/base64 schema, ZMQ는 GR00T native observation dict와 <code>PolicyClient</code> protocol을 쓴다.</div>
+            </div>
+            <div class="step safe">
+              <div class="step-title">4. Latent Steering</div>
+              <div>SAFE collection은 action과 hidden state를 함께 저장하고, steering은 feature server hook에서 hidden state를 변환한다.</div>
+            </div>
+          </div>
+        </article>
+
+        <aside class="panel searchable" data-keywords="legend terms naive native">
+          <h2>용어</h2>
+          <p><b>native</b>: LeRobot wrapper를 거치지 않고 Isaac-GR00T 서버/정책을 직접 쓰는 경로. 이전 대화에서 말한 <code>naive</code>는 이 문서에서 <code>native</code>로 표기한다.</p>
+          <p><b>unified HTTP language</b>: <code>observation.images.left</code>, <code>action.eef_pos</code> 같은 project FastAPI 계약.</p>
+          <p><b>GR00T native language</b>: <code>video.res256_image_side_0</code>, <code>action.end_effector_position</code> 같은 Isaac-GR00T/RoboCasa key.</p>
+          <p><b>SAFE feature</b>: GR00T inference 중 action-token latent를 캡처해 steering 분석과 conceptor fit에 쓰는 hidden state.</p>
+        </aside>
+      </div>
+
+      <div class="grid">
+        <article class="card searchable" data-keywords="n16 native http act groot service vla client">
+          <h3>N1.6 Native HTTP <code>/act</code></h3>
+          <div class="tag-row"><span class="tag http">HTTP</span><span class="tag">N1.6</span><span class="tag">native</span></div>
+          <pre>scripts/serve/groot.py
+  -> GrootPolicyService.load_policy()
+  -> load_groot_policy()
+  -> Gr00tPolicy + Gr00tSimPolicyWrapper
+
+VLAClient.predict()
+  -> POST /act
+  -> GrootPolicyService.act()
+  -> build_groot_obs()
+  -> policy.get_action()
+  -> convert_native_action_to_subkeys()</pre>
+          <p>HTTP payload를 GR00T native observation으로 바꾼 뒤 action을 다시 <code>action.*</code> sub-key로 반환한다.</p>
+        </article>
+
+        <article class="card searchable" data-keywords="n16 http closed loop robocasa eval processors robocasa_io">
+          <h3>N1.6 HTTP Closed-Loop Eval</h3>
+          <div class="tag-row"><span class="tag http">HTTP</span><span class="tag">RoboCasa</span></div>
+          <pre>scripts/eval/robocasa_eval.py --use-groot-env
+  -> make_groot_robocasa_processors()
+  -> GrootRoboCasaObsProcessor
+  -> VLAClient.predict()
+  -> GrootRoboCasaActionProcessor(mode="step")
+  -> env.step(native_action)</pre>
+          <p><code>mode="step"</code>은 action chunk의 첫 step만 실행한다. 다음 sim observation을 보고 다시 inference한다.</p>
+        </article>
+
+        <article class="card searchable" data-keywords="n16 zmq eval native policyclient robocasa_env_wrappers">
+          <h3>N1.6 Native ZMQ Eval</h3>
+          <div class="tag-row"><span class="tag zmq">ZMQ</span><span class="tag">N1.6</span><span class="tag">baseline</span></div>
+          <pre>run_gr00t_server.py
+  -> PolicyServer get_action
+
+scripts/eval/groot_robocasa_zmq_eval.py
+  -> prepare_groot_robocasa_observation()
+  -> PolicyClient.get_action()
+  -> MultiStepWrapper executes n_action_steps</pre>
+          <p>HTTP key를 만들지 않고 native <code>video.*</code>, <code>state.*</code>, <code>annotation.human.*</code>를 ZMQ로 보낸다.</p>
+        </article>
+
+        <article class="card searchable" data-keywords="safe n16 zmq http features hidden_states collector feature_server">
+          <h3>N1.6 SAFE Collection</h3>
+          <div class="tag-row"><span class="tag safe">SAFE</span><span class="tag zmq">ZMQ</span><span class="tag http">HTTP</span></div>
+          <pre>collect_rollout.py
+  -> N16SafeCollectingPolicyClient (ZMQ)
+     or HttpN16SafeCollectingPolicyClient (HTTP)
+  -> get_action_with_features or /act_with_features
+  -> hidden_state + action_vector + pkl/csv/mp4</pre>
+          <p>ZMQ와 HTTP transport는 다르지만 artifact의 의미는 <code>hidden_state</code>, <code>action_vector</code>, metadata로 맞춘다.</p>
+        </article>
+
+        <article class="card searchable" data-keywords="n15 native zmq inference_service">
+          <h3>N1.5 Native ZMQ</h3>
+          <div class="tag-row"><span class="tag zmq">ZMQ</span><span class="tag">N1.5</span><span class="tag">native</span></div>
+          <pre>Isaac-GR00T-N1.5/scripts/inference_service.py
+  -> endpoint get_action
+
+scripts/eval/groot_n15_robocasa_zmq_eval.py
+  -> N15PolicyClient
+  -> msgpack {"endpoint": "get_action", "data": obs}</pre>
+          <p>N1.6 <code>PolicyServer</code>와 protocol이 달라 별도 client가 있다.</p>
+        </article>
+
+        <article class="card searchable" data-keywords="n15 lerobot http grootpolicy adapter">
+          <h3>N1.5 LeRobot HTTP</h3>
+          <div class="tag-row"><span class="tag http">HTTP</span><span class="tag">LeRobot</span><span class="tag">N1.5</span></div>
+          <pre>scripts/serve/lerobot.py
+  -> make_policy_adapter("groot")
+  -> GrootPolicyAdapter
+  -> raw Isaac-GR00T checkpoint
+  -> LeRobot GrootPolicy
+  -> /act action.* subkeys</pre>
+          <p>LeRobot framework를 쓰지만 통신은 project HTTP contract다.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="theory" class="section">
+      <div class="wide-grid">
+        <article class="panel searchable" data-keywords="theory equations conceptor coast latent steering alpha beta hidden intervention">
+          <h2>Latent Steering 핵심 수식</h2>
+          <p>
+            이 repo의 steering 수식은 <code>src/conceptor/</code>와 <code>scripts/serve/steering_hooks.py</code>에 구현돼 있다.
+            현재 관심 축은 CP threshold가 아니라, hidden state를 성공 부분공간 쪽으로 직접 변환하는 latent intervention이다.
+          </p>
+
+          <div class="eq">
+            <h3>1. Conceptor</h3>
+            <div class="formula">C = R (R + α<sup>-2</sup>I)<sup>-1</sup></div>
+            <p><code>R</code>은 activation correlation, <code>α</code>는 aperture다. 구현: <code>src/conceptor/core.py::compute_conceptor</code>.</p>
+          </div>
+
+          <div class="eq">
+            <h3>2. Success / Failure Contrast</h3>
+            <div class="formula">C<sub>steer</sub> = C<sub>success</sub> ∧ ¬C<sub>failure</sub></div>
+            <p>성공 부분공간은 유지하고 실패 부분공간은 억제하는 contrastive conceptor다. 구현: <code>contrastive_conceptor()</code>.</p>
+          </div>
+
+          <div class="eq">
+            <h3>3. Steering Gate</h3>
+            <div class="formula">M = (1 - β)I + β C<sub>steer</sub>, &nbsp; h′ = h M<sup>T</sup></div>
+            <p><code>β=0</code>이면 원본, <code>β=1</code>이면 full conceptor projection이다. 구현: <code>build_steering_matrix()</code>, <code>apply_steering()</code>.</p>
+          </div>
+
+          <div class="eq">
+            <h3>4. Layer / Aperture Diagnostics</h3>
+            <div class="formula">q(C) = tr(C) / d</div>
+            <div class="formula">overlap(C<sub>a</sub>, C<sub>b</sub>) = tr(C<sub>a</sub>C<sub>b</sub>) / sqrt(tr(C<sub>a</sub><sup>2</sup>) tr(C<sub>b</sub><sup>2</sup>))</div>
+            <p>Quota는 부분공간 크기, overlap은 두 conceptor의 겹침이다. 구현: <code>src/conceptor/analysis.py</code>.</p>
+          </div>
+        </article>
+
+        <aside class="panel searchable" data-keywords="safe features tensor hidden states dit pre velocity">
+          <h2>SAFE Feature 정의</h2>
+          <div class="eq">
+            <h3>DiT pre-velocity slice</h3>
+            <div class="formula">Z = model_output[:, -H<sub>model</sub>:, :][:, :H<sub>export</sub>, :]</div>
+            <div class="formula">hidden_states ∈ R<sup>B×K×H×D</sup></div>
+            <p>
+              GR00T N1.6 RoboCasa 기준으로 <code>model_action_horizon=50</code>,
+              <code>valid_action_horizon=16</code>이며, K는 denoising step 수다.
+              구현: <code>src/policies/groot/safe_features.py</code>.
+            </p>
+          </div>
+          <div class="eq">
+            <h3>Feature axes</h3>
+            <pre>valid: ["denoising_step", "valid_action_step", "feature_dim"]
+all:   ["denoising_step", "model_action_token", "feature_dim"]</pre>
+          </div>
+        </aside>
+      </div>
+
+      <div class="grid">
+        <article class="card searchable" data-keywords="vl dit pathway lda auroc motor goal">
+          <h3>VL / DiT Pathway 판정</h3>
+          <div class="tag-row"><span class="tag steer">Steering</span><span class="tag">VL</span><span class="tag">DiT</span></div>
+          <p>길이 통제 후 고정 t까지의 feature를 평균하고 PCA(SVD) → LDA → Mann-Whitney AUROC로 succ/fail 분리력을 비교한다.</p>
+          <table>
+            <tr><th>Pathway</th><th>역할 해석</th><th>좋았던 task</th></tr>
+            <tr><td>VL / <code>action_head.vlln</code></td><td>goal semantics, early signal</td><td>CloseToasterOvenDoor, SlideDishwasherRack</td></tr>
+            <tr><td>DiT block 24/31</td><td>motor program, later signal</td><td>OpenCabinet, OpenDrawer, PnP tasks</td></tr>
+          </table>
+          <p class="muted">근거 문서: <a href="../steering/09_phase3_vl_dit_comparison.md">09_phase3_vl_dit_comparison.md</a></p>
+        </article>
+
+        <article class="card searchable" data-keywords="lda quadrant goal motor failure type">
+          <h3>LDA Failure Quadrants</h3>
+          <div class="tag-row"><span class="tag steer">LDA</span><span class="tag">Failure type</span></div>
+          <table>
+            <tr><th>Quadrant</th><th>해석</th></tr>
+            <tr><td>A: VL+ DiT+</td><td>goal과 motor 둘 다 혼란. 복합 실패.</td></tr>
+            <tr><td>B: VL+ DiT-</td><td>goal-type failure 가설.</td></tr>
+            <tr><td>C: VL- DiT+</td><td>motor-type failure 가설.</td></tr>
+            <tr><td>D: VL- DiT-</td><td>latent로 예측하기 어려운 실패.</td></tr>
+          </table>
+          <p class="muted">분석 스크립트: <code>scripts/safe/groot_n16/robocasa/analyze/vl_dit_lda_analysis.py</code></p>
+        </article>
+      </div>
+
+      <details class="searchable" data-keywords="cp conformal detector threshold tdet safe legacy note">
+        <summary>Historical SAFE detector note: CP threshold</summary>
+        <p>
+          이 식은 detector baseline과 과거 SAFE report를 읽기 위한 참고다. 현재 주력은 threshold 기반
+          failure alarm이 아니라, VL/DiT pathway별 latent steering이다.
+        </p>
+        <div class="formula">q<sub>1-α</sub> = Quantile<sub>1-α</sub>(S<sub>cal</sub><sup>success</sup>)</div>
+        <div class="formula">T<sub>det</sub> = min { t : s<sub>t</sub> &gt; q<sub>1-α</sub> }</div>
+        <p class="muted">근거 문서: <a href="n16_10_safe_report.md">n16_10_safe_report.md</a>, <a href="n16_07_safe_detector.md">n16_07_safe_detector.md</a></p>
+      </details>
+    </section>
+
+    <section id="steering" class="section">
+      <div class="panel searchable" data-keywords="steering status safe coast notall vl dit phase">
+        <h2>Steering 연구 흐름</h2>
+        <div class="flow">
+          <div class="step safe">
+            <div class="step-title">Phase 0. SAFE detector baseline</div>
+            <div>Detector/CP는 과거 baseline으로 남긴다. DiT pre-velocity feature + LSTM detector는 unseen에서 chance에 가까웠고, 현재 주력 방법은 latent steering이다.</div>
+          </div>
+          <div class="step steer">
+            <div class="step-title">Phase 1. COAST / DiT-only conceptor</div>
+            <div>DiT 32-layer COAST 재현에서 평균 ΔSR ≤ 0. Layer quota도 중간층 peak 없이 약했다.</div>
+          </div>
+          <div class="step">
+            <div class="step-title">Phase 2. NOTALL 해석</div>
+            <div>GR00T에는 goal semantics(VL)와 motor program(DiT)이 분리된다는 가설을 적용. 기존 실패는 DiT-only였기 때문일 가능성이 커졌다.</div>
+          </div>
+          <div class="step safe">
+            <div class="step-title">Phase 3. VL + DiT aligned capture</div>
+            <div>VL seq-mean-pool과 DiT 7-layer per-token feature를 같은 rollout에서 수집하고 pathway separation을 비교했다.</div>
+          </div>
+          <div class="step steer">
+            <div class="step-title">Phase 4. Type-matched steering target</div>
+            <div>VL-dominant task에는 VL steering, DiT-dominant task에는 DiT steering을 비교하는 것이 다음 축이다.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid">
+        <article class="card searchable" data-keywords="current conclusion vl dit auroc">
+          <h3>현재 결론</h3>
+          <ul>
+            <li>VL은 t≤8에서 더 이른 실패 신호를 낸다.</li>
+            <li>DiT는 t≥12에서 motor failure task에 강해진다.</li>
+            <li>SlideDishwasherRack은 VL AUROC 0.931로 goal-type failure 후보가 강하다.</li>
+            <li>OpenCabinet/OpenDrawer/PnP는 DiT-dominant motor-type failure 후보가 강하다.</li>
+          </ul>
+        </article>
+
+        <article class="card searchable" data-keywords="next work phase4 conceptor fit eval steer pathways">
+          <h3>다음 구현/실험 축</h3>
+          <ul>
+            <li><code>fit_conceptor_steering.py</code>에 <code>--pathway vl</code> 지원.</li>
+            <li><code>feature_server.py</code>에서 <code>--steering-pathway vl</code>로 VL hook 적용.</li>
+            <li><code>eval_steer_pathways.sh</code>로 baseline + VL β + DiT β 비교.</li>
+            <li>B/C quadrant video를 정성 검증해 goal/motor 해석을 확인.</li>
+          </ul>
+        </article>
+
+        <article class="card searchable" data-keywords="pitfalls length confound action smoke sr parity">
+          <h3>주의할 claim</h3>
+          <ul>
+            <li>Action smoke는 SR 검증이 아니다.</li>
+            <li>HTTP parity와 ZMQ baseline은 별개 claim이다.</li>
+            <li>길이 confound는 succ/fail latent 분석에서 반드시 통제해야 한다.</li>
+            <li>시각화 결과는 geometry 진단이고, steering 성능 주장은 rollout ΔSR이 필요하다.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="trace" class="section">
+      <div class="grid">
+        <article class="card searchable" data-keywords="trace n16 http action">
+          <h3>N1.6 HTTP action 하나 추적</h3>
+          <ol>
+            <li><code>configs/checkpoints/groot__robocasa365_ckpt120000.yaml</code></li>
+            <li><code>scripts/serve/groot.py::main</code></li>
+            <li><code>src/policies/groot/loader.py::load_groot_policy</code></li>
+            <li><code>src/policies/groot/service.py::GrootPolicyService.act</code></li>
+            <li><code>src/policies/groot/service.py::build_groot_obs</code></li>
+            <li><code>src/policies/groot/service.py::convert_native_action_to_subkeys</code></li>
+          </ol>
+        </article>
+
+        <article class="card searchable" data-keywords="trace safe zmq feature collect">
+          <h3>N1.6 SAFE ZMQ 수집 추적</h3>
+          <ol>
+            <li><code>feature_server.py::main</code></li>
+            <li><code>SafeN16FeaturePolicy.get_action_with_features</code></li>
+            <li><code>SafeFeatureExtractor.capture</code></li>
+            <li><code>collect_rollout.py::main</code></li>
+            <li><code>N16SafeCollectingPolicyClient.get_action</code></li>
+            <li><code>collect_artifacts.py</code></li>
+          </ol>
+        </article>
+
+        <article class="card searchable" data-keywords="trace steering vl dit conceptor">
+          <h3>VL/DiT steering 추적</h3>
+          <ol>
+            <li><code>scripts/serve/steering_hooks.py::ConceptorSteering</code></li>
+            <li><code>feature_server.py --steering-pathway vl|dit</code></li>
+            <li><code>fit_conceptor_steering.py</code>로 conceptor npz 생성</li>
+            <li><code>eval_steer_pathways.sh</code>로 SR 비교</li>
+            <li><code>docs/steering/09_phase3_vl_dit_comparison.md</code>로 target 해석 확인</li>
+          </ol>
+        </article>
+
+        <article class="card searchable" data-keywords="trace lerobot n15 http">
+          <h3>N1.5 LeRobot HTTP 추적</h3>
+          <ol>
+            <li><code>configs/checkpoints/lerobot_groot_n15__robocasa365_ckpt120000.yaml</code></li>
+            <li><code>scripts/serve/lerobot.py::main</code></li>
+            <li><code>lerobot_adapters/factory.py::make_policy_adapter</code></li>
+            <li><code>lerobot_adapters/groot.py::GrootPolicyAdapter</code></li>
+            <li><code>scripts/serve/lerobot.py::predict_action</code></li>
+            <li><code>scripts/eval/lerobot_groot_n15_official_robocasa_eval.py</code></li>
+          </ol>
+        </article>
+      </div>
+    </section>
+
+    <section id="files" class="section">
+      <div class="panel searchable" data-keywords="files docs links index">
+        <h2>주요 파일 링크</h2>
+        <table>
+          <tr><th>역할</th><th>파일</th></tr>
+          <tr><td>GR00T flow map markdown</td><td><a href="00_groot_flow_map.md">docs/groot/00_groot_flow_map.md</a></td></tr>
+          <tr><td>Steering overview</td><td><a href="../steering/README.md">docs/steering/README.md</a></td></tr>
+          <tr><td>Session handoff</td><td><a href="../steering/10_session_handoff.md">docs/steering/10_session_handoff.md</a></td></tr>
+          <tr><td>VL vs DiT comparison</td><td><a href="../steering/09_phase3_vl_dit_comparison.md">docs/steering/09_phase3_vl_dit_comparison.md</a></td></tr>
+          <tr><td>COAST reproduction map</td><td><a href="../steering/04_coast_reproduction_map.md">docs/steering/04_coast_reproduction_map.md</a></td></tr>
+          <tr><td>Conceptor code</td><td><a href="../../src/conceptor/README.md">src/conceptor/README.md</a></td></tr>
+          <tr><td>GR00T HTTP service</td><td><a href="../../src/policies/groot/service.py">src/policies/groot/service.py</a></td></tr>
+          <tr><td>GR00T RoboCasa IO adapter</td><td><a href="../../src/policies/groot/robocasa_io.py">src/policies/groot/robocasa_io.py</a></td></tr>
+          <tr><td>SAFE feature extraction</td><td><a href="../../src/policies/groot/safe_features.py">src/policies/groot/safe_features.py</a></td></tr>
+          <tr><td>Steering hook</td><td><a href="../../scripts/serve/steering_hooks.py">scripts/serve/steering_hooks.py</a></td></tr>
+          <tr><td>SAFE feature server</td><td><a href="../../scripts/safe/groot_n16/robocasa/serve/feature_server.py">scripts/safe/groot_n16/robocasa/serve/feature_server.py</a></td></tr>
+          <tr><td>Pathway separation analysis</td><td><a href="../../scripts/safe/groot_n16/robocasa/analyze/pathway_separation.py">scripts/safe/groot_n16/robocasa/analyze/pathway_separation.py</a></td></tr>
+          <tr><td>LDA quadrant analysis</td><td><a href="../../scripts/safe/groot_n16/robocasa/analyze/vl_dit_lda_analysis.py">scripts/safe/groot_n16/robocasa/analyze/vl_dit_lda_analysis.py</a></td></tr>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const tabs = Array.from(document.querySelectorAll(".tab"));
+    const sections = Array.from(document.querySelectorAll(".section"));
+    const search = document.getElementById("search");
+
+    function selectTab(name) {
+      tabs.forEach((tab) => {
+        tab.setAttribute("aria-selected", String(tab.dataset.tab === name));
+      });
+      sections.forEach((section) => {
+        section.classList.toggle("active", section.id === name);
+      });
+      applyFilter();
+    }
+
+    function applyFilter() {
+      const query = search.value.trim().toLowerCase();
+      const active = document.querySelector(".section.active");
+      if (!active) return;
+      const nodes = Array.from(active.querySelectorAll(".searchable"));
+      nodes.forEach((node) => {
+        if (!query) {
+          node.classList.remove("hidden");
+          return;
+        }
+        const haystack = (node.textContent + " " + (node.dataset.keywords || "")).toLowerCase();
+        node.classList.toggle("hidden", !haystack.includes(query));
+      });
+    }
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => selectTab(tab.dataset.tab));
+    });
+    search.addEventListener("input", applyFilter);
+  </script>
+</body>
+</html>
