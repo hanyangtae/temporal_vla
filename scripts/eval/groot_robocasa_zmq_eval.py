@@ -11,6 +11,7 @@ those keys before sending observations to the ZMQ policy server.
 from __future__ import annotations
 
 import argparse
+import inspect
 from pathlib import Path
 import sys
 import uuid
@@ -111,14 +112,16 @@ def main() -> None:
         args.policy_client_port,
         inference_seed_base=args.eval_seed,
     )
-    results = run_rollout_gymnasium_policy(
-        env_name=args.env_name,
-        policy=policy,
-        wrapper_configs=wrapper_configs,
-        n_episodes=args.n_episodes,
-        n_envs=args.n_envs,
-        eval_seed=args.eval_seed,
-    )
+    rollout_kwargs = {
+        "env_name": args.env_name,
+        "policy": policy,
+        "wrapper_configs": wrapper_configs,
+        "n_episodes": args.n_episodes,
+        "n_envs": args.n_envs,
+    }
+    if "eval_seed" in inspect.signature(run_rollout_gymnasium_policy).parameters:
+        rollout_kwargs["eval_seed"] = args.eval_seed
+    results = run_rollout_gymnasium_policy(**rollout_kwargs)
     env_name, successes, infos = results
     print("Video saved to: ", video_dir)
     print("results: ", results)
