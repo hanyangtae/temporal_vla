@@ -13,7 +13,7 @@ succ/fail 분리가 instruction identity 아티팩트로 오염됨. 이를 제�
 ## 수집 대상 — 10 instruction × 50 ep (option A: 전부 fresh)
 
 기존 pathway_pertoken run(100ep mixed)에서 이미 ≥50 인 5개는 **재사용**(아래 "재사용" 표),
-<50 인 10개만 fresh 수집.
+<50 인 10개만 새로 fresh 수집.
 
 | # | task | instruction (정확 lang) | 기존 |
 |---|---|---|---|
