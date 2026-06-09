@@ -1,8 +1,4 @@
-# LeRobot with policies and simulation environments
-# transformers v5 (PR #2964)로 pi0/groot 충돌 해소 → 단일 컨테이너 가능
-lerobot[pi,groot,smolvla,pusht,libero]
-
-# Training utilities
+# Extra utilities not owned by the lerobot submodule extras.
 wandb
 tensorboard
 open-clip-torch
