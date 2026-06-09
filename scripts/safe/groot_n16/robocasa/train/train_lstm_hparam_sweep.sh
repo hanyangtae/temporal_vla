@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../run_config.sh"
 
-SAFE_REPO="${SAFE_REPO:-/home/dongkyu/pdk_ws/SAFE}"
+SAFE_REPO="${SAFE_REPO:-/home/dongkyu/pkt_ws/SAFE}"
 CONDA_ENV="${CONDA_ENV:-vla-safe}"
 
 OUT_ROOT="${OUT_ROOT:-${ROBOCASA_SAFE_OUT_ROOT}}"
@@ -52,6 +52,7 @@ for lr in "${LR_VALUES[@]}"; do
           dataset=groot_n16 \
           model=lstm \
           dataset.data_path="${DATA_PATH}" \
+          dataset.subset_name="${ROBOCASA_SAFE_SUBSET_NAME}" \
           dataset.horizon_idx_rel="${HORIZON_IDX_REL}" \
           dataset.diff_idx_rel="${DIFF_IDX_REL}" \
           model.batch_size="${BATCH_SIZE}" \

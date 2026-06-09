@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../run_config.sh"
 
-SAFE_REPO="${SAFE_REPO:-/home/dongkyu/pdk_ws/SAFE}"
+SAFE_REPO="${SAFE_REPO:-/home/dongkyu/pkt_ws/SAFE}"
 CONDA_ENV="${CONDA_ENV:-vla-safe}"
 
 OUT_ROOT="${OUT_ROOT:-${ROBOCASA_SAFE_OUT_ROOT}}"
@@ -13,6 +13,7 @@ LOG_ROOT="${LOG_ROOT:-${RUN_ROOT}/experiments/aggregation_ablation/train_logs}"
 WANDB_DIR="${WANDB_DIR:-${RUN_ROOT}/experiments/aggregation_ablation/wandb}"
 HYDRA_ROOT="${HYDRA_ROOT:-${RUN_ROOT}/experiments/aggregation_ablation/hydra}"
 WANDB_MODE="${WANDB_MODE:-online}"
+DATA_PATH="${DATA_PATH:-${RUN_ROOT}/split}"
 
 LR="${LR:-3e-4}"
 LAMBDA_REG="${LAMBDA_REG:-1e-2}"
@@ -50,6 +51,8 @@ for horizon_idx_rel in "${HORIZON_VALUES[@]}"; do
         conda run -n "${CONDA_ENV}" python -m failure_prob.train \
           dataset=groot_n16 \
           model=lstm \
+          dataset.data_path="${DATA_PATH}" \
+          dataset.subset_name="${ROBOCASA_SAFE_SUBSET_NAME}" \
           dataset.horizon_idx_rel="${horizon_idx_rel}" \
           dataset.diff_idx_rel="${diff_idx_rel}" \
           model.batch_size="${BATCH_SIZE}" \

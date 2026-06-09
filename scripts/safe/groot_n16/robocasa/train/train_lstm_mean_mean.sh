@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../run_config.sh"
 
-SAFE_REPO="${SAFE_REPO:-/home/dongkyu/pdk_ws/SAFE}"
+SAFE_REPO="${SAFE_REPO:-/home/dongkyu/pkt_ws/SAFE}"
 CONDA_ENV="${CONDA_ENV:-vla-safe}"
 
 OUT_ROOT="${OUT_ROOT:-${ROBOCASA_SAFE_OUT_ROOT}}"
