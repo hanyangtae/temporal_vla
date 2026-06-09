@@ -1,6 +1,6 @@
 # n15_05 — Closed-loop Obs Bridge Spec (stage [2][3])
 
-파이프라인 stage [2](HTTP)·[3](robocasa365 eval)의 obs 계약 명세와 수정 상태다.
+파이프라인 `stage [2] HTTP`·`stage [3] robocasa365 eval`의 obs 계약 명세와 수정 상태다.
 전체 그림·상태는 [`n15_03`](n15_03_lerobot_robocasa365.md), serve 로딩은
 [`n15_04`](n15_04_lerobot_serve_adapter.md).
 

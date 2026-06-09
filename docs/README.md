@@ -1,6 +1,30 @@
-# Documentation Map
+# Temporal VLA Documentation
 
-이 디렉터리는 실행 절차, 실험 결정, 논문 reference를 함께 보관한다. 번호 prefix(`01_`, `02_`, ...)는 **읽기 순서**를 의미한다.
+이 디렉터리는 Temporal VLA의 실행 절차, 실험 결정, 결과 보고, 논문 reference를 함께
+보관한다. 문서는 단순 파일 목록이 아니라 **무엇을 하는 프로젝트인지 → 어떤 절차를
+따라야 하는지 → 결과와 남은 판단은 어디에 있는지**를 빠르게 찾게 하는 entrypoint다.
+
+## Project Goal
+
+현재 프로젝트 목표는 VLA latent에서 성공/실패 표현을 구분하고, 추론 시 활성화를 성공
+부분공간으로 steering 해서 RoboCasa/Calvin/LIBERO 같은 벤치마크의 Success Rate를 올리는
+것이다. VLA 백본 추가학습 없이 intervention 효과를 확인하는 것이 핵심이며, 이전 TTT/VITA
+progress-predictor 방향은 `ttt/` 아래의 보존 문서로 남긴다.
+
+인프라는 Docker container로 모델 서버와 벤치마크를 분리하고, 공통 FastAPI `/act`
+계약으로 여러 policy를 같은 evaluator에 붙이는 구조다. GR00T RoboCasa처럼 upstream parity가
+중요한 경로는 별도 adapter/runbook을 둔다.
+
+## How To Use These Docs
+
+1. 공통 serving/eval 작업은 `01` → `02` → `03` 순서로 읽는다.
+2. GR00T RoboCasa 기준선, SAFE wiring, N1.5/LeRobot 실험은 `groot/README.md`에서
+   N1.6/N1.5 trunk를 고른다.
+3. 메인 연구 결과와 steering 방향은 `steering/README.md`에서 phase별 문서를 따라간다.
+4. 환경 재현성, task 이름, seed 의미는 `benchmarks/`와 `groot/n16_05_*`를 같이 본다.
+5. 장기 결정은 `adr/`, 외부 논문은 `references/`, 예전 방향은 `_legacy/` 또는 `ttt/`에 둔다.
+
+번호 prefix(`01_`, `02_`, ...)는 각 scope 안에서 **읽기 순서**를 의미한다.
 
 ## Project-Wide Reading Order
 
@@ -12,6 +36,16 @@
 4. [CONTRIBUTING](CONTRIBUTING.md) — git/PR 워크플로우.
 
 부가 runbook: [Cache Paths](cache_paths.md) — 체크포인트·데이터셋의 repo 밖 cache 위치와 코드에서의 경로 참조 규칙(`path_setup.py` / `cache_env.sh`).
+
+## Current Results And Status
+
+- GR00T RoboCasa runtime/SR/SAFE 결과는 [`groot/README.md`](groot/README.md)의
+  "최근 실행 결과"와 [`groot/n16_10_safe_report.md`](groot/n16_10_safe_report.md)를 본다.
+- Latent steering 표현 분석과 intervention 후보는 [`steering/README.md`](steering/README.md)에서
+  phase별 문서를 따라간다.
+- 환경 결정성, task 이름 차이, seed replay 문제는 [`benchmarks/`](benchmarks/)와
+  [`groot/n16_05_safe_env_reproduction.md`](groot/n16_05_safe_env_reproduction.md)를 같이 본다.
+- 일회성 상태 점검 snapshot은 root runbook으로 두지 않고 `_legacy/` 아래에 보관한다.
 
 ## GR00T RoboCasa
 
@@ -86,6 +120,7 @@ succ/fail latent 구분 → steer 로 SR↑ (COAST 계열). 메인 method 의 �
 
 - [groot/_legacy/robocasa_finetune_setup.md](groot/_legacy/robocasa_finetune_setup.md) — 초기 GR00T x RoboCasa fine-tuning setup. 현행 N1.6 기준은 `groot/n16_01_finetune.md`.
 - [ttt/_legacy/groot_loop_analysis_plan.md](ttt/_legacy/groot_loop_analysis_plan.md) — 초기 loop analysis 계획. 문서 상단의 legacy note 를 먼저 확인한다.
+- [_legacy/status_report_20260526.md](_legacy/status_report_20260526.md) — 2026-05-26 read-only repo 상태 점검 snapshot. 현행 entrypoint가 아니다.
 
 ## Organization Rule
 
@@ -96,4 +131,4 @@ succ/fail latent 구분 → steer 로 SR↑ (COAST 계열). 메인 method 의 �
 - **벤치마크 reference** (task 이름 매핑 등) 는 `benchmarks/` 아래에 둔다.
 - **장기 결정** 은 `adr/` 아래에 둔다.
 - **논문 PDF / 외부 reference** 는 `references/` 아래에 둔다.
-- **Legacy / 폐기된 문서** 는 각 디렉터리의 `_legacy/` 서브디렉터리에 둔다 (파일명 prefix `legacy_*` 는 사용하지 않는다).
+- **Legacy / 폐기된 문서** 는 해당 scope의 `_legacy/` 서브디렉터리에 둔다. Scope가 애매한 repo-wide snapshot은 `docs/_legacy/`에 둔다. 파일명 prefix `legacy_*` 는 사용하지 않는다.

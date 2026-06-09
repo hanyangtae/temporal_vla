@@ -1,64 +1,23 @@
 # GR00T RoboCasa Documentation Map
 
-이 디렉터리는 GR00T와 RoboCasa가 만나는 실행 문서의 기준 위치다. GR00T fine-tuning/eval, RoboCasa scenario 재현성, SAFE feature export와 detector 재현 문서를 한 트리에서 관리한다.
+이 디렉터리는 GR00T와 RoboCasa가 만나는 실행 문서의 기준 위치다. 목표는 GR00T N1.6/N1.5
+체크포인트를 RoboCasa에서 재현 가능하게 평가하고, 같은 rollout에서 action과 latent feature를
+SAFE-readable artifact로 내보내는 절차를 유지하는 것이다.
 
-파일명에 두 자리 번호 prefix를 붙여 읽는 순서를 표시한다. N1.6 trunk와 N1.5 reference trunk는 독립이다.
+파일명에 두 자리 번호 prefix를 붙여 읽는 순서를 표시한다. N1.6 trunk와 N1.5 reference trunk는
+독립이며, 새 실행 기록은 먼저 canonical runbook/result 문서에 흡수하고 필요할 때만 별도 문서로
+분리한다.
 
-## Runtime Recheck 2026-06-09
+## 사용 절차
 
-목적은 SR 재측정이 아니라 현재 checkout/container에서 각 serving path가 정상 action을
-반환하는지 확인하는 것이다. Host sandbox에서 일부 HTTP port 접근이 끊기는 경우가 있어
-HTTP health/smoke는 해당 model container 내부 `127.0.0.1` 기준으로 확인했다.
-이 섹션은 실행 당시 로그 요약이다. `outputs/debug/recheck_20260609_*` one-off 영상
-디렉터리는 현재 host에 남아 있지 않으므로, 재사용 가능한 artifact가 필요하면 같은 명령으로
-다시 생성한다.
-
-| Case | Current action check | Closed-loop note |
-|---|---|---|
-| LeRobot pi0.5 + LIBERO HTTP | `lerobot_pi05__libero` `/health` OK, warm smoke OK. `/act` returned finite `action.eef_pos` `[1,3]`, `action.eef_axisangle` `[1,3]`, `action.gripper` `[1,1]`. | First CUDA load OOMed while LeRobot GR00T N1.5 was still on GPU. After freeing VRAM it loaded. First `/act` spent more than 60s in Torch Inductor/autotune; warm call was ~149ms. LIBERO closed-loop rollout was not rerun in this pass. |
-| Native GR00T N1.5 ZMQ + RoboCasa365 | Real OpenFridge reset obs through `groot_n15` ZMQ returned finite keys `action.end_effector_position`, `action.end_effector_rotation`, `action.gripper_close`, `action.base_motion`, `action.control_mode`, each `[1,16,D]`. | Current OpenFridge target 1ep smoke ended `success_rate=0.0`; this official client uses `get_task_horizon(args.task)` when `--max-episode-steps` is omitted, so the failure is not explained by a shortened 400-step cap. No seed is exposed by this official client, so this is not a deterministic repeat of the earlier successful scene. |
-| Native GR00T N1.6 ZMQ + RoboCasa365 | `run_gr00t_server.py` with checkpoint `grootn16_robocasa365_multitask_learning/checkpoint-120000` and `NEW_EMBODIMENT` returned finite real-obs action keys `[1,16,D]`. | Current OpenFridge 1ep smoke reached the env/action loop but ended `success_rate=0.0` with `MAX_STEPS=400`. The N1.6 eval runbook/default script uses `MAX_STEPS=720`, so this is an action-loop smoke result, not a canonical SR failure. During this pass `scripts/eval/groot_robocasa_zmq_eval.py` needed a compatibility guard because the current upstream helper does not accept `eval_seed`. |
-| Native GR00T N1.6 HTTP + RoboCasa365 | `groot__robocasa365_ckpt120000` `/health` OK and smoke OK. `/act` returned finite `action.eef_pos`, `action.eef_axisangle`, `action.gripper`, `action.base_motion`, `action.control_mode`, each `[16,D]`. | Closed-loop HTTP SR was not established in this pass; endpoint/schema/action health is OK. Generic `scripts/eval/robocasa_eval.py` defaults to `--num-steps 400`, so N1.6 HTTP SR 확인은 `--num-steps 720`로 별도 rerun해야 한다. |
-| LeRobot GR00T N1.5 HTTP + RoboCasa365 | `lerobot_groot_n15__robocasa365_ckpt120000` `/health` OK and smoke OK. `/act` returned finite five-key response with `[1,D]` per key. | OpenFridge target seed 0 rerun succeeded: `success_rate=1.0`, first success step `209`. The official LeRobot HTTP eval client also uses the RoboCasa task horizon when `--max-episode-steps` is omitted, so this path is not blocked by the default time setting. |
-
-결론: action 반환 자체는 위 다섯 경로 모두 현재 재현된다. 다만 native N1.5/N1.6 ZMQ의
-단일 OpenFridge rollout은 이번 pass에서 실패했으므로, "action 정상"과 "SR 정상"은
-분리해서 보고해야 한다. 성능 재확인은 seed 고정 가능 client 또는 task별 반복 rollout으로
-별도 수행한다.
-
-## Runtime Recheck 720-step 3ep 2026-06-09
-
-위 action smoke 이후, 같은 다섯 case를 3 episodes/trials로 다시 확인했다. RoboCasa
-case는 `OpenFridge` 기준이며 max horizon을 `720`으로 명시했다. LIBERO case는 같은
-`720` cap과 deadline으로 `libero_10` 첫 task 3 trials만 확인했다.
-
-Artifact root:
-
-```text
-outputs/eval/recheck_720_3ep_20260609_202347
-```
-
-| Case | Eval target | Result | Notes |
-|---|---|---:|---|
-| LeRobot pi0.5 + LIBERO HTTP | `libero_10`, task 0, 3 trials, `max_steps=720` | 3/3 | terminated steps: 249, 249, 241. First run downloaded LIBERO assets into the container user cache. |
-| Native GR00T N1.5 ZMQ + RoboCasa365 | `robocasa/OpenFridge`, `split=target`, 3 episodes, `--max-episode-steps 720` | 2/3 | Results: `[True, False, True]`. Videos saved under `native_groot_n15_zmq/videos`. |
-| Native GR00T N1.6 ZMQ + RoboCasa365 | `robocasa_panda_omron/OpenFridge_PandaOmron_Env`, 3 episodes, `MAX_STEPS=720` | 0/3 | `per_episode.tsv` records all three failures. The server log shows this run loaded the RoboCasa365 checkpoint with `ROBOCASA_PANDA_OMRON`, while the checkpoint profile expects `NEW_EMBODIMENT`. |
-| Native GR00T N1.6 HTTP + RoboCasa365 | `OpenFridge`, `--use-groot-env`, 3 rollouts, `--num-steps 720`, seed 0 | 2/3 | Success at steps 652 and 458; seed 2 reached 720 without success. Combined video: `native_groot_n16_http/videos/OpenFridge.mp4`. |
-| LeRobot GR00T N1.5 HTTP + RoboCasa365 | `robocasa/OpenFridge`, `split=target`, 3 episodes, `--max-episode-steps 720`, seed 0 | 3/3 | Success steps: 204, 355, 253. Videos saved under `lerobot_groot_n15_http/videos`. |
-
-Operational conclusion: the `720` horizon fixes the interpretation of the earlier short smoke, but it does
-not make every path pass. The strongest new signal is the N1.6 split: HTTP succeeds 2/3 with
-`new_embodiment`, while ZMQ failed 0/3 after starting the same checkpoint with `ROBOCASA_PANDA_OMRON`.
-For RoboCasa365 checkpoint-120000, the ZMQ server should be launched with
-`EMBODIMENT_TAG=NEW_EMBODIMENT`; rerun closed-loop ZMQ after that setting before making a final SR claim.
-
-후속 확인 (`outputs/eval/n16_zmq_new_emb_3ep_20260609_212237`): 같은
-RoboCasa365 checkpoint-120000을 ZMQ server에서 `EMBODIMENT_TAG=NEW_EMBODIMENT`로
-띄우면 `CloseFridge_PandaOmron_Env` 3ep/720은 `[False, False, True]` (`1/3`),
-`OpenFridge_PandaOmron_Env` 3ep/720도 `[False, False, True]` (`1/3`)로 끝났다.
-따라서 이전 N1.6 ZMQ `0/3`은 checkpoint 자체의 action 반환 불능이라기보다
-server embodiment mismatch 영향으로 보는 것이 맞다. 다만 이 결과는 3-episode smoke라
-task-level SR 기준선은 target task set으로 더 크게 다시 산출해야 한다.
+1. N1.6 기준선을 다룰 때는 `n16_01`에서 checkpoint/data 준비를 확인하고 `n16_02`로 ZMQ 평가를
+   실행한다.
+2. SAFE 수집이나 feature 의미를 다룰 때는 `n16_03` overview에서 현재 결론을 잡고 `n16_04`부터
+   collection/replay/feature/detector/report 순서로 내려간다.
+3. HTTP `/act` 또는 `/act_with_features`를 다룰 때는 `n16_09`의 parity 상태와 `n16_11`의 코드
+   변경 범위를 같이 확인한다. HTTP 결과를 Upstream GR00T ZMQ evaluation 기준선으로 혼동하지 않는다.
+4. N1.5와 LeRobot 실험은 `n15_03`을 overview로 보고, stage별 세부는 `n15_04`와 `n15_05`에서
+   확인한다.
 
 ## N1.6 Reading Order
 
@@ -125,3 +84,61 @@ Repo-wide 용어는 [`../../CONTEXT.md`](../../CONTEXT.md)를 기준으로 한�
 | CP operating point | detector score 위에 conformal threshold/band를 고정한 운영점 | `n16_07_safe_detector.md`, `n16_10_safe_report.md` |
 
 현재 label scope는 rollout-level success/failure다. Inference-step-level failure onset/intervention label은 아직 별도 protocol로 정의해야 한다.
+
+## 최근 실행 결과
+
+### Runtime Recheck 2026-06-09
+
+목적은 SR 재측정이 아니라 현재 checkout/container에서 각 serving path가 정상 action을
+반환하는지 확인하는 것이다. Host sandbox에서 일부 HTTP port 접근이 끊기는 경우가 있어
+HTTP health/smoke는 해당 model container 내부 `127.0.0.1` 기준으로 확인했다.
+이 섹션은 실행 당시 로그 요약이다. `outputs/debug/recheck_20260609_*` one-off 영상
+디렉터리는 현재 host에 남아 있지 않으므로, 재사용 가능한 artifact가 필요하면 같은 명령으로
+다시 생성한다.
+
+| Case | Current action check | Closed-loop note |
+|---|---|---|
+| LeRobot pi0.5 + LIBERO HTTP | `lerobot_pi05__libero` `/health` OK, warm smoke OK. `/act` returned finite `action.eef_pos` `[1,3]`, `action.eef_axisangle` `[1,3]`, `action.gripper` `[1,1]`. | First CUDA load OOMed while LeRobot GR00T N1.5 was still on GPU. After freeing VRAM it loaded. First `/act` spent more than 60s in Torch Inductor/autotune; warm call was ~149ms. LIBERO closed-loop rollout was not rerun in this pass. |
+| Native GR00T N1.5 ZMQ + RoboCasa365 | Real OpenFridge reset obs through `groot_n15` ZMQ returned finite keys `action.end_effector_position`, `action.end_effector_rotation`, `action.gripper_close`, `action.base_motion`, `action.control_mode`, each `[1,16,D]`. | Current OpenFridge target 1ep smoke ended `success_rate=0.0`; this official client uses `get_task_horizon(args.task)` when `--max-episode-steps` is omitted, so the failure is not explained by a shortened 400-step cap. No seed is exposed by this official client, so this is not a deterministic repeat of the earlier successful scene. |
+| Native GR00T N1.6 ZMQ + RoboCasa365 | `run_gr00t_server.py` with checkpoint `grootn16_robocasa365_multitask_learning/checkpoint-120000` and `NEW_EMBODIMENT` returned finite real-obs action keys `[1,16,D]`. | Current OpenFridge 1ep smoke reached the env/action loop but ended `success_rate=0.0` with `MAX_STEPS=400`. The N1.6 eval runbook/default script uses `MAX_STEPS=720`, so this is an action-loop smoke result, not a canonical SR failure. During this pass `scripts/eval/groot_robocasa_zmq_eval.py` needed a compatibility guard because the current upstream helper does not accept `eval_seed`. |
+| Native GR00T N1.6 HTTP + RoboCasa365 | `groot__robocasa365_ckpt120000` `/health` OK and smoke OK. `/act` returned finite `action.eef_pos`, `action.eef_axisangle`, `action.gripper`, `action.base_motion`, `action.control_mode`, each `[16,D]`. | Closed-loop HTTP SR was not established in this pass; endpoint/schema/action health is OK. Generic `scripts/eval/robocasa_eval.py` defaults to `--num-steps 400`, so N1.6 HTTP SR 확인은 `--num-steps 720`로 별도 rerun해야 한다. |
+| LeRobot GR00T N1.5 HTTP + RoboCasa365 | `lerobot_groot_n15__robocasa365_ckpt120000` `/health` OK and smoke OK. `/act` returned finite five-key response with `[1,D]` per key. | OpenFridge target seed 0 rerun succeeded: `success_rate=1.0`, first success step `209`. The official LeRobot HTTP eval client also uses the RoboCasa task horizon when `--max-episode-steps` is omitted, so this path is not blocked by the default time setting. |
+
+결론: action 반환 자체는 위 다섯 경로 모두 현재 재현된다. 다만 native N1.5/N1.6 ZMQ의
+단일 OpenFridge rollout은 이번 pass에서 실패했으므로, "action 정상"과 "SR 정상"은
+분리해서 보고해야 한다. 성능 재확인은 seed 고정 가능 client 또는 task별 반복 rollout으로
+별도 수행한다.
+
+### Runtime Recheck 720-step 3ep 2026-06-09
+
+위 action smoke 이후, 같은 다섯 case를 3 episodes/trials로 다시 확인했다. RoboCasa
+case는 `OpenFridge` 기준이며 max horizon을 `720`으로 명시했다. LIBERO case는 같은
+`720` cap과 deadline으로 `libero_10` 첫 task 3 trials만 확인했다.
+
+Artifact root:
+
+```text
+outputs/eval/recheck_720_3ep_20260609_202347
+```
+
+| Case | Eval target | Result | Notes |
+|---|---|---:|---|
+| LeRobot pi0.5 + LIBERO HTTP | `libero_10`, task 0, 3 trials, `max_steps=720` | 3/3 | terminated steps: 249, 249, 241. First run downloaded LIBERO assets into the container user cache. |
+| Native GR00T N1.5 ZMQ + RoboCasa365 | `robocasa/OpenFridge`, `split=target`, 3 episodes, `--max-episode-steps 720` | 2/3 | Results: `[True, False, True]`. Videos saved under `native_groot_n15_zmq/videos`. |
+| Native GR00T N1.6 ZMQ + RoboCasa365 | `robocasa_panda_omron/OpenFridge_PandaOmron_Env`, 3 episodes, `MAX_STEPS=720` | 0/3 | `per_episode.tsv` records all three failures. The server log shows this run loaded the RoboCasa365 checkpoint with `ROBOCASA_PANDA_OMRON`, while the checkpoint profile expects `NEW_EMBODIMENT`. |
+| Native GR00T N1.6 HTTP + RoboCasa365 | `OpenFridge`, `--use-groot-env`, 3 rollouts, `--num-steps 720`, seed 0 | 2/3 | Success at steps 652 and 458; seed 2 reached 720 without success. Combined video: `native_groot_n16_http/videos/OpenFridge.mp4`. |
+| LeRobot GR00T N1.5 HTTP + RoboCasa365 | `robocasa/OpenFridge`, `split=target`, 3 episodes, `--max-episode-steps 720`, seed 0 | 3/3 | Success steps: 204, 355, 253. Videos saved under `lerobot_groot_n15_http/videos`. |
+
+Operational conclusion: the `720` horizon fixes the interpretation of the earlier short smoke, but it does
+not make every path pass. The strongest new signal is the N1.6 split: HTTP succeeds 2/3 with
+`new_embodiment`, while ZMQ failed 0/3 after starting the same checkpoint with `ROBOCASA_PANDA_OMRON`.
+For RoboCasa365 checkpoint-120000, the ZMQ server should be launched with
+`EMBODIMENT_TAG=NEW_EMBODIMENT`; rerun closed-loop ZMQ after that setting before making a final SR claim.
+
+후속 확인 (`outputs/eval/n16_zmq_new_emb_3ep_20260609_212237`): 같은
+RoboCasa365 checkpoint-120000을 ZMQ server에서 `EMBODIMENT_TAG=NEW_EMBODIMENT`로
+띄우면 `CloseFridge_PandaOmron_Env` 3ep/720은 `[False, False, True]` (`1/3`),
+`OpenFridge_PandaOmron_Env` 3ep/720도 `[False, False, True]` (`1/3`)로 끝났다.
+따라서 이전 N1.6 ZMQ `0/3`은 checkpoint 자체의 action 반환 불능이라기보다
+server embodiment mismatch 영향으로 보는 것이 맞다. 다만 이 결과는 3-episode smoke라
+task-level SR 기준선은 target task set으로 더 크게 다시 산출해야 한다.
