@@ -1,6 +1,6 @@
 # GR00T RoboCasa Loop 분석 실행 계획
 
-> Legacy note: 이 문서는 초기 N1.6 local rollout / loop analysis 계획이다. 현재 권장 N1.6 RoboCasa 평가는 `docs/groot/n16_robocasa_eval.md`의 Docker ZMQ workflow를 기준으로 한다. 체크포인트 위치는 현재 repo 규칙에 맞춰 `/cache/checkpoints/nvidia/GR00T-N1.6-3B`를 사용한다.
+> Legacy note: 이 문서는 초기 N1.6 local rollout / loop analysis 계획이다. 현재 권장 N1.6 RoboCasa 평가는 `docs/groot/n16_02_eval.md`의 Docker ZMQ workflow를 기준으로 한다. 체크포인트 위치는 현재 repo 규칙에 맞춰 `/cache/checkpoints/nvidia/GR00T-N1.6-3B`를 사용한다.
 
 ## 목표
 GR00T N1.6-3B 모델을 RoboCasa 환경에서 rollout하여 실패 케이스를 영상으로 확인하고,

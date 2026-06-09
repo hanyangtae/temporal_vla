@@ -9,7 +9,7 @@
 현재 프로젝트 목표는 VLA latent에서 성공/실패 표현을 구분하고, 추론 시 활성화를 성공
 부분공간으로 steering 해서 RoboCasa/Calvin/LIBERO 같은 벤치마크의 Success Rate를 올리는
 것이다. VLA 백본 추가학습 없이 intervention 효과를 확인하는 것이 핵심이며, 이전 TTT/VITA
-progress-predictor 방향은 `ttt/` 아래의 보존 문서로 남긴다.
+progress-predictor 방향은 [`ttt/`](ttt/README.md) 아래의 보존 문서로 남긴다.
 
 인프라는 Docker container로 모델 서버와 벤치마크를 분리하고, 공통 FastAPI `/act`
 계약으로 여러 policy를 같은 evaluator에 붙이는 구조다. GR00T RoboCasa처럼 upstream parity가
@@ -88,11 +88,10 @@ succ/fail latent 구분 → steer 로 SR↑ (COAST 계열). 메인 method 의 �
 4. [COAST Reproduction Map](steering/04_coast_reproduction_map.md) — 코드 ↔ COAST 논문 식/섹션 매핑
 5. [SAFE lerobot Collection](steering/05_safe_lerobot_collection.md) — SAFE 수집 lerobot 멀티벤치 확장 (plan+status)
 
-## TTT Methodology
+## TTT / Progress Predictor Archive
 
-- [TTT Pipeline](ttt/ttt_pipeline.md): GR00T N1.6 + TTT RoboCasa pipeline 정리.
-- [Phase 1 Progress Predictor](ttt/progress_predictor.md): VITA 기반 progress predictor 구현 및 학습 정리.
-- [Phase 1 Status](ttt/2026_04_01_status.md): Phase 1 진행 상태 snapshot.
+현재 메인 연구 라인은 아니다. 과거 실패 루프 탈출/ProgressPredictor 방향은
+[`ttt/README.md`](ttt/README.md)에서 보존 문서로 관리한다.
 
 ## Benchmark References
 
