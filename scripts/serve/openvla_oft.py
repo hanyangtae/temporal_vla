@@ -207,6 +207,21 @@ def _load_model_impl():
     proprio_dim = _proprio_dim(profile)
     _proprio_projector = get_proprio_projector(cfg, _model.llm_dim, proprio_dim=proprio_dim)
 
+    # device_map="auto" 로 model 이 multi-GPU 에 split 된 경우, get_action_head/
+    # get_proprio_projector 는 default DEVICE(cuda:0) 에 모듈을 만들어 두는데,
+    # action_head 의 입력 hidden_states 는 lm_head 가 있는 last device 에서 나오고
+    # proprio_projector 의 입력 proprio 는 embed_tokens 가 있는 first device 에 있어야 함.
+    if hasattr(_model, "hf_device_map") and _model.hf_device_map:
+        lm_head_dev = next(_model.language_model.lm_head.parameters()).device
+        embed_dev = next(_model.language_model.model.embed_tokens.parameters()).device
+        _action_head = _action_head.to(lm_head_dev)
+        _proprio_projector = _proprio_projector.to(embed_dev)
+        logger.info(
+            "Multi-GPU split detected (hf_device_map=%s). "
+            "Moved action_head→%s, proprio_projector→%s",
+            _model.hf_device_map, lm_head_dev, embed_dev,
+        )
+
     logger.info(
         "OpenVLA-OFT loaded. unnorm_key=%s, num_open_loop_steps=%d, proprio_dim=%d",
         cfg.unnorm_key, cfg.num_open_loop_steps, proprio_dim,
@@ -448,19 +463,28 @@ async def predict_action(payload: dict):
     profile = _profile
     assert profile is not None
 
-    # action queue가 비었으면 새로 예측
-    if len(_action_queue) == 0:
-        action_chunk = _predict_action_chunk(payload)
-        for i in range(len(action_chunk)):
-            _action_queue.append(action_chunk[i])
+    try:
+        # action queue가 비었으면 새로 예측
+        if len(_action_queue) == 0:
+            action_chunk = _predict_action_chunk(payload)
+            for i in range(len(action_chunk)):
+                _action_queue.append(action_chunk[i])
 
-    # queue에서 하나씩 꺼내서 반환
-    action = _action_queue.popleft()
-    action = _process_action(action, profile)
+        # queue에서 하나씩 꺼내서 반환
+        action = _action_queue.popleft()
+        action = _process_action(action, profile)
 
-    out = _emit_subkeys(action, profile)
-    out["latency_ms"] = (time.time() - t0) * 1000
-    return out
+        out = _emit_subkeys(action, profile)
+        out["latency_ms"] = (time.time() - t0) * 1000
+        return out
+    except Exception:
+        # uvicorn 기본 핸들러가 traceback 을 stdout 으로 안 흘려서 진단 불가.
+        # 직접 stderr 로 dump 후 500 반환.
+        import traceback as _tb
+        _tb.print_exc()
+        sys.stderr.flush()
+        from fastapi import HTTPException as _HTTPException
+        raise _HTTPException(status_code=500, detail=_tb.format_exc())
 
 
 @app.post("/reset")
