@@ -17,11 +17,12 @@ cd /temporal_vla
 
 MODE=${1:-help}
 MODEL_PATH=${MODEL_PATH:-"/cache/checkpoints/nvidia/GR00T-N1.6-3B"}
+EMBODIMENT_TAG=${EMBODIMENT_TAG:-ROBOCASA_PANDA_OMRON}
 PORT=${PORT:-5556}
 POLICY_CLIENT_HOST=${POLICY_CLIENT_HOST:-166.104.35.98}
 EVAL_OUTPUT_DIR=${EVAL_OUTPUT_DIR:-"/temporal_vla/outputs/eval/robocasa/groot"}
 EVAL_RUN_ID=${EVAL_RUN_ID:-"$(date +%Y%m%d_%H%M%S)"}
-export PORT POLICY_CLIENT_HOST EVAL_OUTPUT_DIR EVAL_RUN_ID
+export PORT POLICY_CLIENT_HOST EVAL_OUTPUT_DIR EVAL_RUN_ID EMBODIMENT_TAG
 export HF_MODULES_CACHE=${HF_MODULES_CACHE:-/tmp/hf_modules}
 export MUJOCO_GL=${MUJOCO_GL:-egl}
 
@@ -112,11 +113,12 @@ case "$MODE" in
     echo "============================================"
     echo "Starting GR00T N1.6 server"
     echo "  Model: ${MODEL_PATH}"
+    echo "  Embodiment: ${EMBODIMENT_TAG}"
     echo "  Port:  ${PORT}"
     echo "============================================"
     python /temporal_vla/src/policies/Isaac-GR00T/gr00t/eval/run_gr00t_server.py \
         --model-path "${MODEL_PATH}" \
-        --embodiment-tag ROBOCASA_PANDA_OMRON \
+        --embodiment-tag "${EMBODIMENT_TAG}" \
         --use-sim-policy-wrapper \
         --port "${PORT}"
     ;;

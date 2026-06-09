@@ -148,6 +148,21 @@ bash /temporal_vla/scripts/eval/groot_robocasa.sh server
 '
 ```
 
+`scripts/eval/groot_robocasa.sh server`의 기본 `EMBODIMENT_TAG`는
+`ROBOCASA_PANDA_OMRON`이다. RoboCasa365 `checkpoint-120000`
+(`/temporal_vla/outputs/checkpoints/grootn16_robocasa365_multitask_learning/checkpoint-120000`)
+은 checkpoint metadata와 `groot__robocasa365_ckpt120000.yaml`에 맞춰
+`EMBODIMENT_TAG=NEW_EMBODIMENT`를 명시해서 띄운다.
+
+```bash
+docker exec -it groot bash -lc '
+MODEL_PATH=/temporal_vla/outputs/checkpoints/grootn16_robocasa365_multitask_learning/checkpoint-120000 \
+EMBODIMENT_TAG=NEW_EMBODIMENT \
+PORT=5556 \
+bash /temporal_vla/scripts/eval/groot_robocasa.sh server
+'
+```
+
 Target atomic-seen 15-task eval:
 
 ```bash
