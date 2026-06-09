@@ -41,4 +41,6 @@ CONTEXT.md
 
 # MuJoCo
 MUJOCO_LOG.TXT
-.antigravitycli/*
+.antigravitycli/*src/benchmarks/LIBERO/
+src/benchmarks/calvin/
+image.png
