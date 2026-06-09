@@ -29,8 +29,13 @@ controlled AUROC on val_unseen significantly exceeds its permutation null
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import sys
+
+os.environ.setdefault("OMP_NUM_THREADS", "8")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "8")
+os.environ.setdefault("MKL_NUM_THREADS", "8")
 
 import numpy as np
 import pandas as pd
