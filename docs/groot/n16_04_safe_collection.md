@@ -1,4 +1,4 @@
-# SAFE x GR00T N1.6 RoboCasa — Collection
+# GR00T N1.6 RoboCasa — SAFE Collection
 
 ZMQ SAFE feature server 또는 HTTP `/act_with_features`를 통해 RoboCasa rollout pkl/mp4/csv triplet을 수집한다. ah8/ah16 action-horizon mode와 task-set 정의도 함께 둔다.
 

@@ -1,4 +1,4 @@
-# SAFE x GR00T N1.6 RoboCasa — Reproduction Report
+# GR00T N1.6 RoboCasa — SAFE Reproduction Report
 
 SAFE 논문식 failure detection을 GR00T N1.6 RoboCasa에 맞춰 축소 재현한 end-to-end 결과 보고서다. 절차 runbook은 [04 Collection](n16_04_safe_collection.md), [07 Detector](n16_07_safe_detector.md), [08 Visualization](n16_08_safe_visualization.md), [09 Parity](n16_09_safe_parity.md)을, 전체 wiring 개요는 [03 Overview](n16_03_safe_overview.md)를 본다.
 

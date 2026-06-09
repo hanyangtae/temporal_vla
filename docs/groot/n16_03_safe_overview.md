@@ -1,4 +1,4 @@
-# SAFE x GR00T N1.6 RoboCasa — Overview
+# GR00T N1.6 RoboCasa — SAFE Overview
 
 이 문서 묶음은 GR00T N1.6 RoboCasa와 SAFE detector를 연결하는 canonical 위치다. 예전 단일 SAFE wiring 문서는 `n16_03`부터 `n16_10`까지의 번호 prefix 문서로 합쳐졌고, 결론은 HTTP와 ZMQ를 모두 유지하되 현재 실험 기준선을 ZMQ로 두는 것이다.
 

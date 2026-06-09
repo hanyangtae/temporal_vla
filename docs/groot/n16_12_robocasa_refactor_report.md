@@ -1,4 +1,4 @@
-# GR00T N1.6 RoboCasa Refactor Report
+# GR00T N1.6 RoboCasa — Refactor Report
 
 이 문서는 GR00T N1.6 RoboCasa HTTP/ZMQ 통합 작업에서 정리한 코드 구조, 책임 분리, 검증 범위를 요약한다. 실행 runbook과 상세 실험 수치는 `docs/groot/` 문서를 기준으로 하고, 이 문서는 리팩토링 결과와 현재 아키텍처를 빠르게 확인하는 용도다.
 
