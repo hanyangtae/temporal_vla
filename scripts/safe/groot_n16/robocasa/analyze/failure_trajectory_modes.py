@@ -19,6 +19,9 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+os.environ.setdefault("OMP_NUM_THREADS", "8")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "8")
+os.environ.setdefault("MKL_NUM_THREADS", "8")
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 
 import matplotlib as mpl
@@ -58,6 +61,10 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     cache = load_feature_cache(CACHE)
     rollouts, names = reconstruct_rollouts(cache)
+    # rollouts[i] 는 np.unique(rollout_idx)[i] 에 해당하는 rollout (reconstruct_rollouts 와 동일 정렬).
+    # ep_* 배열은 true rollout id 로 인덱싱되므로, 리스트 위치 i 가 아니라 rid_list[i] 로 접근해야
+    # rollout_idx 가 0..N-1 비연속일 때도 task/episode/succ 가 어긋나지 않는다.
+    rid_list = np.unique(cache["rollout_idx"])
     ep_task = cache["ep_task_id"]; ep_ep = cache["ep_episode_idx"]; ep_succ = cache["ep_success"]
 
     Xs, rid, stp, Tl, succ, task, normt = build_states(rollouts)
@@ -221,8 +228,9 @@ def main():
 
     # ---- mp4 representatives per pattern ----
     def mp4_of(i):
-        tname = names[int(ep_task[i])]
-        return RAW / tname / f"task{int(ep_task[i])}--ep{int(ep_ep[i])}--succ{int(ep_succ[i])}.mp4"
+        rid_i = int(rid_list[i])
+        tname = names[int(ep_task[rid_i])]
+        return RAW / tname / f"task{int(ep_task[rid_i])}--ep{int(ep_ep[rid_i])}--succ{int(ep_succ[rid_i])}.mp4"
 
     with (OUT / "pattern_representatives.tsv").open("w", newline="") as f:
         w = csv.writer(f, delimiter="\t")
@@ -233,13 +241,13 @@ def main():
                 s = fail_seqs[i]
                 comp = "→".join(str(x) for x in s[::3])  # every 3rd step
                 p = mp4_of(i)
-                w.writerow([pat, names[rollouts[i]["task"]], int(ep_ep[i]), comp, str(p), p.exists()])
+                w.writerow([pat, names[rollouts[i]["task"]], int(ep_ep[int(rid_list[i])]), comp, str(p), p.exists()])
 
     with (OUT / "trajectory_patterns.tsv").open("w", newline="") as f:
         w = csv.writer(f, delimiter="\t")
         w.writerow(["rollout", "outcome", "task", "episode", "pattern", "last_region"])
         for i, pat, lr, _ in fail_rows:
-            w.writerow([i, "fail", names[rollouts[i]["task"]], int(ep_ep[i]), pat, lr])
+            w.writerow([i, "fail", names[rollouts[i]["task"]], int(ep_ep[int(rid_list[i])]), pat, lr])
 
     json.dump({"K": K, "silhouettes": sils, "goal_region": int(goal_region),
                "succ_final_region_dist": succ_final_dist, "regions": region_info,

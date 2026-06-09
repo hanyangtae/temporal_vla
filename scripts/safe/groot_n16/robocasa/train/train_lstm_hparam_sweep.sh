@@ -27,6 +27,12 @@ SEEDS=(${SEEDS:-0 1 2})
 
 mkdir -p "${LOG_ROOT}" "${WANDB_DIR}" "${HYDRA_ROOT}"
 
+if [ ! -d "${DATA_PATH}" ]; then
+  echo "ERROR: DATA_PATH 디렉토리가 없음: ${DATA_PATH}" >&2
+  echo "       run env(예: seen18_env.sh)를 source 하거나 DATA_PATH 를 직접 지정하세요." >&2
+  exit 1
+fi
+
 cd "${SAFE_REPO}"
 
 for lr in "${LR_VALUES[@]}"; do

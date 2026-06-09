@@ -243,17 +243,19 @@ def write_manifests(
         for split_name in ("train", "val_seen", "val_unseen"):
             rollouts = splits[split_name]
             n_success, n_fail = count_success(rollouts)
+            sr = n_success / len(rollouts) if rollouts else 0.0
             summary.write(
                 f"{split_name}\tALL\tALL\tALL\t{len(rollouts)}\t{n_success}\t{n_fail}\t"
-                f"{n_success / len(rollouts):.6f}\n"
+                f"{sr:.6f}\n"
             )
             for task_id in sorted({r.task_id for r in rollouts}):
                 task_rollouts = [r for r in rollouts if r.task_id == task_id]
                 task_name, category = tasks[task_id]
                 t_succ, t_fail = count_success(task_rollouts)
+                t_sr = t_succ / len(task_rollouts) if task_rollouts else 0.0
                 summary.write(
                     f"{split_name}\t{task_id}\t{task_name}\t{category}\t{len(task_rollouts)}\t"
-                    f"{t_succ}\t{t_fail}\t{t_succ / len(task_rollouts):.6f}\n"
+                    f"{t_succ}\t{t_fail}\t{t_sr:.6f}\n"
                 )
 
     print(f"wrote {manifest_path}")

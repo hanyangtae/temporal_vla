@@ -59,7 +59,12 @@ def assign_splits(rows: list[dict], val_ratio: float, seed: int) -> None:
     for task_rows in by_task.values():
         idxs = list(range(len(task_rows)))
         rng.shuffle(idxs)
-        n_val = max(1, round(len(task_rows) * val_ratio)) if len(task_rows) > 1 else 0
+        # task당 최소 1개는 train 에 남긴다 (val_ratio≈1 이어도 train 이 비지 않도록).
+        n_val = (
+            min(max(1, round(len(task_rows) * val_ratio)), len(task_rows) - 1)
+            if len(task_rows) > 1
+            else 0
+        )
         val_set = set(idxs[:n_val])
         for i, r in enumerate(task_rows):
             r["split"] = "val_seen" if i in val_set else "train"
