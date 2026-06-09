@@ -26,6 +26,31 @@ HTTP health/smoke는 해당 model container 내부 `127.0.0.1` 기준으로 확�
 분리해서 보고해야 한다. 성능 재확인은 seed 고정 가능 client 또는 task별 반복 rollout으로
 별도 수행한다.
 
+## Runtime Recheck 720-step 3ep 2026-06-09
+
+위 action smoke 이후, 같은 다섯 case를 3 episodes/trials로 다시 확인했다. RoboCasa
+case는 `OpenFridge` 기준이며 max horizon을 `720`으로 명시했다. LIBERO case는 같은
+`720` cap과 deadline으로 `libero_10` 첫 task 3 trials만 확인했다.
+
+Artifact root:
+
+```text
+outputs/eval/recheck_720_3ep_20260609_202347
+```
+
+| Case | Eval target | Result | Notes |
+|---|---|---:|---|
+| LeRobot pi0.5 + LIBERO HTTP | `libero_10`, task 0, 3 trials, `max_steps=720` | 3/3 | terminated steps: 249, 249, 241. First run downloaded LIBERO assets into the container user cache. |
+| Native GR00T N1.5 ZMQ + RoboCasa365 | `robocasa/OpenFridge`, `split=target`, 3 episodes, `--max-episode-steps 720` | 2/3 | Results: `[True, False, True]`. Videos saved under `native_groot_n15_zmq/videos`. |
+| Native GR00T N1.6 ZMQ + RoboCasa365 | `robocasa_panda_omron/OpenFridge_PandaOmron_Env`, 3 episodes, `MAX_STEPS=720` | 0/3 | `per_episode.tsv` records all three failures. This means the earlier ZMQ failure is not explained only by the previous 400-step cap. |
+| Native GR00T N1.6 HTTP + RoboCasa365 | `OpenFridge`, `--use-groot-env`, 3 rollouts, `--num-steps 720`, seed 0 | 2/3 | Success at steps 652 and 458; seed 2 reached 720 without success. Combined video: `native_groot_n16_http/videos/OpenFridge.mp4`. |
+| LeRobot GR00T N1.5 HTTP + RoboCasa365 | `robocasa/OpenFridge`, `split=target`, 3 episodes, `--max-episode-steps 720`, seed 0 | 3/3 | Success steps: 204, 355, 253. Videos saved under `lerobot_groot_n15_http/videos`. |
+
+Operational conclusion: the `720` horizon fixes the interpretation of the earlier short smoke, but it does
+not make every path pass. The strongest new signal is the N1.6 split: HTTP succeeds 2/3 while ZMQ
+fails 0/3 on the same checkpoint family and task. Further diagnosis should compare the N1.6 HTTP
+processor/action path against the N1.6 ZMQ rollout helper rather than focusing only on max-step length.
+
 ## N1.6 Reading Order
 
 1. [01 Fine-Tuning](n16_01_finetune.md) — Isaac-GR00T `n1.6-release` 기반 PandaOmron fine-tuning runbook
