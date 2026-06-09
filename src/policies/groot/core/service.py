@@ -13,7 +13,7 @@ import torch
 from .loader import LoadedGrootModel, load_groot_policy
 from .preprocess import FINAL_IMAGE_RESOLUTION, decode_b64_image, process_img
 from .rng import temporary_inference_seed
-from .safe_features import SafeFeatureExtractor, encode_features_to_base64, feature_metadata
+from ..safe.features import SafeFeatureExtractor, encode_features_to_base64, feature_metadata
 from .schema import (
     GROOT_ENV_LANGUAGE_KEYS,
     GROOT_TO_UNIFIED_ACTION,
@@ -21,6 +21,7 @@ from .schema import (
     build_video_mapping,
     normalize_modality_key,
 )
+from src.utils.common.serving import health_response, reset_policy
 
 
 logger = logging.getLogger(__name__)
@@ -210,13 +211,12 @@ class GrootPolicyService:
         return obs
 
     def reset(self) -> dict[str, str]:
-        if self.policy is not None:
-            self.policy.reset()
-            inner = getattr(self.policy, "policy", None)
-            model = getattr(inner, "model", None) if inner is not None else None
-            if model is not None and hasattr(model, "reset_predictor"):
-                model.reset_predictor()
-        return {"status": "reset"}
+        response = reset_policy(self.policy)
+        inner = getattr(self.policy, "policy", None) if self.policy is not None else None
+        model = getattr(inner, "model", None) if inner is not None else None
+        if model is not None and hasattr(model, "reset_predictor"):
+            model.reset_predictor()
+        return response
 
     def convert_native_action_to_subkeys(
         self, action_dict: dict[str, Any], latency_ms: float
@@ -320,20 +320,20 @@ class GrootPolicyService:
 
         cfg = self.feature_config
         feature_kind, feature_axes = feature_metadata(cfg.feature_slice)
-        return {
-            "status": "ok" if self.policy is not None else "not_loaded",
-            "model": "groot-n1.6",
-            "profile": self.profile.name,
-            "embodiment_tag": self.embodiment_tag.value if self.embodiment_tag else None,
-            "n_action_steps": self.action_horizon(),
-            "action_type": self.profile.action_type,
-            "action_keys": list(self.profile.emits_subkeys),
-            "language_keys": self.language_keys(),
-            "supports_features": True,
-            "supports_inference_seed": True,
-            "feature_kind": feature_kind,
-            "feature_axes": feature_axes,
-            "feature_slice": cfg.feature_slice,
-            "feature_dtype": cfg.feature_dtype,
-            "feature_action_horizon": cfg.feature_action_horizon,
-        }
+        return health_response(
+            policy=self.policy,
+            model="groot-n1.6",
+            profile=self.profile,
+            n_action_steps=self.action_horizon(),
+            action_type=self.profile.action_type,
+            action_keys=list(self.profile.emits_subkeys),
+            embodiment_tag=self.embodiment_tag.value if self.embodiment_tag else None,
+            language_keys=self.language_keys(),
+            supports_features=True,
+            supports_inference_seed=True,
+            feature_kind=feature_kind,
+            feature_axes=feature_axes,
+            feature_slice=cfg.feature_slice,
+            feature_dtype=cfg.feature_dtype,
+            feature_action_horizon=cfg.feature_action_horizon,
+        )

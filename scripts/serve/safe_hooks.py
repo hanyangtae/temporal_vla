@@ -26,34 +26,34 @@ per-step 저장 텐서
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 from typing import Any, Callable
 
 import numpy as np
 import torch
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from src.policies.safe_capture import SafeForwardCapture  # noqa: E402
+from src.policies.safe_metadata import (  # noqa: E402
+    lerobot_feature_axes,
+    lerobot_feature_kind,
+)
 
 
 FLOW_MATCHING_TYPES = {"pi0", "pi05", "xvla", "groot"}
 AUTOREGRESSIVE_TYPES = {"pi0_fast"}
 SUPPORTED_TYPES = FLOW_MATCHING_TYPES | AUTOREGRESSIVE_TYPES
 
-_FLOW_AXES = ["denoising_step", "action_step", "feature_dim"]
-_FAST_AXES = ["token_singleton", "action_token", "feature_dim"]
-
-
 def feature_kind(policy_type: str) -> str:
-    if policy_type in ("pi0", "pi05"):
-        return f"{policy_type}_action_expert_pre_velocity"
-    if policy_type == "xvla":
-        return "xvla_transformer_pre_action_decoder"
-    if policy_type == "groot":
-        return "groot_n15_dit_action_tokens_pre_decode"
-    if policy_type == "pi0_fast":
-        return "pi0_fast_prelogit_action_tokens"
-    raise ValueError(f"Unsupported policy_type: {policy_type}")
+    return lerobot_feature_kind(policy_type)
 
 
 def feature_axes(policy_type: str) -> list[str]:
-    return _FAST_AXES if policy_type in AUTOREGRESSIVE_TYPES else _FLOW_AXES
+    return lerobot_feature_axes(policy_type)
 
 
 def _resolve_target(
@@ -95,34 +95,25 @@ class SafeFeatureCapture:
         self.policy_type = policy_type
         self.module, self.mode, self.slicer = _resolve_target(policy, policy_type)
         self.buf: list[torch.Tensor] = []
-        self._handle = None
-
-    def _capture(self, tensor: torch.Tensor) -> None:
-        t = tensor
-        if self.slicer is not None:
-            t = self.slicer(t)
-        self.buf.append(t.detach().to("cpu", torch.float32))
-
-    def _pre_hook(self, _module: Any, args: tuple[Any, ...]) -> None:
-        if args:
-            self._capture(args[0])
-
-    def _post_hook(self, _module: Any, _args: tuple[Any, ...], output: Any) -> None:
-        out = output[0] if isinstance(output, tuple) else output
-        self._capture(out)
+        self._capture_ctx: SafeForwardCapture | None = None
 
     def __enter__(self) -> "SafeFeatureCapture":
         self.buf = []
-        if self.mode == "pre":
-            self._handle = self.module.register_forward_pre_hook(self._pre_hook)
-        else:
-            self._handle = self.module.register_forward_hook(self._post_hook)
+        self._capture_ctx = SafeForwardCapture(
+            self.module,
+            self.mode,
+            self.slicer,
+            to_cpu=True,
+            dtype=torch.float32,
+        )
+        self._capture_ctx.__enter__()
         return self
 
     def __exit__(self, *_exc: Any) -> bool:
-        if self._handle is not None:
-            self._handle.remove()
-            self._handle = None
+        if self._capture_ctx is not None:
+            self.buf = list(self._capture_ctx.buf)
+            self._capture_ctx.__exit__(*_exc)
+            self._capture_ctx = None
         return False
 
     def assemble(self) -> np.ndarray | None:

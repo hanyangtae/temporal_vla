@@ -25,7 +25,6 @@ import argparse
 import base64
 import io
 import logging
-import math
 import random
 import sys
 import time
@@ -36,11 +35,14 @@ import numpy as np
 import torch
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from PIL import Image
 
 _SERVE_DIR = Path(__file__).resolve().parent
-if str(_SERVE_DIR) not in sys.path:
-    sys.path.insert(0, str(_SERVE_DIR))
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_SCRIPTS_ROOT = _REPO_ROOT / "scripts"
+_UTILS_ROOT = _SCRIPTS_ROOT / "utils"
+for _path in (_REPO_ROOT, _SCRIPTS_ROOT, _UTILS_ROOT, _SERVE_DIR):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
 # 프로파일 로더 (scripts/utils 는 PYTHONPATH 에 포함)
 from checkpoint_profile import CheckpointProfile, load_profile  # noqa: E402
@@ -51,6 +53,9 @@ from lerobot_adapters import (  # noqa: E402
     preprocess_image_numpy,
 )
 from lerobot_adapters.pi import PiPolicyAdapter  # noqa: E402
+from lerobot_adapters.rotation import quat_xyzw_to_axisangle  # noqa: E402
+from src.utils.common.image import decode_b64_image  # noqa: E402
+from src.utils.common.serving import health_response, reset_policy  # noqa: E402
 
 # SAFE feature hook (scripts/serve 는 스크립트 실행 시 sys.path[0])
 import safe_hooks  # noqa: E402
@@ -97,7 +102,7 @@ STATE_KEY_ORDER = [
 
 
 def _b64_to_numpy(b64_str: str) -> np.ndarray:
-    return np.array(Image.open(io.BytesIO(base64.b64decode(b64_str))).convert("RGB"))
+    return decode_b64_image(b64_str)
 
 
 def _encode_ndarray(arr: np.ndarray) -> str:
@@ -105,16 +110,6 @@ def _encode_ndarray(arr: np.ndarray) -> str:
     buf = io.BytesIO()
     np.save(buf, arr, allow_pickle=False)
     return base64.b64encode(buf.getvalue()).decode()
-
-
-def _quat_xyzw_to_axisangle(quat) -> np.ndarray:
-    """Quaternion (x,y,z,w) → axis-angle (3D). lerobot LiberoProcessorStep._quat2axisangle 와 동일."""
-    quat = np.asarray(quat, dtype=np.float64)
-    w = max(-1.0, min(1.0, float(quat[3])))
-    den = np.sqrt(1.0 - w * w)
-    if math.isclose(den, 0.0):
-        return np.zeros(3, dtype=np.float32)
-    return (quat[:3] * 2.0 * math.acos(w) / den).astype(np.float32)
 
 
 def _state_payload_keys(key: str) -> tuple[str, ...]:
@@ -146,12 +141,12 @@ def _build_state_from_profile(payload: dict, profile: CheckpointProfile) -> np.n
                 raw = _policy_adapter.transform_state_value(key, raw)
             arr = np.array(raw, dtype=np.float32).flatten()
             if key == "eef_quat":  # quat 직접 제공 → axisangle(3D)
-                arr = _quat_xyzw_to_axisangle(raw)
+                arr = quat_xyzw_to_axisangle(raw)
         elif key == "eef_axisangle":
             quat = payload.get("observation.state.eef_quat")
             euler = payload.get("observation.state.eef_euler")
             if quat is not None and "quat_to_axisangle" in conversions:
-                arr = _quat_xyzw_to_axisangle(quat)
+                arr = quat_xyzw_to_axisangle(quat)
             elif euler is not None and "euler_to_axisangle" in conversions:
                 from scipy.spatial.transform import Rotation
 
@@ -264,9 +259,7 @@ def parse_payload(payload: dict) -> dict:
 
 @app.post("/reset")
 async def reset():
-    if policy is not None:
-        policy.reset()
-    return {"status": "reset"}
+    return reset_policy(policy)
 
 
 def _emit_subkeys(action_np: np.ndarray, profile: CheckpointProfile) -> dict:
@@ -375,15 +368,15 @@ async def predict_action_with_features(payload: dict):
 async def health():
     if _profile is None:
         return {"status": "not_loaded", "model": "lerobot"}
-    return {
-        "status": "ok" if policy is not None else "not_loaded",
-        "model": _policy_type,
-        "profile": _profile.name,
-        "n_action_steps": _n_action_steps,
-        "action_type": _profile.action_type,
-        "action_keys": list(_profile.emits_subkeys),
-        "collect_mode": _collect_mode,
-    }
+    return health_response(
+        policy=policy,
+        model=_policy_type,
+        profile=_profile,
+        n_action_steps=_n_action_steps,
+        action_type=_profile.action_type,
+        action_keys=list(_profile.emits_subkeys),
+        collect_mode=_collect_mode,
+    )
 
 
 @app.on_event("startup")

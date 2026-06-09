@@ -47,7 +47,7 @@
 - 새로 추가하는 것: `scripts/serve/lerobot.py`의 공통 HTTP serve 경로와
   `scripts/serve/lerobot_adapters/`의 policy adapter registry,
   `configs/checkpoints/lerobot_groot_n15__robocasa365_ckpt120000.yaml`,
-  repo-local runtime helper `scripts/utils/lerobot_groot_n15_runtime.py`,
+  repo-local runtime helper `scripts/safe/groot_n15/robocasa/utils/runtime.py`,
   (예정) LeRobotDataset recorder.
 - 통신 방식: LeRobot native eval이 아니라 project HTTP framework다. RoboCasa 쪽은
   `VLAClient`/processor가 `/act`를 호출하고, server는 sub-keyed `action.*`를 반환한다.
@@ -96,10 +96,9 @@ stage 1~3으로 "serve → HTTP → robocasa365" 연결은 확인됐다. stage 4
 
 ## 정리 상태 (closed-loop와 독립)
 
-- **helper 이름 충돌 해결**: 구버전 `scripts/eval/lerobot_groot_n15_runtime.py`를 제거하고
-  runtime helper는 `scripts/utils/lerobot_groot_n15_runtime.py`만 source of truth로 둔다.
-  eval wrapper/smoke는 기존 `scripts/path_setup.py`의
-  `configure_repo_paths(include_script_utils=True)`를 재사용해서 utils helper를 가져온다.
+- **helper 위치 정리**: runtime helper는
+  `scripts/safe/groot_n15/robocasa/utils/runtime.py`만 source of truth로 둔다.
+  `GrootPolicyAdapter`는 이 파일을 path-based loader로 가져온다.
 - **one-off probe 정리**: payload variant exploration script는 retained diagnostic surface에서
   제거했다. 재현 가능한 내부 검증 축은 [`n15_08`](n15_08_lerobot_internal_parity.md)의 parity
   scripts로 둔다.

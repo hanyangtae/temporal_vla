@@ -233,7 +233,7 @@ docker exec \
 import json
 import pickle
 from pathlib import Path
-from src.policies.groot.scenario_replay import json_safe
+from src.policies.groot.robocasa.scenario_replay import json_safe
 
 root = Path('outputs/eval/robocasa/groot_n16/<run>/raw_rollouts')
 task = 'CloseFridge'

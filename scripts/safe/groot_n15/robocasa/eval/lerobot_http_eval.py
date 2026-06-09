@@ -19,7 +19,7 @@ from typing import Any
 import numpy as np
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[5]
 for path in (
     REPO_ROOT / "scripts" / "utils",
     REPO_ROOT / "src" / "policies" / "Isaac-GR00T-N1.5",

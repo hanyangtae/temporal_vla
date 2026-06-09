@@ -29,8 +29,8 @@ from gr00t.eval.rollout_policy import (  # noqa: E402
     WrapperConfigs,
 )
 from gr00t.policy.server_client import PolicyClient  # noqa: E402
-from src.policies.groot.robocasa_env_wrappers import wrap_groot_robocasa_eval_env  # noqa: E402
-from src.policies.groot.robocasa_io import (  # noqa: E402
+from src.policies.groot.robocasa.env_wrappers import wrap_groot_robocasa_eval_env  # noqa: E402
+from src.policies.groot.robocasa.io import (  # noqa: E402
     prepare_groot_robocasa_observation,
 )
 

@@ -66,7 +66,7 @@ except ModuleNotFoundError:
 
 from src.processor.factory import make_groot_robocasa_processors, make_robocasa_processors
 from src.processor.types import TransitionKey
-from src.policies.groot.scenario_replay import (
+from src.policies.groot.robocasa.scenario_replay import (
     ep_meta_manifest_path as _ep_meta_manifest_path,
     get_robocasa_ep_meta as _get_robocasa_ep_meta,
     load_ep_meta_manifest as _load_ep_meta_manifest,

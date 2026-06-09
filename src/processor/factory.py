@@ -143,7 +143,7 @@ def make_groot_robocasa_processors(
     """GR00T GrootRoboCasaEnv용 (obs_pipeline, action_pipeline) 생성.
 
     Generic robosuite RoboCasa processor와 달리 GrootRoboCasaEnv native keys를
-    ``src.policies.groot.robocasa_io`` adapter contract에 맞춰 처리한다.
+    ``src.policies.groot.robocasa.io`` adapter contract에 맞춰 처리한다.
     """
     obs_pipeline = DataProcessorPipeline(
         steps=[GrootRoboCasaObsProcessor(strict=strict, image_size=image_size)],

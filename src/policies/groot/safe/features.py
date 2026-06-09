@@ -23,11 +23,20 @@ from typing import Any
 import numpy as np
 import torch
 
+from src.policies.safe_capture import SafeForwardCapture
+from src.policies.safe_metadata import (
+    GROOT_N16_ALL_FEATURE_AXES,
+    GROOT_N16_ALL_FEATURE_KIND,
+    GROOT_N16_VALID_FEATURE_AXES,
+    GROOT_N16_VALID_FEATURE_KIND,
+    groot_n16_feature_metadata,
+)
 
-SAFE_FEATURE_KIND_VALID = "groot_n16_dit_valid_action_tokens_pre_velocity"
-SAFE_FEATURE_KIND_ALL = "groot_n16_dit_all_action_tokens_pre_velocity"
-SAFE_FEATURE_AXES_VALID = ["denoising_step", "valid_action_step", "feature_dim"]
-SAFE_FEATURE_AXES_ALL = ["denoising_step", "model_action_token", "feature_dim"]
+
+SAFE_FEATURE_KIND_VALID = GROOT_N16_VALID_FEATURE_KIND
+SAFE_FEATURE_KIND_ALL = GROOT_N16_ALL_FEATURE_KIND
+SAFE_FEATURE_AXES_VALID = GROOT_N16_VALID_FEATURE_AXES
+SAFE_FEATURE_AXES_ALL = GROOT_N16_ALL_FEATURE_AXES
 
 FEATURE_SLICES: tuple[str, ...] = ("valid", "all")
 FEATURE_DTYPES: tuple[str, ...] = ("float16", "float32")
@@ -124,11 +133,7 @@ class SafeFeatureExtractor:
 
 
 def feature_metadata(feature_slice: str) -> tuple[str, list[str]]:
-    if feature_slice == "valid":
-        return SAFE_FEATURE_KIND_VALID, list(SAFE_FEATURE_AXES_VALID)
-    if feature_slice == "all":
-        return SAFE_FEATURE_KIND_ALL, list(SAFE_FEATURE_AXES_ALL)
-    raise ValueError(f"Unsupported feature slice: {feature_slice}")
+    return groot_n16_feature_metadata(feature_slice)
 
 
 def _first_present(payload: dict[str, Any], *keys: str) -> Any:
@@ -254,23 +259,22 @@ def capture_dit_features(
         feature_action_horizon=feature_action_horizon,
     )
 
-    captured: list[torch.Tensor] = []
-
-    def hook(_module: Any, _inputs: tuple[Any, ...], output: Any) -> None:
+    def slice_action_tokens(output: torch.Tensor) -> torch.Tensor:
         model_output = output[0] if isinstance(output, tuple) else output
         action_tokens = model_output[:, -model_action_horizon:]
-        captured.append(action_tokens[:, :fah].detach())
+        return action_tokens[:, :fah]
 
-    handle = action_head.model.register_forward_hook(hook)
-    try:
+    with SafeForwardCapture(
+        action_head.model,
+        "post",
+        slice_action_tokens,
+    ) as capture:
         action, _ = sim_policy.get_action(observation, options)
-    finally:
-        handle.remove()
 
-    if not captured:
+    if not capture.buf:
         raise RuntimeError("Failed to capture GR00T N1.6 DiT SAFE features")
 
-    feature_tensor = torch.stack(captured, dim=1)
+    feature_tensor = torch.stack(capture.buf, dim=1)
     return {
         "action": action,
         "features": feature_tensor,

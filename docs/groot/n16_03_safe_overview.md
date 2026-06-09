@@ -19,7 +19,7 @@
 
 - `ZMQ official eval`: GR00T N1.6 RoboCasa 성공률을 판단하는 기준 경로.
 - `ZMQ SAFE feature server`: SAFE rollout 수집 기준 경로. official RoboCasa 클라이언트 환경을 쓰면서 action과 feature를 함께 저장한다.
-- `HTTP /act` + `HTTP /act_with_features`: 프로젝트 공통 serving API로 유지한다 (port `:8500`, `scripts/serve/groot.py`). HTTP 경로는 일반 벤치마크가 같은 모델을 호출하거나 (`/act`) SAFE feature를 회수할 때 (`/act_with_features`) 사용한다. DiT pre-velocity feature 정의는 ZMQ feature server와 HTTP `/act_with_features` 가 `src/policies/groot/safe_features.py` 의 `capture_dit_features` 를 공유한다. Endpoint action parity, SAFE pkl/loader smoke, 짧은 closed-loop transport smoke까지 통과했다 ([09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29), [10 SAFE Report](n16_10_safe_report.md#http-act_with_features-safe-collection-smoke-2026-05-29), [n16_11 변경 일지](n16_11_http_act_changes.md)).
+- `HTTP /act` + `HTTP /act_with_features`: 프로젝트 공통 serving API로 유지한다 (port `:8500`, `scripts/serve/groot.py`). HTTP 경로는 일반 벤치마크가 같은 모델을 호출하거나 (`/act`) SAFE feature를 회수할 때 (`/act_with_features`) 사용한다. DiT pre-velocity feature 정의는 ZMQ feature server와 HTTP `/act_with_features` 가 `src/policies/groot/safe/features.py` 의 `capture_dit_features` 를 공유한다. Endpoint action parity, SAFE pkl/loader smoke, 짧은 closed-loop transport smoke까지 통과했다 ([09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29), [10 SAFE Report](n16_10_safe_report.md#http-act_with_features-safe-collection-smoke-2026-05-29), [n16_11 변경 일지](n16_11_http_act_changes.md)).
 - RoboCasa365 `target_atomic_seen18` 100ep/task collection은 완료됐다. `target_atomic_seen18_ckpt120000_robocasa365_100ep`는 `18 x 100 = 1800` episode triplet을 포함하고, seed range는 task별 `100000..100099`, verifier 기준 `status=ok`, total SR `967/1800 = 53.7%`다.
 
 전체 task-set HTTP benchmark SR은 아직 산출하지 않았다. 현재 HTTP 검증 범위는 action parity, feature schema, transport smoke다.
@@ -80,7 +80,7 @@ python -c "import sys; sys.path.insert(0, 'scripts/safe/groot_n16/robocasa'); im
 Layer boundary:
 
 - `src/policies/groot/`: GR00T policy adapter library shared by serving, eval, and SAFE workflows. It must not import from `scripts/`; SAFE workflow pkl/CSV collection contracts do not live here.
-- `src/policies/groot/robocasa_io.py`: GR00T RoboCasa IO adapter for `GrootRoboCasaEnv` native keys. GR00T HTTP eval and SAFE wiring use this instead of the generic benchmark processor pipeline.
+- `src/policies/groot/robocasa/io.py`: GR00T RoboCasa IO adapter for `GrootRoboCasaEnv` native keys. GR00T HTTP eval and SAFE wiring use this instead of the generic benchmark processor pipeline.
 - `src/processor/`: generic benchmark processor pipeline for Project FastAPI evaluation. It remains the path for non-GR00T-native RoboCasa/Calvin/LIBERO eval scripts, not the home for GR00T native key conversion.
 - `scripts/`: executable workflow entrypoints and runtime wiring. Scripts may import `src/policies/groot/`.
 - `scripts/safe/groot_n16/robocasa/collect/`: RoboCasa SAFE collection orchestration, transport clients, and collector pkl/CSV schema helpers.
@@ -95,7 +95,7 @@ Layer boundary:
 | 2 | `collect/collect_env.py` | RoboCasa env construction, video wrapper, one-episode rollout loop | env name + scenario replay -> rollout result |
 | 2 | `collect/collect_artifacts.py` | SAFE rollout artifact writer | feature records + ep_meta + video -> pkl/mp4/csv |
 | 2 | `collect/collect_policy_clients.py` | ZMQ/HTTP feature policy client transports | ZMQ `get_action_with_features` or HTTP `/act_with_features` -> action + feature records |
-| 2 | `collect/collect_schema.py` | SAFE collection schema helpers derived from `src/policies/groot/schema.py` | observation/action/features -> collector pkl schema |
+| 2 | `collect/collect_schema.py` | SAFE collection schema helpers derived from `src/policies/groot/core/schema.py` | observation/action/features -> collector pkl schema |
 | 2 | `collect/collect_task_set_official_uv_host.sh` | preferred host-side task-set collection wrapper using official `robocasa_uv` env | task set + seeds -> raw rollout directories |
 | 2 | `collect/collect_task_set_in_container.sh` | collection wrapper for already-running container shell context | task set + seeds -> raw rollout directories |
 | 2 | `collect/collect_task_set_via_docker_exec.sh` | host wrapper that enters the Docker container for collection | task set + seeds -> raw rollout directories |
@@ -153,7 +153,7 @@ HTTP:
 
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/serve/groot.py` (port 8500, `/act` + `/act_with_features`)
 - `/home/dongkyu/pdk_ws/temporal_vla/scripts/utils/vla_client.py` (`predict`, `predict_with_features`)
-- `/home/dongkyu/pdk_ws/temporal_vla/src/policies/groot/safe_features.py` (HTTP/ZMQ 공유 DiT capture)
+- `/home/dongkyu/pdk_ws/temporal_vla/src/policies/groot/safe/features.py` (HTTP/ZMQ 공유 DiT capture)
 - `/home/dongkyu/pdk_ws/temporal_vla/configs/checkpoints/groot__robocasa365_ckpt120000.yaml`
 - `/home/dongkyu/pdk_ws/temporal_vla/configs/checkpoints/groot__robocasa_panda_omron.yaml`
 

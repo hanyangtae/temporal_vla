@@ -15,18 +15,23 @@ task and one PnP task.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
-import os
 from pathlib import Path
 import random
-import re
-import shutil
 import sys
 
 
 ROBOCASA_SAFE_ROOT = Path(__file__).resolve().parents[1]
+SAFE_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(SAFE_ROOT))
 sys.path.insert(0, str(ROBOCASA_SAFE_ROOT))
 
+from _common.split_lib import (  # noqa: E402
+    RolloutFile,
+    collect_rollouts,
+    count_success,
+    link_rollout_files,
+    safe_remove_split_root,
+)
 from run_config import RUN_ROOT, SPLIT_ROOT  # noqa: E402
 
 
@@ -40,19 +45,6 @@ TASKS = {
 }
 
 DEFAULT_UNSEEN_TASKS = ("OpenDrawer", "PnPCounterToCab")
-
-ROLLOUT_RE = re.compile(r"task(?P<task_id>\d+)--ep(?P<episode_idx>\d+)--succ(?P<success>[01])\.pkl$")
-
-
-@dataclass(frozen=True)
-class RolloutFile:
-    task_id: int
-    task_name: str
-    category: str
-    episode_idx: int
-    success: int
-    pkl_path: Path
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -91,42 +83,6 @@ def parse_args() -> argparse.Namespace:
         help="Check counts and print the planned split without creating links.",
     )
     return parser.parse_args()
-
-
-def parse_rollout(path: Path, task_name: str, category: str) -> RolloutFile:
-    match = ROLLOUT_RE.match(path.name)
-    if match is None:
-        raise ValueError(f"Unexpected rollout filename: {path}")
-    task_id = int(match.group("task_id"))
-    expected_name, _ = TASKS[task_id]
-    if expected_name != task_name:
-        raise ValueError(f"{path} is under {task_name}, but task{task_id} is {expected_name}")
-    return RolloutFile(
-        task_id=task_id,
-        task_name=task_name,
-        category=category,
-        episode_idx=int(match.group("episode_idx")),
-        success=int(match.group("success")),
-        pkl_path=path,
-    )
-
-
-def collect_rollouts(source_root: Path, rollouts_per_task: int) -> dict[int, list[RolloutFile]]:
-    by_task: dict[int, list[RolloutFile]] = {}
-    for task_id, (task_name, category) in TASKS.items():
-        task_dir = source_root / task_name
-        if not task_dir.is_dir():
-            raise FileNotFoundError(f"Missing task directory: {task_dir}")
-        rollouts = [
-            parse_rollout(pkl_path, task_name, category)
-            for pkl_path in sorted(task_dir.glob("*.pkl"))
-        ]
-        rollouts = sorted(rollouts, key=lambda r: r.episode_idx)
-        if len(rollouts) < rollouts_per_task:
-            raise ValueError(f"{task_name}: need {rollouts_per_task} rollouts, found {len(rollouts)}")
-        by_task[task_id] = rollouts[:rollouts_per_task]
-    return by_task
-
 
 def task_ids_by_name(task_names: list[str]) -> list[int]:
     name_to_id = {task_name: task_id for task_id, (task_name, _) in TASKS.items()}
@@ -171,39 +127,6 @@ def split_rollouts(
         "val_seen": val_seen,
         "val_unseen": val_unseen,
     }
-
-
-def safe_remove_split_root(split_root: Path) -> None:
-    if not split_root.exists():
-        return
-    if not split_root.name.startswith("safe_split_"):
-        raise ValueError(f"Refusing to remove non-split path: {split_root}")
-    shutil.rmtree(split_root)
-
-
-def symlink_relative(src: Path, dst: Path) -> None:
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    rel_src = os.path.relpath(src, dst.parent)
-    if dst.is_symlink() and os.readlink(dst) == rel_src:
-        return
-    if dst.exists() or dst.is_symlink():
-        raise FileExistsError(f"Destination already exists: {dst}")
-    dst.symlink_to(rel_src)
-
-
-def link_rollout_files(rollout: RolloutFile, dst_dir: Path) -> list[Path]:
-    linked = []
-    for src in sorted(rollout.pkl_path.parent.glob(f"{rollout.pkl_path.stem}.*")):
-        dst = dst_dir / src.name
-        symlink_relative(src, dst)
-        linked.append(dst)
-    return linked
-
-
-def count_success(rollouts: list[RolloutFile]) -> tuple[int, int]:
-    n_success = sum(r.success for r in rollouts)
-    return n_success, len(rollouts) - n_success
-
 
 def print_summary(splits: dict[str, list[RolloutFile]]) -> None:
     for split_name, rollouts in splits.items():
@@ -263,7 +186,11 @@ def main() -> None:
     unseen_task_ids = task_ids_by_name(unseen_task_names)
     validate_unseen_tasks(unseen_task_ids)
 
-    by_task = collect_rollouts(args.source_root, args.rollouts_per_task)
+    by_task = collect_rollouts(
+        args.source_root,
+        TASKS,
+        rollouts_per_task=args.rollouts_per_task,
+    )
     splits = split_rollouts(
         by_task=by_task,
         unseen_task_ids=unseen_task_ids,
@@ -281,7 +208,7 @@ def main() -> None:
         return
 
     if args.force:
-        safe_remove_split_root(args.split_root)
+        safe_remove_split_root(args.split_root, allowed_prefix="safe_split_")
     elif args.split_root.exists():
         raise FileExistsError(f"Split root already exists. Use --force to replace: {args.split_root}")
 

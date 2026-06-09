@@ -87,7 +87,7 @@ gripper_qpos -> gripper_qpos
 
 Unit contract와 실제 `/act` payload probe는 통과했다. 2026-06-09에는 RoboCasa
 benchmark fork의 official `robocasa/<Task>` split 경로도
-`scripts/eval/lerobot_groot_n15_official_robocasa_eval.py`로 붙였다. 이후
+`scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py`로 붙였다. 이후
 OpenFridge target seed-0 LeRobot HTTP smoke는 성공했고, SR 외 내부값 검증은
 [`n15_08_lerobot_internal_parity.md`](n15_08_lerobot_internal_parity.md)로 분리했다.
 따라서 이 문서의 결론 범위는 camera/state bridge 계약까지이며, model/action parity
@@ -119,7 +119,7 @@ slicing이 깨진다. 이전 `side_0, side_1, wrist_0` + 224 crop probe/rollout�
 
 N1.6 GR00T HTTP serve (`scripts/serve/groot.py`, :8500)는 이 문제를 이미 해결했다. 코드 확인:
 
-- `src/policies/groot/schema.py`:
+- `src/policies/groot/core/schema.py`:
   - `observation.images.side_0` (+ `static`/`left` alias) → `video.res256_image_side_0`
   - `observation.state.eef_pos_rel` → `state.end_effector_position_relative`
   - `observation.state.base_position` → `state.base_position`

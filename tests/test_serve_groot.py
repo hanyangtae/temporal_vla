@@ -24,7 +24,7 @@ GROOT_SERVER_PATH = REPO_ROOT / "scripts" / "serve" / "groot.py"
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "utils"))
 
 from checkpoint_profile import load_profile  # noqa: E402
-from src.policies.groot.safe_features import decode_features_from_base64  # noqa: E402
+from src.policies.groot.safe.features import decode_features_from_base64  # noqa: E402
 
 
 class _ModalityConfig:

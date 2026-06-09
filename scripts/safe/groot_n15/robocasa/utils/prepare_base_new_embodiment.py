@@ -17,7 +17,7 @@ from pathlib import Path
 import sys
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[5]
 sys.path.insert(0, str(REPO_ROOT / "configs/policies"))
 sys.path.insert(0, str(REPO_ROOT / "src/policies/Isaac-GR00T-N1.5"))
 sys.path.insert(0, str(REPO_ROOT))

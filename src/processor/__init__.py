@@ -6,7 +6,7 @@ LeRobot의 ProcessorStep/DataProcessorPipeline 인터페이스를 따르는
 이 package는 RoboCasa/Calvin/LIBERO eval script가 env-native obs/action을
 project HTTP schema로 바꾸는 benchmark-side pipeline이다. GR00T
 `GrootRoboCasaEnv` adapter도 같은 pipeline shape를 제공하지만, 실제 native
-key mapping 구현은 `src.policies.groot.robocasa_io`를 단일 출처로 둔다.
+key mapping 구현은 `src.policies.groot.robocasa.io`를 단일 출처로 둔다.
 """
 from .base import (
     ActionProcessorStep,

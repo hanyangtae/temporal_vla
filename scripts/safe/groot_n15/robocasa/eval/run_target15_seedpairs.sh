@@ -11,7 +11,7 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="${REPO_ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
+REPO_ROOT="${REPO_ROOT:-$(cd "${SCRIPT_DIR}/../../../../.." && pwd)}"
 CONTAINER_REPO_ROOT="${CONTAINER_REPO_ROOT:-/temporal_vla}"
 ROBOCASA_CONTAINER="${ROBOCASA_CONTAINER:-robocasa}"
 
@@ -54,7 +54,7 @@ TARGET15_TASKS=(
 usage() {
     cat <<USAGE
 Usage:
-  RUN_ID=my_eval bash scripts/eval/run_groot_n15_target15_seedpairs.sh [options]
+  RUN_ID=my_eval bash scripts/safe/groot_n15/robocasa/eval/run_target15_seedpairs.sh [options]
 
 Options:
   --mode both|base|tuned          Models to evaluate. Default: ${MODE}
@@ -211,7 +211,7 @@ run_eval() {
         -e MUJOCO_GL=egl \
         -e PYTHONPATH="${CONTAINER_REPO_ROOT}/src/policies/Isaac-GR00T:${CONTAINER_REPO_ROOT}/src/benchmarks/robocasa:${CONTAINER_REPO_ROOT}/src/benchmarks/robosuite:${CONTAINER_REPO_ROOT}" \
         "${ROBOCASA_CONTAINER}" \
-        bash -lc "set -o pipefail; mkdir -p '${out_container}/videos' && python '${CONTAINER_REPO_ROOT}/scripts/eval/groot_n15_robocasa_zmq_eval.py' \
+        bash -lc "set -o pipefail; mkdir -p '${out_container}/videos' && python '${CONTAINER_REPO_ROOT}/scripts/safe/groot_n15/robocasa/eval/native_zmq_eval.py' \
             --policy-client-host '${host}' \
             --policy-client-port '${port}' \
             --env-name '${env_name}' \

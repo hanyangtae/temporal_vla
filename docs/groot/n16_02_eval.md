@@ -477,7 +477,7 @@ server 호출 전에 이 alias 보정을 적용해야 한다. 보정 매핑은 �
 | `annotation.human.action.task_description` | `annotation.human.task_description` |
 
 이 매핑은 더 이상 eval 스크립트가 자체 dict로 들고 있지 않다. 공통 adapter
-`src/policies/groot/robocasa_io.py`의 `OBS_ALIASES`(`_bidirectional_aliases(VIDEO_KEY_GROUPS)`로
+`src/policies/groot/robocasa/io.py`의 `OBS_ALIASES`(`_bidirectional_aliases(VIDEO_KEY_GROUPS)`로
 생성)와 `prepare_groot_robocasa_observation(observation, strict=True)`가 담당하고,
 `scripts/eval/groot_robocasa_zmq_eval.py`는 이 함수를 호출(L63)해서 policy payload를 만든다.
 덕분에 HTTP eval, SAFE HTTP, SAFE ZMQ, N1.6 ZMQ eval이 같은 native observation alias와

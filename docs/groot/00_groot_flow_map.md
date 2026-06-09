@@ -51,14 +51,14 @@ GR00T 관련 파일은 이 층 중 하나에 속한다.
 | LeRobot HTTP server | `scripts/serve/lerobot.py` | `base_model: lerobot` profile을 FastAPI `/act`, `/act_with_features`로 serve |
 | LeRobot adapter registry | `scripts/serve/lerobot_adapters/factory.py` | `model_specific.policy_type`으로 `PiPolicyAdapter` 또는 `GrootPolicyAdapter` 선택 |
 | LeRobot GR00T adapter | `scripts/serve/lerobot_adapters/groot.py` | raw Isaac-GR00T N1.5 checkpoint를 LeRobot `GrootPolicy`로 로드 |
-| GR00T shared schema | `src/policies/groot/schema.py` | unified HTTP key와 GR00T native key의 이름 대응 |
-| GR00T RoboCasa IO | `src/policies/groot/robocasa_io.py` | RoboCasa native obs/action을 HTTP/ZMQ 양쪽에서 공유하는 adapter |
-| GR00T HTTP runtime | `src/policies/groot/service.py` | HTTP payload를 GR00T observation으로 만들고 action/features를 응답으로 변환 |
-| Native rollout wrapper | `src/policies/groot/robocasa_env_wrappers.py` | upstream `VideoRecordingWrapper`/`MultiStepWrapper` 적용, 3-view video 유지 |
+| GR00T shared schema | `src/policies/groot/core/schema.py` | unified HTTP key와 GR00T native key의 이름 대응 |
+| GR00T RoboCasa IO | `src/policies/groot/robocasa/io.py` | RoboCasa native obs/action을 HTTP/ZMQ 양쪽에서 공유하는 adapter |
+| GR00T HTTP runtime | `src/policies/groot/core/service.py` | HTTP payload를 GR00T observation으로 만들고 action/features를 응답으로 변환 |
+| Native rollout wrapper | `src/policies/groot/robocasa/env_wrappers.py` | upstream `VideoRecordingWrapper`/`MultiStepWrapper` 적용, 3-view video 유지 |
 | Project HTTP eval | `scripts/eval/robocasa_eval.py` | RoboCasa env에서 `VLAClient`로 HTTP 서버 호출 |
 | N1.6 ZMQ eval | `scripts/eval/groot_robocasa_zmq_eval.py` | upstream rollout helper와 N1.6 `PolicyClient` 연결 |
-| N1.5 ZMQ eval | `scripts/eval/groot_n15_robocasa_zmq_eval.py` | N1.5 `inference_service.py` ZMQ protocol 연결 |
-| N1.5 LeRobot HTTP eval | `scripts/eval/lerobot_groot_n15_official_robocasa_eval.py` | official RoboCasa env에서 LeRobot HTTP server 호출 |
+| N1.5 ZMQ eval | `scripts/safe/groot_n15/robocasa/eval/native_zmq_eval.py` | N1.5 `inference_service.py` ZMQ protocol 연결 |
+| N1.5 LeRobot HTTP eval | `scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py` | official RoboCasa env에서 LeRobot HTTP server 호출 |
 | SAFE N1.6 feature server | `scripts/safe/groot_n16/robocasa/serve/feature_server.py` | ZMQ `get_action_with_features`로 action과 hidden state 반환 |
 | SAFE N1.6 collector | `scripts/safe/groot_n16/robocasa/collect/collect_rollout.py` | episode 실행, action/feature/video/csv/pkl 저장 |
 
@@ -117,8 +117,8 @@ action.base_motion
 action.control_mode
 ```
 
-이 둘의 대응표는 `src/policies/groot/schema.py`가 단일 출처다.
-`src/policies/groot/robocasa_io.py`는 이 표를 사용해 HTTP/ZMQ 경로의 observation과 action을
+이 둘의 대응표는 `src/policies/groot/core/schema.py`가 단일 출처다.
+`src/policies/groot/robocasa/io.py`는 이 표를 사용해 HTTP/ZMQ 경로의 observation과 action을
 실제로 변환한다.
 
 ## Profiles
@@ -198,7 +198,7 @@ scripts/serve/groot.py --profile configs/checkpoints/groot__robocasa365_ckpt1200
 
 FastAPI startup
   -> GrootPolicyService.load_policy()
-  -> src/policies/groot/loader.py::load_groot_policy()
+  -> src/policies/groot/core/loader.py::load_groot_policy()
   -> Gr00tPolicy(embodiment_tag=NEW_EMBODIMENT, model_path=..., strict=True)
   -> Gr00tSimPolicyWrapper
 ```
@@ -419,7 +419,7 @@ src/policies/Isaac-GR00T-N1.5/scripts/inference_service.py --server
 클라이언트:
 
 ```text
-scripts/eval/groot_n15_robocasa_zmq_eval.py
+scripts/safe/groot_n15/robocasa/eval/native_zmq_eval.py
   -> N15PolicyClient
   -> msgpack request {"endpoint": "get_action", "data": filtered_obs}
   -> local OBS_ALIASES fills:
@@ -483,7 +483,7 @@ VLAClient.predict(images, states, instruction)
 RoboCasa closed-loop eval:
 
 ```text
-scripts/eval/lerobot_groot_n15_official_robocasa_eval.py
+scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py
   -> make_env("robocasa/<Task>", split="target" or "pretrain")
   -> official_obs_to_lerobot_inputs(obs)
      official RoboCasa obs -> images/states/instruction
@@ -550,11 +550,11 @@ raw checkpoint를 LeRobot `GrootPolicy`에 맞춰 로드한 뒤 project HTTP con
 
 1. `configs/checkpoints/groot__robocasa365_ckpt120000.yaml`
 2. `scripts/serve/groot.py::main`
-3. `src/policies/groot/loader.py::load_groot_policy`
-4. `src/policies/groot/service.py::GrootPolicyService.act`
-5. `src/policies/groot/service.py::build_groot_obs`
-6. `src/policies/groot/schema.py`
-7. `src/policies/groot/service.py::convert_native_action_to_subkeys`
+3. `src/policies/groot/core/loader.py::load_groot_policy`
+4. `src/policies/groot/core/service.py::GrootPolicyService.act`
+5. `src/policies/groot/core/service.py::build_groot_obs`
+6. `src/policies/groot/core/schema.py`
+7. `src/policies/groot/core/service.py::convert_native_action_to_subkeys`
 8. `scripts/utils/vla_client.py::predict`
 
 ### N1.6 HTTP closed-loop rollout 추적
@@ -562,19 +562,19 @@ raw checkpoint를 LeRobot `GrootPolicy`에 맞춰 로드한 뒤 project HTTP con
 1. `scripts/eval/robocasa_eval.py --use-groot-env`
 2. `src/processor/factory.py::make_groot_robocasa_processors`
 3. `src/processor/obs/groot_robocasa.py::GrootRoboCasaObsProcessor`
-4. `src/policies/groot/robocasa_io.py::prepare_groot_robocasa_http_request`
+4. `src/policies/groot/robocasa/io.py::prepare_groot_robocasa_http_request`
 5. `scripts/utils/vla_client.py::predict`
 6. `src/processor/action/groot_robocasa.py::GrootRoboCasaActionProcessor`
-7. `src/policies/groot/robocasa_io.py::convert_http_actions_to_groot_step`
+7. `src/policies/groot/robocasa/io.py::convert_http_actions_to_groot_step`
 
 ### N1.6 SAFE ZMQ 수집 추적
 
 1. `scripts/safe/groot_n16/robocasa/serve/feature_server.py::main`
 2. `scripts/safe/groot_n16/robocasa/serve/feature_server.py::SafeN16FeaturePolicy.get_action_with_features`
-3. `src/policies/groot/safe_features.py::SafeFeatureExtractor`
+3. `src/policies/groot/safe/features.py::SafeFeatureExtractor`
 4. `scripts/safe/groot_n16/robocasa/collect/collect_rollout.py::main`
 5. `scripts/safe/groot_n16/robocasa/collect/collect_policy_clients.py::N16SafeCollectingPolicyClient`
-6. `src/policies/groot/robocasa_io.py::prepare_groot_robocasa_observation`
+6. `src/policies/groot/robocasa/io.py::prepare_groot_robocasa_observation`
 7. `scripts/safe/groot_n16/robocasa/collect/collect_artifacts.py`
 
 ### N1.5 LeRobot HTTP 추적
@@ -585,16 +585,16 @@ raw checkpoint를 LeRobot `GrootPolicy`에 맞춰 로드한 뒤 project HTTP con
 4. `scripts/serve/lerobot_adapters/groot.py::GrootPolicyAdapter`
 5. `scripts/serve/lerobot.py::parse_payload`
 6. `scripts/serve/lerobot.py::predict_action`
-7. `scripts/eval/lerobot_groot_n15_official_robocasa_eval.py`
+7. `scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py`
 
 ## Ownership Rule
 
 새 GR00T RoboCasa 코드를 추가할 때 기본 원칙은 아래와 같다.
 
-- HTTP/ZMQ 공통 observation/action key 변환은 `src/policies/groot/robocasa_io.py`에 둔다.
-- 단순 key 이름 대응은 `src/policies/groot/schema.py`에 둔다.
-- native rollout wrapper 중복은 `src/policies/groot/robocasa_env_wrappers.py`에 둔다.
-- HTTP server runtime 상태와 `/act` behavior는 `src/policies/groot/service.py`에 둔다.
+- HTTP/ZMQ 공통 observation/action key 변환은 `src/policies/groot/robocasa/io.py`에 둔다.
+- 단순 key 이름 대응은 `src/policies/groot/core/schema.py`에 둔다.
+- native rollout wrapper 중복은 `src/policies/groot/robocasa/env_wrappers.py`에 둔다.
+- HTTP server runtime 상태와 `/act` behavior는 `src/policies/groot/core/service.py`에 둔다.
 - LeRobot policy별 차이는 `scripts/serve/lerobot_adapters/<policy>.py`에 둔다.
 - SAFE pkl/csv/mp4 저장 schema는 `scripts/safe/groot_n16/robocasa/collect/` 아래에 둔다.
 

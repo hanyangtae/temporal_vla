@@ -7,7 +7,7 @@ import unittest
 import numpy as np
 import torch
 
-from src.policies.groot.safe_features import (
+from src.policies.groot.safe.features import (
     SAFE_FEATURE_AXES_ALL,
     SAFE_FEATURE_AXES_VALID,
     SAFE_FEATURE_KIND_ALL,

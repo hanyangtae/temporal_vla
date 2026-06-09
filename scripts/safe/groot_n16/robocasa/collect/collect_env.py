@@ -15,8 +15,8 @@ from tqdm import tqdm
 
 from gr00t.eval.rollout_policy import WrapperConfigs
 
-from src.policies.groot.robocasa_env_wrappers import wrap_groot_robocasa_eval_env
-from src.policies.groot.scenario_replay import (
+from src.policies.groot.robocasa.env_wrappers import wrap_groot_robocasa_eval_env
+from src.policies.groot.robocasa.scenario_replay import (
     get_robocasa_ep_meta,
     json_safe,
     set_robocasa_ep_meta,

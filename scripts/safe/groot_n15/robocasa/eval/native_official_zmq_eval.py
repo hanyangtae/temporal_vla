@@ -4,7 +4,7 @@
 This mirrors ``robocasa-benchmark/Isaac-GR00T``'s ``scripts/run_eval.py`` client
 path: ``gym.make("robocasa/<Task>", split=...)`` plus N1.5
 ``SimulationInferenceClient`` protocol. Keep this separate from
-``groot_n15_robocasa_zmq_eval.py``, which uses this repo's N1.6 rollout helper.
+``native_zmq_eval.py``, which uses this repo's N1.6 rollout helper.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import msgpack
 import numpy as np
 import zmq
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[5]
 N15_ROOT = REPO_ROOT / "src" / "policies" / "Isaac-GR00T-N1.5"
 for path in (
     N15_ROOT,
