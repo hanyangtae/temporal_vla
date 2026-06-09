@@ -1,4 +1,4 @@
-# n15_04 — LeRobot Serve Adapter Spec (stage [1])
+# GR00T N1.5 RoboCasa — LeRobot Serve Adapter Spec (stage [1])
 
 파이프라인 stage [1]의 명세다. raw Isaac-GR00T N1.5 RoboCasa365 checkpoint를 LeRobot
 `GrootPolicy`로 로딩해 통일 HTTP `/act`를 노출한다. 전체 그림·상태는

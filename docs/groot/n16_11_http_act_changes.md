@@ -1,4 +1,4 @@
-# GR00T N1.6 HTTP `/act` Changes
+# GR00T N1.6 RoboCasa — HTTP `/act` Changes
 
 이 문서는 GR00T N1.6 RoboCasa HTTP serving 경로를 정리하면서 무엇이 바뀌었는지 기록한다. 목적은 SAFE rollout collection 경로를 유지하면서, 프로젝트 공통 FastAPI `/act` 경로가 GR00T RoboCasa observation/action schema와 맞게 동작하도록 만드는 것이다.
 

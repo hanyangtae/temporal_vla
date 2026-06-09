@@ -20,13 +20,14 @@
 │  ObsProcessor → VLAClient    │                             │
 │  ActionProcessor ← response  │                             │
 └──────────────────────────────┘                             ▼
-                                  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
-                                  │   xvla   │  │ dreamvla │  │ openvla_oft │  │  groot   │  │ lerobot  │
-                                  │  :8100   │  │  :8200   │  │  :8400      │  │  :8500   │  │  :8400   │
-                                  └──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘
+                                  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+                                  │    xvla     │  │  dreamvla   │  │    upvla    │  │ openvla_oft │  │   lerobot   │  │    groot    │
+                                  │    :8100    │  │    :8200    │  │    :8300    │  │    :8400    │  │    :8400    │  │    :8500    │
+                                  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘
 ```
 
 - 모델 서버는 한 컨테이너에 하나의 process 로 떠 있고, 벤치마크는 `--vla-server http://localhost:<port>` 만 바꿔서 같은 모델을 여러 벤치로 평가하거나 한 벤치를 여러 모델로 비교한다.
+- `openvla_oft` 와 `lerobot` 은 같은 `:8400` 을 쓰는 상호배타 컨테이너라 동시에 띄우지 않는다. GR00T N1.5(`groot_n15`)는 HTTP 가 아니라 ZMQ 경로라 위 다이어그램에서 생략했다.
 - `n_action_steps` 와 `action_type` 은 `/health` 가 알리고, 벤치 측 `ActionProcessor` 가 그에 맞춰 chunk 를 소비한다.
 - 일반 벤치마크 경로는 `src/processor/` 의 processor pipeline 이 env-native obs/action 을 통일 HTTP schema 로 바꾼다. GR00T `GrootRoboCasaEnv` native-key 경로(`robocasa_eval.py --use-groot-env`, SAFE wiring)는 `make_groot_robocasa_processors()` 를 쓰고, 실제 key mapping 은 `src.policies.groot.robocasa_io` adapter 를 단일 출처로 둔다.
 
@@ -43,7 +44,7 @@
 
 ### `/health`
 
-응답은 모든 모델 서버에 공통인 키를 포함한다.
+응답은 모든 모델 서버에 공통인 키를 포함하고, features 지원 모델은 그 뒤에 feature 메타 키(`supports_features` 이하)를 더 붙인다 (비지원 모델은 생략).
 
 ```json
 {

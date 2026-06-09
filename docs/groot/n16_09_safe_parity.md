@@ -1,4 +1,4 @@
-# SAFE x GR00T N1.6 RoboCasa — Parity
+# GR00T N1.6 RoboCasa — SAFE Parity
 
 이 문서는 **task 성능 평가가 아니라 SAFE wiring의 action parity 검증**이다.
 

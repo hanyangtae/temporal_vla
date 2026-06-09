@@ -1,4 +1,4 @@
-# GR00T N1.5 Native ZMQ OpenFridge Smoke
+# GR00T N1.5 RoboCasa — Native ZMQ OpenFridge Smoke
 
 이 문서는 LeRobot N1.5 behavior mismatch를 분리하기 위한 native Isaac-GR00T N1.5
 ZMQ 비교 기록이다. 기준 runbook은 [`n15_02_eval.md`](n15_02_eval.md)이며,

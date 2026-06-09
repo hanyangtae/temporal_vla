@@ -1,4 +1,4 @@
-# GR00T N1.5 LeRobot Internal Parity
+# GR00T N1.5 RoboCasa — LeRobot Internal Parity
 
 이 문서는 SR(success rate) 비교가 아니라, LeRobot HTTP 경로가 RoboCasa365
 GR00T N1.5 checkpoint를 올바르게 로드하는지 확인하는 진단 문서다.

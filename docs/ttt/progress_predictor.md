@@ -1,5 +1,9 @@
 # Phase 1: Progress Predictor 구현 및 학습 정리
 
+> ⚠️ **보류된 연구 라인 (무기한 연기)**. 과거 TTT/VITA progress-predictor 방향의 기록이며
+> active 작업이 아니다. 현재 메인 라인은 latent steering → [`../steering/`](../steering/README.md).
+> 보존 맥락은 [ttt/README](README.md) 참고.
+
 ## 목표
 
 VLA 모델이 실패 루프에 빠졌는지 감지하기 위한 **task 진행률 예측기(ProgressPredictor)** 를 학습.  

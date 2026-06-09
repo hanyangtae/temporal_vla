@@ -1,4 +1,4 @@
-# GR00T N1.5 RoboCasa fine-tuning setup
+# GR00T N1.5 RoboCasa — Fine-Tuning
 
 Isaac-GR00T `n1.5-release` 기준으로 RoboCasa GR1 tabletop benchmark를 fine-tuning 하는 방법을 정리한다. 이 문서는 `src/policies/Isaac-GR00T-N1.5` submodule의 공식 문서를 기준으로 작성한다.
 

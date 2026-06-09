@@ -1,4 +1,4 @@
-# GR00T N1.5 RoboCasa365 LeRobot Pipeline — Overview & Status
+# GR00T N1.5 RoboCasa — LeRobot RoboCasa365 Pipeline Overview & Status
 
 `n15_02_eval.md`의 후속 wiring 문서다. 기존 Isaac-GR00T N1.5 base/ZMQ 평가 경로는
 그대로 두고, RoboCasa365 checkpoint를 LeRobot framework(serve·dataset·시각화) 위에서
