@@ -87,6 +87,11 @@ succ/fail latent 구분 → steer 로 SR↑ (COAST 계열). 메인 method 의 �
 3. [COAST Report](steering/03_coast_report.md) — conceptor 구현 + GR00T N1.6 적용 진행 보고
 4. [COAST Reproduction Map](steering/04_coast_reproduction_map.md) — 코드 ↔ COAST 논문 식/섹션 매핑
 5. [SAFE lerobot Collection](steering/05_safe_lerobot_collection.md) — SAFE 수집 lerobot 멀티벤치 확장 (plan+status)
+6. [COAST GR00T N1.6 Summary](steering/06_coast_groot_n16_summary.md) — DiT-only COAST steering 결과와 평균 ΔSR≤0 결론
+7. [Steering Methods Survey](steering/07_steering_methods_survey.md) — COAST 이후 적용 후보와 권장 순서
+8. [Phase 3 DiT32 Separation](steering/08_phase3_dit32_separation.md) — DiT 32-layer pre-failure 분리력
+9. [Phase 3 VL vs DiT Comparison](steering/09_phase3_vl_dit_comparison.md) — VL(goal) vs DiT(motor) pathway 비교와 Phase 4 target
+10. [Session Handoff](steering/10_session_handoff.md) — 최신 연구 현황, 다음 세션 우선순위, 주요 파일 위치
 
 ## TTT / Progress Predictor Archive
 
@@ -115,6 +120,14 @@ succ/fail latent 구분 → steer 로 SR↑ (COAST 계열). 메인 method 의 �
 - `references/VITA.pdf`
 - `references/robocasa365.pdf`
 
+## Related Work Notes
+
+논문 원문과 별도로, 우리 방법과의 차이를 정리한 reviewer 대응용 노트는
+[`related_work/`](related_work/) 아래에 둔다.
+
+- [PPGuide](related_work/ppguide.md) — inference-time policy guidance와 우리 mode-conditional latent steering의 차이.
+- [RoboMD](related_work/robomd.md) — 외부 VL embedding 기반 vulnerability diagnosis와 frozen VLA latent 개입의 차이.
+
 ## Legacy
 
 - [groot/_legacy/robocasa_finetune_setup.md](groot/_legacy/robocasa_finetune_setup.md) — 초기 GR00T x RoboCasa fine-tuning setup. 현행 N1.6 기준은 `groot/n16_01_finetune.md`.
@@ -130,4 +143,5 @@ succ/fail latent 구분 → steer 로 SR↑ (COAST 계열). 메인 method 의 �
 - **벤치마크 reference** (task 이름 매핑 등) 는 `benchmarks/` 아래에 둔다.
 - **장기 결정** 은 `adr/` 아래에 둔다.
 - **논문 PDF / 외부 reference** 는 `references/` 아래에 둔다.
+- **Related work 해석 노트** 는 `related_work/` 아래에 둔다.
 - **Legacy / 폐기된 문서** 는 해당 scope의 `_legacy/` 서브디렉터리에 둔다. Scope가 애매한 repo-wide snapshot은 `docs/_legacy/`에 둔다. 파일명 prefix `legacy_*` 는 사용하지 않는다.
