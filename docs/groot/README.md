@@ -10,14 +10,21 @@ SAFE-readable artifact로 내보내는 절차를 유지하는 것이다.
 
 ## 사용 절차
 
-1. N1.6 기준선을 다룰 때는 `n16_01`에서 checkpoint/data 준비를 확인하고 `n16_02`로 ZMQ 평가를
+1. GR00T 관련 코드가 파일 사이에서 어떻게 이어지는지 처음 파악할 때는
+   [00 Flow Map](00_groot_flow_map.md)으로 profile/server/client/adapter 흐름을 먼저 본다.
+2. N1.6 기준선을 다룰 때는 `n16_01`에서 checkpoint/data 준비를 확인하고 `n16_02`로 ZMQ 평가를
    실행한다.
-2. SAFE 수집이나 feature 의미를 다룰 때는 `n16_03` overview에서 현재 결론을 잡고 `n16_04`부터
+3. SAFE 수집이나 feature 의미를 다룰 때는 `n16_03` overview에서 현재 결론을 잡고 `n16_04`부터
    collection/replay/feature/detector/report 순서로 내려간다.
-3. HTTP `/act` 또는 `/act_with_features`를 다룰 때는 `n16_09`의 parity 상태와 `n16_11`의 코드
+4. HTTP `/act` 또는 `/act_with_features`를 다룰 때는 `n16_09`의 parity 상태와 `n16_11`의 코드
    변경 범위를 같이 확인한다. HTTP 결과를 Upstream GR00T ZMQ evaluation 기준선으로 혼동하지 않는다.
-4. N1.5와 LeRobot 실험은 `n15_03`을 overview로 보고, stage별 세부는 `n15_04`와 `n15_05`에서
+5. N1.5와 LeRobot 실험은 `n15_03`을 overview로 보고, stage별 세부는 `n15_04`와 `n15_05`에서
    확인한다.
+
+## Architecture Entry
+
+- [00 Flow Map](00_groot_flow_map.md) — GR00T N1.6/N1.5, LeRobot/native,
+  RoboCasa365, ZMQ/HTTP 경로를 entrypoint별 call chain과 전달 값 기준으로 설명하는 입문용 지도
 
 ## N1.6 Reading Order
 

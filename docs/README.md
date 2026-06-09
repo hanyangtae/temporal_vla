@@ -51,6 +51,10 @@ progress-predictor 방향은 [`ttt/`](ttt/README.md) 아래의 보존 문서로 
 
 GR00T 학습·평가·SAFE feature export 문서는 [`groot/`](groot/README.md) 아래에 별도 번호로 정리. README에 reading order 가 있다.
 
+처음 구조를 파악할 때는 [GR00T Flow Map](groot/00_groot_flow_map.md)을 먼저 본다. 이 문서는
+LeRobot/native, RoboCasa365, ZMQ/HTTP entry point가 어떤 파일과 함수를 지나 어떤 값을 전달하는지
+초보자용 call chain으로 정리한다.
+
 ### N1.6
 1. [Fine-Tuning](groot/n16_01_finetune.md)
 2. [Evaluation](groot/n16_02_eval.md)
