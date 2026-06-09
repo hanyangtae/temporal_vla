@@ -29,7 +29,7 @@
 - 모델 서버는 한 컨테이너에 하나의 process 로 떠 있고, 벤치마크는 `--vla-server http://localhost:<port>` 만 바꿔서 같은 모델을 여러 벤치로 평가하거나 한 벤치를 여러 모델로 비교한다.
 - `openvla_oft` 와 `lerobot` 은 같은 `:8400` 을 쓰는 상호배타 컨테이너라 동시에 띄우지 않는다. GR00T N1.5(`groot_n15`)는 HTTP 가 아니라 ZMQ 경로라 위 다이어그램에서 생략했다.
 - `n_action_steps` 와 `action_type` 은 `/health` 가 알리고, 벤치 측 `ActionProcessor` 가 그에 맞춰 chunk 를 소비한다.
-- 일반 벤치마크 경로는 `src/processor/` 의 processor pipeline 이 env-native obs/action 을 통일 HTTP schema 로 바꾼다. GR00T `GrootRoboCasaEnv` native-key 경로(`robocasa_eval.py --use-groot-env`, SAFE wiring)는 `make_groot_robocasa_processors()` 를 쓰고, 실제 key mapping 은 `src.policies.groot.robocasa_io` adapter 를 단일 출처로 둔다.
+- 일반 벤치마크 경로는 `src/processor/` 의 processor pipeline 이 env-native obs/action 을 통일 HTTP schema 로 바꾼다. GR00T `GrootRoboCasaEnv` native-key 경로(`robocasa_eval.py --use-groot-env`, SAFE wiring)는 `make_groot_robocasa_processors()` 를 쓰고, 실제 key mapping 은 `src.policies.groot.robocasa.io` adapter 를 단일 출처로 둔다.
 
 ## Endpoint 계약
 
@@ -214,11 +214,11 @@ actions, features, latency_ms = client.predict_with_features(
 
 새 모델/벤치 조합을 붙일 때는 **모델의 emit 조합이 벤치의 소비 조합을 부분집합으로 포함**해야 한다. 그렇지 않으면 프로파일의 `rotation_encoding` / `allow_conversions` 로 자동 변환을 선언한다.
 
-GR00T `robocasa_eval.py --use-groot-env` 와 SAFE collection 은 위 generic RoboCasa `ActionProcessor` 대신 `src/processor/action/groot_robocasa.py` 를 사용한다. 이 processor 는 `src.policies.groot.robocasa_io` 를 감싸서 `GrootRoboCasaEnv` native action key 로 되돌린 뒤 `env.step()` 또는 SAFE rollout wrapper 에 전달한다.
+GR00T `robocasa_eval.py --use-groot-env` 와 SAFE collection 은 위 generic RoboCasa `ActionProcessor` 대신 `src/processor/action/groot_robocasa.py` 를 사용한다. 이 processor 는 `src.policies.groot.robocasa.io` 를 감싸서 `GrootRoboCasaEnv` native action key 로 되돌린 뒤 `env.step()` 또는 SAFE rollout wrapper 에 전달한다.
 
 ## SAFE features
 
-GR00T HTTP 서버는 `/act_with_features` 를 통해 DiT pre-velocity action token 을 export 한다. 같은 데이터를 ZMQ `get_action_with_features` 로도 export 한다 (upstream GR00T SAFE collector msgpack 호환). 둘 다 같은 `src/policies/groot/safe_features.py` 의 `capture_dit_features` 를 사용해 텐서 정의가 일치한다.
+GR00T HTTP 서버는 `/act_with_features` 를 통해 DiT pre-velocity action token 을 export 한다. 같은 데이터를 ZMQ `get_action_with_features` 로도 export 한다 (upstream GR00T SAFE collector msgpack 호환). 둘 다 같은 `src/policies/groot/safe/features.py` 의 `capture_dit_features` 를 사용해 텐서 정의가 일치한다.
 
 GR00T의 call-local RNG control은 transport별 위치만 다르다. HTTP `/act`/`/act_with_features`는 request payload의 `inference_seed`를 쓰고, ZMQ SAFE `get_action_with_features`는 request `options.inference_seed`를 쓴다. HTTP/ZMQ parity 검증에서는 같은 base seed에 policy-step index를 더한 schedule을 사용한다.
 

@@ -21,7 +21,7 @@ from typing import Any, Mapping, Sequence
 import torch
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[5]
 DEFAULT_PROFILE = REPO_ROOT / "configs/checkpoints/lerobot_groot_n15__robocasa365_ckpt120000.yaml"
 
 
@@ -247,6 +247,7 @@ def _configure_import_paths() -> None:
     for path in (
         REPO_ROOT,
         REPO_ROOT / "scripts",
+        REPO_ROOT / "scripts" / "safe" / "groot_n15" / "robocasa" / "utils",
         REPO_ROOT / "scripts" / "utils",
         REPO_ROOT / "scripts" / "serve",
         REPO_ROOT / "configs" / "policies",

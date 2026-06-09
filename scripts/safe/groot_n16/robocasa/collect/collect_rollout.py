@@ -79,11 +79,11 @@ from collect_policy_clients import (  # noqa: E402
     HttpN16SafeCollectingPolicyClient,
     N16SafeCollectingPolicyClient,
 )
-from src.policies.groot.robocasa_io import (  # noqa: E402
+from src.policies.groot.robocasa.io import (  # noqa: E402
     REQUIRED_OBS_KEYS,
     prepare_groot_robocasa_observation as _prepare_observation,
 )
-from src.policies.groot.scenario_replay import (  # noqa: E402
+from src.policies.groot.robocasa.scenario_replay import (  # noqa: E402
     ep_meta_manifest_path as _ep_meta_manifest_path,
     load_ep_meta_manifest as _load_ep_meta_manifest,
 )

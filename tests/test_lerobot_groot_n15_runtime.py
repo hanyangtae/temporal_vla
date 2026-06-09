@@ -9,9 +9,9 @@ from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "scripts" / "utils"))
+sys.path.insert(0, str(REPO_ROOT / "scripts" / "safe" / "groot_n15" / "robocasa" / "utils"))
 
-from lerobot_groot_n15_runtime import (  # noqa: E402
+from runtime import (  # noqa: E402
     _conversation_with_raw_language,
     _should_force_eager_attention,
     _unwrap_single_string_list_repr,
@@ -23,6 +23,9 @@ class TestDefaultHfCacheRoot(unittest.TestCase):
     def test_eval_runtime_shadow_module_is_removed(self):
         self.assertFalse(
             (REPO_ROOT / "scripts" / "eval" / "lerobot_groot_n15_runtime.py").exists()
+        )
+        self.assertFalse(
+            (REPO_ROOT / "scripts" / "utils" / "lerobot_groot_n15_runtime.py").exists()
         )
 
     def test_honors_hf_home_when_set(self):

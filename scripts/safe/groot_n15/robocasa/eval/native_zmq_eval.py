@@ -23,7 +23,7 @@ import msgpack
 import numpy as np
 import zmq
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[5]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src/policies/Isaac-GR00T"))
 sys.path.insert(0, str(REPO_ROOT / "src/benchmarks/robocasa"))

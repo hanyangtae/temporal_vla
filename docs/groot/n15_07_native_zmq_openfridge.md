@@ -39,7 +39,7 @@ nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,nohead
 docker exec temporal_vla-robocasa-run-3705634bbbf6 bash -lc '
 export MUJOCO_GL=egl
 PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite:/temporal_vla \
-python /temporal_vla/scripts/eval/groot_n15_robocasa_zmq_eval.py \
+python /temporal_vla/scripts/safe/groot_n15/robocasa/eval/native_zmq_eval.py \
   --policy-client-host 127.0.0.1 \
   --policy-client-port 5558 \
   --env-name robocasa_panda_omron/OpenFridge_PandaOmron_Env \
@@ -86,7 +86,7 @@ docker exec \
   -e MUJOCO_GL=egl \
   -e PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T-N1.5:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite:/temporal_vla:/temporal_vla/configs/policies \
   temporal_vla-robocasa-run-3705634bbbf6 \
-  python /temporal_vla/scripts/eval/groot_n15_official_robocasa_eval.py \
+  python /temporal_vla/scripts/safe/groot_n15/robocasa/eval/native_official_zmq_eval.py \
     --host 127.0.0.1 \
     --port 5558 \
     --task OpenFridge \
@@ -129,7 +129,7 @@ docker exec \
   -e no_proxy=127.0.0.1,localhost \
   -e PYTHONPATH=/temporal_vla:/temporal_vla/scripts/utils:/temporal_vla/src/policies/Isaac-GR00T-N1.5:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite \
   temporal_vla-robocasa-run-3705634bbbf6 \
-  python /temporal_vla/scripts/eval/lerobot_groot_n15_official_robocasa_eval.py \
+  python /temporal_vla/scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py \
     --vla-server http://127.0.0.1:8400 \
     --task OpenFridge \
     --split target \
@@ -180,6 +180,6 @@ threshold를 물리적으로 넘지 못했다.
 호출하기 전에 지원하지 않는 kwargs를 걸러낸다. 이 checkout에서는 imported helper가
 matching parameter를 노출할 때만 `--seed`가 보존된다.
 
-`scripts/eval/groot_n15_official_robocasa_eval.py`의 benchmark-style client는 benchmark
+`scripts/safe/groot_n15/robocasa/eval/native_official_zmq_eval.py`의 benchmark-style client는 benchmark
 fork와 같은 env id/split convention을 사용한다. 다만 RoboCasa container에 새 dependency를
 추가하지 않기 위해 repo-local N1.5 ZMQ msgpack client는 유지한다.

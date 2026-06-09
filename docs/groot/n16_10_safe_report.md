@@ -149,7 +149,7 @@ Base checkpoint는 GR00T N1.6 RoboCasa PandaOmron checkpoint다.
 /home/dongkyu/pdk_ws/temporal_vla/outputs/checkpoints/GR00T-N1.6-3B
 ```
 
-GR00T N1.6 success-rate 기준선은 upstream GR00T ZMQ evaluation path로 둔다. HTTP serving 경로(`scripts/serve/groot.py`, port `:8500`, `/act` + `/act_with_features`)는 ZMQ SAFE path와 action parity 및 SAFE transport smoke를 확인했다 ([09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29)). 전체 benchmark HTTP closed-loop SR은 아직 산출하지 않았다. HTTP `/act_with_features` 는 SAFE feature 를 일반 벤치마크에서도 회수할 수 있게 ZMQ feature server 의 정의를 `src/policies/groot/safe_features.py` 공유 모듈로 단일화한 결과이며, SAFE pkl/loader smoke도 통과했다 ([아래 smoke](#http-act_with_features-safe-collection-smoke-2026-05-29)).
+GR00T N1.6 success-rate 기준선은 upstream GR00T ZMQ evaluation path로 둔다. HTTP serving 경로(`scripts/serve/groot.py`, port `:8500`, `/act` + `/act_with_features`)는 ZMQ SAFE path와 action parity 및 SAFE transport smoke를 확인했다 ([09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29)). 전체 benchmark HTTP closed-loop SR은 아직 산출하지 않았다. HTTP `/act_with_features` 는 SAFE feature 를 일반 벤치마크에서도 회수할 수 있게 ZMQ feature server 의 정의를 `src/policies/groot/safe/features.py` 공유 모듈로 단일화한 결과이며, SAFE pkl/loader smoke도 통과했다 ([아래 smoke](#http-act_with_features-safe-collection-smoke-2026-05-29)).
 
 SAFE rollout collection은 dedicated ZMQ feature server로 수행했다. Feature endpoint는 normal action path를 유지하면서 action과 feature를 함께 저장한다. Official direct policy action과 SAFE feature path action의 동등성은 action key별 비교에서 `max_abs=0.0`으로 확인했다.
 
@@ -521,7 +521,7 @@ HTTP feature collection path도 ZMQ SAFE pkl contract에 맞춰 1-step capped ro
 - [Dedicated ZMQ feature server ADR](../adr/0001-dedicated-safe-groot-n16-zmq-server.md)
 - `scripts/serve/groot.py` (HTTP `/act` + `/act_with_features`, port 8500)
 - `scripts/utils/vla_client.py` (`predict_with_features`)
-- `src/policies/groot/safe_features.py` (HTTP/ZMQ 공유 DiT capture)
+- `src/policies/groot/safe/features.py` (HTTP/ZMQ 공유 DiT capture)
 - `scripts/safe/groot_n16/robocasa/run_config.py`
 - `scripts/safe/groot_n16/robocasa/run_config.sh`
 - `scripts/safe/groot_n16/robocasa/safe_feature_vectors.py`

@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from src.policies.groot.robocasa_io import (
+from src.policies.groot.robocasa.io import (
     GROOT_ACTION_KEYS,
     PRIMARY_ACTION_KEYS,
     REQUIRED_OBS_KEYS,

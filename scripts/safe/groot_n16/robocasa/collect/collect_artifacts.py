@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 
 from collect_schema import GROOT_ACTION_KEYS, SAFE_ACTION_COLUMNS
-from src.policies.groot.scenario_replay import json_safe, write_ep_meta_manifest
+from src.policies.groot.robocasa.scenario_replay import json_safe, write_ep_meta_manifest
 
 
 def write_collect_ep_meta_manifest(

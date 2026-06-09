@@ -17,7 +17,7 @@ from typing import Any
 
 import numpy as np
 
-from .schema import (
+from ..core.schema import (
     GROOT_ENV_LANGUAGE_KEYS,
     GROOT_ENV_VIDEO_TO_UNIFIED_CAM,
     GROOT_TO_UNIFIED_ACTION,

@@ -10,9 +10,9 @@ GR00T N1.5 checkpoint를 올바르게 로드하는지 확인하는 진단 문서
 
 | Script | 역할 |
 |---|---|
-| `scripts/eval/lerobot_groot_n15_internal_parity.py` | raw Isaac-GR00T checkpoint prefix/value parity verifier |
+| `scripts/safe/groot_n15/robocasa/eval/internal_parity.py` | raw Isaac-GR00T checkpoint prefix/value parity verifier |
 
-Runtime compatibility glue는 `scripts/utils/lerobot_groot_n15_runtime.py` 한 곳에만 둔다.
+Runtime compatibility glue는 `scripts/safe/groot_n15/robocasa/utils/runtime.py` 한 곳에만 둔다.
 Import shadowing을 피하기 위해 예전 eval-side helper duplicate는 제거했다.
 
 ## 현재 결론
@@ -36,7 +36,7 @@ identity는 별도 질문으로 남긴다.
 검증 명령:
 
 ```bash
-python scripts/eval/lerobot_groot_n15_internal_parity.py \
+python scripts/safe/groot_n15/robocasa/eval/internal_parity.py \
   --device cpu \
   --output outputs/debug/lerobot_groot_n15_internal_parity/checkpoint_load_cpu.json
 ```
@@ -46,8 +46,8 @@ python scripts/eval/lerobot_groot_n15_internal_parity.py \
 ```bash
 docker exec temporal_vla-lerobot-run-0b327aff8915 bash -lc '
 cd /temporal_vla &&
-PYTHONPATH=/temporal_vla/scripts/eval:/temporal_vla/scripts:/temporal_vla/scripts/utils:/temporal_vla/scripts/serve:/temporal_vla/lerobot/src:/temporal_vla \
-python scripts/eval/lerobot_groot_n15_internal_parity.py \
+PYTHONPATH=/temporal_vla/scripts/safe/groot_n15/robocasa/eval:/temporal_vla/scripts/safe/groot_n15/robocasa/utils:/temporal_vla/scripts:/temporal_vla/scripts/serve:/temporal_vla/lerobot/src:/temporal_vla \
+python scripts/safe/groot_n15/robocasa/eval/internal_parity.py \
   --device cpu \
   --output outputs/debug/lerobot_groot_n15_internal_parity/checkpoint_load_cpu.json'
 ```
@@ -139,8 +139,8 @@ Target env 체크포인트 로드 verifier:
 ```bash
 docker exec temporal_vla-lerobot-run-0b327aff8915 bash -lc '
 cd /temporal_vla &&
-PYTHONPATH=/temporal_vla/scripts/eval:/temporal_vla/scripts:/temporal_vla/scripts/utils:/temporal_vla/scripts/serve:/temporal_vla/lerobot/src:/temporal_vla \
-python scripts/eval/lerobot_groot_n15_internal_parity.py --device cpu \
+PYTHONPATH=/temporal_vla/scripts/safe/groot_n15/robocasa/eval:/temporal_vla/scripts/safe/groot_n15/robocasa/utils:/temporal_vla/scripts:/temporal_vla/scripts/serve:/temporal_vla/lerobot/src:/temporal_vla \
+python scripts/safe/groot_n15/robocasa/eval/internal_parity.py --device cpu \
   --output outputs/debug/lerobot_groot_n15_internal_parity/checkpoint_load_cpu.json'
 ```
 

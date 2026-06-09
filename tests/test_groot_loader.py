@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.policies.groot.loader import (
+from src.policies.groot.core.loader import (
     load_state_dims_from_statistics,
     resolve_device,
     resolve_model_path,

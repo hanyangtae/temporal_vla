@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import importlib.util
 from pathlib import Path
+import sys
 from typing import Any
 
 import numpy as np
@@ -20,6 +22,7 @@ from .common import (
     make_policy_features,
     map_container_path,
 )
+from .rotation import quat_wxyz_to_rotation_6d
 
 
 GROOT_IMAGE_ALIASES: dict[str, tuple[str, ...]] = {
@@ -55,6 +58,10 @@ GROOT_STATS_FIELDS = ("min", "max", "mean", "std", "q01", "q99")
 GROOT_STATE_ROTATION_6D_KEYS = {"eef_quat_rel", "base_rotation"}
 GROOT_NATIVE_BINARY_ACTION_NAMES = {"gripper", "control_mode"}
 GROOT_EAGLE_PROJECTOR_PREFIX = "backbone.eagle_model.mlp1."
+GROOT_N15_RUNTIME_UTILS = (
+    Path(__file__).resolve().parents[2] / "safe" / "groot_n15" / "robocasa" / "utils"
+)
+GROOT_N15_RUNTIME_MODULE = "_temporal_vla_groot_n15_runtime"
 GROOT_ROTATION_6D_STATS = {
     "min": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
     "max": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
@@ -63,6 +70,21 @@ GROOT_ROTATION_6D_STATS = {
     "q01": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
     "q99": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
 }
+
+
+def _load_groot_n15_runtime():
+    module = sys.modules.get(GROOT_N15_RUNTIME_MODULE)
+    if module is not None:
+        return module
+
+    runtime_path = GROOT_N15_RUNTIME_UTILS / "runtime.py"
+    spec = importlib.util.spec_from_file_location(GROOT_N15_RUNTIME_MODULE, runtime_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load GR00T N1.5 runtime helper: {runtime_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[GROOT_N15_RUNTIME_MODULE] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _strip_order_prefix(view: str) -> str:
@@ -101,28 +123,6 @@ def _concat_metadata_stats(
         if len(parts) == len(keys):
             flattened[field] = torch.cat(parts)
     return flattened
-
-
-def _quat_wxyz_to_rotation_6d(value: Any) -> np.ndarray:
-    quat = np.asarray(value, dtype=np.float64).flatten()
-    if quat.size < 4:
-        quat = np.pad(quat, (0, 4 - quat.size))
-        quat[0] = 1.0
-    w, x, y, z = quat[:4]
-    norm = np.linalg.norm([w, x, y, z])
-    if norm <= 0:
-        w, x, y, z = 1.0, 0.0, 0.0, 0.0
-    else:
-        w, x, y, z = w / norm, x / norm, y / norm, z / norm
-    matrix = np.array(
-        [
-            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
-            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
-            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
-        ],
-        dtype=np.float32,
-    )
-    return matrix[:2, :].reshape(6)
 
 
 def _groot_state_feature_dim_for_keys(keys: list[str]) -> int:
@@ -353,7 +353,8 @@ class GrootPolicyAdapter:
             raise ValueError("groot hf_repo profile requires model_specific.checkpoint_subfolder")
 
         from huggingface_hub import snapshot_download
-        from lerobot_groot_n15_runtime import setup_repo_local_hf_cache
+
+        setup_repo_local_hf_cache = _load_groot_n15_runtime().setup_repo_local_hf_cache
 
         setup_repo_local_hf_cache()
         snapshot = snapshot_download(
@@ -375,7 +376,7 @@ class GrootPolicyAdapter:
 
     def transform_state_value(self, key: str, value):
         if key in GROOT_STATE_ROTATION_6D_KEYS:
-            return _quat_wxyz_to_rotation_6d(value)
+            return quat_wxyz_to_rotation_6d(value)
         return value
 
     def build_remap_config(self, visual_keys: list, state_feat) -> tuple[dict[str, str], int]:
@@ -393,7 +394,10 @@ class GrootPolicyAdapter:
     ) -> LoadedPolicy:
         from lerobot.policies.factory import make_pre_post_processors
         from lerobot.policies.groot.configuration_groot import GrootConfig
-        from lerobot_groot_n15_runtime import patch_groot_runtime, setup_repo_local_hf_cache
+
+        runtime = _load_groot_n15_runtime()
+        patch_groot_runtime = runtime.patch_groot_runtime
+        setup_repo_local_hf_cache = runtime.setup_repo_local_hf_cache
 
         setup_repo_local_hf_cache()
         if bool(profile.model_specific.get("raw_language", False)):

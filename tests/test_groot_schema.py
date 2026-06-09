@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 
-from src.policies.groot.schema import (
+from src.policies.groot.core.schema import (
     GROOT_ENV_VIDEO_TO_UNIFIED_CAM,
     GROOT_TO_UNIFIED_STATE,
     UNIFIED_TO_GROOT_ACTION,

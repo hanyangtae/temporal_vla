@@ -578,7 +578,7 @@ scripts/eval/groot_robocasa_zmq_eval.py
           <pre>Isaac-GR00T-N1.5/scripts/inference_service.py
   -> endpoint get_action
 
-scripts/eval/groot_n15_robocasa_zmq_eval.py
+scripts/safe/groot_n15/robocasa/eval/native_zmq_eval.py
   -> N15PolicyClient
   -> msgpack {"endpoint": "get_action", "data": obs}</pre>
           <p>N1.6 <code>PolicyServer</code>와 protocol이 달라 별도 client가 있다.</p>
@@ -729,7 +729,7 @@ scripts/eval/groot_n15_robocasa_zmq_eval.py
             <p>
               GR00T N1.6 RoboCasa 기준으로 <code>model_action_horizon=50</code>,
               <code>valid_action_horizon=16</code>이며, K는 denoising step 수다.
-              구현: <code>src/policies/groot/safe_features.py</code>.
+              구현: <code>src/policies/groot/safe/features.py</code>.
             </p>
           </div>
           <div class="eq">
@@ -1017,10 +1017,10 @@ DiT_b01, DiT_b03</pre>
           <ol>
             <li><code>configs/checkpoints/groot__robocasa365_ckpt120000.yaml</code></li>
             <li><code>scripts/serve/groot.py::main</code></li>
-            <li><code>src/policies/groot/loader.py::load_groot_policy</code></li>
-            <li><code>src/policies/groot/service.py::GrootPolicyService.act</code></li>
-            <li><code>src/policies/groot/service.py::build_groot_obs</code></li>
-            <li><code>src/policies/groot/service.py::convert_native_action_to_subkeys</code></li>
+            <li><code>src/policies/groot/core/loader.py::load_groot_policy</code></li>
+            <li><code>src/policies/groot/core/service.py::GrootPolicyService.act</code></li>
+            <li><code>src/policies/groot/core/service.py::build_groot_obs</code></li>
+            <li><code>src/policies/groot/core/service.py::convert_native_action_to_subkeys</code></li>
           </ol>
         </article>
 
@@ -1055,7 +1055,7 @@ DiT_b01, DiT_b03</pre>
             <li><code>lerobot_adapters/factory.py::make_policy_adapter</code></li>
             <li><code>lerobot_adapters/groot.py::GrootPolicyAdapter</code></li>
             <li><code>scripts/serve/lerobot.py::predict_action</code></li>
-            <li><code>scripts/eval/lerobot_groot_n15_official_robocasa_eval.py</code></li>
+            <li><code>scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py</code></li>
           </ol>
         </article>
       </div>
@@ -1072,9 +1072,9 @@ DiT_b01, DiT_b03</pre>
           <tr><td>VL vs DiT comparison</td><td><a href="../steering/09_phase3_vl_dit_comparison.md">docs/steering/09_phase3_vl_dit_comparison.md</a></td></tr>
           <tr><td>COAST reproduction map</td><td><a href="../steering/04_coast_reproduction_map.md">docs/steering/04_coast_reproduction_map.md</a></td></tr>
           <tr><td>Conceptor code</td><td><a href="../../src/conceptor/README.md">src/conceptor/README.md</a></td></tr>
-          <tr><td>GR00T HTTP service</td><td><a href="../../src/policies/groot/service.py">src/policies/groot/service.py</a></td></tr>
-          <tr><td>GR00T RoboCasa IO adapter</td><td><a href="../../src/policies/groot/robocasa_io.py">src/policies/groot/robocasa_io.py</a></td></tr>
-          <tr><td>SAFE feature extraction</td><td><a href="../../src/policies/groot/safe_features.py">src/policies/groot/safe_features.py</a></td></tr>
+          <tr><td>GR00T HTTP service</td><td><a href="../../src/policies/groot/core/service.py">src/policies/groot/core/service.py</a></td></tr>
+          <tr><td>GR00T RoboCasa IO adapter</td><td><a href="../../src/policies/groot/robocasa/io.py">src/policies/groot/robocasa/io.py</a></td></tr>
+          <tr><td>SAFE feature extraction</td><td><a href="../../src/policies/groot/safe/features.py">src/policies/groot/safe/features.py</a></td></tr>
           <tr><td>Steering hook</td><td><a href="../../scripts/serve/steering_hooks.py">scripts/serve/steering_hooks.py</a></td></tr>
           <tr><td>SAFE feature server</td><td><a href="../../scripts/safe/groot_n16/robocasa/serve/feature_server.py">scripts/safe/groot_n16/robocasa/serve/feature_server.py</a></td></tr>
           <tr><td>Pathway separation analysis</td><td><a href="../../scripts/safe/groot_n16/robocasa/analyze/pathway_separation.py">scripts/safe/groot_n16/robocasa/analyze/pathway_separation.py</a></td></tr>
@@ -1132,7 +1132,7 @@ DiT_b01, DiT_b03</pre>
         input: "RoboCasa observation, GR00T checkpoint profile, feature-slice config",
         output: "per-step action + hidden_states + optional vl_hidden_states",
         proof: "pkl schema, feature tensor shape, smoke test logs",
-        files: ["scripts/safe/groot_n16/robocasa/serve/feature_server.py", "src/policies/groot/safe_features.py"]
+        files: ["scripts/safe/groot_n16/robocasa/serve/feature_server.py", "src/policies/groot/safe/features.py"]
       },
       analysis: {
         title: "2. Analysis",

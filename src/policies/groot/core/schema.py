@@ -17,19 +17,6 @@ from typing import Any
 
 import numpy as np
 
-# 통일 API 이미지 키 → GR00T video 키 (PandaOmron 기준).
-# `static`/`left` 는 2-camera 모델 호환 alias. side_0/side_1/wrist_0 는
-# GR00T schema 정합 alias.
-UNIFIED_TO_VIDEO_KEY: dict[str, str] = {
-    "observation.images.left":    "video.res256_image_side_0",
-    "observation.images.static":  "video.res256_image_side_0",  # 2-camera 모델 호환
-    "observation.images.side_0":  "video.res256_image_side_0",
-    "observation.images.right":   "video.res256_image_side_1",
-    "observation.images.side_1":  "video.res256_image_side_1",
-    "observation.images.wrist":   "video.res256_image_wrist_0",
-    "observation.images.wrist_0": "video.res256_image_wrist_0",
-}
-
 # 통일 API state 키 → GR00T state 키 (PandaOmronKeyConverter 매핑 기준).
 UNIFIED_TO_STATE_KEY: dict[str, str] = {
     "observation.state.gripper_qpos":   "state.gripper_qpos",

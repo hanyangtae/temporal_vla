@@ -19,7 +19,7 @@ from gr00t.eval.sim.wrapper.video_recording_wrapper import (
     VideoRecordingWrapper,
 )
 
-from .robocasa_io import VIDEO_RECORDING_KEYS
+from .io import VIDEO_RECORDING_KEYS
 
 
 class CanonicalRoboCasaVideoObservationFilter(gym.ObservationWrapper):

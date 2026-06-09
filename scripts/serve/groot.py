@@ -22,9 +22,9 @@ from path_setup import configure_repo_paths  # noqa: E402
 configure_repo_paths(include_script_utils=True, include_groot=True)
 
 from checkpoint_profile import load_profile  # noqa: E402
-from src.policies.groot.safe_features import FEATURE_DTYPES, FEATURE_SLICES  # noqa: E402
-from src.policies.groot.schema import build_video_mapping  # noqa: E402
-from src.policies.groot.service import (  # noqa: E402
+from src.policies.groot.safe.features import FEATURE_DTYPES, FEATURE_SLICES  # noqa: E402
+from src.policies.groot.core.schema import build_video_mapping  # noqa: E402
+from src.policies.groot.core.service import (  # noqa: E402
     GrootFeatureConfig,
     GrootModelNotLoadedError,
     GrootPolicyService,
@@ -42,32 +42,12 @@ def _apply_runtime_args() -> None:
     _service.feature_config = GrootFeatureConfig.from_args(getattr(app.state, "args", None))
 
 
-# Backward-compatible private helpers used by tests and ad-hoc notebooks.
-def _language_keys_from_modality_config() -> list[str]:
-    return _service.language_keys()
-
-
 def _build_groot_obs(payload: dict) -> dict:
     return _service.build_groot_obs(payload)
 
 
-def _convert_native_action_to_subkeys(action_dict: dict, profile, latency_ms: float) -> dict:
-    if _service.profile is None:
-        _service.profile = profile
-    return _service.convert_native_action_to_subkeys(action_dict, latency_ms)
-
-
 def _log_debug_call(out: dict, payload: dict) -> None:
     _service._log_debug_call(out, payload)
-
-
-def _feature_config() -> dict:
-    cfg = GrootFeatureConfig.from_args(getattr(app.state, "args", None))
-    return {
-        "slice": cfg.feature_slice,
-        "dtype": cfg.feature_dtype,
-        "horizon": cfg.feature_action_horizon,
-    }
 
 
 _temporary_inference_seed = temporary_inference_seed

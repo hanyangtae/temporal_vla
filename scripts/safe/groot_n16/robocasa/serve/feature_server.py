@@ -37,9 +37,9 @@ configure_repo_paths(include_script_utils=True, include_groot=True)
 
 from checkpoint_profile import load_profile  # noqa: E402
 from gr00t.policy.server_client import PolicyServer  # noqa: E402
-from src.policies.groot.loader import load_groot_policy  # noqa: E402
-from src.policies.groot.rng import temporary_inference_seed  # noqa: E402
-from src.policies.groot.safe_features import (  # noqa: E402
+from src.policies.groot.core.loader import load_groot_policy  # noqa: E402
+from src.policies.groot.core.rng import temporary_inference_seed  # noqa: E402
+from src.policies.groot.safe.features import (  # noqa: E402
     SAFE_FEATURE_AXES_ALL,
     SAFE_FEATURE_AXES_VALID,
     SAFE_FEATURE_KIND_ALL,

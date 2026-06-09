@@ -7,11 +7,13 @@ import numpy as np
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPT_PATH = REPO_ROOT / "scripts" / "eval" / "lerobot_groot_n15_official_robocasa_eval.py"
+SCRIPT_PATH = (
+    REPO_ROOT / "scripts" / "safe" / "groot_n15" / "robocasa" / "eval" / "lerobot_http_eval.py"
+)
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("lerobot_groot_n15_official_eval", SCRIPT_PATH)
+    spec = importlib.util.spec_from_file_location("lerobot_groot_n15_lerobot_http_eval", SCRIPT_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
     spec.loader.exec_module(module)

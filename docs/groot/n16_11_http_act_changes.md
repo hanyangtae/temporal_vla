@@ -10,7 +10,7 @@
 |---|---|---|
 | HTTP port | 일부 문서와 helper가 다른 VLA 기본값을 따라 `:8000` 또는 `:8200`을 암묵적으로 사용 | GR00T HTTP serve와 smoke 기본 경로를 `:8500`으로 정렬 |
 | SAFE feature export | HTTP path는 `/act` only, SAFE feature는 ZMQ 전용 | HTTP serve가 `/act_with_features`도 노출 (`features.*` namespace, base64 hidden states). 같은 모델 인스턴스 공유. ZMQ `get_action_with_features`는 upstream SAFE collector msgpack 호환을 위해 유지 |
-| SAFE feature 공유 모듈 | DiT hook이 ZMQ feature_server.py에 inline | `src/policies/groot/safe_features.py` 가 HTTP/ZMQ 양쪽이 공유하는 hook + horizon 해석 + base64 직렬화 helpers |
+| SAFE feature 공유 모듈 | DiT hook이 ZMQ feature_server.py에 inline | `src/policies/groot/safe/features.py` 가 HTTP/ZMQ 양쪽이 공유하는 hook + horizon 해석 + base64 직렬화 helpers |
 | GR00T input state | HTTP profile이 absolute/joint 계열 state를 요구 | HTTP profile이 GR00T native relative/base state alias를 요구 |
 | RoboCasa cameras | res256 GR00T key 중심 | res256 key와 raw RoboCasa camera key를 둘 다 HTTP alias로 수용 |
 | Language key | 일부 경로는 `annotation.human.action.task_description`만 사용 | old/new language key를 모두 채움 |
@@ -47,7 +47,7 @@
 
 ### SAFE feature 공유 모듈
 
-`src/policies/groot/safe_features.py` 가 단일 진입점이다.
+`src/policies/groot/safe/features.py` 가 단일 진입점이다.
 
 - `capture_dit_features(sim_policy, observation, ...)` — `action_head.model` 에 forward hook 을 install/remove 하면서 `sim_policy.get_action` 을 실행하고, 각 denoising step 출력을 `[B, K, H, D]` 로 stack 해 반환.
 - `resolve_feature_action_horizon(...)` — `feature_slice` 와 `feature_action_horizon` 결합 검증.
@@ -58,7 +58,7 @@ ZMQ `SafeN16FeaturePolicy.get_action_with_features` 와 HTTP `/act_with_features
 
 ### Schema helpers
 
-`src/policies/groot/schema.py`가 GR00T HTTP schema boundary를 공유한다.
+`src/policies/groot/core/schema.py`가 GR00T HTTP schema boundary를 공유한다.
 
 - `video.res256_image_side_0/1/wrist_0`와 `video.robot0_agentview_left/right/eye_in_hand`를 각각 `left/right/wrist` alias로 매핑한다.
 - `annotation.human.action.task_description`과 `annotation.human.task_description`을 모두 language source로 다룬다.
@@ -66,7 +66,7 @@ ZMQ `SafeN16FeaturePolicy.get_action_with_features` 와 HTTP `/act_with_features
 
 ### Loader behavior
 
-`src/policies/groot/loader.py`가 host/container path 차이를 흡수한다.
+`src/policies/groot/core/loader.py`가 host/container path 차이를 흡수한다.
 
 - profile에 `/temporal_vla/...` path가 들어 있어도 host checkout에 대응 path가 있으면 로컬 경로로 resolve한다.
 - HF repo id와 이미 존재하는 path는 그대로 둔다.
@@ -77,7 +77,7 @@ ZMQ `SafeN16FeaturePolicy.get_action_with_features` 와 HTTP `/act_with_features
 `scripts/eval/robocasa_eval.py`와 `scripts/utils/vla_client.py`가 HTTP GR00T path를 더 명확히 다룬다.
 
 - `robocasa_eval.py --use-groot-env`는 기본 VLA server를 `http://localhost:8500`으로 둔다.
-- `--use-groot-env`는 `src.processor.factory.make_groot_robocasa_processors()`를 통해 `GrootRoboCasaEnv` native keys를 HTTP payload/action으로 변환한다. 이 processor adapter의 실제 key mapping은 `src.policies.groot.robocasa_io`가 단일 출처다.
+- `--use-groot-env`는 `src.processor.factory.make_groot_robocasa_processors()`를 통해 `GrootRoboCasaEnv` native keys를 HTTP payload/action으로 변환한다. 이 processor adapter의 실제 key mapping은 `src.policies.groot.robocasa.io`가 단일 출처다.
 - generic RoboCasa eval path는 기존처럼 `src.processor.factory.make_robocasa_processors()`를 사용한다. 이 경로는 arbitrary VLA server 비교용 Project FastAPI evaluation이고, GR00T upstream parity 경로가 아니다.
 - GR00T env mode는 raw RoboCasa camera key와 new/old instruction key를 모두 처리한다.
 - `--seed`는 GrootRoboCasaEnv construction (`gym.make(..., seed=seed)`)과 rollout reset (`env.reset(seed=seed + rollout_i)`)에 들어간다.
@@ -106,10 +106,10 @@ ZMQ `SafeN16FeaturePolicy.get_action_with_features` 와 HTTP `/act_with_features
 | Role | Files |
 |---|---|
 | HTTP serve | `scripts/serve/groot.py` |
-| SAFE feature 공유 모듈 | `src/policies/groot/safe_features.py` (new), `scripts/safe/groot_n16/robocasa/serve/feature_server.py` (refactored to share) |
+| SAFE feature 공유 모듈 | `src/policies/groot/safe/features.py` (new), `scripts/safe/groot_n16/robocasa/serve/feature_server.py` (refactored to share) |
 | SAFE collection | `scripts/safe/groot_n16/robocasa/collect/collect_rollout.py`, `scripts/safe/groot_n16/robocasa/collect/collect_env.py`, `scripts/safe/groot_n16/robocasa/collect/collect_artifacts.py`, `scripts/safe/groot_n16/robocasa/collect/collect_policy_clients.py`, `scripts/safe/groot_n16/robocasa/collect/collect_schema.py` |
 | HTTP client | `scripts/utils/vla_client.py` |
-| GR00T schema/load | `src/policies/groot/schema.py`, `src/policies/groot/loader.py` |
+| GR00T schema/load | `src/policies/groot/core/schema.py`, `src/policies/groot/core/loader.py` |
 | RoboCasa eval | `scripts/eval/robocasa_eval.py` |
 | Checkpoint profiles | `configs/checkpoints/groot__robocasa365_ckpt120000.yaml`, `configs/checkpoints/groot__robocasa_panda_omron.yaml` |
 | Processor guard/test cleanup | `src/processor/action/calvin.py`, `tests/test_processor.py` |

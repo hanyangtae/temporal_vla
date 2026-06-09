@@ -9,13 +9,12 @@ GR00T native (`GrootRoboCasaEnv.process_img`) 와 동일한 로직:
 
 from __future__ import annotations
 
-import base64
-import io
 from typing import Tuple
 
 import cv2
 import numpy as np
-from PIL import Image
+
+from src.utils.common.image import decode_b64_image
 
 # GR00T N1 표준 입력 해상도. modality key prefix `res256_` 도 이 값에 대응.
 FINAL_IMAGE_RESOLUTION: Tuple[int, int] = (256, 256)
@@ -37,8 +36,3 @@ def process_img(img: np.ndarray) -> np.ndarray:
     if img.shape[:2] != FINAL_IMAGE_RESOLUTION:
         img = cv2.resize(img, FINAL_IMAGE_RESOLUTION, cv2.INTER_AREA)
     return np.copy(img)
-
-
-def decode_b64_image(b64_str: str) -> np.ndarray:
-    """base64 PNG → HxWx3 uint8 numpy. (서빙 layer 전용)"""
-    return np.array(Image.open(io.BytesIO(base64.b64decode(b64_str))).convert("RGB"))

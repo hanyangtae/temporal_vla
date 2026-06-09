@@ -118,7 +118,7 @@ HTTP payload parsing
 ```
 
 `GrootPolicyAdapter`는 process-local patch만 적용한다 (`patch_groot_runtime`,
-`scripts/utils/lerobot_groot_n15_runtime.py`) — `lerobot/` submodule 미수정:
+`scripts/safe/groot_n15/robocasa/utils/runtime.py`) — `lerobot/` submodule 미수정:
 
 - torch 2.10 Beta meta-device validation 회피 (`flow_matching.Beta(validate_args=False)`)
 - transformers 5용 `GR00TN15.all_tied_weights_keys = {}` 보강
@@ -165,7 +165,7 @@ smoke: exit code 0
 ```
 
 이 workstation의 GPU는 RTX 4070(sm89)이고, 현재 LeRobot image는 `FLASH_ATTN_CUDA_ARCHS=120`
-으로 flash-attn을 빌드한다. `scripts/utils/lerobot_groot_n15_runtime.py`는 이 mismatch를
+으로 flash-attn을 빌드한다. `scripts/safe/groot_n15/robocasa/utils/runtime.py`는 이 mismatch를
 감지하면 Eagle vision attention을 process-local eager attention으로 바꾼다. sm120 GPU에서는
 flash-attn 경로를 유지한다.
 
@@ -176,11 +176,11 @@ flash-attn 경로를 유지한다.
 - 컨테이너: `VLA_CACHE_ROOT=/cache`
 - HF cache: `/cache/huggingface` because the `lerobot` compose service mounts
   repo-local `./data` to `/cache`.
-- helper: `scripts/utils/lerobot_groot_n15_runtime.py`
+- helper: `scripts/safe/groot_n15/robocasa/utils/runtime.py`
 
-Runtime compatibility helper는 `scripts/utils/lerobot_groot_n15_runtime.py` 하나만 source of
-truth로 둔다. eval smoke/parity scripts도 기존 `scripts/path_setup.py`의
-`configure_repo_paths(include_script_utils=True)`를 재사용해서 같은 helper를 가져온다.
+Runtime compatibility helper는 `scripts/safe/groot_n15/robocasa/utils/runtime.py` 하나만 source of
+truth로 둔다. `GrootPolicyAdapter`는 path-based loader로 이 helper를 가져오고, parity/eval
+diagnostics는 safe-tree utils path를 직접 추가해서 같은 helper를 가져온다.
 Cleanup status는 [`n15_03`](n15_03_lerobot_robocasa365.md)에 기록한다.
 
 ## Stage [1] 검증

@@ -15,8 +15,8 @@
 리팩토링의 핵심은 GR00T `GrootRoboCasaEnv` native key와 프로젝트 공통 HTTP schema 사이의 변환 책임을 명확히 분리한 것이다.
 
 - Generic RoboCasa processor는 그대로 generic robosuite RoboCasa env용으로 남긴다.
-- GR00T RoboCasa 전용 변환은 `src.policies.groot.robocasa_io`를 단일 출처로 둔다.
-- GR00T native rollout wrapper는 `src.policies.groot.robocasa_env_wrappers`로 공유해 ZMQ eval과 SAFE collection의 3-view video contract를 같이 유지한다.
+- GR00T RoboCasa 전용 변환은 `src.policies.groot.robocasa.io`를 단일 출처로 둔다.
+- GR00T native rollout wrapper는 `src.policies.groot.robocasa.env_wrappers`로 공유해 ZMQ eval과 SAFE collection의 3-view video contract를 같이 유지한다.
 - `src.processor`에는 GR00T 전용 processor를 추가해 기존 eval/collection 코드가 같은 `(obs_pipeline, action_pipeline)` 형태를 사용할 수 있게 했다.
 - SAFE collection의 transport 차이는 client adapter에 가두고, pkl schema와 feature metadata는 HTTP/ZMQ가 같은 의미를 갖도록 맞췄다.
 - HTTP `/act`, HTTP `/act_with_features`, ZMQ `get_action_with_features`는 같은 checkpoint/profile, 같은 schema, 같은 optional `inference_seed` 의미를 공유한다.
@@ -101,11 +101,11 @@ flowchart TD
 | Local loop | [src/processor/action/groot_robocasa.py](../../src/processor/action/groot_robocasa.py) | action 변환 | HTTP action sub-key를 native GR00T action dict로 변환 |
 | Transport | [scripts/safe/groot_n16/robocasa/collect/collect_policy_clients.py](../../scripts/safe/groot_n16/robocasa/collect/collect_policy_clients.py) | HTTP/ZMQ client adapter | transport별 요청, action 수신, SAFE record 누적 |
 | HTTP | [scripts/utils/vla_client.py](../../scripts/utils/vla_client.py) | HTTP client base | `/act`, `/act_with_features`, `inference_seed` request 구성 |
-| HTTP | [scripts/serve/groot.py](../../scripts/serve/groot.py), [src/policies/groot/service.py](../../src/policies/groot/service.py) | HTTP serving | FastAPI endpoint, GR00T policy load, action/feature response 생성 |
+| HTTP | [scripts/serve/groot.py](../../scripts/serve/groot.py), [src/policies/groot/core/service.py](../../src/policies/groot/core/service.py) | HTTP serving | FastAPI endpoint, GR00T policy load, action/feature response 생성 |
 | ZMQ | [scripts/safe/groot_n16/robocasa/serve/feature_server.py](../../scripts/safe/groot_n16/robocasa/serve/feature_server.py) | ZMQ serving | `get_action_with_features` endpoint와 upstream `PolicyServer` 호환 |
-| Shared contract | [src/policies/groot/robocasa_io.py](../../src/policies/groot/robocasa_io.py), [src/policies/groot/schema.py](../../src/policies/groot/schema.py) | key contract | native key와 unified key 변환의 단일 출처 |
-| Shared contract | [src/policies/groot/robocasa_env_wrappers.py](../../src/policies/groot/robocasa_env_wrappers.py) | rollout wrapper | res256 3-view video recording filter와 upstream `MultiStepWrapper` 적용 |
-| Shared contract | [src/policies/groot/safe_features.py](../../src/policies/groot/safe_features.py), [src/policies/groot/rng.py](../../src/policies/groot/rng.py) | feature/RNG contract | hidden-state metadata와 call-local inference RNG 의미 통일 |
+| Shared contract | [src/policies/groot/robocasa/io.py](../../src/policies/groot/robocasa/io.py), [src/policies/groot/core/schema.py](../../src/policies/groot/core/schema.py) | key contract | native key와 unified key 변환의 단일 출처 |
+| Shared contract | [src/policies/groot/robocasa/env_wrappers.py](../../src/policies/groot/robocasa/env_wrappers.py) | rollout wrapper | res256 3-view video recording filter와 upstream `MultiStepWrapper` 적용 |
+| Shared contract | [src/policies/groot/safe/features.py](../../src/policies/groot/safe/features.py), [src/policies/groot/core/rng.py](../../src/policies/groot/core/rng.py) | feature/RNG contract | hidden-state metadata와 call-local inference RNG 의미 통일 |
 | Output | [scripts/safe/groot_n16/robocasa/collect/collect_artifacts.py](../../scripts/safe/groot_n16/robocasa/collect/collect_artifacts.py) | artifact 저장 | SAFE pkl/csv/mp4/manifest 저장 |
 
 ## 주요 정리 내용
@@ -145,7 +145,7 @@ ZMQ eval client도 이 경계를 따른다. `scripts/eval/groot_robocasa_zmq_eva
 
 `GrootRoboCasaEnv`는 3개 카메라를 `res256`과 `res512` 두 해상도로 함께 노출할 수 있다. upstream `VideoRecordingWrapper`는 observation key에 `"video"`가 들어간 항목을 모두 이어 붙이므로, 별도 필터가 없으면 저장 영상이 3-view가 아니라 6-view가 된다.
 
-이 wrapper 책임은 transport와 무관하므로 `src.policies.groot.robocasa_env_wrappers`로 분리했다.
+이 wrapper 책임은 transport와 무관하므로 `src.policies.groot.robocasa.env_wrappers`로 분리했다.
 
 - `CanonicalRoboCasaVideoObservationFilter`: video recorder가 볼 observation을 `video.res256_image_side_0/1/wrist_0` 세 개로 제한
 - `wrap_groot_robocasa_eval_env()`: upstream `VideoRecordingWrapper`와 `MultiStepWrapper` 적용
@@ -289,12 +289,12 @@ gripper_close         -> action.gripper
 이후 GR00T RoboCasa checkpoint나 profile을 추가할 때는 아래 파일을 같이 확인한다.
 
 - [configs/checkpoints/groot__robocasa365_ckpt120000.yaml](../../configs/checkpoints/groot__robocasa365_ckpt120000.yaml)
-- [src/policies/groot/schema.py](../../src/policies/groot/schema.py)
-- [src/policies/groot/robocasa_io.py](../../src/policies/groot/robocasa_io.py)
+- [src/policies/groot/core/schema.py](../../src/policies/groot/core/schema.py)
+- [src/policies/groot/robocasa/io.py](../../src/policies/groot/robocasa/io.py)
 - [src/processor/factory.py](../../src/processor/factory.py)
 - [scripts/utils/vla_client.py](../../scripts/utils/vla_client.py)
 - [scripts/safe/groot_n16/robocasa/collect/collect_policy_clients.py](../../scripts/safe/groot_n16/robocasa/collect/collect_policy_clients.py)
 - [docs/groot/n16_09_safe_parity.md](n16_09_safe_parity.md)
 - [docs/groot/n16_11_http_act_changes.md](n16_11_http_act_changes.md)
 
-판단 기준은 간단하다. Generic RoboCasa env는 generic processor를 쓰고, GR00T `GrootRoboCasaEnv`는 GR00T 전용 processor를 쓴다. 둘의 공통점은 processor pipeline shape이고, key 변환의 단일 출처는 `src.policies.groot.robocasa_io`다.
+판단 기준은 간단하다. Generic RoboCasa env는 generic processor를 쓰고, GR00T `GrootRoboCasaEnv`는 GR00T 전용 processor를 쓴다. 둘의 공통점은 processor pipeline shape이고, key 변환의 단일 출처는 `src.policies.groot.robocasa.io`다.

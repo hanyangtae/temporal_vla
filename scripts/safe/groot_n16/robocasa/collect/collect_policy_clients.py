@@ -16,12 +16,12 @@ from collect_schema import (
 )
 from src.processor.factory import make_groot_robocasa_processors
 from src.processor.types import TransitionKey
-from src.policies.groot.robocasa_io import (
+from src.policies.groot.robocasa.io import (
     http_server_url,
     prepare_groot_robocasa_observation,
 )
-from src.policies.groot.schema import extract_groot_instruction
-from src.policies.groot.safe_features import normalize_feature_metadata
+from src.policies.groot.core.schema import extract_groot_instruction
+from src.policies.groot.safe.features import normalize_feature_metadata
 
 
 MsgSerializer: Any | None = None

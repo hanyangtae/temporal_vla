@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 import numpy as np
 
-from src.policies.groot.robocasa_io import (
+from src.policies.groot.robocasa.io import (
     convert_http_actions_to_groot_chunk,
     convert_http_actions_to_groot_step,
 )

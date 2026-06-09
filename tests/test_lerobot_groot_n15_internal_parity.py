@@ -10,9 +10,9 @@ from pathlib import Path
 import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "scripts" / "eval"))
+sys.path.insert(0, str(REPO_ROOT / "scripts" / "safe" / "groot_n15" / "robocasa" / "eval"))
 
-from lerobot_groot_n15_internal_parity import (  # noqa: E402
+from internal_parity import (  # noqa: E402
     CheckpointPrefixSpec,
     DEFAULT_CHECKPOINT_PREFIX_SPECS,
     compare_checkpoint_prefixes,
