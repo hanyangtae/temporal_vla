@@ -1,0 +1,58 @@
+# LeRobot GrootPolicy wrapper for RoboCasa365 GR00T N1.5 checkpoint-120000.
+# The weights are raw Isaac-GR00T artifacts stored in a Hugging Face repo
+# subfolder, not a LeRobot Policy.save_pretrained checkpoint.
+
+name: lerobot_groot_n15__robocasa365_ckpt120000
+base_model: lerobot
+checkpoint_source:
+  type: hf_repo
+  id: robocasa/robocasa365_checkpoints
+compatible_benchmarks: [robocasa]
+
+action_type: absolute
+action_layout:
+  - {name: eef_pos,        dims: 3}
+  - {name: eef_axisangle,  dims: 3}
+  - {name: gripper,        dims: 1}
+  - {name: base_motion,    dims: 4}
+  - {name: control_mode,   dims: 1}
+rotation_encoding: axisangle
+gripper_encoding:
+  range: "[-1,1]"
+  binarize: false
+  sign_flip: false
+  threshold: 0.0
+
+normalization:
+  scheme: min_max
+  stats_file: null
+  key_selection: []
+
+observation_requirements:
+  images: [side_0, side_1, wrist_0]
+  state: [eef_pos_rel, eef_quat_rel, gripper_qpos, base_position, base_rotation]
+  allow_conversions: []
+
+n_action_steps: 16
+image_preprocess:
+  resolution: 224
+  rotate_180: false
+  center_crop: true
+  center_crop_scale: 0.95
+
+emits_subkeys:
+  - action.eef_pos
+  - action.eef_axisangle
+  - action.gripper
+  - action.base_motion
+  - action.control_mode
+
+model_specific:
+  policy_type: groot
+  checkpoint_subfolder: gr00t_n1-5/multitask_learning/checkpoint-120000
+  embodiment_tag: new_embodiment
+  chunk_size: 16
+  use_bf16: true
+  raw_language: true
+  native_action_unapply: true
+  load_native_eagle_projector: true

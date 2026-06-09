@@ -9,9 +9,14 @@ Docker 없이 로컬에서 실행 가능. LeRobot serving interface를 명세한
 from __future__ import annotations
 
 import base64
+import importlib.util
 import io
+import random
 import sys
+import tempfile
+import types
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 from pathlib import Path
 
@@ -22,8 +27,36 @@ from PIL import Image
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "utils"))
+sys.path.insert(0, str(REPO_ROOT / "scripts" / "serve"))
 
-from scripts.serve import lerobot as serve_lerobot
+_scripts_pkg = types.ModuleType("scripts")
+_scripts_pkg.__path__ = [str(REPO_ROOT / "scripts")]
+_serve_pkg = types.ModuleType("scripts.serve")
+_serve_pkg.__path__ = [str(REPO_ROOT / "scripts" / "serve")]
+sys.modules["scripts"] = _scripts_pkg
+sys.modules["scripts.serve"] = _serve_pkg
+
+_lerobot_spec = importlib.util.spec_from_file_location(
+    "scripts.serve.lerobot",
+    REPO_ROOT / "scripts" / "serve" / "lerobot.py",
+)
+assert _lerobot_spec and _lerobot_spec.loader
+serve_lerobot = importlib.util.module_from_spec(_lerobot_spec)
+sys.modules["scripts.serve.lerobot"] = serve_lerobot
+_lerobot_spec.loader.exec_module(serve_lerobot)
+
+from lerobot_adapters import make_policy_adapter  # noqa: E402
+from lerobot_adapters.common import FeatureSpec  # noqa: E402
+from lerobot_adapters.groot import (  # noqa: E402
+    GrootPolicyAdapter,
+    build_groot_feature_specs,
+    groot_snapshot_allow_patterns,
+    load_groot_eagle_projector_from_checkpoint,
+    load_groot_dataset_stats_from_metadata,
+    wrap_groot_native_action_postprocessor,
+)
+from lerobot_adapters.pi import PiPolicyAdapter  # noqa: E402
+from checkpoint_profile import load_profile  # noqa: E402
 
 STATE_KEY_ORDER = serve_lerobot.STATE_KEY_ORDER
 _build_remap_config = serve_lerobot._build_remap_config
@@ -50,6 +83,23 @@ def _make_full_state_payload() -> dict:
         "observation.state.gripper_action": [1.0],
     }
     return dims
+
+
+def _make_groot_profile() -> SimpleNamespace:
+    return SimpleNamespace(
+        image_preprocess=SimpleNamespace(rotate_180=False),
+        observation_requirements=SimpleNamespace(
+            images=["side_0", "side_1", "wrist_0"],
+            state=[
+                "eef_pos_rel",
+                "eef_quat_rel",
+                "gripper_qpos",
+                "base_position",
+                "base_rotation",
+            ],
+            allow_conversions=[],
+        ),
+    )
 
 
 # ─── parse_payload ────────────────────────────────────────────────────────────
@@ -100,6 +150,69 @@ class TestParsePayloadImage(unittest.TestCase):
         self.assertIn("observation.images.wrist", batch)
         self.assertEqual(batch["observation.images.static"].shape, (1, 3, 200, 200))
         self.assertEqual(batch["observation.images.wrist"].shape, (1, 3, 84, 84))
+
+    def test_profile_center_crop_resize(self):
+        """profile image_preprocess can center-crop and resize images."""
+        from scripts.serve import lerobot as srv
+
+        old_profile = srv._profile
+        srv._profile = SimpleNamespace(
+            image_preprocess=SimpleNamespace(
+                rotate_180=False,
+                center_crop=True,
+                center_crop_scale=0.5,
+                resolution=4,
+            ),
+            observation_requirements=SimpleNamespace(state=[]),
+        )
+        try:
+            batch = parse_payload({"observation.images.static": _make_b64_image(8, 8)})
+        finally:
+            srv._profile = old_profile
+
+        self.assertEqual(batch["observation.images.static"].shape, (1, 3, 4, 4))
+
+    def test_profile_crop_resize_matches_groot_torchvision_rounding(self):
+        """GR00T image preprocessing uses torchvision float resize before uint8 cast."""
+        try:
+            import torchvision.transforms.v2 as tv2
+        except Exception as exc:
+            self.skipTest(f"torchvision v2 unavailable: {exc}")
+
+        from scripts.serve import lerobot as srv
+
+        arr = np.arange(8 * 8 * 3, dtype=np.uint8).reshape(8, 8, 3)
+        buf = io.BytesIO()
+        Image.fromarray(arr).save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode()
+
+        old_profile = srv._profile
+        srv._profile = SimpleNamespace(
+            image_preprocess=SimpleNamespace(
+                rotate_180=False,
+                center_crop=True,
+                center_crop_scale=0.75,
+                resolution=4,
+            ),
+            observation_requirements=SimpleNamespace(state=[]),
+        )
+        try:
+            batch = parse_payload({"observation.images.static": b64})
+        finally:
+            srv._profile = old_profile
+
+        frame = torch.from_numpy(arr.copy()).to(torch.float32) / 255.0
+        frame = frame.permute(2, 0, 1).unsqueeze(0)
+        frame = tv2.CenterCrop((6, 6))(frame)
+        frame = tv2.Resize(
+            (4, 4),
+            interpolation=tv2.InterpolationMode.BILINEAR,
+            antialias=True,
+        )(frame)
+        expected = (frame[0].permute(1, 2, 0) * 255).to(torch.uint8).numpy()
+        got = (batch["observation.images.static"][0].permute(1, 2, 0) * 255).to(torch.uint8).numpy()
+
+        np.testing.assert_array_equal(got, expected)
 
     def test_no_image_key_absent(self):
         """이미지 없으면 observation.images.* 키 없음."""
@@ -198,6 +311,34 @@ class TestParsePayloadMisc(unittest.TestCase):
         self.assertNotIn("some_random_key", batch)
 
 
+class TestInferenceSeed(unittest.TestCase):
+    """Optional per-request seed controls stochastic policy sampling."""
+
+    def test_missing_inference_seed_is_noop(self):
+        self.assertIsNone(serve_lerobot._apply_inference_seed({}))
+
+    def test_inference_seed_replays_python_numpy_and_torch_rng(self):
+        seed = 12345
+
+        serve_lerobot._apply_inference_seed({"inference_seed": seed})
+        first = (
+            random.random(),
+            np.random.rand(3),
+            torch.rand(3),
+        )
+
+        serve_lerobot._apply_inference_seed({"inference_seed": seed})
+        second = (
+            random.random(),
+            np.random.rand(3),
+            torch.rand(3),
+        )
+
+        self.assertEqual(first[0], second[0])
+        np.testing.assert_allclose(first[1], second[1])
+        torch.testing.assert_close(first[2], second[2])
+
+
 # ─── _apply_input_remap ──────────────────────────────────────────────────────
 
 
@@ -293,6 +434,22 @@ class _StateFeat:
         self.shape = (dim,)
 
 
+class TestPolicyAdapterFactory(unittest.TestCase):
+    """LeRobot policy_type -> explicit adapter registry."""
+
+    def test_pi_family_uses_pi_adapter(self):
+        for policy_type in ("pi0", "pi05", "pi0_fast"):
+            with self.subTest(policy_type=policy_type):
+                self.assertIsInstance(make_policy_adapter(policy_type), PiPolicyAdapter)
+
+    def test_groot_uses_groot_adapter(self):
+        self.assertIsInstance(make_policy_adapter("groot"), GrootPolicyAdapter)
+
+    def test_unknown_policy_type_is_rejected(self):
+        with self.assertRaises(ValueError):
+            make_policy_adapter("unknown_policy")
+
+
 class TestBuildRemapConfig(unittest.TestCase):
     """_build_remap_config: policy input_features → 카메라 키맵 + state dim 도출."""
 
@@ -353,6 +510,329 @@ class TestBuildRemapConfig(unittest.TestCase):
     def test_state_feat_14dim(self):
         _, state_dim = _build_remap_config(["observation.images.top"], _StateFeat(14))
         self.assertEqual(state_dim, 14)
+
+
+class TestGrootRobocasaObsBridge(unittest.TestCase):
+    """GR00T RoboCasa365 HTTP obs bridge contract."""
+
+    def setUp(self):
+        from scripts.serve import lerobot as srv
+
+        self.srv = srv
+        self._old_profile = srv._profile
+        self._old_policy_type = srv._policy_type
+        self._old_policy_adapter = srv._policy_adapter
+        self._old_camera_key_map = dict(srv._camera_key_map)
+        self._old_state_dim = srv._state_dim
+        srv._profile = _make_groot_profile()
+        srv._policy_type = "groot"
+        srv._policy_adapter = GrootPolicyAdapter()
+        srv._camera_key_map = {}
+        srv._state_dim = 0
+
+    def tearDown(self):
+        self.srv._profile = self._old_profile
+        self.srv._policy_type = self._old_policy_type
+        self.srv._policy_adapter = self._old_policy_adapter
+        self.srv._camera_key_map = self._old_camera_key_map
+        self.srv._state_dim = self._old_state_dim
+
+    def test_groot_state_uses_robocasa_generic_aliases(self):
+        """generic RoboCasa state aliases populate the 20D official GR00T state vector."""
+        payload = {
+            "observation.state.eef_pos": [1.0, 2.0, 3.0],
+            "observation.state.eef_quat": [0.0, 0.0, 0.0, 1.0],
+            "observation.state.gripper_qpos": [0.1, 0.2],
+            "observation.state.base_pos": [4.0, 5.0, 6.0],
+            "observation.state.base_quat": [0.0, 0.0, 1.0, 0.0],
+        }
+
+        batch = self.srv.parse_payload(payload)
+
+        self.assertEqual(batch["observation.state"].shape, (1, 20))
+        np.testing.assert_allclose(
+            batch["observation.state"][0].numpy(),
+            np.array(
+                [
+                    1.0, 2.0, 3.0,
+                    -1.0, 0.0, 0.0, 0.0, -1.0, 0.0,
+                    0.1, 0.2,
+                    4.0, 5.0, 6.0,
+                    -1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+                ],
+                dtype=np.float32,
+            ),
+            atol=1e-6,
+        )
+
+    def test_groot_camera_aliases_do_not_clobber_direct_side_keys(self):
+        """wrist alias maps to wrist_0, never overwrites side_1."""
+        key_map, state_dim = self.srv._build_remap_config(
+            [
+                "observation.images.00_side_0",
+                "observation.images.01_side_1",
+                "observation.images.02_wrist_0",
+            ],
+            _StateFeat(16),
+        )
+        self.srv._camera_key_map = key_map
+        self.srv._state_dim = state_dim
+
+        side_1 = torch.ones(1, 3, 4, 4)
+        wrist = torch.full((1, 3, 4, 4), 2.0)
+        batch = {
+            "observation.images.side_1": side_1.clone(),
+            "observation.images.wrist": wrist.clone(),
+            "observation.state": torch.zeros(1, 16),
+        }
+
+        result = self.srv._apply_input_remap(batch)
+
+        np.testing.assert_allclose(
+            result["observation.images.01_side_1"].numpy(),
+            side_1.numpy(),
+        )
+        np.testing.assert_allclose(
+            result["observation.images.02_wrist_0"].numpy(),
+            wrist.numpy(),
+        )
+        self.assertNotIn("observation.images.side_1", result)
+        self.assertNotIn("observation.images.wrist", result)
+
+
+class TestGrootAdapterSpecs(unittest.TestCase):
+    """GR00T policy adapter: profile → LeRobot GrootConfig feature specs."""
+
+    def test_robocasa365_profile_matches_n15_data_config_order(self):
+        profile = load_profile(
+            REPO_ROOT
+            / "configs/checkpoints/lerobot_groot_n15__robocasa365_ckpt120000.yaml"
+        )
+
+        self.assertEqual(
+            profile.observation_requirements.images,
+            ["side_0", "side_1", "wrist_0"],
+        )
+        self.assertEqual(
+            profile.observation_requirements.state,
+            [
+                "eef_pos_rel",
+                "eef_quat_rel",
+                "gripper_qpos",
+                "base_position",
+                "base_rotation",
+            ],
+        )
+        self.assertEqual(
+            [(item.name, item.dims) for item in profile.action_layout],
+            [
+                ("eef_pos", 3),
+                ("eef_axisangle", 3),
+                ("gripper", 1),
+                ("base_motion", 4),
+                ("control_mode", 1),
+            ],
+        )
+        self.assertEqual(profile.action_type, "absolute")
+        self.assertEqual(profile.action_dim, 12)
+        self.assertEqual(profile.image_preprocess.resolution, 224)
+        self.assertTrue(profile.image_preprocess.center_crop)
+        self.assertEqual(profile.image_preprocess.center_crop_scale, 0.95)
+        self.assertTrue(profile.model_specific["raw_language"])
+        self.assertTrue(profile.model_specific["native_action_unapply"])
+        self.assertTrue(profile.model_specific["load_native_eagle_projector"])
+
+    def test_native_action_postprocessor_binarizes_gripper_and_control_mode(self):
+        """Native GR00T action inverse uses binary mode for gripper/control_mode."""
+        profile = load_profile(
+            REPO_ROOT
+            / "configs/checkpoints/lerobot_groot_n15__robocasa365_ckpt120000.yaml"
+        )
+        stats = {
+            "action": {
+                "min": torch.tensor([-1.0] * 12),
+                "max": torch.tensor([1.0] * 12),
+            }
+        }
+
+        class _Post:
+            def __call__(self, action):
+                return action
+
+        post = wrap_groot_native_action_postprocessor(_Post(), profile, stats)
+        action = torch.tensor(
+            [[
+                0.0, 0.25, -0.25,
+                0.5, -0.5, 0.0,
+                0.49,
+                -1.0, 0.0, 1.0, 0.25,
+                0.51,
+            ]],
+            dtype=torch.float32,
+        )
+
+        result = post(action)
+
+        self.assertEqual(result.shape, (1, 12))
+        torch.testing.assert_close(result[:, 6], torch.tensor([0.0]))
+        torch.testing.assert_close(result[:, 11], torch.tensor([1.0]))
+        torch.testing.assert_close(result[:, :3], torch.tensor([[0.0, 0.25, -0.25]]))
+
+    def test_robocasa_profile_builds_three_view_state_and_action_specs(self):
+        profile = SimpleNamespace(
+            image_preprocess=SimpleNamespace(resolution=224),
+            observation_requirements=SimpleNamespace(
+                images=["side_0", "side_1", "wrist_0"],
+                state=[
+                    "eef_pos_rel",
+                    "eef_quat_rel",
+                    "gripper_qpos",
+                    "base_position",
+                    "base_rotation",
+                ],
+            ),
+            action_layout=[
+                _ActionDim("eef_pos", 3),
+                _ActionDim("eef_axisangle", 3),
+                _ActionDim("gripper", 1),
+                _ActionDim("base_motion", 4),
+                _ActionDim("control_mode", 1),
+            ],
+        )
+
+        input_specs, output_specs = build_groot_feature_specs(profile)
+
+        self.assertEqual(
+            input_specs,
+            [
+                FeatureSpec(
+                    "observation.images.00_side_0", "VISUAL", (3, 224, 224)
+                ),
+                FeatureSpec(
+                    "observation.images.01_side_1", "VISUAL", (3, 224, 224)
+                ),
+                FeatureSpec(
+                    "observation.images.02_wrist_0", "VISUAL", (3, 224, 224)
+                ),
+                FeatureSpec("observation.state", "STATE", (20,)),
+            ],
+        )
+        self.assertEqual(
+            sorted(spec.key for spec in input_specs if spec.kind == "VISUAL"),
+            [
+                "observation.images.00_side_0",
+                "observation.images.01_side_1",
+                "observation.images.02_wrist_0",
+            ],
+        )
+        self.assertEqual(
+            output_specs,
+            [FeatureSpec("action", "ACTION", (12,))],
+        )
+
+    def test_emit_subkeys_uses_metadata_action_order(self):
+        from scripts.serve import lerobot as srv
+
+        profile = load_profile(
+            REPO_ROOT
+            / "configs/checkpoints/lerobot_groot_n15__robocasa365_ckpt120000.yaml"
+        )
+        action = np.arange(12, dtype=np.float32).reshape(1, 12)
+
+        result = srv._emit_subkeys(action, profile)
+
+        self.assertEqual(result["action.eef_pos"], [[0.0, 1.0, 2.0]])
+        self.assertEqual(result["action.eef_axisangle"], [[3.0, 4.0, 5.0]])
+        self.assertEqual(result["action.gripper"], [[6.0]])
+        self.assertEqual(result["action.base_motion"], [[7.0, 8.0, 9.0, 10.0]])
+        self.assertEqual(result["action.control_mode"], [[11.0]])
+
+    def test_checkpoint_metadata_stats_are_flattened_in_profile_order(self):
+        profile = load_profile(
+            REPO_ROOT
+            / "configs/checkpoints/lerobot_groot_n15__robocasa365_ckpt120000.yaml"
+        )
+        metadata_path = (
+            REPO_ROOT
+            / "data/huggingface/hub/models--robocasa--robocasa365_checkpoints"
+            / "snapshots/14895998fe7c8f8f2441cc8957ec2c510302758b"
+            / "gr00t_n1-5/multitask_learning/checkpoint-120000"
+            / "experiment_cfg/metadata.json"
+        )
+
+        stats = load_groot_dataset_stats_from_metadata(profile, metadata_path)
+
+        self.assertEqual(set(stats), {"observation.state", "action"})
+        self.assertEqual(stats["observation.state"]["min"].shape, (20,))
+        self.assertEqual(stats["action"]["min"].shape, (12,))
+        np.testing.assert_allclose(
+            stats["observation.state"]["min"][:3].numpy(),
+            [-0.6509041, -0.90334606, -0.3715313],
+            rtol=1e-5,
+        )
+        np.testing.assert_allclose(
+            stats["observation.state"]["min"][3:9].numpy(),
+            [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0],
+            rtol=1e-5,
+        )
+        np.testing.assert_allclose(
+            stats["action"]["min"][:5].numpy(),
+            [-1.0, -1.0, -1.0, -1.0, -1.0],
+            rtol=1e-5,
+        )
+
+    def test_groot_hf_snapshot_patterns_download_only_runtime_files(self):
+        patterns = groot_snapshot_allow_patterns(
+            "gr00t_n1-5/multitask_learning/checkpoint-120000",
+        )
+
+        self.assertIn(
+            "gr00t_n1-5/multitask_learning/checkpoint-120000/config.json",
+            patterns,
+        )
+        self.assertIn(
+            "gr00t_n1-5/multitask_learning/checkpoint-120000/model-*.safetensors",
+            patterns,
+        )
+        self.assertIn(
+            "gr00t_n1-5/multitask_learning/checkpoint-120000/experiment_cfg/**",
+            patterns,
+        )
+        self.assertFalse(any("optimizer" in pattern for pattern in patterns))
+        self.assertFalse(any("scheduler" in pattern for pattern in patterns))
+
+    def test_native_eagle_projector_loader_reads_raw_groot_shards(self):
+        try:
+            from safetensors.torch import save_file
+        except Exception as exc:
+            self.skipTest(f"safetensors unavailable: {exc}")
+
+        projector = torch.nn.Sequential(torch.nn.Linear(2, 3))
+        policy = SimpleNamespace(
+            _groot_model=SimpleNamespace(
+                backbone=SimpleNamespace(
+                    eagle_model=SimpleNamespace(mlp1=projector),
+                ),
+            ),
+        )
+        expected_weight = torch.arange(6, dtype=torch.float32).reshape(3, 2)
+        expected_bias = torch.tensor([0.25, 0.5, 0.75], dtype=torch.float32)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            save_file(
+                {
+                    "backbone.eagle_model.mlp1.0.weight": expected_weight,
+                    "backbone.eagle_model.mlp1.0.bias": expected_bias,
+                    "backbone.other": torch.ones(1),
+                },
+                str(Path(tmpdir) / "model-00001-of-00001.safetensors"),
+            )
+
+            loaded_keys = load_groot_eagle_projector_from_checkpoint(policy, tmpdir)
+
+        self.assertEqual(loaded_keys, ["0.bias", "0.weight"])
+        torch.testing.assert_close(projector[0].weight, expected_weight)
+        torch.testing.assert_close(projector[0].bias, expected_bias)
 
 
 # ─── FastAPI endpoints ────────────────────────────────────────────────────────

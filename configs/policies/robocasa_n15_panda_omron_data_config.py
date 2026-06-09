@@ -50,11 +50,11 @@ from gr00t.model.transforms import GR00TTransform
 
 
 class RobocasaPandaOmron10TaskDataConfig(BaseDataConfig):
-    """Data config for RoboCasa PandaOmron atomic datasets.
+    """Data config matching robocasa-benchmark/Isaac-GR00T ``panda_omron``.
 
-    State/action/video/language key order matches ``meta/modality.json`` of the
-    NVIDIA-publish pretrain and target datasets (start-index order). The class
-    name is historical; it is also used for the target atomic-seen 15-task split.
+    Do not use raw ``meta/modality.json`` insertion order here. RoboCasa365's
+    public N1.5 fork trains/evals with ``PandaOmronDataConfig`` order and
+    transform semantics from ``gr00t/experiment/data_config.py``.
     """
 
     video_keys = [
@@ -63,22 +63,41 @@ class RobocasaPandaOmron10TaskDataConfig(BaseDataConfig):
         "video.robot0_eye_in_hand",
     ]
     state_keys = [
-        "state.base_position",
-        "state.base_rotation",
         "state.end_effector_position_relative",
         "state.end_effector_rotation_relative",
         "state.gripper_qpos",
+        "state.base_position",
+        "state.base_rotation",
     ]
     action_keys = [
-        "action.base_motion",
-        "action.control_mode",
         "action.end_effector_position",
         "action.end_effector_rotation",
         "action.gripper_close",
+        "action.base_motion",
+        "action.control_mode",
     ]
     language_keys = ["annotation.human.task_description"]
     observation_indices = [0]
     action_indices = list(range(16))
+
+    state_normalization_modes = {
+        "state.end_effector_position_relative": "min_max",
+        "state.end_effector_rotation_relative": "min_max",
+        "state.gripper_qpos": "min_max",
+        "state.base_position": "min_max",
+        "state.base_rotation": "min_max",
+    }
+    state_target_rotations = {
+        "state.end_effector_rotation_relative": "rotation_6d",
+        "state.base_rotation": "rotation_6d",
+    }
+    action_normalization_modes = {
+        "action.end_effector_position": "min_max",
+        "action.end_effector_rotation": "min_max",
+        "action.gripper_close": "binary",
+        "action.base_motion": "min_max",
+        "action.control_mode": "binary",
+    }
 
     def modality_config(self) -> dict[str, ModalityConfig]:
         return {
@@ -116,12 +135,13 @@ class RobocasaPandaOmron10TaskDataConfig(BaseDataConfig):
             StateActionToTensor(apply_to=self.state_keys),
             StateActionTransform(
                 apply_to=self.state_keys,
-                normalization_modes={key: "min_max" for key in self.state_keys},
+                normalization_modes=self.state_normalization_modes,
+                target_rotations=self.state_target_rotations,
             ),
             StateActionToTensor(apply_to=self.action_keys),
             StateActionTransform(
                 apply_to=self.action_keys,
-                normalization_modes={key: "min_max" for key in self.action_keys},
+                normalization_modes=self.action_normalization_modes,
             ),
             ConcatTransform(
                 video_concat_order=self.video_keys,
