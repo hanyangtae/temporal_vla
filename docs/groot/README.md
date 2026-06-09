@@ -27,7 +27,7 @@ SAFE-readable artifact로 내보내는 절차를 유지하는 것이다.
   RoboCasa365, ZMQ/HTTP 경로를 entrypoint별 call chain과 전달 값 기준으로 설명하는 입문용 지도
 - [00 Latent Steering Explorer](00_groot_steering_explorer.html) — 위 flow map과
   latent steering 핵심 수식(conceptor, hidden-state gate, VL/DiT pathway)을 한 화면에서
-  추적하는 self-contained HTML 지도
+  추적하는 self-contained interactive HTML 지도
 
 ## N1.6 Reading Order
 

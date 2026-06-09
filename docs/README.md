@@ -99,7 +99,7 @@ succ/fail latent 구분 → steer 로 SR↑ (COAST 계열). 메인 method 의 �
 10. [Session Handoff](steering/10_session_handoff.md) — 최신 연구 현황, 다음 세션 우선순위, 주요 파일 위치
 
 한 화면 요약: [GR00T Latent Steering Explorer](groot/00_groot_steering_explorer.html) — GR00T runtime flow와
-conceptor/hidden-state steering 수식, VL/DiT pathway 상태를 함께 보는 self-contained HTML.
+conceptor/hidden-state steering 수식, VL/DiT pathway 상태, code artifact map을 함께 보는 self-contained interactive HTML.
 
 ## TTT / Progress Predictor Archive
 
