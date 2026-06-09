@@ -11,7 +11,9 @@ rollout helper API.
 from __future__ import annotations
 
 import argparse
+from dataclasses import fields, is_dataclass
 import io
+import inspect
 from pathlib import Path
 import sys
 import uuid
@@ -52,6 +54,14 @@ REQUIRED_OBS_KEYS = {
     "state.gripper_qpos",
     "annotation.human.task_description",
 }
+
+
+def supported_kwargs(target: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
+    if is_dataclass(target):
+        supported = {field.name for field in fields(target)}
+    else:
+        supported = set(inspect.signature(target).parameters)
+    return {key: value for key, value in kwargs.items() if key in supported}
 
 
 class N15MsgSerializer:
@@ -152,32 +162,55 @@ def main() -> None:
         video_dir = f"/tmp/sim_eval_videos_n15_{env_tag}_{uuid.uuid4()}"
     Path(video_dir).mkdir(parents=True, exist_ok=True)
 
+    video = VideoConfig(
+        **supported_kwargs(
+            VideoConfig,
+            {
+                "video_dir": video_dir,
+                "max_episode_steps": args.max_episode_steps,
+                "fps": args.video_fps,
+                "steps_per_render": args.steps_per_render,
+                "filename_prefix": args.video_file_prefix,
+                "append_outcome_to_filename": not args.no_video_outcome_suffix,
+                "record_first_episode_only": args.one_episode_per_env,
+            },
+        )
+    )
+    multistep = MultiStepConfig(
+        **supported_kwargs(
+            MultiStepConfig,
+            {
+                "n_action_steps": args.n_action_steps,
+                "max_episode_steps": args.max_episode_steps,
+                "terminate_on_success": True,
+            },
+        )
+    )
     wrapper_configs = WrapperConfigs(
-        video=VideoConfig(
-            video_dir=video_dir,
-            max_episode_steps=args.max_episode_steps,
-            fps=args.video_fps,
-            steps_per_render=args.steps_per_render,
-            filename_prefix=args.video_file_prefix,
-            append_outcome_to_filename=not args.no_video_outcome_suffix,
-            record_first_episode_only=args.one_episode_per_env,
-        ),
-        multistep=MultiStepConfig(
-            n_action_steps=args.n_action_steps,
-            max_episode_steps=args.max_episode_steps,
-            terminate_on_success=True,
-        ),
-        seed=args.seed,
-        one_episode_per_env=args.one_episode_per_env,
+        **supported_kwargs(
+            WrapperConfigs,
+            {
+                "video": video,
+                "multistep": multistep,
+                "seed": args.seed,
+                "one_episode_per_env": args.one_episode_per_env,
+            },
+        )
     )
     policy = N15PolicyClient(args.policy_client_host, args.policy_client_port)
-    results = run_rollout_gymnasium_policy(
-        env_name=args.env_name,
-        policy=policy,
-        wrapper_configs=wrapper_configs,
-        n_episodes=args.n_episodes,
-        n_envs=args.n_envs,
+    rollout_kwargs = supported_kwargs(
+        run_rollout_gymnasium_policy,
+        {
+            "env_name": args.env_name,
+            "policy": policy,
+            "wrapper_configs": wrapper_configs,
+            "n_episodes": args.n_episodes,
+            "n_envs": args.n_envs,
+            "eval_seed": args.seed,
+            "one_episode_per_env": args.one_episode_per_env,
+        },
     )
+    results = run_rollout_gymnasium_policy(**rollout_kwargs)
     print("Video saved to: ", video_dir)
     print("results: ", results)
     print("success rate: ", np.mean(results[1]) if results[1] else 0.0)
