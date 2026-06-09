@@ -4,6 +4,25 @@
 
 파일명에 두 자리 번호 prefix를 붙여 읽는 순서를 표시한다. N1.6 trunk와 N1.5 reference trunk는 독립이다.
 
+## Runtime Recheck 2026-06-09
+
+목적은 SR 재측정이 아니라 현재 checkout/container에서 각 serving path가 정상 action을
+반환하는지 확인하는 것이다. Host sandbox에서 일부 HTTP port 접근이 끊기는 경우가 있어
+HTTP health/smoke는 해당 model container 내부 `127.0.0.1` 기준으로 확인했다.
+
+| Case | Current action check | Closed-loop note |
+|---|---|---|
+| LeRobot pi0.5 + LIBERO HTTP | `lerobot_pi05__libero` `/health` OK, warm smoke OK. `/act` returned finite `action.eef_pos` `[1,3]`, `action.eef_axisangle` `[1,3]`, `action.gripper` `[1,1]`. | First CUDA load OOMed while LeRobot GR00T N1.5 was still on GPU. After freeing VRAM it loaded. First `/act` spent more than 60s in Torch Inductor/autotune; warm call was ~149ms. LIBERO closed-loop rollout was not rerun in this pass. |
+| Native GR00T N1.5 ZMQ + RoboCasa365 | Real OpenFridge reset obs through `groot_n15` ZMQ returned finite keys `action.end_effector_position`, `action.end_effector_rotation`, `action.gripper_close`, `action.base_motion`, `action.control_mode`, each `[1,16,D]`. | Current OpenFridge target 1ep smoke at `outputs/debug/recheck_20260609_groot_n15_native_OpenFridge_target_current/videos` ended `success_rate=0.0`; no seed is exposed by this official client, so this is not a deterministic repeat of the earlier successful scene. |
+| Native GR00T N1.6 ZMQ + RoboCasa365 | `run_gr00t_server.py` with checkpoint `grootn16_robocasa365_multitask_learning/checkpoint-120000` and `NEW_EMBODIMENT` returned finite real-obs action keys `[1,16,D]`. | Current OpenFridge 1ep smoke reached the env/action loop but ended `success_rate=0.0` at `outputs/debug/recheck_20260609_groot_n16_zmq_OpenFridge_current/videos`. During this pass `scripts/eval/groot_robocasa_zmq_eval.py` needed a compatibility guard because the current upstream helper does not accept `eval_seed`. |
+| Native GR00T N1.6 HTTP + RoboCasa365 | `groot__robocasa365_ckpt120000` `/health` OK and smoke OK. `/act` returned finite `action.eef_pos`, `action.eef_axisangle`, `action.gripper`, `action.base_motion`, `action.control_mode`, each `[16,D]`. | Closed-loop HTTP SR was not established in this pass; endpoint/schema/action health is OK. |
+| LeRobot GR00T N1.5 HTTP + RoboCasa365 | `lerobot_groot_n15__robocasa365_ckpt120000` `/health` OK and smoke OK. `/act` returned finite five-key response with `[1,D]` per key. | OpenFridge target seed 0 rerun succeeded: `success_rate=1.0`, first success step `209`, video `outputs/debug/recheck_20260609_lerobot_groot_n15_http_OpenFridge_target_seed0_current/videos/79d0fdbb-eb38-4ab1-bc71-d766fb51abbd_success1.mp4`. |
+
+결론: action 반환 자체는 위 다섯 경로 모두 현재 재현된다. 다만 native N1.5/N1.6 ZMQ의
+단일 OpenFridge rollout은 이번 pass에서 실패했으므로, "action 정상"과 "SR 정상"은
+분리해서 보고해야 한다. 성능 재확인은 seed 고정 가능 client 또는 task별 반복 rollout으로
+별도 수행한다.
+
 ## N1.6 Reading Order
 
 1. [01 Fine-Tuning](n16_01_finetune.md) — Isaac-GR00T `n1.6-release` 기반 PandaOmron fine-tuning runbook
