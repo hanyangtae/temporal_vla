@@ -6,7 +6,9 @@ name: groot__robocasa365_ckpt120000
 base_model: groot
 checkpoint_source:
   type: local
-  id: /temporal_vla/outputs/checkpoints/grootn16_robocasa365_multitask_learning/checkpoint-120000
+  # cache 단일 소스 규칙(docs/cache_paths.md): 컨테이너 /cache = 호스트 ~/.cache/temporal_vla.
+  # HF Abhi03/grootn16_robocasa365_multitask_learning 미러.
+  id: /cache/checkpoints/Abhi03/grootn16_robocasa365_multitask_learning/checkpoint-120000
 compatible_benchmarks: [robocasa]
 
 action_type: relative

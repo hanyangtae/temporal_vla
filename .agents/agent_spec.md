@@ -182,6 +182,12 @@ Git 작업은 의미 단위로 나누고, PR 산출물은 한글로 작성한다
 - Base 대비 커밋이 없으면 PR 작업을 멈추고 상태를 보고한다.
 - `gh` CLI나 GitHub connector가 막히면 PR compare URL과 한글 제목/본문을 제공한다.
 
+플러그인 경계 (superpowers):
+
+- 커밋 분할·메시지·브랜치 마무리·PR은 본 §7과 `commitor` 에이전트가 단일 출처다. superpowers 플러그인의 `finishing-a-development-branch` 및 커밋류 절차는 사용하지 않고 commitor로 위임한다.
+- 완료 전 test-gating은 superpowers 기본 `pytest` 호출이 아니라 이 repo의 Docker/env-split(robocasa 3.11, calvin 3.8 등) 실행 경로를 따른다.
+- superpowers의 나머지 방법론 스킬(brainstorming/TDD/debugging/planning/verification 등)은 git을 건드리지 않으므로 그대로 활용한다.
+
 PR 본문 구조:
 
 ```markdown
