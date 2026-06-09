@@ -13,6 +13,10 @@ LOG_FORMAT = "%(asctime)s - %(process)d - %(levelname)s - %(message)s"
 COLOR_LOG_FORMAT = "%(log_color)s%(levelname)-8s%(reset)s %(log_color)s%(message)s"
 
 
+def _repo_log_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "outputs" / "logs"
+
+
 def _get_console_handler():
     handler = logging.StreamHandler()
     formatter = ColoredFormatter(
@@ -85,6 +89,7 @@ def create_module_logger(
 
     logger.addHandler(_get_console_handler())
 
+    uses_default_log_path = False
     if log_file_path:
         log_file = log_file_path
     elif os.environ.get("PDK_LOG_FILE"):
@@ -97,8 +102,15 @@ def create_module_logger(
             else datetime.datetime.now().strftime("%Y%m%d_%H%M")
         )
         log_file = Path(LOG_PATH) / "all_log" / f"{timestamp}.log"
+        uses_default_log_path = True
 
-    log_file.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        if not uses_default_log_path:
+            raise
+        log_file = _repo_log_path() / "all_log" / log_file.name
+        log_file.parent.mkdir(parents=True, exist_ok=True)
     logger.addHandler(_get_file_handler(log_file, mode="a"))
 
     if False:
