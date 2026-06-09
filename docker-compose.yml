@@ -111,7 +111,9 @@ services:
     environment:
       - VLA_CACHE_ROOT=/cache
       - HF_HOME=/home/${USER_NAME}/.cache/huggingface
+      - HF_MODULES_CACHE=/tmp/hf_modules
       - HF_TRUST_REMOTE_CODE=1
+      - NO_ALBUMENTATIONS_UPDATE=1
       - HF_TOKEN=${HF_TOKEN}
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
       - PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla:/temporal_vla/scripts/utils
