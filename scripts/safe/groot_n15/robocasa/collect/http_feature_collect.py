@@ -28,8 +28,11 @@ N16_GROOT_ROOT = REPO_ROOT / "src" / "policies" / "Isaac-GR00T"
 
 def _prepend_path(path: Path) -> None:
     path_str = str(path)
-    if path.exists() and path_str not in sys.path:
-        sys.path.insert(0, path_str)
+    if not path.exists():
+        return
+    if path_str in sys.path:
+        sys.path.remove(path_str)
+    sys.path.insert(0, path_str)
 
 
 for path in reversed(

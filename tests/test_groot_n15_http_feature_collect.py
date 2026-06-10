@@ -36,6 +36,20 @@ def _load_module():
     return module
 
 
+def test_path_bootstrap_keeps_n16_groot_before_n15_when_already_present():
+    n16_root = str(REPO_ROOT / "src" / "policies" / "Isaac-GR00T")
+    n15_root = str(REPO_ROOT / "src" / "policies" / "Isaac-GR00T-N1.5")
+    original_path = list(sys.path)
+    sys.path[:] = [n16_root] + [entry for entry in original_path if entry != n16_root]
+    try:
+        module = _load_module()
+        assert sys.path.index(str(module.N16_GROOT_ROOT)) < sys.path.index(
+            str(module.N15_GROOT_ROOT)
+        )
+    finally:
+        sys.path[:] = original_path
+
+
 def _raw_observation() -> dict:
     return {
         "video.robot0_agentview_left": np.zeros((8, 8, 3), dtype=np.uint8),
