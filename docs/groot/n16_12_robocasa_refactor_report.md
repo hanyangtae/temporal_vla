@@ -60,8 +60,8 @@ flowchart TD
 
     subgraph Contract["shared contract"]
         Schema["schema.py<br/>native/unified keys"]:::shared
-        IO["robocasa_io.py<br/>RoboCasa IO adapter"]:::shared
-        Features["safe_features.py<br/>hidden-state metadata"]:::shared
+        IO["robocasa/io.py<br/>RoboCasa IO adapter"]:::shared
+        Features["safe/features.py<br/>hidden-state metadata"]:::shared
         RNG["rng.py<br/>call-local inference_seed"]:::shared
     end
 
@@ -94,7 +94,7 @@ flowchart TD
 |---|---|---|---|
 | Entry | [scripts/eval/robocasa_eval.py](../../scripts/eval/robocasa_eval.py) | HTTP eval 진입점 | `--use-groot-env`에서 GR00T 전용 env/processor 경로 선택 |
 | Entry | [scripts/safe/groot_n16/robocasa/collect/collect_rollout.py](../../scripts/safe/groot_n16/robocasa/collect/collect_rollout.py) | SAFE collection 진입점 | HTTP/ZMQ transport 선택, episode 단위 수집 조율 |
-| Local loop | [scripts/eval/groot_robocasa_zmq_eval.py](../../scripts/eval/groot_robocasa_zmq_eval.py) | ZMQ eval 진입점 | upstream rollout helper를 유지하면서 `robocasa_io.py` 관측 adapter와 shared env wrapper 사용 |
+| Local loop | [scripts/eval/groot_robocasa_zmq_eval.py](../../scripts/eval/groot_robocasa_zmq_eval.py) | ZMQ eval 진입점 | upstream rollout helper를 유지하면서 `src/policies/groot/robocasa/io.py` 관측 adapter와 shared env wrapper 사용 |
 | Local loop | [scripts/safe/groot_n16/robocasa/collect/collect_env.py](../../scripts/safe/groot_n16/robocasa/collect/collect_env.py) | env 실행 | `GrootRoboCasaEnv`, shared wrapper stack, `scenario_seed`, `ep_meta`, `env.step()` 관리 |
 | Local loop | [src/processor/factory.py](../../src/processor/factory.py) | processor 생성 | `make_groot_robocasa_processors()`로 obs/action pipeline 제공 |
 | Local loop | [src/processor/obs/groot_robocasa.py](../../src/processor/obs/groot_robocasa.py) | obs 변환 | native observation을 HTTP payload 형태로 변환 |
@@ -120,13 +120,13 @@ flowchart TD
 - `GrootRoboCasaActionProcessor`: HTTP action sub-key -> native action dict
 - `make_groot_robocasa_processors()`: 기존 processor factory와 같은 형태로 GR00T pipeline 제공
 
-이 구조 덕분에 eval/collection 호출부는 processor shape를 공유하고, 실제 key 변환 구현은 `robocasa_io.py`에 모인다.
+이 구조 덕분에 eval/collection 호출부는 processor shape를 공유하고, 실제 key 변환 구현은 `src/policies/groot/robocasa/io.py`에 모인다.
 
-### 2. `robocasa_io.py`를 단일 IO adapter로 고정
+### 2. `src/policies/groot/robocasa/io.py`를 단일 IO adapter로 고정
 
-이전 구조의 가장 큰 냄새는 SAFE collection 쪽 helper가 `robocasa_io.py`와 비슷한 변환을 다시 정의한다는 점이었다. 현재는 중복 변환을 제거하고, `collect_schema.py`는 SAFE pkl 저장에 필요한 helper만 갖는다.
+이전 구조의 가장 큰 냄새는 SAFE collection 쪽 helper가 `src/policies/groot/robocasa/io.py`와 비슷한 변환을 다시 정의한다는 점이었다. 현재는 중복 변환을 제거하고, `collect_schema.py`는 SAFE pkl 저장에 필요한 helper만 갖는다.
 
-`robocasa_io.py`가 담당하는 것:
+`src/policies/groot/robocasa/io.py`가 담당하는 것:
 
 - observation alias 정리와 required key 검증
 - image/state/instruction을 HTTP request 형태로 변환
@@ -150,7 +150,7 @@ ZMQ eval client도 이 경계를 따른다. `scripts/eval/groot_robocasa_zmq_eva
 - `CanonicalRoboCasaVideoObservationFilter`: video recorder가 볼 observation을 `video.res256_image_side_0/1/wrist_0` 세 개로 제한
 - `wrap_groot_robocasa_eval_env()`: upstream `VideoRecordingWrapper`와 `MultiStepWrapper` 적용
 
-이 helper는 N1.6 ZMQ eval과 SAFE collection이 같이 사용한다. HTTP path의 payload/action 변환은 이미 `make_groot_robocasa_processors()` -> `robocasa_io.py`를 타므로, HTTP eval이 upstream video/multistep wrapper를 직접 쓰는 경우에만 이 env wrapper를 같이 쓰면 된다.
+이 helper는 N1.6 ZMQ eval과 SAFE collection이 같이 사용한다. HTTP path의 payload/action 변환은 이미 `make_groot_robocasa_processors()` -> `src/policies/groot/robocasa/io.py`를 타므로, HTTP eval이 upstream video/multistep wrapper를 직접 쓰는 경우에만 이 env wrapper를 같이 쓰면 된다.
 
 ### 4. HTTP client는 기존 `VLAClient`를 상속
 
@@ -218,12 +218,12 @@ collect_rollout.py --policy-transport zmq
 효과:
 
 - `robocasa_eval.py --use-groot-env`와 SAFE collection이 같은 processor factory 패턴을 쓴다.
-- native key 변환은 `robocasa_io.py`로 모인다.
+- native key 변환은 `src/policies/groot/robocasa/io.py`로 모인다.
 - generic RoboCasa pipeline과 GR00T native pipeline의 경계가 문서와 코드에서 모두 드러난다.
 
-### `collect_schema.py`와 `robocasa_io.py`의 중복
+### `collect_schema.py`와 `src/policies/groot/robocasa/io.py`의 중복
 
-문제는 SAFE pkl 저장 helper가 IO adapter 역할까지 일부 반복하던 점이었다. 현재는 `collect_schema.py`가 `robocasa_io.py`의 key/action helper를 import하고, SAFE pkl 고유 로직만 유지한다.
+문제는 SAFE pkl 저장 helper가 IO adapter 역할까지 일부 반복하던 점이었다. 현재는 `collect_schema.py`가 `src/policies/groot/robocasa/io.py`의 key/action helper를 import하고, SAFE pkl 고유 로직만 유지한다.
 
 효과:
 
@@ -243,7 +243,7 @@ end_effector_rotation -> action.eef_axisangle
 gripper_close         -> action.gripper
 ```
 
-해당 contract는 `schema.py`, `robocasa_io.py`, processor tests, serve tests에서 같이 검증한다.
+해당 contract는 `schema.py`, `src/policies/groot/robocasa/io.py`, processor tests, serve tests에서 같이 검증한다.
 
 ### Scenario replay와 inference seed 혼동
 

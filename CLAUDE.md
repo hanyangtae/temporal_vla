@@ -56,7 +56,7 @@ condition pair 끼리 ΔSR 비교 가능).
 - **모델 서버** (`scripts/serve/*.py`): FastAPI + uvicorn. 통일 API (`/act`, `/reset`, `/health`).
 - **벤치마크 평가** (`scripts/eval/*.py`): 모델 무관. `VLAClient`로 통신.
 - **Processor Pipeline** (`src/processor/`): **추론(eval)용**. generic 벤치마크 env↔통일API obs/action 변환.
-- **GR00T RoboCasa IO adapter** (`src/policies/groot/robocasa_io.py`): `GrootRoboCasaEnv` native key↔HTTP GR00T 변환. GR00T upstream parity / SAFE wiring 경로는 `src/processor/`를 우회.
+- **GR00T RoboCasa IO adapter** (`src/policies/groot/robocasa/io.py`): `GrootRoboCasaEnv` native key↔HTTP GR00T 변환. GR00T upstream parity / SAFE wiring 경로는 `src/processor/`를 우회.
 - **Dataset + Adapter** (`src/datasets/`): **학습(train)용**. 벤치마크별 generic dataset + 모델별 adapter.
 - **통일 클라이언트** (`scripts/utils/vla_client.py`): `VLAClient` 클래스 1개.
 - **Docker**: `docker-compose.yml`에 5개 서비스. 모두 `network_mode: host`.
@@ -67,7 +67,7 @@ condition pair 끼리 ΔSR 비교 가능).
 
 - 클라이언트는 `scripts/utils/vla_client.py` 의 `VLAClient` 한 개. `predict()` 와 `predict_with_features()`.
 - 요청: `observation.images.<view>` (base64 PNG), `observation.state.<key>` (float list), `task` (str).
-- 응답: `action.<subkey>` (2D list `[n_steps, dim]`) + `latency_ms`. `/act_with_features` 는 추가로 `features.hidden_states` (base64 blob), `features.kind/axes/...` 노출.
+- 응답: `action.<subkey>` (2D list `[n_steps, dim]`) + `latency_ms`. `/act_with_features` 는 추가로 `features.hidden_states` (feature blob), `features.kind/axes/...` 노출.
 - 표준 action sub-key: `action.eef_pos`, `action.eef_euler` | `action.eef_rot6d` | `action.eef_quat` | `action.eef_axisangle`, `action.gripper`, `action.joint_pos`. GR00T 전용: `action.base_motion`, `action.control_mode`.
 - `/health` 필수 필드: `status`, `action_type` (`"relative"` | `"absolute"`), `action_keys`, `n_action_steps`. `/act_with_features` 지원 시 `supports_features`, `feature_kind`, `feature_axes` 도 노출.
 
@@ -132,7 +132,7 @@ env obs → ObsProcessor (통일 키 변환) → VLAClient (HTTP) → 모델 서
 ```
 
 GR00T `--use-groot-env` 평가와 SAFE wiring은 위 generic pipeline이 아니라
-`src/policies/groot/robocasa_io.py`를 사용한다. 이 경로는 `GrootRoboCasaEnv`
+`src/policies/groot/robocasa/io.py`를 사용한다. 이 경로는 `GrootRoboCasaEnv`
 native observation/action key를 유지해 upstream GR00T eval과 맞춘다.
 
 ## Dataset + Adapter (학습용)

@@ -57,8 +57,8 @@ RoboCasa/Calvin 시뮬레이션 환경에서 다양한 VLA 모델(pi0, groot, Dr
 요약:
 
 - `/act` 는 sub-keyed action dict 를 반환합니다. 모델은 자신의 native 출력을 표준 sub-key (`action.eef_pos`, `action.eef_euler` / `action.eef_rot6d` / ..., `action.gripper` 등) 로 분리해 보내고, 벤치마크 측 ActionProcessor 가 env 포맷으로 합쳐 `env.step()` 에 넘깁니다.
-- `/act_with_features` 는 `/act` 와 같은 응답에 `features.*` namespace (hidden states base64 blob + 메타) 를 더해 반환합니다 (모델이 features 를 지원할 때만).
-- 벤치마크 스크립트는 `VLAClient` (`scripts/utils/vla_client.py`) 와 generic `ProcessorPipeline` (`src/processor/`) 만 사용하므로, `--vla-server` URL 만 바꾸면 같은 벤치에 다른 모델을 붙일 수 있습니다. GR00T `GrootRoboCasaEnv` native-key 경로는 예외적으로 `src/policies/groot/robocasa_io.py` adapter를 사용해 upstream parity와 SAFE wiring을 맞춥니다.
+- `/act_with_features` 는 `/act` 와 같은 응답에 `features.*` namespace (`features.hidden_states` feature blob + 메타) 를 더해 반환합니다 (모델이 features 를 지원할 때만).
+- 벤치마크 스크립트는 `VLAClient` (`scripts/utils/vla_client.py`) 와 generic `ProcessorPipeline` (`src/processor/`) 만 사용하므로, `--vla-server` URL 만 바꾸면 같은 벤치에 다른 모델을 붙일 수 있습니다. GR00T `GrootRoboCasaEnv` native-key 경로는 예외적으로 `src/policies/groot/robocasa/io.py` adapter를 사용해 upstream parity와 SAFE wiring을 맞춥니다.
 - 새 체크포인트/모델/벤치를 붙이는 절차는 [`docs/03_adding_checkpoint.md`](docs/03_adding_checkpoint.md) 와 [`configs/checkpoints/README.md`](configs/checkpoints/README.md) 를 참조합니다.
 
 ### Containers

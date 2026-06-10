@@ -18,6 +18,26 @@ wrapper를 거치지 않고 Isaac-GR00T 서버/정책을 직접 쓰는 경로다
 
 처음 읽을 때는 이 문서로 전체 지도를 잡고, 실제 실행은 각 runbook으로 이동한다.
 
+## First Rule: N1.5 And N1.6 Are Asymmetric
+
+`scripts/safe/groot_n15/robocasa/`는 `src/policies/groot/`의 N1.5판이 아니다.
+여기에는 loader, schema, RoboCasa IO adapter, serving service, SAFE feature extractor 같은
+backend library 역할이 없다.
+
+| 역할 | N1.6 위치 | N1.5 위치 또는 상태 |
+|---|---|---|
+| 모델 class / loader | `src/policies/groot/core/loader.py`, upstream Isaac-GR00T N1.6 | submodule native `gr00t.*` 또는 LeRobot port `lerobot.policies.groot.*`; repo-local backend library 없음 |
+| HTTP serving service | `scripts/serve/groot.py` + `src/policies/groot/core/service.py` | `scripts/serve/lerobot.py` + `scripts/serve/lerobot_adapters/groot.py` |
+| RoboCasa IO / schema mapping | `src/policies/groot/core/schema.py`, `src/policies/groot/robocasa/io.py` | LeRobot HTTP는 `scripts/serve/lerobot_adapters/groot.py`; native ZMQ eval은 client-local alias/filter |
+| Native ZMQ serving | N1.6 upstream server 또는 SAFE `feature_server.py` | external `src/policies/Isaac-GR00T-N1.5/scripts/inference_service.py`; `groot_n15` script는 client |
+| SAFE DiT/VL feature capture | `src/policies/groot/safe/features.py`, `scripts/safe/groot_n16/.../serve/feature_server.py` | dedicated N1.5 RoboCasa SAFE pipeline 없음. generic LeRobot hook(`scripts/serve/safe_hooks.py`)은 별도 experimental surface |
+| Eval / split / checkpoint helper | `scripts/eval/*`, `scripts/safe/groot_n16/*` | `scripts/safe/groot_n15/robocasa/{eval,split,utils}` |
+
+이 비대칭성이 폴더 구조가 섞여 보이는 가장 큰 이유다. N1.6은 repo-local backend library가
+`src/policies/groot/`에 응집되어 있지만, N1.5는 submodule, LeRobot serve adapter, N1.5 eval/split
+script로 흩어져 있다. 따라서 "GR00T 역할 코드"를 찾을 때 N1.6은 `src/policies/groot/`부터
+보지만, N1.5는 native ZMQ인지 LeRobot HTTP인지 먼저 나눠 봐야 한다.
+
 | 읽고 싶은 것 | 다음 문서 |
 |---|---|
 | N1.6 native 학습/평가 명령 | [n16_01_finetune.md](n16_01_finetune.md), [n16_02_eval.md](n16_02_eval.md) |
@@ -57,10 +77,84 @@ GR00T 관련 파일은 이 층 중 하나에 속한다.
 | Native rollout wrapper | `src/policies/groot/robocasa/env_wrappers.py` | upstream `VideoRecordingWrapper`/`MultiStepWrapper` 적용, 3-view video 유지 |
 | Project HTTP eval | `scripts/eval/robocasa_eval.py` | RoboCasa env에서 `VLAClient`로 HTTP 서버 호출 |
 | N1.6 ZMQ eval | `scripts/eval/groot_robocasa_zmq_eval.py` | upstream rollout helper와 N1.6 `PolicyClient` 연결 |
-| N1.5 ZMQ eval | `scripts/safe/groot_n15/robocasa/eval/native_zmq_eval.py` | N1.5 `inference_service.py` ZMQ protocol 연결 |
+| N1.5 ZMQ eval client | `scripts/safe/groot_n15/robocasa/eval/native_zmq_eval.py` | external N1.5 `inference_service.py` ZMQ protocol에 말 거는 client |
 | N1.5 LeRobot HTTP eval | `scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py` | official RoboCasa env에서 LeRobot HTTP server 호출 |
 | SAFE N1.6 feature server | `scripts/safe/groot_n16/robocasa/serve/feature_server.py` | ZMQ `get_action_with_features`로 action과 hidden state 반환 |
 | SAFE N1.6 collector | `scripts/safe/groot_n16/robocasa/collect/collect_rollout.py` | episode 실행, action/feature/video/csv/pkl 저장 |
+
+## Inference-Time N1.5/N1.6 Merge/Split Map
+
+N1.5 LeRobot HTTP와 N1.6 native HTTP는 밖에서 보면 같은 project HTTP API를 쓴다.
+공유되는 구간은 evaluator/client/API envelope이고, model runtime과 obs/action 변환은
+서버 안에서 갈라진다.
+
+```mermaid
+flowchart LR
+    classDef shared fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#15351d;
+    classDef n15 fill:#fff8e1,stroke:#f9a825,stroke-width:2px,color:#3b2b00;
+    classDef n16 fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d2538;
+    classDef out fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#331042;
+
+    Env["RoboCasa / evaluator"]:::shared
+    Client["VLAClient<br/>scripts/utils/vla_client.py"]:::shared
+    API["Shared HTTP API<br/>/act, /act_with_features, /reset, /health"]:::shared
+    Out["Shared response shape<br/>action.* sub-keys"]:::out
+
+    Env --> Client --> API
+
+    API --> N15Serve["N1.5 LeRobot HTTP<br/>scripts/serve/lerobot.py"]:::n15
+    N15Serve --> N15Adapter["GrootPolicyAdapter<br/>scripts/serve/lerobot_adapters/groot.py"]:::n15
+    N15Adapter --> N15Runtime["N1.5 compatibility glue<br/>scripts/safe/groot_n15/robocasa/utils/runtime.py"]:::n15
+    N15Runtime --> N15Model["LeRobot GrootPolicy<br/>select_action(batch)"]:::n15
+    N15Model --> N15Post["LeRobot postprocessor<br/>native action unapply"]:::n15
+    N15Post --> Out
+
+    API --> N16Serve["N1.6 native HTTP<br/>scripts/serve/groot.py"]:::n16
+    N16Serve --> N16Service["GrootPolicyService<br/>src/policies/groot/core/service.py"]:::n16
+    N16Service --> N16Loader["load_groot_policy<br/>src/policies/groot/core/loader.py"]:::n16
+    N16Loader --> N16Model["Isaac-GR00T N1.6<br/>Gr00tSimPolicyWrapper.get_action(obs)"]:::n16
+    N16Model --> N16Post["native action dict<br/>convert_native_action_to_subkeys"]:::n16
+    N16Post --> Out
+```
+
+| 구간 | 공유 여부 | 설명 |
+|---|---|---|
+| Eval client / HTTP payload | 공유 | `VLAClient`가 `observation.images.*`, `observation.state.*`, `task`를 같은 `/act` payload로 보낸다. |
+| HTTP endpoint shape | 공유 | N1.5 LeRobot server와 N1.6 native server 모두 `/act`, `/act_with_features`, `/reset`, `/health` 모양을 유지한다. |
+| Profile/action response contract | 공유 | 두 경로 모두 profile의 `action_layout` / `emits_subkeys`를 기준으로 `action.*` sub-key 응답을 만든다. |
+| Image/state preprocessing | 분리 | N1.5는 LeRobot feature spec, 224 crop/resize, rotation6d state packing을 쓴다. N1.6은 GR00T native 256 image와 modality key mapping을 쓴다. |
+| Model load / forward | 분리 | N1.5는 LeRobot `GrootPolicy.select_action`; N1.6은 Isaac-GR00T `Gr00tSimPolicyWrapper.get_action`. |
+| Runtime compatibility | 분리 | N1.5는 repo-local runtime patch가 필요하고, N1.6은 `src/policies/groot/core/loader.py`의 native loader path를 쓴다. |
+| SAFE feature capture | 비대칭 | N1.6은 `src/policies/groot/safe/features.py`를 HTTP/ZMQ에서 공유한다. N1.5 RoboCasa 전용 SAFE pipeline은 없고, generic LeRobot `scripts/serve/safe_hooks.py`는 별도 experimental surface다. |
+
+Native ZMQ 경로는 이 HTTP merge 지점을 지나지 않는다. N1.5 native ZMQ는
+`src/policies/Isaac-GR00T-N1.5/scripts/inference_service.py`, N1.6 native/Safe ZMQ는
+`run_gr00t_server.py` 또는 `scripts/safe/groot_n16/robocasa/serve/feature_server.py`를
+직접 호출한다.
+
+## Current Folder Axes
+
+현재 폴더 구조가 섞여 보이는 이유는 "모델 버전", "transport", "실험/수집 script",
+"재사용 가능한 library code" 축이 한 번에 존재하기 때문이다. 당장 안전한 정리 기준은
+아래처럼 둔다.
+
+| 위치 | 맡는 책임 | 새 코드를 둘 때의 기준 |
+|---|---|---|
+| `scripts/serve/` | HTTP server entry point와 server-wide envelope | FastAPI route, `/act`/`/act_with_features` response shape, policy adapter dispatch |
+| `scripts/serve/lerobot_adapters/` | LeRobot policy별 load/forward 차이 | LeRobot `PiPolicy`, `GrootPolicy`처럼 policy type에 묶인 차이 |
+| `src/policies/groot/` | N1.6 native GR00T reusable runtime/library | HTTP/ZMQ 양쪽에서 재사용할 schema, loader, RoboCasa IO, SAFE feature extractor |
+| `scripts/safe/groot_n15/robocasa/` | N1.5 RoboCasa eval/split/checkpoint helper | eval client, split 준비, base checkpoint helper, LeRobot runtime patch만 둔다. loader/schema/IO/serve/feature capture library를 두지 않는다. |
+| `scripts/safe/groot_n16/robocasa/` | N1.6 SAFE 수집/eval/visualization scripts | SAFE artifact writer, ZMQ feature server, offline visualization runner |
+| `scripts/safe/_common/` | SAFE script 공통 helper | N1.5/N1.6 split symlink, rollout filename parsing/formatting처럼 script tree 안에서만 공유하는 helper |
+| `src/policies/safe_metadata.py` | SAFE feature metadata naming and alias normalization | policy/version을 가로지르는 `feature_kind`, `feature_axes`, horizon metadata |
+| `scripts/utils/` | project-level script utility | `VLAClient`, checkpoint profile처럼 특정 GR00T version에 묶이지 않는 script utility |
+| `src/utils/common/` | cross-server/client primitives | image decode, serving health/reset, feature blob처럼 GR00T version에 묶이지 않는 공통 규약 |
+
+따라서 `scripts/safe/groot_n15/robocasa/utils/runtime.py`가 serve adapter에서 import되는 것은
+지금 기준으로는 의도된 예외다. N1.5 LeRobot 호환 patch가 parity/eval과 HTTP serve 둘 다에
+필요하지만, 그 동작은 N1.5 RoboCasa checkpoint에 강하게 묶여 있다. 이 파일을 옮기려면
+`scripts/serve/lerobot_adapters/groot.py`와 N1.5 layout test를 같이 바꾸는 별도 migration으로
+다루는 편이 안전하다.
 
 ## Two Data Languages
 
@@ -258,13 +352,13 @@ scripts/eval/robocasa_eval.py --use-groot-env --vla-server http://localhost:8500
 per step:
   GrootRoboCasaEnv observation
   -> GrootRoboCasaObsProcessor.process_observation()
-  -> robocasa_io.prepare_groot_robocasa_http_request()
+  -> groot.robocasa.io.prepare_groot_robocasa_http_request()
      video.res256_image_side_0 / robot0_agentview_left -> observation.images.left
      state.end_effector_position_relative              -> observation.state.eef_pos_rel
      annotation.human.*                                -> task
   -> VLAClient.predict(... /act ...)
   -> GrootRoboCasaActionProcessor(mode="step")
-  -> robocasa_io.convert_http_actions_to_groot_step()
+  -> groot.robocasa.io.convert_http_actions_to_groot_step()
   -> env.step({"action.end_effector_position": [3], ...})
 ```
 
@@ -299,7 +393,7 @@ scripts/eval/groot_robocasa_zmq_eval.py
 
 per policy call:
   GrootRoboCasaEnv observation
-  -> robocasa_io.prepare_groot_robocasa_observation(strict=True)
+  -> groot.robocasa.io.prepare_groot_robocasa_observation(strict=True)
      fills res256 <-> robot0 camera aliases
      fills old/new language aliases
      filters required video/state/language keys
@@ -313,7 +407,7 @@ per policy call:
 
 - 이 경로는 `observation.images.left` 같은 HTTP key를 만들지 않는다.
 - policy input은 native `video.*`, `state.*`, `annotation.human.*` key다.
-- 다만 alias와 required-key 검증은 HTTP 경로와 같은 `robocasa_io.py`를 사용한다.
+- 다만 alias와 required-key 검증은 HTTP 경로와 같은 `src/policies/groot/robocasa/io.py`를 사용한다.
 - 저장 video는 `robocasa_env_wrappers.py`가 res256 3-view만 보이게 필터링한다.
 
 ## Flow D: N1.6 SAFE Collection
@@ -346,7 +440,7 @@ scripts/safe/groot_n16/robocasa/serve/feature_server.py
 
 collector:
   N16SafeCollectingPolicyClient.get_action(observation)
-  -> robocasa_io.prepare_groot_robocasa_observation(strict=True)
+  -> groot.robocasa.io.prepare_groot_robocasa_observation(strict=True)
   -> ZMQ request:
      {
        "endpoint": "get_action_with_features",
@@ -433,8 +527,9 @@ scripts/safe/groot_n15/robocasa/eval/native_zmq_eval.py
   -> upstream rollout helper
 ```
 
-이 경로는 현재 N1.6 `robocasa_io.py`와 완전히 합쳐져 있지 않다. 이유는 N1.5 server protocol과
-required key set이 별도이기 때문이다. 다만 개념적으로는 같은 역할의 adapter다.
+이 경로는 현재 N1.6 `src/policies/groot/robocasa/io.py`와 합치지 않는다. 이유는 N1.5 server
+protocol과 required key set이 별도이고, `native_zmq_eval.py`는 reusable IO library가 아니라
+external N1.5 server에 맞춘 eval client이기 때문이다.
 
 ## Flow F: N1.5 LeRobot HTTP
 
@@ -505,11 +600,11 @@ scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py
 | 경로 | 서버 | client | observation 언어 | action 반환 | feature 반환 | 주 용도 |
 |---|---|---|---|---|---|---|
 | N1.6 native HTTP `/act` | `scripts/serve/groot.py` | `VLAClient` | unified HTTP -> GR00T native | `action.*` sub-key | 없음 | HTTP smoke, project evaluator |
-| N1.6 native HTTP `/act_with_features` | `scripts/serve/groot.py` | `VLAClient.predict_with_features` | unified HTTP -> GR00T native | `action.*` sub-key | `features.hidden_states` base64 blob | HTTP SAFE/parity |
+| N1.6 native HTTP `/act_with_features` | `scripts/serve/groot.py` | `VLAClient.predict_with_features` | unified HTTP -> GR00T native | `action.*` sub-key | `features.hidden_states` feature blob | HTTP SAFE/parity |
 | N1.6 native ZMQ eval | `run_gr00t_server.py` | `PolicyClient` via `groot_robocasa_zmq_eval.py` | GR00T native | native `action.*` dict | 없음 | upstream-like SR baseline |
 | N1.6 SAFE ZMQ | `feature_server.py` | `N16SafeCollectingPolicyClient` | GR00T native | native action dict | numpy hidden states | canonical SAFE collection |
 | N1.5 native ZMQ | `inference_service.py` | `N15PolicyClient` | GR00T N1.5 native | native action dict | 없음 | LeRobot mismatch 분리 baseline |
-| N1.5 LeRobot HTTP | `scripts/serve/lerobot.py` + `GrootPolicyAdapter` | `VLAClient` | unified HTTP -> LeRobot batch | `action.*` sub-key | optional LeRobot SAFE hook format | LeRobot integration experiment |
+| N1.5 LeRobot HTTP | `scripts/serve/lerobot.py` + `GrootPolicyAdapter` | `VLAClient` | unified HTTP -> LeRobot batch | `action.*` sub-key | N1.5 RoboCasa eval path에서는 사용 안 함 | LeRobot integration experiment |
 
 ## What Not To Conflate
 
@@ -596,6 +691,13 @@ raw checkpoint를 LeRobot `GrootPolicy`에 맞춰 로드한 뒤 project HTTP con
 - native rollout wrapper 중복은 `src/policies/groot/robocasa/env_wrappers.py`에 둔다.
 - HTTP server runtime 상태와 `/act` behavior는 `src/policies/groot/core/service.py`에 둔다.
 - LeRobot policy별 차이는 `scripts/serve/lerobot_adapters/<policy>.py`에 둔다.
+- N1.5 LeRobot compatibility patch는 `scripts/safe/groot_n15/robocasa/utils/runtime.py`에 둔다.
+- N1.5 loader/schema/IO/serve/feature capture library는 `scripts/safe/groot_n15/robocasa/`에 새로 만들지 않는다. 그런 역할이 실제로 필요해지면 별도 module/ADR로 설계한다.
+- HTTP client envelope는 `scripts/utils/vla_client.py`에 둔다.
+- `features.hidden_states` blob encode/decode 규약은 `src/utils/common/feature_blob.py`에 둔다.
+- SAFE feature metadata naming과 alias normalization은 `src/policies/safe_metadata.py`에 둔다.
+- SAFE script-only split/file helper와 rollout filename parsing/formatting은 `scripts/safe/_common/split_lib.py`에 둔다.
+- checkpoint/profile parsing은 `scripts/utils/checkpoint_profile.py`에 둔다.
 - SAFE pkl/csv/mp4 저장 schema는 `scripts/safe/groot_n16/robocasa/collect/` 아래에 둔다.
 
 이 경계를 지키면 `groot.py`, `lerobot.py`, ZMQ eval script가 각자 local alias와 wrapper를

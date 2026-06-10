@@ -57,7 +57,7 @@ python scripts/utils/checkpoint_profile.py configs/checkpoints/<name>.yaml
 - **새 아키텍처**: `scripts/serve/<model>.py` 신규 작성 (참고: `scripts/serve/lerobot.py` 가 외부 체크포인트 norm_stats 로딩 패턴을 잘 보여줌) + 필요 시 `docker-compose.yml` 서비스 + `docker/<model>/Dockerfile` 신규.
 
 `/health` 응답은 프로파일의 `action_type`, `emits_subkeys`, `n_action_steps` 를 그대로 반영할 것.
-features 를 노출하는 모델은 `/health` 에 `supports_features`, `feature_kind`, `feature_axes` 를 추가하고, `/act_with_features` 에 `features.hidden_states` base64 blob 과 horizon metadata 를 실어야 한다. GR00T N1.6 은 `src/policies/groot/safe/features.py` 를 HTTP/ZMQ 공통 feature module 로 둔다.
+features 를 노출하는 모델은 `/health` 에 `supports_features`, `feature_kind`, `feature_axes` 를 추가하고, `/act_with_features` 에 `features.hidden_states` feature blob 과 horizon metadata 를 실어야 한다. GR00T N1.6 은 `src/policies/groot/safe/features.py` 를 HTTP/ZMQ 공통 feature module 로 둔다.
 
 ## 5. 벤치마크 쪽 계약 확인
 

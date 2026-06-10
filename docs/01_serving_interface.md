@@ -136,6 +136,7 @@
   "features.kind": "<model-specific identifier>",
   "features.axes": ["denoising_step", "valid_action_step", "feature_dim"],
   "features.slice": "valid" | "all",
+  "features.exported_action_token_count": 16,
   "features.feature_action_horizon": 16,
   "features.valid_action_horizon": 16,
   "features.model_action_horizon": 50,
@@ -143,9 +144,9 @@
 }
 ```
 
-- `features.hidden_states` 는 base64+shape+dtype 의 JSON-safe blob. 클라이언트는 `np.frombuffer(base64.b64decode(data), dtype).reshape(shape)` 로 복원한다 (`scripts/utils/vla_client.py` `predict_with_features` 가 자동 수행).
+- `features.hidden_states` 는 `data`(base64 raw bytes)+`shape`+`dtype` 로 구성된 JSON-safe feature blob. 클라이언트는 `scripts/utils/vla_client.py` `predict_with_features` 가 자동 복원하며, 공통 encode/decode 규약은 `src/utils/common/feature_blob.py` 에 둔다.
 - `features.kind` 와 `features.axes` 는 모델마다 다르다 (예: GR00T N1.6 DiT pre-velocity action tokens). 클라이언트가 의미를 알아야 할 때 이 두 키를 사용.
-- `features.*_horizon` / `features.num_inference_timesteps` 는 `hidden_states` shape 해석에 필요한 메타.
+- `features.exported_action_token_count`, `features.*_horizon`, `features.num_inference_timesteps` 는 `hidden_states` shape 해석에 필요한 메타. legacy alias normalization 은 `src/policies/safe_metadata.py` 에 둔다.
 - 모델이 features 를 지원하지 않으면 endpoint 가 `404`/`405` 를 반환하거나 `features.*` 키 없이 `/act` 와 동일하게 응답한다 (구현 선택).
 - 잘못된 slice/horizon 조합은 `400 {"error": "..."}`.
 
@@ -227,8 +228,8 @@ GR00T N1.6 특정 사항은 [`groot/n16_11_http_act_changes.md`](groot/n16_11_ht
 새 모델이 features 를 노출할 때 따를 일반 계약:
 
 1. `/health` 에 `supports_features: true` 와 `feature_kind` / `feature_axes` 메타 노출.
-2. `/act_with_features` 응답에 `features.hidden_states` (base64+shape+dtype), `features.kind`, `features.axes`, 그리고 모델이 export 하는 horizon 메타.
-3. 가능하면 hidden state 정의를 `src/policies/<model>/safe_features.py` 같은 단일 모듈에 두고 HTTP/배치 추출 양쪽이 같은 함수를 호출하게 한다.
+2. `/act_with_features` 응답에 `features.hidden_states` feature blob (`data`+`shape`+`dtype`), `features.kind`, `features.axes`, `features.exported_action_token_count`, 그리고 모델이 export 하는 horizon 메타.
+3. 가능하면 hidden state 정의를 `src/policies/<model>/safe/features.py` 같은 단일 모듈에 두고 HTTP/배치 추출 양쪽이 같은 함수를 호출하게 한다.
 
 ## 운영 패턴
 
