@@ -27,7 +27,6 @@ from typing import Optional
 
 import numpy as np
 import torch
-import uvicorn
 from fastapi import FastAPI
 from PIL import Image
 
@@ -37,7 +36,12 @@ sys.path.insert(0, "/temporal_vla/src/policies/dreamvla")
 from checkpoint_profile import CheckpointProfile, load_profile  # noqa: E402
 
 from src.utils.common.image import decode_b64_image  # noqa: E402
-from src.utils.common.serving import health_response  # noqa: E402
+from src.utils.common.serving import (  # noqa: E402
+    add_server_args,
+    health_response,
+    run_uvicorn,
+    setup_serve_logging,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -353,20 +357,14 @@ async def health():
 def main():
     global _profile
 
-    try:
-        from src.utils.common.logger import create_module_logger
-
-        create_module_logger("dreamvla_serve")
-    except ImportError:
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    setup_serve_logging("dreamvla_serve")
 
     parser = argparse.ArgumentParser(description="DreamVLA 추론 서버 (port 8200)")
     parser.add_argument(
         "--profile", type=str, required=True,
         help="체크포인트 프로파일 YAML 경로 (configs/checkpoints/*.yaml)",
     )
-    parser.add_argument("--host", type=str, default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8200)
+    add_server_args(parser, default_port=8200)
     parser.add_argument("--device", type=str, default="cuda")
     args = parser.parse_args()
 
@@ -377,7 +375,7 @@ def main():
     )
 
     app.state.args = args
-    uvicorn.run(app, host=args.host, port=args.port)
+    run_uvicorn(app, args)
 
 
 if __name__ == "__main__":

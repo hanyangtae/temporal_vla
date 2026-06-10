@@ -22,12 +22,12 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import uvicorn
 from fastapi import FastAPI
 
 # repo root (UP-VLA 컨테이너 PYTHONPATH 에는 /temporal_vla 가 없어 직접 추가)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from src.utils.common.image import decode_b64_pil  # noqa: E402
+from src.utils.common.serving import add_server_args, run_uvicorn  # noqa: E402
 
 app = FastAPI(title="UP-VLA Inference Server")
 
@@ -222,13 +222,12 @@ def main():
         default="/temporal_vla/src/policies/UP-VLA",
         help="UP-VLA 소스 루트 (상대 경로 resolve 기준 및 sys.path 추가)",
     )
-    parser.add_argument("--host", type=str, default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8300)
+    add_server_args(parser, default_port=8300)
     args = parser.parse_args()
 
     app.state.model_config_path = args.model_config
     app.state.upvla_root = args.upvla_root
-    uvicorn.run(app, host=args.host, port=args.port)
+    run_uvicorn(app, args)
 
 
 if __name__ == "__main__":

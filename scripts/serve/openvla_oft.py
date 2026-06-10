@@ -30,7 +30,6 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import torch
-import uvicorn
 from fastapi import FastAPI
 
 # openvla-oft 소스 경로
@@ -41,7 +40,12 @@ sys.path.insert(0, OPENVLA_OFT_ROOT)
 from checkpoint_profile import CheckpointProfile, load_profile  # noqa: E402
 
 from src.utils.common.image import decode_b64_image  # noqa: E402
-from src.utils.common.serving import health_response  # noqa: E402
+from src.utils.common.serving import (  # noqa: E402
+    add_server_args,
+    health_response,
+    run_uvicorn,
+    setup_serve_logging,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -516,12 +520,7 @@ async def health():
 def main():
     global _profile
 
-    try:
-        from src.utils.common.logger import create_module_logger
-
-        create_module_logger("openvla_oft_serve")
-    except ImportError:
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    setup_serve_logging("openvla_oft_serve")
 
     parser = argparse.ArgumentParser(description="OpenVLA-OFT 추론 서버 (port 8400)")
     parser.add_argument(
@@ -530,8 +529,7 @@ def main():
     )
     parser.add_argument("--load-in-8bit", action="store_true")
     parser.add_argument("--load-in-4bit", action="store_true")
-    parser.add_argument("--host", type=str, default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8400)
+    add_server_args(parser, default_port=8400)
     args = parser.parse_args()
 
     _profile = load_profile(args.profile)
@@ -541,7 +539,7 @@ def main():
     )
 
     app.state.args = args
-    uvicorn.run(app, host=args.host, port=args.port)
+    run_uvicorn(app, args)
 
 
 if __name__ == "__main__":

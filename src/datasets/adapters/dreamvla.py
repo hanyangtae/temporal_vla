@@ -32,8 +32,12 @@ from torch.utils.data import Dataset
 # Quaternion → Euler (intrinsic XYZ, i.e. roll-pitch-yaw)
 # ---------------------------------------------------------------------------
 
-def quat_to_euler(quat: np.ndarray) -> np.ndarray:
-    """Convert quaternion (w,x,y,z) to euler angles (roll, pitch, yaw)."""
+def quat_wxyz_to_euler(quat: np.ndarray) -> np.ndarray:
+    """Convert quaternion to euler angles (roll, pitch, yaw).
+
+    Convention: ``(w, x, y, z)`` (scalar-first). RoboCasa 의 eef_quat 가 이 순서.
+    xyzw 순서는 ``src/processor/action/_rotation.py`` 의 ``quat_xyzw_to_euler`` 사용.
+    """
     w, x, y, z = quat[..., 0], quat[..., 1], quat[..., 2], quat[..., 3]
 
     sinr_cosp = 2.0 * (w * x + y * z)
@@ -62,7 +66,7 @@ def robocasa_state_to_dreamvla(state_16d: np.ndarray) -> np.ndarray:
     """
     eef_pos = state_16d[..., 7:10]      # relative EEF position (3)
     eef_quat = state_16d[..., 10:14]    # relative EEF quaternion wxyz (4)
-    eef_euler = quat_to_euler(eef_quat)  # → euler rpy (3)
+    eef_euler = quat_wxyz_to_euler(eef_quat)  # → euler rpy (3)
     gripper = state_16d[..., 14:16]     # gripper joint positions (2)
     return np.concatenate([eef_pos, eef_euler, gripper], axis=-1)
 

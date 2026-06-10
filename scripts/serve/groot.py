@@ -7,7 +7,6 @@ import logging
 import sys
 from pathlib import Path
 
-import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
@@ -22,6 +21,11 @@ from path_setup import configure_repo_paths  # noqa: E402
 configure_repo_paths(include_script_utils=True, include_groot=True)
 
 from checkpoint_profile import load_profile  # noqa: E402
+from src.utils.common.serving import (  # noqa: E402
+    add_server_args,
+    run_uvicorn,
+    setup_serve_logging,
+)
 from src.policies.groot.safe.features import FEATURE_DTYPES, FEATURE_SLICES  # noqa: E402
 from src.policies.groot.core.schema import build_video_mapping  # noqa: E402
 from src.policies.groot.core.service import (  # noqa: E402
@@ -112,8 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Checkpoint profile YAML path (configs/checkpoints/*.yaml)",
     )
-    parser.add_argument("--host", type=str, default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8500)
+    add_server_args(parser, default_port=8500)
     parser.add_argument(
         "--device",
         type=str,
@@ -153,12 +156,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    try:
-        from src.utils.common.logger import create_module_logger
-
-        create_module_logger("groot_serve")
-    except ImportError:
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    setup_serve_logging("groot_serve")
 
     args = build_parser().parse_args()
 
@@ -174,7 +172,7 @@ def main() -> None:
     _service.feature_config = GrootFeatureConfig.from_args(args)
     _service.step_count = 0
     app.state.args = args
-    uvicorn.run(app, host=args.host, port=args.port)
+    run_uvicorn(app, args)
 
 
 if __name__ == "__main__":
