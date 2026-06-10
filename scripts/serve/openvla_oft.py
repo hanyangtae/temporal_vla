@@ -52,6 +52,9 @@ _model = None
 _processor = None
 _action_head = None
 _proprio_projector = None
+# 입력 텐서를 올릴 device. single-GPU 면 DEVICE(cuda:0), multi-GPU split 이면
+# embed_tokens(첫 shard)/proprio_projector 가 있는 device. _load_model_impl 에서 설정.
+_input_device = None
 _action_queue: deque = deque()
 _cfg = None
 _profile: Optional[CheckpointProfile] = None
@@ -129,7 +132,7 @@ def load_model():
 
 
 def _load_model_impl():
-    global _model, _processor, _action_head, _proprio_projector, _cfg
+    global _model, _processor, _action_head, _proprio_projector, _cfg, _input_device
 
     args = app.state.args
     profile = _profile
@@ -146,7 +149,7 @@ def _load_model_impl():
         get_processor,
         get_proprio_projector,
     )
-    from experiments.robot.robot_utils import get_model
+    from experiments.robot.robot_utils import get_model, DEVICE
 
     # 간이 config 객체 생성 (draccus dataclass 대신)
     class Config:
@@ -206,6 +209,26 @@ def _load_model_impl():
     # proprio projector
     proprio_dim = _proprio_dim(profile)
     _proprio_projector = get_proprio_projector(cfg, _model.llm_dim, proprio_dim=proprio_dim)
+
+    # device_map="auto" 로 model 이 multi-GPU 에 split 된 경우, get_action_head/
+    # get_proprio_projector 는 default DEVICE(cuda:0) 에 모듈을 만들어 두는데,
+    # action_head 의 입력 hidden_states 는 lm_head 가 있는 last device 에서 나오고
+    # proprio_projector 의 입력 proprio 는 embed_tokens 가 있는 first device 에 있어야 함.
+    if hasattr(_model, "hf_device_map") and _model.hf_device_map:
+        lm_head_dev = next(_model.language_model.lm_head.parameters()).device
+        embed_dev = next(_model.language_model.model.embed_tokens.parameters()).device
+        _action_head = _action_head.to(lm_head_dev)
+        _proprio_projector = _proprio_projector.to(embed_dev)
+        # 입력(프로세서 출력·proprio)은 첫 shard(embed) device 에 올린다. device_map 이
+        # cuda:0 을 첫 shard 로 쓰지 않는 커스텀 맵이어도 proprio_projector 와 device 가 맞음.
+        _input_device = embed_dev
+        logger.info(
+            "Multi-GPU split detected (hf_device_map=%s). "
+            "Moved action_head→%s, proprio_projector→%s, inputs→%s",
+            _model.hf_device_map, lm_head_dev, embed_dev, _input_device,
+        )
+    else:
+        _input_device = DEVICE
 
     logger.info(
         "OpenVLA-OFT loaded. unnorm_key=%s, num_open_loop_steps=%d, proprio_dim=%d",
@@ -313,13 +336,14 @@ def _predict_action_chunk(payload: dict) -> np.ndarray:
     instruction = payload.get("task", "")
     prompt = f"In: What action should the robot take to {instruction.lower()}?\nOut:"
 
-    # processor를 통한 입력 생성
-    inputs = _processor(prompt, primary_image).to(DEVICE, dtype=torch.bfloat16)
+    # processor를 통한 입력 생성 — multi-GPU split 시 첫 shard device, 아니면 DEVICE(cuda:0)
+    dev = _input_device if _input_device is not None else DEVICE
+    inputs = _processor(prompt, primary_image).to(dev, dtype=torch.bfloat16)
 
     # wrist 이미지 결합
     if wrist_images:
         wrist_inputs = [
-            _processor(prompt, img).to(DEVICE, dtype=torch.bfloat16)
+            _processor(prompt, img).to(dev, dtype=torch.bfloat16)
             for img in wrist_images
         ]
         primary_pv = inputs["pixel_values"]
@@ -448,19 +472,28 @@ async def predict_action(payload: dict):
     profile = _profile
     assert profile is not None
 
-    # action queue가 비었으면 새로 예측
-    if len(_action_queue) == 0:
-        action_chunk = _predict_action_chunk(payload)
-        for i in range(len(action_chunk)):
-            _action_queue.append(action_chunk[i])
+    try:
+        # action queue가 비었으면 새로 예측
+        if len(_action_queue) == 0:
+            action_chunk = _predict_action_chunk(payload)
+            for i in range(len(action_chunk)):
+                _action_queue.append(action_chunk[i])
 
-    # queue에서 하나씩 꺼내서 반환
-    action = _action_queue.popleft()
-    action = _process_action(action, profile)
+        # queue에서 하나씩 꺼내서 반환
+        action = _action_queue.popleft()
+        action = _process_action(action, profile)
 
-    out = _emit_subkeys(action, profile)
-    out["latency_ms"] = (time.time() - t0) * 1000
-    return out
+        out = _emit_subkeys(action, profile)
+        out["latency_ms"] = (time.time() - t0) * 1000
+        return out
+    except Exception:
+        # uvicorn 기본 핸들러가 traceback 을 stdout 으로 안 흘려서 진단 불가.
+        # 직접 stderr 로 dump 후 500 반환.
+        import traceback as _tb
+        _tb.print_exc()
+        sys.stderr.flush()
+        from fastapi import HTTPException as _HTTPException
+        raise _HTTPException(status_code=500, detail=_tb.format_exc())
 
 
 @app.post("/reset")

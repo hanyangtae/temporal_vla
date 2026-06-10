@@ -261,11 +261,208 @@ NOTALL 시사점:
   - 18 task → 10 task scope 축소가 average q̄ 를 떨어뜨렸을 가능성 (다른 8 task 추가
     확인 가치 있음).
 
-## 9. 진행 중 작업 / 인계
+## 9. Phase 2 — T-full 재수집 + token-window sweep (완료)
 
-- 백그라운드 SR eval (`eval_steer_compare.sh`, 이전 세션 task ID `bj0toof0q`): 결과는
-  `results.tsv` 로 누적. **이 세션과 독립적으로 계속 돌아감.** docker 컨테이너의
-  feature_server 프로세스가 살아 있는지 `docker exec groot pgrep -fc feature_server.py` 로
-  확인 가능. 완료 시 결과 TSV 로 task × condition matrix 표 구성하면 됨.
-- `eval_steer_compare.sh` 의 cleanup 은 worker 별 마지막에 자기 port 의 server 만 kill →
-  정상 종료 시 모두 정리.
+### 9.1 동기
+
+COAST 논문 (`docs/references/COAST.pdf` p24~26) 재독으로 발견: COAST 명세는
+**S=49 token (1 state + 32 future + 16 action) 전체 mean** pool. 우리 Phase 1 은
+action token 16개만 (state/future context 버림). → "재현 실패의 결정적 차이 1순위" 가설.
+
+### 9.2 데이터 (T-full 재수집)
+
+- 위치: 원격 archive (이미 로컬 삭제, [[remote-data-archive]])
+  `kimseungjun@166.104.146.37:11112 /home/kimseungjun/workspace/temporal_vla/outputs/eval/robocasa/groot_n16/target_atomic_moderate10_multilayer_perT_100ep/raw_rollouts/`
+- 1000 pkl (moderate-10 × 100 ep), per-step shape **[L=32, T=51, D=1536] fp16**.
+  - T=51 ≈ COAST 명세 S=49 (1+32+16) 와 거의 동일 (N1.6 transformer_blocks sequence dim).
+- capture mode 신규: `feature_server.py --capture-token-mode full` (hook 슬라이싱 제거,
+  K mean 만, T 보존).
+- 수집 launcher 수정: `collect_multilayer_parallel.sh` 에 `CAPTURE_TOKEN_MODE`,
+  `WORKERS_PER_SERVER` 환경변수 추가. 3 GPU × 2 server × 2 worker/server = 12 worker.
+  ~6.5h on 3 GPU (GPU 0-3 양보).
+
+### 9.3 Layer-select sweep (4 window × 2 method × 32 layer)
+
+스크립트: `scripts/safe/groot_n16/robocasa/steer/layer_select_compare.py` (신규).
+4 token window (`coast49`, `valid16`, `all50`, `T_full`) × 2 method (coast, balanced)
+× 32 layer = 256 (layer, window, method) 조합.
+
+결과 JSON: `.../conceptor_steering/layer_selection/stage1_quota_compare.json`
+
+| window | method | ℓ* | q̄ | ov̄ |
+|---|---|---|---|---|
+| coast49 | coast | 5 | 0.1037 | 0.867 |
+| coast49 | balanced | 4 | 0.0736 | 0.732 |
+| **valid16** | coast | **4** | **0.1190** | 0.839 |
+| valid16 | balanced | 0 | 0.0846 | 0.701 |
+| all50 | coast | 5 | 0.1038 | 0.866 |
+| all50 | balanced | 4 | 0.0739 | 0.732 |
+| T_full | coast | 5 | 0.1040 | 0.863 |
+| T_full | balanced | 4 | 0.0739 | 0.729 |
+
+**핵심 발견**: 4 window 모두 q̄ 곡선 거의 동일 (layer별 ±0.001), ℓ* 거의 같음 (4/5).
+**valid16 (action 16) 이 가장 높은 q̄** — 즉 state/future context 추가 안 했을 때가 오히려
+contrastive signal 강함. **token-pooling 가설 부정**.
+
+### 9.4 평가 표준 확정 (2026-06-05, [[eval-seed-standard]])
+
+Phase E A 작업 중 baseline 변동성 큰 게 확인되어 ([[robocasa-collection-seed-nonrepro]] 의
+eval 경로 버전), 새 표준 등록. 이후 모든 robocasa eval 은 이 표준.
+
+- **`EVAL_SEED=100000`**: 동료 (do-dong-park) collection seed 표준
+  (`task_sets.sh` `ROBOCASA_SEED_START_FOR_TASK_SET=100000`) 과 동일. 같은 (env, seed) →
+  같은 episode 시리즈.
+- 코드 흐름: `eval_steer_compare.sh` → docker `-e EVAL_SEED` → `groot_robocasa.sh
+  ${EVAL_SEED_ARG}` → `groot_robocasa_zmq_eval.py --eval-seed` → `run_rollout_gymnasium_policy
+  (eval_seed=...)` → `gym.make(env_name, seed=...)` (`env.rng` 결정적) + `env.reset(seed=[..])`.
+- AliasedPolicyClient 가 `inference_seed_base` 받아 매 get_action 마다 `options={"inference_seed":
+  base + call_idx}` 주입 (server 측 `temporary_inference_seed` 활용).
+- **`GPUS="4 5 6 4 5 6"`** default (3 GPU × 2 server, GPU 0-3 동료 양보).
+- **per-episode tsv**: `<video_dir>/per_episode.tsv` (episode_idx, success, language).
+  instruction variant 별 SR 분리 분석 가능. instruction 키는
+  `obs["annotation.human.action.task_description"]` 우선 → `obs["language"]` → 
+  `sub_env.unwrapped.get_ep_meta()["lang"]` fallback.
+
+### 9.5 SR eval (Phase E B + Phase E A)
+
+- **Phase E B** (RUN_TAG=`steer_compare_full`, EVAL_SEED 미적용 — non-deterministic)
+  - 10 task × 5 condition × 20 ep = 1000 rollout
+  - 5 condition: baseline + L0_b01/L0_b03 + L4_b01/L4_b03
+- **Phase E A** (RUN_TAG=`phaseE_A_valid16_L4_seed100k`, EVAL_SEED=100000 + new layer4_valid16 NPZ)
+  - 10 task × 2 condition × 20 ep = 400 rollout
+  - 2 condition: baseline + L4_valid16_b03
+
+#### Phase E B 결과 (5 condition, action16 NPZ from Phase 1)
+
+| condition | 전체 10 평균 ΔSR | COAST ★ 3 task |
+|---|---|---|
+| L0 β=0.1 | −0.015 | 0.000 |
+| L0 β=0.3 | −0.010 | −0.033 |
+| L4 β=0.1 | −0.065 | −0.033 |
+| L4 β=0.3 | −0.033 | −0.100 |
+
+#### Phase E A 결과 (L4 valid16, EVAL_SEED=100000)
+
+| subset | Phase E A | Phase E B reference (L4 β=0.3) |
+|---|---|---|
+| 전체 10 task | −0.070 | −0.033 |
+| **COAST ★ 3** | **−0.050** | **−0.050** ⟵ 두 phase 일관 |
+| 비-★ 7 task | −0.103 | −0.025 ⟵ 큰 변동 |
+
+#### Phase E A 매트릭스 (★ = COAST 논문 atomic-seen 중복)
+
+| task | A_base | A_strd | A_Δ |
+|---|---|---|---|
+| CloseToasterOvenDoor | 0.55 | 0.25 | −0.30 |
+| NavigateKitchen | 0.35 | 0.30 | −0.05 |
+| OpenCabinet | 0.55 | 0.40 | −0.15 |
+| ★ OpenDrawer | 0.20 | 0.30 | +0.10 |
+| ★ PnPCounterToCabinet | 0.85 | 0.60 | −0.25 |
+| ★ PnPCounterToStove | 0.60 | 0.60 | 0.00 |
+| PnPDrawerToCounter | 0.45 | 0.30 | −0.15 |
+| SlideDishwasherRack | 0.45 | 0.60 | +0.15 |
+| TurnOnMicrowave | 0.35 | 0.35 | 0.00 |
+| TurnOnSinkFaucet | 0.35 | 0.30 | −0.05 |
+
+### 9.6 Instruction variant 발견 (사용자 가설 확정 ✓)
+
+per_episode.tsv 로 같은 task 내부 instruction 확인:
+- OpenDrawer: "Open the right drawer." vs "Open the left drawer."
+- SlideDishwasherRack: "Fully slide ... in." vs "Fully slide ... out."
+
+robocasa env가 reset 마다 instruction variant 를 sample. 같은 task 의 episode 라도
+prompt 가 다름 → SR 변동의 주요 원인 중 하나.
+
+## 10. 최종 결론 — N1.6 robocasa365 에서 COAST steering 작동 안 함
+
+### 10.1 핵심 증거
+
+1. **★ 3 task ΔSR = −0.050** (Phase E A 와 E B 정확히 동일) — 가장 신뢰성 있는 지표에서
+   steering 효과 음 (또는 zero). COAST 논문 보고치 **+0.16** 의 정반대.
+2. **quota 절대값 0.07~0.12** — COAST 보고치 (0.3~0.5) 의 ~1/3. layer 별 monotone 감소,
+   중간층 peak 없음.
+3. **token-pooling 4 variant 동일** — Phase 2 의 핵심 가설 부정.
+4. **β·layer sweep 양수 condition 0개** — 어느 (layer, β) 조합도 평균 양 효과 없음.
+
+### 10.2 부정된 가설
+
+| 가설 | 검증 결과 |
+|---|---|
+| token-pooling 차이 (49 vs 16) | 부정 — Phase D 4 window quota 거의 동일 |
+| layer 선택 못함 | 부정 — 32 layer 전수 sweep, COAST/balanced 둘 다 |
+| moderate-10 task scope | 부정 — COAST ★ subset 도 음 |
+| Baseline noise | 일부 — Phase E B baseline 일부 task 변동 큼. EVAL_SEED=100000 으로 통제 후에도 ★ subset 동일 결과 |
+
+### 10.3 남은 유일한 가설 (검증 미루기로 결정)
+
+**GR00T N1.5 vs N1.6 architecture 차이가 원인**:
+- N1.5: 16-layer plain DiT, d=1536
+- N1.6: 32-layer AlternateVLDiT (vision/lang 교차 cross-attn), inner=1536, proj_out 1024
+- 그 외 모든 변수 (ckpt-120000, robocasa365, conceptor 수학, α/β grid, W 절단) 동일
+
+**N1.5 fallback plan** 은 미루기로 사용자 결정 (2026-06-08). COAST 명시 ckpt
+`robocasa/robocasa365_checkpoints/gr00t_n1-5/multitask_learning/checkpoint-120000` 입수 후
+검증할 경우 이 plan 재가동.
+
+### 10.4 해석
+
+- N1.6 robocasa365 의 DiT subspace 는 succ/fail contrastive structure 가 약함 (multitask SFT 의
+  representation 평탄화 추정).
+- COAST 의 multiplicative subspace gating 자체가 보편적 방법인지, 또는 N1.5 특이적 art 인지는
+  본 실험으로 단정 불가. N1.5 재현 시 +0.16 이 다시 나오면 architecture 종속, 안 나오면 더
+  깊은 의문.
+- 우리 연구 방향 ([[project-direction-latent-steering]]) — 즉 succ/fail latent 구분 후
+  steer 로 SR↑ — 은 N1.6 에서는 conceptor 단독으로는 충분하지 않음.
+- 가능한 발전: **pathway-resolved steering** ([[pathway-resolved-steering]],
+  [[notall-online-failuretype-niche]]) — DiT 외 VL-SA / Eagle pathway 에서 contrastive
+  structure 시도. NOTALL 분석상 N1.5 에서 VL-SA pooling 이득.
+
+## 11. 신규/수정 파일 (본 작업 산출물)
+
+### 새로 만든 코드
+- `scripts/safe/groot_n16/robocasa/steer/layer_select_compare.py` — 4 window × 2 method
+  × 32 layer sweep, per-T data loader (메모리 효율 reduce).
+- `scripts/safe/groot_n16/robocasa/steer/archive_perT_to_remote.sh` — rsync archive
+  + 검증 + 자동 삭제 자동화.
+
+### 수정한 코드
+- `scripts/safe/groot_n16/robocasa/serve/feature_server.py` — `--capture-token-mode
+  {valid,all,full}` + `MULTILAYER_FEATURE_KIND_PERT` + perT 응답 분기.
+- `scripts/safe/groot_n16/robocasa/steer/collect_multilayer_parallel.sh` —
+  `CAPTURE_TOKEN_MODE`, `WORKERS_PER_SERVER` env, `trap cleanup`, sub_idx 별 ep 분배.
+- `scripts/safe/groot_n16/robocasa/steer/fit_conceptor_steering.py` — `--force-layer`,
+  `--token-window`, output dir 에 window tag 포함 (`layer{N}_{window}`).
+- `scripts/safe/groot_n16/robocasa/steer/eval_steer_compare.sh` — `EVAL_SEED=100000`,
+  `GPUS="4 5 6 4 5 6"` default, `RUN_DIR` env, CONDS 포맷에 `layer_dir`/`layer_int` 분리,
+  results.tsv 에 `eval_seed` 컬럼, per-task video-dir 분리.
+- `scripts/safe/groot_n16/robocasa/collect/collect_artifacts.py` — multilayer pooled
+  feature 의 SAFE per-token export 불변식 우회 가드 (kind suffix `_multilayer`).
+- `scripts/eval/groot_robocasa.sh` — `EVAL_SEED` env → `--eval-seed` 전달.
+- `scripts/eval/groot_robocasa_zmq_eval.py` — `--eval-seed` + `--per-episode-csv`,
+  `AliasedPolicyClient.inference_seed_base` 매 호출 자동 주입.
+- `src/policies/Isaac-GR00T/gr00t/eval/rollout_policy.py` (submodule) — `get_robocasa_env_fn(seed)`
+  → `gym.make(seed=...)`, `create_eval_env(seed)` + `run_rollout_gymnasium_policy(eval_seed)`
+  + `env.reset(seed=[..])`, language 캡처 (3-tier fallback).
+
+### 문서
+- `CLAUDE.md` — "## 평가 표준 (2026-06-05 확정)" 섹션 신설.
+- `docs/steering/06_coast_groot_n16_summary.md` (이 파일) — Phase 2 결과 + 결론 + 11 절 추가.
+
+### 메모리 (auto memory)
+- `eval-seed-standard.md` (신규)
+- `cleanup-policy.md` (신규)
+- `remote-data-archive.md` (Phase E 시점에 사용자 추가)
+- `MEMORY.md` 인덱스 동기.
+
+### 산출물 (보존)
+- 원격: T-full perT raw_rollouts 1000 pkl (152G) — kimseungjun@166.104.146.37:11112
+  `/home/kimseungjun/workspace/temporal_vla/outputs/eval/robocasa/groot_n16/target_atomic_moderate10_multilayer_perT_100ep/raw_rollouts/`
+- 로컬:
+  - `outputs/eval/robocasa/groot_n16/target_atomic_moderate10_multilayer_perT_100ep/conceptor_steering/`
+    (1.3 GB) — `layer_selection/stage1_quota_compare.json` (4 window × 2 method),
+    `layer4_valid16/truncated_w19/*/conceptors.npz` (11개).
+  - `outputs/eval/robocasa/groot_n16/target_atomic_moderate10_multilayer_perT_100ep/steer_eval/`
+    (203 MB) — `phaseE_A_valid16_L4_seed100k/results.tsv`, `videos/<task>__<cond>/per_episode.tsv`
+    (instruction variant + success).
+  - Phase 1 산출물 (`target_atomic_moderate10_multilayer_100ep/`): 16-action-token pool 결과,
+    layer0/4 fit NPZ + Phase E B results.tsv.

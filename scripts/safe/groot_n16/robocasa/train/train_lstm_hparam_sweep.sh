@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../run_config.sh"
 
-SAFE_REPO="${SAFE_REPO:-/home/dongkyu/pdk_ws/SAFE}"
+SAFE_REPO="${SAFE_REPO:-/home/dongkyu/pkt_ws/SAFE}"
 CONDA_ENV="${CONDA_ENV:-vla-safe}"
 
 OUT_ROOT="${OUT_ROOT:-${ROBOCASA_SAFE_OUT_ROOT}}"
@@ -26,6 +26,12 @@ LAMBDA_REG_VALUES=(${LAMBDA_REG_VALUES:-1e-2 1e-1 1})
 SEEDS=(${SEEDS:-0 1 2})
 
 mkdir -p "${LOG_ROOT}" "${WANDB_DIR}" "${HYDRA_ROOT}"
+
+if [ ! -d "${DATA_PATH}" ]; then
+  echo "ERROR: DATA_PATH 디렉토리가 없음: ${DATA_PATH}" >&2
+  echo "       run env(예: seen18_env.sh)를 source 하거나 DATA_PATH 를 직접 지정하세요." >&2
+  exit 1
+fi
 
 cd "${SAFE_REPO}"
 
@@ -52,6 +58,7 @@ for lr in "${LR_VALUES[@]}"; do
           dataset=groot_n16 \
           model=lstm \
           dataset.data_path="${DATA_PATH}" \
+          dataset.subset_name="${ROBOCASA_SAFE_SUBSET_NAME}" \
           dataset.horizon_idx_rel="${HORIZON_IDX_REL}" \
           dataset.diff_idx_rel="${DIFF_IDX_REL}" \
           model.batch_size="${BATCH_SIZE}" \

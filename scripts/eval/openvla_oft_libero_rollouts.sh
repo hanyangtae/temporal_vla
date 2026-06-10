@@ -79,7 +79,9 @@ fi
 
 # ── 서버 헬퍼 ──────────────────────────────────────────────────────
 wait_server() {
-    local max_wait=300
+    # 7B 체크포인트 HF cache miss 시 다운로드 5~6분 + 모델 로딩 1~2분.
+    # 안전하게 15분 (900s) 까지 대기. cache hit 시는 1~2분 안에 ready.
+    local max_wait=900
     local elapsed=0
     while [ ${elapsed} -lt ${max_wait} ]; do
         if curl -sf "${SERVER_URL}/health" 2>/dev/null | grep -q '"status":"ok"'; then
