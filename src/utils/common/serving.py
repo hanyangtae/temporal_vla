@@ -1,8 +1,43 @@
-"""Small shared serving response helpers."""
+"""Shared serving helpers: API responses + serve-script bootstrap."""
 
 from __future__ import annotations
 
+import argparse
 from typing import Any
+
+
+def setup_serve_logging(name: str) -> None:
+    """모듈 로거를 구성한다. create_module_logger 사용, 불가 시 basicConfig 폴백.
+
+    기존 serve 스크립트들이 main() 첫머리에서 반복하던 try/except 블록과
+    동일한 동작.
+    """
+    import logging
+
+    try:
+        from src.utils.common.logger import create_module_logger
+
+        create_module_logger(name)
+    except ImportError:
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
+
+def add_server_args(
+    parser: argparse.ArgumentParser,
+    *,
+    default_port: int,
+    host_default: str = "0.0.0.0",
+) -> None:
+    """통일 serve 스크립트 공통 --host/--port 인자를 등록."""
+    parser.add_argument("--host", type=str, default=host_default)
+    parser.add_argument("--port", type=int, default=default_port)
+
+
+def run_uvicorn(app: Any, args: argparse.Namespace) -> None:
+    """uvicorn.run(app, host=args.host, port=args.port). uvicorn 은 지연 import."""
+    import uvicorn
+
+    uvicorn.run(app, host=args.host, port=args.port)
 
 
 def policy_status(policy: Any | None) -> str:

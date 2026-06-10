@@ -26,7 +26,6 @@ from typing import Optional
 
 import numpy as np
 import torch
-import uvicorn
 from fastapi import FastAPI
 from PIL import Image
 
@@ -36,7 +35,12 @@ sys.path.insert(0, "/temporal_vla/lerobot/src")
 from checkpoint_profile import CheckpointProfile, load_profile  # noqa: E402
 
 from src.utils.common.image import decode_b64_pil  # noqa: E402
-from src.utils.common.serving import health_response  # noqa: E402
+from src.utils.common.serving import (  # noqa: E402
+    add_server_args,
+    health_response,
+    run_uvicorn,
+    setup_serve_logging,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -333,20 +337,14 @@ async def health():
 def main():
     global _profile
 
-    try:
-        from src.utils.common.logger import create_module_logger
-
-        create_module_logger("xvla_serve")
-    except ImportError:
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    setup_serve_logging("xvla_serve")
 
     parser = argparse.ArgumentParser(description="X-VLA 추론 서버 (port 8100)")
     parser.add_argument(
         "--profile", type=str, required=True,
         help="체크포인트 프로파일 YAML 경로 (configs/checkpoints/*.yaml)",
     )
-    parser.add_argument("--host", type=str, default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8100)
+    add_server_args(parser, default_port=8100)
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument(
         "--dtype", type=str, default="bfloat16", choices=["float32", "bfloat16"],
@@ -361,7 +359,7 @@ def main():
 
     app.state.args = args
     app.state._step = 0
-    uvicorn.run(app, host=args.host, port=args.port)
+    run_uvicorn(app, args)
 
 
 if __name__ == "__main__":

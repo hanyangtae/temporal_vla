@@ -24,7 +24,11 @@ def rot6d_to_euler(rot6d: np.ndarray) -> np.ndarray:
 
 
 def quat_xyzw_to_euler(quat: np.ndarray) -> np.ndarray:
-    """Quaternion (x, y, z, w) -> euler (roll, pitch, yaw)."""
+    """Quaternion -> euler (roll, pitch, yaw).
+
+    Convention: ``(x, y, z, w)`` (scalar-last). wxyz 순서는
+    ``src/datasets/adapters/dreamvla.py`` 의 ``quat_wxyz_to_euler`` 사용.
+    """
     x = quat[..., 0]
     y = quat[..., 1]
     z = quat[..., 2]
