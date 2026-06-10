@@ -33,7 +33,6 @@ from typing import Optional
 
 import numpy as np
 import torch
-import uvicorn
 from fastapi import FastAPI, HTTPException
 
 _SERVE_DIR = Path(__file__).resolve().parent
@@ -55,7 +54,13 @@ from lerobot_adapters import (  # noqa: E402
 from lerobot_adapters.pi import PiPolicyAdapter  # noqa: E402
 from lerobot_adapters.rotation import quat_xyzw_to_axisangle  # noqa: E402
 from src.utils.common.image import decode_b64_image  # noqa: E402
-from src.utils.common.serving import health_response, reset_policy  # noqa: E402
+from src.utils.common.serving import (  # noqa: E402
+    add_server_args,
+    health_response,
+    reset_policy,
+    run_uvicorn,
+    setup_serve_logging,
+)
 
 # SAFE feature hook (scripts/serve 는 스크립트 실행 시 sys.path[0])
 import safe_hooks  # noqa: E402
@@ -475,12 +480,7 @@ def _load_model_impl():
 def main():
     global _profile, _collect_mode
 
-    try:
-        from src.utils.common.logger import create_module_logger
-
-        create_module_logger("lerobot_serve")
-    except ImportError:
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    setup_serve_logging("lerobot_serve")
 
     parser = argparse.ArgumentParser(description="LeRobot policy 추론 서버 (통일 API)")
     parser.add_argument(
@@ -488,8 +488,7 @@ def main():
         help="체크포인트 프로파일 YAML 경로 (configs/checkpoints/*.yaml)",
     )
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"])
-    parser.add_argument("--host", type=str, default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8400)
+    add_server_args(parser, default_port=8400)
     parser.add_argument(
         "--collect",
         action="store_true",
@@ -511,7 +510,7 @@ def main():
     )
 
     app.state.args = args
-    uvicorn.run(app, host=args.host, port=args.port)
+    run_uvicorn(app, args)
 
 
 if __name__ == "__main__":
