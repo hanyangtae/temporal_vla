@@ -6,22 +6,19 @@ from __future__ import annotations
 import argparse
 import csv
 import random
-import re
-import shutil
-from dataclasses import dataclass
 from pathlib import Path
+import sys
 
 
-PKL_RE = re.compile(r"task(?P<task_id>\d+)--ep(?P<episode_idx>\d+)--succ(?P<success>[01])\.pkl$")
+SAFE_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(SAFE_ROOT))
 
-
-@dataclass(frozen=True)
-class RolloutFile:
-    path: Path
-    task_id: int
-    original_episode_idx: int
-    success: int
-    source_root: Path
+from _common.split_lib import (  # noqa: E402
+    RolloutFile,
+    parse_rollout,
+    rollout_stem,
+    symlink_relative,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -39,18 +36,11 @@ def collect_rollouts(source_roots: list[Path]) -> list[RolloutFile]:
     rollouts: list[RolloutFile] = []
     for root in source_roots:
         for path in sorted(root.rglob("*.pkl")):
-            match = PKL_RE.match(path.name)
-            if match is None:
+            try:
+                rollout = parse_rollout(path.resolve(), source_root=root.resolve())
+            except ValueError:
                 continue
-            rollouts.append(
-                RolloutFile(
-                    path=path.resolve(),
-                    task_id=int(match.group("task_id")),
-                    original_episode_idx=int(match.group("episode_idx")),
-                    success=int(match.group("success")),
-                    source_root=root.resolve(),
-                )
-            )
+            rollouts.append(rollout)
     return rollouts
 
 
@@ -120,7 +110,15 @@ def stratified_task_split(
         raise RuntimeError(f"Internal split error: expected {test_n} test items, got {len(out['test'])}")
 
     for split_items in out.values():
-        split_items.sort(key=lambda item: (item.task_id, item.success, item.source_root.name, item.original_episode_idx, str(item.path)))
+        split_items.sort(
+            key=lambda item: (
+                item.task_id,
+                item.success,
+                item.source_root.name if item.source_root is not None else "",
+                item.episode_idx,
+                str(item.pkl_path),
+            )
+        )
     return out
 
 
@@ -141,9 +139,9 @@ def link_split(output_root: Path, splits_by_task: dict[int, dict[str, list[Rollo
             for item in splits_by_task[task_id][split_name]:
                 new_episode_idx = next_episode_idx[task_id]
                 next_episode_idx[task_id] += 1
-                new_name = f"task{task_id}--ep{new_episode_idx:03d}--succ{item.success}.pkl"
+                new_name = f"{rollout_stem(task_id, new_episode_idx, item.success)}.pkl"
                 link_path = split_dir / new_name
-                link_path.symlink_to(item.path)
+                symlink_relative(item.pkl_path, link_path)
                 manifest_rows.append(
                     {
                         "split": split_name,
@@ -152,9 +150,9 @@ def link_split(output_root: Path, splits_by_task: dict[int, dict[str, list[Rollo
                         "new_episode_idx": new_episode_idx,
                         "new_path": str(link_path),
                         "source_root": str(item.source_root),
-                        "source_path": str(item.path),
-                        "source_filename": item.path.name,
-                        "source_episode_idx": item.original_episode_idx,
+                        "source_path": str(item.pkl_path),
+                        "source_filename": item.pkl_path.name,
+                        "source_episode_idx": item.episode_idx,
                     }
                 )
     return manifest_rows

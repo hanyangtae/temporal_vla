@@ -30,14 +30,28 @@ REMOVED_GROOT_N15_ROBOCASA_FILES = {
     "scripts/utils/prepare_groot_n15_base_new_embodiment.py",
 }
 
+DISALLOWED_GROOT_N15_BACKEND_LIBRARY_PARTS = {
+    "collect",
+    "serve",
+    "features.py",
+    "loader.py",
+    "schema.py",
+    "io.py",
+}
+
 
 def test_groot_n15_robocasa_files_live_under_safe_tree() -> None:
-    missing = [
-        path
-        for path in sorted(CANONICAL_GROOT_N15_ROBOCASA_FILES)
-        if not (REPO_ROOT / path).is_file()
-    ]
-    assert missing == []
+    root = REPO_ROOT / "scripts/safe/groot_n15/robocasa"
+    source_files = []
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        relative_parts = path.relative_to(root).parts
+        if "__pycache__" in relative_parts or path.suffix == ".pyc":
+            continue
+        source_files.append(str(path.relative_to(REPO_ROOT)))
+
+    assert sorted(source_files) == sorted(CANONICAL_GROOT_N15_ROBOCASA_FILES)
 
 
 def test_old_groot_n15_robocasa_script_paths_are_removed() -> None:
@@ -47,3 +61,15 @@ def test_old_groot_n15_robocasa_script_paths_are_removed() -> None:
         if (REPO_ROOT / path).exists()
     ]
     assert remaining == []
+
+
+def test_groot_n15_tree_stays_eval_split_utils_only() -> None:
+    root = REPO_ROOT / "scripts/safe/groot_n15/robocasa"
+    unexpected = []
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        relative_parts = path.relative_to(root).parts
+        if DISALLOWED_GROOT_N15_BACKEND_LIBRARY_PARTS.intersection(relative_parts):
+            unexpected.append(str(path.relative_to(REPO_ROOT)))
+    assert unexpected == []
