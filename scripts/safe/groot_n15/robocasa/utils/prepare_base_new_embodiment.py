@@ -17,11 +17,14 @@ from pathlib import Path
 import sys
 
 
+ROBOCASA_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(__file__).resolve().parents[5]
+sys.path.insert(0, str(ROBOCASA_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "configs/policies"))
 sys.path.insert(0, str(REPO_ROOT / "src/policies/Isaac-GR00T-N1.5"))
 sys.path.insert(0, str(REPO_ROOT))
 
+from run_config import BASE_NEW_EMBODIMENT_CHECKPOINT  # noqa: E402
 from scripts.path_setup import DATA_ROOT  # noqa: E402
 from gr00t.data.dataset import LeRobotMixtureDataset, LeRobotSingleDataset  # noqa: E402
 from gr00t.data.embodiment_tags import EmbodimentTag  # noqa: E402
@@ -64,7 +67,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=REPO_ROOT / "outputs/checkpoints/groot_n15_base_pandaomron_new_embodiment",
+        default=BASE_NEW_EMBODIMENT_CHECKPOINT,
     )
     parser.add_argument(
         "--data-config",

@@ -11,8 +11,10 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="${REPO_ROOT:-$(cd "${SCRIPT_DIR}/../../../../.." && pwd)}"
-CONTAINER_REPO_ROOT="${CONTAINER_REPO_ROOT:-/temporal_vla}"
+source "${SCRIPT_DIR}/../run_config.sh"
+
+REPO_ROOT="${REPO_ROOT:-${GROOT_N15_REPO_ROOT}}"
+CONTAINER_REPO_ROOT="${CONTAINER_REPO_ROOT:-${GROOT_N15_CONTAINER_REPO_ROOT}}"
 ROBOCASA_CONTAINER="${ROBOCASA_CONTAINER:-robocasa}"
 
 BASE_HOST="${BASE_HOST:-127.0.0.1}"
@@ -21,7 +23,7 @@ TUNED_HOST="${TUNED_HOST:-166.104.35.50}"
 TUNED_PORT="${TUNED_PORT:-5556}"
 
 MODE="${MODE:-both}"
-RUN_ID="${RUN_ID:-$(date +%Y%m%d_%H%M%S)}"
+RUN_ID="${RUN_ID:-${GROOT_N15_TARGET15_RUN_ID}}"
 SEED_START="${SEED_START:-101}"
 SEED_COUNT="${SEED_COUNT:-10}"
 N_ENVS="${N_ENVS:-2}"
@@ -29,8 +31,8 @@ N_ACTION_STEPS="${N_ACTION_STEPS:-16}"
 MAX_EPISODE_STEPS="${MAX_EPISODE_STEPS:-720}"
 STEPS_PER_RENDER="${STEPS_PER_RENDER:-2}"
 VIDEO_FPS="${VIDEO_FPS:-10}"
-OUT_ROOT="${OUT_ROOT:-${REPO_ROOT}/outputs/eval/robocasa/groot_n15/target15_seedpairs_${RUN_ID}}"
-OUT_ROOT_CONTAINER="${OUT_ROOT_CONTAINER:-${CONTAINER_REPO_ROOT}/outputs/eval/robocasa/groot_n15/target15_seedpairs_${RUN_ID}}"
+OUT_ROOT="${OUT_ROOT:-${GROOT_N15_TARGET15_RUN_ROOT}}"
+OUT_ROOT_CONTAINER="${OUT_ROOT_CONTAINER:-${GROOT_N15_TARGET15_RUN_ROOT_CONTAINER}}"
 TASKS_CSV="${TASKS_CSV:-}"
 
 TARGET15_TASKS=(
@@ -71,8 +73,8 @@ Options:
   -h, --help                      Show this help.
 
 Environment overrides:
-  ROBOCASA_CONTAINER, CONTAINER_REPO_ROOT, N_ACTION_STEPS, MAX_EPISODE_STEPS,
-  STEPS_PER_RENDER, VIDEO_FPS
+  ROBOCASA_CONTAINER, CONTAINER_REPO_ROOT, GROOT_N15_* run_config variables,
+  N_ACTION_STEPS, MAX_EPISODE_STEPS, STEPS_PER_RENDER, VIDEO_FPS
 USAGE
 }
 
@@ -84,8 +86,8 @@ while [[ $# -gt 0 ]]; do
             ;;
         --run-id)
             RUN_ID="$2"
-            OUT_ROOT="${REPO_ROOT}/outputs/eval/robocasa/groot_n15/target15_seedpairs_${RUN_ID}"
-            OUT_ROOT_CONTAINER="${CONTAINER_REPO_ROOT}/outputs/eval/robocasa/groot_n15/target15_seedpairs_${RUN_ID}"
+            OUT_ROOT="${GROOT_N15_OUT_ROOT}/target15_seedpairs_${RUN_ID}"
+            OUT_ROOT_CONTAINER="${GROOT_N15_OUT_ROOT_CONTAINER}/target15_seedpairs_${RUN_ID}"
             shift 2
             ;;
         --seed-start)

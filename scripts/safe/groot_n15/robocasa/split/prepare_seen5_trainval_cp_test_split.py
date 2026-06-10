@@ -16,9 +16,12 @@ import argparse
 from pathlib import Path
 import sys
 
+ROBOCASA_ROOT = Path(__file__).resolve().parents[1]
 SAFE_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROBOCASA_ROOT))
 sys.path.insert(0, str(SAFE_ROOT))
 
+from run_config import SEEN5_SOURCE_ROOT, SEEN5_SPLIT_ROOT  # noqa: E402
 from _common.split_lib import (  # noqa: E402
     RolloutFile,
     collect_rollouts,
@@ -41,19 +44,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--source-root",
         type=Path,
-        default=Path(
-            "/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n15/"
-            "rollouts_seen5_100ep_per_task_subset100"
-        ),
+        default=SEEN5_SOURCE_ROOT,
         help="Rollout source root containing one task directory per task.",
     )
     parser.add_argument(
         "--split-root",
         type=Path,
-        default=Path(
-            "/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n15/"
-            "split_seen5_trainval75_cp15_test10_subset100"
-        ),
+        default=SEEN5_SPLIT_ROOT,
         help="Destination split root to create.",
     )
     parser.add_argument("--trainval-per-task", type=int, default=75)
