@@ -13,6 +13,7 @@ CANONICAL_GROOT_N15_ROBOCASA_FILES = {
     "scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py",
     "scripts/safe/groot_n15/robocasa/eval/internal_parity.py",
     "scripts/safe/groot_n15/robocasa/eval/run_target15_seedpairs.sh",
+    "scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py",
     "scripts/safe/groot_n15/robocasa/split/build_safe_splits.py",
     "scripts/safe/groot_n15/robocasa/split/merge_seen60_source.py",
     "scripts/safe/groot_n15/robocasa/utils/runtime.py",
@@ -33,7 +34,6 @@ REMOVED_GROOT_N15_ROBOCASA_FILES = {
 }
 
 DISALLOWED_GROOT_N15_BACKEND_LIBRARY_PARTS = {
-    "collect",
     "serve",
     "features.py",
     "loader.py",
@@ -69,7 +69,7 @@ def test_old_groot_n15_robocasa_script_paths_are_removed() -> None:
     assert remaining == []
 
 
-def test_groot_n15_tree_stays_eval_split_utils_only() -> None:
+def test_groot_n15_tree_does_not_grow_backend_library_parts() -> None:
     root = REPO_ROOT / "scripts/safe/groot_n15/robocasa"
     unexpected = []
     for path in root.rglob("*"):

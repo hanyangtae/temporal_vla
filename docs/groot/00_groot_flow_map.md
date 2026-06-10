@@ -28,17 +28,17 @@ backend library 역할이 없다.
 |---|---|---|
 | 모델 class / loader | `src/policies/groot/core/loader.py`, upstream Isaac-GR00T N1.6 | submodule native `gr00t.*` 또는 LeRobot port `lerobot.policies.groot.*`; repo-local backend library 없음 |
 | HTTP serving service | `scripts/serve/groot.py` + `src/policies/groot/core/service.py` | `scripts/serve/lerobot.py` + `scripts/serve/lerobot_adapters/groot.py` |
-| RoboCasa IO / schema mapping | `src/policies/groot/core/schema.py`, `src/policies/groot/robocasa/io.py` | LeRobot HTTP는 `scripts/serve/lerobot_adapters/groot.py`; native ZMQ eval은 client-local alias/filter |
+| RoboCasa IO / schema mapping | `src/policies/groot/core/schema.py`, `src/policies/groot/robocasa/io.py` | N1.5 LeRobot HTTP eval은 shared RoboCasa IO를 obs->unified request 경계에서 재사용한 뒤 LeRobot camera 이름만 변환한다. LeRobot serving adapter는 `scripts/serve/lerobot_adapters/groot.py`; native ZMQ eval은 client-local alias/filter |
 | Native ZMQ serving | N1.6 upstream server 또는 SAFE `feature_server.py` | external `src/policies/Isaac-GR00T-N1.5/scripts/inference_service.py`; `groot_n15` script는 client |
-| SAFE DiT/VL feature capture | `src/policies/groot/safe/features.py`, `scripts/safe/groot_n16/.../serve/feature_server.py` | dedicated N1.5 RoboCasa SAFE pipeline 없음. generic LeRobot hook(`scripts/serve/safe_hooks.py`)은 별도 experimental surface |
-| Eval / split / checkpoint helper | `scripts/eval/*`, `scripts/safe/groot_n16/*` | `scripts/safe/groot_n15/robocasa/{eval,split,utils}` |
+| SAFE DiT/VL feature capture | `src/policies/groot/safe/features.py`, `scripts/safe/groot_n16/.../serve/feature_server.py` | N1.5 전용 feature extractor backend는 없음. `collect/http_feature_collect.py`는 LeRobot HTTP `/act_with_features` 응답을 N1.6 SAFE triplet schema로 저장하는 client |
+| Eval / split / checkpoint helper | `scripts/eval/*`, `scripts/safe/groot_n16/*` | `scripts/safe/groot_n15/robocasa/{eval,collect,split,utils}` |
 
 이 비대칭성이 폴더 구조가 섞여 보였던 가장 큰 이유다. 현재 정리 기준은 두 겹이다.
 N1.6 backend library는 `src/policies/groot/`에 응집한다. N1.5는 그런 backend library를
 새로 만들지 않고, repo-local RoboCasa script bundle만 `scripts/safe/groot_n15/` 아래에
 응집한다. 따라서 "GR00T 역할 코드"를 찾을 때 N1.6은 `src/policies/groot/`부터 보지만,
-N1.5는 먼저 `scripts/safe/groot_n15/README.md`에서 native ZMQ, LeRobot HTTP, split/helper
-entrypoint를 나눠 본다.
+N1.5는 먼저 `scripts/safe/groot_n15/README.md`에서 native ZMQ, LeRobot HTTP, feature
+collection, split/helper entrypoint를 나눠 본다.
 
 | 읽고 싶은 것 | 다음 문서 |
 |---|---|
@@ -47,7 +47,7 @@ entrypoint를 나눠 본다.
 | N1.6 HTTP 변경/검증 | [n16_09_safe_parity.md](n16_09_safe_parity.md), [n16_11_http_act_changes.md](n16_11_http_act_changes.md) |
 | N1.6 구조 리팩토링 결과 | [n16_12_robocasa_refactor_report.md](n16_12_robocasa_refactor_report.md) |
 | N1.5 native 평가 | [n15_02_eval.md](n15_02_eval.md), [n15_07_native_zmq_openfridge.md](n15_07_native_zmq_openfridge.md) |
-| N1.5 LeRobot HTTP | [n15_03_lerobot_robocasa365.md](n15_03_lerobot_robocasa365.md), [n15_04_lerobot_serve_adapter.md](n15_04_lerobot_serve_adapter.md), [n15_05_lerobot_obs_bridge.md](n15_05_lerobot_obs_bridge.md) |
+| N1.5 LeRobot HTTP | [n15_03_lerobot_robocasa365.md](n15_03_lerobot_robocasa365.md), [n15_04_lerobot_serve_adapter.md](n15_04_lerobot_serve_adapter.md), [n15_05_lerobot_obs_bridge.md](n15_05_lerobot_obs_bridge.md), `scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py` |
 
 ## One-Screen Map
 
@@ -81,7 +81,8 @@ GR00T 관련 파일은 이 층 중 하나에 속한다.
 | N1.6 ZMQ eval | `scripts/eval/groot_robocasa_zmq_eval.py` | upstream rollout helper와 N1.6 `PolicyClient` 연결 |
 | N1.5 script bundle | `scripts/safe/groot_n15/README.md`, `scripts/safe/groot_n15/robocasa/run_config.{py,sh}` | N1.5 repo-local script entrypoint와 shared path/run identity |
 | N1.5 ZMQ eval client | `scripts/safe/groot_n15/robocasa/eval/native_zmq_eval.py` | external N1.5 `inference_service.py` ZMQ protocol에 말 거는 client |
-| N1.5 LeRobot HTTP eval | `scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py` | official RoboCasa env에서 LeRobot HTTP server 호출 |
+| N1.5 LeRobot HTTP eval | `scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py` | official RoboCasa env에서 LeRobot HTTP server 호출. RoboCasa obs alias/state/language extraction은 `src/policies/groot/robocasa/io.py`를 재사용 |
+| N1.5 LeRobot HTTP feature collector | `scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py` | official RoboCasa env에서 `/act_with_features` 호출 후 N1.6 SAFE-style `pkl/csv/mp4` triplet 저장 |
 | SAFE N1.6 feature server | `scripts/safe/groot_n16/robocasa/serve/feature_server.py` | ZMQ `get_action_with_features`로 action과 hidden state 반환 |
 | SAFE N1.6 collector | `scripts/safe/groot_n16/robocasa/collect/collect_rollout.py` | episode 실행, action/feature/video/csv/pkl 저장 |
 
@@ -108,7 +109,7 @@ flowchart LR
     API --> N15Serve["N1.5 LeRobot HTTP<br/>scripts/serve/lerobot.py"]:::n15
     N15Serve --> N15Adapter["GrootPolicyAdapter<br/>scripts/serve/lerobot_adapters/groot.py"]:::n15
     N15Adapter --> N15Runtime["N1.5 compatibility glue<br/>scripts/safe/groot_n15/robocasa/utils/runtime.py"]:::n15
-    N15Runtime --> N15Model["LeRobot GrootPolicy<br/>select_action(batch)"]:::n15
+    N15Runtime --> N15Model["LeRobot GrootPolicy<br/>/act: select_action(batch)<br/>/act_with_features: predict_action_chunk(batch)"]:::n15
     N15Model --> N15Post["LeRobot postprocessor<br/>native action unapply"]:::n15
     N15Post --> Out
 
@@ -126,9 +127,9 @@ flowchart LR
 | HTTP endpoint shape | 공유 | N1.5 LeRobot server와 N1.6 native server 모두 `/act`, `/act_with_features`, `/reset`, `/health` 모양을 유지한다. |
 | Profile/action response contract | 공유 | 두 경로 모두 profile의 `action_layout` / `emits_subkeys`를 기준으로 `action.*` sub-key 응답을 만든다. |
 | Image/state preprocessing | 분리 | N1.5는 LeRobot feature spec, 224 crop/resize, rotation6d state packing을 쓴다. N1.6은 GR00T native 256 image와 modality key mapping을 쓴다. |
-| Model load / forward | 분리 | N1.5는 LeRobot `GrootPolicy.select_action`; N1.6은 Isaac-GR00T `Gr00tSimPolicyWrapper.get_action`. |
+| Model load / forward | 분리 | N1.5는 LeRobot `GrootPolicy`를 쓰되 `/act`는 `select_action`, `/act_with_features` feature collection은 `predict_action_chunk`로 chunk를 보존한다. N1.6은 Isaac-GR00T `Gr00tSimPolicyWrapper.get_action`. |
 | Runtime compatibility | 분리 | N1.5는 repo-local runtime patch가 필요하고, N1.6은 `src/policies/groot/core/loader.py`의 native loader path를 쓴다. |
-| SAFE feature capture | 비대칭 | N1.6은 `src/policies/groot/safe/features.py`를 HTTP/ZMQ에서 공유한다. N1.5 RoboCasa 전용 SAFE pipeline은 없고, generic LeRobot `scripts/serve/safe_hooks.py`는 별도 experimental surface다. |
+| SAFE feature capture | 비대칭 | N1.6은 `src/policies/groot/safe/features.py`를 HTTP/ZMQ에서 공유한다. N1.5는 LeRobot HTTP `/act_with_features`로 나온 `features.hidden_states`를 수집 client가 저장하지만, N1.6 같은 repo-local feature extractor backend는 없다. |
 
 Native ZMQ 경로는 이 HTTP merge 지점을 지나지 않는다. N1.5 native ZMQ는
 `src/policies/Isaac-GR00T-N1.5/scripts/inference_service.py`, N1.6 native/Safe ZMQ는
@@ -147,7 +148,7 @@ Native ZMQ 경로는 이 HTTP merge 지점을 지나지 않는다. N1.5 native Z
 | `scripts/serve/lerobot_adapters/` | LeRobot policy별 load/forward 차이 | LeRobot `PiPolicy`, `GrootPolicy`처럼 policy type에 묶인 차이 |
 | `src/policies/groot/` | N1.6 native GR00T reusable runtime/library | HTTP/ZMQ 양쪽에서 재사용할 schema, loader, RoboCasa IO, SAFE feature extractor |
 | `scripts/safe/groot_n15/` | N1.5 script bundle entrypoint | N1.5 repo-local scripts의 role map. `robocasa/run_config.{py,sh}`가 shared path/run identity를 제공 |
-| `scripts/safe/groot_n15/robocasa/` | N1.5 RoboCasa eval/split/checkpoint helper | eval client, split 준비, base checkpoint helper, LeRobot runtime patch만 둔다. loader/schema/IO/serve/feature capture library를 두지 않는다. |
+| `scripts/safe/groot_n15/robocasa/` | N1.5 RoboCasa eval/feature-collect/split/checkpoint helper | eval client, `/act_with_features` 수집 client, split 준비, base checkpoint helper, LeRobot runtime patch만 둔다. loader/schema/IO/serve/feature extractor library를 두지 않는다. |
 | `scripts/safe/groot_n16/robocasa/` | N1.6 SAFE 수집/eval/visualization scripts | SAFE artifact writer, ZMQ feature server, offline visualization runner |
 | `scripts/safe/_common/` | SAFE script 공통 helper | N1.5/N1.6 split symlink, rollout filename parsing/formatting처럼 script tree 안에서만 공유하는 helper |
 | `src/policies/safe_metadata.py` | SAFE feature metadata naming and alias normalization | policy/version을 가로지르는 `feature_kind`, `feature_axes`, horizon metadata |
@@ -159,6 +160,10 @@ Native ZMQ 경로는 이 HTTP merge 지점을 지나지 않는다. N1.5 native Z
 필요하지만, 그 동작은 N1.5 RoboCasa checkpoint에 강하게 묶여 있다. 이 파일을 옮기려면
 `scripts/serve/lerobot_adapters/groot.py`와 N1.5 layout test를 같이 바꾸는 별도 migration으로
 다루는 편이 안전하다.
+
+N1.5 LeRobot HTTP eval이 `src/policies/groot/robocasa/io.py`를 import하는 것도 같은 원칙의
+예외다. `scripts/safe/groot_n15/robocasa/`가 reusable IO library를 소유하지 않고,
+이미 존재하는 RoboCasa native obs alias/state/language adapter를 읽어 쓰는 얇은 client로 남긴다.
 
 ## Two Data Languages
 
@@ -414,10 +419,11 @@ per policy call:
 - 다만 alias와 required-key 검증은 HTTP 경로와 같은 `src/policies/groot/robocasa/io.py`를 사용한다.
 - 저장 video는 `robocasa_env_wrappers.py`가 res256 3-view만 보이게 필터링한다.
 
-## Flow D: N1.6 SAFE Collection
+## Flow D: SAFE Feature Collection Artifacts
 
 SAFE collection은 "rollout을 하면서 action과 latent feature를 같이 저장"하는 경로다.
-transport는 두 가지지만, collector가 저장하는 record 의미는 맞춰져 있다.
+N1.6 ZMQ가 canonical 경로이고, N1.6 HTTP와 N1.5 LeRobot HTTP feature collection은 같은
+episode artifact contract를 따른다.
 
 ```text
 scripts/safe/groot_n16/robocasa/collect/collect_rollout.py
@@ -487,6 +493,35 @@ per policy call:
 
 `mode="chunk"`은 SAFE artifact에 GR00T action horizon을 보존하기 위해 chunk shape를 유지한다.
 이 점이 closed-loop HTTP eval의 `mode="step"`과 다르다.
+
+### N1.5 LeRobot HTTP Feature Collection
+
+```text
+scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py
+  -> make_env(required --env-name)
+  -> shared wrap_groot_robocasa_eval_env(...)
+     VideoRecordingWrapper + MultiStepWrapper
+  -> optional ep_meta replay/export via --ep-meta-dir
+  -> N15LerobotHttpFeatureClient
+  -> official_obs_to_lerobot_inputs(obs)
+     official RoboCasa obs -> shared HTTP images/states/instruction
+     shared camera names -> LeRobot names side_0/side_1/wrist_0
+  -> VLAClient.predict_with_features(... /act_with_features ...)
+  -> HTTP response action.* + features.hidden_states
+  -> convert_http_actions_to_groot_chunk(action.*)
+  -> MultiStepWrapper executes --n_action_steps
+  -> collect_artifacts.write_safe_triplet(
+       model_family="lerobot_groot_n15",
+       policy_transport="http",
+       task_suite_name="lerobot_groot_n15_robocasa")
+```
+
+이 경로는 N1.6 `SafeFeatureExtractor`를 공유하지 않는다. 공유되는 것은 HTTP envelope와
+N1.6 ZMQ 기준의 `task{id}--ep{idx}--succ{0|1}.{pkl,csv,mp4}` 저장 schema,
+shared RoboCasa `VideoRecordingWrapper`/`MultiStepWrapper` env stack, 그리고 optional
+`ep_meta` replay contract다.
+따라서 N1.5/N1.6 hidden-state 값 비교는 같은 파일 형식 위에서 가능하지만,
+`feature_kind`와 `feature_axes`를 함께 보고 해석해야 한다.
 
 SAFE에서 자주 보는 값:
 
@@ -591,9 +626,24 @@ scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py
   -> env.step(official_action)
 ```
 
+Feature collection:
+
+```text
+scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py
+  -> required --env-name for N1.6 scene/env-id alignment
+  -> optional --ep-meta-dir for N1.6 scene replay alignment
+  -> shared VideoRecordingWrapper / MultiStepWrapper
+  -> VLAClient.predict_with_features(... :8400 /act_with_features ...)
+  -> features.hidden_states + action.*
+  -> execute action chunk with --n_action_steps
+  -> N1.6 SAFE artifact writer
+  -> task{id}--ep{idx}--succ{0|1}.{pkl,csv,mp4}
+```
+
 주의할 점:
 
 - 이 경로는 LeRobot framework를 사용하지만 통신은 project HTTP `/act`다.
+- Feature collection에서는 같은 server의 `/act_with_features`를 사용한다.
 - LeRobot native eval UI/recorder와 같은 것은 아직 별도 stage다.
 - N1.5 profile의 image preprocessing은 224 resize + 0.95 center crop이다.
 - `raw_language`, `native_action_unapply`, `load_native_eagle_projector`는 N1.5 raw checkpoint와
@@ -608,7 +658,8 @@ scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py
 | N1.6 native ZMQ eval | `run_gr00t_server.py` | `PolicyClient` via `groot_robocasa_zmq_eval.py` | GR00T native | native `action.*` dict | 없음 | upstream-like SR baseline |
 | N1.6 SAFE ZMQ | `feature_server.py` | `N16SafeCollectingPolicyClient` | GR00T native | native action dict | numpy hidden states | canonical SAFE collection |
 | N1.5 native ZMQ | `inference_service.py` | `N15PolicyClient` | GR00T N1.5 native | native action dict | 없음 | LeRobot mismatch 분리 baseline |
-| N1.5 LeRobot HTTP | `scripts/serve/lerobot.py` + `GrootPolicyAdapter` | `VLAClient` | unified HTTP -> LeRobot batch | `action.*` sub-key | N1.5 RoboCasa eval path에서는 사용 안 함 | LeRobot integration experiment |
+| N1.5 LeRobot HTTP `/act` | `scripts/serve/lerobot.py` + `GrootPolicyAdapter` | `VLAClient` | unified HTTP -> LeRobot batch | `action.*` sub-key | 없음 | LeRobot integration eval |
+| N1.5 LeRobot HTTP `/act_with_features` | `scripts/serve/lerobot.py` + `GrootPolicyAdapter` | `N15LerobotHttpFeatureClient` | official RoboCasa -> shared HTTP -> LeRobot batch | `action.*` sub-key chunk -> GR00T native action chunk | `features.hidden_states` feature blob | N1.5/N1.6 value-scale comparison artifact |
 
 ## What Not To Conflate
 
@@ -685,6 +736,7 @@ raw checkpoint를 LeRobot `GrootPolicy`에 맞춰 로드한 뒤 project HTTP con
 5. `scripts/serve/lerobot.py::parse_payload`
 6. `scripts/serve/lerobot.py::predict_action`
 7. `scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py`
+8. `scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py` (`/act_with_features` collection only)
 
 ## Ownership Rule
 
@@ -698,13 +750,14 @@ raw checkpoint를 LeRobot `GrootPolicy`에 맞춰 로드한 뒤 project HTTP con
 - N1.5 script bundle entrypoint는 `scripts/safe/groot_n15/README.md`에 둔다.
 - N1.5 RoboCasa path/run identity 기본값은 `scripts/safe/groot_n15/robocasa/run_config.py`와 `run_config.sh`에 둔다.
 - N1.5 LeRobot compatibility patch는 `scripts/safe/groot_n15/robocasa/utils/runtime.py`에 둔다.
-- N1.5 loader/schema/IO/serve/feature capture library는 `scripts/safe/groot_n15/robocasa/`에 새로 만들지 않는다. 그런 역할이 실제로 필요해지면 별도 module/ADR로 설계한다.
+- N1.5 `/act_with_features` collection client는 `scripts/safe/groot_n15/robocasa/collect/`에 둔다.
+- N1.5 loader/schema/IO/serve/feature extractor library는 `scripts/safe/groot_n15/robocasa/`에 새로 만들지 않는다. 그런 역할이 실제로 필요해지면 별도 module/ADR로 설계한다.
 - HTTP client envelope는 `scripts/utils/vla_client.py`에 둔다.
 - `features.hidden_states` blob encode/decode 규약은 `src/utils/common/feature_blob.py`에 둔다.
 - SAFE feature metadata naming과 alias normalization은 `src/policies/safe_metadata.py`에 둔다.
 - SAFE script-only split/file helper와 rollout filename parsing/formatting은 `scripts/safe/_common/split_lib.py`에 둔다.
 - checkpoint/profile parsing은 `scripts/utils/checkpoint_profile.py`에 둔다.
-- SAFE pkl/csv/mp4 저장 schema는 `scripts/safe/groot_n16/robocasa/collect/` 아래에 둔다.
+- SAFE pkl/csv/mp4 저장 schema는 `scripts/safe/groot_n16/robocasa/collect/` 아래에 둔다. N1.5 feature collection client는 이 writer를 호출해 같은 episode triplet contract를 따른다.
 
 이 경계를 지키면 `groot.py`, `lerobot.py`, ZMQ eval script가 각자 local alias와 wrapper를
 다시 들고 있는 상태를 피할 수 있다.

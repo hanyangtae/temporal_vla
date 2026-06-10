@@ -66,6 +66,11 @@ LeRobot `GrootPolicy` 내부 action queue 길이와 GR00T N1.5 action horizon을
 값. 8로 낮추면 `deque(maxlen=n_action_steps)`가 16-step chunk 앞부분을 버릴 수 있어서
 HTTP profile은 16으로 둔다.
 
+`/act`는 일반 LeRobot serving semantics를 유지해 queue에서 1-step action을 반환한다.
+반대로 GR00T N1.5 `/act_with_features` collect path는 N1.6 SAFE collection과 같은
+execution 단위를 맞추기 위해 hook 아래에서 `predict_action_chunk`를 직접 호출하고
+`[H,D]` action sub-key를 반환한다.
+
 ### data config order / normalization
 
 RoboCasa365 N1.5의 inference feature order는 이 repo의

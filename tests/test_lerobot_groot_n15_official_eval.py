@@ -49,6 +49,34 @@ def test_official_obs_maps_to_lerobot_http_inputs():
     np.testing.assert_allclose(states["observation.state.base_rotation"], [0.0, 0.0, 1.0, 0.0])
 
 
+def test_official_obs_reuses_groot_robocasa_io_aliases():
+    module = _load_module()
+    obs = {
+        "video.res256_image_side_0": np.full((2, 4, 4, 3), 1, dtype=np.uint8),
+        "video.res256_image_side_1": np.full((2, 4, 4, 3), 2, dtype=np.uint8),
+        "video.res256_image_wrist_0": np.full((2, 4, 4, 3), 3, dtype=np.uint8),
+        "annotation.human.action.task_description": np.array(["Open the fridge."]),
+        "state.end_effector_position_relative": np.array([0.1, 0.2, 0.3], dtype=np.float32),
+        "state.end_effector_rotation_relative": np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32),
+        "state.gripper_qpos": np.array([0.4, 0.5], dtype=np.float32),
+        "state.base_position": np.array([1.0, 2.0, 3.0], dtype=np.float32),
+        "state.base_rotation": np.array([0.0, 0.0, 1.0, 0.0], dtype=np.float32),
+    }
+
+    images, states, instruction = module.official_obs_to_lerobot_inputs(obs)
+
+    assert set(images) == {"side_0", "side_1", "wrist_0"}
+    assert images["side_0"].shape == (4, 4, 3)
+    assert instruction == "Open the fridge."
+    assert set(states) == {
+        "observation.state.eef_pos_rel",
+        "observation.state.eef_quat_rel",
+        "observation.state.gripper_qpos",
+        "observation.state.base_position",
+        "observation.state.base_rotation",
+    }
+
+
 def test_lerobot_action_maps_to_official_robocasa_action():
     module = _load_module()
     action = {

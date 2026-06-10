@@ -13,7 +13,6 @@ import json
 from pathlib import Path
 import sys
 import time
-import uuid
 from typing import Any
 
 import numpy as np
@@ -32,19 +31,18 @@ for path in (
         sys.path.insert(0, path_str)
 
 from vla_client import VLAClient  # noqa: E402
+from robocasa_video_artifacts import (  # noqa: E402
+    EpisodeVideoRecord,
+    save_frames_as_episode_video,
+    write_per_episode_tsv,
+)
+from src.policies.groot.robocasa.io import prepare_groot_robocasa_http_request  # noqa: E402
 
 
-OFFICIAL_IMAGE_TO_LEROBOT = {
-    "video.robot0_agentview_left": "side_0",
-    "video.robot0_agentview_right": "side_1",
-    "video.robot0_eye_in_hand": "wrist_0",
-}
-OFFICIAL_STATE_TO_LEROBOT = {
-    "state.end_effector_position_relative": "observation.state.eef_pos_rel",
-    "state.end_effector_rotation_relative": "observation.state.eef_quat_rel",
-    "state.gripper_qpos": "observation.state.gripper_qpos",
-    "state.base_position": "observation.state.base_position",
-    "state.base_rotation": "observation.state.base_rotation",
+UNIFIED_CAM_TO_LEROBOT = {
+    "left": "side_0",
+    "right": "side_1",
+    "wrist": "wrist_0",
 }
 LEROBOT_ACTION_TO_OFFICIAL = {
     "action.eef_pos": "action.end_effector_position",
@@ -53,18 +51,6 @@ LEROBOT_ACTION_TO_OFFICIAL = {
     "action.base_motion": "action.base_motion",
     "action.control_mode": "action.control_mode",
 }
-
-
-def _scalar_text(value: Any) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, np.ndarray):
-        if value.size == 0:
-            return ""
-        return str(value.reshape(-1)[0])
-    if isinstance(value, (list, tuple)):
-        return "" if not value else str(value[0])
-    return str(value)
 
 
 def _first_step(value: Any) -> np.ndarray:
@@ -81,26 +67,16 @@ def _first_step(value: Any) -> np.ndarray:
 def official_obs_to_lerobot_inputs(
     obs: dict[str, Any],
 ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray], str]:
-    images: dict[str, np.ndarray] = {}
-    states: dict[str, np.ndarray] = {}
-
-    for src, dst in OFFICIAL_IMAGE_TO_LEROBOT.items():
-        if src not in obs:
-            raise KeyError(f"Missing official RoboCasa image key: {src}")
-        images[dst] = np.asarray(obs[src], dtype=np.uint8)
-
-    for src, dst in OFFICIAL_STATE_TO_LEROBOT.items():
-        if src not in obs:
-            raise KeyError(f"Missing official RoboCasa state key: {src}")
-        states[dst] = np.asarray(obs[src], dtype=np.float32)
-
-    instruction = _scalar_text(
-        obs.get(
-            "annotation.human.task_description",
-            obs.get("annotation.human.action.task_description", ""),
-        )
-    )
-    return images, states, instruction
+    request = prepare_groot_robocasa_http_request(obs, strict=True)
+    images = {
+        lerobot_key: request.images[unified_key]
+        for unified_key, lerobot_key in UNIFIED_CAM_TO_LEROBOT.items()
+        if unified_key in request.images
+    }
+    missing = sorted(set(UNIFIED_CAM_TO_LEROBOT.values()) - set(images))
+    if missing:
+        raise KeyError(f"Missing LeRobot camera images after RoboCasa IO conversion: {missing}")
+    return images, request.states, request.instruction
 
 
 def lerobot_action_to_official_action(action: dict[str, Any]) -> dict[str, np.ndarray]:
@@ -147,17 +123,6 @@ def fixture_open_state(env: Any) -> dict[str, float]:
 
     joint_state = fixture.get_joint_state(raw_env, joint_names)
     return {name: float(value) for name, value in joint_state.items()}
-
-
-def _save_video(frames: list[np.ndarray], output_path: Path, fps: int) -> None:
-    if not frames:
-        return
-    import imageio
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with imageio.get_writer(str(output_path), fps=fps) as writer:
-        for frame in frames:
-            writer.append_data(np.asarray(frame, dtype=np.uint8))
 
 
 def parse_args() -> argparse.Namespace:
@@ -210,6 +175,7 @@ def run() -> dict[str, Any]:
     max_rewards: list[float] = []
     max_fixture_open: list[float | None] = []
     video_paths: list[str] = []
+    video_records: list[EpisodeVideoRecord] = []
     start = time.time()
 
     env = make_env(args.task, args.split)
@@ -223,12 +189,15 @@ def run() -> dict[str, Any]:
             first_success_step = None
             episode_max_reward = float("-inf")
             episode_max_open = float("-inf")
+            episode_instruction = ""
             step_i = 0
 
             while step_i < max_steps:
                 if args.video_dir is not None and step_i % args.steps_per_render == 0:
                     frames.append(env.render())
                 images, states, instruction = official_obs_to_lerobot_inputs(obs)
+                if instruction and not episode_instruction:
+                    episode_instruction = instruction
                 inference_seed = None
                 if args.inference_seed is not None:
                     inference_seed = args.inference_seed + episode_i * max_steps + step_i
@@ -270,10 +239,23 @@ def run() -> dict[str, Any]:
 
             if args.video_dir is not None:
                 frames.append(env.render())
-                suffix = f"success{int(success)}"
-                video_path = args.video_dir / f"{uuid.uuid4()}_{suffix}.mp4"
-                _save_video(frames, video_path, args.video_fps)
-                video_paths.append(str(video_path))
+                video_path = save_frames_as_episode_video(
+                    [np.asarray(frame, dtype=np.uint8) for frame in frames],
+                    args.video_dir,
+                    success=success,
+                    fps=args.video_fps,
+                )
+                if video_path is not None:
+                    video_paths.append(str(video_path))
+                video_records.append(
+                    EpisodeVideoRecord(
+                        episode_idx=episode_i,
+                        success=success,
+                        language=episode_instruction,
+                        video_path=str(video_path) if video_path is not None else None,
+                    )
+                )
+                write_per_episode_tsv(args.video_dir, video_records)
 
             successes.append(success)
             episode_lengths.append(step_i)

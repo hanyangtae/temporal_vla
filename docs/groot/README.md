@@ -11,7 +11,8 @@ SAFE-readable artifact로 내보내는 절차를 유지하는 것이다.
 구조상 가장 중요한 전제는 N1.5와 N1.6이 대칭이 아니라는 점이다. N1.6 reusable backend
 library는 `src/policies/groot/`에 모여 있지만, `scripts/safe/groot_n15/robocasa/`는 그
 N1.5판이 아니다. N1.5 tree는 eval client, split helper, checkpoint/runtime compatibility
-helper만 맡고, model loader/schema/IO/serving/SAFE feature capture 역할은 갖지 않는다.
+helper, LeRobot HTTP feature collection client만 맡고, model loader/schema/IO/serving/SAFE
+feature extractor backend 역할은 갖지 않는다.
 N1.5 repo-local script entrypoint는 `scripts/safe/groot_n15/README.md`이고, RoboCasa
 script 공통 path/run identity는 `scripts/safe/groot_n15/robocasa/run_config.{py,sh}`가 맡는다.
 처음 읽을 때는 [00 Flow Map](00_groot_flow_map.md)의 "N1.5 And N1.6 Are Asymmetric"
@@ -77,11 +78,42 @@ script 공통 path/run identity는 `scripts/safe/groot_n15/robocasa/run_config.{
 | N1.6 HTTP implementation changelog | `n16_11_http_act_changes.md` | HTTP `/act` / `/act_with_features` 코드 계약과 변경점. 검증 수치는 `n16_09`로 링크 |
 | N1.6 RoboCasa refactor architecture | `n16_12_robocasa_refactor_report.md` | GR00T RoboCasa 전용 processor, HTTP/ZMQ transport, shared contract 책임 경계 |
 | N1.5 reference | `n15_01_finetune.md`, `n15_02_eval.md` | Isaac-GR00T N1.5 GR1/PandaOmron reference workflow (ZMQ) |
-| N1.5 LeRobot pipeline | `n15_03`(overview/status), `n15_04`(serve spec), `n15_05`(obs bridge spec) | LeRobot serve→HTTP→robocasa365→analysis UI 4-stage. n15_03이 map, 04~05가 stage별 명세 |
+| N1.5 LeRobot pipeline | `n15_03`(overview/status), `n15_04`(serve spec), `n15_05`(obs bridge spec) | LeRobot serve→HTTP→robocasa365→analysis UI 4-stage. Feature 비교용 수집 client는 `scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py` |
 | N1.5 native/internal comparison | `n15_07_native_zmq_openfridge.md`, `n15_08_lerobot_internal_parity.md` | native Isaac-GR00T N1.5 ZMQ smoke와 SR 외 내부값 parity 검증 |
 | Legacy | `_legacy/robocasa_finetune_setup.md` | 초기 setup note. 현행 runbook의 기준이 아니다 |
 
-SAFE 관련 script는 계속 `scripts/safe/groot_n16/robocasa/` 아래에 둔다. 문서는 `docs/groot/`에서 번호 prefix로 reading order를 표현한다.
+N1.6 SAFE feature server와 canonical artifact writer는 계속
+`scripts/safe/groot_n16/robocasa/` 아래에 둔다. N1.5는 LeRobot HTTP
+`/act_with_features` client가 그 writer contract를 재사용해 비교용 artifact를 만든다.
+문서는 `docs/groot/`에서 번호 prefix로 reading order를 표현한다.
+
+## 현재 비디오 Artifact 계약
+
+현행 HTTP eval code는 ZMQ-style episode artifact를 따른다.
+
+| 경로 | 현재 저장 형태 | 비고 |
+|---|---|---|
+| N1.6 ZMQ | `<video-dir>/<uuid>_s{0|1}.mp4` + `per_episode.tsv` | upstream `VideoRecordingWrapper` 경로 |
+| N1.6 HTTP `--use-groot-env` | `<video-dir>/<Task>/<uuid>_s{0|1}.mp4` + `per_episode.tsv` | `scripts/eval/robocasa_eval.py`; video frame selection은 `src/policies/groot/robocasa/io.py`의 frame helper를 재사용 |
+| N1.5 LeRobot HTTP | `<video-dir>/<uuid>_s{0|1}.mp4` + `per_episode.tsv` | `scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py`; RoboCasa obs alias/state/language extraction은 shared RoboCasa IO를 재사용한 뒤 LeRobot camera 이름으로 변환 |
+
+Feature collection artifact는 N1.6 ZMQ 기준인
+`task{id}--ep{idx}--succ{0|1}.{pkl,csv,mp4}` triplet을 따른다. N1.6 HTTP
+collection은 `collect_rollout.py --policy-transport http`, N1.5 LeRobot HTTP
+collection은 `scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py`가
+같은 writer contract를 사용한다. Scene까지 맞춰 비교할 때는 N1.5도 N1.6과 같은
+explicit `--env-name`을 필수로 쓰고, N1.6이 export한 `ep_meta` manifest를
+`--ep-meta-dir` / `--ep-meta-load-env-name`으로 replay한다. N1.5 feature collector도
+N1.6과 같은 shared RoboCasa `VideoRecordingWrapper`/`MultiStepWrapper` stack에서
+`--n_action_steps` action chunk를 실행한다. 숫자 seed만 같다고 서로 다른 RoboCasa env id
+사이의 scene이 같아지는 것은 아니다.
+검증도 `scripts/safe/groot_n16/robocasa/collect/verify_rollout_collection.py`를
+재사용하되 N1.5 기대값(`model_family=lerobot_groot_n15`,
+`feature_kind=groot_n15_dit_action_tokens_pre_decode`, `policy_transport=http`)을
+명시해서 실행한다.
+
+`docs/groot/n15_07_*`와 아래 Runtime Recheck 섹션에 남아 있는 `success1.mp4` 또는 task-level
+`OpenFridge.mp4` 경로는 해당 실행 당시의 historical artifact 이름이다. 새 run의 기준은 위 표다.
 
 ## 용어 기준
 
@@ -95,7 +127,7 @@ Repo-wide 용어는 [`../../CONTEXT.md`](../../CONTEXT.md)를 기준으로 한�
 | SAFE feature vector | VLA latent feature를 token/horizon/diffusion 축에서 aggregation한 timestep-level detector input | `n16_06_safe_inference_semantics.md`, `n16_10_safe_report.md` |
 | datapoint | `hidden_states[t]` 하나. GR00T inference 1회의 DiT action-token latent | `n16_06_safe_inference_semantics.md` |
 | scenario / scene composition | layout/style, object cfg, texture, fixture reference, camera/config, robot base pose 수준의 task instance | `n16_05_safe_env_reproduction.md` |
-| `scenario_seed` | RoboCasa env construction seed. 현재 collector의 `--seed` 값 | `n16_05_safe_env_reproduction.md` |
+| `scenario_seed` | RoboCasa env construction seed. 현재 collector는 `--seed S`와 local episode index `i`로 `S+i`를 쓴다 | `n16_05_safe_env_reproduction.md` |
 | `ep_meta` manifest | `(env_name, scenario_seed)`에 대응하는 RoboCasa scenario 기록 JSON | `n16_05_safe_env_reproduction.md` |
 | `ah8` / `ah16` | SAFE feature export horizon과 RoboCasa execution step을 8 또는 16으로 맞춘 paired collection mode | `n16_04_safe_collection.md`, `n16_06_safe_inference_semantics.md` |
 | SR | success rate. task 또는 run에서 success episode 비율 | `n16_02_eval.md`, `n16_10_safe_report.md` |
