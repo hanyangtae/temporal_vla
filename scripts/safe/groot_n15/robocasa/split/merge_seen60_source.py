@@ -8,6 +8,13 @@ import csv
 import os
 import shutil
 from pathlib import Path
+import sys
+
+
+SAFE_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(SAFE_ROOT))
+
+from _common.split_lib import rollout_stem, symlink_relative  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -26,10 +33,6 @@ def _load_manifest(path: Path) -> list[dict[str, str]]:
 
 def _task_dir_name(row: dict[str, str]) -> str:
     return Path(row["source_path"]).parent.name
-
-
-def _new_stem(task_id: int, episode_idx: int, success: int) -> str:
-    return f"task{task_id}--ep{episode_idx:03d}--succ{success}"
 
 
 def _link_or_copy(src: Path, dst: Path, mode: str) -> None:
@@ -75,7 +78,7 @@ def main() -> None:
         success = int(row["success"])
         episode_idx = int(row["new_episode_idx"])
         task_dir = _task_dir_name(row)
-        stem = _new_stem(task_id, episode_idx, success)
+        stem = rollout_stem(task_id, episode_idx, success)
         old_pkl = Path(row["source_path"]).resolve()
         source_dir = new_source_root / task_dir
         new_pkl = source_dir / f"{stem}.pkl"
@@ -91,7 +94,7 @@ def main() -> None:
         split_path = split_dir / f"{stem}.pkl"
         if split_path.exists() or split_path.is_symlink():
             split_path.unlink()
-        split_path.symlink_to(new_pkl)
+        symlink_relative(new_pkl, split_path)
 
         source_manifest_rows.append(
             {

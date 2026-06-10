@@ -21,6 +21,11 @@ class RolloutFile:
     pkl_path: Path
     task_name: str = ""
     category: str = ""
+    source_root: Path | None = None
+
+
+def rollout_stem(task_id: int, episode_idx: int, success: int) -> str:
+    return f"task{task_id}--ep{episode_idx:03d}--succ{success}"
 
 
 def task_name_category(value: str | tuple[str, str]) -> tuple[str, str]:
@@ -34,6 +39,7 @@ def parse_rollout(
     *,
     task_name: str = "",
     category: str = "",
+    source_root: Path | None = None,
 ) -> RolloutFile:
     match = ROLLOUT_RE.match(path.name)
     if match is None:
@@ -45,6 +51,7 @@ def parse_rollout(
         pkl_path=path,
         task_name=task_name,
         category=category,
+        source_root=source_root,
     )
 
 
