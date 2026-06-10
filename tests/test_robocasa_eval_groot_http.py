@@ -195,6 +195,12 @@ class _FakeGrootEnv:
         self.step_actions.append(action)
         return (
             {
+                "video.res256_image_side_0": np.stack(
+                    [
+                        np.full((8, 8, 3), 4, dtype=np.uint8),
+                        np.full((8, 8, 3), 5, dtype=np.uint8),
+                    ]
+                ),
                 "video.robot0_agentview_left": np.full((8, 8, 3), 4, dtype=np.uint8),
             },
             0.0,
@@ -397,6 +403,66 @@ class TestRunVlaRolloutsGroot(unittest.TestCase):
         self.assertEqual(env.set_ep_meta_calls, [replay_ep_meta])
         self.assertEqual(result["rollouts"][0]["ep_meta_mode"], "imported")
         self.assertEqual(result["rollouts"][0]["inference_seed"], 5000)
+
+    def test_groot_env_http_video_contract_is_episode_files_and_manifest(self):
+        module = _import_robocasa_eval()
+        env = _FakeGrootEnv()
+        client = _FakeVLAClient()
+
+        class FakeWriter:
+            def __init__(self, path, fps):
+                self.path = Path(path)
+                self.fps = fps
+                self.frames = []
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                self.path.write_bytes(b"")
+
+            def append_data(self, frame):
+                self.frames.append(frame)
+
+            def close(self):
+                pass
+
+        fake_imageio = types.ModuleType("imageio")
+        writers = []
+
+        def get_writer(path, fps):
+            writer = FakeWriter(path, fps)
+            writers.append(writer)
+            return writer
+
+        fake_imageio.get_writer = get_writer
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
+            sys.modules,
+            {"imageio": fake_imageio},
+        ):
+            video_dir = Path(tmp) / "videos" / "OpenFridge"
+            result = module.run_vla_rollouts_groot(
+                env,
+                client,
+                num_rollouts=2,
+                num_steps=2,
+                seed=0,
+                video_dir=str(video_dir),
+            )
+
+            manifest_lines = (video_dir / "per_episode.tsv").read_text().splitlines()
+
+        self.assertEqual(len(writers), 2)
+        self.assertEqual(result["num_success"], 2)
+        self.assertEqual(len(result["video_paths"]), 2)
+        self.assertTrue(all(path.endswith("_s1.mp4") for path in result["video_paths"]))
+        self.assertTrue(all(writer.frames[-1].shape == (8, 8, 3) for writer in writers))
+        self.assertTrue(all(np.all(writer.frames[-1] == 5) for writer in writers))
+        self.assertEqual(
+            manifest_lines,
+            [
+                "episode_idx\tsuccess\tlanguage",
+                "0\t1\topen the cabinet",
+                "1\t1\topen the cabinet",
+            ],
+        )
 
 
 if __name__ == "__main__":

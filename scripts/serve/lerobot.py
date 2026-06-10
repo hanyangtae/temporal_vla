@@ -273,6 +273,32 @@ def _emit_subkeys(action_np: np.ndarray, profile: CheckpointProfile) -> dict:
     return out
 
 
+def _postprocess_action_preserve_chunk(action: torch.Tensor) -> torch.Tensor:
+    """Run the LeRobot postprocessor without collapsing a [B,H,D] action chunk."""
+    if postprocessor is None:
+        return action
+    if not isinstance(action, torch.Tensor) or action.ndim != 3:
+        return postprocessor(action)
+
+    processed_steps = []
+    for step_idx in range(action.shape[1]):
+        processed_steps.append(postprocessor(action[:, step_idx, :]))
+    return torch.stack(processed_steps, dim=1)
+
+
+def _action_to_emit_array(action: torch.Tensor) -> np.ndarray:
+    action_np = action.detach().cpu().float().numpy()
+    if action_np.ndim == 1:
+        return action_np[np.newaxis, :]
+    if action_np.ndim == 2:
+        return action_np
+    if action_np.ndim == 3:
+        if action_np.shape[0] != 1:
+            raise ValueError(f"Only batch size 1 action chunks are supported, got {action_np.shape}")
+        return action_np[0]
+    raise ValueError(f"Unsupported action tensor shape: {action_np.shape}")
+
+
 @app.post("/act")
 async def predict_action(payload: dict):
     """통일 API: observation → action sub-keys."""
@@ -302,12 +328,8 @@ async def predict_action(payload: dict):
     with torch.inference_mode():
         action = policy.select_action(batch)
 
-    if postprocessor is not None:
-        action = postprocessor(action)
-
-    action_np = action.detach().cpu().float().numpy()
-    if action_np.ndim == 1:
-        action_np = action_np[np.newaxis, :]
+    action = _postprocess_action_preserve_chunk(action)
+    action_np = _action_to_emit_array(action)
 
     result = _emit_subkeys(action_np, profile)
     if inference_seed is not None:
@@ -320,10 +342,11 @@ async def predict_action(payload: dict):
 async def predict_action_with_features(payload: dict):
     """SAFE 수집용: /act 와 동일하되 추론이 발화한 step 에서 SAFE hidden_states 동봉.
 
-    lerobot 정책은 action queue 가 빌 때(매 n_action_steps)만 새 추론을 돌리므로,
-    그 step 에만 has_feature=True, legacy hidden_states_b64, unified
-    features.hidden_states blob 이 채워진다. 그 외 step 은 버퍼된 action 만
-    반환(has_feature=False).
+    GR00T N1.5 collect는 N1.6 SAFE collector와 같은 chunk execution을 맞추기 위해
+    predict_action_chunk를 hook 아래에서 직접 호출하고 [H,D] action subkeys를 반환한다.
+    다른 lerobot 정책은 action queue가 빌 때만 새 추론을 돌리므로 그 step에만
+    has_feature=True, legacy hidden_states_b64, unified features.hidden_states blob이
+    채워진다.
     """
     if policy is None:
         return {"error": "model not loaded"}
@@ -342,12 +365,8 @@ async def predict_action_with_features(payload: dict):
 
     action, hidden, _axes, meta = safe_hooks.run_with_features(policy, batch, _policy_type)
 
-    if postprocessor is not None:
-        action = postprocessor(action)
-
-    action_np = action.detach().cpu().float().numpy()
-    if action_np.ndim == 1:
-        action_np = action_np[np.newaxis, :]
+    action = _postprocess_action_preserve_chunk(action)
+    action_np = _action_to_emit_array(action)
 
     result = _emit_subkeys(action_np, profile)
     if hidden is not None:

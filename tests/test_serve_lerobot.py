@@ -1037,6 +1037,72 @@ class TestActWithFeaturesEndpoint(unittest.TestCase):
         self.assertEqual(data["features.feature_action_horizon"], 12)
         self.assertEqual(data["features.model_action_horizon"], 12)
 
+    def test_response_preserves_groot_action_chunk_shape(self):
+        hidden = np.zeros((4, 16, 8), dtype=np.float16)
+        action = torch.arange(1 * 16 * 7, dtype=torch.float32).reshape(1, 16, 7)
+        meta = {
+            "feature_kind": "groot_n15_dit_action_tokens_pre_decode",
+            "feature_axes": ["denoising_step", "action_step", "feature_dim"],
+            "num_inference_timesteps": 4,
+            "action_horizon": 16,
+            "feature_dim": 8,
+        }
+
+        self.srv._policy_type = "groot"
+        self.srv.postprocessor = MagicMock(side_effect=lambda step: step + 1.0)
+        with unittest.mock.patch.object(
+            self.srv.safe_hooks,
+            "run_with_features",
+            return_value=(action, hidden, meta["feature_axes"], meta),
+        ):
+            r = self.client.post(
+                "/act_with_features",
+                json={"observation.images.static": _make_b64_image(), "task": "test"},
+            )
+
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertEqual(np.array(data["action.eef_pos"]).shape, (16, 3))
+        self.assertEqual(np.array(data["action.eef_axisangle"]).shape, (16, 3))
+        self.assertEqual(np.array(data["action.gripper"]).shape, (16, 1))
+        self.assertEqual(data["action.eef_pos"][0], [1.0, 2.0, 3.0])
+        self.assertEqual(data["action.gripper"][-1], [112.0])
+        self.assertEqual(self.srv.postprocessor.call_count, 16)
+
+
+class TestSafeHooks(unittest.TestCase):
+    def test_groot_feature_hook_uses_predict_action_chunk(self):
+        class FakeActionHead:
+            action_horizon = 2
+
+            def __init__(self):
+                self.model = torch.nn.Identity()
+
+        class FakePolicy:
+            def __init__(self):
+                self._groot_model = SimpleNamespace(action_head=FakeActionHead())
+                self.select_action = MagicMock(side_effect=AssertionError("select_action used"))
+                self.predict_action_chunk = MagicMock(side_effect=self._predict_action_chunk)
+
+            def _predict_action_chunk(self, batch):
+                del batch
+                self._groot_model.action_head.model(torch.ones(1, 3, 4))
+                return torch.zeros(1, 2, 7)
+
+        policy = FakePolicy()
+        action, hidden, axes, meta = serve_lerobot.safe_hooks.run_with_features(
+            policy,
+            {},
+            "groot",
+        )
+
+        self.assertEqual(tuple(action.shape), (1, 2, 7))
+        self.assertEqual(tuple(hidden.shape), (1, 2, 4))
+        self.assertEqual(axes, ["denoising_step", "action_step", "feature_dim"])
+        self.assertEqual(meta["action_horizon"], 2)
+        policy.predict_action_chunk.assert_called_once()
+        policy.select_action.assert_not_called()
+
 
 class TestResetEndpoint(unittest.TestCase):
     """POST /reset 엔드포인트."""

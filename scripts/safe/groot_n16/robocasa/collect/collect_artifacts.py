@@ -46,6 +46,10 @@ def write_safe_triplet(
     ep_meta: dict[str, Any],
     n_action_steps: int,
     robocasa_env_source: str,
+    model_family: str = "groot_n16",
+    policy_transport: str = "zmq",
+    task_suite_name: str = "groot_n16_robocasa",
+    video_source: str = "groot_upstream_video_recording_wrapper",
 ) -> None:
     if not policy.records:
         raise RuntimeError("No feature records were collected during rollout")
@@ -72,7 +76,9 @@ def write_safe_triplet(
 
     pkl_path = output_dir / f"{stem}.pkl"
     payload = {
-        "task_suite_name": "groot_n16_robocasa",
+        "task_suite_name": task_suite_name,
+        "model_family": model_family,
+        "policy_transport": policy_transport,
         "task_id": task_id,
         "task_description": task_description,
         "episode_idx": episode_idx,
@@ -97,7 +103,7 @@ def write_safe_triplet(
         "num_inference_timesteps": policy.num_inference_timesteps,
         "env_name": env_name,
         "robocasa_env_source": robocasa_env_source,
-        "video_source": "groot_upstream_video_recording_wrapper",
+        "video_source": video_source,
     }
     # VL(goal) pathway feature (multilayer --capture-vl). 모든 step 에 있을 때만 기록.
     if all("vl_hidden_state" in record for record in policy.records):

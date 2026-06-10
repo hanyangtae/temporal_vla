@@ -50,6 +50,15 @@ def parse_shape(text: str) -> tuple[int, ...]:
         raise argparse.ArgumentTypeError(f"invalid shape: {text!r}") from exc
 
 
+def parse_optional_int(text: str) -> int | None:
+    if text.lower() in {"none", "null"}:
+        return None
+    try:
+        return int(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid optional int: {text!r}") from exc
+
+
 def load_pickle(path: Path) -> dict[str, Any]:
     with path.open("rb") as f:
         return pickle.load(f)
@@ -105,17 +114,26 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--episodes-per-task", type=int, default=100)
     parser.add_argument("--allow-partial", action="store_true")
-    parser.add_argument("--expected-env-source", default="robocasa365")
+    parser.add_argument(
+        "--expected-env-source",
+        "--expected-robocasa-env-source",
+        dest="expected_env_source",
+        default="robocasa365",
+    )
+    parser.add_argument("--expected-model-family", default=None)
+    parser.add_argument("--expected-policy-transport", default=None)
+    parser.add_argument("--expected-task-suite-name", default=None)
+    parser.add_argument("--expected-video-source", default=None)
     parser.add_argument(
         "--expected-feature-kind",
         default="groot_n16_dit_valid_action_tokens_pre_velocity",
     )
     parser.add_argument("--expected-hidden-shape", type=parse_shape, default=(4, 16, 1024))
     parser.add_argument("--expected-action-dim", type=int, default=12)
-    parser.add_argument("--expected-model-horizon", type=int, default=50)
-    parser.add_argument("--expected-valid-horizon", type=int, default=16)
-    parser.add_argument("--expected-feature-action-horizon", type=int, default=None)
-    parser.add_argument("--expected-n-action-steps", type=int, default=None)
+    parser.add_argument("--expected-model-horizon", type=parse_optional_int, default=50)
+    parser.add_argument("--expected-valid-horizon", type=parse_optional_int, default=16)
+    parser.add_argument("--expected-feature-action-horizon", type=parse_optional_int, default=None)
+    parser.add_argument("--expected-n-action-steps", type=parse_optional_int, default=None)
     return parser.parse_args()
 
 
@@ -182,6 +200,30 @@ def main() -> None:
             )
         if payload.get("robocasa_env_source") != args.expected_env_source:
             errors.append(f"env source mismatch for {path}: {payload.get('robocasa_env_source')}")
+        if (
+            args.expected_model_family is not None
+            and payload.get("model_family") != args.expected_model_family
+        ):
+            errors.append(f"model family mismatch for {path}: {payload.get('model_family')}")
+        if (
+            args.expected_policy_transport is not None
+            and payload.get("policy_transport") != args.expected_policy_transport
+        ):
+            errors.append(
+                f"policy transport mismatch for {path}: {payload.get('policy_transport')}"
+            )
+        if (
+            args.expected_task_suite_name is not None
+            and payload.get("task_suite_name") != args.expected_task_suite_name
+        ):
+            errors.append(
+                f"task suite mismatch for {path}: {payload.get('task_suite_name')}"
+            )
+        if (
+            args.expected_video_source is not None
+            and payload.get("video_source") != args.expected_video_source
+        ):
+            errors.append(f"video source mismatch for {path}: {payload.get('video_source')}")
         if payload.get("feature_kind") != args.expected_feature_kind:
             errors.append(f"feature kind mismatch for {path}: {payload.get('feature_kind')}")
         if payload.get("model_action_horizon") != args.expected_model_horizon:

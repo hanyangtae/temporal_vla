@@ -147,7 +147,7 @@ def main() -> None:
 
     for local_ep_idx in range(args.n_episodes):
         episode_idx = args.episode_start_idx + local_ep_idx
-        scenario_seed = args.seed
+        scenario_seed = None if args.seed is None else args.seed + local_ep_idx
         ep_meta_manifest_path = None
         replay_ep_meta = None
         ep_meta_mode = "none"
@@ -226,6 +226,9 @@ def main() -> None:
             ep_meta=results[4],
             n_action_steps=args.n_action_steps,
             robocasa_env_source=ROBOCASA_ENV_SOURCE,
+            model_family="groot_n16",
+            policy_transport=args.policy_transport,
+            task_suite_name="groot_n16_robocasa",
         )
         shutil.rmtree(upstream_video_dir, ignore_errors=True)
         print(

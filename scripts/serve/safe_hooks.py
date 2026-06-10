@@ -6,11 +6,11 @@ SAFE latent 한 점의 의미
 (flow-matching) 또는 token logit(autoregressive)으로 디코딩되기 **직전**의
 마지막-레이어 hidden state. SAFE 논문(arXiv 2506.09937)의 feature 정의와 동일.
 
-lerobot 정책은 내부 action queue 가 빌 때만(= ``config.n_action_steps`` env step
-마다) 새 추론을 돌린다. 그 사이 step 의 ``select_action`` 은 버퍼된 action 을
-popleft 만 하고 추론을 하지 않으므로 latent 가 생기지 않는다. collector 는 latent
-가 생긴 step 에만 record 한다. 이렇게 하면 rollout 충실도가 일반 배포와 동일하게
-유지되면서(매 step replan 아님) SAFE 의 "추론당 feature" 시퀀스와 일치한다.
+대부분의 lerobot 정책은 내부 action queue 가 빌 때만(= ``config.n_action_steps`` env step
+마다) 새 추론을 돌린다. 그 사이 step 의 ``select_action`` 은 버퍼된 action 을 popleft 만
+하고 추론을 하지 않으므로 latent 가 생기지 않는다. GR00T N1.5 feature collection은
+N1.6 SAFE collector와 같은 chunk execution을 맞추기 위해 ``predict_action_chunk``를
+직접 호출하고, 그 action chunk와 같은 추론에서 나온 latent를 record한다.
 
 모델별 hook 지점 (v0.5.1 소스에서 검증)
   pi0, pi05 : ``model.action_out_proj`` 입력            (denoise_step 마다 [B, H, D])
@@ -112,7 +112,9 @@ class SafeFeatureCapture:
     def assemble(self) -> np.ndarray | None:
         """캡처된 텐서를 per-step SAFE latent 으로 결합.
 
-        이번 호출에서 추론이 발화하지 않았으면(queue pop 만) None 반환.
+        이번 호출에서 추론이 발화하지 않았으면(queue pop 만) None 반환. GR00T N1.5
+        collect는 queue pop이 아니라 direct chunk inference이므로 매 호출마다 latent가
+        생긴다.
         flow-matching → ``[K, H, D]`` (float16), pi0_fast → ``[1, n_tokens, D]`` (float16).
         """
         if not self.buf:
@@ -133,12 +135,17 @@ def run_with_features(
     """SAFE hook 을 건 채 ``select_action`` 을 실행.
 
     Returns ``(action, hidden_states | None, feature_axes | None, meta)``.
-    추론이 발화하지 않은 step(queue pop 만)에서는 hidden_states=None — 호출자는
-    hidden_states 가 있을 때만 record 한다.
+    GR00T N1.5는 N1.6 SAFE collection과 같은 chunk execution을 맞추기 위해
+    ``predict_action_chunk``를 호출한다. 다른 policy에서 추론이 발화하지 않은
+    step(queue pop 만)에서는 hidden_states=None — 호출자는 hidden_states가 있을 때만
+    record 한다.
     """
     cap = SafeFeatureCapture(policy, policy_type)
     with torch.inference_mode(), cap:
-        action = policy.select_action(batch)
+        if policy_type == "groot" and hasattr(policy, "predict_action_chunk"):
+            action = policy.predict_action_chunk(batch)
+        else:
+            action = policy.select_action(batch)
 
     hidden = cap.assemble()
     if hidden is None:
