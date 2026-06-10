@@ -34,7 +34,7 @@
 
   POST /act_with_features
     요청: /act 와 동일
-    응답: /act sub-keyed 응답 + features.hidden_states base64 blob + metadata
+    응답: /act sub-keyed 응답 + features.hidden_states feature blob + metadata
 
   POST /reset   ← 에피소드 시작 시 히스토리 초기화 (모델이 필요 없으면 no-op)
   GET  /health  ← 서버 상태 확인 + feature 정보
@@ -50,12 +50,8 @@ import numpy as np
 import requests
 from PIL import Image
 
-
-def _decode_feature_blob(blob: dict) -> np.ndarray:
-    """``features.hidden_states`` 의 base64+shape+dtype dict 를 numpy 로 복원."""
-    raw = base64.b64decode(blob["data"])
-    arr = np.frombuffer(raw, dtype=np.dtype(blob["dtype"]))
-    return arr.reshape(blob["shape"]).copy()
+from src.policies.safe_metadata import normalize_feature_metadata
+from src.utils.common.feature_blob import decode_feature_blob, decode_legacy_feature_array
 
 
 def encode_image(img: np.ndarray) -> str:
@@ -63,11 +59,6 @@ def encode_image(img: np.ndarray) -> str:
     buf = io.BytesIO()
     Image.fromarray(img).save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode()
-
-
-def _decode_ndarray(b64_str: str) -> np.ndarray:
-    """base64(np.save bytes) → ndarray (서버 _encode_ndarray 의 역변환)."""
-    return np.load(io.BytesIO(base64.b64decode(b64_str)), allow_pickle=False)
 
 
 class VLAClient:
@@ -222,11 +213,12 @@ class VLAClient:
             (actions, features, latency_ms)
               actions: ``predict`` 와 같은 sub-keyed dict[str, np.ndarray]
                        (서버가 sub-keyed 응답을 보장 — GR00T HTTP serve 한정)
-              features: dict
+              features: dict | None
                 hidden_states: np.ndarray (``[B, K, H, D]`` 등 서버 shape 그대로)
                 kind: str   (e.g. "groot_n16_dit_valid_action_tokens_pre_velocity")
                 axes: list[str]
                 slice: str  ("valid" | "all")
+                exported_action_token_count: int
                 feature_action_horizon: int
                 valid_action_horizon: int
                 model_action_horizon: int
@@ -237,18 +229,40 @@ class VLAClient:
         actions = self._parse_action(result)
 
         blob = result.get("features.hidden_states")
-        if not isinstance(blob, dict):
+        if isinstance(blob, dict):
+            metadata = normalize_feature_metadata(result)
+            features = {
+                "hidden_states": decode_feature_blob(blob),
+                "kind": metadata.feature_kind,
+                "axes": metadata.feature_axes,
+                "slice": metadata.feature_slice,
+                "exported_action_token_count": metadata.exported_action_token_count,
+                "feature_action_horizon": metadata.feature_action_horizon,
+                "valid_action_horizon": metadata.valid_action_horizon,
+                "model_action_horizon": metadata.model_action_horizon,
+                "num_inference_timesteps": metadata.num_inference_timesteps,
+            }
+            return actions, features, latency_ms
+
+        if result.get("has_feature") is False:
+            return actions, None, latency_ms
+
+        legacy_blob = result.get("hidden_states_b64")
+        if not isinstance(legacy_blob, str):
             raise RuntimeError(
                 "/act_with_features response missing features.hidden_states blob"
             )
+
+        metadata = normalize_feature_metadata(result)
         features = {
-            "hidden_states": _decode_feature_blob(blob),
-            "kind": result.get("features.kind"),
-            "axes": result.get("features.axes"),
-            "slice": result.get("features.slice"),
-            "feature_action_horizon": result.get("features.feature_action_horizon"),
-            "valid_action_horizon": result.get("features.valid_action_horizon"),
-            "model_action_horizon": result.get("features.model_action_horizon"),
-            "num_inference_timesteps": result.get("features.num_inference_timesteps"),
+            "hidden_states": decode_legacy_feature_array(legacy_blob),
+            "kind": metadata.feature_kind,
+            "axes": metadata.feature_axes,
+            "slice": metadata.feature_slice,
+            "exported_action_token_count": metadata.exported_action_token_count,
+            "feature_action_horizon": metadata.feature_action_horizon,
+            "valid_action_horizon": metadata.valid_action_horizon,
+            "model_action_horizon": metadata.model_action_horizon,
+            "num_inference_timesteps": metadata.num_inference_timesteps,
         }
         return actions, features, latency_ms

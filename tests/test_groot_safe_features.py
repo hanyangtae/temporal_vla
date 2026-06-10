@@ -14,10 +14,11 @@ from src.policies.groot.safe.features import (
     SAFE_FEATURE_KIND_VALID,
     capture_dit_features,
     cast_feature_tensor,
+    decode_feature_tensor_blob,
     decode_features_from_base64,
+    encode_feature_tensor_blob,
     encode_features_to_base64,
     feature_metadata,
-    normalize_feature_metadata,
     resolve_feature_action_horizon,
     SafeFeatureExtractor,
 )
@@ -94,69 +95,6 @@ class TestFeatureMetadata(unittest.TestCase):
     def test_unknown_slice_raises(self):
         with self.assertRaisesRegex(ValueError, "Unsupported feature slice"):
             feature_metadata("bogus")
-
-
-class TestNormalizeFeatureMetadata(unittest.TestCase):
-    def test_normalizes_zmq_canonical_metadata(self):
-        metadata = normalize_feature_metadata(
-            {
-                "feature_kind": SAFE_FEATURE_KIND_VALID,
-                "feature_axes": SAFE_FEATURE_AXES_VALID,
-                "feature_slice": "valid",
-                "exported_action_token_count": 8,
-                "feature_action_horizon": 8,
-                "valid_action_horizon": 16,
-                "model_action_horizon": 50,
-                "num_inference_timesteps": 4,
-            }
-        )
-
-        self.assertEqual(metadata.feature_kind, SAFE_FEATURE_KIND_VALID)
-        self.assertEqual(metadata.feature_axes, SAFE_FEATURE_AXES_VALID)
-        self.assertEqual(metadata.feature_slice, "valid")
-        self.assertEqual(metadata.exported_action_token_count, 8)
-        self.assertEqual(metadata.feature_action_horizon, 8)
-        self.assertEqual(metadata.valid_action_horizon, 16)
-        self.assertEqual(metadata.model_action_horizon, 50)
-        self.assertEqual(metadata.num_inference_timesteps, 4)
-
-    def test_normalizes_http_feature_metadata_aliases(self):
-        metadata = normalize_feature_metadata(
-            {
-                "kind": SAFE_FEATURE_KIND_VALID,
-                "axes": tuple(SAFE_FEATURE_AXES_VALID),
-                "slice": "valid",
-                "feature_action_horizon": np.int64(8),
-                "valid_action_horizon": 16,
-                "model_action_horizon": 50,
-                "num_inference_timesteps": 4,
-            }
-        )
-
-        self.assertEqual(metadata.feature_kind, SAFE_FEATURE_KIND_VALID)
-        self.assertEqual(metadata.feature_axes, SAFE_FEATURE_AXES_VALID)
-        self.assertEqual(metadata.feature_slice, "valid")
-        self.assertEqual(metadata.exported_action_token_count, 8)
-
-    def test_normalizes_vla_client_flattened_feature_metadata(self):
-        metadata = normalize_feature_metadata(
-            {
-                "features.kind": SAFE_FEATURE_KIND_ALL,
-                "features.axes": SAFE_FEATURE_AXES_ALL,
-                "features.slice": "all",
-                "features.exported_action_token_count": 50,
-                "features.feature_action_horizon": 50,
-                "features.valid_action_horizon": 16,
-                "features.model_action_horizon": 50,
-                "features.num_inference_timesteps": 6,
-            }
-        )
-
-        self.assertEqual(metadata.feature_kind, SAFE_FEATURE_KIND_ALL)
-        self.assertEqual(metadata.feature_axes, SAFE_FEATURE_AXES_ALL)
-        self.assertEqual(metadata.feature_slice, "all")
-        self.assertEqual(metadata.exported_action_token_count, 50)
-        self.assertEqual(metadata.num_inference_timesteps, 6)
 
 
 class TestResolveFeatureActionHorizon(unittest.TestCase):
@@ -305,8 +243,8 @@ class TestFeatureEncoding(unittest.TestCase):
         arr = np.linspace(-1.0, 1.0, 12, dtype=np.float16).reshape(1, 2, 2, 3)
         tensor = torch.from_numpy(arr.astype(np.float32))
 
-        blob = encode_features_to_base64(tensor, "float16")
-        decoded = decode_features_from_base64(blob)
+        blob = encode_feature_tensor_blob(tensor, "float16")
+        decoded = decode_feature_tensor_blob(blob)
 
         self.assertEqual(blob["dtype"], "float16")
         self.assertEqual(list(blob["shape"]), [1, 2, 2, 3])
@@ -316,8 +254,8 @@ class TestFeatureEncoding(unittest.TestCase):
         arr = np.linspace(-1.0, 1.0, 6, dtype=np.float32).reshape(1, 1, 2, 3)
         tensor = torch.from_numpy(arr)
 
-        blob = encode_features_to_base64(tensor, "float32")
-        decoded = decode_features_from_base64(blob)
+        blob = encode_feature_tensor_blob(tensor, "float32")
+        decoded = decode_feature_tensor_blob(blob)
 
         self.assertEqual(blob["dtype"], "float32")
         np.testing.assert_array_equal(decoded, arr)
@@ -328,12 +266,21 @@ class TestFeatureEncoding(unittest.TestCase):
 
     def test_decoded_array_is_writable(self):
         arr = np.zeros((2,), dtype=np.float16)
-        blob = encode_features_to_base64(torch.from_numpy(arr.astype(np.float32)), "float16")
-        decoded = decode_features_from_base64(blob)
+        blob = encode_feature_tensor_blob(torch.from_numpy(arr.astype(np.float32)), "float16")
+        decoded = decode_feature_tensor_blob(blob)
 
         # frombuffer returns a read-only view; decode should return a copy.
         decoded[0] = 1.0
         self.assertEqual(decoded[0], 1.0)
+
+    def test_legacy_base64_names_alias_feature_blob_api(self):
+        tensor = torch.arange(4, dtype=torch.float32).reshape(1, 1, 2, 2)
+
+        blob = encode_feature_tensor_blob(tensor, "float32")
+        legacy_blob = encode_features_to_base64(tensor, "float32")
+
+        self.assertEqual(legacy_blob, blob)
+        np.testing.assert_array_equal(decode_features_from_base64(blob), decode_feature_tensor_blob(blob))
 
 
 if __name__ == "__main__":

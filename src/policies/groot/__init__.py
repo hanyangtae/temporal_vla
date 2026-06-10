@@ -6,5 +6,7 @@ N1.6 위에 얹는 데이터/모델 변환 layer다. GR00T N1.5 LeRobot serving 
 
 - core:      로더, schema, 이미지 전처리, HTTP service runtime
 - robocasa:  GrootRoboCasaEnv native obs/action, replay, eval wrappers
-- safe:      N1.6 DiT SAFE feature capture/metadata helpers
+- safe:      N1.6 DiT SAFE feature capture/serialization helpers
+
+Cross-policy SAFE feature metadata naming lives in `src/policies/safe_metadata.py`.
 """

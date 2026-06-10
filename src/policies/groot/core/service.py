@@ -8,12 +8,11 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-import torch
 
 from .loader import LoadedGrootModel, load_groot_policy
 from .preprocess import FINAL_IMAGE_RESOLUTION, decode_b64_image, process_img
 from .rng import temporary_inference_seed
-from ..safe.features import SafeFeatureExtractor, encode_features_to_base64, feature_metadata
+from ..safe.features import SafeFeatureExtractor, encode_feature_tensor_blob, feature_metadata
 from .schema import (
     GROOT_ENV_LANGUAGE_KEYS,
     GROOT_TO_UNIFIED_ACTION,
@@ -300,12 +299,15 @@ class GrootPolicyService:
 
         out = self.convert_native_action_to_subkeys(captured.action, latency_ms)
         metadata = captured.metadata
-        out["features.hidden_states"] = encode_features_to_base64(
+        out["features.hidden_states"] = encode_feature_tensor_blob(
             captured.hidden_states, cfg.feature_dtype
         )
         out["features.kind"] = metadata.feature_kind
         out["features.axes"] = metadata.feature_axes
         out["features.slice"] = metadata.feature_slice
+        out["features.exported_action_token_count"] = (
+            metadata.exported_action_token_count
+        )
         out["features.feature_action_horizon"] = metadata.feature_action_horizon
         out["features.valid_action_horizon"] = metadata.valid_action_horizon
         out["features.model_action_horizon"] = metadata.model_action_horizon

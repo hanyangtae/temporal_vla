@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Any
+
 FLOW_FEATURE_AXES = ["denoising_step", "action_step", "feature_dim"]
 FAST_FEATURE_AXES = ["token_singleton", "action_token", "feature_dim"]
 GROOT_N16_VALID_FEATURE_AXES = [
@@ -27,6 +30,30 @@ _LEROBOT_FEATURE_KINDS = {
 }
 
 
+@dataclass(frozen=True)
+class SafeFeatureMetadata:
+    feature_kind: str | None
+    feature_axes: list[str] | None
+    feature_slice: str | None
+    exported_action_token_count: int | None
+    feature_action_horizon: int | None
+    valid_action_horizon: int | None
+    model_action_horizon: int | None
+    num_inference_timesteps: int | None
+
+    def asdict(self) -> dict[str, Any]:
+        return {
+            "feature_kind": self.feature_kind,
+            "feature_axes": self.feature_axes,
+            "feature_slice": self.feature_slice,
+            "exported_action_token_count": self.exported_action_token_count,
+            "feature_action_horizon": self.feature_action_horizon,
+            "valid_action_horizon": self.valid_action_horizon,
+            "model_action_horizon": self.model_action_horizon,
+            "num_inference_timesteps": self.num_inference_timesteps,
+        }
+
+
 def lerobot_feature_kind(policy_type: str) -> str:
     try:
         return _LEROBOT_FEATURE_KINDS[policy_type]
@@ -48,3 +75,80 @@ def groot_n16_feature_metadata(feature_slice: str) -> tuple[str, list[str]]:
     if feature_slice == "all":
         return GROOT_N16_ALL_FEATURE_KIND, list(GROOT_N16_ALL_FEATURE_AXES)
     raise ValueError(f"Unsupported feature slice: {feature_slice}")
+
+
+def _first_non_none(payload: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = payload.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    return int(value)
+
+
+def normalize_feature_metadata(payload: dict[str, Any]) -> SafeFeatureMetadata:
+    """Normalize ZMQ, HTTP-response, or VLAClient feature metadata keys.
+
+    Canonical fields match the SAFE rollout pkl schema. Accepted aliases include
+    ``feature_kind`` / ``kind`` / ``features.kind`` and equivalent patterns for
+    axes, slice, and horizon metadata. Legacy LeRobot responses use
+    ``action_horizon`` or ``n_action_tokens`` for the exported feature horizon.
+    """
+    feature_action_horizon = _optional_int(
+        _first_non_none(
+            payload,
+            "feature_action_horizon",
+            "features.feature_action_horizon",
+            "action_horizon",
+            "features.action_horizon",
+            "n_action_tokens",
+            "features.n_action_tokens",
+        )
+    )
+    exported_action_token_count = _optional_int(
+        _first_non_none(
+            payload,
+            "exported_action_token_count",
+            "features.exported_action_token_count",
+        )
+    )
+    if exported_action_token_count is None:
+        exported_action_token_count = feature_action_horizon
+
+    model_action_horizon = _optional_int(
+        _first_non_none(
+            payload,
+            "model_action_horizon",
+            "features.model_action_horizon",
+        )
+    )
+    if model_action_horizon is None:
+        model_action_horizon = feature_action_horizon
+
+    axes = _first_non_none(payload, "feature_axes", "axes", "features.axes")
+    if axes is not None:
+        axes = list(axes)
+
+    return SafeFeatureMetadata(
+        feature_kind=_first_non_none(payload, "feature_kind", "kind", "features.kind"),
+        feature_axes=axes,
+        feature_slice=_first_non_none(payload, "feature_slice", "slice", "features.slice"),
+        exported_action_token_count=exported_action_token_count,
+        feature_action_horizon=feature_action_horizon,
+        valid_action_horizon=_optional_int(
+            _first_non_none(payload, "valid_action_horizon", "features.valid_action_horizon")
+        ),
+        model_action_horizon=model_action_horizon,
+        num_inference_timesteps=_optional_int(
+            _first_non_none(
+                payload,
+                "num_inference_timesteps",
+                "features.num_inference_timesteps",
+            )
+        ),
+    )

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import sys
 import threading
@@ -13,6 +12,11 @@ from unittest import mock
 
 import numpy as np
 import requests
+
+from src.utils.common.feature_blob import (
+    encode_feature_blob,
+    encode_legacy_feature_array,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -295,11 +299,11 @@ class TestVLAClientPredict(unittest.TestCase):
 
 
 def _feature_blob(arr: np.ndarray) -> dict:
-    return {
-        "data": base64.b64encode(arr.tobytes()).decode("ascii"),
-        "shape": list(arr.shape),
-        "dtype": str(arr.dtype),
-    }
+    return encode_feature_blob(arr)
+
+
+def _legacy_feature_blob(arr: np.ndarray) -> str:
+    return encode_legacy_feature_array(arr)
 
 
 class TestVLAClientPredictWithFeatures(unittest.TestCase):
@@ -312,6 +316,7 @@ class TestVLAClientPredictWithFeatures(unittest.TestCase):
             "features.kind": "groot_n16_dit_valid_action_tokens_pre_velocity",
             "features.axes": ["denoising_step", "valid_action_step", "feature_dim"],
             "features.slice": "valid",
+            "features.exported_action_token_count": 16,
             "features.feature_action_horizon": 16,
             "features.valid_action_horizon": 16,
             "features.model_action_horizon": 50,
@@ -348,10 +353,29 @@ class TestVLAClientPredictWithFeatures(unittest.TestCase):
             ["denoising_step", "valid_action_step", "feature_dim"],
         )
         self.assertEqual(features["slice"], "valid")
+        self.assertEqual(features["exported_action_token_count"], 16)
         self.assertEqual(features["feature_action_horizon"], 16)
         self.assertEqual(features["valid_action_horizon"], 16)
         self.assertEqual(features["model_action_horizon"], 50)
         self.assertEqual(features["num_inference_timesteps"], 4)
+
+    def test_predict_with_features_accepts_namespaced_legacy_horizon_alias(self):
+        feature_arr = np.arange(1 * 1 * 12 * 4, dtype=np.float16).reshape(1, 1, 12, 4)
+        payload = self._features_response(feature_arr)
+        payload["features.feature_action_horizon"] = None
+        payload["features.exported_action_token_count"] = None
+        payload["features.model_action_horizon"] = None
+        payload["features.action_horizon"] = None
+        payload["features.n_action_tokens"] = 12
+        client = VLAClient("http://server")
+
+        with mock.patch("vla_client.requests.post", return_value=_Response(payload)):
+            _actions, features, _latency = client.predict_with_features({"left": _image()})
+
+        assert features is not None
+        self.assertEqual(features["exported_action_token_count"], 12)
+        self.assertEqual(features["feature_action_horizon"], 12)
+        self.assertEqual(features["model_action_horizon"], 12)
 
     def test_predict_with_features_raises_when_blob_missing(self):
         client = VLAClient("http://server")
@@ -362,6 +386,58 @@ class TestVLAClientPredictWithFeatures(unittest.TestCase):
         ):
             with self.assertRaisesRegex(RuntimeError, "features.hidden_states"):
                 client.predict_with_features({"left": _image()})
+
+    def test_predict_with_features_returns_none_when_lerobot_queue_has_no_feature(self):
+        client = VLAClient("http://server")
+
+        with mock.patch(
+            "vla_client.requests.post",
+            return_value=_Response(
+                {
+                    "action.eef_pos": [[0.0, 0.0, 0.0]],
+                    "has_feature": False,
+                }
+            ),
+        ):
+            actions, features, _latency = client.predict_with_features({"left": _image()})
+
+        np.testing.assert_allclose(actions["action.eef_pos"], [[0.0, 0.0, 0.0]])
+        self.assertIsNone(features)
+
+    def test_predict_with_features_decodes_legacy_lerobot_feature_response(self):
+        feature_arr = np.arange(10 * 50 * 4, dtype=np.float16).reshape(10, 50, 4)
+        client = VLAClient("http://server")
+
+        with mock.patch(
+            "vla_client.requests.post",
+            return_value=_Response(
+                {
+                    "action.eef_pos": [[1.0, 2.0, 3.0]],
+                    "has_feature": True,
+                    "hidden_states_b64": _legacy_feature_blob(feature_arr),
+                    "feature_kind": "pi05_action_expert_pre_velocity",
+                    "feature_axes": ["denoising_step", "action_step", "feature_dim"],
+                    "num_inference_timesteps": 10,
+                    "action_horizon": None,
+                    "n_action_tokens": 50,
+                    "exported_action_token_count": None,
+                    "model_action_horizon": None,
+                }
+            ),
+        ):
+            _actions, features, _latency = client.predict_with_features({"left": _image()})
+
+        self.assertIsNotNone(features)
+        assert features is not None
+        np.testing.assert_array_equal(features["hidden_states"], feature_arr)
+        self.assertEqual(features["kind"], "pi05_action_expert_pre_velocity")
+        self.assertEqual(
+            features["axes"], ["denoising_step", "action_step", "feature_dim"]
+        )
+        self.assertEqual(features["exported_action_token_count"], 50)
+        self.assertEqual(features["feature_action_horizon"], 50)
+        self.assertEqual(features["model_action_horizon"], 50)
+        self.assertEqual(features["num_inference_timesteps"], 10)
 
     def test_predict_with_features_propagates_server_error(self):
         client = VLAClient("http://server")

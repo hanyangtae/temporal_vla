@@ -15,6 +15,15 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 COLLECT_ROLLOUT_PATH = (
     REPO_ROOT / "scripts" / "safe" / "groot_n16" / "robocasa" / "collect" / "collect_rollout.py"
 )
+COLLECT_POLICY_CLIENTS_PATH = (
+    REPO_ROOT
+    / "scripts"
+    / "safe"
+    / "groot_n16"
+    / "robocasa"
+    / "collect"
+    / "collect_policy_clients.py"
+)
 
 
 def _import_collect_rollout():
@@ -24,6 +33,24 @@ def _import_collect_rollout():
 
     spec = importlib.util.spec_from_file_location(
         "safe_groot_collect_rollout_under_test", COLLECT_ROLLOUT_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def _import_collect_policy_clients_direct():
+    for path in (
+        COLLECT_POLICY_CLIENTS_PATH.parent,
+        REPO_ROOT / "scripts" / "utils",
+    ):
+        if str(path) not in sys.path:
+            sys.path.insert(0, str(path))
+    spec = importlib.util.spec_from_file_location(
+        "safe_groot_collect_policy_clients_direct_under_test",
+        COLLECT_POLICY_CLIENTS_PATH,
     )
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -215,6 +242,45 @@ class TestSafeCollectEndpointContract(unittest.TestCase):
         self.assertEqual(client.feature_action_horizon, 8)
         self.assertEqual(client.valid_action_horizon, 16)
         self.assertEqual(client.model_action_horizon, 50)
+
+
+def test_feature_record_mixin_preserves_zero_metadata_values():
+    clients_module = _import_collect_policy_clients_direct()
+    mixin_cls = clients_module.SafeFeatureRecordMixin
+
+    class _FakeClient(mixin_cls):
+        pass
+
+    client = _FakeClient()
+    client._init_safe_feature_records()
+    client.exported_action_token_count = 8
+    client.feature_action_horizon = 8
+    client.valid_action_horizon = 16
+    client.model_action_horizon = 50
+    client.num_inference_timesteps = 4
+
+    client._update_safe_feature_metadata(
+        {
+            "feature_kind": "groot_n16_dit_valid_action_tokens_pre_velocity",
+            "feature_axes": [
+                "denoising_step",
+                "valid_action_step",
+                "feature_dim",
+            ],
+            "feature_slice": "valid",
+            "exported_action_token_count": 0,
+            "feature_action_horizon": 0,
+            "valid_action_horizon": 0,
+            "model_action_horizon": 0,
+            "num_inference_timesteps": 0,
+        }
+    )
+
+    assert client.exported_action_token_count == 0
+    assert client.feature_action_horizon == 0
+    assert client.valid_action_horizon == 0
+    assert client.model_action_horizon == 0
+    assert client.num_inference_timesteps == 0
 
 
 if __name__ == "__main__":
