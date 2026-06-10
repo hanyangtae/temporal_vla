@@ -6,6 +6,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 CANONICAL_GROOT_N15_ROBOCASA_FILES = {
     "scripts/safe/groot_n15/robocasa/README.md",
+    "scripts/safe/groot_n15/robocasa/run_config.py",
+    "scripts/safe/groot_n15/robocasa/run_config.sh",
     "scripts/safe/groot_n15/robocasa/eval/native_official_zmq_eval.py",
     "scripts/safe/groot_n15/robocasa/eval/native_zmq_eval.py",
     "scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py",
@@ -52,6 +54,10 @@ def test_groot_n15_robocasa_files_live_under_safe_tree() -> None:
         source_files.append(str(path.relative_to(REPO_ROOT)))
 
     assert sorted(source_files) == sorted(CANONICAL_GROOT_N15_ROBOCASA_FILES)
+
+
+def test_groot_n15_bundle_has_top_level_entrypoint_readme() -> None:
+    assert (REPO_ROOT / "scripts/safe/groot_n15/README.md").is_file()
 
 
 def test_old_groot_n15_robocasa_script_paths_are_removed() -> None:

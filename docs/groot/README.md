@@ -12,6 +12,8 @@ SAFE-readable artifact로 내보내는 절차를 유지하는 것이다.
 library는 `src/policies/groot/`에 모여 있지만, `scripts/safe/groot_n15/robocasa/`는 그
 N1.5판이 아니다. N1.5 tree는 eval client, split helper, checkpoint/runtime compatibility
 helper만 맡고, model loader/schema/IO/serving/SAFE feature capture 역할은 갖지 않는다.
+N1.5 repo-local script entrypoint는 `scripts/safe/groot_n15/README.md`이고, RoboCasa
+script 공통 path/run identity는 `scripts/safe/groot_n15/robocasa/run_config.{py,sh}`가 맡는다.
 처음 읽을 때는 [00 Flow Map](00_groot_flow_map.md)의 "N1.5 And N1.6 Are Asymmetric"
 섹션을 먼저 확인한다.
 

@@ -17,6 +17,8 @@ schema adapters, or SAFE feature capture code.
 - `split/merge_seen60_source.py`: seen60 source merge helper.
 - `utils/runtime.py`: N1.5 LeRobot runtime compatibility helper.
 - `utils/prepare_base_new_embodiment.py`: base checkpoint metadata preparation helper.
+- `run_config.py`: shared host-side paths for Python helpers.
+- `run_config.sh`: shared shell paths/run identity for eval recipes.
 
 The shared LeRobot serve adapter remains at `scripts/serve/lerobot_adapters/groot.py`
 because it belongs to the common serving surface. Old N1.5 RoboCasa paths under
