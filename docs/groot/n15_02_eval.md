@@ -1,6 +1,10 @@
 # GR00T N1.5 RoboCasa — Evaluation
 
-`n15_01_finetune.md`의 후속 문서다. N1.5 평가는 N1.6 평가와 실행 경로가 다르므로 `n16_02_eval.md`와 분리한다. N1.5는 ZMQ-only protocol을 사용하며, 통일 HTTP API (`/act`, `/act_with_features`) 는 N1.6 전용이다 (참고: [`n16_11_http_act_changes.md`](n16_11_http_act_changes.md), [`../01_serving_interface.md`](../01_serving_interface.md)).
+`n15_01_finetune.md`의 후속 문서다. 이 문서는 native Isaac-GR00T N1.5 평가 경로를 다룬다.
+N1.5 native path는 N1.6 평가와 실행 경로가 다르므로 `n16_02_eval.md`와 분리하고,
+`inference_service.py`의 ZMQ-only protocol을 사용한다. LeRobot wrapper로 감싼 N1.5 HTTP
+경로는 별도 문서 [`n15_03_lerobot_robocasa365.md`](n15_03_lerobot_robocasa365.md) /
+[`n15_04_lerobot_serve_adapter.md`](n15_04_lerobot_serve_adapter.md)에서 다룬다.
 
 ## Scope
 

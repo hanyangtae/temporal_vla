@@ -421,7 +421,7 @@
       <div>
         <h1>GR00T Latent Steering Explorer</h1>
         <p class="subtitle">
-          GR00T N1.6/N1.5, LeRobot/native, RoboCasa365, ZMQ/HTTP, SAFE feature collection,
+          GR00T N1.6/N1.5, LeRobot/native, RoboCasa365, ZMQ/HTTP, N1.6 SAFE feature collection,
           COAST/conceptor latent steering 흐름을 한 파일에서 따라가기 위한 repo-local HTML 지도.
         </p>
       </div>
@@ -536,7 +536,7 @@ VLAClient.predict()
           <p>HTTP payload를 GR00T native observation으로 바꾼 뒤 action을 다시 <code>action.*</code> sub-key로 반환한다.</p>
         </article>
 
-        <article class="card searchable" data-keywords="n16 http closed loop robocasa eval processors robocasa_io">
+        <article class="card searchable" data-keywords="n16 http closed loop robocasa eval processors groot robocasa io">
           <h3>N1.6 HTTP Closed-Loop Eval</h3>
           <div class="tag-row"><span class="tag http">HTTP</span><span class="tag">RoboCasa</span></div>
           <pre>scripts/eval/robocasa_eval.py --use-groot-env
@@ -581,7 +581,7 @@ scripts/eval/groot_robocasa_zmq_eval.py
 scripts/safe/groot_n15/robocasa/eval/native_zmq_eval.py
   -> N15PolicyClient
   -> msgpack {"endpoint": "get_action", "data": obs}</pre>
-          <p>N1.6 <code>PolicyServer</code>와 protocol이 달라 별도 client가 있다.</p>
+          <p>N1.6 <code>PolicyServer</code>와 protocol이 달라 별도 client가 있다. 이 tree는 backend library가 아니라 eval client다.</p>
         </article>
 
         <article class="card searchable" data-keywords="n15 lerobot http grootpolicy adapter">
@@ -593,7 +593,7 @@ scripts/safe/groot_n15/robocasa/eval/native_zmq_eval.py
   -> raw Isaac-GR00T checkpoint
   -> LeRobot GrootPolicy
   -> /act action.* subkeys</pre>
-          <p>LeRobot framework를 쓰지만 통신은 project HTTP contract다.</p>
+          <p>LeRobot framework를 쓰지만 통신은 project HTTP contract다. N1.5 reusable 역할은 serve adapter와 submodule에 있고 <code>groot_n15</code> tree는 eval/split/helper만 맡는다.</p>
         </article>
       </div>
     </section>

@@ -8,6 +8,13 @@ SAFE-readable artifact로 내보내는 절차를 유지하는 것이다.
 독립이며, 새 실행 기록은 먼저 canonical runbook/result 문서에 흡수하고 필요할 때만 별도 문서로
 분리한다.
 
+구조상 가장 중요한 전제는 N1.5와 N1.6이 대칭이 아니라는 점이다. N1.6 reusable backend
+library는 `src/policies/groot/`에 모여 있지만, `scripts/safe/groot_n15/robocasa/`는 그
+N1.5판이 아니다. N1.5 tree는 eval client, split helper, checkpoint/runtime compatibility
+helper만 맡고, model loader/schema/IO/serving/SAFE feature capture 역할은 갖지 않는다.
+처음 읽을 때는 [00 Flow Map](00_groot_flow_map.md)의 "N1.5 And N1.6 Are Asymmetric"
+섹션을 먼저 확인한다.
+
 ## 사용 절차
 
 1. GR00T 관련 코드가 파일 사이에서 어떻게 이어지는지 처음 파악할 때는

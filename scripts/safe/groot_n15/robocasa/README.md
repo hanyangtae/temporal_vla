@@ -2,6 +2,11 @@
 
 This directory is the canonical home for GR00T N1.5 RoboCasa scripts.
 
+It is not the N1.5 counterpart of `src/policies/groot/`. This tree owns only
+eval clients, dataset split helpers, and small checkpoint/runtime compatibility
+helpers. It does not own model loaders, serving services, reusable RoboCasa IO
+schema adapters, or SAFE feature capture code.
+
 - `eval/native_zmq_eval.py`: N1.5 ZMQ client using this repo's N1.6 rollout helper API shape.
 - `eval/native_official_zmq_eval.py`: benchmark-style RoboCasa client for the N1.5 ZMQ server.
 - `eval/lerobot_http_eval.py`: benchmark-style RoboCasa client for LeRobot HTTP `/act`.

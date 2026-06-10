@@ -4,7 +4,7 @@
 > 정책(pi0.5, pi0+FAST, X-VLA, GR00T N1.5)** 으로 확장하여, 여러 벤치마크에서 SAFE latent
 > 데이터를 대량 수집한다. (detector 학습/분석은 별도 단계.)
 >
-> 현재 작업 브랜치: `feat/safe-lerobot-latent-collect` (base `dev`).
+> 원래 작업 브랜치: `feat/safe-lerobot-latent-collect` (base `dev`).
 
 ---
 
@@ -46,11 +46,13 @@ SAFE feature(arXiv 2506.09937) = **마지막 레이어에서 action 이 velocity
   scripts/serve/lerobot.py (FastAPI, GPU)            scripts/eval/*.py (VLAClient)
   forward hook → SAFE latent                          env.reset/step 루프
   POST /act_with_features  ◀──────── HTTP ─────────  매 step 호출, 추론 발화 step 만 latent
-     {action subkeys, has_feature, hidden_states_b64}  → collect_common 으로 per-episode pkl
+     {action subkeys, has_feature, features.hidden_states, hidden_states_b64}
+        → VLAClient decode → collect_common 으로 per-episode pkl
 ```
 
 - 모델 서버 한 곳(`scripts/serve/lerobot.py`)이 `--profile` 로 4개 정책을 교체.
-- hidden_states 직렬화: float16 ndarray → `np.save` bytes → base64 (JSON list 대비 경량).
+- hidden_states 직렬화: 표준 응답은 `features.hidden_states` feature blob(`data`+`shape`+`dtype`).
+  기존 collector 호환을 위해 legacy `hidden_states_b64`(`base64(np.save(...))`)도 함께 낸다.
 - 수집 pkl 스키마는 groot_n16 과 동일 → 기존 split/aggregation 재사용.
 
 ---
@@ -113,14 +115,17 @@ shape `[10,50,1024]`.)
 - **VLABench**: repo 미통합. env clone + processor + eval 스크립트 + 프로파일 신규 필요.
 - **RoboCasa × GR00T N1.5**: robocasa365 체크포인트가 **Isaac-GR00T 포맷**(safetensors shards +
   config.json + experiment_cfg/). lerobot `GrootPolicy.from_pretrained` 로 직접 로드 불가능성이
-  높음 → **기존 Isaac ZMQ 경로(`scripts/safe/groot_n16/.../serve/feature_server.py` +
-  `src/policies/groot/loader.py`) 재사용(Fallback A)** 가 유력. 별도 트랙.
+  높음. 현재 정리 기준에서는 native ZMQ 평가는
+  `scripts/safe/groot_n15/robocasa/eval/native_zmq_eval.py` 가 외부 N1.5
+  `inference_service.py` 에 말 거는 client 역할만 맡는다. N1.6
+  `feature_server.py`/`src/policies/groot/core/loader.py` 재사용이 아니며,
+  RoboCasa N1.5 전용 SAFE feature capture pipeline 은 별도 미지원이다.
 
 ---
 
-## 4. 현재까지 완료 (committed)
+## 4. 당시 완료 상태 (committed)
 
-브랜치 `feat/safe-lerobot-latent-collect`, 커밋 5개:
+원래 브랜치 `feat/safe-lerobot-latent-collect`, 커밋 5개:
 - `chore: lerobot submodule v0.5.1 bump (py3.12/torch2.7/transformers5.3.0)`
 - `feat: SAFE latent 추출 — lerobot serve hook + /act_with_features + client`
 - `feat: SAFE 수집 공통 writer + pi0.5 LIBERO 체크포인트 프로파일`
