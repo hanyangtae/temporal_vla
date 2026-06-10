@@ -24,9 +24,15 @@ from typing import Any
 
 import numpy as np
 
+from src.policies.safe_metadata import normalize_feature_metadata
+
 
 def _safe_name(name: str) -> str:
     return "".join(c if c.isalnum() or c in "-_" else "_" for c in str(name))[:80]
+
+
+def _prefer_present(new: Any, old: Any) -> Any:
+    return old if new is None else new
 
 
 class SafeEpisodeCollector:
@@ -55,6 +61,9 @@ class SafeEpisodeCollector:
         self.feature_kind: str | None = None
         self.feature_axes: list[str] | None = None
         self.num_inference_timesteps: int | None = None
+        self.exported_action_token_count: int | None = None
+        self.feature_action_horizon: int | None = None
+        self.valid_action_horizon: int | None = None
         self.model_action_horizon: int | None = None
         self.feature_dim: int | None = None
 
@@ -66,14 +75,30 @@ class SafeEpisodeCollector:
     ) -> None:
         if features is None:
             return
-        self.hidden_states.append(np.asarray(features["hidden_states"]))
-        self.feature_kind = features.get("feature_kind", self.feature_kind)
-        self.feature_axes = features.get("feature_axes", self.feature_axes)
-        self.num_inference_timesteps = features.get(
-            "num_inference_timesteps", self.num_inference_timesteps
+        hidden = np.asarray(features["hidden_states"])
+        metadata = normalize_feature_metadata(features)
+        self.hidden_states.append(hidden)
+        self.feature_kind = _prefer_present(metadata.feature_kind, self.feature_kind)
+        self.feature_axes = _prefer_present(metadata.feature_axes, self.feature_axes)
+        self.num_inference_timesteps = _prefer_present(
+            metadata.num_inference_timesteps, self.num_inference_timesteps
         )
-        self.model_action_horizon = features.get("action_horizon", self.model_action_horizon)
-        self.feature_dim = features.get("feature_dim", self.feature_dim)
+        self.exported_action_token_count = _prefer_present(
+            metadata.exported_action_token_count, self.exported_action_token_count
+        )
+        self.feature_action_horizon = _prefer_present(
+            metadata.feature_action_horizon, self.feature_action_horizon
+        )
+        self.valid_action_horizon = _prefer_present(
+            metadata.valid_action_horizon, self.valid_action_horizon
+        )
+        self.model_action_horizon = _prefer_present(
+            metadata.model_action_horizon, self.model_action_horizon
+        )
+        self.feature_dim = _prefer_present(
+            features.get("feature_dim"),
+            int(hidden.shape[-1]) if hidden.ndim > 0 else self.feature_dim,
+        )
         if action_vector is not None:
             self.action_vectors.append(np.asarray(action_vector, dtype=np.float32))
         if action is not None:
@@ -99,6 +124,9 @@ class SafeEpisodeCollector:
             "feature_kind": self.feature_kind,
             "feature_axes": self.feature_axes,
             "num_inference_timesteps": self.num_inference_timesteps,
+            "exported_action_token_count": self.exported_action_token_count,
+            "feature_action_horizon": self.feature_action_horizon,
+            "valid_action_horizon": self.valid_action_horizon,
             "model_action_horizon": self.model_action_horizon,
             "feature_dim": self.feature_dim,
             "env_name": self.env_name,

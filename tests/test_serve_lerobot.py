@@ -956,6 +956,88 @@ class TestActEndpoint(unittest.TestCase):
             self.assertIn("error", r.json())
 
 
+class TestActWithFeaturesEndpoint(unittest.TestCase):
+    """POST /act_with_features endpoint contract."""
+
+    def setUp(self):
+        from scripts.serve import lerobot as srv
+        from fastapi.testclient import TestClient
+
+        srv.policy = _make_mock_policy(action_dim=7)
+        srv.preprocessor, srv.postprocessor = _make_mock_processors()
+        srv._profile = _MockProfile()
+        srv._policy_type = "pi05"
+        srv._n_action_steps = 1
+        self.client = TestClient(srv.app)
+        self.srv = srv
+
+    def tearDown(self):
+        self.srv.policy = None
+
+    def test_response_includes_unified_feature_horizon_metadata(self):
+        hidden = np.zeros((10, 50, 4), dtype=np.float16)
+        action = torch.zeros(7, dtype=torch.float32)
+        meta = {
+            "feature_kind": "pi05_action_expert_pre_velocity",
+            "feature_axes": ["denoising_step", "action_step", "feature_dim"],
+            "num_inference_timesteps": 10,
+            "action_horizon": 50,
+            "feature_dim": 4,
+        }
+
+        with unittest.mock.patch.object(
+            self.srv.safe_hooks,
+            "run_with_features",
+            return_value=(action, hidden, meta["feature_axes"], meta),
+        ):
+            r = self.client.post(
+                "/act_with_features",
+                json={"observation.images.static": _make_b64_image(), "task": "test"},
+            )
+
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertTrue(data["has_feature"])
+        self.assertEqual(data["features.kind"], "pi05_action_expert_pre_velocity")
+        self.assertEqual(data["features.exported_action_token_count"], 50)
+        self.assertEqual(data["features.feature_action_horizon"], 50)
+        self.assertEqual(data["features.model_action_horizon"], 50)
+        self.assertEqual(data["features.num_inference_timesteps"], 10)
+        self.assertIn("features.hidden_states", data)
+        self.assertIn("hidden_states_b64", data)
+
+    def test_response_maps_autoregressive_token_count_to_feature_horizon(self):
+        hidden = np.zeros((1, 12, 4), dtype=np.float16)
+        action = torch.zeros(7, dtype=torch.float32)
+        meta = {
+            "feature_kind": "pi0_fast_prelogit_action_tokens",
+            "feature_axes": ["token_singleton", "action_token", "feature_dim"],
+            "num_inference_timesteps": None,
+            "action_horizon": None,
+            "n_action_tokens": 12,
+            "exported_action_token_count": None,
+            "model_action_horizon": None,
+            "feature_dim": 4,
+        }
+
+        with unittest.mock.patch.object(
+            self.srv.safe_hooks,
+            "run_with_features",
+            return_value=(action, hidden, meta["feature_axes"], meta),
+        ):
+            r = self.client.post(
+                "/act_with_features",
+                json={"observation.images.static": _make_b64_image(), "task": "test"},
+            )
+
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertEqual(data["features.kind"], "pi0_fast_prelogit_action_tokens")
+        self.assertEqual(data["features.exported_action_token_count"], 12)
+        self.assertEqual(data["features.feature_action_horizon"], 12)
+        self.assertEqual(data["features.model_action_horizon"], 12)
+
+
 class TestResetEndpoint(unittest.TestCase):
     """POST /reset 엔드포인트."""
 

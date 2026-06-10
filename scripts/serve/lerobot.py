@@ -22,8 +22,6 @@ lerobot 컨테이너에서 실행:
 """
 
 import argparse
-import base64
-import io
 import logging
 import random
 import sys
@@ -53,6 +51,11 @@ from lerobot_adapters import (  # noqa: E402
 )
 from lerobot_adapters.pi import PiPolicyAdapter  # noqa: E402
 from lerobot_adapters.rotation import quat_xyzw_to_axisangle  # noqa: E402
+from src.utils.common.feature_blob import (  # noqa: E402
+    encode_feature_blob,
+    encode_legacy_feature_array,
+)
+from src.policies.safe_metadata import normalize_feature_metadata  # noqa: E402
 from src.utils.common.image import decode_b64_image  # noqa: E402
 from src.utils.common.serving import (  # noqa: E402
     add_server_args,
@@ -104,13 +107,6 @@ STATE_KEY_ORDER = [
 
 
 # ─── 변환 유틸 ────────────────────────────────────────────────────────────────
-
-
-def _encode_ndarray(arr: np.ndarray) -> str:
-    """ndarray → base64(np.save bytes). dtype/shape 보존, JSON list 대비 경량."""
-    buf = io.BytesIO()
-    np.save(buf, arr, allow_pickle=False)
-    return base64.b64encode(buf.getvalue()).decode()
 
 
 def _state_payload_keys(key: str) -> tuple[str, ...]:
@@ -325,8 +321,9 @@ async def predict_action_with_features(payload: dict):
     """SAFE 수집용: /act 와 동일하되 추론이 발화한 step 에서 SAFE hidden_states 동봉.
 
     lerobot 정책은 action queue 가 빌 때(매 n_action_steps)만 새 추론을 돌리므로,
-    그 step 에만 has_feature=True 와 hidden_states_b64(=[K,H,D] 또는 [1,n_tokens,D])
-    가 채워진다. 그 외 step 은 버퍼된 action 만 반환(has_feature=False).
+    그 step 에만 has_feature=True, legacy hidden_states_b64, unified
+    features.hidden_states blob 이 채워진다. 그 외 step 은 버퍼된 action 만
+    반환(has_feature=False).
     """
     if policy is None:
         return {"error": "model not loaded"}
@@ -355,8 +352,22 @@ async def predict_action_with_features(payload: dict):
     result = _emit_subkeys(action_np, profile)
     if hidden is not None:
         result["has_feature"] = True
-        result["hidden_states_b64"] = _encode_ndarray(hidden)
+        hidden_np = np.asarray(hidden)
+        # Keep the legacy keys for existing collectors, and also emit the
+        # unified /act_with_features contract used by VLAClient and GR00T HTTP.
+        result["hidden_states_b64"] = encode_legacy_feature_array(hidden_np)
+        result["features.hidden_states"] = encode_feature_blob(hidden_np)
         result.update(meta)  # feature_kind, feature_axes, num_inference_timesteps, ...
+        metadata = normalize_feature_metadata(meta)
+        result["features.kind"] = metadata.feature_kind
+        result["features.axes"] = metadata.feature_axes
+        result["exported_action_token_count"] = metadata.exported_action_token_count
+        result["features.exported_action_token_count"] = (
+            metadata.exported_action_token_count
+        )
+        result["features.feature_action_horizon"] = metadata.feature_action_horizon
+        result["features.model_action_horizon"] = metadata.model_action_horizon
+        result["features.num_inference_timesteps"] = metadata.num_inference_timesteps
     else:
         result["has_feature"] = False
     if inference_seed is not None:

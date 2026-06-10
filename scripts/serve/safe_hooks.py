@@ -48,13 +48,6 @@ FLOW_MATCHING_TYPES = {"pi0", "pi05", "xvla", "groot"}
 AUTOREGRESSIVE_TYPES = {"pi0_fast"}
 SUPPORTED_TYPES = FLOW_MATCHING_TYPES | AUTOREGRESSIVE_TYPES
 
-def feature_kind(policy_type: str) -> str:
-    return lerobot_feature_kind(policy_type)
-
-
-def feature_axes(policy_type: str) -> list[str]:
-    return lerobot_feature_axes(policy_type)
-
 
 def _resolve_target(
     policy: Any, policy_type: str
@@ -151,10 +144,10 @@ def run_with_features(
     if hidden is None:
         return action, None, None, {}
 
-    axes = feature_axes(policy_type)
+    axes = lerobot_feature_axes(policy_type)
     if policy_type in AUTOREGRESSIVE_TYPES:
         meta = {
-            "feature_kind": feature_kind(policy_type),
+            "feature_kind": lerobot_feature_kind(policy_type),
             "feature_axes": axes,
             "num_inference_timesteps": None,
             "n_action_tokens": int(hidden.shape[1]),
@@ -162,7 +155,7 @@ def run_with_features(
         }
     else:
         meta = {
-            "feature_kind": feature_kind(policy_type),
+            "feature_kind": lerobot_feature_kind(policy_type),
             "feature_axes": axes,
             "num_inference_timesteps": int(hidden.shape[0]),
             "action_horizon": int(hidden.shape[1]),
