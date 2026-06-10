@@ -18,8 +18,6 @@ xvla 컨테이너에서 실행:
 """
 
 import argparse
-import base64
-import io
 import logging
 import math
 import sys
@@ -37,6 +35,9 @@ sys.path.insert(0, "/temporal_vla/lerobot/src")
 # 프로파일 로더 (scripts/utils 는 PYTHONPATH 에 포함)
 from checkpoint_profile import CheckpointProfile, load_profile  # noqa: E402
 
+from src.utils.common.image import decode_b64_pil  # noqa: E402
+from src.utils.common.serving import health_response  # noqa: E402
+
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="X-VLA Inference Server")
@@ -53,11 +54,6 @@ IMAGENET_STD = [0.229, 0.224, 0.225]
 
 
 # ─── 유틸 ────────────────────────────────────────────────────────────────────
-
-
-def _b64_to_pil(b64_str: str) -> Image.Image:
-    """base64 PNG → PIL Image (RGB)."""
-    return Image.open(io.BytesIO(base64.b64decode(b64_str))).convert("RGB")
 
 
 def _euler_to_rot6d(euler: np.ndarray) -> np.ndarray:
@@ -253,7 +249,7 @@ async def predict_action(payload: dict):
     for view in profile.observation_requirements.images:
         b64 = payload.get(f"observation.images.{view}")
         if b64 is not None:
-            pil_images.append(_b64_to_pil(b64))
+            pil_images.append(decode_b64_pil(b64))
     if not pil_images:
         return {"error": "no images in payload"}
     image_input, image_mask = _preprocess_images(pil_images)
@@ -321,14 +317,14 @@ async def predict_action(payload: dict):
 async def health():
     if _profile is None:
         return {"status": "not_loaded", "model": "xvla"}
-    return {
-        "status": "ok" if _model is not None else "not_loaded",
-        "model": "xvla",
-        "profile": _profile.name,
-        "n_action_steps": _profile.n_action_steps,
-        "action_type": _profile.action_type,
-        "action_keys": list(_profile.emits_subkeys),
-    }
+    return health_response(
+        policy=_model,
+        model="xvla",
+        profile=_profile,
+        n_action_steps=_profile.n_action_steps,
+        action_type=_profile.action_type,
+        action_keys=list(_profile.emits_subkeys),
+    )
 
 
 # ─── Entry point ─────────────────────────────────────────────────────────────

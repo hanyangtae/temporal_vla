@@ -15,8 +15,6 @@ upvla 컨테이너에서 실행:
 """
 
 import argparse
-import base64
-import io
 import os
 import sys
 import time
@@ -26,7 +24,10 @@ import numpy as np
 import torch
 import uvicorn
 from fastapi import FastAPI
-from PIL import Image
+
+# repo root (UP-VLA 컨테이너 PYTHONPATH 에는 /temporal_vla 가 없어 직접 추가)
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from src.utils.common.image import decode_b64_pil  # noqa: E402
 
 app = FastAPI(title="UP-VLA Inference Server")
 
@@ -35,11 +36,6 @@ _vq_model = None
 _uni_prompting = None
 _config = None
 _device = None
-
-
-def _b64_to_pil(b64_str: str) -> Image.Image:
-    """base64 PNG 문자열 → PIL Image (RGB)."""
-    return Image.open(io.BytesIO(base64.b64decode(b64_str))).convert("RGB")
 
 
 @app.on_event("startup")
@@ -137,7 +133,7 @@ async def predict_action(payload: dict):
 
     # static view 처리
     static_b64 = payload.get("observation.images.static")
-    img_static = _b64_to_pil(static_b64)
+    img_static = decode_b64_pil(static_b64)
     pv_static = (
         image_transform(img_static, resolution=resolution).to(_device).unsqueeze(0)
     )
@@ -146,7 +142,7 @@ async def predict_action(payload: dict):
     # wrist view 처리 (num_view=2 && 클라이언트가 전송한 경우)
     wrist_b64 = payload.get("observation.images.wrist")
     if config.model.vla.num_view == 2 and wrist_b64:
-        img_wrist = _b64_to_pil(wrist_b64)
+        img_wrist = decode_b64_pil(wrist_b64)
         pv_wrist = (
             image_transform(img_wrist, resolution=resolution).to(_device).unsqueeze(0)
         )

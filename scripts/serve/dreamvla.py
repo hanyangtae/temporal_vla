@@ -18,8 +18,6 @@ dreamvla 컨테이너에서 실행:
 """
 
 import argparse
-import base64
-import io
 import logging
 import math
 import sys
@@ -37,6 +35,9 @@ sys.path.insert(0, "/temporal_vla/src/policies/dreamvla")
 
 # 프로파일 로더 (scripts/utils 는 PYTHONPATH 에 포함)
 from checkpoint_profile import CheckpointProfile, load_profile  # noqa: E402
+
+from src.utils.common.image import decode_b64_image  # noqa: E402
+from src.utils.common.serving import health_response  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +61,6 @@ _text_queue: Optional[deque] = None
 
 
 # ─── 유틸 ────────────────────────────────────────────────────────────────────
-
-
-def _b64_to_numpy(b64_str: str) -> np.ndarray:
-    """base64 PNG → HxWx3 uint8 numpy."""
-    return np.array(Image.open(io.BytesIO(base64.b64decode(b64_str))).convert("RGB"))
 
 
 def _quat_xyzw_to_euler(quat) -> np.ndarray:
@@ -262,8 +258,8 @@ async def predict_action(payload: dict):
     static_b64 = payload.get("observation.images.static")
     wrist_b64 = payload.get("observation.images.wrist")
     img_size = int(ms.get("image_size", profile.image_preprocess.resolution))
-    static_np = _b64_to_numpy(static_b64) if static_b64 else np.zeros((img_size, img_size, 3), dtype=np.uint8)
-    wrist_np = _b64_to_numpy(wrist_b64) if wrist_b64 else np.zeros((img_size, img_size, 3), dtype=np.uint8)
+    static_np = decode_b64_image(static_b64) if static_b64 else np.zeros((img_size, img_size, 3), dtype=np.uint8)
+    wrist_np = decode_b64_image(wrist_b64) if wrist_b64 else np.zeros((img_size, img_size, 3), dtype=np.uint8)
     state_list = _assemble_state(payload)
     instruction = payload.get("task", "")
 
@@ -341,14 +337,14 @@ async def predict_action(payload: dict):
 async def health():
     if _profile is None:
         return {"status": "not_loaded", "model": "dreamvla"}
-    return {
-        "status": "ok" if _model is not None else "not_loaded",
-        "model": "dreamvla",
-        "profile": _profile.name,
-        "n_action_steps": _profile.n_action_steps,
-        "action_type": _profile.action_type,
-        "action_keys": list(_profile.emits_subkeys),
-    }
+    return health_response(
+        policy=_model,
+        model="dreamvla",
+        profile=_profile,
+        n_action_steps=_profile.n_action_steps,
+        action_type=_profile.action_type,
+        action_keys=list(_profile.emits_subkeys),
+    )
 
 
 # ─── Entry point ─────────────────────────────────────────────────────────────

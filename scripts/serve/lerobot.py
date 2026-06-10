@@ -101,10 +101,6 @@ STATE_KEY_ORDER = [
 # ─── 변환 유틸 ────────────────────────────────────────────────────────────────
 
 
-def _b64_to_numpy(b64_str: str) -> np.ndarray:
-    return decode_b64_image(b64_str)
-
-
 def _encode_ndarray(arr: np.ndarray) -> str:
     """ndarray → base64(np.save bytes). dtype/shape 보존, JSON list 대비 경량."""
     buf = io.BytesIO()
@@ -223,7 +219,7 @@ def parse_payload(payload: dict) -> dict:
     rotate_180 = bool(getattr(image_preprocess, "rotate_180", False))
     for k, v in payload.items():
         if k.startswith("observation.images."):
-            np_img = _b64_to_numpy(v)
+            np_img = decode_b64_image(v)
             np_img = preprocess_image_numpy(np_img, image_preprocess)
             t = torch.from_numpy(np_img).permute(2, 0, 1).float() / 255.0
             if rotate_180:
