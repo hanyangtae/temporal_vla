@@ -301,6 +301,36 @@ def test_feature_record_mixin_preserves_zero_metadata_values():
     assert client.num_inference_timesteps == 0
 
 
+def test_feature_record_mixin_preserves_block_residual_metadata():
+    clients_module = _import_collect_policy_clients_direct()
+    mixin_cls = clients_module.SafeFeatureRecordMixin
+
+    class _FakeClient(mixin_cls):
+        pass
+
+    client = _FakeClient()
+    client._init_safe_feature_records()
+
+    client._update_safe_feature_metadata(
+        {
+            "feature_kind": "groot_n16_dit_block_residual_kmean_perT_multilayer",
+            "feature_axes": ["layer", "token_pos", "feature_dim"],
+            "layer_indices": [0, 2, 31],
+            "layer_count": 3,
+            "token_count": 51,
+            "num_inference_timesteps": 4,
+        }
+    )
+
+    assert client.feature_kind == "groot_n16_dit_block_residual_kmean_perT_multilayer"
+    assert client.feature_axes == ["layer", "token_pos", "feature_dim"]
+    assert client.layer_indices == [0, 2, 31]
+    assert client.capture_layers == [0, 2, 31]
+    assert client.layer_count == 3
+    assert client.token_count == 51
+    assert client.num_inference_timesteps == 4
+
+
 def test_safe_triplet_writer_records_model_family_and_transport_metadata():
     module = _import_collect_artifacts_direct()
 
@@ -341,6 +371,10 @@ def test_safe_triplet_writer_records_model_family_and_transport_metadata():
             ep_meta={"lang": "open the cabinet"},
             n_action_steps=8,
             robocasa_env_source="robocasa365",
+            max_episode_steps=720,
+            video_fps=20,
+            steps_per_render=2,
+            inference_seed=4242,
             model_family="groot_n16",
             policy_transport="http",
             task_suite_name="groot_n16_robocasa",
@@ -352,6 +386,74 @@ def test_safe_triplet_writer_records_model_family_and_transport_metadata():
     assert payload["policy_transport"] == "http"
     assert payload["task_suite_name"] == "groot_n16_robocasa"
     assert payload["video_source"] == "groot_upstream_video_recording_wrapper"
+    assert payload["max_episode_steps"] == 720
+    assert payload["video_fps"] == 20
+    assert payload["steps_per_render"] == 2
+    assert payload["inference_seed"] == 4242
+
+
+def test_safe_triplet_writer_allows_block_residual_token_features():
+    module = _import_collect_artifacts_direct()
+
+    class _FakePolicy:
+        feature_kind = "groot_n15_dit_block_residual_tokens"
+        feature_axes = ["layer", "model_token", "feature_dim"]
+        feature_slice = None
+        exported_action_token_count = None
+        feature_action_horizon = None
+        valid_action_horizon = None
+        model_action_horizon = 16
+        num_inference_timesteps = 4
+        capture_layers = [0, 2]
+        layer_count = 2
+        token_count = 5
+        records = [
+            {
+                "hidden_state": np.zeros((2, 5, 3), dtype=np.float32),
+                "action_vector": np.zeros(7, dtype=np.float32),
+                "groot_action_vector": np.zeros(12, dtype=np.float32),
+                "action": {"action.end_effector_position": np.zeros(3, dtype=np.float32)},
+            }
+        ]
+
+    with tempfile.TemporaryDirectory() as tmp:
+        output_dir = Path(tmp)
+        source_video = output_dir / "source.mp4"
+        source_video.write_bytes(b"video")
+
+        module.write_safe_triplet(
+            output_dir=output_dir,
+            stem="task0--ep0--succ1",
+            policy=_FakePolicy(),
+            task_id=0,
+            task_description="open the cabinet",
+            episode_idx=0,
+            scenario_seed=100000,
+            episode_success=True,
+            env_name="robocasa_panda_omron/OpenCabinet_PandaOmron_Env",
+            upstream_video_path=source_video,
+            ep_meta={"lang": "open the cabinet"},
+            n_action_steps=16,
+            robocasa_env_source="robocasa365",
+            max_episode_steps=720,
+            video_fps=20,
+            steps_per_render=2,
+            inference_seed=4242,
+            model_family="lerobot_groot_n15",
+            policy_transport="http",
+            task_suite_name="lerobot_groot_n15_robocasa",
+        )
+        with (output_dir / "task0--ep0--succ1.pkl").open("rb") as f:
+            payload = pickle.load(f)
+
+    assert payload["feature_kind"] == "groot_n15_dit_block_residual_tokens"
+    assert payload["feature_axes"] == ["layer", "model_token", "feature_dim"]
+    assert payload["exported_action_token_count"] is None
+    assert payload["feature_action_horizon"] is None
+    assert payload["model_action_horizon"] == 16
+    assert payload["capture_layers"] == [0, 2]
+    assert payload["layer_count"] == 2
+    assert payload["token_count"] == 5
 
 
 def test_collect_main_advances_scenario_seed_per_episode():
@@ -391,6 +493,8 @@ def test_collect_main_advances_scenario_seed_per_episode():
             seed=100,
             inference_seed=4242,
             ep_meta_dir=tmp_path / "ep_meta",
+            video_fps=20,
+            steps_per_render=2,
         )
 
         def _fake_run_single_rollout(
@@ -406,6 +510,11 @@ def test_collect_main_advances_scenario_seed_per_episode():
                     "policy": policy,
                     "scenario_seed": scenario_seed,
                     "replay_ep_meta": replay_ep_meta,
+                    "video_fps": wrapper_configs.video.fps,
+                    "steps_per_render": wrapper_configs.video.steps_per_render,
+                    "video_max_episode_steps": wrapper_configs.video.max_episode_steps,
+                    "multistep_max_episode_steps": wrapper_configs.multistep.max_episode_steps,
+                    "n_action_steps": wrapper_configs.multistep.n_action_steps,
                 }
             )
             return (None, [False], None, source_video, {"scenario_seed": scenario_seed})
@@ -447,6 +556,15 @@ def test_collect_main_advances_scenario_seed_per_episode():
     assert [call["scenario_seed"] for call in manifest_calls] == [100, 101, 102]
     assert [call["episode_idx"] for call in triplet_calls] == [10, 11, 12]
     assert [call["policy"].inference_seed for call in rollout_calls] == [4242, 4242, 4242]
+    assert [call["n_action_steps"] for call in rollout_calls] == [8, 8, 8]
+    assert [call["video_fps"] for call in rollout_calls] == [20, 20, 20]
+    assert [call["steps_per_render"] for call in rollout_calls] == [2, 2, 2]
+    assert [call["video_max_episode_steps"] for call in rollout_calls] == [720, 720, 720]
+    assert [call["multistep_max_episode_steps"] for call in rollout_calls] == [720, 720, 720]
+    assert [call["max_episode_steps"] for call in triplet_calls] == [720, 720, 720]
+    assert [call["video_fps"] for call in triplet_calls] == [20, 20, 20]
+    assert [call["steps_per_render"] for call in triplet_calls] == [2, 2, 2]
+    assert [call["inference_seed"] for call in triplet_calls] == [4242, 4242, 4242]
 
 
 if __name__ == "__main__":

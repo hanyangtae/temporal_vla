@@ -27,7 +27,7 @@ import random
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -55,7 +55,15 @@ from src.utils.common.feature_blob import (  # noqa: E402
     encode_feature_blob,
     encode_legacy_feature_array,
 )
-from src.policies.safe_metadata import normalize_feature_metadata  # noqa: E402
+from src.policies.safe_metadata import (  # noqa: E402
+    GROOT_N15_DIT_BLOCK_RESIDUAL_FEATURE_AXES,
+    GROOT_N15_DIT_BLOCK_RESIDUAL_FEATURE_KIND,
+    GROOT_N15_VL_FEATURE_KIND,
+    GROOT_VL_FEATURE_AXES,
+    lerobot_feature_axes,
+    lerobot_feature_kind,
+    normalize_feature_metadata,
+)
 from src.utils.common.image import decode_b64_image  # noqa: E402
 from src.utils.common.serving import (  # noqa: E402
     add_server_args,
@@ -89,6 +97,9 @@ _state_dim: int = 0
 # 캐시돼 이후 /act_with_features 의 hook 이 무시(features=None)된다. 수집 serve 는
 # /act_with_features 만 받아 첫 compile 이 hook 과 함께 일어나도록 강제한다.
 _collect_mode: bool = False
+_capture_vl_features: bool = False
+_groot_dit_capture_layers: tuple[int, ...] | None = None
+_steering = None
 
 # payload 의 observation.state.* 서브키를 lerobot observation.state 로 합칠 때 사용할
 # canonical 정렬 순서 (벤치 공통). 체크포인트가 학습된 state dim 만큼 앞에서 truncate.
@@ -210,6 +221,18 @@ def _apply_inference_seed(payload: dict) -> int | None:
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
     return seed
+
+
+def _parse_groot_dit_capture_layers(value: str | None) -> tuple[int, ...] | None:
+    if value is None:
+        return None
+    parts = [part.strip() for part in value.split(",")]
+    if not parts or any(part == "" for part in parts):
+        raise ValueError("--groot-dit-capture-layers must be a comma-separated int list")
+    layers = tuple(int(part) for part in parts)
+    if len(layers) == 0:
+        raise ValueError("--groot-dit-capture-layers must not be empty")
+    return layers
 
 
 def parse_payload(payload: dict) -> dict:
@@ -363,7 +386,13 @@ async def predict_action_with_features(payload: dict):
     if preprocessor is not None:
         batch = preprocessor(batch)
 
-    action, hidden, _axes, meta = safe_hooks.run_with_features(policy, batch, _policy_type)
+    action, hidden, _axes, meta = safe_hooks.run_with_features(
+        policy,
+        batch,
+        _policy_type,
+        capture_vl=_capture_vl_features,
+        groot_dit_layers=_groot_dit_capture_layers,
+    )
 
     action = _postprocess_action_preserve_chunk(action)
     action_np = _action_to_emit_array(action)
@@ -376,7 +405,10 @@ async def predict_action_with_features(payload: dict):
         # unified /act_with_features contract used by VLAClient and GR00T HTTP.
         result["hidden_states_b64"] = encode_legacy_feature_array(hidden_np)
         result["features.hidden_states"] = encode_feature_blob(hidden_np)
-        result.update(meta)  # feature_kind, feature_axes, num_inference_timesteps, ...
+        vl_hidden = meta.get("vl_hidden_states")
+        result.update(
+            {k: v for k, v in meta.items() if k != "vl_hidden_states"}
+        )  # feature_kind, feature_axes, num_inference_timesteps, ...
         metadata = normalize_feature_metadata(meta)
         result["features.kind"] = metadata.feature_kind
         result["features.axes"] = metadata.feature_axes
@@ -387,6 +419,10 @@ async def predict_action_with_features(payload: dict):
         result["features.feature_action_horizon"] = metadata.feature_action_horizon
         result["features.model_action_horizon"] = metadata.model_action_horizon
         result["features.num_inference_timesteps"] = metadata.num_inference_timesteps
+        if vl_hidden is not None:
+            result["features.vl_hidden_states"] = encode_feature_blob(
+                np.asarray(vl_hidden)
+            )
     else:
         result["has_feature"] = False
     if inference_seed is not None:
@@ -399,6 +435,7 @@ async def predict_action_with_features(payload: dict):
 async def health():
     if _profile is None:
         return {"status": "not_loaded", "model": "lerobot"}
+    feature_metadata = _health_feature_metadata()
     return health_response(
         policy=policy,
         model=_policy_type,
@@ -407,7 +444,88 @@ async def health():
         action_type=_profile.action_type,
         action_keys=list(_profile.emits_subkeys),
         collect_mode=_collect_mode,
+        capture_vl=_capture_vl_features,
+        **feature_metadata,
     )
+
+
+def _health_feature_metadata() -> dict[str, Any]:
+    if _policy_type not in safe_hooks.SUPPORTED_TYPES:
+        return {}
+
+    if _policy_type == "groot" and _groot_dit_capture_layers is not None:
+        metadata: dict[str, Any] = {
+            "supports_features": True,
+            "feature_kind": GROOT_N15_DIT_BLOCK_RESIDUAL_FEATURE_KIND,
+            "feature_axes": list(GROOT_N15_DIT_BLOCK_RESIDUAL_FEATURE_AXES),
+            "feature_dtype": "float32",
+            "model_action_horizon": _n_action_steps,
+            "groot_dit_capture_layers": [int(layer) for layer in _groot_dit_capture_layers],
+        }
+    else:
+        metadata = {
+            "supports_features": True,
+            "feature_kind": lerobot_feature_kind(_policy_type),
+            "feature_axes": lerobot_feature_axes(_policy_type),
+            "feature_dtype": "float32",
+        }
+    if (
+        _policy_type in safe_hooks.FLOW_MATCHING_TYPES
+        and not (_policy_type == "groot" and _groot_dit_capture_layers is not None)
+    ):
+        metadata["feature_action_horizon"] = _n_action_steps
+        metadata["model_action_horizon"] = _n_action_steps
+    if _policy_type == "groot" and _capture_vl_features:
+        metadata.update(
+            {
+                "vl_feature_kind": GROOT_N15_VL_FEATURE_KIND,
+                "vl_feature_axes": list(GROOT_VL_FEATURE_AXES),
+                "vl_feature_dim": 2048,
+            }
+        )
+    return metadata
+
+
+def _register_steering_if_requested(loaded_policy, args):
+    global _steering
+    steering_npz = getattr(args, "steering_npz", None)
+    if not steering_npz:
+        return None
+    if _policy_type != "groot":
+        raise ValueError("Conceptor steering requires policy_type='groot'")
+
+    from steering_hooks import ConceptorSteering, load_steering_matrix
+
+    groot_model = getattr(loaded_policy, "_groot_model", None)
+    if groot_model is None:
+        raise ValueError("GR00T LeRobot policy is missing _groot_model for steering")
+
+    matrix = load_steering_matrix(
+        steering_npz,
+        beta=getattr(args, "steering_beta", 0.3),
+        alpha=getattr(args, "steering_alpha", None),
+        key=getattr(args, "steering_key", "C_steer"),
+    )
+    pathway = getattr(args, "steering_pathway", "dit")
+    layer = None if pathway == "vl" else getattr(args, "steering_layer", None)
+    if _steering is not None:
+        _steering.unregister()
+    _steering = ConceptorSteering(
+        groot_model,
+        matrix,
+        pathway=pathway,
+        layer=layer,
+    ).register()
+    logger.info(
+        "Conceptor steering registered: npz=%s pathway=%s beta=%s alpha=%s key=%s layer=%s",
+        steering_npz,
+        pathway,
+        getattr(args, "steering_beta", 0.3),
+        getattr(args, "steering_alpha", None),
+        getattr(args, "steering_key", "C_steer"),
+        layer,
+    )
+    return _steering
 
 
 @app.on_event("startup")
@@ -470,6 +588,7 @@ def _load_model_impl():
     policy = loaded.policy
     preprocessor = loaded.preprocessor
     postprocessor = loaded.postprocessor
+    _register_steering_if_requested(policy, args)
 
     from lerobot.configs.types import FeatureType
     from lerobot.utils.constants import ACTION
@@ -508,7 +627,7 @@ def _load_model_impl():
 
 
 def main():
-    global _profile, _collect_mode
+    global _profile, _collect_mode, _capture_vl_features, _groot_dit_capture_layers
 
     setup_serve_logging("lerobot_serve")
 
@@ -526,13 +645,67 @@ def main():
         "compile_model=True 정책에서 SAFE hook 이 첫 compile 에 포함되도록 보장 "
         "(/act 선행 시 hook 없는 그래프가 캐시돼 features=None). compile 은 유지된다.",
     )
+    parser.add_argument(
+        "--capture-vl",
+        action="store_true",
+        help=(
+            "GR00T N1.5 /act_with_features 에서 VL(goal) pathway feature"
+            "(action_head.vlln seq-mean-pool)도 함께 반환한다. 기본은 DiT-only."
+        ),
+    )
+    parser.add_argument(
+        "--groot-dit-capture-layers",
+        default=None,
+        help=(
+            "Comma-separated GR00T N1.5 DiT transformer_block indices to capture. "
+            "지정 시 /act_with_features 의 DiT feature가 final action-token output "
+            "대신 block residual [layer, model_token, feature_dim]가 된다."
+        ),
+    )
+    parser.add_argument(
+        "--steering-npz",
+        default=None,
+        help="Conceptor npz path. 지정 시 GR00T N1.5 HTTP server에 steering hook을 등록한다.",
+    )
+    parser.add_argument("--steering-beta", type=float, default=0.3)
+    parser.add_argument("--steering-alpha", type=float, default=None)
+    parser.add_argument(
+        "--steering-key",
+        choices=("C_steer", "C_success", "C_failure"),
+        default="C_steer",
+    )
+    parser.add_argument(
+        "--steering-layer",
+        type=int,
+        default=None,
+        help="DiT block index to steer (pathway=dit). None=action_head.model output.",
+    )
+    parser.add_argument(
+        "--steering-pathway",
+        choices=("dit", "vl"),
+        default="dit",
+        help="Steering pathway: dit=motor action tokens, vl=goal pathway action_head.vlln.",
+    )
     args = parser.parse_args()
 
     _collect_mode = bool(args.collect)
+    _capture_vl_features = bool(args.capture_vl)
+    _groot_dit_capture_layers = _parse_groot_dit_capture_layers(
+        args.groot_dit_capture_layers
+    )
     _profile = load_profile(args.profile)
     if _collect_mode:
         logger.info(
             "SAFE collect mode ON: /act 거부, /act_with_features 만 허용 (compile 유지)."
+        )
+    if _capture_vl_features:
+        logger.info(
+            "SAFE VL capture ON: /act_with_features returns features.vl_hidden_states."
+        )
+    if _groot_dit_capture_layers is not None:
+        logger.info(
+            "SAFE GR00T DiT block residual capture ON: layers=%s",
+            ",".join(str(layer) for layer in _groot_dit_capture_layers),
         )
     logger.info("Loaded profile %s from %s", _profile.name, args.profile)
     assert _profile.base_model == "lerobot", (

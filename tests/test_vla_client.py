@@ -359,6 +359,51 @@ class TestVLAClientPredictWithFeatures(unittest.TestCase):
         self.assertEqual(features["model_action_horizon"], 50)
         self.assertEqual(features["num_inference_timesteps"], 4)
 
+    def test_predict_with_features_decodes_optional_vl_feature_blob(self):
+        feature_arr = np.arange(2 * 3 * 4, dtype=np.float16).reshape(1, 2, 3, 4)
+        vl_arr = np.arange(4, dtype=np.float16)
+        payload = self._features_response(feature_arr)
+        payload["features.vl_hidden_states"] = _feature_blob(vl_arr)
+        payload["vl_feature_kind"] = "groot_n15_vlln_seq_meanpool"
+        payload["vl_feature_axes"] = ["feature_dim"]
+        payload["vl_feature_dim"] = 4
+        client = VLAClient("http://server")
+
+        with mock.patch("vla_client.requests.post", return_value=_Response(payload)):
+            _actions, features, _latency = client.predict_with_features({"left": _image()})
+
+        assert features is not None
+        np.testing.assert_array_equal(features["hidden_states"], feature_arr)
+        np.testing.assert_array_equal(features["vl_hidden_states"], vl_arr)
+        self.assertEqual(features["vl_feature_kind"], "groot_n15_vlln_seq_meanpool")
+        self.assertEqual(features["vl_feature_axes"], ["feature_dim"])
+        self.assertEqual(features["vl_feature_dim"], 4)
+
+    def test_predict_with_features_preserves_block_residual_metadata(self):
+        feature_arr = np.arange(1 * 2 * 5 * 3, dtype=np.float16).reshape(1, 2, 5, 3)
+        payload = self._features_response(feature_arr)
+        payload["features.kind"] = "groot_n15_dit_block_residual_tokens"
+        payload["features.axes"] = ["layer", "model_token", "feature_dim"]
+        payload["features.exported_action_token_count"] = None
+        payload["features.feature_action_horizon"] = None
+        payload["capture_layers"] = [0, 2]
+        payload["layer_count"] = 2
+        payload["token_count"] = 5
+        client = VLAClient("http://server")
+
+        with mock.patch("vla_client.requests.post", return_value=_Response(payload)):
+            _actions, features, _latency = client.predict_with_features({"left": _image()})
+
+        assert features is not None
+        np.testing.assert_array_equal(features["hidden_states"], feature_arr)
+        self.assertEqual(features["kind"], "groot_n15_dit_block_residual_tokens")
+        self.assertEqual(features["axes"], ["layer", "model_token", "feature_dim"])
+        self.assertIsNone(features["exported_action_token_count"])
+        self.assertIsNone(features["feature_action_horizon"])
+        self.assertEqual(features["capture_layers"], [0, 2])
+        self.assertEqual(features["layer_count"], 2)
+        self.assertEqual(features["token_count"], 5)
+
     def test_predict_with_features_accepts_namespaced_legacy_horizon_alias(self):
         feature_arr = np.arange(1 * 1 * 12 * 4, dtype=np.float16).reshape(1, 1, 12, 4)
         payload = self._features_response(feature_arr)

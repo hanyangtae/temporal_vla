@@ -29,6 +29,8 @@ OUT_ROOT_HOST=outputs/eval/robocasa/groot_n16/${RUN_ID}/raw_rollouts
 EP_META_ROOT=${REPO}/outputs/eval/robocasa/groot_n16/${RUN_ID}/ep_meta
 EP_META_ROOT_HOST=outputs/eval/robocasa/groot_n16/${RUN_ID}/ep_meta
 LOG=/tmp/pathway_collect
+PYTHON=${PYTHON:-python}
+VERIFY_AFTER_COLLECT=${VERIFY_AFTER_COLLECT:-1}
 NPROC=${#GPUS[@]}
 # DiT per-token capture mode (full=T 전체 보존, K mean). VL 은 항상 seq-mean-pool.
 CAPTURE_TOKEN_MODE=${CAPTURE_TOKEN_MODE:-full}
@@ -75,6 +77,47 @@ try:
 except Exception:
     print('FAIL')
 " 2>/dev/null | grep -q OK
+}
+
+capture_layer_count() {
+  local clean="${CAPTURE_LAYERS// /}"
+  if [[ -z "${clean}" ]]; then
+    echo 32
+    return
+  fi
+  awk -F',' '{print NF}' <<<"${clean}"
+}
+
+expected_dit_hidden_shape() {
+  local layers
+  layers="$(capture_layer_count)"
+  case "${CAPTURE_TOKEN_MODE}" in
+    full)
+      echo "${layers},51,1536"
+      ;;
+    valid|all)
+      echo "${layers},1536"
+      ;;
+    *)
+      echo "ERROR: unsupported CAPTURE_TOKEN_MODE=${CAPTURE_TOKEN_MODE}" >&2
+      return 1
+      ;;
+  esac
+}
+
+expected_dit_feature_kind() {
+  case "${CAPTURE_TOKEN_MODE}" in
+    full)
+      echo "groot_n16_dit_block_residual_kmean_perT_multilayer"
+      ;;
+    valid|all)
+      echo "groot_n16_dit_block_residual_pooled_multilayer"
+      ;;
+    *)
+      echo "ERROR: unsupported CAPTURE_TOKEN_MODE=${CAPTURE_TOKEN_MODE}" >&2
+      return 1
+      ;;
+  esac
 }
 
 # ── 1. GPU당 feature_server(multilayer + VL) 기동 ──
@@ -144,3 +187,27 @@ wait
 # ── 4. cleanup 은 trap(EXIT) 가 수행 (이 스크립트 포트만 kill) ──
 echo "[done] 수집 완료 -> ${OUT_ROOT}"
 find "${OUT_ROOT_HOST}" -name "*.pkl" | wc -l | xargs echo "pkl 개수:"
+if [[ "${VERIFY_AFTER_COLLECT}" == "1" ]]; then
+  dit_hidden_shape="$(expected_dit_hidden_shape)"
+  dit_feature_kind="$(expected_dit_feature_kind)"
+  echo "[verify] DiT+VL pkl contract 확인"
+  if ! "${PYTHON}" scripts/safe/groot_n16/robocasa/collect/verify_rollout_collection.py \
+      "${OUT_ROOT_HOST}" \
+      --tasks-override "${TASKS[@]}" \
+      --episodes-per-task "${EPISODES_PER_TASK}" \
+      --expected-feature-kind "${dit_feature_kind}" \
+      --expected-hidden-shape "${dit_hidden_shape}" \
+      --expected-model-family groot_n16 \
+      --expected-policy-transport zmq \
+      --expected-task-suite-name groot_n16_robocasa \
+      --expected-video-source groot_upstream_video_recording_wrapper \
+      --expected-model-horizon 50 \
+      --expected-valid-horizon 16 \
+      --require-vl-hidden-states \
+      --expected-vl-hidden-shape 2048 \
+      --expected-vl-feature-kind groot_n16_vlln_seq_meanpool \
+      --expected-vl-feature-dim 2048; then
+    echo "[verify] ERROR: DiT+VL pkl contract 검증 실패" >&2
+    exit 1
+  fi
+fi

@@ -17,9 +17,18 @@ GROOT_N16_ALL_FEATURE_AXES = [
     "model_action_token",
     "feature_dim",
 ]
+GROOT_N15_DIT_BLOCK_RESIDUAL_FEATURE_AXES = [
+    "layer",
+    "model_token",
+    "feature_dim",
+]
 
 GROOT_N16_VALID_FEATURE_KIND = "groot_n16_dit_valid_action_tokens_pre_velocity"
 GROOT_N16_ALL_FEATURE_KIND = "groot_n16_dit_all_action_tokens_pre_velocity"
+GROOT_N15_DIT_BLOCK_RESIDUAL_FEATURE_KIND = "groot_n15_dit_block_residual_tokens"
+GROOT_VL_FEATURE_AXES = ["feature_dim"]
+GROOT_N15_VL_FEATURE_KIND = "groot_n15_vlln_seq_meanpool"
+GROOT_N16_VL_FEATURE_KIND = "groot_n16_vlln_seq_meanpool"
 
 _LEROBOT_FEATURE_KINDS = {
     "pi0": "pi0_action_expert_pre_velocity",

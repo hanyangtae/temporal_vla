@@ -47,6 +47,10 @@ from src.policies.groot.safe.features import (  # noqa: E402
     SafeFeatureExtractor,
     cast_feature_tensor,
 )
+from src.policies.safe_metadata import (  # noqa: E402
+    GROOT_N16_VL_FEATURE_KIND,
+    GROOT_VL_FEATURE_AXES,
+)
 
 # Multi-layer capture (COAST A.10.2 Stage1 layer sweep용): DiT transformer_blocks 의
 # residual stream(inner_dim=1536)을 layer별로 캡처.
@@ -65,8 +69,8 @@ CAPTURE_TOKEN_MODES = ("valid", "all", "full")
 # VL(goal) pathway feature: action_head.vlln 출력(post-LayerNorm VL features, D=2048).
 # get_action 당 1회 발화 → VL token 축(seq) mean-pool (NOTALL: GR00T VL-SA 는 pooling 이득).
 # DiT multilayer 와 동일 forward 에서 함께 캡처해 rollout 비용 중복 없음.
-VL_FEATURE_KIND = "groot_n16_vlln_seq_meanpool"
-VL_FEATURE_AXES = ["feature_dim"]
+VL_FEATURE_KIND = GROOT_N16_VL_FEATURE_KIND
+VL_FEATURE_AXES = GROOT_VL_FEATURE_AXES
 
 
 def _to_numpy_tree(value: Any) -> Any:

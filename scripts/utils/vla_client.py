@@ -35,6 +35,7 @@
   POST /act_with_features
     요청: /act 와 동일
     응답: /act sub-keyed 응답 + features.hidden_states feature blob + metadata
+          + optional features.vl_hidden_states feature blob
 
   POST /reset   ← 에피소드 시작 시 히스토리 초기화 (모델이 필요 없으면 no-op)
   GET  /health  ← 서버 상태 확인 + feature 정보
@@ -223,6 +224,9 @@ class VLAClient:
                 valid_action_horizon: int
                 model_action_horizon: int
                 num_inference_timesteps: int
+                capture_layers / layer_count / token_count, optional for DiT block residual features
+                vl_hidden_states: np.ndarray, optional
+                vl_feature_kind / vl_feature_axes / vl_feature_dim, optional
         """
         payload = self._build_payload(images, states, instruction, inference_seed)
         result, latency_ms = self._post_and_decode("/act_with_features", payload)
@@ -242,6 +246,22 @@ class VLAClient:
                 "model_action_horizon": metadata.model_action_horizon,
                 "num_inference_timesteps": metadata.num_inference_timesteps,
             }
+            for key in (
+                "capture_layers",
+                "layer_indices",
+                "layer_count",
+                "token_count",
+                "feature_dim",
+                "capture_token_mode",
+            ):
+                if key in result:
+                    features[key] = result.get(key)
+            vl_blob = result.get("features.vl_hidden_states")
+            if isinstance(vl_blob, dict):
+                features["vl_hidden_states"] = decode_feature_blob(vl_blob)
+                features["vl_feature_kind"] = result.get("vl_feature_kind")
+                features["vl_feature_axes"] = result.get("vl_feature_axes")
+                features["vl_feature_dim"] = result.get("vl_feature_dim")
             return actions, features, latency_ms
 
         if result.get("has_feature") is False:
@@ -265,4 +285,14 @@ class VLAClient:
             "model_action_horizon": metadata.model_action_horizon,
             "num_inference_timesteps": metadata.num_inference_timesteps,
         }
+        for key in (
+            "capture_layers",
+            "layer_indices",
+            "layer_count",
+            "token_count",
+            "feature_dim",
+            "capture_token_mode",
+        ):
+            if key in result:
+                features[key] = result.get(key)
         return actions, features, latency_ms

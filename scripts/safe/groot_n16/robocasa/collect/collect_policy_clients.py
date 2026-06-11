@@ -68,6 +68,10 @@ class SafeFeatureRecordMixin:
         self.valid_action_horizon: int | None = None
         self.model_action_horizon: int | None = None
         self.num_inference_timesteps: int | None = None
+        self.capture_layers: list[int] | None = None
+        self.layer_indices: list[int] | None = None
+        self.layer_count: int | None = None
+        self.token_count: int | None = None
         # VL(goal) pathway feature metadata (multilayer endpoint --capture-vl 시).
         self.vl_feature_kind: str | None = None
         self.vl_feature_axes: list[str] | None = None
@@ -84,6 +88,10 @@ class SafeFeatureRecordMixin:
         self.valid_action_horizon = None
         self.model_action_horizon = None
         self.num_inference_timesteps = None
+        self.capture_layers = None
+        self.layer_indices = None
+        self.layer_count = None
+        self.token_count = None
         self.vl_feature_kind = None
         self.vl_feature_axes = None
         self.vl_feature_dim = None
@@ -113,6 +121,20 @@ class SafeFeatureRecordMixin:
         self.num_inference_timesteps = _prefer_present(
             metadata.num_inference_timesteps, self.num_inference_timesteps
         )
+        layer_indices = payload.get("layer_indices")
+        capture_layers = payload.get("capture_layers", layer_indices)
+        normalized_layers = (
+            None if capture_layers is None else [int(layer) for layer in capture_layers]
+        )
+        self.capture_layers = _prefer_present(normalized_layers, self.capture_layers)
+        self.layer_indices = _prefer_present(
+            None if layer_indices is None else [int(layer) for layer in layer_indices],
+            self.layer_indices,
+        )
+        if self.layer_indices is None:
+            self.layer_indices = self.capture_layers
+        self.layer_count = _prefer_present(payload.get("layer_count"), self.layer_count)
+        self.token_count = _prefer_present(payload.get("token_count"), self.token_count)
         # VL pathway metadata (multilayer --capture-vl). 없으면 그대로 None 유지.
         self.vl_feature_kind = _prefer_present(
             payload.get("vl_feature_kind"), self.vl_feature_kind
