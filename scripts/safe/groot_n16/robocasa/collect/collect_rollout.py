@@ -43,6 +43,7 @@ def _select_robocasa_env_source() -> str:
 
 
 ROBOCASA_ENV_SOURCE = _select_robocasa_env_source()
+DEFAULT_MAX_EPISODE_STEPS = 720
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
@@ -135,6 +136,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional directory for seed-keyed RoboCasa ep_meta JSON import/export.",
     )
+    parser.add_argument("--video-fps", type=int, default=20)
+    parser.add_argument("--steps-per-render", type=int, default=2)
     return parser.parse_args()
 
 
@@ -142,8 +145,17 @@ def main() -> None:
     args = parse_args()
     if args.n_action_steps <= 0:
         raise ValueError(f"--n_action_steps must be positive: {args.n_action_steps}")
+    if args.video_fps <= 0:
+        raise ValueError(f"--video-fps must be positive: {args.video_fps}")
+    if args.steps_per_render <= 0:
+        raise ValueError(f"--steps-per-render must be positive: {args.steps_per_render}")
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    max_episode_steps = (
+        args.max_episode_steps
+        if args.max_episode_steps is not None
+        else DEFAULT_MAX_EPISODE_STEPS
+    )
 
     for local_ep_idx in range(args.n_episodes):
         episode_idx = args.episode_start_idx + local_ep_idx
@@ -172,12 +184,16 @@ def main() -> None:
         upstream_video_dir.mkdir(parents=True, exist_ok=True)
         multistep_kwargs = {
             "n_action_steps": args.n_action_steps,
+            "max_episode_steps": max_episode_steps,
             "terminate_on_success": True,
         }
-        if args.max_episode_steps is not None:
-            multistep_kwargs["max_episode_steps"] = args.max_episode_steps
         wrapper_configs = WrapperConfigs(
-            video=VideoConfig(video_dir=str(upstream_video_dir)),
+            video=VideoConfig(
+                video_dir=str(upstream_video_dir),
+                fps=args.video_fps,
+                steps_per_render=args.steps_per_render,
+                max_episode_steps=max_episode_steps,
+            ),
             multistep=MultiStepConfig(**multistep_kwargs),
         )
 
@@ -226,6 +242,10 @@ def main() -> None:
             ep_meta=results[4],
             n_action_steps=args.n_action_steps,
             robocasa_env_source=ROBOCASA_ENV_SOURCE,
+            max_episode_steps=max_episode_steps,
+            video_fps=args.video_fps,
+            steps_per_render=args.steps_per_render,
+            inference_seed=args.inference_seed,
             model_family="groot_n16",
             policy_transport=args.policy_transport,
             task_suite_name="groot_n16_robocasa",

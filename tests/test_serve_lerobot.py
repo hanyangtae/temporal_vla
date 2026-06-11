@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import io
+import asyncio
 import random
 import sys
 import tempfile
@@ -973,6 +974,8 @@ class TestActWithFeaturesEndpoint(unittest.TestCase):
 
     def tearDown(self):
         self.srv.policy = None
+        self.srv._capture_vl_features = False
+        self.srv._groot_dit_capture_layers = None
 
     def test_response_includes_unified_feature_horizon_metadata(self):
         hidden = np.zeros((10, 50, 4), dtype=np.float16)
@@ -1069,6 +1072,81 @@ class TestActWithFeaturesEndpoint(unittest.TestCase):
         self.assertEqual(data["action.gripper"][-1], [112.0])
         self.assertEqual(self.srv.postprocessor.call_count, 16)
 
+    def test_response_encodes_vl_features_only_when_capture_vl_enabled(self):
+        hidden = np.zeros((4, 16, 8), dtype=np.float16)
+        vl_hidden = np.arange(4, dtype=np.float16)
+        action = torch.zeros((1, 16, 7), dtype=torch.float32)
+        meta = {
+            "feature_kind": "groot_n15_dit_action_tokens_pre_decode",
+            "feature_axes": ["denoising_step", "action_step", "feature_dim"],
+            "num_inference_timesteps": 4,
+            "action_horizon": 16,
+            "feature_dim": 8,
+            "vl_hidden_states": vl_hidden,
+            "vl_feature_kind": "groot_n15_vlln_seq_meanpool",
+            "vl_feature_axes": ["feature_dim"],
+            "vl_feature_dim": 4,
+        }
+
+        self.srv._policy_type = "groot"
+        self.srv._capture_vl_features = True
+        with unittest.mock.patch.object(
+            self.srv.safe_hooks,
+            "run_with_features",
+            return_value=(action, hidden, meta["feature_axes"], meta),
+        ) as run_with_features:
+            r = self.client.post(
+                "/act_with_features",
+                json={"observation.images.static": _make_b64_image(), "task": "test"},
+            )
+
+        self.assertEqual(r.status_code, 200)
+        run_with_features.assert_called_once()
+        self.assertTrue(run_with_features.call_args.kwargs["capture_vl"])
+        data = r.json()
+        self.assertIn("features.vl_hidden_states", data)
+        self.assertEqual(data["vl_feature_kind"], "groot_n15_vlln_seq_meanpool")
+        self.assertEqual(data["vl_feature_axes"], ["feature_dim"])
+        self.assertEqual(data["vl_feature_dim"], 4)
+        self.assertNotIn("vl_hidden_states", data)
+
+    def test_response_preserves_groot_block_residual_metadata(self):
+        hidden = np.zeros((2, 5, 3), dtype=np.float16)
+        action = torch.zeros((1, 16, 7), dtype=torch.float32)
+        meta = {
+            "feature_kind": "groot_n15_dit_block_residual_tokens",
+            "feature_axes": ["layer", "model_token", "feature_dim"],
+            "num_inference_timesteps": 4,
+            "capture_layers": [0, 2],
+            "layer_count": 2,
+            "token_count": 5,
+            "model_action_horizon": 16,
+            "feature_dim": 3,
+        }
+
+        self.srv._policy_type = "groot"
+        self.srv._groot_dit_capture_layers = (0, 2)
+        with unittest.mock.patch.object(
+            self.srv.safe_hooks,
+            "run_with_features",
+            return_value=(action, hidden, meta["feature_axes"], meta),
+        ) as run_with_features:
+            r = self.client.post(
+                "/act_with_features",
+                json={"observation.images.static": _make_b64_image(), "task": "test"},
+            )
+
+        self.assertEqual(r.status_code, 200)
+        run_with_features.assert_called_once()
+        self.assertEqual(run_with_features.call_args.kwargs["groot_dit_layers"], (0, 2))
+        data = r.json()
+        self.assertEqual(data["features.kind"], "groot_n15_dit_block_residual_tokens")
+        self.assertEqual(data["features.axes"], ["layer", "model_token", "feature_dim"])
+        self.assertEqual(data["capture_layers"], [0, 2])
+        self.assertEqual(data["layer_count"], 2)
+        self.assertEqual(data["token_count"], 5)
+        self.assertIsNone(data["features.exported_action_token_count"])
+
 
 class TestSafeHooks(unittest.TestCase):
     def test_groot_feature_hook_uses_predict_action_chunk(self):
@@ -1103,6 +1181,170 @@ class TestSafeHooks(unittest.TestCase):
         policy.predict_action_chunk.assert_called_once()
         policy.select_action.assert_not_called()
 
+    def test_groot_feature_hook_can_capture_vl_pathway(self):
+        class FakeActionHead:
+            action_horizon = 2
+
+            def __init__(self):
+                self.model = torch.nn.Identity()
+                self.vlln = torch.nn.Identity()
+
+        class FakePolicy:
+            def __init__(self):
+                self._groot_model = SimpleNamespace(action_head=FakeActionHead())
+                self.select_action = MagicMock(side_effect=AssertionError("select_action used"))
+                self.predict_action_chunk = MagicMock(side_effect=self._predict_action_chunk)
+
+            def _predict_action_chunk(self, batch):
+                del batch
+                self._groot_model.action_head.vlln(
+                    torch.tensor(
+                        [[[1.0, 3.0, 5.0, 7.0], [3.0, 5.0, 7.0, 9.0]]],
+                        dtype=torch.float32,
+                    )
+                )
+                self._groot_model.action_head.model(torch.ones(1, 3, 4))
+                return torch.zeros(1, 2, 7)
+
+        policy = FakePolicy()
+        action, hidden, axes, meta = serve_lerobot.safe_hooks.run_with_features(
+            policy,
+            {},
+            "groot",
+            capture_vl=True,
+        )
+
+        self.assertEqual(tuple(action.shape), (1, 2, 7))
+        self.assertEqual(tuple(hidden.shape), (1, 2, 4))
+        self.assertEqual(axes, ["denoising_step", "action_step", "feature_dim"])
+        np.testing.assert_allclose(
+            meta["vl_hidden_states"],
+            np.array([2.0, 4.0, 6.0, 8.0], dtype=np.float16),
+        )
+        self.assertEqual(meta["vl_feature_kind"], "groot_n15_vlln_seq_meanpool")
+        self.assertEqual(meta["vl_feature_axes"], ["feature_dim"])
+        self.assertEqual(meta["vl_feature_dim"], 4)
+
+    def test_groot_feature_hook_can_capture_block_residual_layers(self):
+        class AddBlock(torch.nn.Module):
+            def __init__(self, value):
+                super().__init__()
+                self.value = value
+
+            def forward(self, x):
+                return x + self.value
+
+        class FakeDiT(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.transformer_blocks = torch.nn.ModuleList(
+                    [AddBlock(1.0), AddBlock(10.0), AddBlock(100.0)]
+                )
+
+            def forward(self, x):
+                for block in self.transformer_blocks:
+                    x = block(x)
+                return x
+
+        class FakeActionHead:
+            action_horizon = 2
+
+            def __init__(self):
+                self.model = FakeDiT()
+
+        class FakePolicy:
+            def __init__(self):
+                self._groot_model = SimpleNamespace(action_head=FakeActionHead())
+                self.select_action = MagicMock(side_effect=AssertionError("select_action used"))
+                self.predict_action_chunk = MagicMock(side_effect=self._predict_action_chunk)
+
+            def _predict_action_chunk(self, batch):
+                del batch
+                x = torch.arange(1 * 5 * 3, dtype=torch.float32).reshape(1, 5, 3)
+                self._groot_model.action_head.model(x)
+                return torch.zeros(1, 2, 7)
+
+        policy = FakePolicy()
+        action, hidden, axes, meta = serve_lerobot.safe_hooks.run_with_features(
+            policy,
+            {},
+            "groot",
+            groot_dit_layers=(0, 2),
+        )
+
+        self.assertEqual(tuple(action.shape), (1, 2, 7))
+        self.assertEqual(tuple(hidden.shape), (2, 5, 3))
+        self.assertEqual(axes, ["layer", "model_token", "feature_dim"])
+        self.assertEqual(meta["feature_kind"], "groot_n15_dit_block_residual_tokens")
+        self.assertEqual(meta["capture_layers"], [0, 2])
+        np.testing.assert_allclose(hidden[0], np.arange(15, dtype=np.float32).reshape(5, 3) + 1.0)
+        np.testing.assert_allclose(
+            hidden[1],
+            np.arange(15, dtype=np.float32).reshape(5, 3) + 111.0,
+        )
+
+
+class TestSteeringRegistration(unittest.TestCase):
+    def tearDown(self):
+        if getattr(serve_lerobot, "_steering", None) is not None:
+            serve_lerobot._steering.unregister()
+            serve_lerobot._steering = None
+        serve_lerobot._policy_type = "unknown"
+
+    def test_register_steering_noops_without_npz(self):
+        args = SimpleNamespace(steering_npz=None)
+        policy = SimpleNamespace()
+
+        result = serve_lerobot._register_steering_if_requested(policy, args)
+
+        self.assertIsNone(result)
+        self.assertIsNone(serve_lerobot._steering)
+
+    def test_register_steering_attaches_vl_hook_to_groot_model(self):
+        conceptor_path = Path(tempfile.mkdtemp()) / "conceptors.npz"
+        np.savez(conceptor_path, alpha1_C_steer=np.eye(4, dtype=np.float64))
+
+        class FakeActionHead:
+            action_horizon = 2
+
+            def __init__(self):
+                self.model = torch.nn.Identity()
+                self.vlln = torch.nn.Identity()
+
+        groot_model = SimpleNamespace(action_head=FakeActionHead())
+        policy = SimpleNamespace(_groot_model=groot_model)
+        args = SimpleNamespace(
+            steering_npz=str(conceptor_path),
+            steering_beta=0.3,
+            steering_alpha=1.0,
+            steering_key="C_steer",
+            steering_layer=3,
+            steering_pathway="vl",
+        )
+        serve_lerobot._policy_type = "groot"
+
+        steering = serve_lerobot._register_steering_if_requested(policy, args)
+
+        self.assertIsNotNone(steering)
+        self.assertIs(serve_lerobot._steering, steering)
+        self.assertEqual(steering.pathway, "vl")
+        self.assertIsNone(steering.layer)
+        self.assertIs(steering.module, groot_model.action_head.vlln)
+
+    def test_register_steering_rejects_non_groot_policy(self):
+        args = SimpleNamespace(
+            steering_npz="/tmp/fake.npz",
+            steering_beta=0.3,
+            steering_alpha=None,
+            steering_key="C_steer",
+            steering_layer=None,
+            steering_pathway="dit",
+        )
+        serve_lerobot._policy_type = "pi05"
+
+        with self.assertRaisesRegex(ValueError, "requires policy_type='groot'"):
+            serve_lerobot._register_steering_if_requested(SimpleNamespace(), args)
+
 
 class TestResetEndpoint(unittest.TestCase):
     """POST /reset 엔드포인트."""
@@ -1133,44 +1375,84 @@ class TestHealthEndpoint(unittest.TestCase):
 
     def setUp(self):
         from scripts.serve import lerobot as srv
-        from fastapi.testclient import TestClient
 
         srv.policy = _make_mock_policy()
         srv.preprocessor, srv.postprocessor = _make_mock_processors()
         srv._profile = _MockProfile()
         srv._policy_type = "lerobot_test"
         srv._n_action_steps = 1
-        self.client = TestClient(srv.app)
+        srv._collect_mode = False
+        srv._capture_vl_features = False
         self.srv = srv
+
+    def tearDown(self):
+        self.srv.policy = None
+        self.srv._collect_mode = False
+        self.srv._capture_vl_features = False
+        self.srv._groot_dit_capture_layers = None
+
+    def _health(self):
+        return asyncio.run(self.srv.health())
 
     def test_health_when_loaded(self):
         """policy 로드 시 status=ok."""
-        r = self.client.get("/health")
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json()["status"], "ok")
+        self.assertEqual(self._health()["status"], "ok")
 
     def test_health_when_not_loaded(self):
         """policy=None이면 status=not_loaded."""
         self.srv.policy = None
-        r = self.client.get("/health")
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json()["status"], "not_loaded")
+        self.assertEqual(self._health()["status"], "not_loaded")
 
     def test_health_has_model_field(self):
         """응답에 model 필드 존재."""
-        r = self.client.get("/health")
-        self.assertIn("model", r.json())
+        self.assertIn("model", self._health())
 
     def test_health_has_n_action_steps(self):
         """응답에 n_action_steps 필드 존재 (calvin_eval.py가 act_step 자동 감지에 사용)."""
-        r = self.client.get("/health")
-        self.assertIn("n_action_steps", r.json())
-        self.assertIsInstance(r.json()["n_action_steps"], int)
+        data = self._health()
+        self.assertIn("n_action_steps", data)
+        self.assertIsInstance(data["n_action_steps"], int)
 
     def test_health_has_action_keys(self):
         """응답에 action_keys 필드 존재."""
-        r = self.client.get("/health")
-        self.assertEqual(r.json()["action_keys"], list(_MockProfile.emits_subkeys))
+        self.assertEqual(self._health()["action_keys"], list(_MockProfile.emits_subkeys))
+
+    def test_health_exposes_groot_feature_and_vl_metadata(self):
+        self.srv._policy_type = "groot"
+        self.srv._n_action_steps = 16
+        self.srv._collect_mode = True
+        self.srv._capture_vl_features = True
+
+        data = self._health()
+        self.assertTrue(data["supports_features"])
+        self.assertEqual(data["feature_kind"], "groot_n15_dit_action_tokens_pre_decode")
+        self.assertEqual(
+            data["feature_axes"],
+            ["denoising_step", "action_step", "feature_dim"],
+        )
+        self.assertEqual(data["feature_action_horizon"], 16)
+        self.assertEqual(data["model_action_horizon"], 16)
+        self.assertEqual(data["feature_dtype"], "float32")
+        self.assertEqual(data["collect_mode"], True)
+        self.assertEqual(data["capture_vl"], True)
+        self.assertEqual(data["vl_feature_kind"], "groot_n15_vlln_seq_meanpool")
+        self.assertEqual(data["vl_feature_axes"], ["feature_dim"])
+        self.assertEqual(data["vl_feature_dim"], 2048)
+
+    def test_health_exposes_groot_block_residual_capture_metadata(self):
+        self.srv._policy_type = "groot"
+        self.srv._n_action_steps = 16
+        self.srv._collect_mode = True
+        self.srv._groot_dit_capture_layers = (0, 2, 31)
+
+        data = self._health()
+
+        self.assertTrue(data["supports_features"])
+        self.assertEqual(data["feature_kind"], "groot_n15_dit_block_residual_tokens")
+        self.assertEqual(data["feature_axes"], ["layer", "model_token", "feature_dim"])
+        self.assertEqual(data["groot_dit_capture_layers"], [0, 2, 31])
+        self.assertEqual(data["model_action_horizon"], 16)
+        self.assertNotIn("feature_action_horizon", data)
 
 
 if __name__ == "__main__":
