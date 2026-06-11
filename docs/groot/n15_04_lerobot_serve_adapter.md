@@ -4,6 +4,16 @@
 `GrootPolicy`로 로딩해 통일 HTTP `/act`를 노출한다. 전체 그림·상태는
 [`n15_03`](n15_03_lerobot_robocasa365.md).
 
+> 관련 문서 (N1.5 reading order)
+> - [Doc map](README.md)
+> - [01 Fine-Tuning](n15_01_finetune.md)
+> - [02 Evaluation](n15_02_eval.md)
+> - [03 Overview & Status](n15_03_lerobot_robocasa365.md)
+> - **04 Serve Adapter (이 문서)**
+> - [05 Obs Bridge](n15_05_lerobot_obs_bridge.md)
+> - [06 Native ZMQ Smoke](n15_06_native_zmq_openfridge.md)
+> - [07 Internal Parity](n15_07_lerobot_internal_parity.md)
+
 ## 체크포인트 형식
 
 RoboCasa365 checkpoint는 LeRobot `Policy.save_pretrained()` 산출물이 아니다. HF repo

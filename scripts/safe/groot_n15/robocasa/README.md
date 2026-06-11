@@ -39,13 +39,50 @@ contract: `<uuid>_s{0|1}.mp4` plus `per_episode.tsv`.
 
 `collect/http_feature_collect.py` intentionally reuses the N1.6 SAFE artifact
 writer so N1.5 HTTP feature rollouts land as
-`task{id}--ep{idx}--succ{0|1}.{pkl,csv,mp4}`. The feature tensors remain
+`raw_rollouts/<task>/task{id}--ep{idx}--succ{0|1}.{pkl,csv,mp4}`. Passing
+`--output-dir raw_rollouts` is enough; the collector creates the task subdir to
+match the N1.6 verifier layout. The feature tensors remain
 N1.5 LeRobot tensors (`groot_n15_dit_action_tokens_pre_decode`), not N1.6 SAFE
 DiT tensors. Its env path uses the same shared RoboCasa
 `VideoRecordingWrapper`/`MultiStepWrapper` stack as N1.6 collection, so video is
 the canonical 3-view upstream recording and action chunks execute according to
 `--n_action_steps`. Its `ep_meta` path can replay manifests exported by N1.6
-when `--ep-meta-load-env-name` points at the N1.6 env id.
+when `--ep-meta-load-env-name` points at the N1.6 env id. For N1.5/N1.6 paired
+feature comparison, keep `env_name`, `scenario_seed`, `ep_meta`, `n_action_steps`,
+`max_episode_steps`, `video_fps`, `steps_per_render`, `task_description`, and
+`inference_seed` aligned; the pkl payload records these replay/video settings.
+
+By default, N1.5 feature collection stores only DiT `hidden_states`. To collect
+the matching VL(goal) pathway feature, start the LeRobot server with
+`scripts/serve/lerobot.py --collect --capture-vl`; then
+`collect/http_feature_collect.py` will store `vl_hidden_states` and
+`vl_feature_*` metadata in the same pkl triplet. The VL point is the
+`action_head.vlln` output after sequence mean pooling, using the shared
+`groot_n15_vlln_seq_meanpool` metadata contract.
+
+For pathway-resolved collection (the NOTALL/COAST steering line), start the
+server so it also captures DiT block residuals at a fixed layer subset:
+
+```bash
+scripts/serve/lerobot.py --collect --capture-vl \
+  --groot-dit-capture-layers 0,2,4,8,10,12,15
+```
+
+This replaces the single `groot_n15_dit_action_tokens_pre_decode` tap
+(`[K=4, H=16, 1024]`) with per-inference DiT block residuals
+`[L=7, T=token_count, 1536]` (the K=4 denoising axis is mean-pooled; the
+per-token axis `T` is preserved). The 7 layers are the N1.5 (16-layer DiT)
+mapping of the N1.6 7-layer subset used in `docs/steering/09`: early `{0,2,4,8}`
+(L0 = NOTALL kill-switch), `10` = COAST N1.5 selected layer, late `{12,15}`
+(separation peak; 15 = final block).
+
+The current N1.5 aligned residual runtime `T` is 49, not 51:
+`state(1) + future_tokens(32) + action(16)`. This differs from N1.6 full
+block residuals, where `T=51 = state(1) + action(50)`. Do not pad/truncate N1.5
+to N1.6 token count; keep the native model-token layout and verify
+`token_count=49` with the first pkl/verifier gate. Each pkl record now also
+stores the per-inference proprio `state` (the paper expert-vs-VL state-probe
+target), surfaced as `states` in the pkl payload.
 
 Verify N1.5 HTTP feature triplets with the same N1.6 collection verifier, but
 override the model/feature expectations:
@@ -64,5 +101,17 @@ python scripts/safe/groot_n16/robocasa/collect/verify_rollout_collection.py \
   --expected-model-horizon 16 \
   --expected-valid-horizon none \
   --expected-feature-action-horizon 16 \
-  --expected-n-action-steps 16
+  --expected-n-action-steps 16 \
+  --expected-max-episode-steps 720 \
+  --expected-video-fps 20 \
+  --expected-steps-per-render 2
+```
+
+For runs collected with `--capture-vl`, add:
+
+```bash
+  --require-vl-hidden-states \
+  --expected-vl-hidden-shape 2048 \
+  --expected-vl-feature-kind groot_n15_vlln_seq_meanpool \
+  --expected-vl-feature-dim 2048
 ```

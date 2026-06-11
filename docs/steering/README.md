@@ -17,6 +17,23 @@ pathway를 steering하여 Success Rate를 올리는 것이다. 실패하더라�
 - 다음 실험 축은 VL pathway conceptor fit, type-matched steering, 그리고 B/C quadrant 비디오
   정성 검증이다.
 
+## 수집 계약
+
+- 기본 SAFE/multilayer 수집은 DiT `hidden_states`만 저장한다.
+- N1.6 full block residual pathway의 model-token 축은 `T=51 = state(1)+action(50)`이다.
+  N1.6 SAFE 기본 export는 full 51-token residual이 아니라 마지막 action-50 block 중
+  RoboCasa valid horizon 16만 저장한 `[K,16,1024]` action-token feature다.
+- N1.5 aligned block residual pathway의 model-token 축은
+  `T=49 = state(1)+future_tokens(32)+action(16)`이다. N1.6과 shape를 맞추려고
+  padding/truncation하지 않고, verifier는 `token_count=49`를 기대한다.
+- VL+DiT pathway 수집은 명시적으로 `feature_server.py --capture-vl`
+  또는 LeRobot `scripts/serve/lerobot.py --capture-vl`을 켤 때만 동작한다.
+  이 경우 pkl에는 DiT `hidden_states`와 VL `vl_hidden_states`가 step 단위로 함께 저장된다.
+- steering용 pathway run은 `verify_rollout_collection.py --require-vl-hidden-states`로
+  `vl_hidden_states` 존재, step count, shape, VL metadata를 검증한다.
+- `collect_pathway_parallel.sh`는 `--capture-vl`로 서버를 띄우고 수집 종료 후 위 verifier를
+  기본 실행한다. 필요할 때만 `VERIFY_AFTER_COLLECT=0`으로 끈다.
+
 ## 사용 절차
 
 1. 표현 분석의 근거를 볼 때는 `01` → `02`를 먼저 읽는다.
@@ -50,6 +67,9 @@ pathway를 steering하여 Success Rate를 올리는 것이다. 실패하더라�
    DiT(motor) pathway 비교, Phase 4 steering target 선택 근거.
 10. [10 Session Handoff](10_session_handoff.md) — 최신 연구 목적, 완료 실험, 다음 세션
     우선순위, 주요 파일 위치.
+11. [11 Phase 4 N1.5 Instruction-Fixed Plan](11_phase4_n15_instruction_fixed_plan.md) —
+    N1.5 instruction-fixed seed selection, paired rollout collection, pathway cache, conceptor fit,
+    steering eval 계획과 실행 log.
 
 ## 결과 위치
 
@@ -58,5 +78,6 @@ pathway를 steering하여 Success Rate를 올리는 것이다. 실패하더라�
 | succ/fail latent가 실제로 분리되는가? | `01_seen18_latent_analysis.md` |
 | DiT-only COAST steering은 왜 실패했나? | `06_coast_groot_n16_summary.md` |
 | 최신 steering target은 무엇인가? | `09_phase3_vl_dit_comparison.md` |
-| 다음 세션은 무엇부터 해야 하나? | `10_session_handoff.md` |
+| N1.5 instruction-fixed 수집/steering은 어디까지 왔나? | `11_phase4_n15_instruction_fixed_plan.md` |
+| 다음 세션은 무엇부터 해야 하나? | `10_session_handoff.md`, `11_phase4_n15_instruction_fixed_plan.md` |
 | LeRobot/멀티벤치 SAFE 수집은 어디까지 왔나? | `05_safe_lerobot_collection.md` |

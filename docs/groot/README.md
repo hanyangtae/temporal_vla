@@ -18,6 +18,24 @@ script 공통 path/run identity는 `scripts/safe/groot_n15/robocasa/run_config.{
 처음 읽을 때는 [00 Flow Map](00_groot_flow_map.md)의 "N1.5 And N1.6 Are Asymmetric"
 섹션을 먼저 확인한다.
 
+<a id="n15-n16-feature-contract"></a>
+
+## N1.5 / N1.6 Feature Contract Quick Reference
+
+N1.5와 N1.6 feature shape은 비슷한 이름을 써도 token layout이 다르다. 비교할 때는
+`hidden_states` shape만 맞추려 하지 말고 어떤 model token을 저장했는지 먼저 확인한다.
+
+| Policy path | Feature mode | Per-inference DiT shape | Token layout | Notes |
+|---|---|---:|---|---|
+| N1.6 Isaac-GR00T | full block residual pathway | `[L, 51, 1536]` | `state(1) + action(50)` | `future_tokens` 축이 없다. RoboCasa가 실제 decode/execution하는 valid action horizon은 이 action-50 block의 leading 16 token이다. |
+| N1.6 Isaac-GR00T | default SAFE export | `[K, 16, 1024]` | last `model_action_horizon=50` action block 중 leading valid 16 | `/act_with_features`와 ZMQ SAFE 기본값. `--feature-slice all`이면 `[K, 50, 1024]`. |
+| N1.5 LeRobot | default final-DiT export | `[K=4, 16, 1024]` | action token 16 | `groot_n15_dit_action_tokens_pre_decode`; 현재 final output action-token feature. |
+| N1.5 LeRobot | aligned block residual pathway | `[L=7, 49, 1536]` | `state(1) + future_tokens(32) + action(16)` | `--groot-dit-capture-layers 0,2,4,8,10,12,15`; N1.6의 token count 51에 padding/truncation으로 맞추지 않는다. |
+
+따라서 N1.6의 `51`은 `1+50`이고, N1.5 aligned residual의 `49`는 `1+32+16`이다.
+둘 다 "T 전체"를 쓰면 action chunk만 쓰는 것이 아니라 state/future/action 또는 state/action
+model token 전체를 pooling하는 것이다.
+
 ## 사용 절차
 
 1. GR00T 관련 코드가 파일 사이에서 어떻게 이어지는지 처음 파악할 때는
@@ -61,8 +79,8 @@ script 공통 path/run identity는 `scripts/safe/groot_n15/robocasa/run_config.{
 3. [N1.5 03 LeRobot RoboCasa365 Pipeline — Overview & Status](n15_03_lerobot_robocasa365.md) — serve→HTTP→robocasa365→analysis UI 4-stage map, 검증 상태/향후 계획
 4. [N1.5 04 Serve Adapter Spec](n15_04_lerobot_serve_adapter.md) — stage [1]: checkpoint 형식, profile 필드 명세, serve/smoke, 구현 구조
 5. [N1.5 05 Closed-loop Obs Bridge Spec](n15_05_lerobot_obs_bridge.md) — stage [2][3]: 카메라/state 키 매핑 명세, gap 분석, 수정안
-6. [N1.5 07 Native ZMQ OpenFridge Smoke](n15_07_native_zmq_openfridge.md) — LeRobot mismatch 분리용 Isaac-GR00T N1.5 ZMQ comparison note
-7. [N1.5 08 LeRobot Internal Parity](n15_08_lerobot_internal_parity.md) — SR가 아닌 checkpoint-load 검증과 historical internal evidence
+6. [N1.5 06 Native ZMQ OpenFridge Smoke](n15_06_native_zmq_openfridge.md) — LeRobot mismatch 분리용 Isaac-GR00T N1.5 ZMQ comparison note (bring-up 후 진단)
+7. [N1.5 07 LeRobot Internal Parity](n15_07_lerobot_internal_parity.md) — SR가 아닌 checkpoint-load 검증과 historical internal evidence (bring-up 후 진단)
 
 ## 문서 경계
 
@@ -79,7 +97,7 @@ script 공통 path/run identity는 `scripts/safe/groot_n15/robocasa/run_config.{
 | N1.6 RoboCasa refactor architecture | `n16_12_robocasa_refactor_report.md` | GR00T RoboCasa 전용 processor, HTTP/ZMQ transport, shared contract 책임 경계 |
 | N1.5 reference | `n15_01_finetune.md`, `n15_02_eval.md` | Isaac-GR00T N1.5 GR1/PandaOmron reference workflow (ZMQ) |
 | N1.5 LeRobot pipeline | `n15_03`(overview/status), `n15_04`(serve spec), `n15_05`(obs bridge spec) | LeRobot serve→HTTP→robocasa365→analysis UI 4-stage. Feature 비교용 수집 client는 `scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py` |
-| N1.5 native/internal comparison | `n15_07_native_zmq_openfridge.md`, `n15_08_lerobot_internal_parity.md` | native Isaac-GR00T N1.5 ZMQ smoke와 SR 외 내부값 parity 검증 |
+| N1.5 native/internal comparison | `n15_06_native_zmq_openfridge.md`, `n15_07_lerobot_internal_parity.md` | native Isaac-GR00T N1.5 ZMQ smoke와 SR 외 내부값 parity 검증 |
 | Legacy | `_legacy/robocasa_finetune_setup.md` | 초기 setup note. 현행 runbook의 기준이 아니다 |
 
 N1.6 SAFE feature server와 canonical artifact writer는 계속
@@ -111,8 +129,12 @@ N1.6과 같은 shared RoboCasa `VideoRecordingWrapper`/`MultiStepWrapper` stack�
 재사용하되 N1.5 기대값(`model_family=lerobot_groot_n15`,
 `feature_kind=groot_n15_dit_action_tokens_pre_decode`, `policy_transport=http`)을
 명시해서 실행한다.
+N1.5도 VL(goal) pathway feature를 수집할 수 있지만 기본은 DiT-only다. VL까지 저장하려면
+LeRobot serve를 `scripts/serve/lerobot.py --collect --capture-vl`로 띄운다. 이때
+collector pkl에는 DiT `hidden_states`와 함께 `vl_hidden_states`,
+`vl_feature_kind=groot_n15_vlln_seq_meanpool`, `vl_feature_dim`이 저장된다.
 
-`docs/groot/n15_07_*`와 아래 Runtime Recheck 섹션에 남아 있는 `success1.mp4` 또는 task-level
+`docs/groot/n15_06_*`와 아래 Runtime Recheck 섹션에 남아 있는 `success1.mp4` 또는 task-level
 `OpenFridge.mp4` 경로는 해당 실행 당시의 historical artifact 이름이다. 새 run의 기준은 위 표다.
 
 ## 용어 기준

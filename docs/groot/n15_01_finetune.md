@@ -2,6 +2,16 @@
 
 Isaac-GR00T `n1.5-release` 기준으로 RoboCasa GR1 tabletop benchmark를 fine-tuning 하는 방법을 정리한다. 이 문서는 `src/policies/Isaac-GR00T-N1.5` submodule의 공식 문서를 기준으로 작성한다.
 
+> 관련 문서 (N1.5 reading order)
+> - [Doc map](README.md)
+> - **01 Fine-Tuning (이 문서)**
+> - [02 Evaluation](n15_02_eval.md)
+> - [03 Overview & Status](n15_03_lerobot_robocasa365.md)
+> - [04 Serve Adapter](n15_04_lerobot_serve_adapter.md)
+> - [05 Obs Bridge](n15_05_lerobot_obs_bridge.md)
+> - [06 Native ZMQ Smoke](n15_06_native_zmq_openfridge.md)
+> - [07 Internal Parity](n15_07_lerobot_internal_parity.md)
+
 이 문서는 N1.6 PandaOmron fine-tuning 문서와 의도적으로 분리한다.
 
 - N1.6 문서: `n16_01_finetune.md`

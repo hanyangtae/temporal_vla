@@ -4,6 +4,16 @@
 전체 그림·상태는 [`n15_03`](n15_03_lerobot_robocasa365.md), serve 로딩은
 [`n15_04`](n15_04_lerobot_serve_adapter.md).
 
+> 관련 문서 (N1.5 reading order)
+> - [Doc map](README.md)
+> - [01 Fine-Tuning](n15_01_finetune.md)
+> - [02 Evaluation](n15_02_eval.md)
+> - [03 Overview & Status](n15_03_lerobot_robocasa365.md)
+> - [04 Serve Adapter](n15_04_lerobot_serve_adapter.md)
+> - **05 Obs Bridge (이 문서)**
+> - [06 Native ZMQ Smoke](n15_06_native_zmq_openfridge.md)
+> - [07 Internal Parity](n15_07_lerobot_internal_parity.md)
+
 ## 요구 계약 (GrootPolicy가 받아야 하는 HTTP 입력)
 
 `scripts/serve/lerobot_adapters/groot.py`의 `GrootPolicyAdapter`는 profile로부터 아래
@@ -89,9 +99,9 @@ Unit contract와 실제 `/act` payload probe는 통과했다. 2026-06-09에는 R
 benchmark fork의 official `robocasa/<Task>` split 경로도
 `scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py`로 붙였다. 이후
 OpenFridge target seed-0 LeRobot HTTP smoke는 성공했고, SR 외 내부값 검증은
-[`n15_08_lerobot_internal_parity.md`](n15_08_lerobot_internal_parity.md)로 분리했다.
+[`n15_07_lerobot_internal_parity.md`](n15_07_lerobot_internal_parity.md)로 분리했다.
 따라서 이 문서의 결론 범위는 camera/state bridge 계약까지이며, model/action parity
-판단은 n15_08을 기준으로 한다.
+판단은 n15_07을 기준으로 한다.
 
 ## N1.6 YAML 비교 결론
 
@@ -158,8 +168,8 @@ schema 공유 키(`GROOT_ENV_VIDEO_TO_UNIFIED_CAM`)는 변경하지 않았다.
     `outputs/debug/lerobot_groot_n15_officialrun_OpenFridge_target_wxyz`.
     같은 checkpoint의 native N1.5 ZMQ official env smoke는 SR 1/1이므로 이 결과는
     LeRobot wrapper parity issue로 추적했다. 현재 retained internal parity와 seed-0
-    closed-loop 상태는 [`n15_08`](n15_08_lerobot_internal_parity.md)과
-    [`n15_07`](n15_07_native_zmq_openfridge.md)을 기준으로 한다.
+    closed-loop 상태는 [`n15_07`](n15_07_lerobot_internal_parity.md)과
+    [`n15_06`](n15_06_native_zmq_openfridge.md)을 기준으로 한다.
 
 ## 과거 Native ZMQ vs LeRobot HTTP 비교 결과
 
@@ -222,5 +232,5 @@ action.control_mode first lerobot: [0.015283823]
   `/temporal_vla/outputs/debug/lerobot_groot_n15_officialrun_OpenFridge_target_after_native_action_unapply/videos/79e7da83-c4ad-43ad-a2ed-9f9c3e1e6624_success0.mp4`).
   Binary action fix는 확인된 parity repair 하나로만 보고, full policy equivalence로 보지
   않는다. 이후 OpenFridge target seed-0 LeRobot HTTP smoke는 성공했다. 자세한 내용은
-  [`n15_07`](n15_07_native_zmq_openfridge.md)을 본다. 현재 retained SR-independent
-  checkpoint-load parity는 [`n15_08`](n15_08_lerobot_internal_parity.md)에 기록한다.
+  [`n15_06`](n15_06_native_zmq_openfridge.md)을 본다. 현재 retained SR-independent
+  checkpoint-load parity는 [`n15_07`](n15_07_lerobot_internal_parity.md)에 기록한다.

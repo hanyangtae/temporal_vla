@@ -21,7 +21,9 @@
 
 - `--seed S`는 RoboCasa env construction까지 전달되어 `env.rng = np.random.default_rng(S)`를 만든다.
 - `--ep-meta-dir`가 있으면 `(env_name, scenario_seed)`에 대응하는 `ep_meta` JSON manifest를 import/export한다.
-- pkl payload에는 `seed`, `scenario_seed`, `ep_meta`가 함께 저장된다.
+- pkl payload에는 `seed`, `scenario_seed`, `ep_meta`와 replay/video config
+  (`n_action_steps`, `max_episode_steps`, `video_fps`, `steps_per_render`,
+  `inference_seed`)가 함께 저장된다.
 - 같은 RoboCasa/robosuite commit, 같은 dependency, 같은 asset에서는 `ep_meta`가 없어도 같은 `(env_name, scenario_seed)`로 같은 scene composition을 다시 생성할 수 있다.
 - 같은 manifest를 import하면 같은 layout/style, object identity, texture, fixture reference, robot base pose를 재사용한다.
 
@@ -97,6 +99,22 @@ local_ep_idx 2 -> scenario_seed 100002
 같은 scenario를 의도적으로 반복 관찰하려면 `--n-episodes 1 --seed S`를 별도 호출로
 반복하고, 그 run은 variance probe라고 명시한다. 기본 collector contract는 episode마다
 서로 다른 deterministic scenario를 만드는 것이다.
+
+### Paired N1.5/N1.6 comparison config
+
+N1.5 LeRobot HTTP feature collection과 N1.6 HTTP/ZMQ SAFE collection을 비교할 때는
+manifest만 공유하는 것으로는 부족하다. 다음 config를 같은 값으로 고정한다.
+
+| config | paired 비교 기준 |
+|---|---|
+| `env_name` | 같은 RoboCasa env id |
+| `scenario_seed` | 같은 `--seed + local_ep_idx` schedule |
+| `ep_meta` | 같은 `--ep-meta-dir` manifest import/export |
+| `n_action_steps` | 같은 action chunk 실행 길이 |
+| `max_episode_steps` | 같은 episode truncation horizon |
+| `video_fps`, `steps_per_render` | 같은 upstream video sampling |
+| `task_description` | 같은 instruction text |
+| `inference_seed` | 같은 per-policy-call seed base, model 차이는 별도 해석 |
 
 ## `ep_meta` import/export 동작
 

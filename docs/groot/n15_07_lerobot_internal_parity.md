@@ -6,6 +6,16 @@ GR00T N1.5 checkpoint를 올바르게 로드하는지 확인하는 진단 문서
 파일 수를 줄이기 위해 action/preprocess/ZMQ-vs-HTTP one-off probe scripts는 제거했다.
 현재 유지하는 parity 표면은 checkpoint-load verifier 하나다.
 
+> 관련 문서 (N1.5 reading order)
+> - [Doc map](README.md)
+> - [01 Fine-Tuning](n15_01_finetune.md)
+> - [02 Evaluation](n15_02_eval.md)
+> - [03 Overview & Status](n15_03_lerobot_robocasa365.md)
+> - [04 Serve Adapter](n15_04_lerobot_serve_adapter.md)
+> - [05 Obs Bridge](n15_05_lerobot_obs_bridge.md)
+> - [06 Native ZMQ Smoke](n15_06_native_zmq_openfridge.md)
+> - **07 Internal Parity (이 문서)**
+
 ## 유지하는 진단 스크립트
 
 | Script | 역할 |

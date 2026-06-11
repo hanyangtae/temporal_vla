@@ -4,6 +4,16 @@
 ZMQ 비교 기록이다. 기준 runbook은 [`n15_02_eval.md`](n15_02_eval.md)이며,
 N1.6과 같은 `robocasa` simulator client + policy server 구조로 실행한다.
 
+> 관련 문서 (N1.5 reading order)
+> - [Doc map](README.md)
+> - [01 Fine-Tuning](n15_01_finetune.md)
+> - [02 Evaluation](n15_02_eval.md)
+> - [03 Overview & Status](n15_03_lerobot_robocasa365.md)
+> - [04 Serve Adapter](n15_04_lerobot_serve_adapter.md)
+> - [05 Obs Bridge](n15_05_lerobot_obs_bridge.md)
+> - **06 Native ZMQ Smoke (이 문서)**
+> - [07 Internal Parity](n15_07_lerobot_internal_parity.md)
+
 ## Runtime 메모
 
 `groot_n15` compose service의 기본 cache mount는 `/cache`다. 현재 host
