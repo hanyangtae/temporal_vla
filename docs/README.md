@@ -50,6 +50,10 @@ progress-predictor 방향은 [`ttt/`](ttt/README.md) 아래의 보존 문서로 
 ## GR00T RoboCasa
 
 GR00T 학습·평가·SAFE feature export 문서는 [`groot/`](groot/README.md) 아래에 별도 번호로 정리. README에 reading order 가 있다.
+N1.5와 N1.6의 DiT token layout은 대칭이 아니므로 feature shape 비교 전에
+[`groot/README.md`](groot/README.md#n15-n16-feature-contract)의
+quick reference를 먼저 확인한다. 핵심 차이는 N1.6 full residual `T=51 = state(1)+action(50)`,
+N1.5 aligned residual `T=49 = state(1)+future_tokens(32)+action(16)`이다.
 
 처음 구조를 파악할 때는 [GR00T Flow Map](groot/00_groot_flow_map.md)을 먼저 본다. 이 문서는
 LeRobot/native, RoboCasa365, ZMQ/HTTP entry point가 어떤 파일과 함수를 지나 어떤 값을 전달하는지
@@ -79,8 +83,8 @@ outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector
 1. [N1.5 Fine-Tuning](groot/n15_01_finetune.md)
 2. [N1.5 Evaluation](groot/n15_02_eval.md)
 3. [N1.5 LeRobot RoboCasa365 Pipeline](groot/n15_03_lerobot_robocasa365.md) — serve→HTTP→robocasa365→analysis UI 4-stage. overview/status(`n15_03`) + stage별 명세 `n15_04`(serve) `n15_05`(obs bridge)
-4. [N1.5 Native ZMQ OpenFridge Smoke](groot/n15_07_native_zmq_openfridge.md) — LeRobot wrapper mismatch를 분리하기 위한 Isaac-GR00T N1.5 native baseline
-5. [N1.5 LeRobot Internal Parity](groot/n15_08_lerobot_internal_parity.md) — SR 외 checkpoint-load 검증과 historical internal evidence
+4. [N1.5 Native ZMQ OpenFridge Smoke](groot/n15_06_native_zmq_openfridge.md) — LeRobot wrapper mismatch를 분리하기 위한 Isaac-GR00T N1.5 native baseline
+5. [N1.5 LeRobot Internal Parity](groot/n15_07_lerobot_internal_parity.md) — SR 외 checkpoint-load 검증과 historical internal evidence
 
 ## Latent Steering (메인 연구 라인)
 
@@ -97,6 +101,7 @@ succ/fail latent 구분 → steer 로 SR↑ (COAST 계열). 메인 method 의 �
 8. [Phase 3 DiT32 Separation](steering/08_phase3_dit32_separation.md) — DiT 32-layer pre-failure 분리력
 9. [Phase 3 VL vs DiT Comparison](steering/09_phase3_vl_dit_comparison.md) — VL(goal) vs DiT(motor) pathway 비교와 Phase 4 target
 10. [Session Handoff](steering/10_session_handoff.md) — 최신 연구 현황, 다음 세션 우선순위, 주요 파일 위치
+11. [Phase 4 N1.5 Instruction-Fixed Plan](steering/11_phase4_n15_instruction_fixed_plan.md) — N1.5 instruction-fixed seed/collection/pathway/steering runbook
 
 한 화면 요약: [GR00T Latent Steering Explorer](groot/00_groot_steering_explorer.html) — GR00T runtime flow와
 conceptor/hidden-state steering 수식, VL/DiT pathway 상태, code artifact map을 함께 보는 self-contained interactive HTML.

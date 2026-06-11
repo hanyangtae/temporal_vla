@@ -4,6 +4,12 @@
 
 > 통일 HTTP API 의 일반 계약 (`/act`, `/act_with_features`, `/reset`, `/health`, sub-key 네임스페이스, 모델 × 벤치 호환 매트릭스) 은 [`../01_serving_interface.md`](../01_serving_interface.md) 가 단일 출처. 이 문서는 그 위에서 **GR00T N1.6 RoboCasa 한정 변경 일지**다.
 
+관련 문서:
+
+- [docs/groot/README.md](README.md)
+- [docs/groot/n16_09_safe_parity.md](n16_09_safe_parity.md)
+- [docs/groot/n16_12_robocasa_refactor_report.md](n16_12_robocasa_refactor_report.md)
+
 ## Summary
 
 | Area | Before | After |

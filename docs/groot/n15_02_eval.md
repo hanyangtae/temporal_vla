@@ -6,6 +6,16 @@ N1.5 native path는 N1.6 평가와 실행 경로가 다르므로 `n16_02_eval.md
 경로는 별도 문서 [`n15_03_lerobot_robocasa365.md`](n15_03_lerobot_robocasa365.md) /
 [`n15_04_lerobot_serve_adapter.md`](n15_04_lerobot_serve_adapter.md)에서 다룬다.
 
+> 관련 문서 (N1.5 reading order)
+> - [Doc map](README.md)
+> - [01 Fine-Tuning](n15_01_finetune.md)
+> - **02 Evaluation (이 문서)**
+> - [03 Overview & Status](n15_03_lerobot_robocasa365.md)
+> - [04 Serve Adapter](n15_04_lerobot_serve_adapter.md)
+> - [05 Obs Bridge](n15_05_lerobot_obs_bridge.md)
+> - [06 Native ZMQ Smoke](n15_06_native_zmq_openfridge.md)
+> - [07 Internal Parity](n15_07_lerobot_internal_parity.md)
+
 ## Scope
 
 | Scope | Embodiment | Data config | Main scripts |

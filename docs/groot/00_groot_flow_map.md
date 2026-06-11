@@ -46,7 +46,7 @@ collection, split/helper entrypoint를 나눠 본다.
 | N1.6 SAFE 수집 | [n16_03_safe_overview.md](n16_03_safe_overview.md), [n16_04_safe_collection.md](n16_04_safe_collection.md) |
 | N1.6 HTTP 변경/검증 | [n16_09_safe_parity.md](n16_09_safe_parity.md), [n16_11_http_act_changes.md](n16_11_http_act_changes.md) |
 | N1.6 구조 리팩토링 결과 | [n16_12_robocasa_refactor_report.md](n16_12_robocasa_refactor_report.md) |
-| N1.5 native 평가 | [n15_02_eval.md](n15_02_eval.md), [n15_07_native_zmq_openfridge.md](n15_07_native_zmq_openfridge.md) |
+| N1.5 native 평가 | [n15_02_eval.md](n15_02_eval.md), [n15_06_native_zmq_openfridge.md](n15_06_native_zmq_openfridge.md) |
 | N1.5 LeRobot HTTP | [n15_03_lerobot_robocasa365.md](n15_03_lerobot_robocasa365.md), [n15_04_lerobot_serve_adapter.md](n15_04_lerobot_serve_adapter.md), [n15_05_lerobot_obs_bridge.md](n15_05_lerobot_obs_bridge.md), `scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py` |
 
 ## One-Screen Map
