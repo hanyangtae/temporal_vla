@@ -24,6 +24,7 @@ N15_EVAL_ROOT = REPO_ROOT / "scripts" / "safe" / "groot_n15" / "robocasa" / "eva
 N16_COLLECT_ROOT = REPO_ROOT / "scripts" / "safe" / "groot_n16" / "robocasa" / "collect"
 N15_GROOT_ROOT = REPO_ROOT / "src" / "policies" / "Isaac-GR00T-N1.5"
 N16_GROOT_ROOT = REPO_ROOT / "src" / "policies" / "Isaac-GR00T"
+DEFAULT_MAX_EPISODE_STEPS = 720
 
 
 def _prepend_path(path: Path) -> None:
@@ -49,11 +50,6 @@ for path in reversed(
 ):
     _prepend_path(path)
 
-from gr00t.eval.rollout_policy import (  # noqa: E402
-    MultiStepConfig,
-    VideoConfig,
-    WrapperConfigs,
-)
 from collect_artifacts import (  # noqa: E402
     write_collect_ep_meta_manifest,
     write_safe_triplet,
@@ -67,7 +63,6 @@ from lerobot_http_eval import (  # noqa: E402
     official_obs_to_lerobot_inputs,
     step_success,
 )
-from src.policies.groot.robocasa.env_wrappers import wrap_groot_robocasa_eval_env  # noqa: E402
 from src.policies.groot.robocasa.io import convert_http_actions_to_groot_chunk  # noqa: E402
 from src.policies.groot.robocasa.scenario_replay import (  # noqa: E402
     ep_meta_manifest_path,
@@ -116,6 +111,9 @@ class N15LerobotHttpFeatureClient(VLAClient):
         self.valid_action_horizon: int | None = None
         self.model_action_horizon: int | None = None
         self.num_inference_timesteps: int | None = None
+        self.capture_layers: list[int] | None = None
+        self.layer_count: int | None = None
+        self.token_count: int | None = None
         self.vl_feature_kind: str | None = None
         self.vl_feature_axes: list[str] | None = None
         self.vl_feature_dim: int | None = None
@@ -131,6 +129,9 @@ class N15LerobotHttpFeatureClient(VLAClient):
         self.valid_action_horizon = None
         self.model_action_horizon = None
         self.num_inference_timesteps = None
+        self.capture_layers = None
+        self.layer_count = None
+        self.token_count = None
         self.vl_feature_kind = None
         self.vl_feature_axes = None
         self.vl_feature_dim = None
@@ -155,6 +156,22 @@ class N15LerobotHttpFeatureClient(VLAClient):
         )
         self.num_inference_timesteps = _prefer_present(
             metadata.num_inference_timesteps, self.num_inference_timesteps
+        )
+        capture_layers = features.get("capture_layers", features.get("layer_indices"))
+        self.capture_layers = _prefer_present(
+            None if capture_layers is None else [int(layer) for layer in capture_layers],
+            self.capture_layers,
+        )
+        self.layer_count = _prefer_present(features.get("layer_count"), self.layer_count)
+        self.token_count = _prefer_present(features.get("token_count"), self.token_count)
+        self.vl_feature_kind = _prefer_present(
+            features.get("vl_feature_kind"), self.vl_feature_kind
+        )
+        self.vl_feature_axes = _prefer_present(
+            features.get("vl_feature_axes"), self.vl_feature_axes
+        )
+        self.vl_feature_dim = _prefer_present(
+            features.get("vl_feature_dim"), self.vl_feature_dim
         )
 
     def get_action(
@@ -188,7 +205,14 @@ class N15LerobotHttpFeatureClient(VLAClient):
             "action_vector": _extract_safe_action_vector(official_action),
             "groot_action_vector": _extract_groot_action_vector(official_action),
             "action": _to_pickleable_numpy(official_action),
+            # Proprio state fed to this inference (paper expert-vs-VL state probe target).
+            "state": _to_pickleable_numpy(states),
         }
+        vl_hidden_states = features.get("vl_hidden_states")
+        if vl_hidden_states is not None:
+            record["vl_hidden_state"] = torch.from_numpy(
+                np.ascontiguousarray(np.asarray(vl_hidden_states))
+            )
         self._update_metadata(features)
         self.records.append(record)
         return official_action, {}
@@ -210,6 +234,24 @@ def _append_summary(summary_path: Path, task_id: int, task: str, episode_idx: in
         )
 
 
+def _resolve_task_dir(root_or_task_dir: Path, task: str) -> Path:
+    """Return the task-specific directory used by the N1.6 collection layout."""
+
+    return root_or_task_dir if root_or_task_dir.name == task else root_or_task_dir / task
+
+
+def _resolve_cell_dir(root_or_cell_dir: Path, task: str, cell_id: str) -> Path:
+    if root_or_cell_dir.name == cell_id and root_or_cell_dir.parent.name == task:
+        return root_or_cell_dir
+    if root_or_cell_dir.name == task:
+        return root_or_cell_dir / cell_id
+    return root_or_cell_dir / task / cell_id
+
+
+def _normalize_instruction(value: str) -> str:
+    return " ".join(value.strip().split())
+
+
 def make_env(
     task: str,
     split: str,
@@ -227,6 +269,8 @@ def make_env(
     import robocasa  # noqa: F401
     from robocasa.utils.gym_utils import GrootRoboCasaEnv  # noqa: F401
     import robosuite  # noqa: F401
+    from gr00t.eval.rollout_policy import MultiStepConfig, VideoConfig, WrapperConfigs
+    from src.policies.groot.robocasa.env_wrappers import wrap_groot_robocasa_eval_env
 
     env = gym.make(env_name, enable_render=True, seed=scenario_seed)
     wrapper_configs = WrapperConfigs(
@@ -245,12 +289,6 @@ def make_env(
     return wrap_groot_robocasa_eval_env(env, wrapper_configs)
 
 
-def task_horizon(task: str) -> int:
-    from robocasa.utils.dataset_registry_utils import get_task_horizon
-
-    return int(get_task_horizon(task))
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vla-server", default="http://127.0.0.1:8400")
@@ -266,10 +304,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split", choices=["pretrain", "target"], default="target")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--task-id", type=int, default=0)
+    parser.add_argument("--cell-id", default=None)
+    parser.add_argument("--cell-index", type=int, default=None)
+    parser.add_argument("--canonical-instruction", default=None)
     parser.add_argument("--task-description", default=None)
     parser.add_argument("--episode-start-idx", type=int, default=0)
     parser.add_argument("--n-episodes", type=int, default=1)
-    parser.add_argument("--max-episode-steps", type=int, default=None)
+    parser.add_argument("--max-episode-steps", type=int, default=DEFAULT_MAX_EPISODE_STEPS)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--inference-seed", type=int, default=None)
     parser.add_argument(
@@ -305,9 +346,40 @@ def run() -> dict[str, Any]:
     args = parse_args()
     if args.n_action_steps <= 0:
         raise ValueError(f"--n_action_steps must be positive: {args.n_action_steps}")
-    output_dir = Path(args.output_dir)
+    if args.max_episode_steps <= 0:
+        raise ValueError(f"--max-episode-steps must be positive: {args.max_episode_steps}")
+    output_root = Path(args.output_dir)
+    cell_id = getattr(args, "cell_id", None)
+    cell_index = getattr(args, "cell_index", None)
+    canonical_instruction = getattr(args, "canonical_instruction", None)
+    if cell_id is not None and cell_index is None:
+        raise ValueError("--cell-index is required when --cell-id is set")
+    if cell_id is not None and canonical_instruction is None:
+        raise ValueError("--canonical-instruction is required when --cell-id is set")
+    effective_task_id = args.task_id if cell_index is None else cell_index
+
+    output_dir = (
+        _resolve_task_dir(output_root, args.task)
+        if cell_id is None
+        else _resolve_cell_dir(output_root, args.task, cell_id)
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
-    summary_path = output_dir.parent / "collection_summary.tsv"
+    summary_path = (
+        output_root / "collection_summary.tsv"
+        if cell_id is not None
+        else output_dir.parent / "collection_summary.tsv"
+    )
+    ep_meta_dir = (
+        None
+        if args.ep_meta_dir is None
+        else (
+            _resolve_task_dir(Path(args.ep_meta_dir), args.task)
+            if cell_id is None
+            else _resolve_cell_dir(Path(args.ep_meta_dir), args.task, cell_id)
+        )
+    )
+    if args.ep_meta_load_env_name is not None and ep_meta_dir is None:
+        raise ValueError("--ep-meta-dir is required when --ep-meta-load-env-name is set")
 
     policy = N15LerobotHttpFeatureClient(
         args.vla_server,
@@ -317,7 +389,7 @@ def run() -> dict[str, Any]:
     if args.wait_ready:
         policy.wait_until_ready(max_wait=args.timeout)
 
-    max_steps = args.max_episode_steps or task_horizon(args.task)
+    max_steps = args.max_episode_steps
     results: list[dict[str, Any]] = []
     env_name = args.env_name
     for local_ep_idx in range(args.n_episodes):
@@ -325,17 +397,23 @@ def run() -> dict[str, Any]:
         scenario_seed = None if args.seed is None else args.seed + local_ep_idx
         ep_meta_path = None
         replay_ep_meta = None
-        if args.ep_meta_dir is not None and scenario_seed is not None:
-            load_env_name = args.ep_meta_load_env_name or env_name
-            ep_meta_path = ep_meta_manifest_path(args.ep_meta_dir, load_env_name, scenario_seed)
-            if ep_meta_path.exists():
+        if ep_meta_dir is not None and scenario_seed is not None:
+            replay_requested = args.ep_meta_load_env_name is not None
+            load_env_name = args.ep_meta_load_env_name if replay_requested else env_name
+            ep_meta_path = ep_meta_manifest_path(ep_meta_dir, load_env_name, scenario_seed)
+            if replay_requested and ep_meta_path.exists():
                 replay_ep_meta = load_ep_meta_manifest(
                     ep_meta_path,
                     env_name=load_env_name,
                     scenario_seed=scenario_seed,
                 )
+            elif replay_requested:
+                raise FileNotFoundError(
+                    "--ep-meta-load-env-name requested but ep_meta manifest is missing: "
+                    f"{ep_meta_path}"
+                )
 
-        upstream_video_dir = output_dir / ".groot_video_tmp" / f"task{args.task_id}--ep{episode_idx}"
+        upstream_video_dir = output_dir / ".groot_video_tmp" / f"task{effective_task_id}--ep{episode_idx}"
         if upstream_video_dir.exists():
             shutil.rmtree(upstream_video_dir)
         upstream_video_dir.mkdir(parents=True, exist_ok=True)
@@ -356,12 +434,12 @@ def run() -> dict[str, Any]:
             obs, _info = env.reset(seed=scenario_seed)
             captured_ep_meta = replay_ep_meta or get_robocasa_ep_meta(env)
             if (
-                args.ep_meta_dir is not None
+                ep_meta_dir is not None
                 and scenario_seed is not None
                 and replay_ep_meta is None
             ):
                 write_collect_ep_meta_manifest(
-                    ep_meta_manifest_path(args.ep_meta_dir, env_name, scenario_seed),
+                    ep_meta_manifest_path(ep_meta_dir, env_name, scenario_seed),
                     env_name=env_name,
                     scenario_seed=scenario_seed,
                     ep_meta=captured_ep_meta,
@@ -386,13 +464,29 @@ def run() -> dict[str, Any]:
             upstream_video_path = _find_latest_video(upstream_video_dir)
             if upstream_video_path is None and rendered_video is not None:
                 upstream_video_path = Path(rendered_video)
-            stem = f"task{args.task_id}--ep{episode_idx}--succ{int(success)}"
+            stem = f"task{effective_task_id}--ep{episode_idx}--succ{int(success)}"
             task_description = args.task_description or policy.task_description or args.task
+            if canonical_instruction is not None and (
+                _normalize_instruction(task_description)
+                != _normalize_instruction(canonical_instruction)
+            ):
+                raise RuntimeError(
+                    "Collected task description does not match canonical instruction: "
+                    f"{task_description!r} != {canonical_instruction!r}"
+                )
+            extra_metadata = None
+            if cell_id is not None:
+                extra_metadata = {
+                    "cell_id": cell_id,
+                    "cell_index": effective_task_id,
+                    "robocasa_task": args.task,
+                    "canonical_instruction": canonical_instruction,
+                }
             write_safe_triplet(
                 output_dir=output_dir,
                 stem=stem,
                 policy=policy,
-                task_id=args.task_id,
+                task_id=effective_task_id,
                 task_description=task_description,
                 episode_idx=episode_idx,
                 scenario_seed=scenario_seed,
@@ -402,12 +496,17 @@ def run() -> dict[str, Any]:
                 ep_meta=captured_ep_meta,
                 n_action_steps=args.n_action_steps,
                 robocasa_env_source="robocasa365",
+                max_episode_steps=max_steps,
+                video_fps=args.video_fps,
+                steps_per_render=args.steps_per_render,
+                inference_seed=args.inference_seed,
                 model_family="lerobot_groot_n15",
                 policy_transport="http",
                 task_suite_name="lerobot_groot_n15_robocasa",
+                extra_metadata=extra_metadata,
             )
             pkl_path = output_dir / f"{stem}.pkl"
-            _append_summary(summary_path, args.task_id, args.task, episode_idx, scenario_seed, pkl_path)
+            _append_summary(summary_path, effective_task_id, args.task, episode_idx, scenario_seed, pkl_path)
             results.append(
                 {
                     "episode_idx": episode_idx,
