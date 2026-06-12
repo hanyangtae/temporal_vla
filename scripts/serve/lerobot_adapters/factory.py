@@ -23,4 +23,3 @@ def make_policy_adapter(policy_type: str):
             f"Unsupported LeRobot policy_type={policy_type!r}; supported: {supported}"
         ) from exc
     return adapter_cls()
-
