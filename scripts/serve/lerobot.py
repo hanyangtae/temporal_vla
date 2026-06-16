@@ -26,6 +26,7 @@ import base64
 import io
 import logging
 import math
+import os
 import random
 import sys
 import time
@@ -76,6 +77,9 @@ _state_dim: int = 0
 # 캐시돼 이후 /act_with_features 의 hook 이 무시(features=None)된다. 수집 serve 는
 # /act_with_features 만 받아 첫 compile 이 hook 과 함께 일어나도록 강제한다.
 _collect_mode: bool = False
+# COAST conceptor steering (env-gated, groot only). Set by _maybe_register_steering.
+_steering = None
+_steering_info: dict = {}
 
 # payload 의 observation.state.* 서브키를 lerobot observation.state 로 합칠 때 사용할
 # canonical 정렬 순서 (벤치 공통). 체크포인트가 학습된 state dim 만큼 앞에서 truncate.
@@ -383,6 +387,7 @@ async def health():
         "action_type": _profile.action_type,
         "action_keys": list(_profile.emits_subkeys),
         "collect_mode": _collect_mode,
+        "steering": _steering_info,
     }
 
 
@@ -477,6 +482,57 @@ def _load_model_impl():
         "(n_action_steps=%d, visual_keys=%s, state_dim=%d, action_dim=%d)",
         _policy_type, pretrained_path, _n_action_steps,
         visual_keys, _state_dim, _action_dim,
+    )
+
+    _maybe_register_steering(policy, _policy_type)
+
+
+def _maybe_register_steering(policy_obj, policy_type: str) -> None:
+    """Env-gated COAST conceptor steering. Registers a permanent forward hook on the
+    served groot policy's DiT/VL pathway (COAST A.9.2 h'=h·Mᵀ). No-op unless
+    ``STEER_NPZ`` is set and ``STEER_BETA`` != 0 (β=0 → M=I → baseline).
+
+    Env:
+      STEER_NPZ      conceptors.npz path (fit_conceptor_steering.py output).
+      STEER_BETA     steering strength [0,1]. 0/unset → baseline (no hook).
+      STEER_ALPHA    aperture to select (default: NPZ's first/only).
+      STEER_PATHWAY  dit (default) | vl.
+      STEER_LAYER    dit transformer_block index (default: DiT final output).
+      STEER_KEY      C_steer (default) | C_success | C_failure.
+    """
+    global _steering, _steering_info
+    npz = os.environ.get("STEER_NPZ")
+    beta = float(os.environ.get("STEER_BETA", "0") or 0)
+    if not npz or beta == 0.0:
+        _steering_info = {"enabled": False, "beta": beta, "npz": npz}
+        logger.info("COAST steering: disabled (baseline). npz=%s beta=%s", npz, beta)
+        return
+    if policy_type != "groot":
+        logger.warning("STEER_NPZ set but policy_type=%s != groot; steering skipped", policy_type)
+        _steering_info = {"enabled": False, "reason": f"policy_type={policy_type}"}
+        return
+    import steering_hooks
+
+    pathway = os.environ.get("STEER_PATHWAY", "dit")
+    alpha = os.environ.get("STEER_ALPHA")
+    alpha = float(alpha) if alpha else None
+    layer = os.environ.get("STEER_LAYER")
+    layer = int(layer) if layer else None
+    key = os.environ.get("STEER_KEY", "C_steer")
+    M = steering_hooks.load_steering_matrix(npz, beta, alpha=alpha, key=key)
+    groot_model = getattr(policy_obj, "_groot_model", None)
+    if groot_model is None:
+        raise RuntimeError("policy._groot_model is None; cannot register steering hook")
+    _steering = steering_hooks.ConceptorSteering(
+        groot_model, M, pathway=pathway, layer=layer
+    ).register()
+    _steering_info = {
+        "enabled": True, "npz": npz, "beta": beta, "alpha": alpha,
+        "pathway": pathway, "layer": layer, "key": key, "dim": int(M.shape[0]),
+    }
+    logger.info(
+        "COAST steering REGISTERED: npz=%s beta=%s alpha=%s pathway=%s layer=%s D=%d",
+        npz, beta, alpha, pathway, layer, M.shape[0],
     )
 
 
