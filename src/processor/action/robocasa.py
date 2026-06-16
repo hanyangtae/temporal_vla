@@ -23,11 +23,11 @@ Python 3.8 compatible.
 from __future__ import annotations
 
 import logging
-import math
 from typing import Any, Dict
 
 import numpy as np
 
+from ._rotation import quat_xyzw_to_euler, rot6d_to_euler
 from ..base import ActionProcessorStep
 from ..types import (
     FeatureType,
@@ -79,10 +79,10 @@ class RoboCasaActionProcessor(ActionProcessorStep):
             ).flatten()
         if "action.eef_rot6d" in action_dict:
             rot6d = np.asarray(action_dict["action.eef_rot6d"], dtype=np.float32)
-            return _rot6d_to_euler(rot6d).flatten()
+            return rot6d_to_euler(rot6d).flatten()
         if "action.eef_quat" in action_dict:
             quat = np.asarray(action_dict["action.eef_quat"], dtype=np.float32)
-            return _quat_to_euler(quat).flatten()
+            return quat_xyzw_to_euler(quat).flatten()
         raise ValueError(
             "RoboCasaActionProcessor: rotation key 없음. "
             "action.eef_axisangle, action.eef_euler, action.eef_rot6d, action.eef_quat "
@@ -176,33 +176,3 @@ class RoboCasaActionProcessor(ActionProcessorStep):
 
     def get_config(self) -> Dict[str, Any]:
         return {"arm_dim": self.arm_dim}
-
-
-# ─── 회전 변환 유틸 (Python 3.8 호환) ────────────────────────────────────────
-
-
-def _rot6d_to_euler(rot6d: np.ndarray) -> np.ndarray:
-    """6D rotation → euler (roll, pitch, yaw)."""
-    a1 = rot6d[..., 0::2]
-    a2 = rot6d[..., 1::2]
-
-    b1 = a1 / (np.linalg.norm(a1, axis=-1, keepdims=True) + 1e-8)
-    dot = np.sum(b1 * a2, axis=-1, keepdims=True)
-    b2 = a2 - dot * b1
-    b2 = b2 / (np.linalg.norm(b2, axis=-1, keepdims=True) + 1e-8)
-    b3 = np.cross(b1, b2, axis=-1)
-
-    pitch = -np.arcsin(np.clip(b1[..., 2], -1.0, 1.0))
-    roll = np.arctan2(b2[..., 2], b3[..., 2])
-    yaw = np.arctan2(b1[..., 1], b1[..., 0])
-
-    return np.stack([roll, pitch, yaw], axis=-1).astype(np.float32)
-
-
-def _quat_to_euler(quat: np.ndarray) -> np.ndarray:
-    """Quaternion (x, y, z, w) → euler (roll, pitch, yaw)."""
-    x, y, z, w = quat[..., 0], quat[..., 1], quat[..., 2], quat[..., 3]
-    roll = np.arctan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y))
-    pitch = np.arcsin(np.clip(2.0 * (w * y - z * x), -1.0, 1.0))
-    yaw = np.arctan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
-    return np.stack([roll, pitch, yaw], axis=-1).astype(np.float32)

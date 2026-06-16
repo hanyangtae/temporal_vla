@@ -1,4 +1,4 @@
-# SAFE x GR00T N1.6 RoboCasa — Visualization
+# GR00T N1.6 RoboCasa — SAFE Visualization
 
 Per-timestep detector input feature를 대상으로 t-SNE/silhouette/overlay 진단을 만든다.
 

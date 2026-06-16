@@ -71,6 +71,7 @@ class ImagePreprocess:
     resolution: int = 224
     rotate_180: bool = False
     center_crop: bool = False
+    center_crop_scale: float = 0.95
 
 
 @dataclass

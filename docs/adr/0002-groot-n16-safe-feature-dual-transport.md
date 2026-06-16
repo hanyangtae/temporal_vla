@@ -37,10 +37,10 @@ SAFE pkl schema:
 - denoising-step count
 - optional call-local inference seed semantics
 
-GR00T RoboCasa observation/action key conversion, scenario replay, and feature
-metadata normalization live under `src.policies.groot`. Script entrypoints may
-adapt CLI, process, or transport details, but should not own those shared
-contracts.
+GR00T RoboCasa observation/action key conversion and scenario replay live under
+`src.policies.groot`. SAFE feature metadata normalization is policy/version
+agnostic and lives in `src.policies.safe_metadata`. Script entrypoints may adapt
+CLI, process, or transport details, but should not own those shared contracts.
 
 ## Consequences
 

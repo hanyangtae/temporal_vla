@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 
 from collect_schema import GROOT_ACTION_KEYS, SAFE_ACTION_COLUMNS
-from src.policies.groot.scenario_replay import json_safe, write_ep_meta_manifest
+from src.policies.groot.robocasa.scenario_replay import json_safe, write_ep_meta_manifest
 
 
 def write_collect_ep_meta_manifest(
@@ -32,6 +32,16 @@ def write_collect_ep_meta_manifest(
     )
 
 
+def _uses_action_token_horizon(policy: Any) -> bool:
+    axes = list(getattr(policy, "feature_axes", None) or [])
+    kind = getattr(policy, "feature_kind", None)
+    if bool(kind) and str(kind).endswith("_multilayer"):
+        return False
+    if axes[:1] == ["layer"]:
+        return False
+    return True
+
+
 def write_safe_triplet(
     output_dir: Path,
     stem: str,
@@ -46,13 +56,21 @@ def write_safe_triplet(
     ep_meta: dict[str, Any],
     n_action_steps: int,
     robocasa_env_source: str,
+    max_episode_steps: int | None = None,
+    video_fps: int | None = None,
+    steps_per_render: int | None = None,
+    inference_seed: int | None = None,
+    model_family: str = "groot_n16",
+    policy_transport: str = "zmq",
+    task_suite_name: str = "groot_n16_robocasa",
+    video_source: str = "groot_upstream_video_recording_wrapper",
+    extra_metadata: dict[str, Any] | None = None,
 ) -> None:
     if not policy.records:
         raise RuntimeError("No feature records were collected during rollout")
-    # multilayer pooled feature(COAST Stage1 layer sweep)는 action-token 축이 없어
-    # per-token export 불변식이 적용되지 않는다(env step당 [L,D] 한 점).
-    is_multilayer = bool(policy.feature_kind) and policy.feature_kind.endswith("_multilayer")
-    if not is_multilayer and policy.exported_action_token_count != n_action_steps:
+    # Block-residual/multilayer features are not exported action-token chunks, so the
+    # per-token export horizon invariant only applies to action-token SAFE features.
+    if _uses_action_token_horizon(policy) and policy.exported_action_token_count != n_action_steps:
         raise RuntimeError(
             "SAFE feature export horizon must match executed action steps: "
             f"exported_action_token_count={policy.exported_action_token_count}, "
@@ -72,7 +90,9 @@ def write_safe_triplet(
 
     pkl_path = output_dir / f"{stem}.pkl"
     payload = {
-        "task_suite_name": "groot_n16_robocasa",
+        "task_suite_name": task_suite_name,
+        "model_family": model_family,
+        "policy_transport": policy_transport,
         "task_id": task_id,
         "task_description": task_description,
         "episode_idx": episode_idx,
@@ -92,19 +112,38 @@ def write_safe_triplet(
         "exported_action_token_count": policy.exported_action_token_count,
         "feature_action_horizon": policy.feature_action_horizon,
         "n_action_steps": n_action_steps,
+        "max_episode_steps": max_episode_steps,
+        "video_fps": video_fps,
+        "steps_per_render": steps_per_render,
+        "inference_seed": inference_seed,
         "valid_action_horizon": policy.valid_action_horizon,
         "model_action_horizon": policy.model_action_horizon,
         "num_inference_timesteps": policy.num_inference_timesteps,
         "env_name": env_name,
         "robocasa_env_source": robocasa_env_source,
-        "video_source": "groot_upstream_video_recording_wrapper",
+        "video_source": video_source,
     }
+    if extra_metadata:
+        payload.update(json_safe(extra_metadata))
+    for key in (
+        "capture_layers",
+        "layer_indices",
+        "layer_count",
+        "token_count",
+        "capture_token_mode",
+    ):
+        value = getattr(policy, key, None)
+        if value is not None:
+            payload[key] = json_safe(value)
     # VL(goal) pathway feature (multilayer --capture-vl). 모든 step 에 있을 때만 기록.
     if all("vl_hidden_state" in record for record in policy.records):
         payload["vl_hidden_states"] = [record["vl_hidden_state"] for record in policy.records]
         payload["vl_feature_kind"] = getattr(policy, "vl_feature_kind", None)
         payload["vl_feature_axes"] = getattr(policy, "vl_feature_axes", None)
         payload["vl_feature_dim"] = getattr(policy, "vl_feature_dim", None)
+    # Robot proprio state per inference (paper state-probe target). 모든 step 에 있을 때만 기록.
+    if all("state" in record for record in policy.records):
+        payload["states"] = [record["state"] for record in policy.records]
     with pkl_path.open("wb") as f:
         pickle.dump(payload, f)
 

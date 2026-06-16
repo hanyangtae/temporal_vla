@@ -1,4 +1,4 @@
-# SAFE x GR00T N1.6 RoboCasa — Collection
+# GR00T N1.6 RoboCasa — SAFE Collection
 
 ZMQ SAFE feature server 또는 HTTP `/act_with_features`를 통해 RoboCasa rollout pkl/mp4/csv triplet을 수집한다. ah8/ah16 action-horizon mode와 task-set 정의도 함께 둔다.
 
@@ -19,7 +19,7 @@ ZMQ SAFE feature server 또는 HTTP `/act_with_features`를 통해 RoboCasa roll
 
 목적: official RoboCasa eval 환경을 유지하면서 SAFE 학습용 pkl schema를 만든다.
 
-`feature_server.py`는 DiT pre-velocity capture 로직을 `src/policies/groot/safe_features.py` 의 `capture_dit_features` 에 위임한다. HTTP `/act_with_features` ([n16_11](n16_11_http_act_changes.md)) 도 같은 함수를 호출하므로, 두 경로가 같은 hidden state 정의를 보장한다.
+`feature_server.py`는 DiT pre-velocity capture 로직을 `src/policies/groot/safe/features.py` 의 `capture_dit_features` 에 위임한다. HTTP `/act_with_features` ([n16_11](n16_11_http_act_changes.md)) 도 같은 함수를 호출하므로, 두 경로가 같은 hidden state 정의를 보장한다.
 
 `collect_rollout.py --inference-seed`는 ZMQ와 HTTP transport 양쪽에 적용된다. ZMQ에서는 request `options.inference_seed`, HTTP에서는 request payload `inference_seed`로 전달된다. Transport parity run은 base seed에 policy-step index를 더한 schedule을 사용한다.
 
@@ -110,7 +110,7 @@ outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_ah16
 
 ## HTTP `/act_with_features` SAFE Feature Collection
 
-HTTP transport는 같은 collector에서 `--policy-transport http`로 선택한다. 이 경로는 `scripts/safe/groot_n16/robocasa/collect/collect_policy_clients.py`가 `make_groot_robocasa_processors(action_mode="chunk")`를 통해 FastAPI `/act_with_features` 응답을 unified action sub-key에서 GR00T native action key로 되돌리고, `scripts/safe/groot_n16/robocasa/collect/collect_schema.py` helper를 통해 `features.hidden_states` blob을 기존 SAFE pkl의 `hidden_states` list로 저장한다. GR00T key mapping은 `src/policies/groot/schema.py`와 `src/policies/groot/robocasa_io.py`를 source of truth로 둔다.
+HTTP transport는 같은 collector에서 `--policy-transport http`로 선택한다. 이 경로는 `scripts/safe/groot_n16/robocasa/collect/collect_policy_clients.py`가 `make_groot_robocasa_processors(action_mode="chunk")`를 통해 FastAPI `/act_with_features` 응답을 unified action sub-key에서 GR00T native action key로 되돌리고, `scripts/safe/groot_n16/robocasa/collect/collect_schema.py` helper를 통해 `features.hidden_states` blob을 기존 SAFE pkl의 `hidden_states` list로 저장한다. GR00T key mapping은 `src/policies/groot/core/schema.py`와 `src/policies/groot/robocasa/io.py`를 source of truth로 둔다.
 
 Smoke command:
 

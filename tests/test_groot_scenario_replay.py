@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from src.policies.groot.scenario_replay import (
+from src.policies.groot.robocasa.scenario_replay import (
     ep_meta_manifest_path,
     get_robocasa_ep_meta,
     json_safe,

@@ -1,5 +1,9 @@
 # GR00T N1.6 + TTT × RoboCasa Atomic Pretrain — End-to-End 파이프라인
 
+> ⚠️ **보류된 연구 라인 (무기한 연기)**. 이 문서는 과거 TTT/VITA progress-predictor 방향의
+> 재현 기록이며 active 작업이 아니다. 현재 메인 라인은 latent steering 이다 →
+> [`../steering/`](../steering/README.md). 보존 맥락은 [ttt/README](README.md) 참고.
+
 > **목적**: 실패-루프 탈출 문제를 TTT-based progress predictor 로 해결하는 연구. 이 문서는 Phase 0 (Eagle pre-LLM 추출) → Phase 1 (ProgressPredictor 메타학습) → Phase 2 (GR00T finetune + LHT injection) → eval 까지의 end-to-end 셋업을 재현 가능하게 정리. **이전 시도에서 부딪힌 모든 함정도 같이 기록** → 다음 실험(예: task 확장, ckpt 교체) 시 동일한 에러로 시간 낭비 X.
 
 브랜치: `feat/groot-ttt-phase1-integration`

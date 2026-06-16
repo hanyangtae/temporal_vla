@@ -19,8 +19,6 @@ openvla_oft 컨테이너에서 실행:
 """
 
 import argparse
-import base64
-import io
 import logging
 import math
 import os
@@ -32,9 +30,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import torch
-import uvicorn
 from fastapi import FastAPI
-from PIL import Image
 
 # openvla-oft 소스 경로
 OPENVLA_OFT_ROOT = "/temporal_vla/src/policies/openvla-oft"
@@ -42,6 +38,14 @@ sys.path.insert(0, OPENVLA_OFT_ROOT)
 
 # 프로파일 로더 (scripts/utils 는 PYTHONPATH 에 포함됨)
 from checkpoint_profile import CheckpointProfile, load_profile  # noqa: E402
+
+from src.utils.common.image import decode_b64_image  # noqa: E402
+from src.utils.common.serving import (  # noqa: E402
+    add_server_args,
+    health_response,
+    run_uvicorn,
+    setup_serve_logging,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +62,6 @@ _input_device = None
 _action_queue: deque = deque()
 _cfg = None
 _profile: Optional[CheckpointProfile] = None
-
-
-def _b64_to_numpy(b64_str: str) -> np.ndarray:
-    """base64 PNG → HxWx3 uint8 numpy."""
-    return np.array(Image.open(io.BytesIO(base64.b64decode(b64_str))).convert("RGB"))
 
 
 def _quat_xyzw_to_axisangle(quat) -> np.ndarray:
@@ -320,7 +319,7 @@ def _predict_action_chunk(payload: dict) -> np.ndarray:
     for view in profile.observation_requirements.images:
         b64 = payload.get(f"observation.images.{view}")
         if b64:
-            arr = _b64_to_numpy(b64)
+            arr = decode_b64_image(b64)
         else:
             arr = np.zeros((resolution, resolution, 3), dtype=np.uint8)
         if rotate_180:
@@ -507,26 +506,21 @@ async def reset():
 async def health():
     if _profile is None:
         return {"status": "not_loaded", "model": "openvla-oft"}
-    return {
-        "status": "ok" if _model is not None else "not_loaded",
-        "model": "openvla-oft",
-        "profile": _profile.name,
+    return health_response(
+        policy=_model,
+        model="openvla-oft",
+        profile=_profile,
         # serve 는 내부 chunk 를 queue 에서 1개씩 반환하므로 외부 API 기준 1
-        "n_action_steps": 1,
-        "action_type": _profile.action_type,
-        "action_keys": list(_profile.emits_subkeys),
-    }
+        n_action_steps=1,
+        action_type=_profile.action_type,
+        action_keys=list(_profile.emits_subkeys),
+    )
 
 
 def main():
     global _profile
 
-    try:
-        from src.utils.common.logger import create_module_logger
-
-        create_module_logger("openvla_oft_serve")
-    except ImportError:
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    setup_serve_logging("openvla_oft_serve")
 
     parser = argparse.ArgumentParser(description="OpenVLA-OFT 추론 서버 (port 8400)")
     parser.add_argument(
@@ -535,8 +529,7 @@ def main():
     )
     parser.add_argument("--load-in-8bit", action="store_true")
     parser.add_argument("--load-in-4bit", action="store_true")
-    parser.add_argument("--host", type=str, default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8400)
+    add_server_args(parser, default_port=8400)
     args = parser.parse_args()
 
     _profile = load_profile(args.profile)
@@ -546,7 +539,7 @@ def main():
     )
 
     app.state.args = args
-    uvicorn.run(app, host=args.host, port=args.port)
+    run_uvicorn(app, args)
 
 
 if __name__ == "__main__":

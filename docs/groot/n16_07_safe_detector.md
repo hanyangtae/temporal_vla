@@ -1,4 +1,4 @@
-# SAFE x GR00T N1.6 RoboCasa — Detector
+# GR00T N1.6 RoboCasa — SAFE Detector
 
 Paper-faithful split을 만들고 SAFE-LSTM detector를 학습한다. Aggregation ablation, hparam sweep, CP 운영점 고정까지 한 흐름이다.
 

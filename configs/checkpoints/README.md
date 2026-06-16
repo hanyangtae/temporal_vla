@@ -96,7 +96,7 @@ python scripts/utils/checkpoint_profile.py configs/checkpoints/<name>.yaml
 
 eval 스크립트의 `make_*_processors(action_type=..., gripper_threshold=...)` 호출은 프로파일과 일치시켜야 한다. 일반적으로 `action_type=relative` 면 `gripper_threshold=0.0`, `absolute` 면 `0.8` (X-VLA 패턴).
 
-GR00T RoboCasa 프로파일은 HTTP 입력 state로 `eef_pos_rel`, `eef_quat_rel`, `gripper_qpos`, `base_position`, `base_rotation`을 사용한다. 이 키들은 `scripts/serve/groot.py`에서 GR00T native relative/base state key로 매핑된다.
+GR00T RoboCasa 프로파일은 HTTP 입력 state로 `eef_pos_rel`, `eef_quat_rel`, `gripper_qpos`, `base_position`, `base_rotation`을 사용한다. N1.6 `base_model: groot` 프로파일은 `scripts/serve/groot.py`에서 GR00T native relative/base state key로 매핑된다. LeRobot GR00T N1.5 프로파일은 `base_model: lerobot`, `model_specific.policy_type: groot`로 두고 `scripts/serve/lerobot_adapters/groot.py`의 `GrootPolicyAdapter`가 LeRobot `GrootConfig` feature shape를 생성한다.
 
 ## 온보딩 절차
 

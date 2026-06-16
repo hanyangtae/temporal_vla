@@ -48,26 +48,34 @@ services:
   lerobot:
     container_name: lerobot
     build:
-      context: ./docker/lerobot
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: docker/lerobot/Dockerfile
       args:
         USER_NAME: ${USER_NAME}
         USER_ID: ${USER_ID}
         GROUP_ID: ${GROUP_ID}
     volumes:
       - .:/temporal_vla:rw
-      # 체크포인트/데이터셋 cache (호스트 ~/.cache/temporal_vla → 컨테이너 /cache)
-      - ${VLA_CACHE_ROOT:-${HOME}/.cache/temporal_vla}:/cache:rw
+      # LeRobot 통합 image 는 repo-local data/huggingface cache 를 사용.
+      - ./data:/cache:rw
       # /D/temporal_vla_data 등 환경별 데이터 마운트는 docker-compose.override.yml 에서 추가.
       # HF cache 는 NTFS(/D) 가 chmod 를 지원 안 해서 호스트 ext4 홈을 직접 bind mount.
       - ${HOME}/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface:rw
     environment:
       - VLA_CACHE_ROOT=/cache
-      - HF_HOME=/home/${USER_NAME}/.cache/huggingface
+      - HF_HOME=/cache/huggingface
+      - HF_HUB_CACHE=/cache/huggingface/hub
+      - HUGGINGFACE_HUB_CACHE=/cache/huggingface/hub
       - HF_TRUST_REMOTE_CODE=1
+      - FLASH_ATTN_CUDA_ARCHS=120
+      - TORCH_CUDA_ARCH_LIST=12.0
       - HF_TOKEN=${HF_TOKEN}
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
       - PYTHONPATH=/temporal_vla:/temporal_vla/scripts/utils
+      # mujoco/robosuite LIBERO headless rendering needs EGL driver libraries.
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - MUJOCO_GL=egl
     deploy:
       resources:
         reservations:
@@ -103,7 +111,9 @@ services:
     environment:
       - VLA_CACHE_ROOT=/cache
       - HF_HOME=/home/${USER_NAME}/.cache/huggingface
+      - HF_MODULES_CACHE=/tmp/hf_modules
       - HF_TRUST_REMOTE_CODE=1
+      - NO_ALBUMENTATIONS_UPDATE=1
       - HF_TOKEN=${HF_TOKEN}
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
       - PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla:/temporal_vla/scripts/utils

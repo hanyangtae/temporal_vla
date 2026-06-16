@@ -1,4 +1,4 @@
-# SAFE x GR00T N1.6 RoboCasa — Parity
+# GR00T N1.6 RoboCasa — SAFE Parity
 
 이 문서는 **task 성능 평가가 아니라 SAFE wiring의 action parity 검증**이다.
 
@@ -91,7 +91,7 @@ API:
 
 HTTP serve는 같은 port에서 `/act`와 `/act_with_features`를 함께 노출한다. `/act`는 action만 반환하고, `/act_with_features`는 `features.*` namespace 아래에 DiT pre-velocity hidden state를 함께 반환한다. `--feature-slice`, `--feature-dtype`, `--feature-action-horizon` CLI flag로 export shape을 제어하며, 기본값은 `valid` slice, `float16`, full embodiment horizon이다.
 
-전용 ZMQ `get_action_with_features` endpoint([04 SAFE Collection](n16_04_safe_collection.md#zmq-safe-feature-collection))는 upstream GR00T collector의 msgpack protocol과 호환되는 canonical SAFE rollout-collection path로 유지한다. HTTP `/act_with_features`는 benchmark-agnostic feature surface이며, `src/policies/groot/safe_features.py`를 통해 ZMQ path와 같은 DiT capture logic을 공유한다.
+전용 ZMQ `get_action_with_features` endpoint([04 SAFE Collection](n16_04_safe_collection.md#zmq-safe-feature-collection))는 upstream GR00T collector의 msgpack protocol과 호환되는 canonical SAFE rollout-collection path로 유지한다. HTTP `/act_with_features`는 benchmark-agnostic feature surface이며, `src/policies/groot/safe/features.py`를 통해 ZMQ path와 같은 DiT capture logic을 공유한다.
 
 SAFE rollout collection이 이미 port `5557`을 사용 중이면 그 process는 그대로 둔다. HTTP `/act` parity check는 `8500`처럼 별도 port에서 실행한다.
 

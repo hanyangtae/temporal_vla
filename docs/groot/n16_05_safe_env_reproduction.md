@@ -21,7 +21,9 @@
 
 - `--seed S`는 RoboCasa env construction까지 전달되어 `env.rng = np.random.default_rng(S)`를 만든다.
 - `--ep-meta-dir`가 있으면 `(env_name, scenario_seed)`에 대응하는 `ep_meta` JSON manifest를 import/export한다.
-- pkl payload에는 `seed`, `scenario_seed`, `ep_meta`가 함께 저장된다.
+- pkl payload에는 `seed`, `scenario_seed`, `ep_meta`와 replay/video config
+  (`n_action_steps`, `max_episode_steps`, `video_fps`, `steps_per_render`,
+  `inference_seed`)가 함께 저장된다.
 - 같은 RoboCasa/robosuite commit, 같은 dependency, 같은 asset에서는 `ep_meta`가 없어도 같은 `(env_name, scenario_seed)`로 같은 scene composition을 다시 생성할 수 있다.
 - 같은 manifest를 import하면 같은 layout/style, object identity, texture, fixture reference, robot base pose를 재사용한다.
 
@@ -85,21 +87,49 @@ ep99 -> scenario_seed 100099
 
 ### `collect_rollout.py --n-episodes K` 직접 호출
 
-collector를 직접 `--n-episodes 3 --seed 100000`으로 호출하면 세 episode 모두 같은 `scenario_seed=100000`을 쓴다. 이 모드는 같은 scenario에서 policy rollout stochasticity나 execution variance를 반복 관찰할 때 사용한다. production 100ep 수집은 wrapper가 `--n-episodes 1`로 collector를 반복 호출하므로 seed가 episode마다 증가한다.
+collector를 직접 `--n-episodes 3 --seed 100000`으로 호출해도 wrapper와 같은 schedule을
+쓴다.
+
+```text
+local_ep_idx 0 -> scenario_seed 100000
+local_ep_idx 1 -> scenario_seed 100001
+local_ep_idx 2 -> scenario_seed 100002
+```
+
+같은 scenario를 의도적으로 반복 관찰하려면 `--n-episodes 1 --seed S`를 별도 호출로
+반복하고, 그 run은 variance probe라고 명시한다. 기본 collector contract는 episode마다
+서로 다른 deterministic scenario를 만드는 것이다.
+
+### Paired N1.5/N1.6 comparison config
+
+N1.5 LeRobot HTTP feature collection과 N1.6 HTTP/ZMQ SAFE collection을 비교할 때는
+manifest만 공유하는 것으로는 부족하다. 다음 config를 같은 값으로 고정한다.
+
+| config | paired 비교 기준 |
+|---|---|
+| `env_name` | 같은 RoboCasa env id |
+| `scenario_seed` | 같은 `--seed + local_ep_idx` schedule |
+| `ep_meta` | 같은 `--ep-meta-dir` manifest import/export |
+| `n_action_steps` | 같은 action chunk 실행 길이 |
+| `max_episode_steps` | 같은 episode truncation horizon |
+| `video_fps`, `steps_per_render` | 같은 upstream video sampling |
+| `task_description` | 같은 instruction text |
+| `inference_seed` | 같은 per-policy-call seed base, model 차이는 별도 해석 |
 
 ## `ep_meta` import/export 동작
 
-`--ep-meta-dir`를 지정하고 `--seed S`가 있으면 collector는 다음 순서로 동작한다.
+`--ep-meta-dir`를 지정하고 `--seed S`가 있으면 collector는 각 episode의
+`scenario_seed = S + local_ep_idx`마다 다음 순서로 동작한다.
 
 ### manifest가 없을 때
 
 ```text
-seed S로 env 생성
+scenario_seed로 env 생성
 reset
 env.get_ep_meta() 캡처
 rollout 실행
 pkl에 ep_meta 저장
-<ep-meta-dir>/<env-name>--seedS.json export
+<ep-meta-dir>/<env-name>--seed<scenario_seed>.json export
 ```
 
 로그에는 `ep_meta=exported`가 찍힌다.
@@ -107,8 +137,8 @@ pkl에 ep_meta 저장
 ### manifest가 있을 때
 
 ```text
-seed S로 env 생성
-manifest JSON load
+scenario_seed로 env 생성
+<ep-meta-dir>/<env-name>--seed<scenario_seed>.json load
 env.set_ep_meta(manifest["ep_meta"])
 reset
 rollout 실행
@@ -233,7 +263,7 @@ docker exec \
 import json
 import pickle
 from pathlib import Path
-from src.policies.groot.scenario_replay import json_safe
+from src.policies.groot.robocasa.scenario_replay import json_safe
 
 root = Path('outputs/eval/robocasa/groot_n16/<run>/raw_rollouts')
 task = 'CloseFridge'
@@ -263,9 +293,17 @@ for name, (pos, quat, _obj) in env.object_placements.items():
 
 object class/cfg가 같고 pos 차이가 작은 수준이면 같은 scene composition의 다른 placement sample로 본다. object class나 fixture reference가 달라지면 manifest import/export 누락을 의심한다.
 
-## 검증된 smoke run
+## Historical smoke run
 
-2026-05-28에 `CloseFridge`로 실제 collection smoke를 수행했다.
+2026-05-28에 `CloseFridge`로 실제 collection smoke를 수행했다. 이 기록은 당시
+import/export wiring을 확인한 historical result다. 현재 collector는 같은 명령의
+`--n-episodes 3 --seed 100000`을 아래 schedule로 해석한다.
+
+```text
+ep0 -> scenario_seed 100000 -> ...--seed100000.json
+ep1 -> scenario_seed 100001 -> ...--seed100001.json
+ep2 -> scenario_seed 100002 -> ...--seed100002.json
+```
 
 실행 명령:
 
@@ -292,7 +330,7 @@ docker exec \
 outputs/eval/robocasa/groot_n16/scenario_replay_smoke_3ep/raw_rollouts/CloseFridge
 ```
 
-결과:
+당시 결과:
 
 | episode | result | manifest mode | steps |
 |---|---:|---|---:|
@@ -300,7 +338,11 @@ outputs/eval/robocasa/groot_n16/scenario_replay_smoke_3ep/raw_rollouts/CloseFrid
 | ep1 | succ1 | imported | 30 |
 | ep2 | succ1 | imported | 22 |
 
-세 pkl의 `scenario_seed=100000`이고, 세 pkl의 `ep_meta`는 `_ep_metas/CloseFridge/robocasa_panda_omron_CloseFridge_PandaOmron_Env--seed100000.json` manifest와 일치했다. 이 검증은 collection path와 manifest import/export의 runtime smoke이며, hidden_state bit identity 검증은 아니다.
+당시 세 pkl은 모두 `scenario_seed=100000`이었고, 세 pkl의 `ep_meta`는
+`_ep_metas/CloseFridge/robocasa_panda_omron_CloseFridge_PandaOmron_Env--seed100000.json`
+manifest와 일치했다. 이 결과는 현재 multi-episode seed schedule의 증거가 아니라,
+collection path와 manifest import/export가 동작했다는 historical smoke로만 읽는다.
+hidden_state bit identity 검증도 아니다.
 
 ## 기존 collection의 한계
 

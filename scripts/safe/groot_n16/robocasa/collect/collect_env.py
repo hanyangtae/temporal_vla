@@ -14,14 +14,9 @@ import numpy as np
 from tqdm import tqdm
 
 from gr00t.eval.rollout_policy import WrapperConfigs
-from gr00t.eval.sim.wrapper.multistep_wrapper import MultiStepWrapper
-from gr00t.eval.sim.wrapper.video_recording_wrapper import (
-    VideoRecorder,
-    VideoRecordingWrapper,
-)
 
-from collect_schema import VIDEO_RECORDING_KEYS
-from src.policies.groot.scenario_replay import (
+from src.policies.groot.robocasa.env_wrappers import wrap_groot_robocasa_eval_env
+from src.policies.groot.robocasa.scenario_replay import (
     get_robocasa_ep_meta,
     json_safe,
     set_robocasa_ep_meta,
@@ -94,28 +89,6 @@ def make_robocasa_env(env_name: str, scenario_seed: int | None) -> gym.Env:
     return gym.make(env_name, enable_render=True, seed=scenario_seed)
 
 
-class SafeVideoObservationFilter(gym.ObservationWrapper):
-    """Keep the upstream recorder on the three canonical RoboCasa camera views."""
-
-    def __init__(self, env: gym.Env):
-        super().__init__(env)
-        if isinstance(env.observation_space, gym.spaces.Dict):
-            self.observation_space = gym.spaces.Dict(
-                {
-                    key: space
-                    for key, space in env.observation_space.spaces.items()
-                    if not key.startswith("video.") or key in VIDEO_RECORDING_KEYS
-                }
-            )
-
-    def observation(self, observation: dict[str, Any]) -> dict[str, Any]:
-        return {
-            key: value
-            for key, value in observation.items()
-            if not key.startswith("video.") or key in VIDEO_RECORDING_KEYS
-        }
-
-
 def create_safe_eval_env(
     env_name: str,
     env_idx: int,
@@ -125,34 +98,7 @@ def create_safe_eval_env(
 ) -> gym.Env:
     del env_idx, total_n_envs
     env = make_robocasa_env(env_name, scenario_seed=scenario_seed)
-    if wrapper_configs.video.video_dir is not None:
-        env = SafeVideoObservationFilter(env)
-        video_recorder = VideoRecorder.create_h264(
-            fps=wrapper_configs.video.fps,
-            codec=wrapper_configs.video.codec,
-            input_pix_fmt=wrapper_configs.video.input_pix_fmt,
-            crf=wrapper_configs.video.crf,
-            thread_type=wrapper_configs.video.thread_type,
-            thread_count=wrapper_configs.video.thread_count,
-        )
-        env = VideoRecordingWrapper(
-            env,
-            video_recorder,
-            video_dir=Path(wrapper_configs.video.video_dir),
-            steps_per_render=wrapper_configs.video.steps_per_render,
-            max_episode_steps=wrapper_configs.video.max_episode_steps,
-            overlay_text=wrapper_configs.video.overlay_text,
-        )
-
-    env = MultiStepWrapper(
-        env,
-        video_delta_indices=wrapper_configs.multistep.video_delta_indices,
-        state_delta_indices=wrapper_configs.multistep.state_delta_indices,
-        n_action_steps=wrapper_configs.multistep.n_action_steps,
-        max_episode_steps=wrapper_configs.multistep.max_episode_steps,
-        terminate_on_success=wrapper_configs.multistep.terminate_on_success,
-    )
-    return env
+    return wrap_groot_robocasa_eval_env(env, wrapper_configs)
 
 
 def run_single_rollout(

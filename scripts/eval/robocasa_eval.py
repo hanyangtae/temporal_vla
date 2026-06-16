@@ -66,7 +66,14 @@ except ModuleNotFoundError:
 
 from src.processor.factory import make_groot_robocasa_processors, make_robocasa_processors
 from src.processor.types import TransitionKey
-from src.policies.groot.scenario_replay import (
+from robocasa_video_artifacts import (
+    EpisodeVideoRecord,
+    episode_video_path,
+    temp_episode_video_path,
+    write_per_episode_tsv,
+)
+from src.policies.groot.robocasa.io import VIDEO_RECORDING_KEYS, latest_image_frame
+from src.policies.groot.robocasa.scenario_replay import (
     ep_meta_manifest_path as _ep_meta_manifest_path,
     get_robocasa_ep_meta as _get_robocasa_ep_meta,
     load_ep_meta_manifest as _load_ep_meta_manifest,
@@ -80,6 +87,19 @@ STATIC_CAM = "robot0_agentview_left"
 WRIST_CAM = "robot0_eye_in_hand"
 CAMERA_NAMES = [STATIC_CAM, "robot0_agentview_right", WRIST_CAM]
 IMAGE_SIZE = 224
+GROOT_HTTP_VIDEO_FRAME_KEYS = tuple(
+    key
+    for key in (
+        "video.res256_image_side_0",
+        "video.res256_image_side_1",
+        "video.res256_image_wrist_0",
+    )
+    if key in VIDEO_RECORDING_KEYS
+) + (
+    "video.robot0_agentview_left",
+    "video.robot0_agentview_right",
+    "video.robot0_eye_in_hand",
+)
 
 
 def create_eval_env(
@@ -139,6 +159,13 @@ def _split_vla_observation(processed_obs: dict) -> tuple[dict, dict, str]:
     return images, states, "" if instruction is None else str(instruction)
 
 
+def _select_groot_video_frame(obs: dict) -> np.ndarray | None:
+    for frame_key in GROOT_HTTP_VIDEO_FRAME_KEYS:
+        if frame_key in obs:
+            return latest_image_frame(obs[frame_key])
+    return None
+
+
 def run_vla_rollouts_groot(
     env,
     vla_client,
@@ -151,6 +178,7 @@ def run_vla_rollouts_groot(
     inference_seed: int | None = None,
     obs_pipeline=None,
     action_pipeline=None,
+    video_dir: str | None = None,
 ) -> dict:
     """GrootRoboCasaEnv 기반 rollout."""
     if obs_pipeline is None or action_pipeline is None:
@@ -158,17 +186,20 @@ def run_vla_rollouts_groot(
             strict=False,
             action_mode="step",
         )
-    video_writer = None
-    if video_path is not None:
+    if video_dir is not None and video_path is not None and video_dir != video_path:
+        raise ValueError("video_path and video_dir both set to different values")
+    video_output_dir = Path(video_dir or video_path) if (video_dir or video_path) else None
+    imageio = None
+    if video_output_dir is not None:
         try:
             import imageio
-            video_writer = imageio.get_writer(video_path, fps=20)
         except ImportError:
             logger.error("영상 저장을 위해 imageio 필요")
-            video_writer = None
 
     results = []
     num_success = 0
+    video_paths: list[str] = []
+    video_records: list[EpisodeVideoRecord] = []
     if ep_meta_dir is not None:
         if seed is None:
             raise ValueError("--ep-meta-dir requires --seed in groot env mode")
@@ -211,60 +242,80 @@ def run_vla_rollouts_groot(
 
         latencies = []
         first_success_step = None
+        episode_video_writer = None
+        episode_tmp_video_path = None
+        if video_output_dir is not None and imageio is not None:
+            video_output_dir.mkdir(parents=True, exist_ok=True)
+            episode_tmp_video_path = temp_episode_video_path(video_output_dir, rollout_i)
+            episode_video_writer = imageio.get_writer(str(episode_tmp_video_path), fps=20)
         step_i = 0
-        for step_i in range(num_steps):
-            processed = obs_pipeline({TransitionKey.OBSERVATION: obs})
-            processed_obs = processed[TransitionKey.OBSERVATION]
-            images, states, processed_instruction = _split_vla_observation(processed_obs)
-            if not instruction and processed_instruction:
-                instruction = processed_instruction
+        try:
+            for step_i in range(num_steps):
+                processed = obs_pipeline({TransitionKey.OBSERVATION: obs})
+                processed_obs = processed[TransitionKey.OBSERVATION]
+                images, states, processed_instruction = _split_vla_observation(processed_obs)
+                if not instruction and processed_instruction:
+                    instruction = processed_instruction
 
-            call_inference_seed = (
-                None if inference_seed is None
-                else inference_seed + rollout_i * num_steps + step_i
+                call_inference_seed = (
+                    None if inference_seed is None
+                    else inference_seed + rollout_i * num_steps + step_i
+                )
+                actions, latency_ms = vla_client.predict(
+                    images,
+                    states or None,
+                    instruction,
+                    inference_seed=call_inference_seed,
+                )
+                latencies.append(latency_ms)
+
+                # DEBUG: action 통계 dump (VLA_ACTION_DUMP=path env 로 활성).
+                import os, json
+                _dbg = os.environ.get("VLA_ACTION_DUMP")
+                if _dbg and isinstance(actions, dict):
+                    with open(_dbg, "a") as f:
+                        rec = {k: (v.tolist() if hasattr(v, "tolist") else v) for k, v in actions.items()}
+                        f.write(json.dumps(rec) + "\n")
+
+                processed_act = action_pipeline({TransitionKey.ACTION: actions})
+                groot_action = processed_act[TransitionKey.ACTION]
+
+                obs, _reward, terminated, truncated, info = env.step(groot_action)
+
+                if episode_video_writer is not None:
+                    frame = _select_groot_video_frame(obs)
+                    if frame is not None:
+                        episode_video_writer.append_data(frame)
+
+                if info.get("success", False):
+                    if first_success_step is None:
+                        first_success_step = step_i
+                    num_success += 1
+                    break
+                if terminated or truncated:
+                    break
+        finally:
+            if episode_video_writer is not None:
+                episode_video_writer.close()
+
+        success = first_success_step is not None
+        episode_video_path_str = None
+        if episode_tmp_video_path is not None and video_output_dir is not None:
+            final_video_path = episode_video_path(video_output_dir, success=success)
+            episode_tmp_video_path.replace(final_video_path)
+            episode_video_path_str = str(final_video_path)
+            video_paths.append(episode_video_path_str)
+            logger.info("영상 저장: %s", episode_video_path_str)
+        if video_output_dir is not None:
+            video_records.append(
+                EpisodeVideoRecord(
+                    episode_idx=rollout_i,
+                    success=success,
+                    language=instruction,
+                    video_path=episode_video_path_str,
+                )
             )
-            actions, latency_ms = vla_client.predict(
-                images,
-                states or None,
-                instruction,
-                inference_seed=call_inference_seed,
-            )
-            latencies.append(latency_ms)
-
-            # DEBUG: action 통계 dump (VLA_ACTION_DUMP=path env 로 활성).
-            import os, json
-            _dbg = os.environ.get("VLA_ACTION_DUMP")
-            if _dbg and isinstance(actions, dict):
-                with open(_dbg, "a") as f:
-                    rec = {k: (v.tolist() if hasattr(v, "tolist") else v) for k, v in actions.items()}
-                    f.write(json.dumps(rec) + "\n")
-
-            processed_act = action_pipeline({TransitionKey.ACTION: actions})
-            groot_action = processed_act[TransitionKey.ACTION]
-
-            obs, _reward, terminated, truncated, info = env.step(groot_action)
-
-            if video_writer is not None:
-                # GrootRoboCasaEnv 의 obs 의 high-res frame 또는 256x256 frame 사용.
-                frame = None
-                for frame_key in (
-                    "video.res256_image_side_0_512x512",
-                    "video.res256_image_side_0",
-                    "video.robot0_agentview_left",
-                ):
-                    if frame_key in obs:
-                        frame = obs[frame_key]
-                        break
-                if frame is not None:
-                    video_writer.append_data(np.asarray(frame, dtype=np.uint8))
-
-            if info.get("success", False):
-                if first_success_step is None:
-                    first_success_step = step_i
-                num_success += 1
-                break
-            if terminated or truncated:
-                break
+            write_per_episode_tsv(video_output_dir, video_records)
 
         results.append({
             "rollout": rollout_i,
@@ -275,16 +326,12 @@ def run_vla_rollouts_groot(
             ),
             "ep_meta_mode": ep_meta_mode,
             "ep_meta_manifest": str(ep_meta_manifest) if ep_meta_manifest else None,
-            "success": first_success_step is not None,
+            "success": success,
             "first_success_step": first_success_step,
             "steps": step_i + 1,
             "mean_latency_ms": float(np.mean(latencies)) if latencies else 0.0,
             "instruction": instruction,
         })
-
-    if video_writer is not None:
-        video_writer.close()
-        logger.info("영상 저장: %s", video_path)
 
     return {
         "num_success": num_success,
@@ -292,6 +339,7 @@ def run_vla_rollouts_groot(
         "success_rate": num_success / num_rollouts if num_rollouts > 0 else 0.0,
         "mean_latency_ms": float(np.mean([r["mean_latency_ms"] for r in results])) if results else 0.0,
         "rollouts": results,
+        "video_paths": video_paths,
     }
 
 
@@ -662,9 +710,15 @@ def main():
     all_summaries = []
     for i, task_name in enumerate(tasks):
         logger.info("[%d/%d] %s", i + 1, len(tasks), task_name)
-        video_path = str(video_dir / f"{task_name}.mp4") if video_dir else None
         if video_dir:
             video_dir.mkdir(parents=True, exist_ok=True)
+            video_path = (
+                str(video_dir / task_name)
+                if args.use_groot_env
+                else str(video_dir / f"{task_name}.mp4")
+            )
+        else:
+            video_path = None
         try:
             summary = evaluate_task(
                 task_name, vla_client,

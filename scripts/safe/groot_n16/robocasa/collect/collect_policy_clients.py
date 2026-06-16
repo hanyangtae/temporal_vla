@@ -16,15 +16,19 @@ from collect_schema import (
 )
 from src.processor.factory import make_groot_robocasa_processors
 from src.processor.types import TransitionKey
-from src.policies.groot.robocasa_io import (
+from src.policies.groot.robocasa.io import (
     http_server_url,
     prepare_groot_robocasa_observation,
 )
-from src.policies.groot.schema import extract_groot_instruction
-from src.policies.groot.safe_features import normalize_feature_metadata
+from src.policies.groot.core.schema import extract_groot_instruction
+from src.policies.safe_metadata import normalize_feature_metadata
 
 
 MsgSerializer: Any | None = None
+
+
+def _prefer_present(new: Any, old: Any) -> Any:
+    return old if new is None else new
 
 
 def _load_msg_serializer() -> Any:
@@ -64,6 +68,10 @@ class SafeFeatureRecordMixin:
         self.valid_action_horizon: int | None = None
         self.model_action_horizon: int | None = None
         self.num_inference_timesteps: int | None = None
+        self.capture_layers: list[int] | None = None
+        self.layer_indices: list[int] | None = None
+        self.layer_count: int | None = None
+        self.token_count: int | None = None
         # VL(goal) pathway feature metadata (multilayer endpoint --capture-vl 시).
         self.vl_feature_kind: str | None = None
         self.vl_feature_axes: list[str] | None = None
@@ -80,6 +88,10 @@ class SafeFeatureRecordMixin:
         self.valid_action_horizon = None
         self.model_action_horizon = None
         self.num_inference_timesteps = None
+        self.capture_layers = None
+        self.layer_indices = None
+        self.layer_count = None
+        self.token_count = None
         self.vl_feature_kind = None
         self.vl_feature_axes = None
         self.vl_feature_dim = None
@@ -91,24 +103,48 @@ class SafeFeatureRecordMixin:
 
     def _update_safe_feature_metadata(self, payload: dict[str, Any]) -> None:
         metadata = normalize_feature_metadata(payload)
-        self.feature_kind = metadata.feature_kind or self.feature_kind
-        self.feature_axes = metadata.feature_axes or self.feature_axes
-        self.feature_slice = metadata.feature_slice or self.feature_slice
-        self.exported_action_token_count = (
-            metadata.exported_action_token_count or self.exported_action_token_count
+        self.feature_kind = _prefer_present(metadata.feature_kind, self.feature_kind)
+        self.feature_axes = _prefer_present(metadata.feature_axes, self.feature_axes)
+        self.feature_slice = _prefer_present(metadata.feature_slice, self.feature_slice)
+        self.exported_action_token_count = _prefer_present(
+            metadata.exported_action_token_count, self.exported_action_token_count
         )
-        self.feature_action_horizon = (
-            metadata.feature_action_horizon or self.feature_action_horizon
+        self.feature_action_horizon = _prefer_present(
+            metadata.feature_action_horizon, self.feature_action_horizon
         )
-        self.valid_action_horizon = metadata.valid_action_horizon or self.valid_action_horizon
-        self.model_action_horizon = metadata.model_action_horizon or self.model_action_horizon
-        self.num_inference_timesteps = (
-            metadata.num_inference_timesteps or self.num_inference_timesteps
+        self.valid_action_horizon = _prefer_present(
+            metadata.valid_action_horizon, self.valid_action_horizon
         )
+        self.model_action_horizon = _prefer_present(
+            metadata.model_action_horizon, self.model_action_horizon
+        )
+        self.num_inference_timesteps = _prefer_present(
+            metadata.num_inference_timesteps, self.num_inference_timesteps
+        )
+        layer_indices = payload.get("layer_indices")
+        capture_layers = payload.get("capture_layers", layer_indices)
+        normalized_layers = (
+            None if capture_layers is None else [int(layer) for layer in capture_layers]
+        )
+        self.capture_layers = _prefer_present(normalized_layers, self.capture_layers)
+        self.layer_indices = _prefer_present(
+            None if layer_indices is None else [int(layer) for layer in layer_indices],
+            self.layer_indices,
+        )
+        if self.layer_indices is None:
+            self.layer_indices = self.capture_layers
+        self.layer_count = _prefer_present(payload.get("layer_count"), self.layer_count)
+        self.token_count = _prefer_present(payload.get("token_count"), self.token_count)
         # VL pathway metadata (multilayer --capture-vl). 없으면 그대로 None 유지.
-        self.vl_feature_kind = payload.get("vl_feature_kind") or self.vl_feature_kind
-        self.vl_feature_axes = payload.get("vl_feature_axes") or self.vl_feature_axes
-        self.vl_feature_dim = payload.get("vl_feature_dim") or self.vl_feature_dim
+        self.vl_feature_kind = _prefer_present(
+            payload.get("vl_feature_kind"), self.vl_feature_kind
+        )
+        self.vl_feature_axes = _prefer_present(
+            payload.get("vl_feature_axes"), self.vl_feature_axes
+        )
+        self.vl_feature_dim = _prefer_present(
+            payload.get("vl_feature_dim"), self.vl_feature_dim
+        )
 
 
 class N16SafeCollectingPolicyClient(SafeFeatureRecordMixin):

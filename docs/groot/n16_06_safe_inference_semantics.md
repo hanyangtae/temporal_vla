@@ -72,6 +72,12 @@ loop until terminated/truncated:
   로 환경에 전달됨
 - 내부 표현: **DiT action-token latent `[K=4, H=16, D=1024]`** — 이게 우리가 pkl에 저장하는 feature
 
+N1.6 full block-residual pathway를 별도로 캡처할 때의 model-token 축은 SAFE 기본 export와 다르다.
+N1.6 action head는 DiT 입력 sequence를 `state_features + action_features`로 만들기 때문에 full
+residual은 `T=51 = state(1) + action(50)`이다. SAFE 기본 feature는 이 full residual 전체가
+아니라 DiT output의 마지막 `model_action_horizon=50` action block에서 RoboCasa가 실제 decode하는
+leading 16 token만 잘라 저장한 `[K=4, H=16, D=1024]`이다.
+
 ### 실행
 
 - `MultiStepWrapper`가 decoded action chunk의 leading action들을 한꺼번에 받아 실행

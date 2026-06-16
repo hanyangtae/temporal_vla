@@ -23,8 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 GROOT_SERVER_PATH = REPO_ROOT / "scripts" / "serve" / "groot.py"
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "utils"))
 
-from checkpoint_profile import load_profile  # noqa: E402
-from src.policies.groot.safe_features import decode_features_from_base64  # noqa: E402
+from src.policies.groot.safe.features import decode_feature_tensor_blob  # noqa: E402
 
 
 class _ModalityConfig:
@@ -439,10 +438,11 @@ class TestPredictActionEndpoint(unittest.TestCase):
         self.assertEqual(response["features.model_action_horizon"], 4)
         # valid_action_horizon = len(modality_configs["action"].delta_indices) = 1.
         self.assertEqual(response["features.valid_action_horizon"], 1)
+        self.assertEqual(response["features.exported_action_token_count"], 1)
         self.assertEqual(response["features.feature_action_horizon"], 1)
         self.assertEqual(response["features.num_inference_timesteps"], 1)
 
-        decoded = decode_features_from_base64(blob)
+        decoded = decode_feature_tensor_blob(blob)
         # [B, K, H, D] with B=1, K=1 denoising step, H=1 valid token, D=2.
         self.assertEqual(decoded.shape, (1, 1, 1, 2))
         # _ActionHead.output = arange(4*2).reshape(1,4,2); leading slice
@@ -525,7 +525,7 @@ class TestGrootServeMain(unittest.TestCase):
         with (
             mock.patch.object(sys, "argv", ["groot.py", "--profile", "profile.yaml"]),
             mock.patch.object(srv, "load_profile", return_value=_Profile()),
-            mock.patch.object(srv.uvicorn, "run"),
+            mock.patch.object(srv, "run_uvicorn"),
         ):
             srv.main()
 
@@ -541,7 +541,7 @@ class TestGrootServeMain(unittest.TestCase):
                 ["groot.py", "--profile", "profile.yaml", "--device", "cpu"],
             ),
             mock.patch.object(srv, "load_profile", return_value=_Profile()),
-            mock.patch.object(srv.uvicorn, "run"),
+            mock.patch.object(srv, "run_uvicorn"),
         ):
             srv.main()
 

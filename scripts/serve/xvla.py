@@ -18,8 +18,6 @@ xvla 컨테이너에서 실행:
 """
 
 import argparse
-import base64
-import io
 import logging
 import math
 import sys
@@ -28,7 +26,6 @@ from typing import Optional
 
 import numpy as np
 import torch
-import uvicorn
 from fastapi import FastAPI
 from PIL import Image
 
@@ -36,6 +33,14 @@ sys.path.insert(0, "/temporal_vla/lerobot/src")
 
 # 프로파일 로더 (scripts/utils 는 PYTHONPATH 에 포함)
 from checkpoint_profile import CheckpointProfile, load_profile  # noqa: E402
+
+from src.utils.common.image import decode_b64_pil  # noqa: E402
+from src.utils.common.serving import (  # noqa: E402
+    add_server_args,
+    health_response,
+    run_uvicorn,
+    setup_serve_logging,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +58,6 @@ IMAGENET_STD = [0.229, 0.224, 0.225]
 
 
 # ─── 유틸 ────────────────────────────────────────────────────────────────────
-
-
-def _b64_to_pil(b64_str: str) -> Image.Image:
-    """base64 PNG → PIL Image (RGB)."""
-    return Image.open(io.BytesIO(base64.b64decode(b64_str))).convert("RGB")
 
 
 def _euler_to_rot6d(euler: np.ndarray) -> np.ndarray:
@@ -253,7 +253,7 @@ async def predict_action(payload: dict):
     for view in profile.observation_requirements.images:
         b64 = payload.get(f"observation.images.{view}")
         if b64 is not None:
-            pil_images.append(_b64_to_pil(b64))
+            pil_images.append(decode_b64_pil(b64))
     if not pil_images:
         return {"error": "no images in payload"}
     image_input, image_mask = _preprocess_images(pil_images)
@@ -321,14 +321,14 @@ async def predict_action(payload: dict):
 async def health():
     if _profile is None:
         return {"status": "not_loaded", "model": "xvla"}
-    return {
-        "status": "ok" if _model is not None else "not_loaded",
-        "model": "xvla",
-        "profile": _profile.name,
-        "n_action_steps": _profile.n_action_steps,
-        "action_type": _profile.action_type,
-        "action_keys": list(_profile.emits_subkeys),
-    }
+    return health_response(
+        policy=_model,
+        model="xvla",
+        profile=_profile,
+        n_action_steps=_profile.n_action_steps,
+        action_type=_profile.action_type,
+        action_keys=list(_profile.emits_subkeys),
+    )
 
 
 # ─── Entry point ─────────────────────────────────────────────────────────────
@@ -337,20 +337,14 @@ async def health():
 def main():
     global _profile
 
-    try:
-        from src.utils.common.logger import create_module_logger
-
-        create_module_logger("xvla_serve")
-    except ImportError:
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    setup_serve_logging("xvla_serve")
 
     parser = argparse.ArgumentParser(description="X-VLA 추론 서버 (port 8100)")
     parser.add_argument(
         "--profile", type=str, required=True,
         help="체크포인트 프로파일 YAML 경로 (configs/checkpoints/*.yaml)",
     )
-    parser.add_argument("--host", type=str, default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8100)
+    add_server_args(parser, default_port=8100)
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument(
         "--dtype", type=str, default="bfloat16", choices=["float32", "bfloat16"],
@@ -365,7 +359,7 @@ def main():
 
     app.state.args = args
     app.state._step = 0
-    uvicorn.run(app, host=args.host, port=args.port)
+    run_uvicorn(app, args)
 
 
 if __name__ == "__main__":

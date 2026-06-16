@@ -2,14 +2,14 @@
 
 This processor gives ``GrootRoboCasaEnv`` the same pipeline-shaped interface
 as the generic benchmark processors while keeping the key mapping in
-``src.policies.groot.robocasa_io`` as the single implementation.
+``src.policies.groot.robocasa.io`` as the single implementation.
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict
 
-from src.policies.groot.robocasa_io import prepare_groot_robocasa_http_request
+from src.policies.groot.robocasa.io import prepare_groot_robocasa_http_request
 
 from ..base import ObservationProcessorStep
 from ..types import FeatureType, Features, PipelineFeatureType, PolicyFeature

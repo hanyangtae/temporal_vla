@@ -82,6 +82,59 @@ class _FakeSimPolicy:
         }, {}
 
 
+class _TransformerBlocks:
+    def __init__(self, outputs: list[torch.Tensor]):
+        self.transformer_blocks = [_HookTarget(output) for output in outputs]
+
+
+class _PathwayActionHead:
+    def __init__(self, layer_outputs: list[torch.Tensor], vl_output: torch.Tensor):
+        self.action_horizon = int(layer_outputs[0].shape[1])
+        self.model = _TransformerBlocks(layer_outputs)
+        self.vlln = _HookTarget(vl_output)
+
+
+class _PathwayRootModel:
+    def __init__(self, layer_outputs: list[torch.Tensor], vl_output: torch.Tensor):
+        self.action_head = _PathwayActionHead(layer_outputs, vl_output)
+
+
+class _PathwayInnerPolicy:
+    def __init__(self, layer_outputs: list[torch.Tensor], vl_output: torch.Tensor):
+        self.model = _PathwayRootModel(layer_outputs, vl_output)
+
+
+class _FakePathwaySimPolicy:
+    def __init__(
+        self,
+        layer_outputs: list[torch.Tensor],
+        vl_output: torch.Tensor,
+        valid_horizon: int,
+    ):
+        self.policy = _PathwayInnerPolicy(layer_outputs, vl_output)
+        self.valid_horizon = valid_horizon
+
+    def get_modality_config(self):
+        return {"action": _ModalityConfig(list(range(self.valid_horizon)))}
+
+    def reset(self, options=None):
+        return {"status": "reset"}
+
+    def get_action(self, observation, options=None):
+        action_head = self.policy.model.action_head
+        for block in action_head.model.transformer_blocks:
+            block.emit()
+        if action_head.vlln.hook is not None:
+            action_head.vlln.emit()
+        return {
+            "action.end_effector_position": torch.randn(
+                1,
+                self.valid_horizon,
+                3,
+            ).numpy()
+        }, {}
+
+
 def _import_feature_server():
     if importlib.util.find_spec("msgpack") is None:
         raise unittest.SkipTest("msgpack is not installed in this Python env")
@@ -166,6 +219,58 @@ class TestSafeN16FeaturePolicy(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "exceeds exportable horizon"):
             policy.get_action_with_features({})
+
+    def test_multilayer_features_default_to_dit_only(self):
+        layer_outputs = [
+            torch.ones((1, 5, 2), dtype=torch.float32),
+            torch.full((1, 5, 2), 3.0, dtype=torch.float32),
+        ]
+        vl_output = torch.ones((1, 2, 4), dtype=torch.float32)
+        policy = self.module.SafeN16FeaturePolicy(
+            _FakePathwaySimPolicy(layer_outputs, vl_output, valid_horizon=3),
+            feature_dtype="float32",
+            feature_slice="valid",
+        )
+        policy.capture_layers = [0, 1]
+
+        response = policy.get_action_with_multilayer_features({"obs": "value"})
+
+        self.assertEqual(tuple(response["hidden_states"].shape), (2, 2))
+        self.assertEqual(
+            response["feature_kind"],
+            self.module.MULTILAYER_FEATURE_KIND,
+        )
+        self.assertNotIn("vl_hidden_states", response)
+        self.assertNotIn("vl_feature_kind", response)
+        self.assertNotIn("vl_feature_dim", response)
+
+    def test_multilayer_features_include_vl_only_when_enabled(self):
+        layer_outputs = [
+            torch.ones((1, 5, 2), dtype=torch.float32),
+            torch.full((1, 5, 2), 3.0, dtype=torch.float32),
+        ]
+        vl_output = torch.tensor(
+            [[[1.0, 3.0, 5.0, 7.0], [3.0, 5.0, 7.0, 9.0]]],
+            dtype=torch.float32,
+        )
+        policy = self.module.SafeN16FeaturePolicy(
+            _FakePathwaySimPolicy(layer_outputs, vl_output, valid_horizon=3),
+            feature_dtype="float32",
+            feature_slice="valid",
+        )
+        policy.capture_layers = [0, 1]
+        policy.capture_vl = True
+
+        response = policy.get_action_with_multilayer_features({"obs": "value"})
+
+        self.assertEqual(tuple(response["hidden_states"].shape), (2, 2))
+        np.testing.assert_allclose(
+            response["vl_hidden_states"],
+            np.array([2.0, 4.0, 6.0, 8.0], dtype=np.float32),
+        )
+        self.assertEqual(response["vl_feature_kind"], self.module.VL_FEATURE_KIND)
+        self.assertEqual(response["vl_feature_axes"], self.module.VL_FEATURE_AXES)
+        self.assertEqual(response["vl_feature_dim"], 4)
 
 
 if __name__ == "__main__":
