@@ -17,7 +17,12 @@ import numpy as np
 _ROBOCASA = Path(__file__).resolve().parents[2]
 if str(_ROBOCASA) not in sys.path:
     sys.path.insert(0, str(_ROBOCASA))
-from safe_feature_vectors import load_manifest, parse_aggregation_command, pooled_hidden_states  # noqa: E402
+from safe_feature_vectors import (  # noqa: E402
+    load_manifest,
+    parse_aggregation_command,
+    pooled_hidden_states,
+    tensor_to_numpy,
+)
 
 from analyses._common import RUN_ROOT
 
@@ -31,12 +36,30 @@ def add_args(p):
     p.add_argument("--scope", default="all")
     p.add_argument("--horizon-idx-rel", default="mean")
     p.add_argument("--diff-idx-rel", default="mean")
+    p.add_argument(
+        "--pathway",
+        default="dit",
+        choices=["dit", "vl"],
+        help=(
+            "dit=DiT motor hidden_states [K,H,D] (default, horizon/diff pooled). "
+            "vl=goal VL vl_hidden_states (already seq-mean-pooled [D]; horizon/diff ignored)."
+        ),
+    )
     p.add_argument("--force", action="store_true")
     p.add_argument("--seed", type=int, default=0)  # unused; for CLI uniformity
 
 
 def _slug(v):
     return v.replace(".", "p").replace("-", "_").replace(":", "_")
+
+
+def _pool_vl(record) -> np.ndarray:
+    """Stack the pre-pooled VL per-step vectors (vl_hidden_states) to [T, D]."""
+    vl = record.get("vl_hidden_states") or []
+    feats = [tensor_to_numpy(h).astype(np.float32, copy=False).reshape(-1) for h in vl]
+    if not feats:
+        return np.empty((0, 0), dtype=np.float32)
+    return np.stack(feats, axis=0)
 
 
 def run(args):
@@ -46,7 +69,9 @@ def run(args):
     print(f"manifest rows: {len(rows)}")
     agg = f"h{_slug(args.horizon_idx_rel)}_d{_slug(args.diff_idx_rel)}"
     args.out_root.mkdir(parents=True, exist_ok=True)
-    out_path = args.out_root / f"pooled_{args.scope}_{agg}.npz"
+    # Keep the DiT (default) filename backward-compatible; prefix only for non-dit pathways.
+    pref = "" if args.pathway == "dit" else f"{args.pathway}_"
+    out_path = args.out_root / f"pooled_{pref}{args.scope}_{agg}.npz"
     if out_path.exists() and not args.force:
         print(f"cache exists (use --force to overwrite): {out_path}")
         return
@@ -59,7 +84,10 @@ def run(args):
     for i, row in enumerate(rows):
         with Path(row["source_path"]).open("rb") as f:
             rec = pickle.load(f)
-        feat = pooled_hidden_states(rec, horizon_idx_rel=h_cmd, diff_idx_rel=d_cmd)
+        if args.pathway == "vl":
+            feat = _pool_vl(rec)
+        else:
+            feat = pooled_hidden_states(rec, horizon_idx_rel=h_cmd, diff_idx_rel=d_cmd)
         T = feat.shape[0]
         if T == 0:
             continue
