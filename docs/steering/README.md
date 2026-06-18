@@ -1,9 +1,11 @@
 # Latent Steering (메인 연구 라인)
 
-이 디렉터리는 프로젝트의 **메인 method — latent steering** 문서 기준 위치다. 목표는
-GR00T N1.6 RoboCasa rollout에서 성공/실패 latent 신호를 찾고, failure type에 맞는
-pathway를 steering하여 Success Rate를 올리는 것이다. 실패하더라도 failure-type 자동 분류와
-개입 후보를 남기는 것이 최소 산출물이다.
+이 디렉터리는 프로젝트의 **메인 method — pathway-resolved + phase-matched activation
+steering** 문서 기준 위치다. 목표는 GR00T RoboCasa rollout에서 성공/실패 latent 신호를
+pathway별(VL goal / DiT motor)·phase별로 찾고(길이 confound 통제 필수), 추론 중 그 신호로
+**어느 pathway·어느 phase에서 실패하는지 식별**한 뒤 phase-matched conceptor steering으로
+개입해 Success Rate를 올리는 것이다. **중심 미해결 문제: online phase/failure-type 식별이
+가능한가** — 안 되면 steering을 라우팅할 수 없다. 메인스트림 thesis는 `14_*` 참고.
 
 번호 prefix(`01_`, `02_`, ...)는 읽기 순서다. TTA/VITA progress predictor 방향은 현재 메인이
 아니며 [`../ttt/`](../ttt/README.md)에 보존 문서로 둔다.
@@ -14,8 +16,11 @@ pathway를 steering하여 Success Rate를 올리는 것이다. 실패하더라�
 - 실패 원인 해석은 NOTALL 가설과 맞는다: GR00T pathway는 goal semantics(VL)와 motor
   program(DiT)이 나뉘며, DiT-only feature는 goal-type failure를 충분히 잡지 못한다.
 - Phase 3 결과에서는 VL pathway가 t≤8에서 더 이른 실패 신호를 내고, DiT는 t≥12에서 강해진다.
-- 다음 실험 축은 VL pathway conceptor fit, type-matched steering, 그리고 B/C quadrant 비디오
-  정성 검증이다.
+- **현재 main stream = pathway-resolved + phase-matched steering** (VL/DiT 분리 + DiT는 rollout
+  phase 조건부). 중심 미해결 문제는 **online phase/failure-type 식별**. 상세: `14_pathway_phase_online_steering.md`.
+- 검증은 사다리식 ablation(global → pathway-split → +phase-bin)으로 각 단계 ΔSR 비교.
+- 다음 실험 축: faithful N1.5 positive control → fixed-instruction confound 제거 → VL conceptor
+  fit + phase-matched steering → ΔSR 인과 재측정.
 
 ## 수집 계약
 
@@ -46,6 +51,9 @@ pathway를 steering하여 Success Rate를 올리는 것이다. 실패하더라�
 
 ## Reading Order
 
+> **메인스트림 thesis(먼저 읽기)**: [14 Pathway+Phase Online Steering](14_pathway_phase_online_steering.md)
+> — 현재 연구 방향·핵심 가설·open problem·ablation 사다리의 단일 출처.
+
 1. [01 seen18 Latent Analysis](01_seen18_latent_analysis.md) — GR00T-N1.6 RoboCasa seen18
    잠재공간에서 succ/fail 이 구분되는지·어떤 조건에서 드러나는지. **길이 confound 통제**가
    모든 해석의 전제. steering 의 표현 측 근거.
@@ -75,6 +83,7 @@ pathway를 steering하여 Success Rate를 올리는 것이다. 실패하더라�
 
 | 질문 | 문서 |
 |---|---|
+| 현재 연구 방향(메인스트림)은? | `14_pathway_phase_online_steering.md` |
 | succ/fail latent가 실제로 분리되는가? | `01_seen18_latent_analysis.md` |
 | DiT-only COAST steering은 왜 실패했나? | `06_coast_groot_n16_summary.md` |
 | 최신 steering target은 무엇인가? | `09_phase3_vl_dit_comparison.md` |

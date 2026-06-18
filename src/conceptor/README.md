@@ -5,8 +5,9 @@ Boolean algebra, multiplicative steering 을 NumPy 로 구현한 모듈이다.
 성공/실패 활성화 분포로부터 **contrastive conceptor** 를 fitting 하고, 이를
 hidden state 에 곱해주는 multiplicative gate 로 변환한다.
 
-본 프로젝트의 목표(실패 루프 탈출)에 맞춰, GR00T N1.6 의 hidden state 에서
-"성공 방향은 보존하고 실패 방향만 억제하는" steering 행렬을 만드는 데 쓴다.
+본 프로젝트의 메인 method(pathway-resolved + phase-matched activation steering)에 맞춰,
+GR00T 의 hidden state(VL/DiT pathway)에서 "성공 방향은 보존하고 실패 방향만 억제하는"
+steering 행렬을 만드는 데 쓴다.
 
 ---
 
@@ -171,8 +172,8 @@ np.save("steering_matrix.npy", as_float32(M))   # float32 로 저장/전송
 - $\beta=0$ → 원본 유지, $\beta=1$ → conceptor 로 완전 projection.
 - 작은 값($0.1\!\sim\!0.5$)부터 키워가며 success rate 가 오르는 지점을 찾는다.
   너무 크면 hidden state 분포가 망가져 backbone 출력이 붕괴할 수 있다.
-- 실패 루프 탈출 용도: 실패가 감지된 step 에서만 $\beta>0$ 로 켜는 conditional
-  steering 도 가능하다.
+- Online/phase-conditional 용도: 실패가 감지된 pathway·phase 에서만 $\beta>0$ 로 켜는
+  conditional steering 도 가능하다.
 
 ### Cross-task 전이 (Sec. 4.4)
 
