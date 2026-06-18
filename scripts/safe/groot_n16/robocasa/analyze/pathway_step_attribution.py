@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 import sys
@@ -181,32 +182,120 @@ def perm_null(rollouts, *, n_perm, min_succ, min_fail, max_t, early_t, late_lo):
     return [float(np.percentile(vals, 2.5)), float(np.percentile(vals, 97.5))]
 
 
+# ----------------------------------------------------------------------------- per-episode OOD
+
+def _safe_tag(label: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "_", label).strip("_")
+
+
+def episode_ood(rollouts, *, min_succ, min_fail, max_t):
+    """각 실패 에피소드의 VL/DiT OOD severity = valid step percentile-rank 평균.
+
+    step t 마다 living 성공(length>t) 분포로 fit → 그 t 에 살아있는 실패의 r_VL(t),r_DiT(t).
+    실패 i 의 OOD_P = mean_{valid t < length_i} r_P(t). length 통제(living 만), 시간축은 평균
+    (시간 *순서* 는 안 봄 — '어느 pathway 가 OOD 인가' 의 공동분포가 질문).
+    """
+    succ = [r for r in rollouts if r["success"] == 1]
+    fail = [r for r in rollouts if r["success"] == 0]
+    acc = [{"vl": [], "dit": []} for _ in fail]
+    valid_ts = []
+    for t in range(max_t):
+        s_live = [r for r in succ if r["length"] > t]
+        fidx = [i for i, r in enumerate(fail) if r["length"] > t]
+        if len(s_live) < min_succ or len(fidx) < min_fail:
+            continue
+        valid_ts.append(t)
+        for key in ("vl", "dit"):
+            S = np.stack([r[key][t] for r in s_live])
+            mu, std = S.mean(axis=0), S.std(axis=0)
+            dS = np.array([mahal_diag(v, mu, std) for v in S])
+            for i in fidx:
+                acc[i][key].append(pct_rank(mahal_diag(fail[i][key][t], mu, std), dS))
+    eps = []
+    for i, r in enumerate(fail):
+        if not acc[i]["vl"]:
+            continue
+        eps.append({"name": r["name"], "length": r["length"],
+                    "ood_vl": float(np.mean(acc[i]["vl"])),
+                    "ood_dit": float(np.mean(acc[i]["dit"])),
+                    "n_steps": len(acc[i]["vl"])})
+    return eps, valid_ts
+
+
+def ood_quadrants(eps, thr):
+    """절대 임계 thr 로 실패를 both / vl_only / dit_only / neither 분류 + corr(VL,DiT)."""
+    q = {"both": 0, "vl_only": 0, "dit_only": 0, "neither": 0}
+    for e in eps:
+        hv, hd = e["ood_vl"] >= thr, e["ood_dit"] >= thr
+        q["both" if hv and hd else "vl_only" if hv else "dit_only" if hd else "neither"] += 1
+    corr = None
+    if len(eps) >= 3:
+        v = [e["ood_vl"] for e in eps]
+        d = [e["ood_dit"] for e in eps]
+        if np.std(v) > 1e-9 and np.std(d) > 1e-9:
+            corr = float(np.corrcoef(v, d)[0, 1])
+    return q, corr
+
+
+def plot_ood(eps, label, path, thr):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    color = {"both": "red", "vl_only": "orange", "dit_only": "blue", "neither": "gray"}
+    cs = []
+    for e in eps:
+        hv, hd = e["ood_vl"] >= thr, e["ood_dit"] >= thr
+        cs.append(color["both" if hv and hd else "vl_only" if hv else "dit_only" if hd else "neither"])
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.scatter([e["ood_vl"] for e in eps], [e["ood_dit"] for e in eps], c=cs, s=45, alpha=0.8)
+    ax.axvline(thr, ls="--", c="k", lw=0.7)
+    ax.axhline(thr, ls="--", c="k", lw=0.7)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_xlabel("VL OOD (percentile vs success)")
+    ax.set_ylabel("DiT OOD (percentile vs success)")
+    ax.set_title(label)
+    fig.tight_layout()
+    fig.savefig(path, dpi=130)
+    plt.close()
+
+
 # ----------------------------------------------------------------------------- run
 
-def run_one(rollouts, label, args) -> dict | None:
+def run_one(rollouts, label, args, out: Path) -> dict | None:
     succ = sum(r["success"] for r in rollouts)
     fail = len(rollouts) - succ
     if succ < args.min_succ or fail < args.min_fail:
         print(f"  [skip] {label}: succ={succ} fail={fail} (< min)")
         return None
-    res = step_table(rollouts, min_succ=args.min_succ, min_fail=args.min_fail, max_t=args.max_t)
-    if not res:
+    # --- per-episode OOD 공동분포 (메인 질문) ---
+    eps, valid_ts = episode_ood(rollouts, min_succ=args.min_succ, min_fail=args.min_fail,
+                                max_t=args.max_t)
+    if not eps:
         print(f"  [skip] {label}: living t 없음")
         return None
-    pc = phase_contrast(res, args.early_t, args.late_lo)
-    null = perm_null(rollouts, n_perm=args.perm, min_succ=args.min_succ, min_fail=args.min_fail,
-                     max_t=args.max_t, early_t=args.early_t, late_lo=args.late_lo) if pc else None
-    valid_t = sorted(res)
-    sig = (pc and null and (pc["contrast"] < null[0] or pc["contrast"] > null[1]))
-    print(f"  {label}: valid t={valid_t[0]}..{valid_t[-1]} | "
-          f"phase contrast={pc['contrast']:+.3f} null95={null} "
-          f"{'SIG' if sig else 'ns'}" if pc else f"  {label}: phase contrast 계산불가")
-    return {
-        "label": label, "n_succ": succ, "n_fail": fail,
-        "valid_t": valid_t,
-        "per_t": {str(t): {k: v for k, v in d.items() if k != "delta"} for t, d in res.items()},
-        "phase_contrast": pc, "perm_null95": null, "significant": bool(sig),
-    }
+    quad, corr = ood_quadrants(eps, args.ood_thr)
+    if not args.no_plot:
+        out.mkdir(parents=True, exist_ok=True)
+        plot_ood(eps, label, out / f"{_safe_tag(label)}_ood.png", args.ood_thr)
+    cs = f"{corr:+.3f}" if corr is not None else "na"
+    print(f"  {label}: OOD(thr={args.ood_thr}) both={quad['both']} vl_only={quad['vl_only']} "
+          f"dit_only={quad['dit_only']} neither={quad['neither']} | n_fail={len(eps)} corr(VL,DiT)={cs}")
+    entry = {"label": label, "n_succ": succ, "n_fail_used": len(eps), "valid_ts": valid_ts,
+             "ood_thr": args.ood_thr, "ood_quadrants": quad, "ood_corr_vl_dit": corr,
+             "episodes": eps}
+    # --- (보조) 시간순서 phase contrast ---
+    res = step_table(rollouts, min_succ=args.min_succ, min_fail=args.min_fail, max_t=args.max_t)
+    pc = phase_contrast(res, args.early_t, args.late_lo) if res else None
+    if pc:
+        entry["phase_contrast"] = pc
+        if args.perm > 0:
+            null = perm_null(rollouts, n_perm=args.perm, min_succ=args.min_succ,
+                             min_fail=args.min_fail, max_t=args.max_t,
+                             early_t=args.early_t, late_lo=args.late_lo)
+            entry["phase_null95"] = null
+            entry["phase_significant"] = bool(null and (pc["contrast"] < null[0] or pc["contrast"] > null[1]))
+    return entry
 
 
 def main() -> None:
@@ -219,7 +308,11 @@ def main() -> None:
     ap.add_argument("--max-t", type=int, default=30, help="이 t 까지만 검사(이후 living 성공 부족)")
     ap.add_argument("--min-succ", type=int, default=8)
     ap.add_argument("--min-fail", type=int, default=8)
-    ap.add_argument("--perm", type=int, default=200)
+    ap.add_argument("--ood-thr", type=float, default=0.8,
+                    help="절대 OOD 임계(성공 대비 percentile). 이상이면 그 pathway OOD.")
+    ap.add_argument("--no-plot", action="store_true")
+    ap.add_argument("--perm", type=int, default=0,
+                    help="보조 phase-contrast permutation 횟수(0=skip, OOD 분석엔 불필요).")
     ap.add_argument("--split-instruction", action="store_true",
                     help="task 내 instruction(ep_meta.lang) 변형별로도 따로 분석")
     ap.add_argument("--min-instr-rollouts", type=int, default=20)
@@ -257,7 +350,7 @@ def main() -> None:
             print(f"  [skip] {td.name}: VL feature 없음")
             continue
         print(f"[task] {td.name} (n={len(rs)})")
-        entry = {"mixed": run_one(rs, f"{td.name}/mixed", args)}
+        entry = {"mixed": run_one(rs, f"{td.name}/mixed", args, out)}
         if args.split_instruction:
             by_lang: dict[str, list] = defaultdict(list)
             for r in rs:
@@ -266,17 +359,23 @@ def main() -> None:
             for lang, grp in by_lang.items():
                 if len(grp) < args.min_instr_rollouts:
                     continue
-                entry["by_instruction"][lang] = run_one(grp, f"{td.name}/[{lang}]", args)
+                entry["by_instruction"][lang] = run_one(grp, f"{td.name}/[{lang}]", args, out)
         results["tasks"][td.name] = entry
 
     out.mkdir(parents=True, exist_ok=True)
     (out / "pathway_step_attribution.json").write_text(json.dumps(results, indent=2))
     print(f"[done] -> {out/'pathway_step_attribution.json'}")
-    # 요약: phase contrast SIG task
-    sig = [(t, e["mixed"]["phase_contrast"]["contrast"])
-           for t, e in results["tasks"].items()
-           if e.get("mixed") and e["mixed"].get("significant")]
-    print(f"[summary] phase-contrast SIG (mixed): {sig}")
+    # 요약: per-task OOD 공동분포 (mixed)
+    print(f"[summary] per-task OOD quadrants (mixed, thr={args.ood_thr}):")
+    for t, e in results["tasks"].items():
+        m = e.get("mixed")
+        if not m:
+            continue
+        q = m["ood_quadrants"]
+        c = m["ood_corr_vl_dit"]
+        cs = f"{c:+.2f}" if c is not None else "na"
+        print(f"  {t:26s} both={q['both']:2d} vl_only={q['vl_only']:2d} "
+              f"dit_only={q['dit_only']:2d} neither={q['neither']:2d}  corr={cs}")
 
 
 if __name__ == "__main__":
