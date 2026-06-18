@@ -10,6 +10,9 @@ GR00T N1.6 RoboCasa에서 실패를 latent 신호로 사전 감지하고, 그 �
 pathway를 conceptor steering해서 SR을 올린다. 이게 되지 않더라도 failure-type 자동 분류를
 달성하는 것이 최소 deliverable.
 
+> 갱신(2026-06): main stream은 **pathway 분리 + phase-matched steering**으로 구체화됨. 핵심
+> 난제 = **online phase/failure-type 식별**. 현재 방향 단일 출처: `14_pathway_phase_online_steering.md`.
+
 ---
 
 ## 왜 이 방향인가 — 이전 실패와 NOTALL 분석

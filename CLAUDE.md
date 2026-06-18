@@ -15,7 +15,9 @@ Claude Code 세션에서는 `.agents/agent_spec.md`를 repo-local 운영 규칙�
 
 VLA 모델의 **latent steering**을 연구하는 프로젝트.
 VLA 잠재공간에서 **실패 latent와 성공 latent를 구분**하고, 추론 시 활성화를 성공 쪽으로
-**steer**하여 Success Rate를 올리는 것이 목표 (VLA 백본 추가학습 없음).
+**steer**하여 Success Rate를 올리는 것이 목표 (VLA 백본 추가학습 없음). 현재 main stream은
+**pathway(VL/DiT) 분리 + phase-matched steering**, 핵심 난제는 **online phase/failure-type
+식별** (아래 "연구 방향").
 
 배경 동기: 성공 데이터로만 학습된 VLA가 실패 시 같은 trajectory를 반복하는 문제
 (이전 "실패 루프 탈출" 프레이밍). 현재는 이를 latent steering 관점에서 접근한다.
@@ -24,15 +26,28 @@ VLA 잠재공간에서 **실패 latent와 성공 latent를 구분**하고, 추�
 
 ## 연구 방향
 
-- **메인 method — latent steering**: succ/fail 활성화 분포에서 contrastive conceptor
-  `C_steer = C_success ∧ ¬C_failure` 등을 fit하고, 추론 시 활성화를 성공 부분공간 쪽으로
-  steer (`h' = h·Mᵀ`)하여 SR을 올린다 (COAST 계열). 단일벡터 additive가 아니라
-  multi-dim contrastive 연산자가 맞다 (실험으로 확인됨).
-- **표현 분석**: succ/fail latent의 분리 가능성을 검증 (SAFE식 feature-space 시각화/score).
-  **길이 confound 통제 필수** — 실패는 항상 timeout이라 시간-pooled 분리는 아티팩트.
-- **TTA (VITA 기반 progress predictor)**: **무기한 연기**됨. (구 방향, 메인 아님)
-- **Baseline 모델**: pi0, groot
-- **Metric**: Success Rate 상승. 인과 검증은 steering intervention 후 ΔSR 재측정.
+메인 method = **pathway-resolved + phase-matched activation steering** (백본 재학습 없음).
+succ/fail 활성화 분포에서 contrastive conceptor `C_steer = C_success ∧ ¬C_failure` 를 fit하고
+추론 시 `h' = h·Mᵀ` 로 성공 부분공간 쪽으로 steer (COAST 계열, 단일벡터 additive 아니라
+multi-dim contrastive 연산자). 여기에 두 축을 더한다. 단일 출처:
+[`docs/steering/14_pathway_phase_online_steering.md`](docs/steering/14_pathway_phase_online_steering.md).
+
+- **(1) Pathway 분리 steering**: VL(goal "what")과 DiT(motor "how") pathway를 **각각 따로** steer.
+  근거 = NOTALL 기능 분리 + 우리 데이터(VL 이른 신호 t≤8, DiT 늦은 신호 t≥12). 주의:
+  Eagle→VL-SA→DiT 직렬이라 "따로"가 진짜 독립이 아님(downstream 결합 고려).
+- **(2) Phase-matched DiT steering**: DiT는 **rollout phase(시간)에 조건부로** steer. COAST는 전
+  timestep을 한 공간(클래스별 R=E[hhᵀ])에 pool해 길이/phase confound를 섞음 — 우리는 phase별
+  성공 분포를 타깃.
+- **★ 중심 미해결 문제 (타당성 판정)**: 추론 중(**online**)에 어느 pathway가 실패했고
+  (goal vs motor) 어느 task-phase인지 식별 가능한가? 안 되면 steering을 라우팅할 수 없다 →
+  다음 실험의 첫 질문은 "steer가 듣나"보다 "phase/type을 온라인에 읽을 수 있나".
+- **검증**: 사다리식 ablation (global → pathway-split → +phase-bin), 각 단계 ΔSR 비교 — 이전
+  단계가 신호를 보일 때만 복잡도 추가(약한 신호에서 noise fit 방지).
+- **표현 분석**: succ/fail latent 분리 검증 (SAFE식 feature-space). **길이 confound 통제 필수**
+  — 실패는 항상 timeout이라 시간-pooled 분리는 아티팩트.
+- **TTA (VITA 기반 progress predictor)**: 메인 아님(구 "loop escape" 방향). 단 phase-matched
+  steering이 online phase/progress 신호를 요구하므로 **보조 부품(phase 신호 공급원)으로 복귀 검토 가능**.
+- **Baseline 모델**: pi0, groot. **Metric**: SR 상승, steering 후 ΔSR 인과 재측정 (EVAL_SEED=100000 표준).
 
 ## 평가 표준 (2026-06-05 확정)
 

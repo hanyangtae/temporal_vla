@@ -6,10 +6,14 @@
 
 ## Project Goal
 
-현재 프로젝트 목표는 VLA latent에서 성공/실패 표현을 구분하고, 추론 시 활성화를 성공
-부분공간으로 steering 해서 RoboCasa/Calvin/LIBERO 같은 벤치마크의 Success Rate를 올리는
-것이다. VLA 백본 추가학습 없이 intervention 효과를 확인하는 것이 핵심이며, 이전 TTT/VITA
-progress-predictor 방향은 [`ttt/`](ttt/README.md) 아래의 보존 문서로 남긴다.
+현재 프로젝트 목표는 VLA latent에서 성공/실패 표현을 **pathway별(VL goal vs DiT motor)** 로
+구분하고, 각 pathway의 **phase/time-dependent 신호**(VL 이른 신호 t≤8, DiT 늦은 신호 t≥12)에
+맞춰 추론 시 활성화를 성공 부분공간으로 steering 해서 Success Rate를 올리는 것이다 (백본
+재학습 없음). 핵심 난제는 **online phase/failure-type 식별** — 추론 중 어느 pathway·어느
+phase에서 실패하는지 알아야 steering을 라우팅할 수 있다. 메인 라인 단일 출처는
+[`steering/`](steering/README.md), 특히 `steering/14_pathway_phase_online_steering.md`. 이전
+TTT/VITA progress-predictor 방향은 메인이 아니며 [`ttt/`](ttt/README.md) 보존 문서로 남기되,
+phase 신호 공급용 보조 부품으로 복귀 검토 가능하다.
 
 인프라는 Docker container로 모델 서버와 벤치마크를 분리하고, 공통 FastAPI `/act`
 계약으로 여러 policy를 같은 evaluator에 붙이는 구조다. GR00T RoboCasa처럼 upstream parity가
