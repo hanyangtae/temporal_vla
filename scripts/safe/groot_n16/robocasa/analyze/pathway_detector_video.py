@@ -28,6 +28,7 @@ sys.path.insert(0, str(_HERE))
 from pathway_separation import load_rollout_features  # noqa: E402
 from pathway_lstm_detector import (  # noqa: E402
     CAPTURE_LAYERS, pathway_seq, make_seqs, standardizer, train_lstm, score_seq,
+    functional_cp_band,
 )
 
 
@@ -54,15 +55,18 @@ def rollout_score(model, r, pathway, dit_idx, mu, sd, device):
     return score_seq(model, Xn, device)
 
 
-def render(mp4_in: Path, mp4_out: Path, scores: np.ndarray, delta: float, pw: str):
+def render(mp4_in: Path, mp4_out: Path, scores: np.ndarray, band: np.ndarray, pw: str):
     cap = cv2.VideoCapture(str(mp4_in))
     nf = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     w, h = int(cap.get(3)), int(cap.get(4))
     fps = cap.get(cv2.CAP_PROP_FPS) or 20.0
     L = len(scores)
     fpi = nf / max(L, 1)  # frames per inference step
-    cross = np.where(scores > delta)[0]
-    fire_step = int(cross[0]) if len(cross) else None
+
+    def bval(k):  # 시간가변 functional CP 밴드 δ_t
+        return float(band[min(k, len(band) - 1)])
+
+    fire_step = next((k for k in range(L) if scores[k] > bval(k)), None)
     fire_frame = fire_step * fpi if fire_step is not None else float("inf")
     vw = cv2.VideoWriter(str(mp4_out), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
     i = 0
@@ -75,8 +79,8 @@ def render(mp4_in: Path, mp4_out: Path, scores: np.ndarray, delta: float, pw: st
         fired = i >= fire_frame
         color = (0, 0, 255) if fired else (200, 200, 200)
         cv2.rectangle(frame, (0, 0), (w - 1, h - 1), color, 14)
-        tag = f"{pw.upper()} det  score={sc:.2f}/thr={delta:.2f}"
-        cv2.putText(frame, tag, (18, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        cv2.putText(frame, f"{pw.upper()} det  score={sc:.2f}/band={bval(step):.2f}",
+                    (18, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         if fired:
             cv2.putText(frame, f"FAILURE DETECTED @step {fire_step}", (18, h - 16),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
@@ -94,7 +98,7 @@ def main():
     ap.add_argument("--dit-block", type=int, default=31)
     ap.add_argument("--detectors", default="dit,vl")
     ap.add_argument("--n-per-task", type=int, default=5)
-    ap.add_argument("--alpha", type=float, default=0.1, help="CP FPR 목표(임계)")
+    ap.add_argument("--alpha", type=float, default=0.3, help="functional CP 유의수준(FPR 목표). 밴드 δ_t 결정")
     ap.add_argument("--epochs", type=int, default=25)
     ap.add_argument("--seen", default="CloseToasterOvenDoor,NavigateKitchen,OpenCabinet,PickPlaceCounterToStove,PickPlaceDrawerToCounter,SlideDishwasherRack,TurnOnMicrowave,TurnOnSinkFaucet")
     ap.add_argument("--unseen", default="OpenDrawer,PickPlaceCounterToCabinet")
@@ -129,20 +133,20 @@ def main():
             train_ids.add(id(rs[i]))
         seen_test += [rs[i] for i in idx[n:]]
     train = [r for r in rolls if id(r) in train_ids]
-    print(f"[load] {len(rolls)} rollouts | train={len(train)} seen_test={len(seen_test)}")
+    L_max = max((r["length"] for r in rolls), default=45)
+    print(f"[load] {len(rolls)} rollouts | train={len(train)} seen_test={len(seen_test)} | L_max={L_max}")
 
-    # detector별 학습 + δ 보정(seen_test 성공)
+    # detector별 학습 + functional CP 밴드 δ_t 보정(seen_test 성공)
     models = {}
     for pw in detectors:
         tr0 = make_seqs(train, pw, dit_idx)
         mu, sd = standardizer(tr0)
         tr = make_seqs(train, pw, dit_idx, mu, sd)
+        st_seqs = make_seqs(seen_test, pw, dit_idx, mu, sd)
         model = train_lstm(tr, tr[0][0].shape[1], args.epochs, 1e-3, 256, device, args.seed)
-        cal_max = np.array([score_seq(model, ((pathway_seq(r, pw, dit_idx) - mu) / sd).astype(np.float32), device).max()
-                            for r in seen_test if r["success"] == 1 and pathway_seq(r, pw, dit_idx) is not None])
-        delta = float(np.quantile(cal_max, 1 - args.alpha)) if len(cal_max) >= 3 else 0.5
-        models[pw] = (model, mu, sd, delta)
-        print(f"[train] {pw}: dim={tr[0][0].shape[1]} delta(α={args.alpha})={delta:.3f} (cal_n={len(cal_max)})")
+        band = functional_cp_band(model, tr, st_seqs, device, args.alpha, L_max)  # [L_max]
+        models[pw] = (model, mu, sd, band)
+        print(f"[train] {pw}: dim={tr[0][0].shape[1]} band(α={args.alpha}) δ_t∈[{band.min():.3f},{band.max():.3f}]")
 
     # 영상: task별 non-train 실패 n개
     manifest = []
@@ -158,15 +162,16 @@ def main():
                 print(f"  [skip] no mp4: {mp4_in.name}"); continue
             ep = r["pkl"].stem
             for pw in detectors:
-                model, mu, sd, delta = models[pw]
+                model, mu, sd, band = models[pw]
                 sc = rollout_score(model, r, pw, dit_idx, mu, sd, device)
                 if sc is None:
                     continue
                 mp4_out = tdir / f"{ep}--{pw}_det.mp4"
-                fire, L = render(mp4_in, mp4_out, sc, delta, pw)
+                fire, L = render(mp4_in, mp4_out, sc, band, pw)
                 manifest.append({"task": task, "ep": ep, "detector": pw,
                                  "fire_step": fire, "n_steps": L, "max_score": round(float(sc.max()), 3),
-                                 "delta": round(delta, 3), "out": str(mp4_out.relative_to(out))})
+                                 "band_range": [round(float(band.min()), 3), round(float(band.max()), 3)],
+                                 "out": str(mp4_out.relative_to(out))})
                 print(f"    {ep} [{pw}] fire_step={fire}/{L} max={sc.max():.2f}")
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2))
     print(f"[done] {len(manifest)} videos -> {out}/")

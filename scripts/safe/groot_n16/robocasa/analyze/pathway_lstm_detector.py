@@ -264,6 +264,19 @@ def functional_cp_metrics(model, train_succ, cal_succ, eval_seqs, device, alphas
     return out
 
 
+def functional_cp_band(model, train_succ, cal_succ, device, alpha, L):
+    """SAFE functional CP 밴드 δ_t (시간가변) [L] 반환 (영상 검출 임계용)."""
+    tr = [_pad_to(score_seq(model, X, device), L) for X, y, _L, _t in train_succ if y == 0]
+    cal = [_pad_to(score_seq(model, X, device), L) for X, y, _L, _t in cal_succ if y == 0]
+    if len(tr) < 3 or len(cal) < 3:
+        return np.full(L, 0.5)
+    tr, cal = np.stack(tr), np.stack(cal)
+    mu = tr.mean(axis=0)
+    sd = tr.std(axis=0, ddof=1) + 1e-8
+    bw = float(np.quantile(np.max((cal - mu) / sd, axis=1), 1 - alpha))
+    return mu + bw * sd
+
+
 def mean_trajectory(model, seqs, device, max_t=40):
     """성공/실패 평균 per-step score 궤적 (padding: 마지막 score 유지)."""
     succ, fail = [], []
