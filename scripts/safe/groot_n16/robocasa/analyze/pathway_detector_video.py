@@ -68,7 +68,9 @@ def render(mp4_in: Path, mp4_out: Path, scores: np.ndarray, band: np.ndarray, pw
 
     fire_step = next((k for k in range(L) if scores[k] > bval(k)), None)
     fire_frame = fire_step * fpi if fire_step is not None else float("inf")
-    vw = cv2.VideoWriter(str(mp4_out), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+    PT, PB = 46, 46                 # 위/아래 검은 띠(글씨용) — cam 이미지 안 가림
+    H = h + PT + PB
+    vw = cv2.VideoWriter(str(mp4_out), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, H))
     i = 0
     while True:
         ok, frame = cap.read()
@@ -77,14 +79,16 @@ def render(mp4_in: Path, mp4_out: Path, scores: np.ndarray, band: np.ndarray, pw
         step = min(int(i / fpi), L - 1)
         sc = float(scores[step])
         fired = i >= fire_frame
-        color = (0, 0, 255) if fired else (200, 200, 200)
-        cv2.rectangle(frame, (0, 0), (w - 1, h - 1), color, 14)
-        cv2.putText(frame, f"{pw.upper()} det  score={sc:.2f}/band={bval(step):.2f}",
-                    (18, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        canvas = np.zeros((H, w, 3), dtype=np.uint8)   # 검은 캔버스
+        canvas[PT:PT + h, :] = frame                   # cam 이미지는 가운데 그대로
+        cv2.putText(canvas, f"{pw.upper()} detector   score={sc:.2f}   band(thr)={bval(step):.2f}",
+                    (16, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         if fired:
-            cv2.putText(frame, f"FAILURE DETECTED @step {fire_step}", (18, h - 16),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        vw.write(frame)
+            cv2.putText(canvas, f"FAILURE DETECTED  @step {fire_step}", (16, H - 16),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        color = (0, 0, 255) if fired else (180, 180, 180)
+        cv2.rectangle(canvas, (0, 0), (w - 1, H - 1), color, 12)  # 전체 테두리(검출=빨강)
+        vw.write(canvas)
         i += 1
     cap.release(); vw.release()
     return fire_step, L
