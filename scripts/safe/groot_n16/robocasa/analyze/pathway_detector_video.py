@@ -55,7 +55,7 @@ def rollout_score(model, r, pathway, dit_idx, mu, sd, device):
     return score_seq(model, Xn, device)
 
 
-CAPTION_H = 62  # 원본 영상 하단에 박힌 instruction 캡션 높이 → 잘라내고 우리가 다시 씀
+CAPTION_H = 0  # crop 안 함(하단 그리퍼 보존). 원본 캡션은 cam에 남고, instruction은 위 띠에 따로 표기.
 
 
 def get_instr(pkl_path: Path) -> str:
@@ -81,8 +81,8 @@ def render(mp4_in: Path, mp4_out: Path, scores: np.ndarray, band: np.ndarray, pw
 
     fire_step = next((k for k in range(L) if scores[k] > bval(k)), None)
     fire_frame = fire_step * fpi if fire_step is not None else float("inf")
-    cam_h = max(h - CAPTION_H, 1)   # 원본 instruction 캡션 잘라낸 cam 높이
-    PT, PB = 44, 78                 # 위(score/band) / 아래(instruction + DETECTED) 검은 띠
+    cam_h = max(h - CAPTION_H, 1)   # CAPTION_H=0 → 원본 cam 그대로(그리퍼 보존)
+    PT, PB = 78, 46                 # 위 띠(instruction + score/band 2줄) / 아래 띠(DETECTED)
     H = PT + cam_h + PB
     vw = cv2.VideoWriter(str(mp4_out), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, H))
     i = 0
@@ -94,13 +94,13 @@ def render(mp4_in: Path, mp4_out: Path, scores: np.ndarray, band: np.ndarray, pw
         sc = float(scores[step])
         fired = i >= fire_frame
         canvas = np.zeros((H, w, 3), dtype=np.uint8)
-        canvas[PT:PT + cam_h, :] = frame[0:cam_h, :]   # 캡션 잘린 cam 이미지(안 가림)
-        cv2.putText(canvas, f"{pw.upper()} detector   score={sc:.2f}   band(thr)={bval(step):.2f}",
-                    (16, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(canvas, instr, (16, PT + cam_h + 32),   # 아래 띠 윗줄: instruction
+        canvas[PT:PT + cam_h, :] = frame[0:cam_h, :]   # cam 이미지 그대로
+        cv2.putText(canvas, instr, (16, 28),           # 위 띠 1줄: instruction (score 위)
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (235, 235, 235), 2)
+        cv2.putText(canvas, f"{pw.upper()} detector   score={sc:.2f}   band(thr)={bval(step):.2f}",
+                    (16, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)  # 위 띠 2줄: score
         if fired:
-            cv2.putText(canvas, f"FAILURE DETECTED  @step {fire_step}", (16, H - 16),  # 맨 아래줄: 빨강
+            cv2.putText(canvas, f"FAILURE DETECTED  @step {fire_step}", (16, H - 16),  # 맨 아래: 빨강
                         cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
         color = (0, 0, 255) if fired else (180, 180, 180)
         cv2.rectangle(canvas, (0, 0), (w - 1, H - 1), color, 12)
