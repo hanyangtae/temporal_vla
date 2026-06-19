@@ -167,6 +167,45 @@ def length_auroc(seqs, tds):
     return res
 
 
+def cp_metrics(model, cal_seqs, eval_seqs, device, alphas):
+    """constant-threshold functional-CP + normalized T-det (SAFE식).
+
+    cal 성공 rollout 들의 **max-score** 의 (1-α) 분위로 임계 δ 보정 → 성공의 α 만 넘김(FPR≈α 보장).
+    eval 에서: failure 가 δ 를 넘으면 검출(TPR), 성공이 넘으면 오경보(FPR),
+    **normalized T-det = 첫 crossing step / 그 rollout 길이**(낮을수록 일찍, 안 넘으면 1).
+    """
+    cal_max = np.array([score_seq(model, X, device).max() for X, y, _L, _t in cal_seqs if y == 0])
+    if len(cal_max) < 3:
+        return {}
+    ev = [(score_seq(model, X, device), y, L) for X, y, L, _t in eval_seqs]
+    out = {}
+    for a in alphas:
+        delta = float(np.quantile(cal_max, 1.0 - a))
+        fail = succ = tp = fp = 0
+        tdet_fail, tdet_fired = [], []
+        for sc, y, L in ev:
+            cross = np.where(sc > delta)[0]
+            fired = len(cross) > 0
+            if y == 1:
+                fail += 1
+                if fired:
+                    tp += 1; tdet_fired.append(cross[0] / L)
+                tdet_fail.append(cross[0] / L if fired else 1.0)
+            else:
+                succ += 1
+                fp += int(fired)
+        tpr = tp / fail if fail else float("nan")
+        fpr = fp / succ if succ else float("nan")
+        out[f"{a:.2f}"] = {
+            "delta": round(delta, 4), "tpr": round(tpr, 3), "fpr": round(fpr, 3),
+            "bal_acc": round((tpr + (1 - fpr)) / 2, 3) if (fail and succ) else None,
+            "mean_tdet_fail": round(float(np.mean(tdet_fail)), 3) if tdet_fail else None,
+            "mean_tdet_fired": round(float(np.mean(tdet_fired)), 3) if tdet_fired else None,
+            "n_fail": fail, "n_succ": succ,
+        }
+    return out
+
+
 def mean_trajectory(model, seqs, device, max_t=40):
     """성공/실패 평균 per-step score 궤적 (padding: 마지막 score 유지)."""
     succ, fail = [], []
@@ -193,6 +232,7 @@ def main():
     ap.add_argument("--epochs", type=int, default=25)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--hidden", type=int, default=256)
+    ap.add_argument("--alphas", default="0.05,0.1,0.2,0.3,0.5", help="CP 유의수준(FPR 목표)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--smoke", action="store_true")
     args = ap.parse_args()
@@ -203,6 +243,7 @@ def main():
     dit_idx = int(np.argmin([abs(b - args.dit_block) for b in CAPTURE_LAYERS]))
     pathways = args.pathways.split(",")
     tds = [int(x) for x in args.t_ds.split(",")]
+    alphas = [float(x) for x in args.alphas.split(",")]
     seen, unseen = set(args.seen.split(",")), set(args.unseen.split(","))
 
     rolls = load_all(run_dir, args.token_pool)
@@ -228,16 +269,31 @@ def main():
         model = train_lstm(tr, input_dim, args.epochs, args.lr, args.hidden, device, args.seed)
         dt_seen = decision_time_auroc(model, st, tds, device)
         dt_unseen = decision_time_auroc(model, ut, tds, device)
+        # CP + normalized T-det: seen-test 성공 절반으로 δ 보정, 나머지+실패로 seen-eval
+        st_succ = [s for s in st if s[1] == 0]
+        st_fail = [s for s in st if s[1] == 1]
+        order = np.random.default_rng(args.seed + 1).permutation(len(st_succ))
+        half = len(order) // 2
+        cal = [st_succ[i] for i in order[:half]]
+        seen_eval = [st_succ[i] for i in order[half:]] + st_fail
+        cp_seen = cp_metrics(model, cal, seen_eval, device, alphas)
+        cp_unseen = cp_metrics(model, cal, ut, device, alphas)
         results["pathways"][pw] = {
             "decision_time_seen": dt_seen,
             "decision_time_unseen": dt_unseen,
             "length_auroc_unseen": length_auroc(ut, tds),
+            "cp_seen": cp_seen,
+            "cp_unseen": cp_unseen,
         }
         traj[pw] = {"seen": mean_trajectory(model, st, device),
                     "unseen": mean_trajectory(model, ut, device)}
         line = " ".join(f"t{t}:seen={dt_seen.get(str(t),{}).get('auroc',float('nan')):.3f}"
                         f"/unseen={dt_unseen.get(str(t),{}).get('auroc',float('nan')):.3f}" for t in tds)
-        print(f"    [{pw}] {line}")
+        print(f"    [{pw}] AUROC {line}")
+        for a in sorted(cp_unseen):
+            r = cp_unseen[a]
+            print(f"    [{pw}] CP α={a} unseen: TPR={r['tpr']} FPR={r['fpr']} bal-acc={r['bal_acc']} "
+                  f"T-det(fired)={r['mean_tdet_fired']} (낮을수록 일찍)")
 
     out.mkdir(parents=True, exist_ok=True)
     (out / "pathway_lstm_detector.json").write_text(json.dumps(results, indent=2))
@@ -275,6 +331,22 @@ def _plot(results, traj, tds, out):
         ax.set_xlabel("inference step"); ax.set_ylabel("LSTM failure score")
         ax.set_ylim(0, 1); ax.set_title(f"{pw}: per-step score"); ax.legend(); ax.grid(alpha=0.3)
     fig.tight_layout(); fig.savefig(out / "lstm_score_trajectory.png", dpi=140); plt.close()
+    # 3) CP trade-off: balanced-acc vs normalized T-det (SAFE Fig.4 style; 좌상단=좋음)
+    fig, ax = plt.subplots(figsize=(8, 6))
+    for pw in pws:
+        for split, ls, mk in (("cp_seen", "-", "o"), ("cp_unseen", "--", "s")):
+            d = results["pathways"][pw].get(split, {})
+            pts = [(d[a]["mean_tdet_fail"], d[a]["bal_acc"]) for a in sorted(d)
+                   if d[a].get("mean_tdet_fail") is not None and d[a].get("bal_acc") is not None]
+            if pts:
+                xs, ys = zip(*pts)
+                ax.plot(xs, ys, ls=ls, marker=mk, color=col.get(pw, "k"),
+                        label=f"{pw} {'seen' if split == 'cp_seen' else 'unseen'}")
+    ax.set_xlabel("normalized T-det (failures; 낮을수록 일찍)")
+    ax.set_ylabel("balanced accuracy")
+    ax.set_title("SAFE-style CP trade-off (점=α; 좌상단이 좋음)")
+    ax.grid(alpha=0.3); ax.legend(fontsize=8)
+    fig.tight_layout(); fig.savefig(out / "lstm_cp_tradeoff.png", dpi=140); plt.close()
 
 
 if __name__ == "__main__":
