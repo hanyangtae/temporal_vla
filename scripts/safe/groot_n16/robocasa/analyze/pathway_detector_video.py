@@ -55,7 +55,20 @@ def rollout_score(model, r, pathway, dit_idx, mu, sd, device):
     return score_seq(model, Xn, device)
 
 
-def render(mp4_in: Path, mp4_out: Path, scores: np.ndarray, band: np.ndarray, pw: str):
+CAPTION_H = 62  # 원본 영상 하단에 박힌 instruction 캡션 높이 → 잘라내고 우리가 다시 씀
+
+
+def get_instr(pkl_path: Path) -> str:
+    import pickle
+    try:
+        with open(pkl_path, "rb") as f:
+            d = pickle.load(f)
+        return str(d.get("ep_meta", {}).get("lang", "")).strip()[:60]
+    except Exception:
+        return ""
+
+
+def render(mp4_in: Path, mp4_out: Path, scores: np.ndarray, band: np.ndarray, pw: str, instr: str):
     cap = cv2.VideoCapture(str(mp4_in))
     nf = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     w, h = int(cap.get(3)), int(cap.get(4))
@@ -68,8 +81,9 @@ def render(mp4_in: Path, mp4_out: Path, scores: np.ndarray, band: np.ndarray, pw
 
     fire_step = next((k for k in range(L) if scores[k] > bval(k)), None)
     fire_frame = fire_step * fpi if fire_step is not None else float("inf")
-    PT, PB = 46, 46                 # 위/아래 검은 띠(글씨용) — cam 이미지 안 가림
-    H = h + PT + PB
+    cam_h = max(h - CAPTION_H, 1)   # 원본 instruction 캡션 잘라낸 cam 높이
+    PT, PB = 44, 78                 # 위(score/band) / 아래(instruction + DETECTED) 검은 띠
+    H = PT + cam_h + PB
     vw = cv2.VideoWriter(str(mp4_out), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, H))
     i = 0
     while True:
@@ -79,15 +93,17 @@ def render(mp4_in: Path, mp4_out: Path, scores: np.ndarray, band: np.ndarray, pw
         step = min(int(i / fpi), L - 1)
         sc = float(scores[step])
         fired = i >= fire_frame
-        canvas = np.zeros((H, w, 3), dtype=np.uint8)   # 검은 캔버스
-        canvas[PT:PT + h, :] = frame                   # cam 이미지는 가운데 그대로
+        canvas = np.zeros((H, w, 3), dtype=np.uint8)
+        canvas[PT:PT + cam_h, :] = frame[0:cam_h, :]   # 캡션 잘린 cam 이미지(안 가림)
         cv2.putText(canvas, f"{pw.upper()} detector   score={sc:.2f}   band(thr)={bval(step):.2f}",
-                    (16, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                    (16, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(canvas, instr, (16, PT + cam_h + 32),   # 아래 띠 윗줄: instruction
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (235, 235, 235), 2)
         if fired:
-            cv2.putText(canvas, f"FAILURE DETECTED  @step {fire_step}", (16, H - 16),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            cv2.putText(canvas, f"FAILURE DETECTED  @step {fire_step}", (16, H - 16),  # 맨 아래줄: 빨강
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
         color = (0, 0, 255) if fired else (180, 180, 180)
-        cv2.rectangle(canvas, (0, 0), (w - 1, H - 1), color, 12)  # 전체 테두리(검출=빨강)
+        cv2.rectangle(canvas, (0, 0), (w - 1, H - 1), color, 12)
         vw.write(canvas)
         i += 1
     cap.release(); vw.release()
@@ -168,13 +184,14 @@ def main():
             if not mp4_in.exists():
                 print(f"  [skip] no mp4: {mp4_in.name}"); continue
             ep = r["pkl"].stem
+            instr = get_instr(r["pkl"])
             for pw in detectors:
                 model, mu, sd, band = models[pw]
                 sc = rollout_score(model, r, pw, dit_idx, mu, sd, device)
                 if sc is None:
                     continue
                 mp4_out = tdir / f"{ep}--{pw}_det.mp4"
-                fire, L = render(mp4_in, mp4_out, sc, band, pw)
+                fire, L = render(mp4_in, mp4_out, sc, band, pw, instr)
                 manifest.append({"task": task, "ep": ep, "detector": pw,
                                  "fire_step": fire, "n_steps": L, "max_score": round(float(sc.max()), 3),
                                  "band_range": [round(float(band.min()), 3), round(float(band.max()), 3)],
