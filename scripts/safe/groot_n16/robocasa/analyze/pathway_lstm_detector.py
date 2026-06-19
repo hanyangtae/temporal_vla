@@ -33,6 +33,7 @@ os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.nn.utils import clip_grad_norm_
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
@@ -102,7 +103,9 @@ def standardizer(train_seqs):
     return mu.astype(np.float32), sd.astype(np.float32)
 
 
-def train_lstm(train_seqs, input_dim, epochs, lr, hidden, device, seed):
+def train_lstm(train_seqs, input_dim, epochs, lr, hidden, device, seed,
+               lambda_reg=1e-2, grad_clip=1.0):
+    """SAFE-LSTM 학습. SAFE식: BCE + lambda_reg·L2(bias 제외) + grad clip."""
     torch.manual_seed(seed)
     model = LSTMDetector(input_dim=input_dim, hidden_dim=hidden).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
@@ -114,7 +117,13 @@ def train_lstm(train_seqs, input_dim, epochs, lr, hidden, device, seed):
             xb = torch.from_numpy(X).float().unsqueeze(0).to(device)  # [1,T,D]
             sc = model(xb).squeeze(0)                                 # [T]
             loss = bce(sc, torch.full_like(sc, float(y)))
-            opt.zero_grad(); loss.backward(); opt.step()
+            if lambda_reg > 0:
+                l2 = sum((p ** 2).sum() for n, p in model.named_parameters() if "bias" not in n)
+                loss = loss + lambda_reg * l2
+            opt.zero_grad(); loss.backward()
+            if grad_clip:
+                clip_grad_norm_(model.parameters(), grad_clip)
+            opt.step()
             tot += loss.item()
         if ep == 0 or (ep + 1) % 5 == 0:
             print(f"    epoch {ep+1}/{epochs} loss={tot/max(1,len(train_seqs)):.4f}")
@@ -206,6 +215,55 @@ def cp_metrics(model, cal_seqs, eval_seqs, device, alphas):
     return out
 
 
+def _pad_to(s, L):
+    return s[:L] if len(s) >= L else np.concatenate([s, np.full(L - len(s), s[-1])])
+
+
+def functional_cp_metrics(model, train_succ, cal_succ, eval_seqs, device, alphas, L):
+    """SAFE functional CP (시간가변 밴드). 성공 궤적 per-step μ_t,σ_t →
+    δ_t = μ_t + bw·σ_t, bw = 보정성공의 max_t(s_t-μ_t)/σ_t 의 (1-α)분위.
+    실패 = δ_t 위로 이탈하는 첫 t. 궤적은 L 로 forward-fill 패딩(성공 종료후 plateau).
+    """
+    tr = [_pad_to(score_seq(model, X, device), L) for X, y, _L, _t in train_succ if y == 0]
+    cal = [_pad_to(score_seq(model, X, device), L) for X, y, _L, _t in cal_succ if y == 0]
+    if len(tr) < 3 or len(cal) < 3:
+        return {}
+    tr, cal = np.stack(tr), np.stack(cal)
+    mu = tr.mean(axis=0)
+    sd = tr.std(axis=0, ddof=1) + 1e-8
+    excursion = np.max((cal - mu) / sd, axis=1)
+    ev = [(score_seq(model, X, device), y, Lr) for X, y, Lr, _t in eval_seqs]
+    out = {}
+    for a in alphas:
+        bw = float(np.quantile(excursion, 1 - a))
+        delta = mu + bw * sd  # [L] time-varying band
+        fail = succ = tp = fp = 0
+        tdet_fail, tdet_fired = [], []
+        for sc, y, Lr in ev:
+            n = min(len(sc), L)
+            cross = np.where(sc[:n] > delta[:n])[0]
+            fired = len(cross) > 0
+            if y == 1:
+                fail += 1
+                if fired:
+                    tp += 1; tdet_fired.append(cross[0] / Lr)
+                tdet_fail.append(cross[0] / Lr if fired else 1.0)
+            else:
+                succ += 1; fp += int(fired)
+        tpr = tp / fail if fail else float("nan")
+        fpr = fp / succ if succ else float("nan")
+        out[f"{a:.2f}"] = {
+            "band_width": round(bw, 3),
+            "delta_t_range": [round(float(delta.min()), 3), round(float(delta.max()), 3)],
+            "tpr": round(tpr, 3), "fpr": round(fpr, 3),
+            "bal_acc": round((tpr + (1 - fpr)) / 2, 3) if (fail and succ) else None,
+            "mean_tdet_fail": round(float(np.mean(tdet_fail)), 3) if tdet_fail else None,
+            "mean_tdet_fired": round(float(np.mean(tdet_fired)), 3) if tdet_fired else None,
+            "n_fail": fail, "n_succ": succ,
+        }
+    return out
+
+
 def mean_trajectory(model, seqs, device, max_t=40):
     """성공/실패 평균 per-step score 궤적 (padding: 마지막 score 유지)."""
     succ, fail = [], []
@@ -232,6 +290,8 @@ def main():
     ap.add_argument("--epochs", type=int, default=25)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--hidden", type=int, default=256)
+    ap.add_argument("--lambda-reg", type=float, default=1e-2, help="SAFE식 L2 정규화 계수")
+    ap.add_argument("--grad-clip", type=float, default=1.0, help="grad clip max-norm(0=off)")
     ap.add_argument("--alphas", default="0.05,0.1,0.2,0.3,0.5", help="CP 유의수준(FPR 목표)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--smoke", action="store_true")
@@ -248,8 +308,9 @@ def main():
 
     rolls = load_all(run_dir, args.token_pool)
     train, seen_test, unseen_test = split_8020(rolls, seen, unseen, args.train_frac, args.seed)
+    L_max = max((r["length"] for r in rolls), default=45)
     print(f"[load] {len(rolls)} rollouts | train={len(train)} seen_test={len(seen_test)} "
-          f"unseen_test={len(unseen_test)} | DiT block={CAPTURE_LAYERS[dit_idx]}")
+          f"unseen_test={len(unseen_test)} | DiT block={CAPTURE_LAYERS[dit_idx]} | L_max={L_max}")
     if args.smoke:
         print("  smoke: shapes only");  return
 
@@ -266,34 +327,35 @@ def main():
         ut = make_seqs(unseen_test, pw, dit_idx, mu, sd)
         input_dim = tr[0][0].shape[1]
         print(f"[train] pathway={pw} dim={input_dim} n_train={len(tr)}")
-        model = train_lstm(tr, input_dim, args.epochs, args.lr, args.hidden, device, args.seed)
+        model = train_lstm(tr, input_dim, args.epochs, args.lr, args.hidden, device, args.seed,
+                            args.lambda_reg, args.grad_clip)
         dt_seen = decision_time_auroc(model, st, tds, device)
         dt_unseen = decision_time_auroc(model, ut, tds, device)
-        # CP + normalized T-det: seen-test 성공 절반으로 δ 보정, 나머지+실패로 seen-eval
+        # CP: seen-test 성공 절반으로 보정, 나머지+실패로 seen-eval. functional(시간가변)이 헤드라인.
         st_succ = [s for s in st if s[1] == 0]
         st_fail = [s for s in st if s[1] == 1]
         order = np.random.default_rng(args.seed + 1).permutation(len(st_succ))
         half = len(order) // 2
         cal = [st_succ[i] for i in order[:half]]
         seen_eval = [st_succ[i] for i in order[half:]] + st_fail
-        cp_seen = cp_metrics(model, cal, seen_eval, device, alphas)
-        cp_unseen = cp_metrics(model, cal, ut, device, alphas)
+        fcp_seen = functional_cp_metrics(model, tr, cal, seen_eval, device, alphas, L_max)
+        fcp_unseen = functional_cp_metrics(model, tr, cal, ut, device, alphas, L_max)
+        cp_unseen_const = cp_metrics(model, cal, ut, device, alphas)  # 상수임계(참고)
         results["pathways"][pw] = {
             "decision_time_seen": dt_seen,
             "decision_time_unseen": dt_unseen,
-            "length_auroc_unseen": length_auroc(ut, tds),
-            "cp_seen": cp_seen,
-            "cp_unseen": cp_unseen,
+            "cp_seen": fcp_seen,          # functional (헤드라인; _plot이 사용)
+            "cp_unseen": fcp_unseen,
+            "cp_unseen_const": cp_unseen_const,
         }
         traj[pw] = {"seen": mean_trajectory(model, st, device),
                     "unseen": mean_trajectory(model, ut, device)}
-        line = " ".join(f"t{t}:seen={dt_seen.get(str(t),{}).get('auroc',float('nan')):.3f}"
-                        f"/unseen={dt_unseen.get(str(t),{}).get('auroc',float('nan')):.3f}" for t in tds)
-        print(f"    [{pw}] AUROC {line}")
-        for a in sorted(cp_unseen):
-            r = cp_unseen[a]
-            print(f"    [{pw}] CP α={a} unseen: TPR={r['tpr']} FPR={r['fpr']} bal-acc={r['bal_acc']} "
-                  f"T-det(fired)={r['mean_tdet_fired']} (낮을수록 일찍)")
+        print(f"    [{pw}] AUROC " + " ".join(
+            f"t{t}:un={dt_unseen.get(str(t),{}).get('auroc',float('nan')):.2f}" for t in tds))
+        for a in sorted(fcp_unseen):
+            r = fcp_unseen[a]
+            print(f"    [{pw}] funcCP α={a} unseen: TPR={r['tpr']} FPR={r['fpr']} bal-acc={r['bal_acc']} "
+                  f"T-det={r['mean_tdet_fired']} | δ_t∈{r['delta_t_range']}")
 
     out.mkdir(parents=True, exist_ok=True)
     (out / "pathway_lstm_detector.json").write_text(json.dumps(results, indent=2))
