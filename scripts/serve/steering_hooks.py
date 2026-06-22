@@ -28,7 +28,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from src.conceptor import build_steering_matrix  # noqa: E402
 
-__all__ = ["load_steering_matrix", "ConceptorSteering"]
+__all__ = ["load_steering_matrix", "ConceptorSteering", "Pi05ConceptorSteering"]
 
 
 def load_steering_matrix(
@@ -163,6 +163,82 @@ class ConceptorSteering:
             self._handle = None
 
     def __enter__(self) -> "ConceptorSteering":
+        return self.register()
+
+    def __exit__(self, *_exc: Any) -> bool:
+        self.unregister()
+        return False
+
+
+class Pi05ConceptorSteering:
+    """pi05 action expert 의 residual stream 에 forward hook 으로 steering 을 거는 CM.
+
+    COAST A.7.1 global strategy: π0.5 action expert(Gemma2, 18 layer, d=1024) 의
+    decoder layer ℓ(default 11) 출력에서 마지막 ``chunk_size`` action token 만
+    ``h' = h·Mᵀ`` 로 steer 한다. 주입 지점은 ``ConceptorSteering`` 의 groot DiT block
+    경로와 동등하게 ``policy.model.paligemma_with_expert.gemma_expert.model.layers[ℓ]``
+    출력(residual stream)이며, denoise step(K) 마다 1회 발화한다.
+
+    HF Gemma decoder layer 는 출력을 tuple ``(hidden_states, ...)`` 로 내므로 hook 은
+    tuple 의 첫 원소만 steer 하고 나머지는 그대로 재조립한다.
+
+    Args:
+        policy: pi05 LeRobot policy (``.model.paligemma_with_expert.gemma_expert``,
+            ``.model.config.chunk_size`` 를 노출).
+        M: (D, D) steering matrix. D 는 expert hidden dim(=1024) 과 일치해야 한다.
+        layer: steer 할 decoder layer 인덱스. 기본 11 (COAST default ℓ).
+        chunk_size: steer 할 마지막 action token 수. None 이면
+            ``policy.model.config.chunk_size``.
+    """
+
+    def __init__(
+        self,
+        policy: Any,
+        M: np.ndarray,
+        *,
+        layer: int = 11,
+        chunk_size: int | None = None,
+    ):
+        self.layer = int(layer)
+        layers = policy.model.paligemma_with_expert.gemma_expert.model.layers
+        self.module = layers[self.layer]
+        if chunk_size is None:
+            chunk_size = int(policy.model.config.chunk_size)
+        self.chunk_size = int(chunk_size)
+        self.M = np.asarray(M)
+        self._Mt: torch.Tensor | None = None
+        self._handle = None
+
+    def _hook(self, _module: Any, _args: tuple, output: Any) -> Any:
+        is_tuple = isinstance(output, tuple)
+        out = output[0] if is_tuple else output
+        if (
+            self._Mt is None
+            or self._Mt.device != out.device
+            or self._Mt.dtype != out.dtype
+        ):
+            self._Mt = torch.as_tensor(self.M, device=out.device, dtype=out.dtype)
+        steered = out.clone()
+        # h' = h @ Mᵀ — 마지막 chunk_size action token 위치만 (앞쪽 토큰 불변).
+        steered[..., -self.chunk_size :, :] = (
+            steered[..., -self.chunk_size :, :] @ self._Mt.T
+        )
+        if is_tuple:
+            return (steered, *output[1:])
+        return steered
+
+    def register(self) -> "Pi05ConceptorSteering":
+        """forward hook 등록 (서버 수명 동안 영구 적용 시 사용)."""
+        if self._handle is None:
+            self._handle = self.module.register_forward_hook(self._hook)
+        return self
+
+    def unregister(self) -> None:
+        if self._handle is not None:
+            self._handle.remove()
+            self._handle = None
+
+    def __enter__(self) -> "Pi05ConceptorSteering":
         return self.register()
 
     def __exit__(self, *_exc: Any) -> bool:

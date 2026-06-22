@@ -56,10 +56,12 @@ from src.utils.common.feature_blob import (  # noqa: E402
     encode_legacy_feature_array,
 )
 from src.policies.safe_metadata import (  # noqa: E402
-    GROOT_N15_DIT_BLOCK_RESIDUAL_FEATURE_AXES,
-    GROOT_N15_DIT_BLOCK_RESIDUAL_FEATURE_KIND,
+    GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES,
+    GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND,
     GROOT_N15_VL_FEATURE_KIND,
     GROOT_VL_FEATURE_AXES,
+    PI05_EXPERT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES,
+    PI05_EXPERT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND,
     lerobot_feature_axes,
     lerobot_feature_kind,
     normalize_feature_metadata,
@@ -99,6 +101,7 @@ _state_dim: int = 0
 _collect_mode: bool = False
 _capture_vl_features: bool = False
 _groot_dit_capture_layers: tuple[int, ...] | None = None
+_pi05_expert_capture_layers: tuple[int, ...] | None = None
 _steering = None
 
 # payload 의 observation.state.* 서브키를 lerobot observation.state 로 합칠 때 사용할
@@ -107,6 +110,8 @@ STATE_KEY_ORDER = [
     "observation.state.eef_pos",
     "observation.state.eef_euler",
     "observation.state.eef_quat",
+    "observation.state.base_to_eef_pos",
+    "observation.state.base_to_eef_quat",
     "observation.state.gripper_opening",
     "observation.state.gripper_qpos",
     "observation.state.joint_pos",
@@ -144,11 +149,21 @@ def _build_state_from_profile(payload: dict, profile: CheckpointProfile) -> np.n
             if payload_key in payload:
                 raw = payload[payload_key]
                 break
+        # base-frame relative 키가 없으면 world-frame alias로 fallback (safety net).
+        # RoboCasaObsProcessor는 robot0_base_to_eef_pos/_quat 를 직접 emit 하므로
+        # robocasa pi05는 이 fallback이 발동하지 않는다. 다른 벤치마크 대비 안전망.
+        if raw is None and key in ("eef_pos_rel", "base_to_eef_pos"):
+            raw = payload.get("observation.state.eef_pos")
+        if raw is None and key in ("eef_quat_rel", "base_to_eef_quat"):
+            raw = payload.get("observation.state.eef_quat")
+
         if raw is not None:
             if _policy_adapter is not None:
                 raw = _policy_adapter.transform_state_value(key, raw)
             arr = np.array(raw, dtype=np.float32).flatten()
-            if key == "eef_quat":  # quat 직접 제공 → axisangle(3D)
+            # eef_quat_rel: 4D quat 그대로 사용 (no conversion)
+            # eef_quat (STATE_DIM=3 모델): axisangle 변환 — 이 분기는 legacy 동작
+            if key == "eef_quat" and dim == 3:
                 arr = quat_xyzw_to_axisangle(raw)
         elif key == "eef_axisangle":
             quat = payload.get("observation.state.eef_quat")
@@ -199,7 +214,16 @@ def _apply_input_remap(batch: dict) -> dict:
                 if dst not in batch:
                     batch[dst] = value
     if _state_dim > 0 and "observation.state" in batch:
-        batch["observation.state"] = batch["observation.state"][:, :_state_dim]
+        st = batch["observation.state"]
+        cur_dim = st.shape[-1]
+        if cur_dim > _state_dim:
+            st = st[..., :_state_dim]
+        elif cur_dim < _state_dim:
+            # pi05 robocasa 등 max_state_dim 에 zero-pad (openpi pad_to_dim 동일)
+            import torch as _torch
+            pad = _torch.zeros(*st.shape[:-1], _state_dim - cur_dim, dtype=st.dtype, device=st.device)
+            st = _torch.cat([st, pad], dim=-1)
+        batch["observation.state"] = st
     return batch
 
 
@@ -232,6 +256,18 @@ def _parse_groot_dit_capture_layers(value: str | None) -> tuple[int, ...] | None
     layers = tuple(int(part) for part in parts)
     if len(layers) == 0:
         raise ValueError("--groot-dit-capture-layers must not be empty")
+    return layers
+
+
+def _parse_pi05_expert_capture_layers(value: str | None) -> tuple[int, ...] | None:
+    if value is None:
+        return None
+    parts = [part.strip() for part in value.split(",")]
+    if not parts or any(part == "" for part in parts):
+        raise ValueError("--pi05-expert-capture-layers must be a comma-separated int list")
+    layers = tuple(int(part) for part in parts)
+    if len(layers) == 0:
+        raise ValueError("--pi05-expert-capture-layers must not be empty")
     return layers
 
 
@@ -392,6 +428,7 @@ async def predict_action_with_features(payload: dict):
         _policy_type,
         capture_vl=_capture_vl_features,
         groot_dit_layers=_groot_dit_capture_layers,
+        pi05_expert_layers=_pi05_expert_capture_layers,
     )
 
     action = _postprocess_action_preserve_chunk(action)
@@ -453,14 +490,27 @@ def _health_feature_metadata() -> dict[str, Any]:
     if _policy_type not in safe_hooks.SUPPORTED_TYPES:
         return {}
 
-    if _policy_type == "groot" and _groot_dit_capture_layers is not None:
+    _groot_block_mode = _policy_type == "groot" and _groot_dit_capture_layers is not None
+    _pi05_block_mode = _policy_type == "pi05" and _pi05_expert_capture_layers is not None
+    if _groot_block_mode:
         metadata: dict[str, Any] = {
             "supports_features": True,
-            "feature_kind": GROOT_N15_DIT_BLOCK_RESIDUAL_FEATURE_KIND,
-            "feature_axes": list(GROOT_N15_DIT_BLOCK_RESIDUAL_FEATURE_AXES),
+            "feature_kind": GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND,
+            "feature_axes": list(GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES),
             "feature_dtype": "float32",
             "model_action_horizon": _n_action_steps,
             "groot_dit_capture_layers": [int(layer) for layer in _groot_dit_capture_layers],
+        }
+    elif _pi05_block_mode:
+        metadata = {
+            "supports_features": True,
+            "feature_kind": PI05_EXPERT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND,
+            "feature_axes": list(PI05_EXPERT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES),
+            "feature_dtype": "float32",
+            "model_action_horizon": _n_action_steps,
+            "pi05_expert_capture_layers": [
+                int(layer) for layer in _pi05_expert_capture_layers
+            ],
         }
     else:
         metadata = {
@@ -471,7 +521,7 @@ def _health_feature_metadata() -> dict[str, Any]:
         }
     if (
         _policy_type in safe_hooks.FLOW_MATCHING_TYPES
-        and not (_policy_type == "groot" and _groot_dit_capture_layers is not None)
+        and not (_groot_block_mode or _pi05_block_mode)
     ):
         metadata["feature_action_horizon"] = _n_action_steps
         metadata["model_action_horizon"] = _n_action_steps
@@ -491,14 +541,14 @@ def _register_steering_if_requested(loaded_policy, args):
     steering_npz = getattr(args, "steering_npz", None)
     if not steering_npz:
         return None
-    if _policy_type != "groot":
-        raise ValueError("Conceptor steering requires policy_type='groot'")
+    if _policy_type not in ("groot", "pi05"):
+        raise ValueError("Conceptor steering requires policy_type in {'groot', 'pi05'}")
 
-    from steering_hooks import ConceptorSteering, load_steering_matrix
-
-    groot_model = getattr(loaded_policy, "_groot_model", None)
-    if groot_model is None:
-        raise ValueError("GR00T LeRobot policy is missing _groot_model for steering")
+    from steering_hooks import (
+        ConceptorSteering,
+        Pi05ConceptorSteering,
+        load_steering_matrix,
+    )
 
     matrix = load_steering_matrix(
         steering_npz,
@@ -506,10 +556,36 @@ def _register_steering_if_requested(loaded_policy, args):
         alpha=getattr(args, "steering_alpha", None),
         key=getattr(args, "steering_key", "C_steer"),
     )
-    pathway = getattr(args, "steering_pathway", "dit")
-    layer = None if pathway == "vl" else getattr(args, "steering_layer", None)
+
     if _steering is not None:
         _steering.unregister()
+
+    if _policy_type == "pi05":
+        # COAST A.7.1 global: action expert decoder layer ℓ(default 11) residual stream.
+        layer = getattr(args, "steering_layer", None)
+        if layer is None:
+            layer = 11
+        _steering = Pi05ConceptorSteering(
+            loaded_policy,
+            matrix,
+            layer=int(layer),
+        ).register()
+        logger.info(
+            "Pi05 conceptor steering registered: npz=%s beta=%s alpha=%s key=%s layer=%s",
+            steering_npz,
+            getattr(args, "steering_beta", 0.3),
+            getattr(args, "steering_alpha", None),
+            getattr(args, "steering_key", "C_steer"),
+            layer,
+        )
+        return _steering
+
+    groot_model = getattr(loaded_policy, "_groot_model", None)
+    if groot_model is None:
+        raise ValueError("GR00T LeRobot policy is missing _groot_model for steering")
+
+    pathway = getattr(args, "steering_pathway", "dit")
+    layer = None if pathway == "vl" else getattr(args, "steering_layer", None)
     _steering = ConceptorSteering(
         groot_model,
         matrix,
@@ -628,6 +704,7 @@ def _load_model_impl():
 
 def main():
     global _profile, _collect_mode, _capture_vl_features, _groot_dit_capture_layers
+    global _pi05_expert_capture_layers
 
     setup_serve_logging("lerobot_serve")
 
@@ -663,6 +740,16 @@ def main():
         ),
     )
     parser.add_argument(
+        "--pi05-expert-capture-layers",
+        default=None,
+        help=(
+            "Comma-separated pi05 action expert(Gemma2) decoder layer indices to capture "
+            "(COAST A.7.1, e.g. '0,5,11,17'). 지정 시 /act_with_features 의 pi05 feature가 "
+            "action_out_proj pre-velocity 대신 expert block residual "
+            "[layer, denoise_step, feature_dim](마지막 chunk_size action token mean-pool)가 된다."
+        ),
+    )
+    parser.add_argument(
         "--steering-npz",
         default=None,
         help="Conceptor npz path. 지정 시 GR00T N1.5 HTTP server에 steering hook을 등록한다.",
@@ -693,6 +780,9 @@ def main():
     _groot_dit_capture_layers = _parse_groot_dit_capture_layers(
         args.groot_dit_capture_layers
     )
+    _pi05_expert_capture_layers = _parse_pi05_expert_capture_layers(
+        args.pi05_expert_capture_layers
+    )
     _profile = load_profile(args.profile)
     if _collect_mode:
         logger.info(
@@ -706,6 +796,11 @@ def main():
         logger.info(
             "SAFE GR00T DiT block residual capture ON: layers=%s",
             ",".join(str(layer) for layer in _groot_dit_capture_layers),
+        )
+    if _pi05_expert_capture_layers is not None:
+        logger.info(
+            "SAFE pi05 expert block residual capture ON: layers=%s",
+            ",".join(str(layer) for layer in _pi05_expert_capture_layers),
         )
     logger.info("Loaded profile %s from %s", _profile.name, args.profile)
     assert _profile.base_model == "lerobot", (

@@ -1,0 +1,45 @@
+{
+  "_source": "COAST arXiv 2605.17144. Global config from the geometric-selection table (docs/references/COAST.txt:1856-1860, Table 16: pi0.5 LIBERO-10 -> ell=11, alpha {0.5,1.0}, beta {0.1,0.3}). per_task = oracle-selected layer/alpha/beta from Table 17 (docs/references/COAST.txt:1865-1875). Expected SR (base vs Global) from the main results Table 1 (docs/references/COAST.txt:366 mean row: pi0.5 LIBERO-10 Base 0.43 -> Global 0.76, delta +0.33); per-task Global SR cross-checked against Table 4 (docs/references/COAST.txt:1016-1037, mean 0.76).",
+  "_serving": "COAST pi0.5 LIBERO-10: Gemma2 action expert (18 decoder layers, d=1024), 10 Euler denoising steps (all executed, no early stop), suffix S=10 action-horizon tokens mean-pooled over token dim -> one vector per layer per denoise step (COAST.txt:1408,1442-1446). Hook = gemma_expert.model.layers[{0,5,11,17}] residual stream; steering uses ell=11 (COAST.txt:1413-1416,1856). Checkpoint = openpi-libero step-2000 (earliest with nonzero success across most tasks, COAST.txt:1551,1918). 15 fit eps/task, 30 test eps/task disjoint seeds (COAST.txt:1542-1545).",
+  "_strategy": "global (C_steer = C_success AND NOT C_failure), ell=11, alpha in {0.5,1.0}, beta in {0.1,0.3}. Global = pool activations across all denoising steps into one conceptor per class per task (COAST.txt:284).",
+  "_protocol": {
+    "model": "pi0.5 (PaLI-Gemma2 prefix + Gemma2 action expert)",
+    "benchmark": "LIBERO-10",
+    "checkpoint": "openpi-libero step-2000 (early)",
+    "denoise_steps": 10,
+    "action_horizon": 10,
+    "hook_layers_captured": [0, 5, 11, 17],
+    "steer_layer": 11,
+    "token_pooling": "mean-pool over S=10 suffix action tokens",
+    "fit_episodes_per_task": 15,
+    "test_episodes_per_task": 30,
+    "success_label": "LIBERO native info['is_success'] at final step",
+    "task_exclusion": "exclude tasks with <3 successes or <3 failures from contrastive conceptor construction",
+    "strategy": "global"
+  },
+  "_global_config": {
+    "layer": 11,
+    "alpha": [0.5, 1.0],
+    "beta": [0.1, 0.3]
+  },
+  "_expected_sr": {
+    "_note": "Table 1 mean row, pi0.5 LIBERO-10 (COAST.txt:366). Table 4 (COAST.txt:1037) gives matching Global mean 0.76.",
+    "base": 0.43,
+    "coast_global": 0.76,
+    "delta_sr": 0.33,
+    "coast_per_step": 0.80,
+    "coast_pos_only": 0.63
+  },
+  "per_task": {
+    "KITCHEN_SCENE3":  {"layer": 5,  "alpha": 0.5, "beta": 0.1, "_desc": "stove + moka pot",            "_global_sr": 0.93},
+    "KITCHEN_SCENE4":  {"layer": 5,  "alpha": 1.0, "beta": 0.1, "_desc": "bowl in bottom drawer",       "_global_sr": 0.73},
+    "KITCHEN_SCENE6":  {"layer": 11, "alpha": 0.1, "beta": 0.3, "_desc": "mug in microwave",            "_global_sr": 0.40},
+    "KITCHEN_SCENE8":  {"layer": 5,  "alpha": 1.0, "beta": 0.1, "_desc": "two moka pots on stove",      "_global_sr": 0.47},
+    "LIVING_ROOM1":    {"layer": 11, "alpha": 0.5, "beta": 0.3, "_desc": "soup + cheese in basket",     "_global_sr": 0.93},
+    "LIVING_ROOM2a":   {"layer": 11, "alpha": 0.5, "beta": 0.3, "_desc": "soup + tomato sauce in basket","_global_sr": 0.80},
+    "LIVING_ROOM2b":   {"layer": 5,  "alpha": 0.5, "beta": 0.1, "_desc": "cheese + butter in basket",   "_global_sr": 0.93},
+    "LIVING_ROOM5":    {"layer": 11, "alpha": 0.5, "beta": 0.5, "_desc": "two mugs on plates",          "_global_sr": 0.60},
+    "LIVING_ROOM6":    {"layer": 5,  "alpha": 0.5, "beta": 0.1, "_desc": "mug + pudding/chocolate",     "_global_sr": 0.87},
+    "STUDY_SCENE1":    {"layer": 5,  "alpha": 0.5, "beta": 0.1, "_desc": "book in caddy/back compartment","_global_sr": 0.93}
+  }
+}
