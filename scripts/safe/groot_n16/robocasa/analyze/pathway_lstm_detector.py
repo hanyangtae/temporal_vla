@@ -190,6 +190,30 @@ def group_by_lang(seqs, min_fail=8, min_succ=8):
     return out
 
 
+def group_by_task(seqs, min_fail=8, min_succ=8):
+    """eval seq 들을 task(tuple index 3)별로 묶고 fail>=min & succ>=min 만. per-task 일반화 검증용."""
+    by = defaultdict(list)
+    for s in seqs:
+        by[s[3]].append(s)
+    out = {}
+    for task, grp in by.items():
+        n_fail = sum(1 for s in grp if s[1] == 1)
+        n_succ = sum(1 for s in grp if s[1] == 0)
+        if n_fail >= min_fail and n_succ >= min_succ:
+            out[task] = grp
+    return out
+
+
+def _balacc(fired, y):
+    """balanced accuracy = (TPR + (1-FPR))/2. fired/y: 1-D bool/int array."""
+    fired = np.asarray(fired); y = np.asarray(y)
+    f1, f0 = fired[y == 1], fired[y == 0]
+    if f1.size == 0 or f0.size == 0:
+        return float("nan")
+    tpr = float(f1.mean()); fpr = float(f0.mean())
+    return (tpr + (1 - fpr)) / 2
+
+
 def who_first(cp_vl, cp_dit, alpha):
     """instruction별 VL vs DiT 검출 선후. cp_* = {lang: {alpha_str: {mean_tdet_fired, ...}}}.
     낮은 normalized T-det(=먼저 발화)이 'first'. 미발화(None)는 진 것으로 본다. 두 pathway 공통 lang만."""
@@ -421,6 +445,59 @@ def per_instruction_cp(model, train_succ, cal_succ, eval_seqs, device, alphas, L
     return out
 
 
+def per_task_cp(model, train_succ, cal_succ, eval_seqs, device, alphas, L,
+                min_fail=8, min_succ=8):
+    """평가만 task별 분해(통짜 model·pooled cal 그대로). {task: fcp}. per-task 일반화 검증."""
+    out = {}
+    for task, grp in group_by_task(eval_seqs, min_fail, min_succ).items():
+        out[task] = functional_cp_metrics(model, train_succ, cal_succ, grp, device, alphas, L)
+    return out
+
+
+def _fired_labels(model, train_succ, cal_succ, eval_seqs, device, alpha, L):
+    """functional-CP 밴드(alpha) 하에서 eval rollout별 (fired bool, y). 유의성 계산용.
+    functional_cp_metrics 와 동일한 밴드 정의(δ_t = μ_t + bw·σ_t)."""
+    tr = [_pad_to(score_seq(model, X, device), L) for X, y, _L, *_ in train_succ if y == 0]
+    cal = [_pad_to(score_seq(model, X, device), L) for X, y, _L, *_ in cal_succ if y == 0]
+    if len(tr) < 3 or len(cal) < 3:
+        return None
+    tr, cal = np.stack(tr), np.stack(cal)
+    mu = tr.mean(axis=0); sd = tr.std(axis=0, ddof=1) + 1e-8
+    bw = float(np.quantile(np.max((cal - mu) / sd, axis=1), 1 - alpha))
+    delta = mu + bw * sd
+    fired, ys = [], []
+    for X, y, _Lr, *_ in eval_seqs:
+        sc = score_seq(model, X, device); n = min(len(sc), L)
+        fired.append(bool(np.any(sc[:n] > delta[:n]))); ys.append(int(y))
+    return np.array(fired), np.array(ys)
+
+
+def cp_significance(model, train_succ, cal_succ, eval_seqs, device, alpha, L,
+                    n_perm=200, n_boot=1000, seed=0):
+    """헤드라인 bal-acc 의 bootstrap 95% CI + label-permutation null/p-value.
+    "우연·노이즈 아님"을 못박기 위함. fired/label 은 한 번만 계산 후 재표집."""
+    fl = _fired_labels(model, train_succ, cal_succ, eval_seqs, device, alpha, L)
+    if fl is None:
+        return {}
+    fired, y = fl
+    if (y == 1).sum() == 0 or (y == 0).sum() == 0:
+        return {}
+    obs = _balacc(fired, y)
+    rng = np.random.default_rng(seed)
+    boots = np.array([b for b in (_balacc(fired[i], y[i]) for i in
+                      (rng.integers(0, len(y), len(y)) for _ in range(n_boot))) if b == b])
+    nulls = np.array([b for b in (_balacc(fired, rng.permutation(y)) for _ in range(n_perm)) if b == b])
+    return {
+        "alpha": alpha, "bal_acc": round(float(obs), 3),
+        "ci95": [round(float(np.percentile(boots, 2.5)), 3),
+                 round(float(np.percentile(boots, 97.5)), 3)] if boots.size else None,
+        "null_mean": round(float(nulls.mean()), 3) if nulls.size else None,
+        "null_p95": round(float(np.percentile(nulls, 95)), 3) if nulls.size else None,
+        "p_value": round(float((nulls >= obs).mean()), 4) if nulls.size else None,
+        "n_fail": int((y == 1).sum()), "n_succ": int((y == 0).sum()),
+    }
+
+
 def mean_trajectory(model, seqs, device, max_t=40):
     """성공/실패 평균 per-step score 궤적 (padding: 마지막 score 유지)."""
     succ, fail = [], []
@@ -460,6 +537,14 @@ def main():
                     help="instruction 평가 포함 최소 succ rollout 수")
     ap.add_argument("--whofirst-alpha", type=float, default=0.3,
                     help="VL vs DiT 검출 선후 비교에 쓸 α (T-det)")
+    ap.add_argument("--per-task", action="store_true",
+                    help="평가만 task별 분해(per-task 일반화 검증)")
+    ap.add_argument("--min-task-fail", type=int, default=8, help="per-task 포함 최소 fail")
+    ap.add_argument("--min-task-succ", type=int, default=8, help="per-task 포함 최소 succ")
+    ap.add_argument("--n-perm", type=int, default=0,
+                    help="헤드라인 bal-acc label-permutation null 횟수(0=off)")
+    ap.add_argument("--null-alpha", type=float, default=0.1,
+                    help="유의성(null/CI) 계산에 쓸 헤드라인 α")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--smoke", action="store_true")
     args = ap.parse_args()
@@ -519,6 +604,30 @@ def main():
             "cp_unseen": fcp_unseen,
             "cp_unseen_const": cp_unseen_const,
         }
+        # length-only baseline(total length = confound 천장; pathway 무관 → 한 번만)
+        if "length_baseline" not in results:
+            results["length_baseline"] = {
+                "note": "total-length AUROC(non-causal, 미래정보 사용 = confound 상한). causal 길이예측은 fixed-t_d서 chance.",
+                "seen": length_auroc(seen_eval, tds), "unseen": length_auroc(ut, tds)}
+        # 유의성: 헤드라인 α 에서 bal-acc bootstrap CI + permutation null
+        if args.n_perm > 0:
+            results["pathways"][pw]["sig_unseen"] = cp_significance(
+                model, tr, cal, ut, device, args.null_alpha, L_max, args.n_perm, seed=args.seed)
+            results["pathways"][pw]["sig_seen"] = cp_significance(
+                model, tr, cal, seen_eval, device, args.null_alpha, L_max, args.n_perm, seed=args.seed)
+            s = results["pathways"][pw]["sig_unseen"]
+            if s:
+                print(f"    [{pw}] sig(unseen,α={args.null_alpha}): bal-acc={s['bal_acc']} "
+                      f"CI95={s['ci95']} null={s['null_mean']} p={s['p_value']}")
+        if args.per_task:
+            pt_seen = per_task_cp(model, tr, cal, seen_eval, device, alphas, L_max,
+                                  args.min_task_fail, args.min_task_succ)
+            pt_unseen = per_task_cp(model, tr, cal, ut, device, alphas, L_max,
+                                    args.min_task_fail, args.min_task_succ)
+            results.setdefault("per_task", {"min_fail": args.min_task_fail,
+                                            "min_succ": args.min_task_succ, "pathways": {}})
+            results["per_task"]["pathways"][pw] = {"seen": pt_seen, "unseen": pt_unseen}
+            print(f"    [{pw}] per-task: seen={len(pt_seen)} unseen={len(pt_unseen)}")
         if args.split_instruction:
             pi_seen = per_instruction_cp(model, tr, cal, seen_eval, device, alphas, L_max,
                                          args.min_instr_fail, args.min_instr_succ)

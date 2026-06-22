@@ -139,6 +139,8 @@ def test_main_split_instruction_end_to_end(tmp_path):
         "--seen", "S", "--unseen", "U", "--pathways", "dit,vl",
         "--epochs", "2", "--hidden", "8", "--detector-type", "mlp",
         "--split-instruction", "--min-instr-fail", "8", "--min-instr-succ", "8",
+        "--per-task", "--min-task-fail", "8", "--min-task-succ", "8",
+        "--n-perm", "30", "--null-alpha", "0.1",
     ]
     import sys
     old = sys.argv
@@ -158,3 +160,32 @@ def test_main_split_instruction_end_to_end(tmp_path):
     res = json.loads((out / "pathway_lstm_detector.json").read_text())
     dit_unseen = res["per_instruction"]["pathways"]["dit"]["unseen"]
     assert set(dit_unseen) == {"open the top drawer", "open the bottom drawer"}
+    # length baseline + per-task + significance 가 저장됐는지
+    assert "length_baseline" in res and "unseen" in res["length_baseline"]
+    assert res["per_task"]["pathways"]["dit"]["unseen"].get("U") is not None  # unseen task U
+    sig = res["pathways"]["dit"]["sig_unseen"]
+    assert sig and "ci95" in sig and "p_value" in sig and sig["n_fail"] > 0
+
+
+def test_group_by_task_filters_small_subsets():
+    """per-task 그룹화는 tuple index 3(task) 기준, fail>=min & succ>=min 만."""
+    seqs = []
+    for _ in range(8):
+        seqs.append((None, 1, 5, "A", "x"))
+    for _ in range(8):
+        seqs.append((None, 0, 5, "A", "x"))   # A: keep
+    for _ in range(8):
+        seqs.append((None, 1, 5, "B", "y"))
+    for _ in range(3):
+        seqs.append((None, 0, 5, "B", "y"))   # B: 3 succ -> drop
+    g = pld.group_by_task(seqs, min_fail=8, min_succ=8)
+    assert set(g) == {"A"}
+
+
+def test_balacc_known_values():
+    """_balacc = (TPR + (1-FPR))/2. 완벽분리=1.0, 항상발화=0.5."""
+    fired = np.array([True, True, True, True, False, False, False, False])
+    y = np.array([1, 1, 1, 1, 0, 0, 0, 0])
+    assert abs(pld._balacc(fired, y) - 1.0) < 1e-9
+    fired_all = np.ones(8, dtype=bool)
+    assert abs(pld._balacc(fired_all, y) - 0.5) < 1e-9  # TPR=1, FPR=1
