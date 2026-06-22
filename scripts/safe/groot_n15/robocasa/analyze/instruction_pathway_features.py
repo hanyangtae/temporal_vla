@@ -39,6 +39,9 @@ class InstructionFeatureExample:
     dit_layer_features: np.ndarray | None
     dit_capture_layers: tuple[int, ...] | None
     vl_features: np.ndarray | None
+    # COAST denoise format only: per-row denoise step index and originating env step.
+    denoise_idx: np.ndarray | None = None
+    env_step_idx: np.ndarray | None = None
 
 
 def _load_pickle(path: Path) -> dict[str, Any]:
@@ -96,6 +99,91 @@ def _load_dit_layer_features(
     return np.stack(features, axis=0), capture_layers
 
 
+def _load_denoise_features(
+    payload: dict[str, Any],
+    *,
+    require_vl: bool,
+) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    tuple[int, ...],
+    np.ndarray | None,
+    np.ndarray,
+    np.ndarray,
+]:
+    """COAST-faithful loader for ``["layer","denoise_step","feature_dim"]`` features.
+
+    Each env-step hidden is ``[L, K, D]`` (action-token mean, denoise K preserved). For the
+    global strategy COAST treats every denoising step as an independent sample, so we expand
+    K into rows: env-step -> K rows of ``[L, D]``. Returns ``(dit_features [N,D] (layer-mean),
+    dit_layer_features [N,L,D], capture_layers, vl_features [N,Dvl]|None, denoise_idx [N],
+    env_step_idx [N])`` with ``N = sum_env(K)``. The pooled ``dit`` is only an alignment/summary
+    pathway; COAST steering uses a single ``dit_layer<id>``. VL fires once per env-step, so it
+    is repeated x K to align (duplication is fine — VL is not used for COAST DiT steering).
+    """
+    feature_axes = list(payload.get("feature_axes") or [])
+    if feature_axes[:2] != ["layer", "denoise_step"]:
+        raise ValueError(
+            f"_load_denoise_features requires ['layer','denoise_step',...] axes, got {feature_axes}"
+        )
+    capture_layers = tuple(int(layer) for layer in (payload.get("capture_layers") or []))
+    if not capture_layers:
+        raise ValueError("denoise features require capture_layers metadata")
+
+    dit_rows: list[np.ndarray] = []
+    layer_rows: list[np.ndarray] = []
+    denoise_idx: list[int] = []
+    env_step_idx: list[int] = []
+    for env_i, hidden in enumerate(payload["hidden_states"]):
+        h = tensor_to_numpy(hidden).astype(np.float32, copy=False)
+        if h.ndim != 3:
+            raise ValueError(f"Expected denoise hidden [L, K, D], got {h.shape}")
+        n_layers, n_denoise, _ = h.shape
+        if n_layers != len(capture_layers):
+            raise ValueError(
+                f"capture_layers ({len(capture_layers)}) != hidden layer axis ({n_layers})"
+            )
+        for k in range(n_denoise):
+            layer_vec = h[:, k, :]  # [L, D]
+            layer_rows.append(layer_vec)
+            dit_rows.append(layer_vec.mean(axis=0))  # [D] layer-mean (summary pathway)
+            denoise_idx.append(k)
+            env_step_idx.append(env_i)
+
+    denoise_idx_arr = np.asarray(denoise_idx, dtype=np.int64)
+    env_step_idx_arr = np.asarray(env_step_idx, dtype=np.int64)
+    if not dit_rows:
+        empty_layers = np.empty((0, len(capture_layers), 0), dtype=np.float32)
+        return (
+            np.empty((0, 0), dtype=np.float32),
+            empty_layers,
+            capture_layers,
+            None,
+            denoise_idx_arr,
+            env_step_idx_arr,
+        )
+    dit_features = np.stack(dit_rows, axis=0)  # [N, D]
+    dit_layer_features = np.stack(layer_rows, axis=0)  # [N, L, D]
+
+    vl_features = None
+    vl_raw = _load_vl_features(payload, require_vl=require_vl)  # [n_env, Dvl] | None
+    if vl_raw is not None:
+        n_env = len(payload["hidden_states"])
+        if len(vl_raw) != n_env:
+            raise ValueError(f"VL/env-step mismatch: vl={len(vl_raw)} env={n_env}")
+        counts = np.bincount(env_step_idx_arr, minlength=n_env)
+        vl_features = np.repeat(vl_raw, counts, axis=0)  # [N, Dvl] (env VL repeated x K)
+
+    return (
+        dit_features,
+        dit_layer_features,
+        capture_layers,
+        vl_features,
+        denoise_idx_arr,
+        env_step_idx_arr,
+    )
+
+
 def load_instruction_feature_examples(
     root: Path,
     *,
@@ -115,29 +203,44 @@ def load_instruction_feature_examples(
         if cell_ids is not None and cell_id not in cell_ids:
             continue
 
-        dit_features = pooled_hidden_states(
-            payload,
-            horizon_idx_rel=horizon_command,
-            diff_idx_rel=diff_command,
-        )
-        dit_layer_features = None
-        dit_capture_layers = None
-        if preserve_dit_layers:
-            dit_layer_features, dit_capture_layers = _load_dit_layer_features(
+        feature_axes = list(payload.get("feature_axes") or [])
+        is_denoise = feature_axes[:2] == ["layer", "denoise_step"]
+        denoise_idx = None
+        env_step_idx = None
+        if preserve_dit_layers and is_denoise:
+            # COAST-faithful [L,K,D]: expand denoise K into sample rows.
+            (
+                dit_features,
+                dit_layer_features,
+                dit_capture_layers,
+                vl_features,
+                denoise_idx,
+                env_step_idx,
+            ) = _load_denoise_features(payload, require_vl=require_vl)
+        else:
+            dit_features = pooled_hidden_states(
                 payload,
-                token_idx_rel=horizon_command,
+                horizon_idx_rel=horizon_command,
+                diff_idx_rel=diff_command,
             )
-            if len(dit_layer_features) != len(dit_features):
-                raise ValueError(
-                    f"Layer-preserved/pooled step count mismatch for {path}: "
-                    f"layers={len(dit_layer_features)} pooled={len(dit_features)}"
+            dit_layer_features = None
+            dit_capture_layers = None
+            if preserve_dit_layers:
+                dit_layer_features, dit_capture_layers = _load_dit_layer_features(
+                    payload,
+                    token_idx_rel=horizon_command,
                 )
-        vl_features = _load_vl_features(payload, require_vl=require_vl)
-        if vl_features is not None and len(vl_features) != len(dit_features):
-            raise ValueError(
-                f"VL/DiT step count mismatch for {path}: "
-                f"vl={len(vl_features)} dit={len(dit_features)}"
-            )
+                if len(dit_layer_features) != len(dit_features):
+                    raise ValueError(
+                        f"Layer-preserved/pooled step count mismatch for {path}: "
+                        f"layers={len(dit_layer_features)} pooled={len(dit_features)}"
+                    )
+            vl_features = _load_vl_features(payload, require_vl=require_vl)
+            if vl_features is not None and len(vl_features) != len(dit_features):
+                raise ValueError(
+                    f"VL/DiT step count mismatch for {path}: "
+                    f"vl={len(vl_features)} dit={len(dit_features)}"
+                )
 
         examples.append(
             InstructionFeatureExample(
@@ -152,6 +255,8 @@ def load_instruction_feature_examples(
                 dit_layer_features=dit_layer_features,
                 dit_capture_layers=dit_capture_layers,
                 vl_features=vl_features,
+                denoise_idx=denoise_idx,
+                env_step_idx=env_step_idx,
             )
         )
 
@@ -170,6 +275,8 @@ def flatten_examples(examples: list[InstructionFeatureExample]) -> dict[str, np.
     episode_idx: list[int] = []
     scenario_seed: list[int] = []
     step_idx: list[int] = []
+    denoise_idx: list[int] = []
+    has_denoise = True
 
     for example in examples:
         n_steps = int(example.dit_features.shape[0])
@@ -191,7 +298,16 @@ def flatten_examples(examples: list[InstructionFeatureExample]) -> dict[str, np.
         cell_index.extend([example.cell_index] * n_steps)
         episode_idx.extend([example.episode_idx] * n_steps)
         scenario_seed.extend([example.scenario_seed] * n_steps)
-        step_idx.extend(range(n_steps))
+        # COAST denoise format: step_idx is the originating env step (K rows share it);
+        # otherwise step_idx is the per-env-step running index.
+        if example.env_step_idx is not None:
+            step_idx.extend(int(s) for s in example.env_step_idx.tolist())
+        else:
+            step_idx.extend(range(n_steps))
+        if example.denoise_idx is not None:
+            denoise_idx.extend(int(d) for d in example.denoise_idx.tolist())
+        else:
+            has_denoise = False
 
     flattened = {
         "dit": np.concatenate(dit_chunks, axis=0) if dit_chunks else np.empty((0, 0)),
@@ -203,6 +319,8 @@ def flatten_examples(examples: list[InstructionFeatureExample]) -> dict[str, np.
         "scenario_seed": np.asarray(scenario_seed, dtype=np.int64),
         "step_idx": np.asarray(step_idx, dtype=np.int64),
     }
+    if has_denoise and len(denoise_idx) == len(success):
+        flattened["denoise_idx"] = np.asarray(denoise_idx, dtype=np.int64)
     if vl_chunks:
         flattened["vl"] = np.concatenate(vl_chunks, axis=0)
     if dit_layer_chunks:
