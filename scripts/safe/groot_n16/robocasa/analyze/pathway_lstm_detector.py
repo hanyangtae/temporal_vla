@@ -135,7 +135,7 @@ def train_lstm(train_seqs, input_dim, epochs, lr, hidden, device, seed,
     for ep in range(epochs):
         random.shuffle(train_seqs)
         tot = 0.0
-        for X, y, _L, _t in train_seqs:
+        for X, y, _L, *_ in train_seqs:
             xb = torch.from_numpy(X).float().unsqueeze(0).to(device)  # [1,T,D]
             sc = model(xb).squeeze(0)                                 # [T]
             loss = bce(sc, torch.full_like(sc, float(y)))
@@ -163,20 +163,129 @@ def score_seq(model, X, device):
 
 
 def make_seqs(rolls, pathway, dit_idx, mu=None, sd=None):
+    """rollout → (Xn, y, length, task, lang) per-step seq. y=1-success(실패=positive).
+    lang = ep_meta.lang(instruction). 소비자는 task/lang 을 무시할 때 `*_` 로 언팩."""
     out = []
     for r in rolls:
         X = pathway_seq(r, pathway, dit_idx)
         if X is None:
             continue
         Xn = ((X - mu) / sd).astype(np.float32) if mu is not None else X.astype(np.float32)
-        out.append((Xn, 1 - int(r["success"]), r["length"], r["task"]))
+        out.append((Xn, 1 - int(r["success"]), r["length"], r["task"], r.get("lang", "")))
     return out
+
+
+def group_by_lang(seqs, min_fail=8, min_succ=8):
+    """eval seq 들을 instruction(lang)별로 묶고 fail>=min_fail & succ>=min_succ 만 남김.
+    seq = (Xn, y, length, task, lang), y: 1=fail/0=succ. 작은 subset(예: SlideDW in=fail4)은 제외."""
+    by = defaultdict(list)
+    for s in seqs:
+        by[s[4]].append(s)
+    out = {}
+    for lang, grp in by.items():
+        n_fail = sum(1 for s in grp if s[1] == 1)
+        n_succ = sum(1 for s in grp if s[1] == 0)
+        if n_fail >= min_fail and n_succ >= min_succ:
+            out[lang] = grp
+    return out
+
+
+def who_first(cp_vl, cp_dit, alpha):
+    """instruction별 VL vs DiT 검출 선후. cp_* = {lang: {alpha_str: {mean_tdet_fired, ...}}}.
+    낮은 normalized T-det(=먼저 발화)이 'first'. 미발화(None)는 진 것으로 본다. 두 pathway 공통 lang만."""
+    akey = f"{alpha:.2f}"
+    out = {}
+    for lang in cp_vl:
+        if lang not in cp_dit:
+            continue
+        v = cp_vl[lang].get(akey, {}).get("mean_tdet_fired")
+        d = cp_dit[lang].get(akey, {}).get("mean_tdet_fired")
+        if v is None and d is None:
+            first = "neither"
+        elif v is None:
+            first = "DiT"
+        elif d is None:
+            first = "VL"
+        elif v < d:
+            first = "VL"
+        elif d < v:
+            first = "DiT"
+        else:
+            first = "tie"
+        out[lang] = {"vl_tdet": v, "dit_tdet": d, "first": first}
+    return out
+
+
+def _md_metric_rows(per_pathway, split, alpha_key):
+    """split('seen'/'unseen') 의 instruction × pathway 행들을 markdown table 문자열로."""
+    pws = [pw for pw in ("dit", "vl") if pw in per_pathway]
+    langs = sorted({lang for pw in pws for lang in per_pathway[pw].get(split, {})})
+    if not langs:
+        return ""
+    lines = [
+        f"#### {split} (α={alpha_key})",
+        "",
+        "| instruction | pathway | TPR | FPR | bal-acc | T-det | n_fail | n_succ |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for lang in langs:
+        for pw in pws:
+            cell = per_pathway[pw].get(split, {}).get(lang, {}).get(alpha_key)
+            if not cell:
+                continue
+            lines.append(
+                f"| {lang} | {pw} | {cell.get('tpr')} | {cell.get('fpr')} | "
+                f"{cell.get('bal_acc')} | {cell.get('mean_tdet_fired')} | "
+                f"{cell.get('n_fail')} | {cell.get('n_succ')} |"
+            )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_per_instruction_md(per_instruction, detector_type):
+    """per-instruction 결과 → detector_results_per_instruction.md 본문.
+
+    per_instruction = {"alpha_whofirst": a, "pathways": {pw: {"seen":{lang:fcp}, "unseen":{lang:fcp}}}}.
+    fcp = {alpha_str: {tpr, fpr, bal_acc, mean_tdet_fired, n_fail, n_succ}}.
+    """
+    pw = per_instruction["pathways"]
+    a = per_instruction.get("alpha_whofirst", 0.3)
+    akey = f"{a:.2f}"
+    parts = [
+        f"# Per-instruction detection ({detector_type.upper()})",
+        "",
+        "통짜 multi-task 검출기 그대로(재학습 X), functional-CP 평가만 `ep_meta.lang`별 분해. "
+        "instruction당 fail≥8 & succ≥8 만(작은 subset 제외). 표본 작으면 노이즈 — 단정 금지.",
+        "",
+    ]
+    for split in ("unseen", "seen"):
+        block = _md_metric_rows(pw, split, akey)
+        if block:
+            parts.append(block)
+    # who-first (VL vs DiT) — unseen 우선, 없으면 seen
+    for split in ("unseen", "seen"):
+        cp_vl = pw.get("vl", {}).get(split, {})
+        cp_dit = pw.get("dit", {}).get(split, {})
+        wf = who_first(cp_vl, cp_dit, a)
+        if not wf:
+            continue
+        parts += [
+            f"#### who fires first — {split} (α={akey}, normalized T-det)",
+            "",
+            "| instruction | VL T-det | DiT T-det | first |",
+            "|---|---|---|---|",
+        ]
+        for lang in sorted(wf):
+            w = wf[lang]
+            parts.append(f"| {lang} | {w['vl_tdet']} | {w['dit_tdet']} | {w['first']} |")
+        parts.append("")
+    return "\n".join(parts)
 
 
 def decision_time_auroc(model, seqs, tds, device):
     """t_d별 living rollout(length>t_d)에서 LSTM score[t_d-1] AUROC."""
     res = {}
-    pre = [(score_seq(model, X, device), y, L) for X, y, L, _ in seqs]
+    pre = [(score_seq(model, X, device), y, L) for X, y, L, *_ in seqs]
     for t in tds:
         s, yy = [], []
         for sc, y, L in pre:
@@ -192,7 +301,7 @@ def length_auroc(seqs, tds):
     res = {}
     for t in tds:
         L, y = [], []
-        for _, yy, ln, _ in seqs:
+        for _, yy, ln, *_ in seqs:
             if ln > t:
                 L.append(ln); y.append(yy)
         L, y = np.asarray(L, float), np.asarray(y)
@@ -208,10 +317,10 @@ def cp_metrics(model, cal_seqs, eval_seqs, device, alphas):
     eval 에서: failure 가 δ 를 넘으면 검출(TPR), 성공이 넘으면 오경보(FPR),
     **normalized T-det = 첫 crossing step / 그 rollout 길이**(낮을수록 일찍, 안 넘으면 1).
     """
-    cal_max = np.array([score_seq(model, X, device).max() for X, y, _L, _t in cal_seqs if y == 0])
+    cal_max = np.array([score_seq(model, X, device).max() for X, y, _L, *_ in cal_seqs if y == 0])
     if len(cal_max) < 3:
         return {}
-    ev = [(score_seq(model, X, device), y, L) for X, y, L, _t in eval_seqs]
+    ev = [(score_seq(model, X, device), y, L) for X, y, L, *_ in eval_seqs]
     out = {}
     for a in alphas:
         delta = float(np.quantile(cal_max, 1.0 - a))
@@ -249,15 +358,15 @@ def functional_cp_metrics(model, train_succ, cal_succ, eval_seqs, device, alphas
     δ_t = μ_t + bw·σ_t, bw = 보정성공의 max_t(s_t-μ_t)/σ_t 의 (1-α)분위.
     실패 = δ_t 위로 이탈하는 첫 t. 궤적은 L 로 forward-fill 패딩(성공 종료후 plateau).
     """
-    tr = [_pad_to(score_seq(model, X, device), L) for X, y, _L, _t in train_succ if y == 0]
-    cal = [_pad_to(score_seq(model, X, device), L) for X, y, _L, _t in cal_succ if y == 0]
+    tr = [_pad_to(score_seq(model, X, device), L) for X, y, _L, *_ in train_succ if y == 0]
+    cal = [_pad_to(score_seq(model, X, device), L) for X, y, _L, *_ in cal_succ if y == 0]
     if len(tr) < 3 or len(cal) < 3:
         return {}
     tr, cal = np.stack(tr), np.stack(cal)
     mu = tr.mean(axis=0)
     sd = tr.std(axis=0, ddof=1) + 1e-8
     excursion = np.max((cal - mu) / sd, axis=1)
-    ev = [(score_seq(model, X, device), y, Lr) for X, y, Lr, _t in eval_seqs]
+    ev = [(score_seq(model, X, device), y, Lr) for X, y, Lr, *_ in eval_seqs]
     out = {}
     for a in alphas:
         bw = float(np.quantile(excursion, 1 - a))
@@ -291,8 +400,8 @@ def functional_cp_metrics(model, train_succ, cal_succ, eval_seqs, device, alphas
 
 def functional_cp_band(model, train_succ, cal_succ, device, alpha, L):
     """SAFE functional CP 밴드 δ_t (시간가변) [L] 반환 (영상 검출 임계용)."""
-    tr = [_pad_to(score_seq(model, X, device), L) for X, y, _L, _t in train_succ if y == 0]
-    cal = [_pad_to(score_seq(model, X, device), L) for X, y, _L, _t in cal_succ if y == 0]
+    tr = [_pad_to(score_seq(model, X, device), L) for X, y, _L, *_ in train_succ if y == 0]
+    cal = [_pad_to(score_seq(model, X, device), L) for X, y, _L, *_ in cal_succ if y == 0]
     if len(tr) < 3 or len(cal) < 3:
         return np.full(L, 0.5)
     tr, cal = np.stack(tr), np.stack(cal)
@@ -302,10 +411,20 @@ def functional_cp_band(model, train_succ, cal_succ, device, alpha, L):
     return mu + bw * sd
 
 
+def per_instruction_cp(model, train_succ, cal_succ, eval_seqs, device, alphas, L,
+                       min_fail=8, min_succ=8):
+    """평가만 instruction(lang)별로 분해. 통짜 model·pooled cal 그대로,
+    eval_seqs 만 lang group → 각 subset 에 functional_cp_metrics. {lang: fcp}."""
+    out = {}
+    for lang, grp in group_by_lang(eval_seqs, min_fail, min_succ).items():
+        out[lang] = functional_cp_metrics(model, train_succ, cal_succ, grp, device, alphas, L)
+    return out
+
+
 def mean_trajectory(model, seqs, device, max_t=40):
     """성공/실패 평균 per-step score 궤적 (padding: 마지막 score 유지)."""
     succ, fail = [], []
-    for X, y, L, _ in seqs:
+    for X, y, L, *_ in seqs:
         sc = score_seq(model, X, device)
         pad = np.full(max_t, sc[-1]); pad[: min(len(sc), max_t)] = sc[: max_t]
         (fail if y == 1 else succ).append(pad)
@@ -333,6 +452,14 @@ def main():
     ap.add_argument("--detector-type", default="lstm", choices=("lstm", "mlp"),
                     help="lstm=recurrent / mlp=per-step MLP+출력 누적평균(SAFE-MLP)")
     ap.add_argument("--alphas", default="0.05,0.1,0.2,0.3,0.5", help="CP 유의수준(FPR 목표)")
+    ap.add_argument("--split-instruction", action="store_true",
+                    help="통짜 검출기 그대로, functional-CP 평가만 ep_meta.lang(instruction)별 분해")
+    ap.add_argument("--min-instr-fail", type=int, default=8,
+                    help="instruction 평가 포함 최소 fail rollout 수")
+    ap.add_argument("--min-instr-succ", type=int, default=8,
+                    help="instruction 평가 포함 최소 succ rollout 수")
+    ap.add_argument("--whofirst-alpha", type=float, default=0.3,
+                    help="VL vs DiT 검출 선후 비교에 쓸 α (T-det)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--smoke", action="store_true")
     args = ap.parse_args()
@@ -356,6 +483,10 @@ def main():
 
     results = {"dit_block": CAPTURE_LAYERS[dit_idx], "t_ds": tds, "seen": sorted(seen),
                "unseen": sorted(unseen), "n_train": len(train), "pathways": {}}
+    if args.split_instruction:
+        results["per_instruction"] = {"alpha_whofirst": args.whofirst_alpha,
+                                      "min_fail": args.min_instr_fail,
+                                      "min_succ": args.min_instr_succ, "pathways": {}}
     traj = {}
     for pw in pathways:
         tr = make_seqs(train, pw, dit_idx)
@@ -388,6 +519,14 @@ def main():
             "cp_unseen": fcp_unseen,
             "cp_unseen_const": cp_unseen_const,
         }
+        if args.split_instruction:
+            pi_seen = per_instruction_cp(model, tr, cal, seen_eval, device, alphas, L_max,
+                                         args.min_instr_fail, args.min_instr_succ)
+            pi_unseen = per_instruction_cp(model, tr, cal, ut, device, alphas, L_max,
+                                           args.min_instr_fail, args.min_instr_succ)
+            results["per_instruction"]["pathways"][pw] = {"seen": pi_seen, "unseen": pi_unseen}
+            print(f"    [{pw}] per-instruction: seen={len(pi_seen)} unseen={len(pi_unseen)} "
+                  f"(fail≥{args.min_instr_fail} & succ≥{args.min_instr_succ})")
         traj[pw] = {"seen": mean_trajectory(model, st, device),
                     "unseen": mean_trajectory(model, ut, device)}
         print(f"    [{pw}] AUROC " + " ".join(
@@ -400,6 +539,10 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     (out / "pathway_lstm_detector.json").write_text(json.dumps(results, indent=2))
     _plot(results, traj, tds, out)
+    if args.split_instruction and results.get("per_instruction", {}).get("pathways"):
+        md = render_per_instruction_md(results["per_instruction"], args.detector_type)
+        (out / "detector_results_per_instruction.md").write_text(md)
+        print(f"[done] per-instruction md -> {out}/detector_results_per_instruction.md")
     print(f"[done] -> {out}/")
 
 

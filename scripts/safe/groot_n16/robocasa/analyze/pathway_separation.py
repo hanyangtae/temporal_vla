@@ -88,6 +88,7 @@ def load_rollout_features(pkl_path: Path, token_pool: str) -> dict | None:
         "length": len(hs),
         "dit": dit,
         "vl": vl_arr,
+        "lang": str(d.get("ep_meta", {}).get("lang", "")),  # instruction (per-lang 평가용)
     }
 
 
