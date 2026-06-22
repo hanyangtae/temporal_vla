@@ -30,8 +30,9 @@ USER ${USER_NAME}
 WORKDIR /temporal_vla
 
 ENV PATH="/home/${USER_NAME}/.local/bin:${PATH}"
-ENV TORCH_CUDA_ARCH_LIST="12.0"
-ENV FLASH_ATTN_CUDA_ARCHS="120"
+# A4000 (kanu) = sm_86. flash-attn(below) compiles for this arch at build time.
+ENV TORCH_CUDA_ARCH_LIST="8.6"
+ENV FLASH_ATTN_CUDA_ARCHS="86"
 
 RUN pip install --upgrade pip setuptools wheel
 
