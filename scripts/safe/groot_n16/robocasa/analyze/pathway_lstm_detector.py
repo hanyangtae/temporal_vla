@@ -45,6 +45,28 @@ CAPTURE_LAYERS = [0, 2, 4, 8, 16, 24, 31]
 DEFAULT_TDS = (3, 5, 8, 11, 15, 20)
 
 
+class MLPDetector(nn.Module):
+    """SAFE-MLP: per-step MLP→scalar→sigmoid (step 독립, memoryless).
+    검출 score는 per-step 출력의 **시간 누적평균**(score_seq 에서 적용). cumulative=True 표식."""
+    cumulative = True
+
+    def __init__(self, input_dim: int, hidden_dim: int = 256):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(self, x):  # [B,T,D] → [B,T] per-step sigmoid (각 step 독립 처리)
+        return torch.sigmoid(self.net(x)).squeeze(-1)
+
+
+def build_detector(detector_type: str, input_dim: int, hidden: int):
+    return (MLPDetector(input_dim, hidden) if detector_type == "mlp"
+            else LSTMDetector(input_dim=input_dim, hidden_dim=hidden))
+
+
 def auroc(scores: np.ndarray, y: np.ndarray) -> float:
     pos, neg = scores[y == 1], scores[y == 0]
     if pos.size == 0 or neg.size == 0:
@@ -104,10 +126,10 @@ def standardizer(train_seqs):
 
 
 def train_lstm(train_seqs, input_dim, epochs, lr, hidden, device, seed,
-               lambda_reg=1e-2, grad_clip=1.0):
-    """SAFE-LSTM 학습. SAFE식: BCE + lambda_reg·L2(bias 제외) + grad clip."""
+               lambda_reg=1e-2, grad_clip=1.0, detector_type="lstm"):
+    """SAFE 검출기 학습(lstm/mlp). per-step BCE + lambda_reg·L2(bias 제외) + grad clip."""
     torch.manual_seed(seed)
-    model = LSTMDetector(input_dim=input_dim, hidden_dim=hidden).to(device)
+    model = build_detector(detector_type, input_dim, hidden).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     bce = nn.BCELoss()
     for ep in range(epochs):
@@ -134,7 +156,10 @@ def train_lstm(train_seqs, input_dim, epochs, lr, hidden, device, seed,
 @torch.no_grad()
 def score_seq(model, X, device):
     xb = torch.from_numpy(X).float().unsqueeze(0).to(device)
-    return model(xb).squeeze(0).cpu().numpy()  # [T]
+    raw = model(xb).squeeze(0).cpu().numpy()  # [T] per-step sigmoid
+    if getattr(model, "cumulative", False):   # SAFE-MLP: 검출 score = 출력 누적평균
+        raw = np.cumsum(raw) / np.arange(1, len(raw) + 1)
+    return raw
 
 
 def make_seqs(rolls, pathway, dit_idx, mu=None, sd=None):
@@ -305,6 +330,8 @@ def main():
     ap.add_argument("--hidden", type=int, default=256)
     ap.add_argument("--lambda-reg", type=float, default=1e-2, help="SAFE식 L2 정규화 계수")
     ap.add_argument("--grad-clip", type=float, default=1.0, help="grad clip max-norm(0=off)")
+    ap.add_argument("--detector-type", default="lstm", choices=("lstm", "mlp"),
+                    help="lstm=recurrent / mlp=per-step MLP+출력 누적평균(SAFE-MLP)")
     ap.add_argument("--alphas", default="0.05,0.1,0.2,0.3,0.5", help="CP 유의수준(FPR 목표)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--smoke", action="store_true")
@@ -341,7 +368,7 @@ def main():
         input_dim = tr[0][0].shape[1]
         print(f"[train] pathway={pw} dim={input_dim} n_train={len(tr)}")
         model = train_lstm(tr, input_dim, args.epochs, args.lr, args.hidden, device, args.seed,
-                            args.lambda_reg, args.grad_clip)
+                            args.lambda_reg, args.grad_clip, args.detector_type)
         dt_seen = decision_time_auroc(model, st, tds, device)
         dt_unseen = decision_time_auroc(model, ut, tds, device)
         # CP: seen-test 성공 절반으로 보정, 나머지+실패로 seen-eval. functional(시간가변)이 헤드라인.

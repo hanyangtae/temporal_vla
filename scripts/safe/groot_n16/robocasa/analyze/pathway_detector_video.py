@@ -122,6 +122,8 @@ def main():
     ap.add_argument("--epochs", type=int, default=25)
     ap.add_argument("--lambda-reg", type=float, default=1e-2, help="SAFE식 L2 정규화")
     ap.add_argument("--grad-clip", type=float, default=0.0, help="grad clip(0=off=SAFE 기본)")
+    ap.add_argument("--detector-type", default="lstm", choices=("lstm", "mlp"),
+                    help="lstm / mlp(SAFE-MLP: per-step MLP+출력 누적평균)")
     ap.add_argument("--seen", default="CloseToasterOvenDoor,NavigateKitchen,OpenCabinet,PickPlaceCounterToStove,PickPlaceDrawerToCounter,SlideDishwasherRack,TurnOnMicrowave,TurnOnSinkFaucet")
     ap.add_argument("--unseen", default="OpenDrawer,PickPlaceCounterToCabinet")
     ap.add_argument("--video-tasks", default=None, help="영상 만들 task(콤마, 기본 전체)")
@@ -166,7 +168,7 @@ def main():
         tr = make_seqs(train, pw, dit_idx, mu, sd)
         st_seqs = make_seqs(seen_test, pw, dit_idx, mu, sd)
         model = train_lstm(tr, tr[0][0].shape[1], args.epochs, 1e-3, 256, device, args.seed,
-                            args.lambda_reg, args.grad_clip)
+                            args.lambda_reg, args.grad_clip, args.detector_type)
         band = functional_cp_band(model, tr, st_seqs, device, args.alpha, L_max)  # [L_max]
         models[pw] = (model, mu, sd, band)
         print(f"[train] {pw}: dim={tr[0][0].shape[1]} band(α={args.alpha}) δ_t∈[{band.min():.3f},{band.max():.3f}]")
