@@ -5,9 +5,6 @@
 	path = src/benchmarks/robocasa
 	url = https://github.com/hanyangtae/robocasa.git
 	branch = temporal_vla
-[submodule "src/policies/dreamvla"]
-	path = src/policies/dreamvla
-	url = https://github.com/Zhangwenyao1/DreamVLA
 [submodule "lerobot"]
 	path = lerobot
 	url = https://github.com/hanyangtae/lerobot

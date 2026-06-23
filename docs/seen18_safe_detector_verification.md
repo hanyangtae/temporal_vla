@@ -1,7 +1,7 @@
 # seen18 SAFE detector 검증 요약
 
 작성: 2026-05-29 · 대상 run: `outputs/eval/robocasa/groot_n16/safe_seen18_4unseen_100ep`
-입력 핸드오프: [`docs/seen18_steering_detector_handoff.md`](seen18_steering_detector_handoff.md) §4
+입력 핸드오프: [`docs/steering/01_seen18_latent_analysis.md`](steering/01_seen18_latent_analysis.md) (구 seen18 steering/detector 핸드오프 통합)
 참조: SAFE [arXiv 2506.09937](https://arxiv.org/abs/2506.09937), COAST [arXiv 2605.17144](https://arxiv.org/abs/2605.17144)
 
 ## TL;DR

@@ -56,12 +56,17 @@ class RoboCasaObsProcessor(ObservationProcessorStep):
         observation.state.joint_vel      — float32 (7,)
         observation.state.base_pos       — float32 (3,)  mobile only
         observation.state.base_quat      — float32 (4,)  mobile only
+        observation.state.base_to_eef_pos  — float32 (3,)  base-frame EEF pos
+        observation.state.base_to_eef_quat — float32 (4,)  base-frame EEF quat xyzw
     """
 
     _STATE_COMPONENTS = (
         "eef_pos", "eef_quat", "gripper_qpos",
         "joint_pos", "joint_vel",
         "base_pos", "base_quat",
+        # base-frame relative EEF (robocasa pi05 학습 포맷). robosuite mobile_robot
+        # observable robot0_base_to_eef_pos/_quat 를 그대로 emit (계산 불필요).
+        "base_to_eef_pos", "base_to_eef_quat",
     )
 
     def __init__(
@@ -127,7 +132,7 @@ class RoboCasaObsProcessor(ObservationProcessorStep):
             # 3-camera 모드: left(=static alias), right, wrist 의 의미 명확한 키로 emit.
             # robocasa native 카메라 = robot0_agentview_left/_right/_eye_in_hand 셋.
             # GR00T ROBOCASA_PANDA_OMRON schema 와 정합되도록 side_0/side_1/wrist_0 alias 도 emit.
-            # `static` 은 `left` alias 로 유지하여 기존 2-camera 모델(xvla/dreamvla)의 통일 API 호환성 유지.
+            # `static` 은 `left` alias 로 유지하여 기존 2-camera 모델(xvla 등)의 통일 API 호환성 유지.
             static2_key = "{}_image".format(self.static_cam2)
             if static2_key not in observation:
                 logger.warning("카메라 '%s' 누락, zero 이미지로 대체", static2_key)
@@ -168,6 +173,8 @@ class RoboCasaObsProcessor(ObservationProcessorStep):
             "observation.state.joint_vel": PolicyFeature(FeatureType.STATE, (7,)),
             "observation.state.base_pos": PolicyFeature(FeatureType.STATE, (3,)),
             "observation.state.base_quat": PolicyFeature(FeatureType.STATE, (4,)),
+            "observation.state.base_to_eef_pos": PolicyFeature(FeatureType.STATE, (3,)),
+            "observation.state.base_to_eef_quat": PolicyFeature(FeatureType.STATE, (4,)),
         }
         features = dict(features)
         features[PipelineFeatureType.OBSERVATION] = obs_features

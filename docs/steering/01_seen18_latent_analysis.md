@@ -64,6 +64,33 @@
 
 ---
 
+## 4b. Cross-task 실패 공유의 구조 (COAST Sec 4.4 재현 시도)
+
+§4의 "약한 공유 zone"을 conceptor containment 관점에서 더 판 결과. 결론: **COAST Sec 4.4의
+"cross-task 공유 실패 subspace"는 재현되지 않으며**, 표면적으로 보이는 fail>succ containment은
+길이/rank 아티팩트다. 분석 산출은 `…/analysis/cross_task_failure_analysis/`(약칭 `ANALYSIS`).
+
+| # | 결론 | 근거(수치) | 생산 스크립트 |
+|---|---|---|---|
+| 2.1 | **COAST Sec4.4 cross-task 공유 실패 subspace 미재현** | rollout-mean: fail containment 0.505 < succ 0.539; per-step all: fail 0.92 > succ 0.87이나 ↓ | `cross_task_failure_analysis.py`, `cross_task_failure_perstep.py` |
+| 2.2 | **그 fail>succ는 길이/rank 아티팩트** (확정) | 단일 5-step window containment 전구간 ~0.65 평평; 벡터수 cap 맞추면 gap 소멸(cap200 fail0.652≈succ0.653) | `failure_stuck_state_test.py` |
+| 2.3 | **실패 공유는 family 무구조**(=공통 stuck), 성공은 family 구조 | fail within≈cross(gap~0), succ within0.893>cross0.876 | `cross_task_containment_structure.py` |
+| 2.4 | **실패는 cross-task 위치 공유, 성공은 task-specific** | global K8: fail high-entropy 4/8·task-pure1; succ task-pure 5/8 | `cross_task_mode_sharing.py` |
+| 2.5 | **within-task 진짜 실패모드는 드묾**(성공대조) | 진짜 fail-특이 2/9 (PnPCabinet 0.65/succ0.11, StandMixer 0.64/0.15); CloseFridge는 scene | `within_task_failure_modes.py`, `within_task_succ_vs_fail.py` |
+| 2.6 | **실패는 이산 모드가 아니라 연속체**(near-miss/stuck은 연속적 정도) | per-step region silhouette 0.09–0.13, 모든 region meanT≈0.5(시간 비국소), fail/succ 패턴 유사 | `failure_trajectory_modes.py` |
+
+**한 줄 종합**: 성공은 task별 목표 영역으로 구조적 수렴 / 실패는 task도 안 가리고 이산 모드도 없이
+"목표 미도달" 연속 영역에 흩어짐. COAST식 "공유 실패 방향"은 길이 아티팩트.
+
+**steering 설계 함의**: ❌ 단일 cross-task 실패 방향/전이 근거 약함(2.1–2.4) → global 한 방향
+steering·cross-task 전이는 기대 낮음. ✅ 성공이 task-구조적(2.4) → **per-task** 또는 **성공-유인
+(C⁺ 쪽)** conceptor가 데이터에 부합. `fit_conceptor_steering.py --per-task`부터 시작.
+
+⚠ **방법 caveat**: conceptor containment는 **표본수/rank에 민감** → 클래스 간 벡터 수를 맞춰 비교해야
+한다(맞추지 않으면 fail>succ가 가짜로 뜸). circularity 금지: whitening은 outcome-agnostic한 `task`로만.
+
+---
+
 ## 5. task 정체성 vs outcome
 - **pairwise task AUROC**(task A vs B 분류): rollout 1점 ~**0.99**, 전체 timestep group-aware(td16) mean **0.998**/min **0.975**, progress 전 구간 ~1.0(worst pair mid에서 0.94).
 - ⇒ **latent을 task 정체성이 지배** (frame 0부터 ~1.0 = scene/instruction 인코딩, 행동 전부터). 단 AUROC는 고차원에서 saturate.
@@ -127,6 +154,13 @@ $PY seen18.py coast                         # Fig 3A/4A/4B
 $PY seen18.py html3d                        # 인터랙티브 3D (vendor 없으면 CDN)
 $PY seen18.py <cmd> --help                  # 각 옵션
 ```
+
+- **feature cache**: `…/analysis/feature_cache/pooled_all_hmean_dmean.npz` (per-env-step DiT
+  pre-velocity action-token latent `[K=4,H=16,D=1024]` → K·H mean-pool → step당 1024-d).
+  로더: `vis/core/io.py` → `reconstruct_rollouts(cache)`. conceptor 모듈은 `src/conceptor/`.
+- ⚠ **§4b cross-task 스크립트 재실행 주의**: `analyze/cross_task_*.py` 등 다수가 삭제된
+  `temporal_agg.py`를 import해 **깨져 있다**. 재실행 전 `from core.io import reconstruct_rollouts`로
+  교체 필요(`within_task_succ_vs_fail.py`는 이미 수정됨). 기초 시각화는 위 `seen18.py` CLI로 재현 가능.
 
 관련 메모리: `seen18-rollout-length-confound`, `seen18-genuine-failure-direction`,
 `seen18-shared-failure-zone`, `seen18-failure-onset-regimes`, `project-direction-latent-steering`.

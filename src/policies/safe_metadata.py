@@ -22,13 +22,35 @@ GROOT_N15_DIT_BLOCK_RESIDUAL_FEATURE_AXES = [
     "model_token",
     "feature_dim",
 ]
+# COAST-faithful (A.7.2): action-token mean-pooled, one vector per denoising step,
+# denoise axis preserved. Shape per env-step = [layer, denoise_step, feature_dim].
+GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES = [
+    "layer",
+    "denoise_step",
+    "feature_dim",
+]
 
 GROOT_N16_VALID_FEATURE_KIND = "groot_n16_dit_valid_action_tokens_pre_velocity"
 GROOT_N16_ALL_FEATURE_KIND = "groot_n16_dit_all_action_tokens_pre_velocity"
 GROOT_N15_DIT_BLOCK_RESIDUAL_FEATURE_KIND = "groot_n15_dit_block_residual_tokens"
+GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND = (
+    "groot_n15_dit_block_residual_action_tokens_denoise"
+)
 GROOT_VL_FEATURE_AXES = ["feature_dim"]
 GROOT_N15_VL_FEATURE_KIND = "groot_n15_vlln_seq_meanpool"
 GROOT_N16_VL_FEATURE_KIND = "groot_n16_vlln_seq_meanpool"
+
+# COAST A.7.1 pi05: π0.5 action expert(Gemma2, 18 layer, d=1024)의 decoder layer
+# residual stream에서 마지막 chunk_size action token을 mean-pool, denoise step K 보존.
+# GR00T DiT block residual 과 동일한 [layer, denoise_step, feature_dim] 축.
+PI05_EXPERT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES = [
+    "layer",
+    "denoise_step",
+    "feature_dim",
+]
+PI05_EXPERT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND = (
+    "pi05_expert_block_residual_action_tokens_denoise"
+)
 
 _LEROBOT_FEATURE_KINDS = {
     "pi0": "pi0_action_expert_pre_velocity",

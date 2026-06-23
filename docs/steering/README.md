@@ -7,8 +7,8 @@ pathway별(VL goal / DiT motor)·phase별로 찾고(길이 confound 통제 필�
 개입해 Success Rate를 올리는 것이다. **중심 미해결 문제: online phase/failure-type 식별이
 가능한가** — 안 되면 steering을 라우팅할 수 없다. 메인스트림 thesis는 `14_*` 참고.
 
-번호 prefix(`01_`, `02_`, ...)는 읽기 순서다. TTA/VITA progress predictor 방향은 현재 메인이
-아니며 [`../ttt/`](../ttt/README.md)에 보존 문서로 둔다.
+번호 prefix(`01_`, `05_`, `07_`, ...)는 대략의 읽기 순서다(아래 Reading Order 참조). TTA/VITA
+progress predictor 방향은 현재 메인이 아니며 [`../ttt/`](../ttt/README.md)에 보존 문서로 둔다.
 
 ## 현재 결론
 
@@ -19,8 +19,8 @@ pathway별(VL goal / DiT motor)·phase별로 찾고(길이 confound 통제 필�
 - **현재 main stream = pathway-resolved + phase-matched steering** (VL/DiT 분리 + DiT는 rollout
   phase 조건부). 중심 미해결 문제는 **online phase/failure-type 식별**. 상세: `14_pathway_phase_online_steering.md`.
 - 검증은 사다리식 ablation(global → pathway-split → +phase-bin)으로 각 단계 ΔSR 비교.
-- 다음 실험 축: faithful N1.5 positive control → fixed-instruction confound 제거 → VL conceptor
-  fit + phase-matched steering → ΔSR 인과 재측정.
+- 다음 실험 축: fixed-instruction confound 제거 → VL conceptor fit + phase-matched steering →
+  ΔSR 인과 재측정. (faithful N1.5 COAST positive control 은 재현 실패—원인 미상—로 중단.)
 
 ## 수집 계약
 
@@ -41,12 +41,14 @@ pathway별(VL goal / DiT motor)·phase별로 찾고(길이 confound 통제 필�
 
 ## 사용 절차
 
-1. 표현 분석의 근거를 볼 때는 `01` → `02`를 먼저 읽는다.
-2. COAST 재현과 DiT-only 실패를 이해할 때는 `03` → `04` → `06`을 읽는다.
-3. 다음 steering 방법론 후보를 정할 때는 `07`을 보고, 최신 pathway 결과는 `08` → `09`에서 본다.
-4. 새 세션을 이어받을 때는 `10_session_handoff.md`를 먼저 보고, 필요한 세부 근거로 역추적한다.
-5. LeRobot/멀티벤치 SAFE 수집 확장은 `05`를 별도 track으로 본다.
-6. 코드 흐름과 수식을 한 화면에서 볼 때는
+1. 방향·가설·open problem·ablation 사다리는 `14`(메인스트림 단일 출처) → `15`(연구 구조 RQ/가설)에서 본다.
+2. 표현 분석의 근거를 볼 때는 `01`(seen18 latent 분석, 길이/instruction confound·cross-task 실패 구조 포함)을 읽는다.
+3. COAST 재현은 실패(원인 미상)로 종료했고 상세 문서는 정리했다 — conceptor 수학 provenance 는 `src/conceptor/README.md`.
+4. 다음 steering 방법론 후보를 정할 때는 `07`을 보고, pathway 분리력 결과(VL early / DiT late, steering target)는 `08`에서 본다.
+5. instruction confound 판정과 VL/DiT LDA 사분면 방법은 `11_instruction_confound`, fixed-instruction 재수집·conceptor fit·steering eval 계획은 `11_phase4`에서 본다.
+6. LeRobot/멀티벤치 SAFE 수집 확장은 `05`를 별도 track으로 본다.
+7. 랩미팅 발표 노트(슬라이드 지도·revision gap·그림/수치 출처 매핑)는 `13_lab_meeting_ppt_notes`에서 본다.
+8. 코드 흐름과 수식을 한 화면에서 볼 때는
    [GR00T Latent Steering Explorer](../groot/00_groot_steering_explorer.html)의 탭/검색/code map을 연다.
 
 ## Reading Order
@@ -56,37 +58,32 @@ pathway별(VL goal / DiT motor)·phase별로 찾고(길이 confound 통제 필�
 
 1. [01 seen18 Latent Analysis](01_seen18_latent_analysis.md) — GR00T-N1.6 RoboCasa seen18
    잠재공간에서 succ/fail 이 구분되는지·어떤 조건에서 드러나는지. **길이 confound 통제**가
-   모든 해석의 전제. steering 의 표현 측 근거.
-2. [02 seen18 Handoff](02_seen18_handoff.md) — cross-task 실패 심화 + 후속 두 세션
-   (COAST steering / SAFE detector) 핸드오프(근거·주의·재사용 인프라·실행 스펙).
-3. [03 COAST Report](03_coast_report.md) — COAST conceptor algebra 구현 + GR00T N1.6
-   rollout feature 적용 진행 보고. 단일 layer 데이터의 한계 정리.
-4. [04 COAST Reproduction Map](04_coast_reproduction_map.md) — 우리 코드 ↔ COAST 논문
-   식/섹션 매핑 (충실 재현 / 의도적 변경 / 미구현).
-5. [05 SAFE lerobot Collection](05_safe_lerobot_collection.md) — SAFE latent 수집을
+   모든 해석의 전제. cross-task 실패 공유 구조(COAST Sec 4.4 미재현)·steering 의 표현 측 근거.
+2. [05 SAFE lerobot Collection](05_safe_lerobot_collection.md) — SAFE latent 수집을
    lerobot 정책(pi0.5/pi0+FAST/X-VLA/GR00T N1.5) × 멀티 벤치로 확장 (plan + status + handoff).
-6. [06 COAST GR00T N1.6 Summary](06_coast_groot_n16_summary.md) — DiT 32-layer COAST 재현,
-   layer selection, SR eval 결과. 평균 ΔSR≤0으로 DiT-only steering 실패를 정리.
-7. [07 Steering Methods Survey](07_steering_methods_survey.md) — COAST 이후 적용 후보
-   (CAA, SAE-guided, NOTALL pathway, learned steering)와 권장 순서.
-8. [08 Phase 3 DiT32 Separation](08_phase3_dit32_separation.md) — DiT 32-layer pre-failure
-   분리력 분석 결과.
-9. [09 Phase 3 VL vs DiT Comparison](09_phase3_vl_dit_comparison.md) — VL(goal)과
-   DiT(motor) pathway 비교, Phase 4 steering target 선택 근거.
-10. [10 Session Handoff](10_session_handoff.md) — 최신 연구 목적, 완료 실험, 다음 세션
-    우선순위, 주요 파일 위치.
-11. [11 Phase 4 N1.5 Instruction-Fixed Plan](11_phase4_n15_instruction_fixed_plan.md) —
-    N1.5 instruction-fixed seed selection, paired rollout collection, pathway cache, conceptor fit,
-    steering eval 계획과 실행 log.
+3. [07 Steering Methods Survey](07_steering_methods_survey.md) — conceptor steering(현 방식,
+   COAST 계열) + 이후 적용 후보(CAA, SAE-guided, NOTALL pathway, learned steering)와 권장 순서.
+4. [08 Pathway Separation Analysis](08_pathway_separation_analysis.md) — Phase 3 통합: DiT 32-layer
+   pre-failure 분리력 + VL(goal) vs DiT(motor) 비교(VL 이른 t≤8 / DiT 늦은 t≥12, goal-vs-motor
+   task 분열) + Phase 4 steering target 선택 근거.
+5. [11 Instruction Confound](11_instruction_confound.md) — Phase A 판정: 헤드라인 VL AUROC 가
+   instruction(in/out) 쏠림 아티팩트일 수 있음. VL/DiT LDA 사분면 분석 방법·근거.
+6. [11 Phase 4 N1.5 Instruction-Fixed Plan](11_phase4_n15_instruction_fixed_plan.md) —
+   N1.5 instruction-fixed seed selection, paired rollout collection, pathway cache, conceptor fit,
+   steering eval 계획과 실행 log.
+7. [13 Lab-Meeting PPT Notes](13_lab_meeting_ppt_notes.md) — 랩미팅 발표 덱 작업 노트:
+   현재 23-slide 지도·메시지 축·revision gap·편집 규칙 + 원본 아웃라인(슬라이드↔그림↔수치 매핑).
+8. [15 Research Structure](15_research_structure.md) — RQ1~4 / 가설 C1~C4 / crossover 검증 설계.
 
 ## 결과 위치
 
 | 질문 | 문서 |
 |---|---|
 | 현재 연구 방향(메인스트림)은? | `14_pathway_phase_online_steering.md` |
+| 연구 질문/가설(RQ1~4, C1~C4)·검증 설계는? | `15_research_structure.md` |
 | succ/fail latent가 실제로 분리되는가? | `01_seen18_latent_analysis.md` |
-| DiT-only COAST steering은 왜 실패했나? | `06_coast_groot_n16_summary.md` |
-| 최신 steering target은 무엇인가? | `09_phase3_vl_dit_comparison.md` |
+| pathway 분리력·최신 steering target은 무엇인가? | `08_pathway_separation_analysis.md` |
+| VL AUROC가 instruction 아티팩트인가? | `11_instruction_confound.md` |
 | N1.5 instruction-fixed 수집/steering은 어디까지 왔나? | `11_phase4_n15_instruction_fixed_plan.md` |
-| 다음 세션은 무엇부터 해야 하나? | `10_session_handoff.md`, `11_phase4_n15_instruction_fixed_plan.md` |
 | LeRobot/멀티벤치 SAFE 수집은 어디까지 왔나? | `05_safe_lerobot_collection.md` |
+| 랩미팅 발표 덱은 어떻게 구성/갱신하나? | `13_lab_meeting_ppt_notes.md` |

@@ -13,16 +13,15 @@
 | 개념 | 설명 | 이 프로젝트에서의 예시 |
 |------|------|----------------------|
 | **이미지(Image)** | 소프트웨어가 설치된 스냅샷. Dockerfile로 정의 | `docker/robocasa/Dockerfile` → robocasa 이미지 |
-| **컨테이너(Container)** | 이미지를 실행한 것. 독립된 환경에서 동작 | `robocasa`, `groot`, `groot_n15`, `xvla`, `dreamvla` |
+| **컨테이너(Container)** | 이미지를 실행한 것. 독립된 환경에서 동작 | `robocasa`, `groot`, `groot_n15`, `xvla` |
 | **볼륨 마운트(Volume)** | 호스트 폴더를 컨테이너 안에 연결 | 프로젝트 폴더 `./` → 컨테이너 내 `/temporal_vla` |
 | **docker-compose** | 여러 컨테이너를 하나의 설정 파일로 관리 | `docker-compose.yml` |
-| **서비스(Service)** | compose 파일에 정의된 각 컨테이너 단위 | `robocasa`, `groot`, `groot_n15`, `xvla`, `dreamvla` |
+| **서비스(Service)** | compose 파일에 정의된 각 컨테이너 단위 | `robocasa`, `groot`, `groot_n15`, `xvla` |
 
 **왜 컨테이너를 분리하는가?**
 
 - `robocasa`는 Python 3.11 + MuJoCo + GUI(KasmVNC)가 필요
 - `xvla`는 Python 3.10 + LeRobot이 필요
-- `dreamvla`는 Python 3.10 + flamingo_pytorch + CLIP이 필요
 - 이들의 의존성이 서로 충돌하므로 각각 별도의 컨테이너를 사용합니다. GR00T도 N1.6은 `groot`, N1.5는 `groot_n15`로 분리합니다.
 
 **볼륨 마운트의 의미:**
@@ -45,7 +44,7 @@
 | 상태 | 항상 실행 (기본 컨테이너) |
 
 이 컨테이너에서 시뮬레이션을 실행하고, 모델이 예측한 행동(action)을 받아 환경에 적용합니다.
-모델 추론은 xvla/dreamvla 컨테이너의 서버에 HTTP 요청을 보내서 수행합니다.
+모델 추론은 xvla 등 모델 서버 컨테이너에 HTTP 요청을 보내서 수행합니다.
 
 ### 2.2 groot
 
@@ -81,22 +80,6 @@ N1.6 RoboCasa fine-tuning과 ZMQ 평가 server에 사용합니다.
 
 LeRobot v3.0 형식의 데이터셋을 사용합니다 (`<cache>/datasets/datasets_v3/`).
 
-### 2.5 dreamvla
-
-| 항목 | 내용 |
-|------|------|
-| 역할 | DreamVLA 모델 학습 및 추론 서버 (FastAPI) |
-| Python | 3.10 |
-| 주요 패키지 | flamingo_pytorch, CLIP, transformers 4.40.2 |
-| 서버 포트 | 8200 |
-| 활성화 | `--profile dreamvla` 필요 |
-
-DreamVLA 코드를 별도로 clone해야 합니다:
-
-```bash
-git clone https://github.com/Zhangwenyao1/DreamVLA dreamvla
-```
-
 ---
 
 ## 3. 컨테이너 시작 / 중지 / 접속
@@ -117,9 +100,6 @@ docker compose build groot_n15
 
 # xvla (X-VLA 사용 시)
 docker compose build xvla
-
-# dreamvla (DreamVLA 사용 시)
-docker compose build dreamvla
 
 # 캐시 무시하고 처음부터 재빌드
 docker compose build --no-cache robocasa
@@ -142,9 +122,6 @@ docker compose up -d groot
 
 # GR00T N1.5 시작
 docker compose up -d groot_n15
-
-# dreamvla 시작
-docker compose up -d dreamvla
 
 # 모든 컨테이너 한번에 시작
 docker compose up -d
@@ -328,14 +305,6 @@ services:
             - driver: nvidia
               device_ids: ['1']       # GPU 1
               capabilities: [gpu]
-  dreamvla:
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ['2']       # GPU 2
-              capabilities: [gpu]
 ```
 
 ### GPU 확인
@@ -469,7 +438,7 @@ docker system prune -a
 
 ---
 
-### 모델 서버 연결 실패 (Connection refused on :8100 / :8200)
+### 모델 서버 연결 실패 (Connection refused on :8100)
 
 **원인:** 해당 모델 컨테이너가 실행 중이 아니거나, 서버 스크립트가 시작되지 않음
 

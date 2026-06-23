@@ -100,6 +100,7 @@ def build_collect_commands(
     video_fps: int,
     steps_per_render: int,
     wait_ready: bool,
+    no_overlay: bool = False,
     replay_ep_meta: bool = False,
     skip_existing: bool = False,
     python_executable: str = sys.executable,
@@ -163,6 +164,8 @@ def build_collect_commands(
             )
         if max_episode_steps is not None:
             argv.extend(["--max-episode-steps", str(max_episode_steps)])
+        if no_overlay:
+            argv.append("--no-overlay")
         if wait_ready:
             argv.append("--wait-ready")
         commands.append(
@@ -217,6 +220,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--steps-per-render", type=int, default=2)
     parser.add_argument("--wait-ready", action="store_true")
     parser.add_argument(
+        "--no-overlay",
+        action="store_true",
+        help="Forward to http_feature_collect.py: render caption-free clean videos.",
+    )
+    parser.add_argument(
         "--replay-ep-meta",
         action="store_true",
         help=(
@@ -248,6 +256,7 @@ def main() -> int:
         video_fps=args.video_fps,
         steps_per_render=args.steps_per_render,
         wait_ready=args.wait_ready,
+        no_overlay=args.no_overlay,
         replay_ep_meta=args.replay_ep_meta,
         skip_existing=args.skip_existing,
     )

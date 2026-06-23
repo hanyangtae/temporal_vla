@@ -143,6 +143,19 @@ class RoboCasaActionProcessor(ActionProcessorStep):
         base_torso = self._resolve_base_torso(action_dict)  # [base(3), torso(1)] = 4D
 
         arm = np.concatenate([eef_pos[:3], eef_rot[:3]])
+        # PandaMobile 12D = [right(6), gripper(1), base(3), torso(1), base_mode(1)].
+        # pi0.5 는 1D gripper + control_mode 를 내보냄 → control_mode 가 있으면 1D gripper +
+        # base_mode(=control_mode) 로 조립. (GR00T 는 2D gripper 라 [grip, grip] 복제가 맞음.)
+        if "action.control_mode" in action_dict:
+            base_mode = float(
+                np.asarray(action_dict["action.control_mode"], dtype=np.float32).flatten()[0]
+            )
+            return np.concatenate([
+                arm,
+                [grip],
+                base_torso,
+                [base_mode],
+            ]).astype(np.float32)
         return np.concatenate([
             arm,
             [grip, grip],

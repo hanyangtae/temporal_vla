@@ -57,11 +57,9 @@ cell 단위로 진행한다.
 
 ## 이어받는 기준 문서
 
-- `docs/steering/04_coast_reproduction_map.md`: COAST 수식, conceptor fit, SR eval의 재현 기준
-- `docs/steering/06_coast_groot_n16_summary.md`: N1.6 DiT-only COAST 실패와 layer sweep 결과
-- `docs/steering/08_phase3_dit32_separation.md`: DiT pre-failure 분리력 분석 방식
-- `docs/steering/09_phase3_vl_dit_comparison.md`: VL(goal) vs DiT(motor) pathway 분리력 결론
-- `docs/steering/10_session_handoff.md`: Phase 3에서 Phase 4로 넘어가는 최신 runbook
+- COAST 수식/conceptor fit/SR eval 재현 기준 문서는 정리됨(재현 실패—원인 미상); conceptor 수학 provenance는 `src/conceptor/README.md`.
+- `docs/steering/08_pathway_separation_analysis.md`: DiT pre-failure 분리력 분석 방식 + VL(goal) vs
+  DiT(motor) pathway 분리력 결론 + Phase 4 steering target 선택 근거 (Phase 3 통합 결과)
 - `docs/benchmarks/robocasa_env_reproducibility.md`: RoboCasa construction seed와 ep_meta replay 경계
 - `docs/groot/n16_05_safe_env_reproduction.md`: SAFE 수집 경로의 scenario_seed/ep_meta contract
 - `scripts/safe/groot_n15/robocasa/README.md`: N1.5 RoboCasa feature collection contract
@@ -110,7 +108,7 @@ SlideDishwasherRack은 이번 N1.5 instruction-fixed 본수집에서 제외한�
 | turn_on_sink_faucet | TurnOnSinkFaucet | Turn on the sink faucet. | 코드상 canonical instruction |
 | navigate_fridge | NavigateKitchen | Navigate to the fridge. | seed-selected navigation target |
 | navigate_coffee_machine | NavigateKitchen | Navigate to the coffee machine. | seed-selected navigation target |
-| coffee_setup_mug | CoffeeSetupMug | Pick the mug from the counter and place it under the coffee machine dispenser. | mug/goal 고정 |
+| coffee_setup_mug | CoffeeSetupMug | Pick the mug from the counter and place it under the coffee machine dispenser. | mug/goal 고정; COAST의 "Coffee Mug"와 동일 task → COAST 비교 일관성 좋음 |
 
 주의할 점:
 

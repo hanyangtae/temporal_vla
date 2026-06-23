@@ -10,10 +10,8 @@
 > - [04 SAFE Collection](n16_04_safe_collection.md)
 > - [05 Scenario Reproduction](n16_05_safe_env_reproduction.md)
 > - **06 Inference Datapoint Semantics (이 문서)**
-> - [07 SAFE Detector](n16_07_safe_detector.md)
-> - [08 SAFE Visualization](n16_08_safe_visualization.md)
+> - [07 SAFE Detector + Visualization + Report](n16_07_safe_detector_report.md)
 > - [09 SAFE Parity](n16_09_safe_parity.md)
-> - [10 SAFE Report](n16_10_safe_report.md)
 
 > **표기 원칙**: 본 문서와 코드 옵션에서 "frame" 이라는 용어는 사용하지 않는다.
 > 한 datapoint는 1회의 **GR00T inference** 출력이고, rollout 길이는 inference

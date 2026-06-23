@@ -122,12 +122,14 @@ def build_tmux_command(
     progress_interval: int,
     shard_suffix: str = "",
     seed_start: int | None = None,
+    cells_config: Path | None = None,
 ) -> list[str]:
     shard_stem = f"{cell.cell_id}{shard_suffix}"
     shard_tsv = run_root / "manifests" / "shards" / f"{shard_stem}.tsv"
     ep_meta_dir = run_root / "ep_meta"
     log_path = run_root / "logs" / f"{shard_stem}.log"
     seed_start_arg = "" if seed_start is None else f"--seed-start {seed_start} "
+    cells_cfg_arg = "" if cells_config is None else f"--cells-config {_quote_path(cells_config)} "
     inner_command = (
         f"cd {_quote_path(repo_root)} && "
         f"docker exec -w {_quote_path(container_workdir)} {_quote_path(container_name)} "
@@ -135,6 +137,7 @@ def build_tmux_command(
         f"--output-tsv {_quote_path(shard_tsv)} "
         f"--ep-meta-dir {_quote_path(ep_meta_dir)} "
         f"--cell-id {_quote_path(cell.cell_id)} "
+        f"{cells_cfg_arg}"
         f"--target-per-cell {target_per_cell} "
         f"{seed_start_arg}"
         f"--max-seeds-per-cell {max_seeds_per_cell} "
@@ -161,6 +164,7 @@ def plan_launches(
     shard_suffix: str = "",
     seed_start: int | None = None,
     max_new_sessions: int | None,
+    cells_config: Path | None = None,
 ) -> list[LaunchPlan]:
     plans: list[LaunchPlan] = []
     launches = 0
@@ -189,6 +193,7 @@ def plan_launches(
             progress_interval=progress_interval,
             shard_suffix=shard_suffix,
             seed_start=seed_start,
+            cells_config=cells_config,
         )
         plans.append(LaunchPlan(cell.cell_id, session, command))
         launches += 1
@@ -236,6 +241,7 @@ def main() -> int:
         shard_suffix=args.shard_suffix,
         seed_start=args.seed_start,
         max_new_sessions=args.max_new_sessions,
+        cells_config=args.cells_config,
     )
     for plan in plans:
         if plan.reason != "launch":

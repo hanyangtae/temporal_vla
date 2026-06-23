@@ -56,19 +56,21 @@ services:
         GROUP_ID: ${GROUP_ID}
     volumes:
       - .:/temporal_vla:rw
-      # LeRobot 통합 image 는 repo-local data/huggingface cache 를 사용.
-      - ./data:/cache:rw
+      # kanu: /cache = user-owned temporal_vla cache (N1.5 robocasa365 ckpt 는
+      # datasets/huggingface 아래에 있음). HF_HOME 의 parent(/cache/datasets)가 쓰기 가능해야
+      # setup_repo_local_hf_cache 의 .cache 생성이 됨 (groot 서비스와 동일 패턴).
+      - ${HOME}/.cache/temporal_vla:/cache:rw
       # /D/temporal_vla_data 등 환경별 데이터 마운트는 docker-compose.override.yml 에서 추가.
       # HF cache 는 NTFS(/D) 가 chmod 를 지원 안 해서 호스트 ext4 홈을 직접 bind mount.
       - ${HOME}/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface:rw
     environment:
       - VLA_CACHE_ROOT=/cache
-      - HF_HOME=/cache/huggingface
-      - HF_HUB_CACHE=/cache/huggingface/hub
-      - HUGGINGFACE_HUB_CACHE=/cache/huggingface/hub
+      - HF_HOME=/cache/datasets/huggingface
+      - HF_HUB_CACHE=/cache/datasets/huggingface/hub
+      - HUGGINGFACE_HUB_CACHE=/cache/datasets/huggingface/hub
       - HF_TRUST_REMOTE_CODE=1
-      - FLASH_ATTN_CUDA_ARCHS=120
-      - TORCH_CUDA_ARCH_LIST=12.0
+      - FLASH_ATTN_CUDA_ARCHS=86
+      - TORCH_CUDA_ARCH_LIST=8.6
       - HF_TOKEN=${HF_TOKEN}
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
       - PYTHONPATH=/temporal_vla:/temporal_vla/scripts/utils
@@ -189,41 +191,6 @@ services:
       - HF_TRUST_REMOTE_CODE=1
       - PYTHONPATH=/temporal_vla/lerobot/src:/temporal_vla:/temporal_vla/scripts/utils
       - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    network_mode: host
-    tty: true
-    stdin_open: true
-    command: ["/bin/bash"]
-
-  dreamvla:
-    container_name: dreamvla
-    build:
-      context: ./docker/dreamvla
-      dockerfile: Dockerfile
-      args:
-        USER_NAME: ${USER_NAME}
-        USER_ID: ${USER_ID}
-        GROUP_ID: ${GROUP_ID}
-    volumes:
-      - .:/temporal_vla:rw
-      # 체크포인트/데이터셋 cache (호스트 ~/.cache/temporal_vla → 컨테이너 /cache)
-      - ${VLA_CACHE_ROOT:-${HOME}/.cache/temporal_vla}:/cache:rw
-      # /D/temporal_vla_data 등 환경별 데이터 마운트는 docker-compose.override.yml 에서 추가.
-      # HF cache 는 NTFS(/D) 가 chmod 미지원 → 호스트 ext4 홈을 직접 bind mount.
-      - ${HOME}/.cache/huggingface:/home/${USER_NAME}/.cache/huggingface:rw
-    environment:
-      - VLA_CACHE_ROOT=/cache
-      - HF_HOME=/home/${USER_NAME}/.cache/huggingface
-      - HF_TRUST_REMOTE_CODE=1
-      - HF_TOKEN=${HF_TOKEN}
-      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
-      - PYTHONPATH=/temporal_vla/src/policies/dreamvla:/temporal_vla:/temporal_vla/lerobot/src:/temporal_vla/scripts/utils
     deploy:
       resources:
         reservations:

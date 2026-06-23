@@ -1,6 +1,6 @@
 # UP-VLA Training & Inference Server
 # Show-o backbone based VLA with future prediction pretraining
-# torch 2.2.1 + xformers 0.0.25 (incompatible with xvla/dreamvla containers)
+# torch 2.2.1 + xformers 0.0.25 (incompatible with xvla container)
 FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
 
 ARG USER_NAME

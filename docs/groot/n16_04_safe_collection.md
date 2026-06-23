@@ -10,10 +10,8 @@ ZMQ SAFE feature server 또는 HTTP `/act_with_features`를 통해 RoboCasa roll
 > - **04 SAFE Collection (이 문서)**
 > - [05 Scenario Reproduction](n16_05_safe_env_reproduction.md)
 > - [06 Inference Datapoint Semantics](n16_06_safe_inference_semantics.md)
-> - [07 SAFE Detector](n16_07_safe_detector.md)
-> - [08 SAFE Visualization](n16_08_safe_visualization.md)
+> - [07 SAFE Detector + Visualization + Report](n16_07_safe_detector_report.md)
 > - [09 SAFE Parity](n16_09_safe_parity.md)
-> - [10 SAFE Report](n16_10_safe_report.md)
 
 ## ZMQ SAFE Feature Collection
 
@@ -142,7 +140,7 @@ python scripts/safe/groot_n16/robocasa/collect/collect_rollout.py \
   --ep-meta-dir outputs/tmp/groot_http_act_features_safe_collect_20260529/ep_meta
 ```
 
-Smoke artifact와 SAFE loader 결과는 [10 SAFE Report](n16_10_safe_report.md#http-act_with_features-safe-collection-smoke-2026-05-29)에 기록한다. HTTP/ZMQ transport parity 결과는 [09 SAFE Parity](n16_09_safe_parity.md#closed-loop-safe-transport-smoke)에 둔다.
+Smoke artifact와 SAFE loader 결과는 [07 SAFE Detector + Visualization + Report](n16_07_safe_detector_report.md#http-act_with_features-safe-collection-smoke-2026-05-29)에 기록한다. HTTP/ZMQ transport parity 결과는 [09 SAFE Parity](n16_09_safe_parity.md#closed-loop-safe-transport-smoke)에 둔다.
 
 `ah8` 서버:
 
@@ -357,7 +355,7 @@ summary_seeds=100000..100099 unique=100 rows=1800 formula=seed_start+episode_idx
 status=ok
 ```
 
-Per-task SR은 [SAFE reproduction report](n16_10_safe_report.md#robocasa365-18-task-collection-결과)에 둔다. 이 collection은 raw rollout/latent-feature producer artifact이며, 기존 `safe_seen4_unseen2_100ep` 6-task detector split과는 별도 run이다.
+Per-task SR은 [SAFE reproduction report](n16_07_safe_detector_report.md#robocasa365-18-task-collection-결과)에 둔다. 이 collection은 raw rollout/latent-feature producer artifact이며, 기존 `safe_seen4_unseen2_100ep` 6-task detector split과는 별도 run이다.
 
 저장 위치:
 

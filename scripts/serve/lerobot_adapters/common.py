@@ -34,8 +34,11 @@ STATE_DIM: dict[str, int] = {
     "eef_pos_rel": 3,
     "eef_euler": 3,
     "eef_axisangle": 3,
-    "eef_quat": 3,
-    "eef_quat_rel": 4,
+    "eef_quat": 3,           # 일부 모델이 3D quat(xyz only) 을 쓰는 경우
+    "eef_quat_xyzw": 4,      # 명시적 4D xyzw quat alias
+    "eef_quat_rel": 4,       # base-frame 상대 4D xyzw quat (robocasa pi05 학습 포맷)
+    "base_to_eef_pos": 3,    # robosuite native base-frame EEF pos (robocasa pi05)
+    "base_to_eef_quat": 4,   # robosuite native base-frame EEF quat xyzw (robocasa pi05)
     "eef_rot6d": 6,
     "gripper_qpos": 2,
     "gripper_opening": 1,

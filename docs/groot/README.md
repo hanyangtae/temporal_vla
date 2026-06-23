@@ -46,8 +46,8 @@ model token 전체를 pooling하는 것이다.
    collection/replay/feature/detector/report 순서로 내려간다.
 4. HTTP `/act` 또는 `/act_with_features`를 다룰 때는 `n16_09`의 parity 상태와 `n16_11`의 코드
    변경 범위를 같이 확인한다. HTTP 결과를 Upstream GR00T ZMQ evaluation 기준선으로 혼동하지 않는다.
-5. N1.5와 LeRobot 실험은 `n15_03`을 overview로 보고, stage별 세부는 `n15_04`와 `n15_05`에서
-   확인한다.
+5. N1.5와 LeRobot 실험은 `n15_03` 한 문서에서 pipeline overview/status, serve adapter spec,
+   obs bridge mapping, native ZMQ baseline, internal checkpoint-load parity를 섹션별로 확인한다.
 
 ## Architecture Entry
 
@@ -65,22 +65,20 @@ model token 전체를 pooling하는 것이다.
 4. [04 SAFE Collection](n16_04_safe_collection.md) — ZMQ feature server, RoboCasa365 collection, ah8/ah16 mode
 5. [05 Scenario Reproduction](n16_05_safe_env_reproduction.md) — scenario seed + ep_meta manifest 재현 범위
 6. [06 Inference Datapoint Semantics](n16_06_safe_inference_semantics.md) — 한 datapoint의 시간/단위 의미
-7. [07 SAFE Detector](n16_07_safe_detector.md) — Paper-faithful split + LSTM 학습 + CP 운영점
-8. [08 SAFE Visualization](n16_08_safe_visualization.md) — t-SNE / overlay / silhouette 진단
-9. [09 SAFE Parity](n16_09_safe_parity.md) — ZMQ official baseline parity + HTTP `/act`/`/act_with_features` parity
-10. [10 SAFE Report](n16_10_safe_report.md) — 축소 재현 end-to-end 결과 보고서
-11. [11 HTTP Act Changes](n16_11_http_act_changes.md) — 이번 HTTP `/act` wiring 변경점과 검증 상태
-12. [12 RoboCasa Refactor Report](n16_12_robocasa_refactor_report.md) — GR00T RoboCasa HTTP/ZMQ 리팩토링 구조와 책임 경계
+7. [07 SAFE Detector + Visualization + Report](n16_07_safe_detector_report.md) — Paper-faithful split + LSTM 학습 + CP 운영점, t-SNE/silhouette 진단, 축소 재현 end-to-end 결과 보고서
+8. [09 SAFE Parity](n16_09_safe_parity.md) — ZMQ official baseline parity + HTTP `/act`/`/act_with_features` parity
+9. [11 HTTP Act Changes](n16_11_http_act_changes.md) — 이번 HTTP `/act` wiring 변경점과 검증 상태
+10. [12 RoboCasa Refactor Report](n16_12_robocasa_refactor_report.md) — GR00T RoboCasa HTTP/ZMQ 리팩토링 구조와 책임 경계
+
+> 파일명 prefix `08`, `10`은 `07`로 흡수됐고, `09`/`11`/`12`는 파일명을 유지한다(reading order 번호만 위와 같이 당겨 읽는다).
 
 ## N1.5 Reading Order
 
 1. [N1.5 01 Fine-Tuning](n15_01_finetune.md)
 2. [N1.5 02 Evaluation](n15_02_eval.md)
-3. [N1.5 03 LeRobot RoboCasa365 Pipeline — Overview & Status](n15_03_lerobot_robocasa365.md) — serve→HTTP→robocasa365→analysis UI 4-stage map, 검증 상태/향후 계획
-4. [N1.5 04 Serve Adapter Spec](n15_04_lerobot_serve_adapter.md) — stage [1]: checkpoint 형식, profile 필드 명세, serve/smoke, 구현 구조
-5. [N1.5 05 Closed-loop Obs Bridge Spec](n15_05_lerobot_obs_bridge.md) — stage [2][3]: 카메라/state 키 매핑 명세, gap 분석, 수정안
-6. [N1.5 06 Native ZMQ OpenFridge Smoke](n15_06_native_zmq_openfridge.md) — LeRobot mismatch 분리용 Isaac-GR00T N1.5 ZMQ comparison note (bring-up 후 진단)
-7. [N1.5 07 LeRobot Internal Parity](n15_07_lerobot_internal_parity.md) — SR가 아닌 checkpoint-load 검증과 historical internal evidence (bring-up 후 진단)
+3. [N1.5 03 LeRobot RoboCasa365 Pipeline](n15_03_lerobot_robocasa365.md) — 한 문서에 섹션별로 통합: pipeline overview/status (serve→HTTP→robocasa365→analysis UI 4-stage map, 검증 상태/향후 계획), serve adapter spec (stage [1] checkpoint 형식·profile 필드·구현 구조), obs bridge mapping (stage [2][3] 카메라/state 키 매핑·과거 remap 버그), native ZMQ baseline (OpenFridge smoke), internal checkpoint-load parity (764-tensor verifier)
+
+> 이전 `n15_04`~`n15_07` (serve adapter / obs bridge / native ZMQ smoke / internal parity)은 `n15_03`의 동명 섹션으로 흡수됐다.
 
 ## 문서 경계
 
@@ -91,14 +89,12 @@ model token 전체를 pooling하는 것이다.
 | N1.6 SAFE collection | `n16_04_safe_collection.md` | ZMQ feature server와 rollout 수집 runbook |
 | N1.6 replay semantics | `n16_05_safe_env_reproduction.md` | `scenario_seed` / `ep_meta` 보장 범위와 PC 간 replay 절차 |
 | N1.6 feature semantics | `n16_06_safe_inference_semantics.md` | datapoint, time axis, feature/action horizon 의미 |
-| N1.6 detector/visualization/report | `n16_07_safe_detector.md`, `n16_08_safe_visualization.md`, `n16_10_safe_report.md` | detector 학습, 시각화 진단, 결과 보고 |
+| N1.6 detector/visualization/report | `n16_07_safe_detector_report.md` | detector 학습, 시각화 진단, 결과 보고 (한 문서 3섹션) |
 | N1.6 parity validation | `n16_09_safe_parity.md` | ZMQ/HTTP action parity, SAFE transport parity, runtime validation 수치, 남은 replay 한계의 단일 출처 |
 | N1.6 HTTP implementation changelog | `n16_11_http_act_changes.md` | HTTP `/act` / `/act_with_features` 코드 계약과 변경점. 검증 수치는 `n16_09`로 링크 |
 | N1.6 RoboCasa refactor architecture | `n16_12_robocasa_refactor_report.md` | GR00T RoboCasa 전용 processor, HTTP/ZMQ transport, shared contract 책임 경계 |
 | N1.5 reference | `n15_01_finetune.md`, `n15_02_eval.md` | Isaac-GR00T N1.5 GR1/PandaOmron reference workflow (ZMQ) |
-| N1.5 LeRobot pipeline | `n15_03`(overview/status), `n15_04`(serve spec), `n15_05`(obs bridge spec) | LeRobot serve→HTTP→robocasa365→analysis UI 4-stage. Feature 비교용 수집 client는 `scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py` |
-| N1.5 native/internal comparison | `n15_06_native_zmq_openfridge.md`, `n15_07_lerobot_internal_parity.md` | native Isaac-GR00T N1.5 ZMQ smoke와 SR 외 내부값 parity 검증 |
-| Legacy | `_legacy/robocasa_finetune_setup.md` | 초기 setup note. 현행 runbook의 기준이 아니다 |
+| N1.5 LeRobot pipeline | `n15_03_lerobot_robocasa365.md` (overview/status + serve spec + obs bridge spec + native ZMQ baseline + internal parity, 한 문서 섹션) | LeRobot serve→HTTP→robocasa365→analysis UI 4-stage. Feature 비교용 수집 client는 `scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py` |
 
 N1.6 SAFE feature server와 canonical artifact writer는 계속
 `scripts/safe/groot_n16/robocasa/` 아래에 둔다. N1.5는 LeRobot HTTP
@@ -134,27 +130,27 @@ LeRobot serve를 `scripts/serve/lerobot.py --collect --capture-vl`로 띄운다.
 collector pkl에는 DiT `hidden_states`와 함께 `vl_hidden_states`,
 `vl_feature_kind=groot_n15_vlln_seq_meanpool`, `vl_feature_dim`이 저장된다.
 
-`docs/groot/n15_06_*`와 아래 Runtime Recheck 섹션에 남아 있는 `success1.mp4` 또는 task-level
-`OpenFridge.mp4` 경로는 해당 실행 당시의 historical artifact 이름이다. 새 run의 기준은 위 표다.
+`n15_03`의 native ZMQ baseline 섹션과 아래 Runtime Recheck 섹션에 남아 있는 `success1.mp4`
+또는 task-level `OpenFridge.mp4` 경로는 해당 실행 당시의 historical artifact 이름이다. 새 run의 기준은 위 표다.
 
 ## 용어 기준
 
-Repo-wide 용어는 [`../../CONTEXT.md`](../../CONTEXT.md)를 기준으로 한다. GR00T RoboCasa 문서에서 자주 쓰는 세부 용어는 아래 의미로 읽는다.
+GR00T RoboCasa 문서에서 자주 쓰는 세부 용어는 아래 의미로 읽는다 (repo-wide 컨벤션은 `CLAUDE.md`).
 
 | 용어 | 의미 | 자세한 기준 |
 |---|---|---|
 | Upstream GR00T ZMQ evaluation | GR00T RoboCasa success-rate 기준 경로 | `n16_02_eval.md`, `n16_09_safe_parity.md` |
 | Project FastAPI evaluation | 여러 VLA policy를 공통 HTTP `/act` API로 비교하는 경로 | `n16_09_safe_parity.md` |
-| SAFE wiring | VLA rollout에서 action과 latent feature를 SAFE-readable artifact로 내보내는 연결 경로 | `n16_03_safe_overview.md`, `../../CONTEXT.md` |
-| SAFE feature vector | VLA latent feature를 token/horizon/diffusion 축에서 aggregation한 timestep-level detector input | `n16_06_safe_inference_semantics.md`, `n16_10_safe_report.md` |
+| SAFE wiring | VLA rollout에서 action과 latent feature를 SAFE-readable artifact로 내보내는 연결 경로 | `n16_03_safe_overview.md` |
+| SAFE feature vector | VLA latent feature를 token/horizon/diffusion 축에서 aggregation한 timestep-level detector input | `n16_06_safe_inference_semantics.md`, `n16_07_safe_detector_report.md` |
 | datapoint | `hidden_states[t]` 하나. GR00T inference 1회의 DiT action-token latent | `n16_06_safe_inference_semantics.md` |
 | scenario / scene composition | layout/style, object cfg, texture, fixture reference, camera/config, robot base pose 수준의 task instance | `n16_05_safe_env_reproduction.md` |
 | `scenario_seed` | RoboCasa env construction seed. 현재 collector는 `--seed S`와 local episode index `i`로 `S+i`를 쓴다 | `n16_05_safe_env_reproduction.md` |
 | `ep_meta` manifest | `(env_name, scenario_seed)`에 대응하는 RoboCasa scenario 기록 JSON | `n16_05_safe_env_reproduction.md` |
 | `ah8` / `ah16` | SAFE feature export horizon과 RoboCasa execution step을 8 또는 16으로 맞춘 paired collection mode | `n16_04_safe_collection.md`, `n16_06_safe_inference_semantics.md` |
-| SR | success rate. task 또는 run에서 success episode 비율 | `n16_02_eval.md`, `n16_10_safe_report.md` |
-| T-det | detection time을 rollout length로 정규화한 값. 작을수록 early detection | `n16_10_safe_report.md` |
-| CP operating point | detector score 위에 conformal threshold/band를 고정한 운영점 | `n16_07_safe_detector.md`, `n16_10_safe_report.md` |
+| SR | success rate. task 또는 run에서 success episode 비율 | `n16_02_eval.md`, `n16_07_safe_detector_report.md` |
+| T-det | detection time을 rollout length로 정규화한 값. 작을수록 early detection | `n16_07_safe_detector_report.md` |
+| CP operating point | detector score 위에 conformal threshold/band를 고정한 운영점 | `n16_07_safe_detector_report.md` |
 
 현재 label scope는 rollout-level success/failure다. Inference-step-level failure onset/intervention label은 아직 별도 protocol로 정의해야 한다.
 

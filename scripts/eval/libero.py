@@ -71,7 +71,6 @@ logger = logging.getLogger(__name__)
 URL_MAP = {
     "http://localhost:8400": "openvla_oft",
     "http://localhost:8300": "upvla",
-    "http://localhost:8200": "dreamvla",
     "http://localhost:8100": "xvla",
 }
 

@@ -8,7 +8,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_UTILS_DIR = REPO_ROOT / "scripts" / "utils"
 ROBOCASA_ROOT = REPO_ROOT / "src" / "benchmarks" / "robocasa"
 ROBOSUITE_ROOT = REPO_ROOT / "src" / "benchmarks" / "robosuite"
-DREAMVLA_ROOT = REPO_ROOT / "src" / "policies" / "dreamvla"
 DATASETS_ROOT = REPO_ROOT / "src" / "datasets"
 GROOT_ROOT = REPO_ROOT / "src" / "policies" / "Isaac-GR00T"
 GROOT_ROBOCASA_V02_ROOT = GROOT_ROOT / "external_dependencies" / "robocasa"
@@ -40,7 +39,6 @@ def configure_repo_paths(
     *,
     include_script_utils: bool = False,
     include_robocasa: bool = False,
-    include_dreamvla: bool = False,
     include_datasets: bool = False,
     include_groot: bool = False,
     include_groot_robocasa_v02: bool = False,
@@ -53,9 +51,6 @@ def configure_repo_paths(
     if include_robocasa:
         _prepend(ROBOCASA_ROOT)
         _prepend(ROBOSUITE_ROOT)
-
-    if include_dreamvla:
-        _prepend(DREAMVLA_ROOT)
 
     if include_datasets:
         _prepend(DATASETS_ROOT)

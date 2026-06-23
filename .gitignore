@@ -11,6 +11,7 @@ logs/*
 models/*
 *.pyc
 checkpoints/*
+configs/checkpoints/**
 src/policies/UP-VLA/showlab/
 lerobot/tests/**
 wandb/**

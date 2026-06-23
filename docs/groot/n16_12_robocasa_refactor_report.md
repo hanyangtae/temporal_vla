@@ -7,7 +7,7 @@
 - [docs/groot/README.md](README.md)
 - [docs/groot/n16_04_safe_collection.md](n16_04_safe_collection.md)
 - [docs/groot/n16_09_safe_parity.md](n16_09_safe_parity.md)
-- [docs/groot/n16_10_safe_report.md](n16_10_safe_report.md)
+- [docs/groot/n16_07_safe_detector_report.md](n16_07_safe_detector_report.md)
 - [docs/groot/n16_11_http_act_changes.md](n16_11_http_act_changes.md)
 
 ## 요약
@@ -257,7 +257,7 @@ gripper_close         -> action.gripper
 
 ## 검증 상태
 
-최근 정리된 검증 범위는 아래와 같다. 상세 수치와 artifact path는 [n16_09_safe_parity.md](n16_09_safe_parity.md)와 [n16_10_safe_report.md](n16_10_safe_report.md)를 기준으로 한다.
+최근 정리된 검증 범위는 아래와 같다. 상세 수치와 artifact path는 [n16_09_safe_parity.md](n16_09_safe_parity.md)와 [n16_07_safe_detector_report.md](n16_07_safe_detector_report.md)를 기준으로 한다.
 
 | 검증 | 상태 | 비고 |
 |---|---|---|

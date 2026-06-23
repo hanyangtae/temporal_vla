@@ -261,6 +261,7 @@ def make_env(
     video_dir: Path | None = None,
     video_fps: int = 20,
     steps_per_render: int = 2,
+    overlay_text: bool = True,
     n_action_steps: int = 16,
     max_episode_steps: int = 720,
 ):
@@ -279,6 +280,7 @@ def make_env(
             fps=video_fps,
             steps_per_render=steps_per_render,
             max_episode_steps=max_episode_steps,
+            overlay_text=overlay_text,   # --no-overlay → 캡션 없는 클린 영상
         ),
         multistep=MultiStepConfig(
             n_action_steps=n_action_steps,
@@ -339,6 +341,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wait-ready", action="store_true")
     parser.add_argument("--video-fps", type=int, default=20)
     parser.add_argument("--steps-per-render", type=int, default=2)
+    parser.add_argument("--no-overlay", action="store_true",
+                        help="영상에 instruction/success 캡션을 안 그림(클린 mp4). "
+                             "instruction은 ep_meta.lang 에 그대로 남음.")
     return parser.parse_args()
 
 
@@ -425,6 +430,7 @@ def run() -> dict[str, Any]:
             video_dir=upstream_video_dir,
             video_fps=args.video_fps,
             steps_per_render=args.steps_per_render,
+            overlay_text=not args.no_overlay,   # --no-overlay → 캡션 없는 클린 영상
             n_action_steps=args.n_action_steps,
             max_episode_steps=max_steps,
         )

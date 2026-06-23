@@ -11,7 +11,7 @@
 ## 가설
 
 1. **Pathway 분리 steering**: VL(goal "what")과 DiT(motor "how")를 **각각 따로** steer.
-   - 근거: NOTALL의 기능 분리(인과개입), 우리 Phase 3(VL 이른 신호 t≤8 / DiT 늦은 신호 t≥12, `09_`).
+   - 근거: NOTALL의 기능 분리(인과개입), 우리 Phase 3(VL 이른 신호 t≤8 / DiT 늦은 신호 t≥12, `08_`).
    - 주의: Eagle→VL-SA→DiT 는 **직렬** → "따로"가 진짜 독립이 아님. "VL만 / DiT만 / 둘 다"를 ablation으로 가른다.
 2. **Phase-matched DiT steering**: DiT는 **rollout phase(시간)에 조건부로** steer.
    - 근거: 길이 confound(`01_`) — COAST는 전 timestep을 한 공간에 pool해 phase를 섞음. 두 실패 regime(초기조건형 / 실행표류형). NOTALL temporal ablation: DiT는 approach phase 지나면 expendable.
@@ -42,12 +42,12 @@
 복잡도를 한 번에 올리면 약한 신호(0.6~0.7)에서 noise를 fit한다. 단계별로 ΔSR을 보고, **이전
 단계가 신호를 보일 때만** 다음으로:
 
-1. **Positive control**: faithful COAST N1.5에서 **global(가장 단순)** steering이 ΔSR>0 인가? (안 되면 정교화 무의미)
+1. **(중단) COAST positive control**: faithful COAST N1.5 global steering 재현을 시도했으나 **실패**(ΔSR≈0, 논문 +0.16 재현 안 됨, **원인 미상**). 추가 시도 안 함. → 사다리는 우리 per-phase conceptor 의 pathway-split(2)부터 ΔSR 로 직접 검증한다.
 2. **Pathway-split**: VL만 / DiT만 / 둘 다.
 3. **+Phase-bin**: 절대 t-bin부터. 효과 보이면 progress / subtask로 격상.
 
 - 표준: EVAL_SEED=100000, N_ENVS=2, N_EP=20, per-episode TSV. ([[eval-seed-standard]])
-- confound: fixed-instruction 데이터로 VL 신호 진위 확보 (`11_instruction_confound`, `12_`).
+- confound: fixed-instruction 데이터로 VL 신호 진위 확보 (`11_instruction_confound`, `11_phase4`).
 
 ## phase를 online에 어떻게 아나 (열린 설계)
 
@@ -61,8 +61,8 @@
 
 - **VL(goal)**: `action_head.vlln` (post-LN, D=2048, seq-mean-pool 이득). = NOTALL의 VL-SA bridge 쪽.
 - **DiT(motor)**: `action_head.model.transformer_blocks[i]` D=1536 / 최종 pre-velocity D=1024 (per-token 필요).
-- **Eagle-LM(goal "what", 12층)**: 아직 tap 안 함 — goal-type의 또 다른 후보 (`06_` next step). ([[pathway-resolved-steering]])
+- **Eagle-LM(goal "what", 12층)**: 아직 tap 안 함 — goal-type의 또 다른 후보. ([[pathway-resolved-steering]])
 
 ## 근거 문서
 
-길이 confound·진짜 신호 `01_` / COAST 재현 ΔSR≤0 `06_` / VL·DiT timing `09_` / instruction confound `11_instruction_confound` / 발표 정리 `13_`.
+길이 confound·진짜 신호 `01_` / VL·DiT timing `08_` / instruction confound `11_instruction_confound` / 발표 정리 `13_lab_meeting_ppt_notes`. (COAST 재현은 시도했으나 실패 — 원인 미상, 추가 안 함.)

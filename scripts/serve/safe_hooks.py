@@ -39,10 +39,12 @@ if str(_REPO_ROOT) not in sys.path:
 
 from src.policies.safe_capture import SafeForwardCapture  # noqa: E402
 from src.policies.safe_metadata import (  # noqa: E402
-    GROOT_N15_DIT_BLOCK_RESIDUAL_FEATURE_AXES,
-    GROOT_N15_DIT_BLOCK_RESIDUAL_FEATURE_KIND,
+    GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES,
+    GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND,
     GROOT_N15_VL_FEATURE_KIND,
     GROOT_VL_FEATURE_AXES,
+    PI05_EXPERT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES,
+    PI05_EXPERT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND,
     lerobot_feature_axes,
     lerobot_feature_kind,
 )
@@ -99,6 +101,7 @@ class SafeFeatureCapture:
         *,
         capture_vl: bool = False,
         groot_dit_layers: tuple[int, ...] | list[int] | None = None,
+        pi05_expert_layers: tuple[int, ...] | list[int] | None = None,
     ):
         if policy_type not in SUPPORTED_TYPES:
             raise ValueError(f"Unsupported policy_type: {policy_type}")
@@ -107,10 +110,17 @@ class SafeFeatureCapture:
         self.groot_dit_layers = (
             None if groot_dit_layers is None else [int(layer) for layer in groot_dit_layers]
         )
+        self.pi05_expert_layers = (
+            None if pi05_expert_layers is None else [int(layer) for layer in pi05_expert_layers]
+        )
         self.block_modules: list[torch.nn.Module] = []
         self.block_bufs: dict[int, list[torch.Tensor]] = {}
         self._block_capture_ctxs: list[SafeForwardCapture] = []
         self.groot_action_horizon: int | None = None
+        # pi05 expert block residual capture 시 마지막 chunk_size action token mean-pool.
+        self.pi05_chunk_size: int | None = None
+        if self.groot_dit_layers is not None and self.pi05_expert_layers is not None:
+            raise ValueError("groot_dit_layers and pi05_expert_layers are mutually exclusive")
         if self.groot_dit_layers is not None:
             if policy_type != "groot":
                 raise ValueError("groot_dit_layers is supported only for policy_type='groot'")
@@ -118,6 +128,16 @@ class SafeFeatureCapture:
             blocks = head.model.transformer_blocks
             self.groot_action_horizon = int(head.action_horizon)
             self.block_modules = [blocks[layer] for layer in self.groot_dit_layers]
+            self.module = None
+            self.mode = None
+            self.slicer = None
+        elif self.pi05_expert_layers is not None:
+            if policy_type != "pi05":
+                raise ValueError("pi05_expert_layers is supported only for policy_type='pi05'")
+            # COAST A.7.1: action expert(Gemma2) decoder layer residual stream 출력.
+            layers = policy.model.paligemma_with_expert.gemma_expert.model.layers
+            self.pi05_chunk_size = int(policy.model.config.chunk_size)
+            self.block_modules = [layers[layer] for layer in self.pi05_expert_layers]
             self.module = None
             self.mode = None
             self.slicer = None
@@ -129,13 +149,23 @@ class SafeFeatureCapture:
         self._capture_ctx: SafeForwardCapture | None = None
         self._vl_capture_ctx: SafeForwardCapture | None = None
 
+    @property
+    def _block_layers(self) -> list[int] | None:
+        """block residual capture 대상 layer 목록 (groot DiT 또는 pi05 expert)."""
+        if self.groot_dit_layers is not None:
+            return self.groot_dit_layers
+        if self.pi05_expert_layers is not None:
+            return self.pi05_expert_layers
+        return None
+
     def __enter__(self) -> "SafeFeatureCapture":
         self.buf = []
         self.vl_buf = []
         self.block_bufs = {}
         self._block_capture_ctxs = []
-        if self.groot_dit_layers is not None:
-            for layer, module in zip(self.groot_dit_layers, self.block_modules):
+        block_layers = self._block_layers
+        if block_layers is not None:
+            for layer, module in zip(block_layers, self.block_modules):
                 ctx = SafeForwardCapture(
                     module,
                     "post",
@@ -172,7 +202,7 @@ class SafeFeatureCapture:
             self._vl_capture_ctx.__exit__(*_exc)
             self._vl_capture_ctx = None
         if self._block_capture_ctxs:
-            for layer, ctx in zip(self.groot_dit_layers or [], self._block_capture_ctxs):
+            for layer, ctx in zip(self._block_layers or [], self._block_capture_ctxs):
                 self.block_bufs[layer] = list(ctx.buf)
                 ctx.__exit__(*_exc)
             self._block_capture_ctxs = []
@@ -202,12 +232,21 @@ class SafeFeatureCapture:
         return arr.astype(np.float16)
 
     def assemble_blocks(self) -> np.ndarray | None:
-        """GR00T DiT block residual features: K mean over ``[K, B, T, D]`` -> ``[L, T, D]``."""
+        """GR00T DiT block residual features, COAST-faithful (A.7.2).
+
+        Per layer ``[K, B, T, D]`` -> slice the last ``action_horizon`` action tokens ->
+        mean-pool across those action tokens -> ``[K, D]`` (one vector per denoising step,
+        denoise axis K preserved). Stack layers -> ``[L, K, D]``. COAST §3: "mean-pooling
+        across action tokens to obtain one vector h per denoising step".
+        """
         if self.groot_dit_layers is None:
             return None
         if not self.groot_dit_layers:
             raise ValueError("groot_dit_layers must not be empty")
-        pooled_layers: list[torch.Tensor] = []
+        horizon = self.groot_action_horizon
+        if not horizon:
+            raise RuntimeError("groot_action_horizon unavailable for action-token slice")
+        layer_feats: list[torch.Tensor] = []
         any_capture = False
         for layer in self.groot_dit_layers:
             feats = self.block_bufs.get(layer, [])
@@ -216,15 +255,44 @@ class SafeFeatureCapture:
             else:
                 raise RuntimeError(f"Failed to capture GR00T DiT block {layer} residual stream")
             stack = torch.stack(feats, dim=0)  # [K, B, T, D]
-            pooled_layers.append(stack[:, 0].mean(dim=0))  # [T, D]
+            # COAST: mean-pool the last `horizon` action tokens, keep denoise step K.
+            layer_feats.append(stack[:, 0, -horizon:, :].mean(dim=1))  # [K, D]
         if not any_capture:
             return None
-        return torch.stack(pooled_layers, dim=0).numpy().astype(np.float16)
+        return torch.stack(layer_feats, dim=0).numpy().astype(np.float16)  # [L, K, D]
+
+    def assemble_expert_blocks(self) -> np.ndarray | None:
+        """pi05 action expert block residual features, COAST-faithful (A.7.1).
+
+        action expert(Gemma2) decoder layer 출력 per layer ``[K, B, S_full, D]`` →
+        마지막 ``chunk_size`` action token slice → 그 action token 들에 대해 mean-pool →
+        ``[K, D]`` (denoise step K 보존). layer stack → ``[L, K, D]``. GR00T
+        ``assemble_blocks`` 와 동일한 집계, slice 길이만 ``chunk_size`` 로 바뀐다.
+        """
+        if self.pi05_expert_layers is None:
+            return None
+        if not self.pi05_expert_layers:
+            raise ValueError("pi05_expert_layers must not be empty")
+        chunk = self.pi05_chunk_size
+        if not chunk:
+            raise RuntimeError("pi05_chunk_size unavailable for action-token slice")
+        layer_feats: list[torch.Tensor] = []
+        for layer in self.pi05_expert_layers:
+            feats = self.block_bufs.get(layer, [])
+            if not feats:
+                raise RuntimeError(
+                    f"Failed to capture pi05 expert block {layer} residual stream"
+                )
+            stack = torch.stack(feats, dim=0)  # [K, B, S_full, D]
+            # COAST: mean-pool the last `chunk_size` action tokens, keep denoise step K.
+            layer_feats.append(stack[:, 0, -chunk:, :].mean(dim=1))  # [K, D]
+        return torch.stack(layer_feats, dim=0).numpy().astype(np.float16)  # [L, K, D]
 
     def block_num_inference_timesteps(self) -> int | None:
-        if self.groot_dit_layers is None:
+        block_layers = self._block_layers
+        if block_layers is None:
             return None
-        first_layer = self.groot_dit_layers[0]
+        first_layer = block_layers[0]
         feats = self.block_bufs.get(first_layer, [])
         return int(len(feats)) if feats else None
 
@@ -242,6 +310,7 @@ def run_with_features(
     *,
     capture_vl: bool = False,
     groot_dit_layers: tuple[int, ...] | list[int] | None = None,
+    pi05_expert_layers: tuple[int, ...] | list[int] | None = None,
 ) -> tuple[torch.Tensor, np.ndarray | None, list[str] | None, dict[str, Any]]:
     """SAFE hook 을 건 채 ``select_action`` 을 실행.
 
@@ -251,14 +320,18 @@ def run_with_features(
     step(queue pop 만)에서는 hidden_states=None — 호출자는 hidden_states가 있을 때만
     record 한다. ``capture_vl``은 GR00T에서만 ``action_head.vlln`` 출력의 sequence
     mean-pool을 optional VL pathway feature로 추가한다. ``groot_dit_layers``가 있으면
-    GR00T DiT final output 대신 선택한 ``transformer_blocks`` residual stream을
-    ``[layer, model_token, feature_dim]``으로 캡처한다.
+    GR00T DiT final output 대신 선택한 ``transformer_blocks`` residual stream을 COAST A.7.2
+    대로 action-token mean + denoise step 보존하여 ``[layer, denoise_step, feature_dim]``으로
+    캡처한다. ``pi05_expert_layers``가 있으면 pi05 action expert(Gemma2) decoder layer
+    residual stream을 COAST A.7.1 대로 마지막 ``chunk_size`` action token mean + denoise step
+    보존하여 동일한 ``[layer, denoise_step, feature_dim]``으로 캡처한다.
     """
     cap = SafeFeatureCapture(
         policy,
         policy_type,
         capture_vl=capture_vl,
         groot_dit_layers=groot_dit_layers,
+        pi05_expert_layers=pi05_expert_layers,
     )
     with torch.inference_mode(), cap:
         if policy_type == "groot" and hasattr(policy, "predict_action_chunk"):
@@ -266,25 +339,45 @@ def run_with_features(
         else:
             action = policy.select_action(batch)
 
-    hidden = cap.assemble_blocks() if groot_dit_layers is not None else cap.assemble()
+    if groot_dit_layers is not None:
+        hidden = cap.assemble_blocks()
+    elif pi05_expert_layers is not None:
+        hidden = cap.assemble_expert_blocks()
+    else:
+        hidden = cap.assemble()
     if hidden is None:
         return action, None, None, {}
 
     if groot_dit_layers is not None:
-        axes = list(GROOT_N15_DIT_BLOCK_RESIDUAL_FEATURE_AXES)
+        # hidden is [L, K, D]: layer x denoise_step x feature_dim (action-token pooled).
+        axes = list(GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES)
         meta = {
-            "feature_kind": GROOT_N15_DIT_BLOCK_RESIDUAL_FEATURE_KIND,
+            "feature_kind": GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND,
             "feature_axes": axes,
-            "num_inference_timesteps": cap.block_num_inference_timesteps(),
+            "num_inference_timesteps": int(hidden.shape[1]),
             "capture_layers": [int(layer) for layer in groot_dit_layers],
             "layer_count": int(hidden.shape[0]),
-            "token_count": int(hidden.shape[1]),
+            "denoise_step_count": int(hidden.shape[1]),
             "feature_dim": int(hidden.shape[2]),
             "model_action_horizon": cap.groot_action_horizon,
         }
+    elif pi05_expert_layers is not None:
+        # hidden is [L, K, D]: layer x denoise_step x feature_dim (action-token pooled).
+        axes = list(PI05_EXPERT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES)
+        meta = {
+            "feature_kind": PI05_EXPERT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND,
+            "feature_axes": axes,
+            "num_inference_timesteps": int(hidden.shape[1]),
+            "capture_layers": [int(layer) for layer in pi05_expert_layers],
+            "layer_count": int(hidden.shape[0]),
+            "denoise_step_count": int(hidden.shape[1]),
+            "feature_dim": int(hidden.shape[2]),
+            "model_action_horizon": cap.pi05_chunk_size,
+        }
     else:
         axes = lerobot_feature_axes(policy_type)
-    if groot_dit_layers is None and policy_type in AUTOREGRESSIVE_TYPES:
+    _block_mode = groot_dit_layers is not None or pi05_expert_layers is not None
+    if not _block_mode and policy_type in AUTOREGRESSIVE_TYPES:
         meta = {
             "feature_kind": lerobot_feature_kind(policy_type),
             "feature_axes": axes,
@@ -292,7 +385,7 @@ def run_with_features(
             "n_action_tokens": int(hidden.shape[1]),
             "feature_dim": int(hidden.shape[2]),
         }
-    elif groot_dit_layers is None:
+    elif not _block_mode:
         meta = {
             "feature_kind": lerobot_feature_kind(policy_type),
             "feature_axes": axes,

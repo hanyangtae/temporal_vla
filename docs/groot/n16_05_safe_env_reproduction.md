@@ -10,10 +10,8 @@
 > - [04 SAFE Collection](n16_04_safe_collection.md)
 > - **05 Scenario Reproduction (이 문서)**
 > - [06 Inference Datapoint Semantics](n16_06_safe_inference_semantics.md)
-> - [07 SAFE Detector](n16_07_safe_detector.md)
-> - [08 SAFE Visualization](n16_08_safe_visualization.md)
+> - [07 SAFE Detector + Visualization + Report](n16_07_safe_detector_report.md)
 > - [09 SAFE Parity](n16_09_safe_parity.md)
-> - [10 SAFE Report](n16_10_safe_report.md)
 
 ## 결론
 

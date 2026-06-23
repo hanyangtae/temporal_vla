@@ -60,29 +60,32 @@ the matching VL(goal) pathway feature, start the LeRobot server with
 `action_head.vlln` output after sequence mean pooling, using the shared
 `groot_n15_vlln_seq_meanpool` metadata contract.
 
-For pathway-resolved collection (the NOTALL/COAST steering line), start the
-server so it also captures DiT block residuals at a fixed layer subset:
+For COAST-faithful pathway collection (the NOTALL/COAST steering line), start the
+server so it captures DiT block residuals at all 16 layers:
 
 ```bash
 scripts/serve/lerobot.py --collect --capture-vl \
-  --groot-dit-capture-layers 0,2,4,8,10,12,15
+  --groot-dit-capture-layers 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
 ```
 
 This replaces the single `groot_n15_dit_action_tokens_pre_decode` tap
-(`[K=4, H=16, 1024]`) with per-inference DiT block residuals
-`[L=7, T=token_count, 1536]` (the K=4 denoising axis is mean-pooled; the
-per-token axis `T` is preserved). The 7 layers are the N1.5 (16-layer DiT)
-mapping of the N1.6 7-layer subset used in `docs/steering/09`: early `{0,2,4,8}`
-(L0 = NOTALL kill-switch), `10` = COAST N1.5 selected layer, late `{12,15}`
-(separation peak; 15 = final block).
+(`[K=4, H=16, 1024]`) with per-inference DiT block residuals captured COAST-faithfully
+(COAST A.7.2 / `docs/references/COAST.txt:265-267,1456-1471`): the residual at
+`transformer_blocks[i]` is **mean-pooled over the last `action_horizon` (=16) action
+tokens**, keeping the **denoising step K=4** axis, giving `[L=16, K=4, D=1536]` per
+env-step (`feature_axes = ["layer","denoise_step","feature_dim"]`,
+`feature_kind = groot_n15_dit_block_residual_action_tokens_denoise`). All 16 layers are
+captured so the COAST quota heuristic can select the action-expert layer; COAST's published
+GR00T N1.5 global choices are L11 (6 tasks) and L5 (PickPlaceCounterToCabinet).
 
-The current N1.5 aligned residual runtime `T` is 49, not 51:
-`state(1) + future_tokens(32) + action(16)`. This differs from N1.6 full
-block residuals, where `T=51 = state(1) + action(50)`. Do not pad/truncate N1.5
-to N1.6 token count; keep the native model-token layout and verify
-`token_count=49` with the first pkl/verifier gate. Each pkl record now also
-stores the per-inference proprio `state` (the paper expert-vs-VL state-probe
-target), surfaced as `states` in the pkl payload.
+For the global strategy COAST stacks every denoising step as an independent sample, so the
+downstream loader (`analyze/instruction_pathway_features.py --preserve-dit-layers`) expands
+the K axis into rows. Each pkl record also stores the per-inference proprio `state`,
+surfaced as `states` in the pkl payload.
+
+(History: a prior variant pooled the K axis and kept all 49 model tokens
+`[L=7, T=49, 1536]`; that diverged from COAST and is replaced by the action-token/denoise
+capture above.)
 
 Verify N1.5 HTTP feature triplets with the same N1.6 collection verifier, but
 override the model/feature expectations:

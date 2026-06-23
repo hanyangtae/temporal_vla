@@ -63,7 +63,7 @@ class CalvinActionProcessor(ActionProcessorStep):
         """
         gripper_invert:
           False (default, **표준**): emit 값이 "클수록 open" 컨벤션.
-            DreamVLA 처럼 ±1 binarized 후 +1=open, -1=close 로 emit 하는 모델.
+            ±1 binarized 후 +1=open, -1=close 로 emit 하는 모델.
             Calvin env 가 동일 부호 사용. → `g > threshold → open(+1)`.
           True: emit 값이 "클수록 close" 컨벤션 (X-VLA 같이 학습 라벨 1=closed).
             sigmoid 연속값을 그대로 emit 하는 경우 사용 (threshold ≈ 0.8 권장).
@@ -108,7 +108,7 @@ class CalvinActionProcessor(ActionProcessorStep):
             )
 
         # gripper — 컨벤션 분기
-        # 표준 (gripper_invert=False): emit 클수록 open. DreamVLA 같은 ±1 binarized 출력.
+        # 표준 (gripper_invert=False): emit 클수록 open. ±1 binarized 출력.
         #   → g > threshold → open(+1), 아니면 close(-1).
         # invert (gripper_invert=True): emit 클수록 close. X-VLA 같은 sigmoid (1=closed).
         #   → g < threshold → open(+1), 아니면 close(-1).

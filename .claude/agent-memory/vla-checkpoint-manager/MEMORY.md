@@ -1,1 +1,2 @@
 - [Onboarding 진행 상태 (2026-04-24)](project_onboarding_progress.md) — dreamvla 리팩터 직전 중단. xvla/openvla_oft/lerobot 완료. RLinf OpenVLA-OFT CALVIN 보류.
+- [pi05 RoboCasa 온보딩 발견사항](pi05_robocasa_quirks.md) — openpi→LeRobot 변환 ckpt 서빙: camera_keys external_config 강제, QUANTILES→MEAN_STD, bf16 OOM, 16D state layout, base_to_eef obs 가용 확인.

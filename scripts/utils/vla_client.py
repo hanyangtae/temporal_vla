@@ -1,7 +1,7 @@
 """VLA 모델 추론 서버와 통신하는 통일 HTTP 클라이언트.
 
 벤치마크 환경(robocasa, calvin 등)에서 실행되며,
-모델 서버(DreamVLA, UP-VLA, X-VLA 등)에 관측값을 보내고 액션을 받는다.
+모델 서버(GR00T, pi0.5, UP-VLA, X-VLA 등)에 관측값을 보내고 액션을 받는다.
 
 통일 API 규격:
   POST /act

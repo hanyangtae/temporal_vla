@@ -98,7 +98,7 @@ environment:
 
 HuggingFace hub 캐시는 이번 이동의 1차 대상이 아니다.
 
-- 모델 서버 컨테이너(groot/dreamvla/openvla_oft/xvla): `HF_HOME=~/.cache/huggingface`
+- 모델 서버 컨테이너(groot/openvla_oft/xvla): `HF_HOME=~/.cache/huggingface`
   (호스트 HF 캐시를 그대로 bind-mount). 베이스 GR00T-N1.6-3B 는 HF 가 아니라 위 로컬
   `/cache/checkpoints/nvidia/GR00T-N1.6-3B` 를 canonical 로 쓴다.
 - lerobot 통합 컨테이너: `./data`를 `/cache`에 mount하고 `HF_HOME=/cache/huggingface`를
@@ -123,4 +123,4 @@ HuggingFace hub 캐시는 이번 이동의 1차 대상이 아니다.
 - `configs/checkpoints/*.yaml` 경로(프로파일 설정 파일)는 repo 안에 남는 설정이다 → 그대로.
 - `outputs/...` (학습 산출물)은 이동 대상이 아니다. 베이스 GR00T-N1.6-3B 만 예외적으로 cache 로 갔다.
 - HF hub ID(`org/name` 형태, 경로 prefix 없음)는 경로가 아니다 → 그대로.
-- 서브모듈 내부 경로(`src/benchmarks/robocasa/datasets/`, `src/policies/dreamvla/.../checkpoints/` 등)는 그대로.
+- 서브모듈 내부 경로(`src/benchmarks/robocasa/datasets/` 등)는 그대로.
