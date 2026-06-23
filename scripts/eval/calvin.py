@@ -9,10 +9,10 @@ docker compose run --rm calvin python /temporal_vla/scripts/eval/calvin.py \
   --dataset-path /temporal_vla/src/benchmarks/calvin/dataset/calvin_debug_dataset \
   --server-url http://localhost:8400
 
-# DreamVLA로 평가 (같은 스크립트, URL만 변경)
+# UP-VLA로 평가 (같은 스크립트, URL만 변경)
 docker compose run --rm calvin python /temporal_vla/scripts/eval/calvin.py \
   --dataset-path /temporal_vla/src/benchmarks/calvin/dataset/task_D_D \
-  --server-url http://localhost:8200 \
+  --server-url http://localhost:8300 \
   --num-sequences 1000
 
 act_step은 서버 /health의 n_action_steps에서 자동 감지.
@@ -22,7 +22,6 @@ VLA 서버(serve_*.py)가 먼저 실행 중이어야 한다.
 URL_MAP = {
     "http://localhost:8400": "lerobot",
     "http://localhost:8300": "upvla",
-    "http://localhost:8200": "dreamvla",
     "http://localhost:8100": "xvla",
 }
 
@@ -360,7 +359,7 @@ def evaluate(
 
     # gripper 컨벤션 분기:
     #  absolute 모델 (X-VLA): sigmoid 연속값 emit, 1=close. invert=True, threshold=0.8.
-    #  relative 모델 (DreamVLA 등): ±1 binarized emit, +1=open. invert=False, threshold=0.0.
+    #  relative 모델 (±1 binarized emit, +1=open): invert=False, threshold=0.0.
     if action_type == "absolute":
         gripper_threshold = 0.8
         gripper_invert = True

@@ -35,14 +35,14 @@ def make_calvin_processors(
         use_state: robot_obs에서 state sub-keys를 추출할지 여부.
         image_size: Calvin 이미지 해상도 (기본 200).
         gripper_threshold: gripper 이산화 임계값.
-                          relative + 표준 컨벤션 (DreamVLA): 0.0 (기본).
+                          relative + 표준 컨벤션 (±1 binarized, +1=open): 0.0 (기본).
                           absolute + invert 컨벤션 (X-VLA sigmoid 1=close): 0.8 권장.
         action_type: "relative" 또는 "absolute".
                     absolute 시 CalvinActionProcessor가 3-tuple 반환 →
                     Calvin env가 절대좌표로 직접 처리.
         gripper_invert: gripper emit 컨벤션 invert.
-                       False (default, 표준): emit 클수록 open. DreamVLA 같은 ±1
-                         binarized 출력. `g > threshold → open(+1)`.
+                       False (default, 표준): emit 클수록 open. ±1 binarized
+                         (+1=open) 출력. `g > threshold → open(+1)`.
                        True: emit 클수록 close. X-VLA 같은 sigmoid (1=close) 출력.
                          `g < threshold → open(+1)`.
 

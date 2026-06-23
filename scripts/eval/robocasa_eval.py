@@ -4,10 +4,10 @@ VLA closed-loop 평가 스크립트 (RoboCasa, 모델 무관).
 통일 API를 따르는 어떤 VLA 서버든 --vla-server URL만 바꾸면 평가 가능.
 
 사용법:
-  # DreamVLA로 평가
+  # UP-VLA로 평가
   python scripts/eval/robocasa_eval.py \
     --task TurnOnMicrowave \
-    --vla-server http://localhost:8200
+    --vla-server http://localhost:8300
 
   # X-VLA로 평가 (같은 스크립트, URL만 변경)
   python scripts/eval/robocasa_eval.py \

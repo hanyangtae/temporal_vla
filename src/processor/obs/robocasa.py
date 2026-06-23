@@ -132,7 +132,7 @@ class RoboCasaObsProcessor(ObservationProcessorStep):
             # 3-camera 모드: left(=static alias), right, wrist 의 의미 명확한 키로 emit.
             # robocasa native 카메라 = robot0_agentview_left/_right/_eye_in_hand 셋.
             # GR00T ROBOCASA_PANDA_OMRON schema 와 정합되도록 side_0/side_1/wrist_0 alias 도 emit.
-            # `static` 은 `left` alias 로 유지하여 기존 2-camera 모델(xvla/dreamvla)의 통일 API 호환성 유지.
+            # `static` 은 `left` alias 로 유지하여 기존 2-camera 모델(xvla 등)의 통일 API 호환성 유지.
             static2_key = "{}_image".format(self.static_cam2)
             if static2_key not in observation:
                 logger.warning("카메라 '%s' 누락, zero 이미지로 대체", static2_key)

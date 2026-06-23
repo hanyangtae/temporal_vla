@@ -297,7 +297,7 @@ def evaluate_dataset(
 ) -> dict:
     """데이터셋 전체에 대한 성공률 평가.
 
-    vla_client: DreamVLAClient 인스턴스를 넘기면 closed-loop VLA 평가.
+    vla_client: VLAClient 인스턴스를 넘기면 closed-loop VLA 평가.
                 VLA 평가는 서버가 stateful하므로 workers=1로 강제된다.
     """
     use_camera_obs = vla_client is not None
