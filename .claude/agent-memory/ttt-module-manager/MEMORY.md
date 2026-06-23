@@ -1,2 +1,0 @@
-- [Phase 1 training approaches](project_phase1_training_approaches.md) — window vs full trajectory differences, train/test mismatch analysis
-- [Phase 1 eval results](project_phase1_eval_results.md) — baseline metrics (Pearson r=0.71 val) and hyperparameters from window-based training
