@@ -20,10 +20,10 @@
 │  ObsProcessor → VLAClient    │                             │
 │  ActionProcessor ← response  │                             │
 └──────────────────────────────┘                             ▼
-                                  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-                                  │    xvla     │  │  dreamvla   │  │    upvla    │  │ openvla_oft │  │   lerobot   │  │    groot    │
-                                  │    :8100    │  │    :8200    │  │    :8300    │  │    :8400    │  │    :8400    │  │    :8500    │
-                                  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘
+                                  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+                                  │    xvla     │  │    upvla    │  │ openvla_oft │  │   lerobot   │  │    groot    │
+                                  │    :8100    │  │    :8300    │  │    :8400    │  │    :8400    │  │    :8500    │
+                                  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘
 ```
 
 - 모델 서버는 한 컨테이너에 하나의 process 로 떠 있고, 벤치마크는 `--vla-server http://localhost:<port>` 만 바꿔서 같은 모델을 여러 벤치로 평가하거나 한 벤치를 여러 모델로 비교한다.
@@ -185,7 +185,6 @@ actions, features, latency_ms = client.predict_with_features(
 | Base model | Container | Port | Calvin | RoboCasa | LIBERO |
 |---|---|---:|---|---|---|
 | `xvla` | xvla | 8100 | `xvla__calvin_abc_d` (abs / 30) | — | — |
-| `dreamvla` | dreamvla | 8200 | `dreamvla__calvin_dynamic_depth_semantic` (rel / 1) | — | — |
 | `upvla` | upvla | 8300 | — | — | — |
 | `lerobot` (pi0/pi05/groot) | lerobot | 8400 | `lerobot_pi05__calvin_sft` (rel / 50) | `lerobot_groot_n15__robocasa365_ckpt120000` (abs / 16) | — |
 | `openvla_oft` | openvla_oft | 8400 | `openvla_oft__rlinf_calvin_sft` (rel / 8) | — | `openvla_oft__moojink_libero_spatial/object/goal/10` (rel / 8) |
@@ -199,7 +198,6 @@ actions, features, latency_ms = client.predict_with_features(
 | Base model | Emits sub-keys |
 |---|---|
 | `xvla` | `action.eef_pos`, `action.eef_rot6d`, `action.gripper` |
-| `dreamvla` | `action.eef_pos`, `action.eef_euler`, `action.gripper` |
 | `lerobot` (pi05) | `action.eef_pos`, `action.eef_euler`, `action.gripper` |
 | `lerobot` (groot N1.5) | `action.eef_pos`, `action.eef_axisangle`, `action.gripper`, `action.base_motion`, `action.control_mode` |
 | `openvla_oft` | `action.eef_pos`, `action.eef_euler`, `action.gripper` |
@@ -267,10 +265,10 @@ docker compose exec robocasa  python .../robocasa_eval.py --vla-server http://lo
 
 ```bash
 # 두 서버를 다른 포트에 동시에 띄움 (다른 컨테이너이므로 GPU 메모리만 충분하면 OK)
-docker compose exec xvla     python .../xvla.py     &     # :8100
-docker compose exec dreamvla python .../dreamvla.py &     # :8200
+docker compose exec xvla  python .../xvla.py  &     # :8100
+docker compose exec upvla python .../upvla.py &     # :8300
 
-for url in http://localhost:8100 http://localhost:8200; do
+for url in http://localhost:8100 http://localhost:8300; do
     docker compose exec calvin python .../calvin.py --vla-server "$url" --output-dir outputs/eval/...
 done
 ```

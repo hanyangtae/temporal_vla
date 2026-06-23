@@ -34,7 +34,7 @@
   - 결정적 단서(다음 섹션에서 정량화): 실패는 거의 **100% 가 그냥 끝까지(timeout) 간 것** → "반복/loop" 은 "끝까지 갔다"의 부산물.
   - **질문을 바꾼다**: 실패를 어떻게 *막을까*? 실패할 걸 *미리 안다면* 조작으로 줄일 수 있나? — 그것도 **학습/finetuning 없이.**
   - 그 답으로 도달한 것이 **activation steering**.
-- **발표자 노트(출처)**: 분류기 `scripts/analysis/analyze_loop_patterns.py`. 정량 근거는 S9.
+- **발표자 노트(출처)**: 실패 rollout 을 표면 유형으로 분류한 결과. 정량 근거는 S9.
 - **발표 멘트**: "loop 는 원인이 아니라 증상이었습니다. 그래서 '왜 반복하나'가 아니라 '실패를 미리 알고 막을 수 있나'로 질문을 바꿨습니다."
 
 ---
@@ -173,7 +173,7 @@
   - **남은 가설**: N1.6(32L AlternateVLDiT, cross-attn) vs **N1.5(16L plain DiT)** architecture 차이 → 내가 수집한 N1.5 데이터로 **faithful 재현 진행 중** (COAST published N1.5 는 +0.16 기대).
   - ※ **아직 진행 중 — 새 결과가 오면 이 슬라이드는 바뀝니다.**
 - **그림**: `outputs/weekly_report/figures/2026-06-w2/fig2_quota_sweep.png`
-- **발표자 노트(출처)**: `docs/steering/06_coast_groot_n16_summary.md`, `04_coast_reproduction_map.md`.
+- **발표자 노트(출처)**: N1.6 DiT-only COAST 결과 (ΔSR ≤ 0); COAST 재현 docs 정리됨.
 - **발표 멘트**: "솔직히 우리 변형으론 아직 효과가 안 났습니다. 다만 차이 나는 지점들을 하나씩 지웠고, 남은 건 architecture 차이라 N1.5 로 충실 재현을 돌리는 중입니다."
 
 ### S16 — ★ 핵심 가설 (punchline)
@@ -227,7 +227,7 @@
 | S12 | SAFE-LSTM 0.683 / 0.434 | `docs/seen18_safe_detector_verification.md` |
 | S13 | 두 regime onset | `docs/steering/01_seen18_latent_analysis.md` §3 |
 | S14 | VL/DiT AUROC, instruction confound | `outputs/weekly_report/2026-06-w2.md`, `docs/steering/11_instruction_confound.md` |
-| S15 | quota 0.07~0.12, ΔSR ≤ 0 | `outputs/weekly_report/2026-06-w2.md`, `docs/steering/06_coast_groot_n16_summary.md` |
+| S15 | quota 0.07~0.12, ΔSR ≤ 0 | `outputs/weekly_report/2026-06-w2.md` (COAST 재현 docs 정리됨) |
 
 ---
 

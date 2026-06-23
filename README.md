@@ -3,7 +3,7 @@
 VLA(Vision-Language-Action) 모델의 **latent activation steering** 을 연구하는 프로젝트입니다.
 실패하는 VLA의 내부 활성화를 추론 시 성공 분포 쪽으로 **steer** 하여, 백본 재학습 없이 Success Rate를 올리는 것이 목표입니다.
 
-RoboCasa/Calvin 시뮬레이션 환경에서 다양한 VLA 모델(pi0, groot, DreamVLA 등)을 Docker 기반 통일 API로 서빙·평가하는 인프라를 갖추고 있습니다.
+RoboCasa/Calvin 시뮬레이션 환경에서 다양한 VLA 모델(pi0.5, groot, UP-VLA, X-VLA 등)을 Docker 기반 통일 API로 서빙·평가하는 인프라를 갖추고 있습니다.
 
 ## Research Direction
 
@@ -35,10 +35,10 @@ RoboCasa/Calvin 시뮬레이션 환경에서 다양한 VLA 모델(pi0, groot, Dr
 │  ObsProcessor → VLAClient        │                                │
 │  ActionProcessor ← response      │                                │
 └──────────────────────────────────┘                                ▼
-        ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌─────────────┐ ┌─────────┐ ┌─────────┐
-        │  xvla   │ │ dreamvla │ │  upvla   │ │ openvla_oft │ │ lerobot │ │  groot  │
-        │  :8100  │ │  :8200   │ │  :8300   │ │   :8400     │ │  :8400  │ │  :8500  │
-        └─────────┘ └──────────┘ └──────────┘ └─────────────┘ └─────────┘ └─────────┘
+        ┌─────────┐ ┌──────────┐ ┌─────────────┐ ┌─────────┐ ┌─────────┐
+        │  xvla   │ │  upvla   │ │ openvla_oft │ │ lerobot │ │  groot  │
+        │  :8100  │ │  :8300   │ │   :8400     │ │  :8400  │ │  :8500  │
+        └─────────┘ └──────────┘ └─────────────┘ └─────────┘ └─────────┘
 
 모든 컨테이너: ./ → /temporal_vla (볼륨 마운트), network_mode: host
 ```
@@ -63,7 +63,6 @@ RoboCasa/Calvin 시뮬레이션 환경에서 다양한 VLA 모델(pi0, groot, Dr
 | robocasa | RoboCasa 시뮬레이션 + 평가 + GUI (KasmVNC/X11) | 3.11 | 8444 (VNC) |
 | calvin | Calvin 벤치마크 + 평가 (headless EGL) | 3.8 | - |
 | xvla | X-VLA 학습/추론 서버 | 3.10 | 8100 |
-| dreamvla | DreamVLA 학습/추론 서버 | 3.10 | 8200 |
 | upvla | UP-VLA 추론 서버 | 3.10 | 8300 |
 | openvla_oft | OpenVLA-OFT 추론 서버 (LIBERO/Calvin) | 3.10 | 8400 |
 | lerobot | pi0 / pi05 추론 서버 (LeRobot stack) | 3.10 | 8400 |
@@ -139,7 +138,6 @@ docker compose build robocasa
 
 # 모델 컨테이너 (필요 시)
 docker compose build xvla
-docker compose build dreamvla
 ```
 
 > 첫 빌드는 PyTorch, Flash Attention 등 빌드로 30분 이상 소요될 수 있습니다.
@@ -165,14 +163,12 @@ temporal_vla/
 ├── .env.example                              # 환경변수 템플릿
 ├── docker/
 │   ├── robocasa/                             # 시뮬레이션 컨테이너 (Python 3.11, KasmVNC)
-│   ├── xvla/                                 # X-VLA 컨테이너 (Python 3.10, LeRobot)
-│   └── dreamvla/                             # DreamVLA 컨테이너 (Python 3.10)
+│   └── xvla/                                 # X-VLA 컨테이너 (Python 3.10, LeRobot)
 ├── scripts/
 │   ├── path_setup.py                         # sys.path 설정 유틸리티
 │   ├── start_vnc.sh                          # KasmVNC 시작 스크립트
 │   ├── serve/                                # 모델 추론 서버 (Docker 내 실행)
 │   │   ├── xvla.py                           # X-VLA (:8100, 통일 API)
-│   │   ├── dreamvla.py                       # DreamVLA (:8200, 통일 API)
 │   │   ├── upvla.py                          # UP-VLA (:8300, 통일 API)
 │   │   ├── lerobot.py                        # LeRobot (pi0 등, 통일 API)
 │   │   └── groot.py                          # GR00T (통일 API)
@@ -181,20 +177,16 @@ temporal_vla/
 │   │   ├── calvin.py                         # Calvin 평가 (모델 무관)
 │   │   └── phase1_predictor.py               # Phase 1 ProgressPredictor 평가
 │   ├── train/                                # 학습 스크립트
-│   │   ├── dreamvla_robocasa.py              # DreamVLA fine-tuning (RoboCasa)
+│   │   ├── phase1_groot_robocasa.py          # GR00T fine-tuning (RoboCasa)
 │   │   ├── phase1_predictor.py               # Phase 1 ProgressPredictor 학습
 │   │   └── *.sh                              # 학습 실행 셸 스크립트
 │   ├── analysis/                             # 분석·디버그·캐시 빌드
-│   │   ├── analyze_loop_patterns.py          # 실패 루프 패턴 분석
-│   │   ├── build_clip_cache.py               # CLIP 임베딩 캐시 생성
-│   │   └── collect_groot_trajectories.py     # GR00T trajectory 수집
-│   ├── extract/                              # Feature 추출
-│   │   ├── extract_sam_robocasa.py           # SAM feature 추출 (LeRobot → .pt)
-│   │   └── extract_cotrack_robocasa.py       # CoTracker trajectory 추출 (LeRobot → .npz)
-│   ├── utils/                                # 공용 유틸리티
-│   │   ├── vla_client.py                     # 통일 VLA HTTP 클라이언트 (VLAClient)
-│   │   └── robocasa_eval.py                  # playback 평가 유틸리티
-│   └── deprecated/                           # 사용하지 않는 스크립트
+│   │   └── build_clip_cache.py               # CLIP 임베딩 캐시 생성
+│   ├── extract/                              # Feature 추출 (Eagle/dataset 준비)
+│   │   └── prepare_robocasa_dataset.py       # RoboCasa LeRobot 데이터셋 준비
+│   └── utils/                                # 공용 유틸리티
+│       ├── vla_client.py                     # 통일 VLA HTTP 클라이언트 (VLAClient)
+│       └── robocasa_eval.py                  # closed-loop 평가 유틸리티
 ├── lerobot/                                  # Git submodule (LeRobot)
 ├── data/
 │   ├── datasets/                             # RoboCasa 데이터 (LeRobot v2.1, 원본)
@@ -207,7 +199,6 @@ temporal_vla/
 │   │   └── robosuite/                        # Git submodule (로봇 시뮬레이션)
 │   ├── datasets/                             # 학습용 데이터 파이프라인
 │   │   └── adapters/                         # 모델별 adapter (LeRobotDataset wrapping + 변환 + collator)
-│   │       └── dreamvla.py                   # DreamVLA adapter (SAM/track feature 지원)
 │   ├── processor/                            # 추론용 Processor Pipeline (LeRobot 인터페이스 호환)
 │   │   ├── base.py                           # ProcessorStep, DataProcessorPipeline
 │   │   ├── types.py                          # FeatureType, PolicyFeature, Transition
@@ -229,7 +220,6 @@ temporal_vla/
 ```bash
 docker compose up -d robocasa                              # robocasa 시작
 docker compose exec robocasa bash                          # robocasa 셸 접속
-docker compose up -d dreamvla                              # dreamvla 시작
 docker compose down                                        # 전체 중지
 docker compose ps                                          # 상태 확인
 docker compose logs -f robocasa                            # 실시간 로그
@@ -247,12 +237,6 @@ docker compose logs -f robocasa                            # 실시간 로그
 docker compose run --rm xvla \
   python /temporal_vla/scripts/serve/xvla.py --model-path lerobot/xvla-base
 
-# DreamVLA 서버 (port 8200)
-docker compose run --rm dreamvla \
-  python /temporal_vla/scripts/serve/dreamvla.py \
-    --checkpoint /cache/checkpoints/dreamvla/checkpoint.pt \
-    --precision bf16
-
 # UP-VLA 서버 (port 8300)
 docker compose run --rm upvla \
   python /temporal_vla/scripts/serve/upvla.py \
@@ -263,13 +247,13 @@ docker compose run --rm upvla \
 
 ```bash
 # RoboCasa closed-loop 평가 (모델 무관, 서버 먼저 실행 필요)
-# --vla-server URL만 바꾸면 DreamVLA, X-VLA, UP-VLA 등 어떤 모델이든 평가 가능
+# --vla-server URL만 바꾸면 X-VLA, UP-VLA 등 어떤 모델이든 평가 가능
 docker compose exec robocasa python /temporal_vla/scripts/eval/robocasa_eval.py \
-  --task TurnOnMicrowave --vla-server http://localhost:8200
+  --task TurnOnMicrowave --vla-server http://localhost:8300
 
 # 태스크셋 평가 (pretrain50, target50, all_tasks 등)
 docker compose exec robocasa python /temporal_vla/scripts/eval/robocasa_eval.py \
-  --task-set pretrain50 --vla-server http://localhost:8200 \
+  --task-set pretrain50 --vla-server http://localhost:8300 \
   --output-dir /temporal_vla/outputs/vla_eval
 
 # Calvin 평가 (모델 무관)
@@ -277,13 +261,6 @@ docker compose exec calvin python /temporal_vla/scripts/eval/calvin.py \
   --dataset-path /cache/datasets/calvin/task_ABC_D \
   --server-url http://localhost:8300 --act-step 10
 
-# 전체 pretrain 데이터셋 재생 평가 (데이터 품질 확인용)
-docker compose exec robocasa python /temporal_vla/scripts/deprecated/robocasa_playback_eval.py \
-  --all --split pretrain --output-dir /temporal_vla/outputs/eval
-
-# 실패 에피소드 영상 렌더링
-docker compose exec robocasa python /temporal_vla/scripts/deprecated/robocasa_render_failures.py \
-  --result /temporal_vla/outputs/eval_result.json
 ```
 
 ## GPU Configuration

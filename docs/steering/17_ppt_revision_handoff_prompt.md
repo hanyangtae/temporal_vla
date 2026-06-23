@@ -73,7 +73,7 @@ S23 Appendix C — Number Sources
    단위) steering의 직접 선행이자, "feature 정렬 ≠ 인과적 steerability"라는 경계.** 정확한 문구·인용은
    PDF 받은 뒤 대조. (지금은 placeholder.)
 2. **S14 / S18 COAST 재현 상태 최신화** — 현 덱은 "N1.6 DiT-only ΔSR≤0 → faithful N1.5 재현 예정".
-   최신 사실(`16_coast_pi05_libero_repro.md`): GR00T-N1.5×RoboCasa 충실 재현도 mean ΔSR≈+0.014로
+   최신 사실(해당 COAST 재현 doc은 정리됨): GR00T-N1.5×RoboCasa 충실 재현도 mean ΔSR≈+0.014로
    **positive control 실패(n=30)** → control을 **π0.5×LIBERO-10(논문 +0.33로 최대 gain)**로 옮겨 재시도
    중. S14/S18에 이 pivot을 반영할지 사용자에게 확인.
 3. **S11 ↔ instruction confound 연결** — "VLM detector 잘 안 됨"을 instruction confound와 묶어 설명
@@ -95,8 +95,8 @@ S23 Appendix C — Number Sources
 
 ### 슬라이드 근거(수치·그림)
 - `docs/steering/01_seen18_latent_analysis.md` — task 분리·길이 confound·실패 onset 두 regime.
-- `docs/steering/06_coast_groot_n16_summary.md` — COAST 재현 ΔSR≤0(N1.6) (S14).
-- `docs/steering/16_coast_pi05_libero_repro.md` — COAST positive-control 재시도(π0.5×LIBERO) (S14/S18).
+- COAST 재현 ΔSR≤0(N1.6) (S14) — 해당 COAST 재현 doc은 정리됨.
+- COAST positive-control 재시도(π0.5×LIBERO): mean ΔSR≈+0.014 재현 실패 (S14/S18) — 해당 COAST 재현 doc은 정리됨.
 - `docs/steering/11_instruction_confound.md` — VL 신호 instruction 아티팩트 경고 (S11/S13).
 - `docs/seen18_safe_detector_verification.md` — SAFE-LSTM 수치(seen 0.683 / unseen 0.434) (S11).
 

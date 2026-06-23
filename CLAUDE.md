@@ -88,15 +88,14 @@ condition pair 끼리 ΔSR 비교 가능).
 
 ## 주요 파일 경로
 
-- 모델 서버: `scripts/serve/dreamvla.py` (:8200), `scripts/serve/upvla.py` (:8300), `scripts/serve/xvla.py` (:8100)
+- 모델 서버: `scripts/serve/upvla.py` (:8300), `scripts/serve/xvla.py` (:8100)
 - 벤치마크 평가: `scripts/eval/robocasa_eval.py`, `scripts/eval/calvin.py`
-- 학습: `scripts/train/dreamvla_robocasa.py` + `.sh`
-- 분석: `scripts/analysis/` — 루프 패턴 분석, CLIP 캐시, trajectory 수집 등
-- Feature 추출: `scripts/extract/extract_sam_robocasa.py`, `scripts/extract/extract_cotrack_robocasa.py`
+- 학습: `scripts/train/phase1_groot_robocasa.py` (GR00T) + `.sh`
+- 분석: `scripts/analysis/` — CLIP 캐시, dataset 디버그 등
 - Processor (추론용): `src/processor/` — `base.py`, `types.py`, `factory.py`, `obs/`, `action/`
-- Dataset (학습용): `src/datasets/adapters/dreamvla.py` (adapter, LeRobotDataset 직접 사용)
+- Dataset (학습용): `src/datasets/` (generic LeRobot dataset + adapter)
 - 경로 설정: `scripts/path_setup.py`
-- 모델 소스 (submodule): `src/policies/dreamvla/`, `src/policies/UP-VLA/`
+- 모델 소스 (submodule): `src/policies/UP-VLA/`, `src/policies/Isaac-GR00T/`
 - 벤치마크 소스 (submodule): `src/benchmarks/robocasa/`, `src/benchmarks/robosuite/`, `src/benchmarks/calvin/`, `lerobot/`
 -출력: `outputs`
 -모델 추론 결과 출력: `outputs/eval/{benchmark}/{model}/{yymmddhhmmss}/`
@@ -155,24 +154,10 @@ native observation/action key를 유지해 upstream GR00T eval과 맞춘다.
 `src/datasets/` 참고. 학습 시 데이터 흐름:
 
 ```
-LeRobotDataset (v3.0) → Model Adapter (차원 변환 + SAM/track feature 로딩 + collator) → 학습 루프
+LeRobotDataset (v3.0) → Model Adapter (차원 변환 + collator) → 학습 루프
 ```
 
 - **Model Adapter** (`src/datasets/adapters/<model>.py`): 모델별 1개. LeRobotDataset을 직접 wrapping. state/action 변환 + collator.
-- DreamVLA adapter는 SAM feature, CoTracker trajectory label도 로딩 지원 (`sam_features_path`, `track_label_path`).
-
-## Feature 추출 (학습 보조 데이터)
-
-SAM/CoTracker feature는 학습 전에 오프라인으로 추출:
-
-```
-LeRobotDataset → scripts/extract/extract_sam_robocasa.py → {save_path}/rgb_static/training/{frame_idx}.pt
-LeRobotDataset → scripts/extract/extract_cotrack_robocasa.py → {save_path}/rgb_static/training/{frame_idx}.npz
-```
-
-- SAM: `segment-anything` ViT-B encoder → avg_pool → `[C, 256]` per frame.
-- CoTracker: frame pair (frame_gap=5) → optical flow delta → `{tracks: [784, 2], visibility: [784]}` per frame.
-- 체크포인트: `src/policies/dreamvla/segment-anything/ckpts/`, `src/policies/dreamvla/co-tracker/checkpoints/`.
 
 ## 확장 가이드
 

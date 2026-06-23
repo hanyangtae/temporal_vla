@@ -97,15 +97,12 @@ succ/fail latent 구분 → steer 로 SR↑ (COAST 계열). 메인 method 의 �
 
 1. [seen18 Latent Analysis](steering/01_seen18_latent_analysis.md) — succ/fail 분리 표현 분석 (길이 confound 통제 전제)
 2. [seen18 Handoff](steering/02_seen18_handoff.md) — cross-task 실패 심화 + steering/detector 핸드오프
-3. [COAST Report](steering/03_coast_report.md) — conceptor 구현 + GR00T N1.6 적용 진행 보고
-4. [COAST Reproduction Map](steering/04_coast_reproduction_map.md) — 코드 ↔ COAST 논문 식/섹션 매핑
-5. [SAFE lerobot Collection](steering/05_safe_lerobot_collection.md) — SAFE 수집 lerobot 멀티벤치 확장 (plan+status)
-6. [COAST GR00T N1.6 Summary](steering/06_coast_groot_n16_summary.md) — DiT-only COAST steering 결과와 평균 ΔSR≤0 결론
-7. [Steering Methods Survey](steering/07_steering_methods_survey.md) — COAST 이후 적용 후보와 권장 순서
-8. [Phase 3 DiT32 Separation](steering/08_phase3_dit32_separation.md) — DiT 32-layer pre-failure 분리력
-9. [Phase 3 VL vs DiT Comparison](steering/09_phase3_vl_dit_comparison.md) — VL(goal) vs DiT(motor) pathway 비교와 Phase 4 target
-10. [Session Handoff](steering/10_session_handoff.md) — 최신 연구 현황, 다음 세션 우선순위, 주요 파일 위치
-11. [Phase 4 N1.5 Instruction-Fixed Plan](steering/11_phase4_n15_instruction_fixed_plan.md) — N1.5 instruction-fixed seed/collection/pathway/steering runbook
+3. [SAFE lerobot Collection](steering/05_safe_lerobot_collection.md) — SAFE 수집 lerobot 멀티벤치 확장 (plan+status)
+4. [Steering Methods Survey](steering/07_steering_methods_survey.md) — COAST 이후 적용 후보와 권장 순서
+5. [Phase 3 DiT32 Separation](steering/08_phase3_dit32_separation.md) — DiT 32-layer pre-failure 분리력
+6. [Phase 3 VL vs DiT Comparison](steering/09_phase3_vl_dit_comparison.md) — VL(goal) vs DiT(motor) pathway 비교와 Phase 4 target
+7. [Session Handoff](steering/10_session_handoff.md) — 최신 연구 현황, 다음 세션 우선순위, 주요 파일 위치
+8. [Phase 4 N1.5 Instruction-Fixed Plan](steering/11_phase4_n15_instruction_fixed_plan.md) — N1.5 instruction-fixed seed/collection/pathway/steering runbook
 
 한 화면 요약: [GR00T Latent Steering Explorer](groot/00_groot_steering_explorer.html) — GR00T runtime flow와
 conceptor/hidden-state steering 수식, VL/DiT pathway 상태, code artifact map을 함께 보는 self-contained interactive HTML.
@@ -148,7 +145,6 @@ conceptor/hidden-state steering 수식, VL/DiT pathway 상태, code artifact map
 ## Legacy
 
 - [groot/_legacy/robocasa_finetune_setup.md](groot/_legacy/robocasa_finetune_setup.md) — 초기 GR00T x RoboCasa fine-tuning setup. 현행 N1.6 기준은 `groot/n16_01_finetune.md`.
-- [ttt/_legacy/groot_loop_analysis_plan.md](ttt/_legacy/groot_loop_analysis_plan.md) — 초기 loop analysis 계획. 문서 상단의 legacy note 를 먼저 확인한다.
 - [_legacy/status_report_20260526.md](_legacy/status_report_20260526.md) — 2026-05-26 read-only repo 상태 점검 snapshot. 현행 entrypoint가 아니다.
 
 ## Organization Rule
@@ -156,7 +152,7 @@ conceptor/hidden-state steering 수식, VL/DiT pathway 상태, code artifact map
 - **Project-wide runbook** 은 `docs/` 루트에 두고 번호 prefix(`01_`, `02_`, `03_`) 로 reading order 를 표현한다.
 - **GR00T 실행 절차** 는 `groot/` 아래에 번호 prefix(`n16_01_` ~ `n16_NN_`, `n15_NN_`) 로 reading order 를 표현한다.
 - **Latent steering (메인 method) 의 분석·재현·진행 기록** 은 `steering/` 아래에 번호 prefix(`01_` ~ `NN_`) 로 reading order 를 표현한다.
-- **TTT 연구 방법론·phase 진행 기록** 은 `ttt/` 아래에 둔다 (무기한 연기됨).
+- **TTT 연구 방법론·phase 진행 기록** 은 `ttt/` 아래 단일 README 로 둔다 (legacy/demoted; `src/ttt/` 코드는 보존).
 - **벤치마크 reference** (task 이름 매핑 등) 는 `benchmarks/` 아래에 둔다.
 - **장기 결정** 은 `adr/` 아래에 둔다.
 - **논문 PDF / 외부 reference** 는 `references/` 아래에 둔다.

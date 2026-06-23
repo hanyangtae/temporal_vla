@@ -29,7 +29,7 @@ For each new VLA checkpoint (HF repo or local weights), you execute the onboardi
 
 ## Out of Scope (Do Not Touch)
 
-- `src/ttt/**` — TTT / progress predictor module (handled by `ttt-module-manager` agent).
+- `src/ttt/**` — TTT / progress predictor module (legacy/demoted; 코드 보존).
 - `src/datasets/**`, `scripts/train/**` — training path.
 - `src/processor/**` — benchmark-side contract is already sub-key based; do not patch processors to accommodate a new model. Fix the serve script instead.
 - `src/policies/**` — upstream model source (git submodules).
