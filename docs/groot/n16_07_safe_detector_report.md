@@ -1,6 +1,12 @@
-# GR00T N1.6 RoboCasa — SAFE Reproduction Report
+# GR00T N1.6 RoboCasa — SAFE Detector + Visualization + Report
 
-SAFE 논문식 failure detection을 GR00T N1.6 RoboCasa에 맞춰 축소 재현한 end-to-end 결과 보고서다. 절차 runbook은 [04 Collection](n16_04_safe_collection.md), [07 Detector](n16_07_safe_detector.md), [08 Visualization](n16_08_safe_visualization.md), [09 Parity](n16_09_safe_parity.md)을, 전체 wiring 개요는 [03 Overview](n16_03_safe_overview.md)를 본다.
+SAFE 논문식 failure detection을 GR00T N1.6 RoboCasa에 맞춰 축소 재현한 post-collection
+분석 trio를 한 문서로 통합한다. detector(LSTM) 학습과 CP 운영점, latent-space 시각화 진단,
+end-to-end 결과 보고서를 순서대로 담는다.
+
+원래 세 문서(`07 SAFE Detector`, `08 SAFE Visualization`, `10 SAFE Report`)는 이 문서의
+세 섹션으로 합쳤다. 절차 runbook은 [04 Collection](n16_04_safe_collection.md), 전체 wiring
+개요는 [03 Overview](n16_03_safe_overview.md), parity는 [09 Parity](n16_09_safe_parity.md)를 본다.
 
 > 관련 문서 (N1.6 reading order)
 > - [Doc map](README.md)
@@ -10,20 +16,389 @@ SAFE 논문식 failure detection을 GR00T N1.6 RoboCasa에 맞춰 축소 재현�
 > - [04 SAFE Collection](n16_04_safe_collection.md)
 > - [05 Scenario Reproduction](n16_05_safe_env_reproduction.md)
 > - [06 Inference Datapoint Semantics](n16_06_safe_inference_semantics.md)
-> - [07 SAFE Detector](n16_07_safe_detector.md)
-> - [08 SAFE Visualization](n16_08_safe_visualization.md)
+> - **07 SAFE Detector + Visualization + Report (이 문서)**
 > - [09 SAFE Parity](n16_09_safe_parity.md)
-> - **10 SAFE Report (이 문서)**
+> - [11 HTTP Act Changes](n16_11_http_act_changes.md)
+> - [12 RoboCasa Refactor Report](n16_12_robocasa_refactor_report.md)
 
-## 범위
+이 문서의 섹션:
 
-이 문서는 SAFE 논문식 failure detection을 GR00T N1.6 RoboCasa에 맞춰 작은 규모로 재현한 결과를 정리한다. 목표는 GR00T N1.6 rollout에서 VLA latent feature를 추출하고, SAFE detector 학습, conformal calibration, unseen-task evaluation, latent-space visualization까지 이어지는 end-to-end path를 닫는 것이다.
+- [Detector (LSTM) training + CP operating point](#detector-lstm-training--cp-operating-point)
+- [Visualization (t-SNE / silhouette)](#visualization-t-sne--silhouette)
+- [End-to-end reduced-reproduction report](#end-to-end-reduced-reproduction-report)
+
+---
+
+## Detector (LSTM) Training + CP Operating Point
+
+Paper-faithful split을 만들고 SAFE-LSTM detector를 학습한다. Aggregation ablation, hparam
+sweep, CP 운영점 고정까지 한 흐름이다.
+
+### Paper-Faithful SAFE Split
+
+SAFE 논문/레포 방식에 맞춰 task-level split과 seen-task episode split을 사용한다.
+
+- raw rollout cap: `max_rollouts_per_task: 100`
+- task-level split: `unseen_task_ratio: 0.25`
+- seen-task episode split: `seen_train_ratio: 0.75`
+- detector train: seen task의 train rollout
+- threshold / conformal calibration: `val_seen`
+- final evaluation: `val_unseen`
+
+따라서 6개 task에서는 `round(0.25 * 6) = 2`개 task가 unseen이 되고, 나머지 4개 task가 seen이 된다. 각 task를 100 rollout으로 맞추면 전체 600 rollout이며, split은 대략 다음 크기가 된다. SAFE 레포 DROID 설정의 `60/task`보다 큰 cap이지만, task별 SR이 낮아 성공 rollout이 부족할 수 있으므로 N1.6 RoboCasa에서는 `100/task`를 사용한다.
+
+이번 small reproduction에서는 taxonomy constraint를 둔다. unseen task는 Open 계열 1개와 PnP 계열 1개로 고정한다. 실제 unseen task는 `OpenDrawer`와 `PnPCounterToCab`이다. 이 선택은 `OpenSingleDoor`를 seen 쪽에 남겨 robocasa365의 `OpenCabinet` 대응 경로를 계속 점검할 수 있게 하고, `val_unseen` 성공/실패 비율도 `114/86`으로 균형을 유지한다.
+
+| split | source | count |
+|---|---|---:|
+| `train` | 4 seen tasks × 75 rollout | 300 |
+| `val_seen` | 4 seen tasks × 25 rollout | 100 |
+| `val_unseen` | 2 unseen tasks × 100 rollout | 200 |
+
+`val_seen`은 validation과 conformal calibration 역할을 함께 한다. 별도 CP-only split이나 seen-task test split을 만들면 논문식 재현에서 벗어난다.
+
+Split 생성 전 count 확인:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/split/prepare_seen4_unseen2_split.py \
+  --source-root outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/raw_rollouts \
+  --split-root outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/split \
+  --dry-run
+```
+
+Split 생성은 새 run에서 한 번 수행한다. 현재 run의 source of truth는 아래 `split` directory다. 기존 `split` directory가 있으면 script가 중단되므로, 재생성은 새 `ROBOCASA_SAFE_RUN_ID`에서 수행한다.
+
+Split 최초 생성:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/split/prepare_seen4_unseen2_split.py \
+  --source-root outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/raw_rollouts \
+  --split-root outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/split
+```
+
+생성된 split:
+
+```text
+/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/split
+```
+
+Split summary:
+
+| split | total | success | failure | SR |
+|---|---:|---:|---:|---:|
+| `train` | 300 | 141 | 159 | 47.0% |
+| `val_seen` | 100 | 58 | 42 | 58.0% |
+| `val_unseen` | 200 | 114 | 86 | 57.0% |
+
+`manifest.tsv`와 `summary.tsv`를 함께 저장해 이후 학습 seed와 split seed를 분리한다.
+
+### SAFE LSTM Final Detector
+
+SAFE repo에는 GR00T N1.6용 dataset loader/config를 추가했다.
+
+- `/home/dongkyu/pdk_ws/SAFE/failure_prob/data/groot_n16.py`
+- `/home/dongkyu/pdk_ws/SAFE/failure_prob/conf/dataset/groot_n16.yaml`
+- `/home/dongkyu/pdk_ws/SAFE/failure_prob/conf/__init__.py`
+
+Loader contract:
+
+- split directory는 `train`, `val_seen`, `val_unseen`을 물리적으로 유지한다.
+- per-step hidden feature `[4, 16, 1024]`를 읽는다.
+- detector input은 train/eval config의 aggregation에 따라 만든다.
+- 최종 SAFE-LSTM은 `horizon_idx_rel=mean`, `diff_idx_rel=concat-2`를 사용하므로 detector input은 `[T, 2048]`이다.
+- `val_seen`은 validation과 conformal calibration에 쓰고, `val_unseen`은 held-out unseen-task 평가에 쓴다.
+
+관련 script:
+
+```text
+/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/run_config.py
+/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/run_config.sh
+/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/safe_feature_vectors.py
+/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/train/train_lstm_aggregation_ablation.sh
+/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/analyze/summarize_lstm_aggregation_ablation.py
+/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/train/train_lstm_hparam_sweep.sh
+/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/analyze/summarize_lstm_hparam_sweep.py
+/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/analyze/finalize_lstm_detector.py
+```
+
+`run_config.py` / `run_config.sh`가 run id, output root, 최종 aggregation, hparam sweep directory의 단일 출처다. `safe_feature_vectors.py`가 `[K,H,D]` Flow-matching SAFE feature를 timestep-level SAFE feature vector로 aggregation하는 공용 Module이다.
+
+Aggregation ablation 실행:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+WANDB_MODE=online \
+bash scripts/safe/groot_n16/robocasa/train/train_lstm_aggregation_ablation.sh
+```
+
+Aggregation ablation 요약:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/analyze/summarize_lstm_aggregation_ablation.py
+```
+
+최종 aggregation 기준 hparam sweep 실행:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+WANDB_MODE=online \
+bash scripts/safe/groot_n16/robocasa/train/train_lstm_hparam_sweep.sh
+```
+
+Hparam sweep 요약:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/analyze/summarize_lstm_hparam_sweep.py
+```
+
+Final detector 고정 및 CP artifact 생성:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/analyze/finalize_lstm_detector.py
+```
+
+최종 선택:
+
+- model: SAFE `lstm`
+- epochs: `1000`
+- batch size: `64`
+- lr: `3e-4`
+- lambda_reg: `1`
+- aggregation: `horizon_idx_rel=mean`, `diff_idx_rel=concat-2`
+- selected checkpoint seed: `2`
+- W&B project: `vla-safe`
+- timing plots: disabled, because current data has episode-level success/failure only and inference-step-level failure-onset label이 없다.
+
+최종 checkpoint:
+
+```text
+/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector/model_final.ckpt
+```
+
+최종 산출물:
+
+```text
+/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector
+```
+
+이 directory에는 `model_final.ckpt`, `config.yaml`, `manifest.json`, `final_operating_point.json`, `fixed_threshold_eval.csv`, `split_cp_eval.csv`, `functional_cp_eval.csv`, `functional_cp_bands.npz`, `per_rollout_scores.csv`, `README.md`가 있다.
+
+초기 aggregation ablation 결과:
+
+| rank | horizon | diff | dim | val_seen bal-acc | val_seen T-det | val_seen ROC-AUC | val_unseen bal-acc | val_unseen T-det | val_unseen ROC-AUC |
+|---:|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | `concat-2` | `0.0` | 2048 | `0.932 ± 0.011` | `0.574 ± 0.026` | `0.922 ± 0.034` | `0.785 ± 0.021` | `0.694 ± 0.015` | `0.749 ± 0.053` |
+| 10 | `mean` | `mean` | 1024 | `0.854 ± 0.039` | `0.653 ± 0.040` | `0.854 ± 0.042` | `0.754 ± 0.025` | `0.702 ± 0.015` | `0.779 ± 0.015` |
+
+이후 SAFE-style feature visualization과 timestep-level separability 진단에서 `horizon_idx_rel=mean`, `diff_idx_rel=concat-2`를 최종 후보로 고정하고 hparam sweep을 다시 수행했다.
+
+Hyperparameter sweep 결과:
+
+| metric | mean ± std |
+|---|---:|
+| best hparam | `lr=3e-4`, `lambda_reg=1` |
+| `val_seen` bal-acc | `0.985 ± 0.012` |
+| `val_seen` T-det | `0.539 ± 0.130` |
+| `val_seen` ROC-AUC | `0.995 ± 0.006` |
+| `val_unseen` bal-acc | `0.981 ± 0.028` |
+| `val_unseen` T-det | `0.642 ± 0.052` |
+| `val_unseen` ROC-AUC | `0.994 ± 0.008` |
+
+Final pinned detector 결과:
+
+| item | value |
+|---|---:|
+| selected checkpoint | `seed2` |
+| fixed threshold baseline | `0.5487` |
+| fixed threshold `val_unseen` bal-acc | `1.0000` |
+| fixed threshold `val_unseen` TPR/TNR | `1.0000 / 1.0000` |
+| fixed threshold `val_unseen` mean T-det | `0.8194` |
+
+최종 운영점은 split conformal prediction으로 고정한다. Fixed threshold는 baseline으로 함께 기록한다.
+
+| item | value |
+|---|---:|
+| method | `split_cp` |
+| alpha | `0.2` |
+| eval time | `by final end` |
+| calibration label | `neg_success` |
+| threshold | `0.5301596522331238` |
+| `val_unseen` bal-acc | `0.9518` |
+| `val_unseen` TPR/TNR | `1.0000 / 0.9035` |
+| `val_unseen` acc/F1 | `0.9450 / 0.9399` |
+| `val_unseen` mean T-det | `0.4114` |
+
+해석:
+
+- wiring은 닫혔다. GR00T N1.6 rollout feature가 SAFE loader를 통과하고, LSTM 학습/validation/CP table 생성/checkpoint 저장까지 완료됐다.
+- 논문식 feature aggregation ablation과 LSTM hyperparameter sweep을 수행했고, 최종 detector/checkpoint/threshold를 별도 산출물로 고정했다.
+- `val_unseen`에서도 failure monitoring 성능은 강하다. 최종 CP 운영점의 mean T-det는 `0.4114`로 이전 운영점보다 앞당겨졌다. 현재 label scope는 rollout-level success/failure이며, proactive intervention 평가는 inference-step-level onset/intervention label을 추가한 뒤 다룬다.
+- CP alpha sweep은 최종 선택된 aggregation/hparam/seed2 checkpoint의 score 위에서 수행했다.
+- Functional CP band도 SAFE repo 구현 그대로 계산했다. `alpha=0.2`, `by final end`, success-calibrated functional CP는 `val_unseen` bal-acc `0.9605`, TPR/TNR `1.0000 / 0.9211`, mean T-det `0.4251`이다. Best by-final-end functional point는 `alpha=0.05`에서 bal-acc `1.0000`, mean T-det `0.6982`다.
+- static latent-space failure zone 근거는 약하다. detector 성능은 정적 cluster 분리보다 LSTM score trajectory와 threshold crossing으로 해석한다.
+
+SAFE 논문 Figure 8류의 CP 시각화는 다음 위치에 생성한다. 이 그림은 CP operating point curve다.
+
+```text
+/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/vis/plot_safe_conformal_curves.py
+/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/visualizations/conformal_figure/by_final_end
+```
+
+기본 산출물은 `cp_balacc_tdet.{png,pdf}`와 `cp_alpha_{fpr,fnr,tpr,tnr,bal_acc}.{png,pdf}`다. 입력은 `final_detector/split_cp_eval.csv`와 `final_detector/functional_cp_eval.csv`이며, 로컬 CSV를 source of truth로 사용한다.
+
+CP curve 생성:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/vis/plot_safe_conformal_curves.py \
+  --eval-time "by final end"
+```
+
+---
+
+## Visualization (t-SNE / silhouette)
+
+Per-timestep detector input feature를 대상으로 t-SNE/silhouette/overlay 진단을 만든다.
+
+### SAFE Feature Visualization
+
+SAFE 논문 Figure 1류의 latent-space 진단은 SAFE loader가 만든 per-timestep detector input feature를 대상으로 한다. 초기 t-SNE artifact는 `mean/mean` aggregation으로 만들었고, 최종 detector의 aggregation은 `horizon_idx_rel=mean`, `diff_idx_rel=concat-2`이다. 현재 visualization/silhouette script의 기본값은 최종 detector aggregation이며, 초기 artifact를 재생성할 때만 `--horizon-idx-rel mean --diff-idx-rel mean`을 명시한다.
+
+최종 aggregation 기준 detector input:
+
+```text
+[T, 4, 16, 1024] -> horizon mean, diff concat(first,last) -> [T, 2048]
+```
+
+Visualization 산출물은 GR00T N1.6 eval output tree 아래에 둔다.
+
+```text
+/home/dongkyu/pdk_ws/temporal_vla/outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep
+```
+
+각 visualization directory는 `feats_projected_skip1.pkl`, `feats_vis_skip1-succ.png`, `feats_vis_skip1-taskid.png`, `manifest.json`을 가진다. task structure와 success/failure signal을 한 그림에서 보기 위해 후처리 overlay도 저장한다.
+
+- `feats_vis_skip1-taskid_failred.png`: 기존 task-id t-SNE 좌표를 그대로 쓰고, success datapoint(=inference)은 task id 색, failure rollout의 datapoint(=inference)은 단색 빨강으로 칠한다.
+- `feats_vis_skip1-taskid_failure_overlay.png`: task id 색상 위에 실패 rollout의 datapoint을 검은 테두리로 겹친다.
+- `feats_vis_skip1-task_success_facets.png`: task별 subplot 안에서 success rollout의 datapoint(=inference)은 파란색, failure rollout의 datapoint(=inference)은 episode 내 상대 시간에 따라 붉게 표시한다.
+
+`manifest.json`에는 source split/task, projector, aggregation, rollout count, feature count, 생성된 output 파일명을 기록한다.
+
+현재 생성된 t-SNE artifacts:
+
+| scope | rollout | timestep feature | path |
+|---|---:|---:|---|
+| all splits | 600 | 18,428 | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/all/tsne_mean_mean` |
+| `val_unseen` | 200 | 5,660 | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/val_unseen/tsne_mean_mean` |
+| `val_unseen/OpenDrawer` | 100 | 2,041 | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/val_unseen_OpenDrawer/tsne_mean_mean` |
+| `val_unseen/PnPCounterToCab` | 100 | 3,619 | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/val_unseen_PnPCounterToCab/tsne_mean_mean` |
+| all splits, SAFE-style | 600 | 18,428 | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/safe_style_visualize_features/all_hmean_dconcat_2-tsne` |
+| `val_unseen`, SAFE-style | 200 | 5,660 | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/safe_style_visualize_features/val_unseen_hmean_dconcat_2-tsne` |
+
+Silhouette 산출물:
+
+| aggregation | path | conclusion |
+|---|---|---|
+| `mean/mean` | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/silhouette_mean_mean` | success/failure silhouette near zero |
+| `concat-2/0.0` | `safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/silhouette_hconcat2_d0p0` | 초기 detector-metric 후보에서도 static failure zone은 약함 |
+
+재생성 runner:
+
+```text
+/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/vis/run_feature_visualization.py
+```
+
+Overlay runner:
+
+```text
+/home/dongkyu/pdk_ws/temporal_vla/scripts/safe/groot_n16/robocasa/vis/plot_task_success_overlay.py
+```
+
+예시:
+
+```bash
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/vis/run_feature_visualization.py \
+  --scope val_unseen \
+  --task PnPCounterToCab \
+  --projector tsne
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/vis/plot_task_success_overlay.py \
+  outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/visualizations/feature_space/seen4_unseen2_openDrawer_pnpCab_100ep/val_unseen/tsne_mean_mean
+```
+
+SAFE-style feature plot 생성:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/vis/plot_safe_style_feature_space.py \
+  --scope val_unseen \
+  --projector tsne
+```
+
+Silhouette 진단:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/vis/compute_feature_silhouette.py
+```
+
+Rollout-mean separability 진단:
+
+```bash
+cd /home/dongkyu/pdk_ws/temporal_vla
+
+/home/dongkyu/miniforge3/envs/vla-safe/bin/python \
+  scripts/safe/groot_n16/robocasa/analyze/diagnose_rollout_mean_feature_separability.py
+```
+
+초기 관찰:
+
+- `val_unseen` 전체로 보면 task structure와 success/failure signal이 함께 섞인다.
+- `OpenDrawer` 단독 t-SNE는 success/failure separation이 약하다.
+- `PnPCounterToCab` 단독 t-SNE는 실패 rollout 후반부로 보이는 red/orange region이 더 뚜렷하다.
+- overlay 기준으로도 `PnPCounterToCab`은 late-failure datapoint(=inference)이 특정 영역에 비교적 많이 몰리지만, `OpenDrawer`는 success/failure가 더 강하게 섞인다.
+- 최종 aggregation의 original 2048-D silhouette에서도 `val_unseen` success/failure Mahalanobis score는 `-0.0027`이고, task+failure도 음수다. static failure zone 근거는 약하고, detector score trajectory 중심으로 해석한다.
+
+---
+
+## End-to-end Reduced-reproduction Report
+
+SAFE 논문식 failure detection을 GR00T N1.6 RoboCasa에 맞춰 작은 규모로 재현한 end-to-end 결과 보고서다.
+
+### 범위
+
+이 섹션은 SAFE 논문식 failure detection을 GR00T N1.6 RoboCasa에 맞춰 작은 규모로 재현한 결과를 정리한다. 목표는 GR00T N1.6 rollout에서 VLA latent feature를 추출하고, SAFE detector 학습, conformal calibration, unseen-task evaluation, latent-space visualization까지 이어지는 end-to-end path를 닫는 것이다.
 
 현재 결론은 명확하다. SAFE wiring은 닫혔고, trajectory 후반의 success/failure separability가 보인다. 최종 산출물은 rollout-level failure monitoring baseline, conformal operating point, latent-space diagnostic artifact다.
 
 평가 범위는 held-out unseen-task evaluation이다. Model weight update, hparam selection, CP threshold calibration은 `train`과 `val_seen`에서 처리했다. 최종 aggregation 후보를 고정하는 과정에서는 `val_unseen` 시각화와 separability 진단을 참고했으므로, 다음 검증 축은 새 rollout seed로 수집한 test set에서 final detector와 CP threshold를 그대로 재평가하는 것이다.
 
-## SAFE 이론
+### SAFE 이론
 
 SAFE의 핵심 가정은 VLA policy의 내부 latent feature trajectory가 최종 rollout 성공/실패에 대한 정보를 담고 있다는 것이다. VLA를 action 출력 black box 관점에서 확장해, 매 policy step마다 생성되는 latent feature를 failure detector의 입력으로 사용한다.
 
@@ -85,7 +460,7 @@ T_{det} = \frac{\hat{t}_{det}}{T_\tau}
 
 작을수록 early detection이다. CP는 detector score 위에서 threshold를 정하는 방법이므로, early score separability가 CP 기반 early detection의 상한을 결정한다.
 
-## GR00T N1.6 Feature 설계
+### GR00T N1.6 Feature 설계
 
 SAFE repo의 pi0 diffusion loader는 policy feature를 다음 구조로 다룬다.
 
@@ -141,7 +516,7 @@ SAFE loader는 이 feature를 읽은 뒤 detector train/eval config에서 aggreg
 
 이 설계는 SAFE repo의 pi0 diffusion loader와 같은 원칙을 따른다. feature 축은 수집 시점에 보존하고, aggregation choice는 detector training/evaluation config에서 선택한다.
 
-## 실험 설정
+### 실험 설정
 
 Base checkpoint는 GR00T N1.6 RoboCasa PandaOmron checkpoint다.
 
@@ -173,23 +548,9 @@ SAFE 논문/레포 방식에 맞춰 task-level seen/unseen split과 seen-task ep
 - validation / conformal calibration: `val_seen`
 - final evaluation: `val_unseen`
 
-Unseen task는 taxonomy constraint를 두어 Open 계열 1개와 PnP 계열 1개로 고정했다. 실제 unseen task는 `OpenDrawer`와 `PnPCounterToCab`이다.
+Unseen task는 taxonomy constraint를 두어 Open 계열 1개와 PnP 계열 1개로 고정했다. 실제 unseen task는 `OpenDrawer`와 `PnPCounterToCab`이다. Split count/SR 표는 위 [Paper-Faithful SAFE Split](#paper-faithful-safe-split)과 동일하다.
 
-| split | source | count |
-|---|---|---:|
-| `train` | 4 seen tasks x 75 rollout | 300 |
-| `val_seen` | 4 seen tasks x 25 rollout | 100 |
-| `val_unseen` | 2 unseen tasks x 100 rollout | 200 |
-
-Split 요약:
-
-| split | total | success | failure | SR |
-|---|---:|---:|---:|---:|
-| `train` | 300 | 141 | 159 | 47.0% |
-| `val_seen` | 100 | 58 | 42 | 58.0% |
-| `val_unseen` | 200 | 114 | 86 | 57.0% |
-
-## RoboCasa365 18-Task Collection 결과
+### RoboCasa365 18-Task Collection 결과
 
 기존 SAFE-LSTM detector 재현은 위의 6-task split을 사용한다. 별도로, RoboCasa365 `target_atomic_seen18` 전체 18개 task에 대해 GR00T N1.6 checkpoint-120000 SAFE feature collection을 완료했다. 이 collection은 latent-space visualization과 후속 SAFE split 구성의 raw rollout source로 사용한다.
 
@@ -260,23 +621,9 @@ Total SR은 `967/1800 = 53.7%`다.
 
 따라서 18-task feature에는 local task-neighborhood signal이 있지만, static success/failure cluster separation은 약하다. Success/failure 분석은 정적 2D embedding보다 rollout trajectory, SAFE-LSTM score, CP threshold crossing 기준으로 해석한다.
 
-## Detector 학습
+### Detector 학습
 
-SAFE repo에 GR00T N1.6 dataset loader/config를 추가했다.
-
-```text
-/home/dongkyu/pdk_ws/SAFE/failure_prob/data/groot_n16.py
-/home/dongkyu/pdk_ws/SAFE/failure_prob/conf/dataset/groot_n16.yaml
-```
-
-Loader contract는 다음과 같다.
-
-- split directory는 `train`, `val_seen`, `val_unseen`을 물리적으로 유지한다.
-- per-step hidden feature `[4, 16, 1024]`를 읽는다.
-- detector input은 aggregation 후 `[T, D']`다. 최종 설정에서는 `[T, 2048]`이다.
-- `val_seen`은 validation과 conformal calibration에 쓰고, `val_unseen`은 held-out unseen-task 평가에 쓴다.
-
-최종 학습 설정:
+Detector 학습 runbook과 명령은 위 [Detector (LSTM) training + CP operating point](#detector-lstm-training--cp-operating-point) 섹션이 단일 출처다. 최종 학습 설정 요약:
 
 | item | value |
 |---|---|
@@ -292,7 +639,7 @@ Loader contract는 다음과 같다.
 
 현재 데이터에는 episode-level success/failure label만 있고 inference-step-level failure-onset label이 없으므로 timing plot은 비활성화했다.
 
-## 결과
+### 결과
 
 Aggregation ablation은 `horizon_idx_rel`과 `diff_idx_rel`을 `{0.0, 1.0, mean, concat-2}`에서 비교했다. 아래 표는 초기 detector-metric 기준 결과다. 이후 SAFE-style feature visualization과 timestep-level separability 진단을 반영해 `horizon_idx_rel=mean`, `diff_idx_rel=concat-2`를 최종 후보로 고정하고 hparam sweep을 다시 수행했다.
 
@@ -397,28 +744,17 @@ Leakage sanity check에서 split 중복은 0이다. Fixed threshold baseline의 
 - random-label sanity를 수행해 label shuffle 시 성능이 chance level로 떨어지는지 확인한다.
 - task-only 또는 length-only baseline을 확인해 episode length/task identity confound를 배제한다.
 
-## 시각화
+### 시각화 요약
 
-SAFE feature 시각화는 detector input feature를 사용한다. GR00T N1.6에서는 다음 feature를 뜻한다.
+시각화 runbook/artifact는 위 [Visualization (t-SNE / silhouette)](#visualization-t-sne--silhouette) 섹션이 단일 출처다. SAFE feature 시각화는 detector input feature를 사용한다. GR00T N1.6에서는 다음 feature를 뜻한다.
 
 ```text
 [T, 4, 16, 1024] -> aggregation -> [T, D']
 ```
 
-초기 t-SNE는 `mean/mean` aggregation으로 만들었다. 최종 detector aggregation은 `mean/concat-2`이며, 이 경우 `[T, 2048]` feature가 된다. 현재 visualization/silhouette script의 기본값은 최종 detector aggregation이며, 초기 artifact를 재생성할 때만 `--horizon-idx-rel mean --diff-idx-rel mean`을 명시한다.
+초기 t-SNE는 `mean/mean` aggregation으로 만들었다. 최종 detector aggregation은 `mean/concat-2`이며, 이 경우 `[T, 2048]` feature가 된다. t-SNE artifact는 전체 split, `val_unseen`, 그리고 `val_unseen`의 task별 subset에 대해 생성했다 (scope별 rollout/timestep count는 visualization 섹션 표 참고). Feature space에는 task 방향성이 일부 있고, 전역적인 success/failure 분리는 약하다. 이 결과는 detector input feature의 diagnostic artifact로 사용한다.
 
-t-SNE artifact는 전체 split, `val_unseen`, 그리고 `val_unseen`의 task별 subset에 대해 생성했다.
-
-| scope | rollout | timestep feature |
-|---|---:|---:|
-| all splits | 600 | 18,428 |
-| `val_unseen` | 200 | 5,660 |
-| `val_unseen/OpenDrawer` | 100 | 2,041 |
-| `val_unseen/PnPCounterToCab` | 100 | 3,619 |
-
-Feature space에는 task 방향성이 일부 있고, 전역적인 success/failure 분리는 약하다. 이 결과는 detector input feature의 diagnostic artifact로 사용한다.
-
-## 해석
+### 해석
 
 이번 구현은 SAFE x GR00T N1.6 wiring 및 detector baseline을 end-to-end로 닫았다.
 
@@ -467,7 +803,7 @@ g_\phi(h_{1:t}) \to \mathbf{1}[t \ge t_{onset}]
 
 따라서 failed rollout의 중후반부에서 failure score가 상승하는 현상은 prefix가 점점 failed rollout class score를 높이는 것으로 읽는다. Proactive intervention 평가는 onset/intervention label을 추가한 뒤 별도 protocol로 다룬다.
 
-## HTTP `/act_with_features` SAFE Collection Smoke (2026-05-29)
+### HTTP `/act_with_features` SAFE Collection Smoke (2026-05-29)
 
 HTTP feature collection path도 ZMQ SAFE pkl contract에 맞춰 1-step capped rollout으로 검증했다. 목적은 full SR 평가가 아니라 `/act_with_features` 응답이 SAFE rollout artifact로 변환되고 기존 SAFE loader가 읽을 수 있는지 확인하는 것이다.
 
@@ -505,7 +841,7 @@ HTTP feature collection path도 ZMQ SAFE pkl contract에 맞춰 1-step capped ro
 
 결론: HTTP `/act_with_features` feature response는 SAFE pkl schema, hidden-state metadata, existing SAFE loader path와 호환된다. 대량 HTTP SAFE dataset collection도 같은 `--policy-transport http` 경로를 사용한다.
 
-## 한계와 남은 항목
+### 한계와 남은 항목
 
 다음 개선 축은 early separability다. CP는 threshold를 calibration하고, rollout 초반의 detector score separability가 early signal 품질을 결정한다.
 
@@ -515,9 +851,9 @@ HTTP feature collection path도 ZMQ SAFE pkl contract에 맞춰 1-step capped ro
 4. Feature axis ablation: `--feature-slice all` model-level `H=50` feature와 current `H=16` valid-horizon export 비교가 남아 있다.
 5. Taskwise score-trajectory plot: CP threshold crossing phase를 더 명확히 기록한다.
 
-## 관련 파일
+### 관련 파일
 
-- [SAFE wiring overview](n16_03_safe_overview.md) (related: [04 collection](n16_04_safe_collection.md), [07 detector](n16_07_safe_detector.md), [08 visualization](n16_08_safe_visualization.md), [09 parity](n16_09_safe_parity.md), [11 HTTP act changes](n16_11_http_act_changes.md))
+- [SAFE wiring overview](n16_03_safe_overview.md) (related: [04 collection](n16_04_safe_collection.md), [09 parity](n16_09_safe_parity.md), [11 HTTP act changes](n16_11_http_act_changes.md))
 - [Dedicated ZMQ feature server ADR](../adr/0001-dedicated-safe-groot-n16-zmq-server.md)
 - `scripts/serve/groot.py` (HTTP `/act` + `/act_with_features`, port 8500)
 - `scripts/utils/vla_client.py` (`predict_with_features`)

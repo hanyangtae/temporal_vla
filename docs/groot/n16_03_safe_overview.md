@@ -1,6 +1,6 @@
 # GR00T N1.6 RoboCasa — SAFE Overview
 
-이 문서 묶음은 GR00T N1.6 RoboCasa와 SAFE detector를 연결하는 canonical 위치다. 예전 단일 SAFE wiring 문서는 `n16_03`부터 `n16_10`까지의 번호 prefix 문서로 합쳐졌고, 결론은 HTTP와 ZMQ를 모두 유지하되 현재 실험 기준선을 ZMQ로 두는 것이다.
+이 문서 묶음은 GR00T N1.6 RoboCasa와 SAFE detector를 연결하는 canonical 위치다. 예전 단일 SAFE wiring 문서는 `n16_03`부터 `n16_12`까지의 번호 prefix 문서로 합쳐졌고(detector/visualization/report 3편은 `n16_07_safe_detector_report.md` 한 문서로 통합), 결론은 HTTP와 ZMQ를 모두 유지하되 현재 실험 기준선을 ZMQ로 두는 것이다.
 
 > 관련 문서 (N1.6 reading order)
 > - [Doc map](README.md)
@@ -10,16 +10,14 @@
 > - [04 SAFE Collection](n16_04_safe_collection.md)
 > - [05 Scenario Reproduction](n16_05_safe_env_reproduction.md)
 > - [06 Inference Datapoint Semantics](n16_06_safe_inference_semantics.md)
-> - [07 SAFE Detector](n16_07_safe_detector.md)
-> - [08 SAFE Visualization](n16_08_safe_visualization.md)
+> - [07 SAFE Detector + Visualization + Report](n16_07_safe_detector_report.md)
 > - [09 SAFE Parity](n16_09_safe_parity.md)
-> - [10 SAFE Report](n16_10_safe_report.md)
 
 ## 현재 결론
 
 - `ZMQ official eval`: GR00T N1.6 RoboCasa 성공률을 판단하는 기준 경로.
 - `ZMQ SAFE feature server`: SAFE rollout 수집 기준 경로. official RoboCasa 클라이언트 환경을 쓰면서 action과 feature를 함께 저장한다.
-- `HTTP /act` + `HTTP /act_with_features`: 프로젝트 공통 serving API로 유지한다 (port `:8500`, `scripts/serve/groot.py`). HTTP 경로는 일반 벤치마크가 같은 모델을 호출하거나 (`/act`) SAFE feature를 회수할 때 (`/act_with_features`) 사용한다. DiT pre-velocity feature 정의는 ZMQ feature server와 HTTP `/act_with_features` 가 `src/policies/groot/safe/features.py` 의 `capture_dit_features` 를 공유한다. Endpoint action parity, SAFE pkl/loader smoke, 짧은 closed-loop transport smoke까지 통과했다 ([09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29), [10 SAFE Report](n16_10_safe_report.md#http-act_with_features-safe-collection-smoke-2026-05-29), [n16_11 변경 일지](n16_11_http_act_changes.md)).
+- `HTTP /act` + `HTTP /act_with_features`: 프로젝트 공통 serving API로 유지한다 (port `:8500`, `scripts/serve/groot.py`). HTTP 경로는 일반 벤치마크가 같은 모델을 호출하거나 (`/act`) SAFE feature를 회수할 때 (`/act_with_features`) 사용한다. DiT pre-velocity feature 정의는 ZMQ feature server와 HTTP `/act_with_features` 가 `src/policies/groot/safe/features.py` 의 `capture_dit_features` 를 공유한다. Endpoint action parity, SAFE pkl/loader smoke, 짧은 closed-loop transport smoke까지 통과했다 ([09 SAFE Parity](n16_09_safe_parity.md#runtime-validation-2026-05-29), [07 SAFE Detector + Visualization + Report](n16_07_safe_detector_report.md#http-act_with_features-safe-collection-smoke-2026-05-29), [n16_11 변경 일지](n16_11_http_act_changes.md)).
 - RoboCasa365 `target_atomic_seen18` 100ep/task collection은 완료됐다. `target_atomic_seen18_ckpt120000_robocasa365_100ep`는 `18 x 100 = 1800` episode triplet을 포함하고, seed range는 task별 `100000..100099`, verifier 기준 `status=ok`, total SR `967/1800 = 53.7%`다.
 
 전체 task-set HTTP benchmark SR은 아직 산출하지 않았다. 현재 HTTP 검증 범위는 action parity, feature schema, transport smoke다.
@@ -165,10 +163,8 @@ Validation utilities:
 - `/home/dongkyu/pdk_ws/temporal_vla/docs/groot/n16_04_safe_collection.md`
 - `/home/dongkyu/pdk_ws/temporal_vla/docs/groot/n16_05_safe_env_reproduction.md`
 - `/home/dongkyu/pdk_ws/temporal_vla/docs/groot/n16_06_safe_inference_semantics.md`
-- `/home/dongkyu/pdk_ws/temporal_vla/docs/groot/n16_07_safe_detector.md`
-- `/home/dongkyu/pdk_ws/temporal_vla/docs/groot/n16_08_safe_visualization.md`
+- `/home/dongkyu/pdk_ws/temporal_vla/docs/groot/n16_07_safe_detector_report.md`
 - `/home/dongkyu/pdk_ws/temporal_vla/docs/groot/n16_09_safe_parity.md`
-- `/home/dongkyu/pdk_ws/temporal_vla/docs/groot/n16_10_safe_report.md`
 
 ## 남은 항목
 

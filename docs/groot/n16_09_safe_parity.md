@@ -17,10 +17,8 @@ ZMQ official eval과 HTTP common serving path는 모두 유지한다. GR00T N1.6
 > - [04 SAFE Collection](n16_04_safe_collection.md)
 > - [05 Scenario Reproduction](n16_05_safe_env_reproduction.md)
 > - [06 Inference Datapoint Semantics](n16_06_safe_inference_semantics.md)
-> - [07 SAFE Detector](n16_07_safe_detector.md)
-> - [08 SAFE Visualization](n16_08_safe_visualization.md)
+> - [07 SAFE Detector + Visualization + Report](n16_07_safe_detector_report.md)
 > - **09 SAFE Parity (이 문서)**
-> - [10 SAFE Report](n16_10_safe_report.md)
 
 ## ZMQ Official Eval
 

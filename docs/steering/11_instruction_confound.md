@@ -9,6 +9,27 @@
 거의 1:1 로 상관된 아티팩트**일 가능성이 크다. 길이 confound 에 이어 **instruction confound**
 가 추가로 확인됨.
 
+## 방법 — VL/DiT LDA 사분면 분석
+
+이 Phase A 판정은 **VL/DiT LDA 사분면 분석**(`scripts/safe/groot_n16/robocasa/analyze/vl_dit_lda_analysis.py`)
+산출물 위에서 내렸다. Phase 3의 scalar Mahalanobis는 1D로 압축해 정보를 잃으므로, AUROC를 만든
+실제 LDA discriminant 방향을 직접 써서 각 episode의 VL-anomaly·DiT-anomaly를 측정하고 2×2 사분면으로
+나눈다(`target_atomic_moderate10_pathway_pertoken_100ep`, mixed-instruction).
+
+**사분면 정의** (실패 유형 가설):
+- **A (VL+ DiT+)**: 둘 다 혼란 — 복합 실패.
+- **B (VL+ DiT−)**: goal-type failure 가설(VL에서만 OOD).
+- **C (VL− DiT+)**: motor-type failure 가설(DiT에서만 OOD).
+- **D (VL− DiT−)**: 둘 다 정상인데 실패 — latent로 예측 불가.
+
+**task별 사분면 분포**:
+- SlideDishwasherRack: A=14, B=8, C=8, D=14 (고르게 분포 → 분류 의미 있음).
+- OpenCabinet: A=20, B=4, C=4, D=19 (A/D에 몰림 → 두 pathway가 함께 움직여 분리 약함).
+
+비디오 검증: 각 task `lda_quadrant/<task>/video_list.html`에서 B그룹(goal-type)·C그룹(motor-type)
+영상을 직접 보고 "goal 오인 vs 동작 실패"를 정성 확인. mp4 다운로드는
+`scripts/safe/groot_n16/robocasa/watch_video.sh <clip>.mp4 <task>` (workspace 루트로 복사 → IDE에서 재생).
+
 ## 근거 — instruction 별 성공/실패 쏠림
 
 | task / instruction | succ | fail | 성공률 |

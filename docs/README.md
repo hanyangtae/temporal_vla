@@ -44,7 +44,7 @@ phase 신호 공급용 보조 부품으로 복귀 검토 가능하다.
 ## Current Results And Status
 
 - GR00T RoboCasa runtime/SR/SAFE 결과는 [`groot/README.md`](groot/README.md)의
-  "최근 실행 결과"와 [`groot/n16_10_safe_report.md`](groot/n16_10_safe_report.md)를 본다.
+  "최근 실행 결과"와 [`groot/n16_07_safe_detector_report.md`](groot/n16_07_safe_detector_report.md)를 본다.
 - Latent steering 표현 분석과 intervention 후보는 [`steering/README.md`](steering/README.md)에서
   phase별 문서를 따라간다.
 - 환경 결정성, task 이름 차이, seed replay 문제는 [`benchmarks/`](benchmarks/)와
@@ -71,11 +71,9 @@ LeRobot/native, RoboCasa365, ZMQ/HTTP entry point가 어떤 파일과 함수를 
 4. [SAFE Collection](groot/n16_04_safe_collection.md) — ah8/ah16 mode 포함
 5. [Scenario Reproduction](groot/n16_05_safe_env_reproduction.md) — scenario seed + ep_meta
 6. [Inference Datapoint Semantics](groot/n16_06_safe_inference_semantics.md) — 한 datapoint 의미
-7. [SAFE Detector](groot/n16_07_safe_detector.md) — split + LSTM + CP 운영점
-8. [SAFE Visualization](groot/n16_08_safe_visualization.md) — t-SNE/silhouette
-9. [SAFE Parity](groot/n16_09_safe_parity.md) — ZMQ official baseline parity + HTTP `/act` parity
-10. [SAFE Reproduction Report](groot/n16_10_safe_report.md) — 축소 재현 결과 보고서
-11. [HTTP Act Changes](groot/n16_11_http_act_changes.md) — HTTP `/act` + `/act_with_features` wiring 변경 일지 (GR00T 한정)
+7. [SAFE Detector + Report](groot/n16_07_safe_detector_report.md) — split+LSTM+CP 운영점 + t-SNE/silhouette + 축소 재현 결과 (구 n16_07/08/10 통합)
+8. [SAFE Parity](groot/n16_09_safe_parity.md) — ZMQ official baseline parity + HTTP `/act` parity
+9. [HTTP Act Changes](groot/n16_11_http_act_changes.md) — HTTP `/act` + `/act_with_features` wiring 변경 일지 (GR00T 한정)
 
 최종 detector artifact:
 
@@ -86,23 +84,22 @@ outputs/eval/robocasa/groot_n16/safe_seen4_unseen2_100ep/final_detector
 ### N1.5
 1. [N1.5 Fine-Tuning](groot/n15_01_finetune.md)
 2. [N1.5 Evaluation](groot/n15_02_eval.md)
-3. [N1.5 LeRobot RoboCasa365 Pipeline](groot/n15_03_lerobot_robocasa365.md) — serve→HTTP→robocasa365→analysis UI 4-stage. overview/status(`n15_03`) + stage별 명세 `n15_04`(serve) `n15_05`(obs bridge)
-4. [N1.5 Native ZMQ OpenFridge Smoke](groot/n15_06_native_zmq_openfridge.md) — LeRobot wrapper mismatch를 분리하기 위한 Isaac-GR00T N1.5 native baseline
-5. [N1.5 LeRobot Internal Parity](groot/n15_07_lerobot_internal_parity.md) — SR 외 checkpoint-load 검증과 historical internal evidence
+3. [N1.5 LeRobot RoboCasa365 Pipeline](groot/n15_03_lerobot_robocasa365.md) — serve adapter / obs bridge / native ZMQ baseline / internal parity 통합 (구 n15_04~07)
 
 ## Latent Steering (메인 연구 라인)
 
 succ/fail latent 구분 → steer 로 SR↑ (COAST 계열). 메인 method 의 표현 분석·재현·진행 기록은
 [`steering/`](steering/README.md) 아래에 번호 prefix 로 정리. README 에 reading order 가 있다.
 
-1. [seen18 Latent Analysis](steering/01_seen18_latent_analysis.md) — succ/fail 분리 표현 분석 (길이 confound 통제 전제)
-2. [seen18 Handoff](steering/02_seen18_handoff.md) — cross-task 실패 심화 + steering/detector 핸드오프
-3. [SAFE lerobot Collection](steering/05_safe_lerobot_collection.md) — SAFE 수집 lerobot 멀티벤치 확장 (plan+status)
-4. [Steering Methods Survey](steering/07_steering_methods_survey.md) — COAST 이후 적용 후보와 권장 순서
-5. [Phase 3 DiT32 Separation](steering/08_phase3_dit32_separation.md) — DiT 32-layer pre-failure 분리력
-6. [Phase 3 VL vs DiT Comparison](steering/09_phase3_vl_dit_comparison.md) — VL(goal) vs DiT(motor) pathway 비교와 Phase 4 target
-7. [Session Handoff](steering/10_session_handoff.md) — 최신 연구 현황, 다음 세션 우선순위, 주요 파일 위치
-8. [Phase 4 N1.5 Instruction-Fixed Plan](steering/11_phase4_n15_instruction_fixed_plan.md) — N1.5 instruction-fixed seed/collection/pathway/steering runbook
+0. [★ Pathway+Phase Online Steering (SSOT)](steering/14_pathway_phase_online_steering.md) — 현재 연구 방향·가설·open problem·ablation 단일 출처
+1. [seen18 Latent Analysis](steering/01_seen18_latent_analysis.md) — succ/fail 분리 표현 분석 (길이 confound 통제 전제, cross-task 실패 구조)
+2. [SAFE lerobot Collection](steering/05_safe_lerobot_collection.md) — SAFE 수집 lerobot 멀티벤치 확장 (plan+status)
+3. [Steering Methods Survey](steering/07_steering_methods_survey.md) — conceptor steering(COAST 계열) + 이후 적용 후보
+4. [Pathway Separation Analysis](steering/08_pathway_separation_analysis.md) — DiT 32-layer + VL/DiT 비교 + Phase 4 target (구 08+09 통합)
+5. [Instruction Confound](steering/11_instruction_confound.md) — VL AUROC instruction 아티팩트 판정 + VL/DiT LDA 사분면
+6. [Phase 4 N1.5 Instruction-Fixed Plan](steering/11_phase4_n15_instruction_fixed_plan.md) — N1.5 instruction-fixed runbook
+7. [Lab-Meeting PPT Notes](steering/13_lab_meeting_ppt_notes.md) — 발표 덱 작업 노트 (구 13+17 통합)
+8. [Research Structure](steering/15_research_structure.md) — RQ1~4 / 가설 C1~C4
 
 한 화면 요약: [GR00T Latent Steering Explorer](groot/00_groot_steering_explorer.html) — GR00T runtime flow와
 conceptor/hidden-state steering 수식, VL/DiT pathway 상태, code artifact map을 함께 보는 self-contained interactive HTML.
@@ -143,8 +140,6 @@ conceptor/hidden-state steering 수식, VL/DiT pathway 상태, code artifact map
 - [RoboMD](related_work/robomd.md) — 외부 VL embedding 기반 vulnerability diagnosis와 frozen VLA latent 개입의 차이.
 
 ## Legacy
-
-- [groot/_legacy/robocasa_finetune_setup.md](groot/_legacy/robocasa_finetune_setup.md) — 초기 GR00T x RoboCasa fine-tuning setup. 현행 N1.6 기준은 `groot/n16_01_finetune.md`.
 - [_legacy/status_report_20260526.md](_legacy/status_report_20260526.md) — 2026-05-26 read-only repo 상태 점검 snapshot. 현행 entrypoint가 아니다.
 
 ## Organization Rule
