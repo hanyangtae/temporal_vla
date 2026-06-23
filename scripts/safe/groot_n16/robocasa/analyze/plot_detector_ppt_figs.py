@@ -60,15 +60,15 @@ def fig_headline(d, out_png, det):
     ax.set_ylim(0.45, 1.0); ax.set_title("(a) Functional-CP detection (unseen)")
     ax.legend(loc="upper right"); ax.grid(alpha=0.3)
 
-    # (b) decision-time AUROC + length baseline (length-fair 증거)
+    # (b) decision-time AUROC + length baseline (length-fair 증거) — DiT 집중
     ax = axes[1]
-    for pw in ("dit", "vl"):
-        x, y = _xy_dt(d["pathways"][pw]["decision_time_unseen"])
-        ax.plot(x, y, "-o", color=COL[pw], label=f"{pw.upper()} activation (causal)")
-    lb = d.get("length_baseline", {}).get("unseen")
+    x, y = _xy_dt(d["pathways"]["dit"]["decision_time_unseen"])
+    ax.plot(x, y, "-o", color=COL["dit"], label="DiT activation (causal)")
+    lb = d.get("length_baseline", {}).get("unseen")  # {t_d: auroc_float}
     if lb:
-        x, y = _xy_dt(lb)
-        ax.plot(x, y, "--^", color="#7a7a7a", label="length, total (non-causal oracle)")
+        ts = sorted(int(t) for t in lb)
+        ax.plot(ts, [lb[str(t)] for t in ts], "--^", color="#7a7a7a",
+                label="length, total (non-causal oracle)")
     ax.axhline(0.5, color="k", ls=":", lw=0.9, label="length, causal = chance")
     ax.set_xlabel("decision time  t_d  (inference steps, causal)")
     ax.set_ylabel("AUROC (failure = positive)")
@@ -77,6 +77,43 @@ def fig_headline(d, out_png, det):
 
     fig.suptitle(f"Online success/failure detection from VLA activations — {det.upper()} "
                  "(unseen, n_fail=93 / n_succ=107)", fontsize=14, y=1.02)
+    fig.tight_layout(); fig.savefig(out_png, dpi=150, bbox_inches="tight"); plt.close()
+
+
+def fig_onepager(d, out_png):
+    """1페이지용: (좌) DiT vs VL 검출(존재·pathway), (우) DiT seen vs unseen(일반화). bal-acc vs α 통일."""
+    fig, axes = plt.subplots(1, 2, figsize=(12.5, 5.0))
+    # (좌) existence + pathway: DiT vs VL, unseen
+    ax = axes[0]
+    for pw in ("dit", "vl"):
+        x, y = _xy_cp(d["pathways"][pw]["cp_unseen"])
+        ax.plot(x, y, "-o", color=COL[pw], label=pw.upper(), lw=2.2, ms=7)
+    ax.axhline(0.5, color="k", ls=":", lw=0.9, label="chance")
+    sig = d["pathways"]["dit"].get("sig_unseen") or {}
+    if sig:
+        ci = sig.get("ci95")
+        txt = f"DiT @α={sig['alpha']}: bal-acc={sig['bal_acc']}"
+        if ci:
+            txt += f"\n95% CI [{ci[0]}, {ci[1]}]"
+        if sig.get("p_value") is not None:
+            txt += f"\nperm-null p={sig['p_value']}"
+        ax.text(0.04, 0.06, txt, transform=ax.transAxes, fontsize=10,
+                bbox=dict(boxstyle="round", fc="white", ec=COL["dit"], alpha=0.9))
+    ax.set_xlabel("target FPR  α"); ax.set_ylabel("balanced accuracy")
+    ax.set_ylim(0.45, 1.0); ax.set_title("(a) Failure signal in DiT activation (unseen)\nDiT ≫ VL")
+    ax.legend(loc="center right"); ax.grid(alpha=0.3)
+    # (우) generalization: DiT seen vs unseen
+    ax = axes[1]
+    for split in ("seen", "unseen"):
+        x, y = _xy_cp(d["pathways"]["dit"][f"cp_{split}"])
+        ax.plot(x, y, "-o", color=SPLITCOL[split], label=f"{split}-test", lw=2.2, ms=7)
+    ax.axhline(0.5, color="k", ls=":", lw=0.9)
+    ax.set_xlabel("target FPR  α"); ax.set_ylabel("balanced accuracy (DiT)")
+    ax.set_ylim(0.45, 1.0)
+    ax.set_title("(b) Generalizes to unseen tasks\n(trained on 8, held-out 2; no drop)")
+    ax.legend(loc="lower left"); ax.grid(alpha=0.3)
+    fig.suptitle("Failure is decodable from DiT activations and generalizes to unseen tasks "
+                 "(unseen n_fail=93 / n_succ=107)", fontsize=14, y=1.03)
     fig.tight_layout(); fig.savefig(out_png, dpi=150, bbox_inches="tight"); plt.close()
 
 
@@ -219,6 +256,7 @@ def main():
     out = Path(args.out) if args.out else run_dir / "ppt_figures"
     out.mkdir(parents=True, exist_ok=True)
     d = json.loads((run_dir / f"pathway_instr_{args.detector}" / "pathway_lstm_detector.json").read_text())
+    fig_onepager(d, out / "fig_onepager.png")
     fig_headline(d, out / "fig_detection_headline.png", args.detector)
     fig_generalization(d, out / "fig_generalization.png")
     fig_per_task(d, out / "fig_per_task.png")
