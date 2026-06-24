@@ -188,7 +188,7 @@ actions, features, latency_ms = client.predict_with_features(
 | `upvla` | upvla | 8300 | — | — | — |
 | `lerobot` (pi0/pi05/groot) | lerobot | 8400 | `lerobot_pi05__calvin_sft` (rel / 50) | `lerobot_groot_n15__robocasa365_ckpt120000` (abs / 16) | — |
 | `openvla_oft` | openvla_oft | 8400 | `openvla_oft__rlinf_calvin_sft` (rel / 8) | — | `openvla_oft__moojink_libero_spatial/object/goal/10` (rel / 8) |
-| `groot` (N1.6) | groot | 8500 | — | `groot__robocasa_panda_omron`, `groot__robocasa365_ckpt120000`, `groot_ttt__robocasa_panda_omron` (rel / 16) | — |
+| `groot` (N1.6) | groot | 8500 | — | `groot__robocasa_panda_omron`, `groot__robocasa365_ckpt120000` (rel / 16) | — |
 | `groot_n15` | groot_n15 | — | — | ZMQ reference path only (`docs/groot/n15_02_eval.md`) | — |
 
 각 셀의 sub-key emit 조합은 다음 절을 참조한다.

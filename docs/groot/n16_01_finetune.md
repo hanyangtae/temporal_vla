@@ -20,7 +20,7 @@ Isaac-GR00T `n1.6-release` 기반으로 RoboCasa PandaOmron per-task LeRobot v2.
 
 ## 요약
 
-- 학습 entrypoint는 local mirror `scripts/train/launch_finetune_ttt.py`를 사용한다. TTT 인자를 비워 baseline GR00T fine-tuning으로 실행한다.
+- 학습 entrypoint는 local mirror `scripts/train/launch_finetune.py`를 사용한다 (upstream `launch_finetune.py`의 mirror, multi-path `:`-split만 추가).
 - 로컬 wrapper `scripts/train/groot_robocasa_finetune.sh`는 repo 경로, checkpoint, dataset, modality config, 주요 hyperparameter를 정리해서 넘기는 역할만 한다.
 - target atomic-seen 15-task 학습은 `scripts/train/groot_robocasa_target_finetune.sh`를 사용한다. 이 wrapper가 15개 target dataset path를 만든 뒤 baseline wrapper에 위임한다.
 - `launch_finetune.py`, `finetune_config.py`, model setup 등 upstream GR00T 핵심 학습 코드는 수정하지 않는다.
@@ -37,7 +37,7 @@ Isaac-GR00T `n1.6-release` 기반으로 RoboCasa PandaOmron per-task LeRobot v2.
 temporal_vla/
 ├── scripts/train/groot_robocasa_finetune.sh
 ├── scripts/train/groot_robocasa_target_finetune.sh
-├── scripts/train/launch_finetune_ttt.py
+├── scripts/train/launch_finetune.py
 ├── configs/policies/groot_robocasa_panda_omron_config.py
 ├── <cache>/checkpoints/nvidia/GR00T-N1.6-3B/
 ├── <cache>/datasets/robocasa/v1.0/pretrain/atomic/<Task>/20250819/lerobot/
@@ -195,12 +195,10 @@ meta/{episodes.jsonl, episodes_stats.jsonl, info.json, modality.json, stats.json
 
 `meta/modality.json` 의 video key 는 RoboCasa raw 카메라 이름 (`robot0_agentview_left/right`, `robot0_eye_in_hand`) 그대로이고, state/action key 는 PandaOmron 표준 (`base_position`, `base_rotation`, `end_effector_position_relative` 등) 이다. 즉 단일 modality config 가 pretrain 10-task와 target 15-task에 그대로 적용된다.
 
-(참고: TTT 트랙은 추가로 `scripts/extract/prepare_robocasa_dataset.py` 로 `progress` 컬럼을 in-place 로 붙인다. baseline finetune 은 `progress` 를 참조하지 않으므로 이 단계 없이도 학습 가능. 이미 TTT 용으로 한 번 돌려놓은 dataset 이라면 그대로 baseline 에 써도 무해.)
-
 ### Workflow Notes
 
 - Dataset은 task별 LeRobot directory를 유지하고, 학습 시 `DATASET_PATH`를 `:`로 join해서 mixture로 넘긴다.
-- Upstream N1.6 `launch_finetune.py`의 `--dataset_path`는 단일 문자열이므로 여러 path를 그대로 나열하지 않는다. Multi-path 처리는 `scripts/train/launch_finetune_ttt.py`의 `:` split로 한다.
+- Upstream N1.6 `launch_finetune.py`의 `--dataset_path`는 단일 문자열이므로 여러 path를 그대로 나열하지 않는다. Multi-path 처리는 local mirror `scripts/train/launch_finetune.py`의 `:` split로 한다.
 - Fine-tuned checkpoint 평가는 두 경로가 있다. SR 기준선 산출은 `n16_02_eval.md`의 ZMQ server/client workflow를 기준으로 하고, 통일 HTTP API 회귀 (`/act`, `/act_with_features`) 는 `scripts/serve/groot.py` (port 8500) + `scripts/eval/robocasa_eval.py --use-groot-env` 조합을 사용한다. 자세한 wiring은 [`n16_09_safe_parity.md`](n16_09_safe_parity.md) / [`n16_11_http_act_changes.md`](n16_11_http_act_changes.md) 참조.
 
 ## modality config
@@ -268,7 +266,7 @@ scripts/train/groot_robocasa_finetune.sh
 이 wrapper는 자기 자신의 위치에서 repo root를 계산한다. 그래서 host의 어떤 `temporal_vla` checkout 경로와 Docker mount의 `/temporal_vla`에서 같은 스크립트를 사용할 수 있다. 필요하면 `REPO_ROOT` 또는 `ISAAC_GR00T_DIR`로 override한다.
 
 - `gr00t/experiment/launch_finetune.py`, `finetune_config.py`, model setup 등 upstream 핵심 학습 코드는 수정하지 않는다.
-- multi-path mixture 가 필요해서 mirror entry 를 따로 두었다 (`scripts/train/launch_finetune_ttt.py`). upstream 을 fork 하지 않고 mirror 한 줄 추가로 처리.
+- multi-path mixture 가 필요해서 mirror entry 를 따로 두었다 (`scripts/train/launch_finetune.py`). upstream 을 fork 하지 않고 mirror 한 줄 추가로 처리.
 - 로컬에서 추가한 것은 RoboCasa PandaOmron modality config, mirror entry, train wrapper 다.
 - custom modality config 는 `src/policies/Isaac-GR00T/examples` 가 아니라 `configs/policies` 아래에 둔다.
 
@@ -298,18 +296,17 @@ scripts/train/groot_robocasa_finetune.sh
 - upstream `video_utils.py` 는 수정하지 않는다.
 - 장기 학습 전에는 container 에 `decord` (가벼움) 또는 `torchcodec` 를 설치해서 upstream video path 가 정상 동작하도록 맞추는 것이 좋다. mirror entry 에서는 `video_backend="decord"` 가 default.
 
-## entry: `launch_finetune_ttt.py` (baseline mode)
+## entry: `launch_finetune.py`
 
 파일:
 
 ```bash
-scripts/train/launch_finetune_ttt.py
+scripts/train/launch_finetune.py
 ```
 
-upstream `launch_finetune.py` 의 mirror. 두 가지 확장:
+upstream `launch_finetune.py` 의 mirror. 확장은 하나뿐:
 
-1. **multi-path**: `--dataset_path` 에 `:` 가 있으면 split 해서 task 별로 `dataset_paths=[p]` 로 mixture 구성 (line 112-117).
-2. **TTT 인자**: `--ttt_predictor_path`, `--ttt_eagle_cache_root`, `--ttt_update_in_train`. 비우면 baseline GR00T finetune (line 54 의 명시: *“Empty `ttt_predictor_path` → baseline GR00T finetune (no TTT)”*).
+- **multi-path**: `--dataset_path` 에 `:` 가 있으면 split 해서 task 별로 `dataset_paths=[p]` 로 mixture 구성.
 
 따라서 dataset merge 없이 multi-path mixture 로 baseline fine-tuning 을 돌리는 정식 진입점은 이 entry 다.
 
@@ -347,7 +344,7 @@ bash /temporal_vla/scripts/train/groot_robocasa_finetune.sh
 
 ckpt 1 개 ≈ 22GB (3B fp32 + AdamW state). `SAVE_STEPS=5000 × SAVE_TOTAL_LIMIT=4` 설정은 checkpoint 누적 사용량을 약 88GB로 제한하기 위한 보수적 default다.
 
-`groot_robocasa_finetune.sh` 와 `groot_ttt_robocasa_finetune.sh` 는 mirror entry 와 hyperparameter 를 공유하지만, baseline / TTT 인자 분기를 분리하기 위해 별도 wrapper 로 둔다. 같은 entry 의 두 호출 형태 정도로 보면 된다.
+`groot_robocasa_target_finetune.sh` 는 `groot_robocasa_finetune.sh` 와 같은 entry·hyperparameter 를 공유하고 `DATASET_PATH`/`OUTPUT_DIR` 만 target 15-task 로 override 한다.
 
 ### Hyperparameter 출처
 

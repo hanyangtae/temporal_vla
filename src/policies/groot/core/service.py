@@ -79,7 +79,6 @@ class GrootPolicyService:
 
         loaded = load_groot_policy(self.profile, device=device)
         self.set_loaded_model(loaded)
-        self._attach_ttt_if_requested()
 
     def set_loaded_model(self, loaded: LoadedGrootModel) -> None:
         self.policy = loaded.policy
@@ -107,33 +106,6 @@ class GrootPolicyService:
         self.embodiment_tag = embodiment_tag
         self.device = device
         self._refresh_video_mapping()
-
-    def _attach_ttt_if_requested(self) -> None:
-        if self.profile is None or self.policy is None:
-            return
-        ms = self.profile.model_specific or {}
-        predictor_path = ms.get("predictor_path")
-        if not predictor_path:
-            return
-
-        from src.ttt.integrations.groot_wrapper import attach_ttt_to_groot
-
-        base_model = self.policy.policy.model
-        ttt_model = attach_ttt_to_groot(
-            base_model,
-            predictor_state_path=predictor_path,
-            predictor_input_dim=int(ms.get("predictor_input_dim", 2048)),
-            predictor_proj_dim=int(ms.get("predictor_proj_dim", 2048)),
-            predictor_inner_model=ms.get("predictor_inner_model", "linear"),
-            predictor_eta_base=float(ms.get("predictor_eta_base", 0.1)),
-            ttt_update_in_train=False,
-            ttt_update_at_inference=bool(ms.get("ttt_update_at_inference", True)),
-        )
-        self.policy.policy.model = ttt_model
-        logger.info(
-            "[ttt] base GR00T -> Gr00tN1d6WithTTT (predictor=%s)",
-            predictor_path,
-        )
 
     def _refresh_video_mapping(self) -> None:
         if self.modality_configs is None:

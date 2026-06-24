@@ -26,12 +26,10 @@
 컨테이너: /cache/                     (docker-compose 가 위 디렉토리를 bind-mount)
 │
 ├── checkpoints/
-│   ├── nvidia/GR00T-N1.6-3B/         # 베이스 모델 (canonical, 로컬 1벌)
-│   └── ttt_module/...                # 사전학습 모듈 ckpt
+│   └── nvidia/GR00T-N1.6-3B/         # 베이스 모델 (canonical, 로컬 1벌)
 ├── datasets/
 │   ├── robocasa/v1.0/{pretrain,target}/atomic/<Task>/<date>/lerobot/
 │   ├── datasets/                     # merge 산출 LeRobot v2.1 등 (구 data/datasets)
-│   ├── robocasa_eagle_pre_llm/<Task>/embeddings.pt
 │   ├── huggingface/                  # 일부 컨테이너의 HF_HOME (아래 'HF 캐시' 참고)
 │   └── bridge_v2_*, calvin* ...      # (legacy / phase1)
 └── safe_groot_n16_data.tar.gz

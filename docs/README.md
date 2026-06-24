@@ -34,6 +34,7 @@ phase 신호 공급용 보조 부품으로 복귀 검토 가능하다.
 
 처음 들어오면 아래 순서대로 본다. 각 문서는 자기 위·아래 문서를 cross-ref한다.
 
+0. [00 Repo Orientation](00_repo_orientation.md) — **여기부터**. 코드가 무슨 역할인지(코드 지도), 현재 구조가 정리됐는지(위생 점검), 모르는 부분을 어떻게 추적하는지(탐색 플레이북). 레포에 다시 들어왔을 때의 출발점.
 1. [01 Serving Interface](01_serving_interface.md) — 통일 HTTP API 단일 출처. endpoint(`/act`, `/act_with_features`, `/reset`, `/health`), sub-key 네임스페이스, 모델 × 벤치마크 호환 매트릭스, 운영 패턴 5종. 모델/벤치/체크포인트 작업의 모든 출발점.
 2. [02 Docker Guide](02_docker_guide.md) — 컨테이너 구성·기동·VNC/X11·troubleshooting. 위 API 를 실제로 띄우는 방법.
 3. [03 Adding Checkpoint](03_adding_checkpoint.md) — 새 VLA 체크포인트를 profile/serve/eval 경로에 붙이는 7단계 체크리스트.
@@ -147,7 +148,7 @@ conceptor/hidden-state steering 수식, VL/DiT pathway 상태, code artifact map
 - **Project-wide runbook** 은 `docs/` 루트에 두고 번호 prefix(`01_`, `02_`, `03_`) 로 reading order 를 표현한다.
 - **GR00T 실행 절차** 는 `groot/` 아래에 번호 prefix(`n16_01_` ~ `n16_NN_`, `n15_NN_`) 로 reading order 를 표현한다.
 - **Latent steering (메인 method) 의 분석·재현·진행 기록** 은 `steering/` 아래에 번호 prefix(`01_` ~ `NN_`) 로 reading order 를 표현한다.
-- **TTT 연구 방법론·phase 진행 기록** 은 `ttt/` 아래 단일 README 로 둔다 (legacy/demoted; `src/ttt/` 코드는 보존).
+- **TTT 연구 방법론·phase 진행 기록** 은 `ttt/` 아래 단일 README 로 둔다 (legacy/demoted; `src/ttt/` 코드는 제거, 설계만 보존).
 - **벤치마크 reference** (task 이름 매핑 등) 는 `benchmarks/` 아래에 둔다.
 - **장기 결정** 은 `adr/` 아래에 둔다.
 - **논문 PDF / 외부 reference** 는 `references/` 아래에 둔다.

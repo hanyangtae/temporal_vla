@@ -2,9 +2,8 @@
 # GR00T N1.6 baseline fine-tuning on RoboCasa 10-task atomic dataset (per-task mixture).
 #
 # 변경 이력: 이전엔 merged single LeRobot v2.1 dataset 을 upstream launch_finetune.py 로
-# 학습했으나, per-task mixture 로 전환하면서 mirror entry launch_finetune_ttt.py 의 ":"-split
-# 을 사용한다 (upstream 의 --dataset_path 가 단일 str 라 multi-path 미지원). TTT 학습은
-# groot_ttt_robocasa_finetune.sh 별도. 이 wrapper 는 baseline 전용으로 TTT 인자 없음.
+# 학습했으나, per-task mixture 로 전환하면서 mirror entry launch_finetune.py 의 ":"-split
+# 을 사용한다 (upstream 의 --dataset_path 가 단일 str 라 multi-path 미지원).
 #
 # Full baseline fine-tune:
 #   bash scripts/train/groot_robocasa_finetune.sh
@@ -53,7 +52,7 @@ if [ -z "${BASE_MODEL_PATH:-}" ]; then
     fi
 fi
 
-# Per-task mixture: 10 atomic task 경로를 ":" 로 join. launch_finetune_ttt 가 split.
+# Per-task mixture: 10 atomic task 경로를 ":" 로 join. launch_finetune 이 split.
 ATOMIC_ROOT="${ATOMIC_ROOT:-${VLA_DATASETS_ROOT}/robocasa/v1.0/pretrain/atomic}"
 DATE_TAG="${DATE_TAG:-20250819}"
 DATASET_PATH="${DATASET_PATH:-\
@@ -70,7 +69,7 @@ ${ATOMIC_ROOT}/PickPlaceCounterToSink/${DATE_TAG}/lerobot}"
 
 MODALITY_CONFIG_PATH="${MODALITY_CONFIG_PATH:-${REPO_ROOT}/configs/policies/groot_robocasa_panda_omron_config.py}"
 OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/outputs/groot_robocasa_baseline_10tasks}"
-ENTRY_SCRIPT="${ENTRY_SCRIPT:-${REPO_ROOT}/scripts/train/launch_finetune_ttt.py}"
+ENTRY_SCRIPT="${ENTRY_SCRIPT:-${REPO_ROOT}/scripts/train/launch_finetune.py}"
 
 BASE_MODEL_PATH="$(expand_home "${BASE_MODEL_PATH}")"
 MODALITY_CONFIG_PATH="$(expand_home "${MODALITY_CONFIG_PATH}")"

@@ -53,11 +53,11 @@ for pair in "${TASK_DATE_PAIRS[@]}"; do
     parts+=("${path}")
 done
 
-# 콜론 join (launch_finetune_ttt.py 가 ':' 로 split).
+# 콜론 join (launch_finetune.py 가 ':' 로 split).
 DATASET_PATH=$(IFS=":"; echo "${parts[*]}")
 
 export DATASET_PATH
 export OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/outputs/groot_robocasa_target_15tasks}"
 
-# Baseline sh 에 위임 (override_pretraining_statistics=True 는 launch_finetune_ttt.py:177 에 hard-set).
+# Baseline sh 에 위임 (override_pretraining_statistics=True 는 launch_finetune.py 에 hard-set).
 exec bash "${SCRIPT_DIR}/groot_robocasa_finetune.sh" "$@"

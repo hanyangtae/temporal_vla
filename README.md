@@ -174,16 +174,12 @@ temporal_vla/
 │   │   └── groot.py                          # GR00T (통일 API)
 │   ├── eval/                                 # 평가 스크립트
 │   │   ├── robocasa.py                       # RoboCasa closed-loop 평가 (모델 무관)
-│   │   ├── calvin.py                         # Calvin 평가 (모델 무관)
-│   │   └── phase1_predictor.py               # Phase 1 ProgressPredictor 평가
+│   │   └── calvin.py                         # Calvin 평가 (모델 무관)
 │   ├── train/                                # 학습 스크립트
-│   │   ├── phase1_groot_robocasa.py          # GR00T fine-tuning (RoboCasa)
-│   │   ├── phase1_predictor.py               # Phase 1 ProgressPredictor 학습
+│   │   ├── launch_finetune.py                # GR00T N1.6 baseline fine-tune (multi-path mixture)
 │   │   └── *.sh                              # 학습 실행 셸 스크립트
 │   ├── analysis/                             # 분석·디버그·캐시 빌드
 │   │   └── build_clip_cache.py               # CLIP 임베딩 캐시 생성
-│   ├── extract/                              # Feature 추출 (Eagle/dataset 준비)
-│   │   └── prepare_robocasa_dataset.py       # RoboCasa LeRobot 데이터셋 준비
 │   └── utils/                                # 공용 유틸리티
 │       ├── vla_client.py                     # 통일 VLA HTTP 클라이언트 (VLAClient)
 │       └── robocasa_eval.py                  # closed-loop 평가 유틸리티

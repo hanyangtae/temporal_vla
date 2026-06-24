@@ -90,7 +90,7 @@ condition pair 끼리 ΔSR 비교 가능).
 
 - 모델 서버: `scripts/serve/upvla.py` (:8300), `scripts/serve/xvla.py` (:8100)
 - 벤치마크 평가: `scripts/eval/robocasa_eval.py`, `scripts/eval/calvin.py`
-- 학습: `scripts/train/phase1_groot_robocasa.py` (GR00T) + `.sh`
+- 학습: `scripts/train/launch_finetune.py` (GR00T N1.6 baseline fine-tune) + `.sh`
 - 분석: `scripts/analysis/` — CLIP 캐시, dataset 디버그 등
 - Processor (추론용): `src/processor/` — `base.py`, `types.py`, `factory.py`, `obs/`, `action/`
 - Dataset (학습용): `src/datasets/` (generic LeRobot dataset + adapter)
@@ -106,7 +106,7 @@ condition pair 끼리 ΔSR 비교 가능).
 
 - 호스트: `~/.cache/temporal_vla/` 아래 `checkpoints/`, `datasets/`.
 - 컨테이너: docker-compose 가 위 cache 를 `/cache` 로 bind-mount + `VLA_CACHE_ROOT=/cache` 주입 → `/cache/checkpoints/...`, `/cache/datasets/...`.
-- 베이스 모델: `checkpoints/nvidia/GR00T-N1.6-3B`. 데이터셋: `datasets/robocasa/...`, `datasets/robocasa_eagle_pre_llm/...` 등 (구 repo `data/` 내용을 그대로 옮김).
+- 베이스 모델: `checkpoints/nvidia/GR00T-N1.6-3B`. 데이터셋: `datasets/robocasa/...` 등 (구 repo `data/` 내용을 그대로 옮김).
 - 학습 산출물(파인튜닝 ckpt, rollout 등)은 이동 대상이 아니라 `outputs/` 에 그대로 둔다.
 
 경로 참조 규칙 (단일 소스 — 하드코딩 금지):
