@@ -1,0 +1,4 @@
+comparison,baseline,fast,slow,fast/slow_%,note
+1_full,0.4085,0.333,0.2636,26.3,full episode
+2_trunc_shortest,0.431,0.3635,0.3142,15.7,per-task min length
+3_paper_paired,,0.333,0.2636,37.6,paired t p=0.0292 dz=0.82
