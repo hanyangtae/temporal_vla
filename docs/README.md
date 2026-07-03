@@ -47,6 +47,10 @@ phase 신호 공급용 보조 부품으로 복귀 검토 가능하다.
   "최근 실행 결과"와 [`groot/n16_07_safe_detector_report.md`](groot/n16_07_safe_detector_report.md)를 본다.
 - Latent steering 표현 분석과 intervention 후보는 [`steering/README.md`](steering/README.md)에서
   phase별 문서를 따라간다.
+- Activation steering 분야 전반(기초→LLM/VLM→산업→VLA) 학습·면접 대비 서베이는
+  [`Activation_steering_basic/00_activation_steering_survey.md`](Activation_steering_basic/00_activation_steering_survey.md)
+  (7-섹션 흐름 + 논문 정독 노트 52편 `Activation_steering_basic/notes/`, Notion 미러 "Activation steer 전반 공부").
+  기초 논문 PDF는 repo에 안 담음 — `_handoff/research_raw/master_index.md`의 arXiv ID로 재다운로드.
 - 환경 결정성, task 이름 차이, seed replay 문제는 [`benchmarks/`](benchmarks/)와
   [`groot/n16_05_safe_env_reproduction.md`](groot/n16_05_safe_env_reproduction.md)를 같이 본다.
 - 일회성 상태 점검 snapshot은 root runbook으로 두지 않고 `_legacy/` 아래에 보관한다.
