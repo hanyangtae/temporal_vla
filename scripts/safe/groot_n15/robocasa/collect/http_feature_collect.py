@@ -63,6 +63,7 @@ from lerobot_http_eval import (  # noqa: E402
     official_obs_to_lerobot_inputs,
     step_success,
 )
+from robocasa_event_labeler import make_robocasa_event_labeler  # noqa: E402
 from src.policies.groot.robocasa.io import convert_http_actions_to_groot_chunk  # noqa: E402
 from src.policies.groot.robocasa.scenario_replay import (  # noqa: E402
     ep_meta_manifest_path,
@@ -218,6 +219,22 @@ class N15LerobotHttpFeatureClient(VLAClient):
         return official_action, {}
 
 
+def _post_steering_phase(server: str, phase: str) -> None:
+    """Oracle-gated steering: 현재 phase 를 serve 에 통지 (실패 시 즉시 예외 — 무음 미조향 방지)."""
+    import json as _json
+    import urllib.request as _rq
+
+    req = _rq.Request(
+        f"{server.rstrip('/')}/steering_phase",
+        data=_json.dumps({"phase": phase}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with _rq.urlopen(req, timeout=5) as resp:
+        if resp.status != 200:
+            raise RuntimeError(f"/steering_phase HTTP {resp.status}")
+
+
 def _find_latest_video(video_dir: Path) -> Path | None:
     videos = sorted(video_dir.glob("*.mp4"), key=lambda path: path.stat().st_mtime)
     return videos[-1] if videos else None
@@ -315,6 +332,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-episode-steps", type=int, default=DEFAULT_MAX_EPISODE_STEPS)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--inference-seed", type=int, default=None)
+    parser.add_argument(
+        "--proximity-phases",
+        action="store_true",
+        help="6-phase 라벨(reach/grasp/transport/place/insert-settle/terminal, proximity 기반 causal).",
+    )
+    parser.add_argument(
+        "--gated-steering",
+        action="store_true",
+        help=(
+            "Oracle phase-gated steering: 매 get_action 전에 현재 phase 를 serve 의 "
+            "/steering_phase 로 POST 해 conceptor 를 스위칭 (serve 는 --steering-phase-npz-base 필요)."
+        ),
+    )
     parser.add_argument(
         "--n_action_steps",
         "--n-action-steps",
@@ -452,11 +482,29 @@ def run() -> dict[str, Any]:
                     robocasa_env_source="robocasa365",
                 )
             policy.reset()
+            # Event-anchored phase labeler: one labeler.step() per get_action (= one SAFE
+            # feature record = n_action_steps env-steps), called BEFORE env.step so the phase
+            # matches the state the policy acted on. Aligns 1:1 with policy.records.
+            labeler = make_robocasa_event_labeler(
+                env, env_name, proximity_phases=getattr(args, "proximity_phases", False)
+            )
+            labeler.reset()
+            feature_phases: list[str] = []
             success = False
             first_success_step = None
             step_i = 0
             while step_i < max_steps:
+                records_before = len(policy.records)
+                # labeler.step() reads the CURRENT sim state (= the obs the policy will act
+                # on; env.step has not run yet), so calling it before or after get_action is
+                # equivalent for alignment. Gated steering needs the phase BEFORE inference
+                # to switch the serve-side conceptor for this call.
+                phase = labeler.step()
+                if getattr(args, "gated_steering", False):
+                    _post_steering_phase(args.vla_server, phase)
                 official_action, _ = policy.get_action(obs)
+                if len(policy.records) > records_before:
+                    feature_phases.append(phase)
                 obs, reward, terminated, truncated, info = env.step(official_action)
                 step_i += 1
                 success_now = step_success(reward, info, env=env)
@@ -465,6 +513,14 @@ def run() -> dict[str, Any]:
                 success = success or success_now
                 if terminated or truncated or success:
                     break
+            # Terminal off-by-one: advance the timeline/event_steps once past the loop end
+            # (no feature record here, so this phase is not appended to feature_phases).
+            labeler.step()
+            if len(feature_phases) != len(policy.records):
+                raise RuntimeError(
+                    "feature_phases/policy.records misaligned: "
+                    f"{len(feature_phases)} != {len(policy.records)}"
+                )
 
             rendered_video = env.render()
             upstream_video_path = _find_latest_video(upstream_video_dir)
@@ -480,14 +536,31 @@ def run() -> dict[str, Any]:
                     "Collected task description does not match canonical instruction: "
                     f"{task_description!r} != {canonical_instruction!r}"
                 )
-            extra_metadata = None
+            extra_metadata: dict[str, Any] = {
+                # State-based phase labels aligned 1:1 with hidden_states records
+                # (non-monotone: drop reverts transport->reach, re-grasp allowed).
+                "phase_scheme": "event_state",
+                "feature_phases": feature_phases,
+                "phase_timeline": labeler.phase_timeline,
+                "event_steps": labeler.event_steps,
+                "event_order": labeler.event_order_keys,
+                # drop-aware fields (per-step grasp signal for offline drop analysis)
+                "grasp_steps": list(getattr(labeler, "grasp_steps", []) or []),
+                "drop_steps": list(getattr(labeler, "drop_steps", []) or []),
+                "grasp_count": int(getattr(labeler, "grasp_count", 0) or 0),
+                "grasp_timeline": list(getattr(labeler, "grasp_timeline", []) or []),
+                "wrong_grasp_steps": list(getattr(labeler, "wrong_grasp_steps", []) or []),
+                "wrong_grasp_timeline": list(getattr(labeler, "wrong_grasp_timeline", []) or []),
+            }
             if cell_id is not None:
-                extra_metadata = {
-                    "cell_id": cell_id,
-                    "cell_index": effective_task_id,
-                    "robocasa_task": args.task,
-                    "canonical_instruction": canonical_instruction,
-                }
+                extra_metadata.update(
+                    {
+                        "cell_id": cell_id,
+                        "cell_index": effective_task_id,
+                        "robocasa_task": args.task,
+                        "canonical_instruction": canonical_instruction,
+                    }
+                )
             write_safe_triplet(
                 output_dir=output_dir,
                 stem=stem,
@@ -520,12 +593,16 @@ def run() -> dict[str, Any]:
                     "first_success_step": first_success_step,
                     "steps": step_i,
                     "records": len(policy.records),
+                    "feature_phases": list(feature_phases),
+                    "event_steps": dict(labeler.event_steps),
+                    "max_phase": labeler.max_phase_label,
                     "pkl": str(pkl_path),
                 }
             )
             print(
                 f"wrote {stem}: steps={step_i} success={int(success)} "
-                f"records={len(policy.records)} feature_kind={policy.feature_kind}"
+                f"records={len(policy.records)} feature_kind={policy.feature_kind} "
+                f"max_phase={labeler.max_phase_label} events={dict(labeler.event_steps)}"
             )
         finally:
             env.close()
