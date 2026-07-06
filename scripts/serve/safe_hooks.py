@@ -246,19 +246,18 @@ class SafeFeatureCapture:
         horizon = self.groot_action_horizon
         if not horizon:
             raise RuntimeError("groot_action_horizon unavailable for action-token slice")
+        # 추론이 발화하지 않은 step → 전 block buf 가 비면 None (assemble() 과 동일).
+        # GR00T 는 direct chunk inference 라 보통 매 호출 발화하지만, 일관성을 위해 가드.
+        if not any(self.block_bufs.get(layer) for layer in self.groot_dit_layers):
+            return None
         layer_feats: list[torch.Tensor] = []
-        any_capture = False
         for layer in self.groot_dit_layers:
             feats = self.block_bufs.get(layer, [])
-            if feats:
-                any_capture = True
-            else:
+            if not feats:
                 raise RuntimeError(f"Failed to capture GR00T DiT block {layer} residual stream")
             stack = torch.stack(feats, dim=0)  # [K, B, T, D]
             # COAST: mean-pool the last `horizon` action tokens, keep denoise step K.
             layer_feats.append(stack[:, 0, -horizon:, :].mean(dim=1))  # [K, D]
-        if not any_capture:
-            return None
         return torch.stack(layer_feats, dim=0).numpy().astype(np.float16)  # [L, K, D]
 
     def assemble_expert_blocks(self) -> np.ndarray | None:
@@ -276,6 +275,12 @@ class SafeFeatureCapture:
         chunk = self.pi05_chunk_size
         if not chunk:
             raise RuntimeError("pi05_chunk_size unavailable for action-token slice")
+        # pi05 는 internal action queue → 추론은 n_action_steps 마다만 발화한다. queue-pop
+        # step(추론 안 함)에서는 expert layer hook 이 안 불려 block_bufs 가 전부 빈다 →
+        # assemble() 과 동일하게 None 반환(이 step 은 feature 없음). 일부 layer 만 비는
+        # 부분 캡처만 진짜 오류로 취급한다.
+        if not any(self.block_bufs.get(layer) for layer in self.pi05_expert_layers):
+            return None
         layer_feats: list[torch.Tensor] = []
         for layer in self.pi05_expert_layers:
             feats = self.block_bufs.get(layer, [])

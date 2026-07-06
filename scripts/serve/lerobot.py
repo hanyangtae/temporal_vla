@@ -102,7 +102,8 @@ _collect_mode: bool = False
 _capture_vl_features: bool = False
 _groot_dit_capture_layers: tuple[int, ...] | None = None
 _pi05_expert_capture_layers: tuple[int, ...] | None = None
-_steering = None
+_steering = []  # list of registered steering hooks (multi-layer 지원)
+_gated_registry: dict = {}  # oracle phase-gated steering: {"hooks":{layer:hook},"matrices":{layer:{phase:M}},"identity":{layer:I}}
 
 # payload 의 observation.state.* 서브키를 lerobot observation.state 로 합칠 때 사용할
 # canonical 정렬 순서 (벤치 공통). 체크포인트가 학습된 state dim 만큼 앞에서 truncate.
@@ -311,6 +312,24 @@ def parse_payload(payload: dict) -> dict:
 
 
 # ─── FastAPI 엔드포인트 ───────────────────────────────────────────────────────
+
+
+@app.post("/steering_phase")
+def steering_phase(payload: dict):
+    """Oracle phase-gated steering: 현재 phase 의 conceptor 로 hook M 을 스위칭.
+
+    수집 client 가 매 get_action 전에 POST {"phase": "<reach-to-object|transport|...>"}.
+    등록된 phase 가 없으면 identity(=no steer). --steering-phase-npz-base 로 활성화.
+    """
+    if not _gated_registry:
+        raise HTTPException(status_code=409, detail="gated steering not enabled")
+    phase = str(payload.get("phase", ""))
+    for layer, hook in _gated_registry["hooks"].items():
+        M = _gated_registry["matrices"][layer].get(phase)
+        hook.M = M if M is not None else _gated_registry["identity"][layer]
+        hook._Mt = None  # invalidate cached tensor so the new M takes effect
+    _gated_registry["current"] = phase
+    return {"ok": True, "phase": phase, "gated": phase in next(iter(_gated_registry["matrices"].values()))}
 
 
 @app.post("/reset")
@@ -539,7 +558,9 @@ def _health_feature_metadata() -> dict[str, Any]:
 def _register_steering_if_requested(loaded_policy, args):
     global _steering
     steering_npz = getattr(args, "steering_npz", None)
-    if not steering_npz:
+    steering_npz_dir = getattr(args, "steering_npz_dir", None)
+    steering_layers = getattr(args, "steering_layers", None)
+    if not steering_npz and not steering_npz_dir and not getattr(args, "steering_phase_npz_base", None):
         return None
     if _policy_type not in ("groot", "pi05"):
         raise ValueError("Conceptor steering requires policy_type in {'groot', 'pi05'}")
@@ -550,33 +571,87 @@ def _register_steering_if_requested(loaded_policy, args):
         load_steering_matrix,
     )
 
-    matrix = load_steering_matrix(
-        steering_npz,
-        beta=getattr(args, "steering_beta", 0.3),
-        alpha=getattr(args, "steering_alpha", None),
-        key=getattr(args, "steering_key", "C_steer"),
-    )
+    # unregister any previously-registered hooks (reload-safe)
+    for _h in _steering:
+        _h.unregister()
+    _steering = []
 
-    if _steering is not None:
-        _steering.unregister()
+    beta = getattr(args, "steering_beta", 0.3)
+    alpha = getattr(args, "steering_alpha", None)
+    key = getattr(args, "steering_key", "C_steer")
+
+    # --- Oracle phase-gated multi-layer steering: /steering_phase 로 M 스위칭 ---
+    phase_base = getattr(args, "steering_phase_npz_base", None)
+    if phase_base and steering_layers:
+        global _gated_registry
+        if _policy_type != "groot":
+            raise ValueError("--steering-phase-npz-base 는 groot dit pathway 전용")
+        groot_model = getattr(loaded_policy, "_groot_model", None)
+        if groot_model is None:
+            raise ValueError("GR00T LeRobot policy is missing _groot_model for steering")
+        import numpy as _np
+
+        layers = [int(x) for x in str(steering_layers).split(",") if x.strip()]
+        base = Path(phase_base)
+        phases = sorted(
+            d.name for d in base.iterdir()
+            if d.is_dir() and (d / f"dit_L{layers[0]}" / "conceptors.npz").exists()
+        )
+        if not phases:
+            raise FileNotFoundError(f"phase 서브디렉토리 없음: {base}")
+        hooks, matrices, identity = {}, {}, {}
+        for lyr in layers:
+            matrices[lyr] = {}
+            for ph in phases:
+                npz_path = base / ph / f"dit_L{lyr}" / "conceptors.npz"
+                if npz_path.exists():
+                    matrices[lyr][ph] = load_steering_matrix(str(npz_path), beta=beta, alpha=alpha, key=key)
+            dim = next(iter(matrices[lyr].values())).shape[0]
+            identity[lyr] = _np.eye(dim)
+            hook = ConceptorSteering(groot_model, identity[lyr], pathway="dit", layer=lyr).register()
+            hooks[lyr] = hook
+            _steering.append(hook)
+        _gated_registry = {"hooks": hooks, "matrices": matrices, "identity": identity, "current": None}
+        logger.info(
+            "Phase-gated conceptor steering registered: base=%s layers=%s phases=%s beta=%s",
+            phase_base, layers, phases, beta,
+        )
+        return _steering
+
+    # --- Multi-layer DiT steering (net-new): layer 마다 hook 하나씩 ---
+    if steering_npz_dir and steering_layers:
+        if _policy_type != "groot":
+            raise ValueError("--steering-npz-dir/--steering-layers 는 groot dit pathway 전용")
+        groot_model = getattr(loaded_policy, "_groot_model", None)
+        if groot_model is None:
+            raise ValueError("GR00T LeRobot policy is missing _groot_model for steering")
+        layers = [int(x) for x in str(steering_layers).split(",") if x.strip()]
+        for lyr in layers:
+            npz_path = Path(steering_npz_dir) / f"dit_L{lyr}" / "conceptors.npz"
+            if not npz_path.exists():
+                raise FileNotFoundError(f"multi-layer steering npz 없음: {npz_path}")
+            mat = load_steering_matrix(str(npz_path), beta=beta, alpha=alpha, key=key)
+            _steering.append(
+                ConceptorSteering(groot_model, mat, pathway="dit", layer=lyr).register()
+            )
+        logger.info(
+            "Multi-layer conceptor steering registered: dir=%s layers=%s beta=%s key=%s",
+            steering_npz_dir, layers, beta, key,
+        )
+        return _steering
+
+    # --- Single hook (--steering-npz) ---
+    matrix = load_steering_matrix(steering_npz, beta=beta, alpha=alpha, key=key)
 
     if _policy_type == "pi05":
         # COAST A.7.1 global: action expert decoder layer ℓ(default 11) residual stream.
         layer = getattr(args, "steering_layer", None)
         if layer is None:
             layer = 11
-        _steering = Pi05ConceptorSteering(
-            loaded_policy,
-            matrix,
-            layer=int(layer),
-        ).register()
+        _steering.append(Pi05ConceptorSteering(loaded_policy, matrix, layer=int(layer)).register())
         logger.info(
             "Pi05 conceptor steering registered: npz=%s beta=%s alpha=%s key=%s layer=%s",
-            steering_npz,
-            getattr(args, "steering_beta", 0.3),
-            getattr(args, "steering_alpha", None),
-            getattr(args, "steering_key", "C_steer"),
-            layer,
+            steering_npz, beta, alpha, key, layer,
         )
         return _steering
 
@@ -586,20 +661,10 @@ def _register_steering_if_requested(loaded_policy, args):
 
     pathway = getattr(args, "steering_pathway", "dit")
     layer = None if pathway == "vl" else getattr(args, "steering_layer", None)
-    _steering = ConceptorSteering(
-        groot_model,
-        matrix,
-        pathway=pathway,
-        layer=layer,
-    ).register()
+    _steering.append(ConceptorSteering(groot_model, matrix, pathway=pathway, layer=layer).register())
     logger.info(
         "Conceptor steering registered: npz=%s pathway=%s beta=%s alpha=%s key=%s layer=%s",
-        steering_npz,
-        pathway,
-        getattr(args, "steering_beta", 0.3),
-        getattr(args, "steering_alpha", None),
-        getattr(args, "steering_key", "C_steer"),
-        layer,
+        steering_npz, pathway, beta, alpha, key, layer,
     )
     return _steering
 
@@ -772,6 +837,32 @@ def main():
         choices=("dit", "vl"),
         default="dit",
         help="Steering pathway: dit=motor action tokens, vl=goal pathway action_head.vlln.",
+    )
+    parser.add_argument(
+        "--steering-layers",
+        default=None,
+        help=(
+            "Multi-layer DiT steering: comma-separated block indices (예: '4,8,12'). "
+            "--steering-npz-dir 와 함께 사용하며 각 layer L 의 conceptor 를 "
+            "<npz-dir>/dit_L{L}/conceptors.npz 에서 로드해 layer 마다 hook 을 건다."
+        ),
+    )
+    parser.add_argument(
+        "--steering-npz-dir",
+        default=None,
+        help=(
+            "Multi-layer steering 용 group 디렉토리 (예: .../conceptor_steering_n15/<cell>/transport). "
+            "--steering-layers 의 각 layer 서브디렉토리(dit_L{n}/conceptors.npz)를 로드."
+        ),
+    )
+    parser.add_argument(
+        "--steering-phase-npz-base",
+        default=None,
+        help=(
+            "Oracle phase-gated steering: <base>/<phase>/dit_L{n}/conceptors.npz 를 phase 별로 로드하고 "
+            "/steering_phase POST 로 매 요청 전 conceptor 를 스위칭. --steering-layers 필요. "
+            "등록 안 된 phase 는 identity(no steer)."
+        ),
     )
     args = parser.parse_args()
 
