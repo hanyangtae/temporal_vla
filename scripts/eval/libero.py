@@ -47,6 +47,8 @@ sys.path.insert(0, "/temporal_vla/src")
 sys.path.insert(0, "/temporal_vla/src/policies/openvla-oft")
 # SAFE 수집 공통 writer (repo-relative: scripts/eval → scripts/safe/lerobot)
 sys.path.insert(0, os.path.join(os.path.dirname(_self_dir), "safe", "lerobot"))
+# LIBERO BDDL sim-state phase 라벨러 (repo-relative: scripts/safe/groot_n16/libero)
+sys.path.insert(0, os.path.join(os.path.dirname(_self_dir), "safe", "groot_n16", "libero"))
 
 import imageio  # noqa: E402
 import numpy as np  # noqa: E402
@@ -63,6 +65,7 @@ from collect_common import (  # noqa: E402
     write_episode,
     flatten_subkeys,
 )
+from event_phase_labeler import make_event_labeler  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -187,14 +190,19 @@ def _rollout(
     success_deadline: int,
     record: bool = False,
     collector: Optional["SafeEpisodeCollector"] = None,
-) -> Tuple[bool, List[np.ndarray], int]:
+    task_name: str = "",
+) -> Tuple[bool, List[np.ndarray], int, Dict]:
     """단일 LIBERO episode rollout.
 
     Returns:
-        (success, frames, terminated_step)
+        (success, frames, terminated_step, phase_info)
         success: deadline 안에 env `done=True` 가 왔는가.
         frames: replay 이미지 (record=True 일 때만 채움).
         terminated_step: 실제로 멈춘 step (effective; num_steps_wait 제외).
+        phase_info: 수집 모드(collector!=None) + forced-order task 일 때 event-anchored
+            phase 라벨(빈 dict=수집 아님/미등록 task). phase_scheme, phase_timeline(per
+            env-step, list[str]), feature_phases(per latent, list[str]), event_steps,
+            event_order.
     """
     vla_client.reset()
     env.reset()
@@ -204,11 +212,25 @@ def _rollout(
     success = False
     effective_t = 0
 
+    # 수집 모드일 때만 event-anchored phase 라벨러 부착(일반 eval=collector None→영향 없음).
+    # forced-order task 만 event spec 보유 → 미등록 task(교환가능/단일)는 phase 라벨 생략(경고).
+    labeler = None
+    if collector is not None:
+        try:
+            labeler = make_event_labeler(env, task_name)
+            labeler.reset()
+        except KeyError as e:
+            logger.warning("event-anchored spec 없음 → phase 라벨 생략: %s", e)
+            labeler = None
+    feature_phases: List[str] = []  # 추론 발화 step마다 그 step의 phase label(latent와 정렬)
+
     # objects stabilize: dummy action 으로 NUM_STEPS_WAIT step 진행
     for _ in range(NUM_STEPS_WAIT):
         obs, _, _, _ = env.step(DUMMY_ACTION.tolist())
 
     for t in range(max_steps):
+        # 현재 obs(=예측에 쓰일 sim state)의 phase label 을 기록 — env.step 전 호출로 정렬 유지.
+        cur_phase = labeler.step() if labeler is not None else None
         processed = obs_pipeline({TransitionKey.OBSERVATION: obs})
         processed_obs = processed[TransitionKey.OBSERVATION]
         if collector is not None:
@@ -222,6 +244,9 @@ def _rollout(
                     action_vector=flatten_subkeys(action_pred, list(action_pred.keys())),
                     action={k: v.tolist() for k, v in action_pred.items()},
                 )
+                # 이 latent가 계산된 step의 phase label을 같은 순서로 적재(hidden_states와 1:1).
+                if labeler is not None:
+                    feature_phases.append(cur_phase)
         else:
             action_pred = _predict(vla_client, processed_obs, instruction)
         # _flat fallback (서버가 sub-key 가 아니라 flat 으로 응답한 경우) 은 ndarray 직접
@@ -255,7 +280,26 @@ def _rollout(
         if done:  # horizon 도달 (성공 못 함)
             break
 
-    return success, frames, effective_t
+    # off-by-one 보정: 루프 top 의 step() 은 각 예측 step 의 obs(=env.step 전) phase 만 본다.
+    # success 는 마지막 env.step '직후' 판정되므로, 성공을 만든 터미널 이벤트(마지막 in/close 등)
+    # 가 위 루프에서 평가되지 않는다 → 한 번 더 읽어 phase_timeline/max_phase 에 반영한다.
+    # 이 step 은 latent 가 없으므로 feature_phases 에는 추가하지 않는다(정렬 유지).
+    if labeler is not None:
+        try:
+            labeler.step()
+        except Exception as e:  # 종료/오류 상태 env 에서 predicate 평가 실패 시 무시
+            logger.warning("terminal labeler.step() skipped: %s", e)
+
+    phase_info: Dict = {}
+    if labeler is not None:
+        phase_info = {
+            "phase_scheme": "event_anchored",
+            "phase_timeline": list(labeler.phase_timeline),  # list[str] per env-step
+            "feature_phases": list(feature_phases),          # list[str] per recorded latent
+            "event_steps": dict(labeler.event_steps),        # event key -> first-fire step
+            "event_order": list(labeler.event_order_keys),
+        }
+    return success, frames, effective_t, phase_info
 
 
 # ─── 메인 evaluate ──────────────────────────────────────────────────────────
@@ -275,6 +319,7 @@ def evaluate(
     safe_output_dir: Optional[Path] = None,
     safe_run_id: str = "run",
     max_tasks: Optional[int] = None,
+    task_names: Optional[List[str]] = None,
 ):
     np.random.seed(seed)
 
@@ -306,6 +351,10 @@ def evaluate(
     n_tasks_run = n_tasks if max_tasks is None else min(n_tasks, max_tasks)
     for task_id in range(n_tasks_run):
         task = task_suite.get_task(task_id)
+        task_name = getattr(task, "name", f"task{task_id:02d}")
+        # --task-names 필터: 지정 시 이름에 부분일치하는 task 만 평가(forced-order 타깃 등).
+        if task_names and not any(tn in task_name for tn in task_names):
+            continue
         env, task_description = _make_libero_env(task, resolution=image_size)
         initial_states = task_suite.get_task_init_states(task_id)
 
@@ -324,7 +373,7 @@ def evaluate(
                 if safe_collect
                 else None
             )
-            success, frames, eff_t = _rollout(
+            success, frames, eff_t, phase_info = _rollout(
                 env,
                 task_description,
                 init_state,
@@ -335,13 +384,15 @@ def evaluate(
                 success_deadline=success_deadline,
                 record=True,
                 collector=collector,
+                task_name=task_name,
             )
             if collector is not None and len(collector) > 0:
                 task_dir_name = getattr(task, "name", f"task{task_id:02d}")
                 pkl_path = episode_path(
                     safe_output_dir, safe_run_id, task_dir_name, task_id, trial, success
                 )
-                write_episode(pkl_path, collector.payload(bool(success)))
+                # phase_info(BDDL sim-state phase 라벨)를 pkl payload에 동봉.
+                write_episode(pkl_path, collector.payload(bool(success), **phase_info))
                 # robocasa 번들 컨벤션: episode 영상을 pkl 과 동일 stem 으로 옆에 저장
                 # (succ/fail 모두). split helper 가 {stem}.* 로 함께 복사.
                 _save_video(frames, pkl_path.with_suffix(".mp4"))
@@ -498,6 +549,13 @@ def main():
         default=None,
         help="suite 의 앞 N개 task 만 평가 (smoke/부분 수집용). 미지정 시 전체.",
     )
+    parser.add_argument(
+        "--task-names",
+        type=str,
+        default=None,
+        help="콤마구분 부분일치 필터: 이름에 매칭되는 task 만 평가 "
+        "(예: 'KITCHEN_SCENE4,KITCHEN_SCENE6' 로 forced-order 만). 미지정 시 전체.",
+    )
     args = parser.parse_args()
 
     max_steps = args.max_steps or DEFAULT_MAX_STEPS[args.task_suite]
@@ -530,6 +588,11 @@ def main():
         safe_output_dir=Path(args.safe_output_dir) if args.safe_output_dir else None,
         safe_run_id=args.safe_run_id,
         max_tasks=args.max_tasks,
+        task_names=(
+            [s.strip() for s in args.task_names.split(",") if s.strip()]
+            if args.task_names
+            else None
+        ),
     )
 
 
