@@ -34,7 +34,10 @@ from PIL import Image, ImageDraw, ImageFont
 PHASE_COLORS = {
     "reach-to-object": (120, 200, 255),
     "reach-to-door": (120, 200, 255),
+    "grasp": (255, 120, 200),
+    "wrong-grasp": (255, 70, 70),
     "transport": (255, 210, 90),
+    "place": (255, 140, 60),
     "insert-settle": (140, 255, 140),
     "release-settle": (140, 255, 140),
     "terminal": (200, 200, 200),
@@ -117,6 +120,7 @@ def main() -> None:
     ap.add_argument("--run-dir", required=True, help="raw_rollouts dir (glob */*/*.pkl)")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--only-fail", action="store_true", help="succ0 만")
+    ap.add_argument("--max-ep", type=int, default=None, help="ep 번호 상한 (예: 29 → ep0-29만)")
     ap.add_argument("--banner-frac", type=float, default=0.16)
     args = ap.parse_args()
 
@@ -125,9 +129,14 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     pkls = sorted(run_dir.glob("*/*/*.pkl"))
     n = 0
+    import re
     for pkl_path in pkls:
         if args.only_fail and not pkl_path.name.endswith("succ0.pkl"):
             continue
+        if args.max_ep is not None:
+            m = re.search(r"--ep(\d+)--", pkl_path.name)
+            if m and int(m.group(1)) > args.max_ep:
+                continue
         mp4_path = pkl_path.with_suffix(".mp4")
         if not mp4_path.exists():
             print(f"[skip] no mp4 for {pkl_path.name}")
