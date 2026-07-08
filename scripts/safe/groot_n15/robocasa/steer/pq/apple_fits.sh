@@ -4,14 +4,15 @@
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/pq_lib.sh"
 cd "$REPO"
-PY=~/miniconda3/envs/libero_bench/bin/python
+# libero_bench env 소실(2026-07-08)로 lerobot 컨테이너 python 사용 (torch·numpy 보장, /temporal_vla=repo)
+PY="docker exec -e OMP_NUM_THREADS=12 -e OPENBLAS_NUM_THREADS=12 -w /temporal_vla lerobot python"
 FITPY=scripts/safe/groot_n15/robocasa/steer/fit_phase_conceptor_n15.py
 FIT_GROUPS="global,reach-to-object,grasp,transport,place,insert-settle"
 
 fit_dir() {  # rundir cellpath outdir
   [ -f "$3/fit_summary.json" ] && return 0
   mkdir -p "$3"
-  OMP_NUM_THREADS=12 OPENBLAS_NUM_THREADS=12 $PY $FITPY --run-dir "$1" --cell "$2" \
+  $PY $FITPY --run-dir "$1" --cell "$2" \
     --groups "$FIT_GROUPS" --carve-window 0 --out-dir "$3" > "$3.fitlog" 2>&1 || true
   grep -m1 '\[done\]' "$3.fitlog" >/dev/null || { echo "[FIT FAILED] $3"; tail -5 "$3.fitlog"; exit 2; }
 }
@@ -24,7 +25,7 @@ ps_fits() {
       mkdir -p "$SUBD"
       for ep in $(seq 0 $((N - 1))); do
         src=$(ls $(pwd)/$SRC6/$task/$c/task${ci}--ep${ep}--succ*.pkl 2>/dev/null | head -1)
-        [ -n "$src" ] && ln -sf "$src" "$SUBD/"
+        [ -n "$src" ] && ln -srf "$src" "$SUBD/"
       done
       fit_dir outputs/eval/robocasa/groot_n15/phase_event_6p/raw_ps${N} "$task/$c" "$AN/final_ps${N}/$c"
     done
@@ -42,7 +43,7 @@ pool_fit() {
       ep=$((i / ${#cells[@]}))
       IFS='|' read -r c task env ci seed instr <<<"$(row_of $cl)"
       src=$(ls $(pwd)/$SRC6/$task/$c/task${ci}--ep${ep}--succ*.pkl 2>/dev/null | head -1)
-      [ -n "$src" ] && ln -sf "$src" "$D/${c}--ep${ep}.pkl"
+      [ -n "$src" ] && ln -srf "$src" "$D/${c}--ep${ep}.pkl"
       i=$((i + 1))
     done
     fit_dir outputs/eval/robocasa/groot_n15/phase_event_6p/raw_${name}${N} "Pool/all" "$AN/final_${name}${N}/all"
