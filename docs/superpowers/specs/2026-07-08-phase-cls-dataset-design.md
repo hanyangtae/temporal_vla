@@ -16,6 +16,14 @@ PyTorch 분류 학습에 바로 쓸 수 있는 벡터화된 형태로 변환한�
 
 ## 2. 범위 / 비범위
 
+**배포/실행 유의 사항 (2026-07-08 사용자 요구):**
+- 산출물은 temporal_vla repo가 아니라 별도 workspace
+  `/home/dongkyu/ksw_ws/task_classification/`에 제공한다 (`script/`에 코드).
+- 입력 데이터는 사용자가 `<workspace>/data/raw_rollouts/`에 복사해 둔 raw_rollouts
+  (9개 cell, 원본과 동일 구조 확인됨).
+- **변환 실행은 사용자가 직접** 한다 — 스크립트는 인자 없이도 돌아가는 CLI로 제공하고,
+  개발 중 검증은 소규모 스모크 테스트로만 수행한다.
+
 **범위 (v1):**
 - `raw_rollouts/` 540 에피소드만 변환 (성공 358 / 실패 182, 9개 cell).
 - DiT 전 레이어 (7 layers × 4 denoise × 1536) + VL(2048) + action/proprio 보존.
@@ -76,9 +84,15 @@ phase_cls_v1/
 
 ## 5. 추출 스크립트
 
-`scripts/safe/groot_n15/robocasa/dataset/build_phase_dataset.py`
+`/home/dongkyu/ksw_ws/task_classification/script/build_phase_dataset.py`
+(**standalone 단일 파일** — temporal_vla repo에 의존하지 않고, 사용자가 직접 실행)
 
-- CLI: `--raw-root <...>/raw_rollouts --out <...>/datasets/phase_cls_v1 [--overwrite]`.
+- 실행 환경: conda env `lerobot_safe` (torch+pandas+pyarrow 확인됨).
+  스크립트 시작 시 의존성 import 실패하면 어떤 env로 실행해야 하는지 안내 후 종료.
+- CLI: `--raw-root`와 `--out`은 workspace 기준 기본값을 가져 인자 없이 실행 가능:
+  `--raw-root` 기본 `<workspace>/data/raw_rollouts`,
+  `--out` 기본 `<workspace>/data/phase_cls_v1` (`[--overwrite]` 지원).
+  경로 기본값은 스크립트 파일 위치(`script/`)에서 상대 계산 — cwd 무관하게 동작.
 - 처리 단위 = cell 디렉토리. pkl을 episode_idx 순 정렬 → 스텝별 누적(cell당 ~500MB RAM)
   → npy 3개 저장 + index 행 생성.
 - 에피소드별 정합성 검사 (실패 시 해당 에피소드 에러 처리):
@@ -100,7 +114,8 @@ phase_cls_v1/
 
 ## 7. PyTorch 로더
 
-`src/datasets/phase_cls_dataset.py` (기존 `src/datasets/` 컨벤션 준수)
+`/home/dongkyu/ksw_ws/task_classification/script/phase_cls_dataset.py`
+(빌드 스크립트와 같은 workspace, 학습 코드에서 import해서 사용)
 
 ```python
 ds = PhaseClsDataset(
