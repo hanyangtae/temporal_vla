@@ -552,6 +552,13 @@ def run() -> dict[str, Any]:
                 "wrong_grasp_steps": list(getattr(labeler, "wrong_grasp_steps", []) or []),
                 "wrong_grasp_timeline": list(getattr(labeler, "wrong_grasp_timeline", []) or []),
             }
+            # pq2 이중 채점 (docs/steering/18): apple corrected env fork 가 노출하는
+            # per-episode ever 플래그 {"0.07": bool, "0.1": bool}. 미지원 task 는 None.
+            _kenv = env
+            while hasattr(_kenv, "env") and not hasattr(_kenv, "_pq2_succ_ever"):
+                _kenv = _kenv.env
+            _ever = getattr(_kenv, "_pq2_succ_ever", None)
+            extra_metadata["succ_ever_th"] = dict(_ever) if _ever is not None else None
             if cell_id is not None:
                 extra_metadata.update(
                     {
