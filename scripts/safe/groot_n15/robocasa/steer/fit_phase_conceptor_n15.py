@@ -146,6 +146,7 @@ def fit_one(Xs, Xf, alphas, band):
         fits[a] = {"C_steer": Csteer, "C_success": Cs, "C_failure": Cf,
                    "quota_steer": conceptor_quota(Csteer)}
     return fits, {"alpha_sweep": sweep, "selected_alpha": float(sel_alpha), "selection_mode": sel_mode,
+                  "quota_steer": {f"{a:g}": g["quota_steer"] for a, g in fits.items()},
                   "n_success": int(Xs.shape[0]), "n_failure": int(Xf.shape[0]), "feature_dim": int(Xs.shape[1])}
 
 
