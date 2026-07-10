@@ -56,6 +56,15 @@ episode 층화 permutation·P0 seed-순서 선발·P2 하방-위험 선택·live
 serve preflight·NPZ 키 순서 고정·episode 단위 min-class·빈-fit rc≠0·pool 총량-고정
 estimand 명시.
 
+## 추가 결정 (2026-07-10 저녁, P0 실측 후)
+
+- **apple 게이트 완화** (사용자 확정): 후보 12 scene 수집 결과 SR 분포 = 1.0×5, 0.95×3,
+  0.85×1, 0.0×1 — 원안 밴드(succ≥15∧fail≥15) 통과 0. apple scene 은 all-or-nothing
+  이부모델로 실증됨(밴드 scene 부재, 재사용 ppcs_apple 0.74 가 유일 예외).
+  → 게이트 = **succ≥6 ∧ fail≥6** (corrected), fit30 은 fail≥12∧succ≥12 일 때만
+  (미달 scene 은 fit15 전용), 천장/바닥 각주 필수. 선발은 여전히 seed 순서.
+  구현: pq2/p0_gate.py. 통과 scene 3개 확보까지 배치 스캔 계속.
+
 ## 구현 상태 (이 세션에서 배선 완료)
 
 - fit v2 + `pq2/make_fit_manifests.py` (a6311c5) — 승준 원격 스모크·회귀(rc=3) 통과

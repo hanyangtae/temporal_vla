@@ -36,8 +36,12 @@ ASYM_MAX = 2  # fit-half 클래스 하한 충족용 비대칭 이동 상한 (Gat
 MIN_CLASS = {15: 3, 30: 6}  # fitN → fit 표본 내 클래스별 최소 episode (사용자 확정)
 
 
-def scene_episodes(scene_dir: Path, rejudge_tsv: Path | None):
-    """[(ep:int, pkl:Path, label:int)] — discordant 제외 적용 후. 라벨 출처도 반환."""
+def scene_episodes(scene_dir: Path, rejudge_tsv: Path | None, pkl_meta: bool = False):
+    """[(ep:int, pkl:Path, label:int)] — discordant 제외 적용 후. 라벨 출처도 반환.
+
+    라벨 소스 3종: filename(기본) / rejudge tsv(구 수집분 corrected) /
+    pkl_meta(신규 수집분 succ_ever_th — robocasa fork 459c70f 이후, torch python 필요).
+    """
     eps = {}
     for p in sorted(scene_dir.glob("task*--ep*--succ*.pkl")):
         m = re.match(r"task\d+--ep(\d+)--succ([01])\.pkl", p.name)
@@ -46,6 +50,21 @@ def scene_episodes(scene_dir: Path, rejudge_tsv: Path | None):
     if not eps:
         raise SystemExit(f"pkl 없음: {scene_dir}")
     excluded, source = [], "filename"
+    if pkl_meta:
+        import pickle
+        source = "pkl_meta:succ_ever_th"
+        for ep in sorted(eps):
+            d = pickle.load(open(eps[ep]["pkl"], "rb"))
+            ever = d.get("succ_ever_th")
+            if ever is None:
+                raise SystemExit(f"succ_ever_th 없음 (구 수집분?): {eps[ep]['pkl']}")
+            lab07, lab10 = int(ever["0.07"]), int(ever["0.1"])
+            if lab07 != lab10:  # 0.07~0.10 걸친 애매 판 → fit 제외 (D1)
+                excluded.append(ep)
+                del eps[ep]
+            else:
+                eps[ep]["label"] = lab10
+        return eps, excluded, source
     if rejudge_tsv:
         source = f"rejudge:{rejudge_tsv.name}"
         rows = [l.split("\t") for l in rejudge_tsv.read_text().splitlines()]
@@ -156,7 +175,8 @@ def cmd_scene(args):
     scene_dir = Path(args.scene_dir)
     scene = scene_dir.name
     out_dir = Path(args.out_dir) if args.out_dir else REPO / "outputs/eval/robocasa/groot_n15/pq2_manifests" / scene
-    eps, excluded, source = scene_episodes(scene_dir, Path(args.rejudge_tsv) if args.rejudge_tsv else None)
+    eps, excluded, source = scene_episodes(scene_dir, Path(args.rejudge_tsv) if args.rejudge_tsv else None,
+                                           pkl_meta=getattr(args, "pkl_meta_labels", False))
     fit_half, select_half, moved = stratified_split(eps, f"{args.seed}:{scene}")
     labels = {e: eps[e]["label"] for e in eps}
     n_f = {h: sum(1 for e in h_eps if labels[e] == 0) for h, h_eps in
@@ -258,6 +278,8 @@ def main():
     s = sub.add_parser("scene", help="scene split + per_scene manifest")
     s.add_argument("--scene-dir", required=True)
     s.add_argument("--rejudge-tsv", default=None, help="apple corrected 라벨 tsv (ever@0.1 override)")
+    s.add_argument("--pkl-meta-labels", action="store_true",
+                   help="신규 수집분: pkl succ_ever_th 로 corrected 라벨+discordant 제외 (torch python)")
     s.add_argument("--seed", default="pq2-20260710")
     s.add_argument("--null-seed", type=int, default=None)
     s.add_argument("--out-dir", default=None)

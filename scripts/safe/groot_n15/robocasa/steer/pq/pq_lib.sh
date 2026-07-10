@@ -33,12 +33,19 @@ CELLS=(
   "ppcs_apple_s100353|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100353|Pick the apple from the plate and place it in the pan."
   "ppcs_apple_s100395|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100395|Pick the apple from the plate and place it in the pan."
   "ppcs_apple_s100422|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100422|Pick the apple from the plate and place it in the pan."
+  "ppcs_apple_s100425|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100425|Pick the apple from the plate and place it in the pan."
+  "ppcs_apple_s100468|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100468|Pick the apple from the plate and place it in the pan."
+  "ppcs_apple_s100485|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100485|Pick the apple from the plate and place it in the pan."
+  "ppcs_apple_s100504|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100504|Pick the apple from the plate and place it in the pan."
+  "ppcs_apple_s100542|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100542|Pick the apple from the plate and place it in the pan."
+  "ppcs_apple_s100632|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100632|Pick the apple from the plate and place it in the pan."
 )
 BREADS="ppcc_bread ppcc_bread_s300028 ppcc_bread_s300033 ppcc_bread_s400020"
 APPLES="ppcs_apple ppcs_apple_s100050 ppcs_apple_s100084 ppcs_apple_s100104"
 APPLES_P0_CAND="ppcs_apple_s100106 ppcs_apple_s100172 ppcs_apple_s100184 ppcs_apple_s100202 ppcs_apple_s100215 ppcs_apple_s100243"
 # 배치 2 (게이트 전멸 대비 선제 수집 — A100 병렬, 2026-07-10)
 APPLES_P0_CAND2="ppcs_apple_s100245 ppcs_apple_s100291 ppcs_apple_s100334 ppcs_apple_s100353 ppcs_apple_s100395 ppcs_apple_s100422"
+APPLES_P0_CAND3="ppcs_apple_s100425 ppcs_apple_s100468 ppcs_apple_s100485 ppcs_apple_s100504 ppcs_apple_s100542 ppcs_apple_s100632"
 row_of() { local c; for c in "${CELLS[@]}"; do [[ "$c" == "$1|"* ]] && { echo "$c"; return; }; done; }
 tag_of() { case "$1" in base) echo ho_base;; perm) echo "ho_perm$2";; gated) echo "ho_gated$2";; esac; }
 
