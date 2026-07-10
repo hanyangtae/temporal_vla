@@ -27,10 +27,18 @@ CELLS=(
   "ppcs_apple_s100202|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100202|Pick the apple from the plate and place it in the pan."
   "ppcs_apple_s100215|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100215|Pick the apple from the plate and place it in the pan."
   "ppcs_apple_s100243|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100243|Pick the apple from the plate and place it in the pan."
+  "ppcs_apple_s100245|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100245|Pick the apple from the plate and place it in the pan."
+  "ppcs_apple_s100291|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100291|Pick the apple from the plate and place it in the pan."
+  "ppcs_apple_s100334|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100334|Pick the apple from the plate and place it in the pan."
+  "ppcs_apple_s100353|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100353|Pick the apple from the plate and place it in the pan."
+  "ppcs_apple_s100395|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100395|Pick the apple from the plate and place it in the pan."
+  "ppcs_apple_s100422|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100422|Pick the apple from the plate and place it in the pan."
 )
 BREADS="ppcc_bread ppcc_bread_s300028 ppcc_bread_s300033 ppcc_bread_s400020"
 APPLES="ppcs_apple ppcs_apple_s100050 ppcs_apple_s100084 ppcs_apple_s100104"
 APPLES_P0_CAND="ppcs_apple_s100106 ppcs_apple_s100172 ppcs_apple_s100184 ppcs_apple_s100202 ppcs_apple_s100215 ppcs_apple_s100243"
+# 배치 2 (게이트 전멸 대비 선제 수집 — A100 병렬, 2026-07-10)
+APPLES_P0_CAND2="ppcs_apple_s100245 ppcs_apple_s100291 ppcs_apple_s100334 ppcs_apple_s100353 ppcs_apple_s100395 ppcs_apple_s100422"
 row_of() { local c; for c in "${CELLS[@]}"; do [[ "$c" == "$1|"* ]] && { echo "$c"; return; }; done; }
 tag_of() { case "$1" in base) echo ho_base;; perm) echo "ho_perm$2";; gated) echo "ho_gated$2";; esac; }
 

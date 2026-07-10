@@ -26,6 +26,38 @@ while true; do
   IFS='|' read -r jt cell suf arms npzsub layers cons retry <<<"$line"
   IFS='|' read -r c task env ci seed instr <<<"$(row_of "$cell")"
   echo "[$LANE] JOB $jt $cell $arms$suf (retry=$retry) $(date -u '+%FT%T')"
+
+  if [ "$jt" = collect ]; then
+    # P0 fit 재료 수집 (ep0-59) → 승준 직송 (fit 은 승준에서 — pq2 재설계)
+    RCMD="cd $HREPO && CELL_ID=$c TASK=$task ENVN=$env CELL_INDEX=$ci SEED=$seed INSTR=$(printf '%q' "$instr") \
+GPUS_L='2 2 2' PORTS_L='$P1 $P2 $P3' bash scripts/safe/groot_n15/robocasa/steer/pq2/w2_collect_cell.sh"
+    $SSH "$RCMD" >> "$QROOT/logs/w2_${LANE}.log" 2>&1
+    rc=$?
+    FRD="outputs/eval/robocasa/groot_n15/phase_event_6p/raw_rollouts/$task/$c"
+    LFIT="$REPO/$SRC6/$task/$c"; mkdir -p "$LFIT"
+    $SSH "cd $HREPO/$FRD 2>/dev/null && find . -name '*.pkl' | sort" > "$LFIT/manifest_w2.txt" 2>/dev/null
+    n_pkl=$(grep -c pkl "$LFIT/manifest_w2.txt" 2>/dev/null || echo 0)
+    mark_machine "$LFIT" "worker2-a100-gpu2(direct-sj)" "$n_pkl"
+    if [ "$n_pkl" -ge 60 ]; then
+      $SSH "cd $HREPO && tar cf - $FRD" | ssh -o BatchMode=yes -p $SJP $SJ "cd $SJREPO && tar xf -" \
+        2>> "$QROOT/logs/w2_${LANE}.log"
+      ship_rc=$?
+      sj_n=$(ssh -o BatchMode=yes -p $SJP $SJ "find $SJREPO/$FRD -name '*.pkl' 2>/dev/null | wc -l" 2>/dev/null || echo 0)
+      if [ "$ship_rc" -eq 0 ] && [ "${sj_n:-0}" -ge "$n_pkl" ]; then
+        $SSH "find $HREPO/$FRD -type f \( -name '*.pkl' -o -name '*.mp4' \) -delete"
+        echo "[$LANE] $c collect → 승준 직송 완료 (pkl=$n_pkl, sj=$sj_n)"
+        finish_job "$line" "$LANE" "worker2-a100-gpu2(sj=$sj_n)" "$n_pkl" "$n_pkl"
+      else
+        echo "[$LANE] $c collect 직송 검증 실패(ship_rc=$ship_rc sj=$sj_n/$n_pkl) — w2 원본 보존, 재큐"
+        requeue_job "$line" "$LANE"
+      fi
+    else
+      echo "[$LANE] $c collect ${n_pkl}/60 (rc=$rc) → 재큐"
+      requeue_job "$line" "$LANE"; sleep 60
+    fi
+    continue
+  fi
+
   tag=$(tag_of "$arms" "$suf")
 
   RCMD="cd $HREPO && CELL_ID=$c TASK=$task ENVN=$env CELL_INDEX=$ci SEED=$seed INSTR=$(printf '%q' "$instr") \
