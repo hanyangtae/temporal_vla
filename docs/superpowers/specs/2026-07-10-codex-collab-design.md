@@ -1,7 +1,8 @@
 # Claude×Codex 협업 프로토콜 설계
 
 - 날짜: 2026-07-10 (R3 — Codex 2차 리뷰 반영)
-- 상태: 설계 개정판. Codex 2차 리뷰 판정 "조건부 가능"의 조건 3건을 반영 완료.
+- 상태: **구현 완료 — 이 문서는 비규범 설계 기록** (결정 배경·개정 이력 보존용).
+  실행 규약의 단일 출처는 `.claude/skills/codex-collab/SKILL.md`.
 - 토론 원장: [`docs/collab/2026-07-10-codex-collab-protocol.md`](../../collab/2026-07-10-codex-collab-protocol.md)
 - 대상 도구: Claude Code 2.1.206, codex-cli 0.144.1 (이 레포는 Codex 쪽 `trusted` 등록됨)
 
