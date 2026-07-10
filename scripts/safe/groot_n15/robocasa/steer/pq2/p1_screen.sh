@@ -12,7 +12,8 @@ PYBIN=${PYBIN:-python3}
 MAN_ROOT=${MAN_ROOT:-outputs/eval/robocasa/groot_n15/pq2_manifests}
 OUT_ROOT=${OUT_ROOT:-outputs/eval/robocasa/groot_n15/pq2_analysis/conceptors}
 FITPY=scripts/safe/groot_n15/robocasa/steer/fit_phase_conceptor_n15.py
-GROUPS="global,reach-to-object,grasp,transport,place,insert-settle"
+# 주의: GROUPS 는 bash 특수 변수(대입 무시, gid 로 확장 — 실제 사고 2026-07-10) → FIT_GROUPS
+FIT_GROUPS="global,reach-to-object,grasp,transport,place,insert-settle"
 JOBS=${JOBS:-2}
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-4} OPENBLAS_NUM_THREADS=${OMP_NUM_THREADS:-4}
 
@@ -26,7 +27,7 @@ fit_one() { # manifest_path
   fi
   mkdir -p "$(dirname "$out")"
   "$PYBIN" "$FITPY" --cell "pq2/$(basename "$stem")" --manifest "$mf" \
-    --groups "$GROUPS" --out-dir "$out" > "$out.fitlog" 2>&1
+    --groups "$FIT_GROUPS" --out-dir "$out" > "$out.fitlog" 2>&1
   rc=$?
   if [ $rc -ne 0 ] || [ ! -s "$out/fit_summary.json" ] || [ "$(cat "$out/fit_summary.json")" = "{}" ]; then
     echo "[FAIL rc=$rc] $stem — $(tail -n 2 "$out.fitlog" | head -1)"; return 1
