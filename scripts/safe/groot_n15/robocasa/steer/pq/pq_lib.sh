@@ -20,9 +20,17 @@ CELLS=(
   "ppcs_apple_s100050|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100050|Pick the apple from the plate and place it in the pan."
   "ppcs_apple_s100084|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100084|Pick the apple from the plate and place it in the pan."
   "ppcs_apple_s100104|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100104|Pick the apple from the plate and place it in the pan."
+  # --- pq2 P0 apple 신규 scene 후보 (2026-07-10, seed 순 — selected_instruction_seeds.tsv 중 미사용 상위 6) ---
+  "ppcs_apple_s100106|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100106|Pick the apple from the plate and place it in the pan."
+  "ppcs_apple_s100172|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100172|Pick the apple from the plate and place it in the pan."
+  "ppcs_apple_s100184|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100184|Pick the apple from the plate and place it in the pan."
+  "ppcs_apple_s100202|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100202|Pick the apple from the plate and place it in the pan."
+  "ppcs_apple_s100215|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100215|Pick the apple from the plate and place it in the pan."
+  "ppcs_apple_s100243|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100243|Pick the apple from the plate and place it in the pan."
 )
 BREADS="ppcc_bread ppcc_bread_s300028 ppcc_bread_s300033 ppcc_bread_s400020"
 APPLES="ppcs_apple ppcs_apple_s100050 ppcs_apple_s100084 ppcs_apple_s100104"
+APPLES_P0_CAND="ppcs_apple_s100106 ppcs_apple_s100172 ppcs_apple_s100184 ppcs_apple_s100202 ppcs_apple_s100215 ppcs_apple_s100243"
 row_of() { local c; for c in "${CELLS[@]}"; do [[ "$c" == "$1|"* ]] && { echo "$c"; return; }; done; }
 tag_of() { case "$1" in base) echo ho_base;; perm) echo "ho_perm$2";; gated) echo "ho_gated$2";; esac; }
 

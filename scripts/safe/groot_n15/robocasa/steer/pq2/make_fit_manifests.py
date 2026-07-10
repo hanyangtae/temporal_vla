@@ -81,10 +81,15 @@ def stratified_split(eps: dict, seed: str):
     for ep, d in eps.items():
         by_label[d["label"]].append(ep)
     fit_half, select_half = [], []
+    fit_gets_remainder = True  # 홀수 클래스 나머지를 fit/select 에 교대로 배정 (half 크기 균형)
     for lab, group in sorted(by_label.items()):
         group = sorted(group)
         rng.shuffle(group)
         k = len(group) // 2
+        if len(group) % 2 and fit_gets_remainder:
+            k += 1
+        if len(group) % 2:
+            fit_gets_remainder = not fit_gets_remainder
         fit_half += group[:k]
         select_half += group[k:]
     moved = []
@@ -101,11 +106,20 @@ def stratified_split(eps: dict, seed: str):
     return sorted(fit_half), sorted(select_half), moved
 
 
-def sample_stratified(cands: list, labels: dict, n: int, min_class: int, rng) -> list | None:
-    """후보 episode 에서 총 n 개 층화 추출 (클래스 비율 유지, 클래스별 ≥min_class). 불가 시 None."""
+def sample_stratified(cands: list, labels: dict, n: int, min_class: int, rng,
+                      allow_short: bool = False) -> list | None:
+    """후보 episode 에서 총 n 개 층화 추출 (클래스 비율 유지, 클래스별 ≥min_class). 불가 시 None.
+
+    allow_short: 후보가 n 미만이면 전체 사용 (fit30 = fit-half 전체 — Gate1 합의:
+    discordant 제외 등으로 half 가 28~29 판이어도 명목 fit30 으로 취급, 실제 n 은 기록).
+    """
     by = {0: sorted(e for e in cands if labels[e] == 0), 1: sorted(e for e in cands if labels[e] == 1)}
-    if len(by[0]) < min_class or len(by[1]) < min_class or len(cands) < n:
+    if len(by[0]) < min_class or len(by[1]) < min_class:
         return None
+    if len(cands) < n:
+        if not allow_short:
+            return None
+        n = len(cands)
     n0 = max(min_class, min(len(by[0]), round(n * len(by[0]) / len(cands))))
     n0 = min(n0, n - min_class)  # 상대 클래스 하한 보장
     n1 = n - n0
@@ -161,12 +175,14 @@ def cmd_scene(args):
 
     for n in (15, 30):
         rng = random.Random(f"{args.seed}:{scene}:fit{n}")
-        cands = sample_stratified(fit_half, labels, n, MIN_CLASS[n], rng)
+        cands = sample_stratified(fit_half, labels, n, MIN_CLASS[n], rng, allow_short=(n == 30))
         if cands is None:
-            print(f"  [N/A] per_scene_fit{n}: fit-half {len(fit_half)}ep 클래스 하한 {MIN_CLASS[n]} 미충족")
+            nf = sum(1 for e in fit_half if labels[e] == 0)
+            print(f"  [N/A] per_scene_fit{n}: fit-half {len(fit_half)}ep "
+                  f"(fail {nf}/succ {len(fit_half) - nf}) 클래스 하한 {MIN_CLASS[n]} 미충족")
             continue
         rows = [(eps[e]["pkl"], labels[e], scene) for e in cands]
-        comments = [f"scope=per_scene fitN={n} scene={scene} seed={args.seed}",
+        comments = [f"scope=per_scene fitN={n} n_actual={len(cands)} scene={scene} seed={args.seed}",
                     f"labels={source} excluded_discordant={excluded}",
                     f"episodes={cands}"]
         write_manifest(out_dir / f"per_scene_fit{n}.tsv", rows, comments)
