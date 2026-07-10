@@ -14,6 +14,8 @@ conceptor NPZ(fit_conceptor_steering.py 산출)의 ``alpha{a}_C_steer`` 를 읽�
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -43,7 +45,9 @@ def load_steering_matrix(
     Args:
         npz_path: fit_conceptor_steering.py 가 저장한 ``conceptors.npz``.
         beta: steering 강도 [0,1].
-        alpha: 사용할 aperture. None 이면 NPZ 안의 (유일하거나 첫) alpha.
+        alpha: 사용할 aperture. None 이면 sibling metadata.json 의 selected_alpha,
+            그것도 없으면 NPZ 첫 키 (구 NPZ 는 키 순서가 비결정 — [[alpha-wiring-audit]]
+            오배선 원인이라 어느 α 가 적용됐는지 preflight 로그로 반드시 남긴다).
         key: ``C_steer`` | ``C_success`` | ``C_failure`` (positive-only 실험은 C_success).
 
     Returns:
@@ -53,13 +57,24 @@ def load_steering_matrix(
     steer_keys = [k for k in z.files if k.endswith(f"_{key}")]
     if not steer_keys:
         raise KeyError(f"{npz_path} 에 *_{key} 없음 (keys={z.files})")
+    alpha_src = "explicit"
+    if alpha is None:
+        meta_path = Path(npz_path).with_name("metadata.json")
+        if meta_path.exists():
+            alpha = json.loads(meta_path.read_text()).get("selected_alpha")
+            alpha_src = "meta"
     if alpha is not None:
         want = f"alpha{alpha:g}_{key}"
         if want not in steer_keys:
-            raise KeyError(f"{want} 없음 (있는 키={steer_keys})")
+            raise KeyError(f"{want} 없음 (있는 키={steer_keys}, alpha_src={alpha_src})")
         chosen = want
     else:
         chosen = steer_keys[0]
+        alpha_src = "first-key"
+    # preflight 로그: 러너가 serve 로그의 이 라인을 arm manifest 와 대조 (불일치 시 rollout 전 실패)
+    sha = hashlib.sha256(Path(npz_path).read_bytes()).hexdigest()[:12]
+    print(f"[steer-preflight] npz={npz_path} key={chosen} alpha_src={alpha_src} "
+          f"beta={beta:g} sha={sha}", flush=True)
     C = z[chosen].astype(np.float64)
     return build_steering_matrix(C, beta)
 
