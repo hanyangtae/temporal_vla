@@ -3,14 +3,15 @@
 # usage: SCENE=<scene> PA=8480 PB=8481 SINGLE_L=<layer> [FITN=30] bash p2_select_cell_w2.sh
 set -uo pipefail
 : "${SCENE:?}" "${PA:?}" "${PB:?}" "${SINGLE_L:?}"
-REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../../../.." && pwd)"
-cd "$REPO"
+MYREPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../../../.." && pwd)"
+cd "$MYREPO"
+# 주의: pq_lib.sh 가 REPO 를 로컬 절대경로로 하드코딩 → source 후 MYREPO 만 신뢰 (w2 사고 실증)
 source scripts/safe/groot_n15/robocasa/steer/pq/pq_lib.sh
 IFS='|' read -r c task env ci seed instr <<<"$(row_of "$SCENE")"
 [ -n "$c" ] || { echo "unknown scene: $SCENE"; exit 2; }
 FITN="${FITN:-30}"
-MAN="$REPO/outputs/eval/robocasa/groot_n15/pq2_manifests/$SCENE"
-NPZ="$REPO/outputs/eval/robocasa/groot_n15/pq2_analysis/conceptors/$SCENE/per_scene_fit${FITN}/global"
+MAN="$MYREPO/outputs/eval/robocasa/groot_n15/pq2_manifests/$SCENE"
+NPZ="$MYREPO/outputs/eval/robocasa/groot_n15/pq2_analysis/conceptors/$SCENE/per_scene_fit${FITN}/global"
 [ -f "$MAN/split.json" ] || { echo "split.json 없음: $MAN"; exit 2; }
 EPLIST=$(python3 -c "import json; print(' '.join(map(str, json.load(open('$MAN/split.json'))['select_half'])))")
 
