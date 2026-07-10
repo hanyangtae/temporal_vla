@@ -10,6 +10,8 @@ Claude Code 세션에서는 `.agents/agent_spec.md`를 repo-local 운영 규칙�
 - `.agents/agent_spec.md`는 agent의 작업 방식, 검증 기준, 문서화 방식, git/PR 절차의 단일 기준이다.
 - `AGENTS.md`는 Codex 계열 agent entrypoint다. Claude Code의 instruction discovery는 `.agents/agent_spec.md`에서 멈추고, `AGENTS.md`는 참고 문맥으로 사용한다.
 - 두 문서의 지침이 충돌하면 더 구체적인 작업 문맥과 현재 repo-local instruction을 우선한다.
+- Codex(GPT) 협업 — 계획 반론·코드 리뷰·디버깅 위임 — 은 `.claude/skills/codex-collab/SKILL.md`
+  규약을 따른다. Review-lane 호출은 반드시 `scripts/utils/codex_ask.sh` 경유.
 
 ## 프로젝트 개요
 
