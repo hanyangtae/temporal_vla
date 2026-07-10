@@ -14,11 +14,22 @@ phase-event([L=7,K=4,D=1536] denoise + feature_phases + seed별 cell)에 안 맞
 /`_C_success`/`_C_failure`. 사용: serve `--steering-npz <.../conceptors.npz> --steering-pathway
 {dit,vl} [--steering-layer <blk>] --steering-alpha <a> --steering-beta <b> --steering-key C_steer`.
 DiT layer_tag `dit_L<blk>` 의 <blk> 를 그대로 --steering-layer 로 넘긴다(transformer_blocks 인덱스).
+
+재설계 라운드 v2 확장 (docs/steering/17 배선 체크리스트, 2026-07-10):
+  - NPZ 키 순서 = [선택 α, 안전 default] 명시 순서 (구판은 set 순회라 serve 첫-키 폴백이 hash
+    우연에 좌우 — α 오배선 원인, [[alpha-wiring-audit]]).
+  - `--min-per-class` 는 **episode 수** 기준 (구판은 record 수 — timeout 실패의 record 과대가중
+    탓에 1 episode 로도 통과하던 구멍).
+  - `--manifest` 로 fit 표본을 외부 명시 (pkl_path\tlabel[\tscene]): 30/30 split 층화 샘플링·
+    corrected 라벨·위약(라벨 permutation) 은 전부 manifest 생성 단계(pq2)에서 결정되고, 이
+    스크립트는 소비만 한다. 사용 표본·content 서명은 out_root/fit_inputs.json 에 기록.
+  - 유효 fit 이 0 개면 exit 3 (빈 fit 이 [done] 으로 통과하던 게이트 구멍 봉합).
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -76,25 +87,35 @@ def carve_5phase(pkl_path, phases: list[str], w: int) -> list[str]:
     return out
 
 
+def _roll_records(r, phase, layer_key):
+    """rollout 1개의 (phase, layer) record 벡터 목록. phase='global'이면 전 record."""
+    if phase == "global":
+        if layer_key == "VL":
+            return list(r["vl"]) if r["vl"] is not None else []
+        return list(r["dit"][:, layer_key, :])
+    return list(phase_records(r, phase, layer_key))
+
+
 def gather_class_records(rolls, phase, layer_key, success):
     """success(0/1) rollout 들의 phase 소속 record 벡터 [N, D] 스택. phase='global'이면 전 record.
 
     wrong-grasp record 는 phase bin 에선 라벨 분리로 자동 제외(fit group 에 wrong-grasp 없음),
     global 은 사용자 결정대로 전 record 포함(phase 무구분 조건이므로).
     """
-    out = []
+    return gather_class_records_eps(rolls, phase, layer_key, success)[0]
+
+
+def gather_class_records_eps(rolls, phase, layer_key, success):
+    """gather_class_records + 기여 episode 수 (해당 group/layer 에 record ≥1 인 rollout 수)."""
+    out, n_eps = [], 0
     for r in rolls:
         if r["success"] != success:
             continue
-        if phase == "global":
-            if layer_key == "VL":
-                if r["vl"] is not None:
-                    out.extend(list(r["vl"]))
-            else:
-                out.extend(list(r["dit"][:, layer_key, :]))
-        else:
-            out.extend(phase_records(r, phase, layer_key))
-    return np.asarray(out, dtype=np.float64) if out else np.empty((0, 0))
+        recs = _roll_records(r, phase, layer_key)
+        if recs:
+            n_eps += 1
+            out.extend(recs)
+    return (np.asarray(out, dtype=np.float64) if out else np.empty((0, 0))), n_eps
 
 
 def select_alpha(sweep, band):
@@ -116,13 +137,29 @@ def fit_one(Xs, Xf, alphas, band):
                       "quota_success": conceptor_quota(Cs), "quota_failure": conceptor_quota(Cf)})
     sel_alpha, sel_mode = select_alpha(sweep, band)
     fits = {}
-    for a in {sel_alpha, alphas[1] if len(alphas) > 1 else alphas[0]}:  # 선택 alpha + 안전 default 저장
+    # 선택 alpha 를 반드시 첫 키로 저장 (serve 의 첫-키 폴백이 선택값을 집도록 — set 순회 금지)
+    default_alpha = alphas[1] if len(alphas) > 1 else alphas[0]
+    save_alphas = [sel_alpha] + ([default_alpha] if default_alpha != sel_alpha else [])
+    for a in save_alphas:
         Cs, Cf = cache[a]
         Csteer = and_conceptor(Cs, not_conceptor(Cf))
         fits[a] = {"C_steer": Csteer, "C_success": Cs, "C_failure": Cf,
                    "quota_steer": conceptor_quota(Csteer)}
     return fits, {"alpha_sweep": sweep, "selected_alpha": float(sel_alpha), "selection_mode": sel_mode,
                   "n_success": int(Xs.shape[0]), "n_failure": int(Xf.shape[0]), "feature_dim": int(Xs.shape[1])}
+
+
+def _content_sig(p: Path) -> str:
+    """pkl content 서명: size + 앞/뒤 1MB sha256 (동일 rollout 재유입 탐지용, 전체 해시는 IO 과다)."""
+    h = hashlib.sha256()
+    size = p.stat().st_size
+    h.update(str(size).encode())
+    with open(p, "rb") as f:
+        h.update(f.read(1 << 20))
+        if size > (2 << 20):
+            f.seek(-(1 << 20), 2)
+            h.update(f.read())
+    return h.hexdigest()[:16]
 
 
 def save_npz(out_dir, fits, meta):
@@ -142,18 +179,44 @@ def main():
     ap.add_argument("--cell", required=True, help="예: PickPlaceCounterToCabinet/ppcc_bread")
     ap.add_argument("--groups", default="global,transport,reach-to-object")
     ap.add_argument("--alphas", default=None)
-    ap.add_argument("--min-per-class", type=int, default=3)
+    ap.add_argument("--min-per-class", type=int, default=3,
+                    help="클래스별 최소 기여 episode 수 (v2: record 수 아님)")
     ap.add_argument("--out-dir", default=None)
+    ap.add_argument("--manifest", default=None,
+                    help="fit 표본 manifest tsv (pkl_path\\tlabel[\\tscene], # 주석 허용). 지정 시 "
+                         "--cell glob 대신 이 목록만 사용하고 label 이 pkl 내장 episode_success 를 "
+                         "override (corrected/위약 라벨 주입 경로). 경로는 절대 또는 repo-root 상대.")
     ap.add_argument("--carve-window", type=int, default=0,
                     help=">0 이면 5-phase carving: event 직전 W record 를 pre-grasp/pre-place 로 재라벨")
     args = ap.parse_args()
 
     run_dir = Path(args.run_dir)
-    cell_dir = run_dir / args.cell
-    pkls = sorted(cell_dir.glob("*.pkl"))
+    manifest_rows = None
+    if args.manifest:
+        manifest_rows = []
+        for line in Path(args.manifest).read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split("\t")
+            p = Path(parts[0])
+            if not p.is_absolute():
+                p = REPO / p
+            manifest_rows.append({"pkl": p, "label": int(parts[1]),
+                                  "scene": parts[2] if len(parts) > 2 else ""})
+        pkls = [m["pkl"] for m in manifest_rows]
+        missing = [str(p) for p in pkls if not p.exists()]
+        if missing:
+            raise SystemExit(f"manifest pkl 누락 {len(missing)}개: {missing[:3]}")
+    else:
+        cell_dir = run_dir / args.cell
+        pkls = sorted(cell_dir.glob("*.pkl"))
     if not pkls:
-        raise SystemExit(f"no pkl under {cell_dir}")
+        raise SystemExit(f"no pkl (cell={args.cell}, manifest={args.manifest})")
     rolls = [load_rollout(p) for p in pkls]
+    if manifest_rows:
+        for r, m in zip(rolls, manifest_rows):
+            r["success"] = m["label"]  # manifest 라벨이 pkl 내장값 override
     if args.carve_window > 0:
         for r, p in zip(rolls, pkls):
             r["phases"] = carve_5phase(p, r["phases"], args.carve_window)
@@ -171,20 +234,34 @@ def main():
     for group in groups:
         for lk in layer_keys:
             tag = "vl" if lk == "VL" else f"dit_L{cap[lk]}"
-            Xs = gather_class_records(rolls, group, lk, 1)
-            Xf = gather_class_records(rolls, group, lk, 0)
-            if Xs.size == 0 or Xf.size == 0 or Xs.shape[0] < args.min_per_class or Xf.shape[0] < args.min_per_class:
+            Xs, ns_ep = gather_class_records_eps(rolls, group, lk, 1)
+            Xf, nf_ep = gather_class_records_eps(rolls, group, lk, 0)
+            # v2 게이트: 클래스별 기여 episode 수 기준 (record 수 아님 — 길이 과대가중 구멍 봉합)
+            if Xs.size == 0 or Xf.size == 0 or ns_ep < args.min_per_class or nf_ep < args.min_per_class:
+                print(f"  [skip {group}/{tag}] eps s={ns_ep} f={nf_ep} < min {args.min_per_class}")
                 continue
             fits, meta = fit_one(Xs, Xf, alphas, OVERLAP_BAND)
             meta.update({"cell": cell_id, "group": group, "layer_tag": tag,
                          "steering_layer": None if lk == "VL" else int(cap[lk]),
-                         "pathway": "vl" if lk == "VL" else "dit"})
+                         "pathway": "vl" if lk == "VL" else "dit",
+                         "n_success_eps": ns_ep, "n_failure_eps": nf_ep})
             save_npz(out_root / group / tag, fits, meta)
             summary.setdefault(group, {})[tag] = {"sel_alpha": meta["selected_alpha"],
-                                                  "n_s": meta["n_success"], "n_f": meta["n_failure"]}
-            print(f"  [{group}/{tag}] Ns={Xs.shape[0]} Nf={Xf.shape[0]} sel_alpha={meta['selected_alpha']:g} "
+                                                  "n_s": meta["n_success"], "n_f": meta["n_failure"],
+                                                  "n_s_eps": ns_ep, "n_f_eps": nf_ep}
+            print(f"  [{group}/{tag}] Ns={Xs.shape[0]}({ns_ep}ep) Nf={Xf.shape[0]}({nf_ep}ep) "
+                  f"sel_alpha={meta['selected_alpha']:g} "
                   f"overlap@sel={[s['overlap'] for s in meta['alpha_sweep'] if s['alpha']==meta['selected_alpha']][0]:.3f}")
+    out_root.mkdir(parents=True, exist_ok=True)
     (out_root / "fit_summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False))
+    # 사용 표본 기록 (검증 가능성: split 교집합 게이트가 content 서명으로 대조)
+    inputs = {"cell": cell_id, "manifest": args.manifest, "min_per_class_eps": args.min_per_class,
+              "episodes": [{"pkl": str(p), "label": int(r["success"]), "sig": _content_sig(p)}
+                           for p, r in zip(pkls, rolls)]}
+    (out_root / "fit_inputs.json").write_text(json.dumps(inputs, indent=2, ensure_ascii=False))
+    if not summary:
+        print(f"[empty] 유효 group×layer 0개 (episode min-class 미달) -> {out_root}")
+        sys.exit(3)
     print(f"[done] -> {out_root}")
 
 
