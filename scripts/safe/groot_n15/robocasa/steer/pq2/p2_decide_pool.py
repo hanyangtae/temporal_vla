@@ -39,7 +39,7 @@ def main():
         rows.append({"tag": armd.name, "succ": s, "n": s + f, "beta": beta, "n_layers": nlayer,
                      "eliminated": s <= base_s - 2})
     survivors = [r for r in rows if not r["eliminated"] and r["n"] >= base_n]
-    pick = None
+    pick, fallback = None, False
     if survivors:
         top = max(r["succ"] for r in survivors)
         n = survivors[0]["n"]
@@ -47,13 +47,22 @@ def main():
         se_eps = (n * p * (1 - p)) ** 0.5
         tied = [r for r in survivors if r["succ"] >= top - se_eps]
         pick = sorted(tied, key=lambda r: (r["beta"], r["n_layers"]))[0]
+    else:
+        # 생존 0 = 전 후보가 base 대비 해악 — 보수 규칙의 연장으로 가장 보수적 후보를
+        # fallback 선택 (선택 실패 자체가 이 tier 의 정보; held-out 이 최종 판정)
+        full = [r for r in rows if r["n"] >= base_n]
+        if full:
+            pick = sorted(full, key=lambda r: (r["beta"], r["n_layers"]))[0]
+            fallback = True
     report = {"scope": args.scope, "scenes": args.scenes, "k": args.k,
               "base": {"succ": base_s, "n": base_n}, "rows": rows, "selected": pick,
-              "rule": "하방-위험(base−2 탈락, n 미달 제외)→SE내 동률 보수(β↓,layer↓)"}
+              "fallback_conservative": fallback,
+              "rule": "하방-위험(base−2 탈락, n 미달 제외)→SE내 동률 보수(β↓,layer↓); 생존 0 이면 최보수 fallback"}
     out = G15 / "pq2_analysis" / f"selection_report_pool_{args.scope}.json"
     out.write_text(json.dumps(report, indent=2, ensure_ascii=False))
     print(f"[{args.scope}] base={base_s}/{base_n} → "
-          + (f"선택: {pick['tag']}" if pick else "생존 후보 없음/표본 미달"))
+          + (f"선택: {pick['tag']}{' (최보수 fallback — 전 후보 base 미달)' if fallback else ''}"
+             if pick else "판정 불가 (표본 미달)"))
 
 
 if __name__ == "__main__":
