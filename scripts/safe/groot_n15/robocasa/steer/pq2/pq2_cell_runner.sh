@@ -63,6 +63,12 @@ start_serves() {
       if [ -n "${STEER_ALPHA:-}" ]; then
         echo "$pf" | grep -q "key=alpha${STEER_ALPHA}_" || { echo "[${CELL_ID}/${ARM_TAG}] preflight alpha 불일치: $pf"; exit 12; }
       fi
+      # gated 는 실제 phase NPZ 로드가 최소 1건 있어야 함 — 'global' 만 로드되면 gating 이
+      # 전혀 발화하지 않는 무-스티어링 arm 이 됨 (2026-07-11 무효 arm 사고 실증)
+      if [ "$STEER_MODE" = gated ]; then
+        echo "$pf" | grep -qE 'npz=[^ ]*/(reach-to-object|grasp|transport|place|insert-settle)/' \
+          || { echo "[${CELL_ID}/${ARM_TAG}] preflight: gated 인데 phase NPZ 로드 0건 ABORT"; exit 12; }
+      fi
       echo "$pf" | sed "s/^/[preflight ${port}] /" >> "${LOGDIR}/${ARM_TAG}_preflight.log"
     fi
   done

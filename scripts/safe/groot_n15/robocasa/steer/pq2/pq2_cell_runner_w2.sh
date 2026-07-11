@@ -53,6 +53,10 @@ start_serves() {
       echo "$pf" | grep -q "key=alpha.*_${STEER_KEY} " || { echo "[${CELL_ID}/${ARM_TAG}] preflight key 불일치: $pf"; exit 12; }
       echo "$pf" | grep -q "beta=${STEER_BETA}" || { echo "[${CELL_ID}/${ARM_TAG}] preflight beta 불일치: $pf"; exit 12; }
       echo "$pf" | grep -q "npz=${NPZ_DIR}" || { echo "[${CELL_ID}/${ARM_TAG}] preflight npz 불일치: $pf"; exit 12; }
+      if [ "$STEER_MODE" = gated ]; then
+        echo "$pf" | grep -qE 'npz=[^ ]*/(reach-to-object|grasp|transport|place|insert-settle)/' \
+          || { echo "[${CELL_ID}/${ARM_TAG}] preflight: gated 인데 phase NPZ 로드 0건 ABORT"; exit 12; }
+      fi
       echo "$pf" | sed "s/^/[preflight ${port}] /" >> "${LOGDIR}/${ARM_TAG}_preflight.log"
     fi
   done
