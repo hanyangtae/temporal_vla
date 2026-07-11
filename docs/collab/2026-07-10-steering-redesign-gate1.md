@@ -65,6 +65,19 @@ estimand 명시.
   (미달 scene 은 fit15 전용), 천장/바닥 각주 필수. 선발은 여전히 seed 순서.
   구현: pq2/p0_gate.py. 통과 scene 3개 확보까지 배치 스캔 계속.
 
+## COAST 대조 감사 (2026-07-11, P3 중간 — perm 해악 패턴 계기)
+
+perm 파이프라인은 COAST 와 수식·주입점(α 선택 포함) 일치 확인. 갈린 곳 3:
+1. **Stage1 layer 선택 기준 편차 (확정)**: COAST 는 quota 를 **α=10** 에서 계산 → 우리 데이터로
+   재계산 시 전 cell **L15>L12>L10** (COAST 공표 L10/L11 과 정합). 우리 P2 후보는 선택 α(≈1)
+   기준 quota 라 L0/L2/L4 로 몰림 — COAST 가 골랐을 층이 후보에 없었음.
+   → 진단 arm 4개 추가 (ho_diag_perm_per_scene_fit30_L15, β0.1, bread 4 cell).
+2. **평가 무대 차이 (설계)**: COAST task = 장면 랜덤 분포(매 rollout 랜덤), 우리 cell = 장면
+   1개 고정(diffusion noise 만 변동). COAST 세팅에 가장 가까운 6월 native replan5 재현은
+   n=30 에서 ΔSR +0.014 (비재현).
+3. denoise K 축: COAST 는 step 별 벡터 개별 stack, 우리는 mean-pool (후속 probe 후보).
+기록: perm 이 base 를 깨끗이 넘은 기록은 전 라운드 통틀어 0 (최선 동률).
+
 ## 구현 상태 (이 세션에서 배선 완료)
 
 - fit v2 + `pq2/make_fit_manifests.py` (a6311c5) — 승준 원격 스모크·회귀(rc=3) 통과
