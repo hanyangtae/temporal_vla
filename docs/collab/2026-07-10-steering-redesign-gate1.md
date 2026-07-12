@@ -75,8 +75,18 @@ perm 파이프라인은 COAST 와 수식·주입점(α 선택 포함) 일치 확
 2. **평가 무대 차이 (설계)**: COAST task = 장면 랜덤 분포(매 rollout 랜덤), 우리 cell = 장면
    1개 고정(diffusion noise 만 변동). COAST 세팅에 가장 가까운 6월 native replan5 재현은
    n=30 에서 ΔSR +0.014 (비재현).
-3. denoise K 축: COAST 는 step 별 벡터 개별 stack, 우리는 mean-pool (후속 probe 후보).
-기록: perm 이 base 를 깨끗이 넘은 기록은 전 라운드 통틀어 0 (최선 동률).
+3. denoise K 축: COAST 는 step 별 벡터 개별 stack(GR00T 4 step 전부 hook 발화, A.7.2),
+   우리는 mean-pool. 토큰 풀링도 상이(COAST GR00T=49토큰 전체, 우리=action 16개 —
+   fit·적용 모두). rollout 단위 pool 은 양쪽 다 안 함.
+기록: perm 이 base 를 깨끗이 넘은 기록은 전 라운드 통틀어 0 (최선 동률) —
+단 pq2 P3 에서 s300033 perm_ps_fit15 +10판·s300028 cross 계열 +2~+5 첫 양성 관측.
+
+### denoise 전후 비교 설계 (2026-07-12 사용자 확정)
+"기준을 바꿨더니 결과가 바뀐다" 시나리오 자체가 발견이므로: ① fit `--denoise stack`
+(COAST Global 충실, a8ba29c) 으로 저SR 2 cell(s300033·s400020) refit → **직접 전후쌍**
+(P3 와 동일 config, denoise 처리만 상이) + L15×K-stack(COAST 최대 충실 조합) 진단 arm
+② 결과가 갈리면 denoise 세팅 전후 전면 비교 라운드(P2′→P3′ steering arm 재실행, 수집물
+재사용 — "처음부터"가 아니라 nuisance 축 ablation 확장)로 진행.
 
 ## 구현 상태 (이 세션에서 배선 완료)
 
