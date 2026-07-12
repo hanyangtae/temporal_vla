@@ -17,7 +17,7 @@ while read -r cell tag; do
   [ "$n" -ge 60 ] || continue  # 로컬 pkl 없으면(w2 arm/이미 처리) skip
   side="$P3/$cell/$tag/dual_scoring.tsv"
   if [ ! -s "$side" ]; then
-    docker exec -e PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T robocasa python - "$d" "$side" <<'EOF' || continue
+    docker exec -i -e PYTHONPATH=/temporal_vla/src/policies/Isaac-GR00T robocasa python - "$d" "$side" <<'EOF' || continue
 import pickle, sys, glob, os
 d, out = "/temporal_vla/" + sys.argv[1], "/temporal_vla/" + sys.argv[2]
 rows = []
