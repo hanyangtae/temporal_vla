@@ -64,12 +64,22 @@ fit(ep0–59) 라벨 교정: ppcs_apple 43/17→45/15 (flip ep43,59) / **s100050
 - **bread(cabinet, `obj_inside_of` th=0.05)는 별도 술어라 미검증** — apple 완료 후 같은 방법으로
   오판정 프로파일 확인 필요.
 
-## 6. 진행 중 (완료 시 이 절 갱신)
+## 6. 완료 결과 ③ — 매트릭스 apple 4 cell 전체 (2026-07-12 완결)
 
-- **매트릭스 apple 4 cell 전체**(승준 아카이브가 최완전본, cell당 16~21 arm) + fit(s100084/104) +
-  구 라운드(strict/aligned/coast4 140판): 승준 20코어 5-샤드 + 로컬 1-샤드로 재채점 중
-  (2026-07-10 06:41 기준 3,649/4,795 = 76%).
-- 완료 후 산출: cell×arm 원판정 vs corrected SR 통합 테이블, base/steered 관계 재해석
-  (confound-audit 준수), s100084/104는 A100 수집 각주.
-- 실행 위치: 승준 `workspace/temporal_vla` (robocasa 이미지 28.2GB·asset 11GB 이관됨,
-  컨테이너 `robocasa`), tsv는 `outputs/eval/robocasa/groot_n15/rejudge_matrix_apple/rejudge_m_s*.tsv`.
+승준 5-shard + 채움 shard(s6, 미달 16 arm 재채점)로 **canonical 79 arm·4,740판** 확보
+(rename 후 신·구 이름 혼재는 RENAME_MAP 조인으로 통합, (dir,ep) 중복 제거, 미달 arm 0).
+산출: `rejudge_matrix_apple/corrected_summary.json` (원판정·ever@0.07·corrected@0.10 병기).
+
+**결론: 구 라운드 종결 판정은 corrected 기준으로도 유지된다.**
+- corrected base = apple 42/60(0.70) · s100050 58/60(0.97) · s100084 60/60(1.00) ·
+  s100104 57/60(0.95) — 재사용 외 3 scene 은 corrected 기준 사실상 천장.
+- **전 steering arm 이 corrected 기준 base 대비 음수** (−1~−43). 양수는 perm fit60 계열
+  +0/+1/+2 세 건(노이즈 수준)뿐.
+- 채점 오류는 해악의 **크기를 계통적으로 과장**했을 뿐 부호를 바꾸지 못함 — 최대 사례
+  s100104 gated_per_scene_fit30: 절대 SR 10→46/60 (+36) 교정돼도 base 57 대비 **−11**.
+  HANDOFF §1 의 "최악 grand-gated15 8/60" 류 수치는 과장이었으나 해악 방향은 실재.
+- gated 계열이 perm 보다 여전히 해악 폭이 큼 (corrected 후에도 −11~−32 층 존재).
+
+pq2 재설계 라운드와의 정합: corrected base 천장(0.95+)은 P0 게이트 완화 때 관측한
+apple all-or-nothing 이부모델과 일치 — 대조 fit 가능한 apple scene 이 희소하다는 판단을
+재확인.
