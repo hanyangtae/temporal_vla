@@ -183,6 +183,9 @@ def main():
     ap.add_argument("--min-per-class", type=int, default=3,
                     help="클래스별 최소 기여 episode 수 (v2: record 수 아님)")
     ap.add_argument("--out-dir", default=None)
+    ap.add_argument("--denoise", choices=["pool", "stack", "step0"], default="pool",
+                    help="K(denoise) 축 처리: pool=평균(현행) | stack=step별 개별 record"
+                         "(COAST Global 충실 — inference step당 K개 표본) | step0=첫 step만")
     ap.add_argument("--manifest", default=None,
                     help="fit 표본 manifest tsv (pkl_path\\tlabel[\\tscene], # 주석 허용). 지정 시 "
                          "--cell glob 대신 이 목록만 사용하고 label 이 pkl 내장 episode_success 를 "
@@ -218,6 +221,24 @@ def main():
     if manifest_rows:
         for r, m in zip(rolls, manifest_rows):
             r["success"] = m["label"]  # manifest 라벨이 pkl 내장값 override
+    if args.denoise != "pool":
+        # K 축 재정의 (COAST 대조 — docs/collab/2026-07-10 §COAST 감사): load_rollout 의
+        # denoise 평균을 풀고 step별 개별 record(stack) 또는 step0 만 사용. phase/vl 은
+        # record 수에 맞춰 정렬 유지 (vl 중복은 R 에 무영향 — 동일 표본 복제).
+        import pickle as _pk
+        for r, p in zip(rolls, pkls):
+            with open(p, "rb") as f:
+                d = _pk.load(f)
+            raw = np.stack([np.asarray(x, dtype=np.float32) for x in d["hidden_states"]], axis=0)  # [n,L,K,D]
+            n, L, K, D = raw.shape
+            if args.denoise == "step0":
+                r["dit"] = raw[:, :, 0, :]
+            else:  # stack
+                r["dit"] = raw.transpose(0, 2, 1, 3).reshape(n * K, L, D)
+                r["phases"] = [ph for ph in r["phases"] for _ in range(K)]
+                if r["vl"] is not None:
+                    r["vl"] = np.repeat(r["vl"], K, axis=0)
+                r["length"] = n * K
     if args.carve_window > 0:
         for r, p in zip(rolls, pkls):
             r["phases"] = carve_5phase(p, r["phases"], args.carve_window)
@@ -245,6 +266,7 @@ def main():
             meta.update({"cell": cell_id, "group": group, "layer_tag": tag,
                          "steering_layer": None if lk == "VL" else int(cap[lk]),
                          "pathway": "vl" if lk == "VL" else "dit",
+                         "denoise_mode": args.denoise,
                          "n_success_eps": ns_ep, "n_failure_eps": nf_ep})
             save_npz(out_root / group / tag, fits, meta)
             summary.setdefault(group, {})[tag] = {"sel_alpha": meta["selected_alpha"],
