@@ -102,3 +102,19 @@ COAST +0.16 미재현의 잔여 후보 = 49토큰 풀링(fit·적용)·평가 �
 - robocasa fork 술어 0.10 + 이중 채점 (서브모듈 459c70f, daf532a) — 컨테이너 스모크 통과
 - steering loader meta-α 폴백 + preflight 로그 (5615da9) — 3-모드 테스트 통과
 - 실행 계획 전문: `~/.claude/plans/sleepy-giggling-newell.md`
+
+## 최종 결과 (2026-07-13, P3 완주 — 라운드 종결)
+
+115 arm × 60 ep held-out 완주 (경고 0, fit/eval 분리 아티팩트 검증: fit 29건 ep≤59 ∧
+eval 117건 ep60-119). 집계: `outputs/eval/robocasa/groot_n15/steer_eval_pq2/aggregate_v2/`,
+Notion "pq2 재설계 라운드 최종 보고" (parent 38e63918…03a3).
+
+- **Primary contrast(gated-ps-fit15 vs base): pooled Δ = +6판/8 cell — δ(+4.5판/cell) 명확 미달.**
+- **위약이 결정타**: 최대 양성 s300033(perm ps15 +10, gated ps15 +8)은 같은 cell 위약 +8과
+  동급 — 방향성 신호 아님. 나머지 7 cell 위약 base±3.
+- cross_scene: s300028(+2~+5, SE 이내) 외 전 cell 0~음수. positive-only 최악(−16/−13).
+- 잔여 관찰: s400020 L15 진단 계열 +6~+9 (단일 scene, SE 언저리) — 확대 해석 불가.
+- confound-audit 8게이트 전부 통과/해당없음, 주장 강도 = intervention effect.
+- **판정: 구라운드 "raw 대조 conceptor 종결"이 공정 조건 + 위약 대조에서 확증됨.**
+  스코프 각주: COAST식 record-pool fit·고정 장면 무대에 한정 (D3·설계 결정). COAST 재현
+  잔여 후보 = 49토큰 풀링·장면 랜덤 무대·논문 재현성.
