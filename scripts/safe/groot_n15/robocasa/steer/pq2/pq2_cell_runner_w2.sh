@@ -88,7 +88,7 @@ mkdir -p "${OUT_HOST}/${ARM_TAG}"
 cat > "${OUT_HOST}/${ARM_TAG}/ARM_SPEC.json" <<EOF
 {"cell":"${CELL_ID}","arm_tag":"${ARM_TAG}","mode":"${STEER_MODE}","npz_dir":"${NPZ_DIR:-}",
  "layers":"${STEER_LAYERS:-}","alpha":"${STEER_ALPHA:-meta}","beta":"${STEER_BETA}",
- "key":"${STEER_KEY}","eps":"${EPS[*]}","tier":"${OUT_TIER}","seed":"${SEED}","machine":"worker2-a100-gpu2"}
+ "key":"${STEER_KEY}","eps":"${EPS[*]}","tier":"${OUT_TIER}","seed":"${SEED}","machine":"${MACHINE_TAG:-worker2-a100-gpu2}"}
 EOF
 start_serves
 for wid in $(seq 0 $((NW-1))); do run_w "$wid" "${PORTS[$wid]}" > "${LOGDIR}/${ARM_TAG}_w${wid}.log" 2>&1 & done
