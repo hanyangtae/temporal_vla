@@ -64,6 +64,7 @@ from lerobot_http_eval import (  # noqa: E402
     step_success,
 )
 from robocasa_event_labeler import make_robocasa_event_labeler  # noqa: E402
+from env_step_phase import EnvStepGT, StepPhaseProbeWrapper, find_probe_wrapper  # noqa: E402
 from src.policies.groot.robocasa.io import convert_http_actions_to_groot_chunk  # noqa: E402
 from src.policies.groot.robocasa.scenario_replay import (  # noqa: E402
     ep_meta_manifest_path,
@@ -291,6 +292,7 @@ def make_env(
     from src.policies.groot.robocasa.env_wrappers import wrap_groot_robocasa_eval_env
 
     env = gym.make(env_name, enable_render=True, seed=scenario_seed)
+    env = StepPhaseProbeWrapper(env)  # env-step GT probe (MultiStep 아래층)
     wrapper_configs = WrapperConfigs(
         video=VideoConfig(
             video_dir=None if video_dir is None else str(video_dir),
@@ -336,6 +338,12 @@ def parse_args() -> argparse.Namespace:
         "--proximity-phases",
         action="store_true",
         help="6-phase 라벨(reach/grasp/transport/place/insert-settle/terminal, proximity 기반 causal).",
+    )
+    parser.add_argument(
+        "--env-step-phases",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="매 env-step 후 별도 라벨러로 phase/성공 GT 기록 (env_step_* pkl 필드)",
     )
     parser.add_argument(
         "--gated-steering",
@@ -489,6 +497,13 @@ def run() -> dict[str, Any]:
                 env, env_name, proximity_phases=getattr(args, "proximity_phases", False)
             )
             labeler.reset()
+            env_gt = None
+            if getattr(args, "env_step_phases", True):
+                _probe = find_probe_wrapper(env)
+                if _probe is not None:
+                    env_gt = EnvStepGT(env, env_name, getattr(args, "proximity_phases", False))
+                    _probe.set_gt(env_gt)
+                    env_gt.start()
             feature_phases: list[str] = []
             success = False
             first_success_step = None
@@ -542,6 +557,7 @@ def run() -> dict[str, Any]:
                 "phase_scheme": "event_state",
                 "feature_phases": feature_phases,
                 "phase_timeline": labeler.phase_timeline,
+                **(env_gt.export(feature_phases, args.n_action_steps) if env_gt is not None else {}),
                 "event_steps": labeler.event_steps,
                 "event_order": labeler.event_order_keys,
                 # drop-aware fields (per-step grasp signal for offline drop analysis)
