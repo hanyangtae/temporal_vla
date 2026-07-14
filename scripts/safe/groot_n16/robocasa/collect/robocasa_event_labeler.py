@@ -419,12 +419,193 @@ class ProximityEventPhaseLabeler(EventPhaseLabeler):
         return max(self.phase_timeline, key=self.phase_rank)
 
 
+# ── Drawer 계열 (OpenDrawer/CloseDrawer) 전용 라벨러 ─────────────────────────────
+# PnP 술어(obj 파지·container 근접)가 안 맞아 별도 구현. EventPhaseLabeler 와 동일한
+# 공개 인터페이스(step/reset/phase_timeline/event_steps/event_order_keys/max_phase_label
+# + wrong_grasp_steps/timeline)를 제공해 collector·EnvStepGT 가 무수정으로 사용.
+# 신호: q = min(drawer.get_door_state(env).values()) ∈ [0,1] (성공역: open ≥0.95/close ≤0.05),
+#       gripper–handle 거리, Δq (debounce). phase 는 현재 상태의 순수 함수(비단조).
+_DRAWER_PHASE_RANK = {
+    "reach-to-handle": 0.0, "wrong-grasp": 0.25, "disengage": 0.5,
+    "push-back": 0.75, "grasp-handle": 1.0, "pull": 2.0, "open-done": 3.0,
+}
+# fit/분석에서 제외 권장: open-done(=success 종결, 프레임 극소 [[terminal 동치]]).
+DRAWER_TERMINAL_PHASES = frozenset({"open-done"})
+
+
+class DrawerPhaseLabeler:
+    NEAR_HANDLE_TH = 0.10   # m — gripper site ↔ handle body
+    DQ_EPS = 1e-3           # 스텝당 열림비율 변화 (당김/되밀림 판정)
+    DD_EPS = 3e-3           # 스텝당 gripper-handle 거리 변화 (재접근/후퇴 판정)
+    HOLD = 2                # debounce (호출 단위: env-step 구동이면 env-step 스케일)
+
+    def __init__(self, env: Any, behavior: str = "open", grasp_hold: int = 2):
+        self._env = find_robocasa_env(env)
+        self._behavior = behavior
+        self.HOLD = int(grasp_hold)
+        self._handle_body = None
+        self.reset()
+
+    # -- 내부 술어 --------------------------------------------------------------
+    def _q(self) -> float:
+        st = self._env.drawer.get_door_state(env=self._env)
+        vals = list(st.values()) or [0.0]
+        return min(vals) if self._behavior == "open" else max(vals)
+
+    def _done(self, q: float) -> bool:
+        return q >= 0.95 if self._behavior == "open" else q <= 0.05
+
+    def _handle_pos(self):
+        import numpy as np
+        sim = self._env.sim
+        if self._handle_body is None:
+            name = self._env.drawer.handle_name  # 실물 fixture 에선 property
+            if callable(name):
+                name = name()
+            # Drawer 는 광고된 "*_handle_handle" 이 모델에 없음(robocasa 불일치) —
+            # 실물 body "*_handle_main" / geom "*_handle_g0" 로 fallback.
+            cands = [name]
+            if name.endswith("_handle"):
+                cands.append(name[: -len("_handle")] + "_main")
+                cands.append(name[: -len("_handle")] + "_g0")
+            for nm in cands:
+                for kind in ("body", "geom", "site"):
+                    try:
+                        getattr(sim.model, f"{kind}_name2id")(nm)
+                        self._handle_body = (kind, nm)
+                        break
+                    except Exception:
+                        continue
+                if self._handle_body is not None:
+                    break
+            if self._handle_body is None:
+                return None
+        kind, name = self._handle_body
+        arr = getattr(sim.data, f"{kind}_xpos")
+        return np.array(arr[getattr(sim.model, f"{kind}_name2id")(name)])
+
+    def _grip_handle_dist(self) -> float:
+        import numpy as np
+        hp = self._handle_pos()
+        if hp is None:
+            return float("inf")
+        gp = self._env.sim.data.site_xpos[self._env.robots[0].eef_site_id["right"]]
+        return float(np.linalg.norm(gp - hp))
+
+    def _near_handle(self) -> bool:
+        return self._grip_handle_dist() < self.NEAR_HANDLE_TH
+
+    def _wrong_grasped(self) -> bool:
+        try:
+            import robocasa.utils.object_utils as OU
+            raw = any(OU.check_obj_grasped(self._env, n) for n in self._env.objects)
+        except Exception:
+            raw = False
+        self._wg_streak = self._wg_streak + 1 if raw else 0
+        return self._wg_streak >= self.HOLD
+
+    # -- 인터페이스 --------------------------------------------------------------
+    def reset(self) -> None:
+        self.phase_timeline: List[str] = []
+        self.event_steps: dict = {}
+        self.wrong_grasp_steps: List[int] = []
+        self.wrong_grasp_timeline: List[bool] = []
+        self.grasp_steps: List[int] = []   # PnP 호환용 (drawer 에선 미사용)
+        self.drop_steps: List[int] = []
+        self._t = 0
+        self._q_prev = None
+        self._pull_streak = 0
+        self._push_streak = 0
+        self._wg_streak = 0
+        self._wg_prev = False
+        self._engaged = False   # 한 번이라도 grasp-handle/pull 에 든 적 있나 (후퇴 구분용)
+        self._disengaged_prev = False
+        self._d_prev = None      # 직전 gripper-handle 거리
+        self._retreat_streak = 0
+        self._approach_streak = 0
+        self._diseng_state = False  # 후퇴 후 멀어짐(True) vs 재접근(False) 상태
+
+    def step(self) -> str:
+        q = self._q()
+        dq = 0.0 if self._q_prev is None else q - self._q_prev
+        opening = dq > self.DQ_EPS if self._behavior == "open" else dq < -self.DQ_EPS
+        closing = dq < -self.DQ_EPS if self._behavior == "open" else dq > self.DQ_EPS
+        self._pull_streak = self._pull_streak + 1 if opening else 0
+        self._push_streak = self._push_streak + 1 if closing else 0
+        wg = self._wrong_grasped()
+
+        d = self._grip_handle_dist()
+        dd = 0.0 if self._d_prev is None or d == float("inf") else d - self._d_prev
+        self._retreat_streak = self._retreat_streak + 1 if dd > self.DD_EPS else 0
+        self._approach_streak = self._approach_streak + 1 if dd < -self.DD_EPS else 0
+        # 후퇴/재접근 상태 전이 (debounce): 멀어지면 disengage, 다시 다가오면 reach 로 복귀
+        if self._retreat_streak >= self.HOLD:
+            self._diseng_state = True
+        elif self._approach_streak >= self.HOLD:
+            self._diseng_state = False
+
+        near = self._near_handle()
+        if self._done(q):
+            ph = "open-done"
+        elif wg:
+            ph = "wrong-grasp"
+        elif self._pull_streak >= self.HOLD:
+            ph = "pull"
+        elif self._push_streak >= self.HOLD:
+            ph = "push-back"
+        elif near:
+            ph = "grasp-handle"
+        elif self._engaged and self._diseng_state:
+            ph = "disengage"        # 파지 실패 후 손잡이에서 멀어지는 중
+        else:
+            ph = "reach-to-handle"  # 첫 접근 또는 후퇴 뒤 재접근
+
+        # engaged: grasp-handle/pull 에 들면 set (이후 멀어짐은 reach 아니라 disengage)
+        if ph in ("grasp-handle", "pull"):
+            self._engaged = True
+        self._d_prev = d if d != float("inf") else self._d_prev
+
+        if wg and not self._wg_prev:
+            self.wrong_grasp_steps.append(self._t)
+        self.wrong_grasp_timeline.append(wg)
+        self._wg_prev = wg
+        if ph == "disengage" and not self._disengaged_prev:
+            self.event_steps.setdefault("disengage:handle", self._t)
+        self._disengaged_prev = ph == "disengage"
+        thresh_start = 0.05 if self._behavior == "open" else 0.95
+        started = q > thresh_start if self._behavior == "open" else q < thresh_start
+        if started:
+            self.event_steps.setdefault("open-start", self._t)
+        if self._done(q):
+            self.event_steps.setdefault("open-done", self._t)
+        if ph == "grasp-handle":
+            self.event_steps.setdefault("near:handle", self._t)
+        self.phase_timeline.append(ph)
+        self._q_prev = q
+        self._t += 1
+        return ph
+
+    @property
+    def max_phase_label(self) -> str:
+        if not self.phase_timeline:
+            return "reach-to-handle"
+        return max(self.phase_timeline, key=lambda p: _DRAWER_PHASE_RANK.get(p, 0.0))
+
+    @property
+    def event_order_keys(self) -> List[str]:
+        return sorted(self.event_steps, key=self.event_steps.get)
+
+
 def make_robocasa_event_labeler(
     env: Any,
     task_name: str,
     grasp_hold: int = 2,
     proximity_phases: bool = False,
 ) -> EventPhaseLabeler:
+    if "Drawer" in task_name:
+        return DrawerPhaseLabeler(
+            env, behavior="close" if "Close" in task_name else "open", grasp_hold=grasp_hold
+        )
     events, place_pred = lookup_task_events(task_name)
     if not proximity_phases:  # default: EXACTLY the original 4-phase labeler
         detector = RoboCasaEventDetector(env, events, place_pred, grasp_hold=grasp_hold)
