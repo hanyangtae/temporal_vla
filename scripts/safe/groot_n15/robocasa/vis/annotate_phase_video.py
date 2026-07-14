@@ -34,12 +34,18 @@ from PIL import Image, ImageDraw, ImageFont
 PHASE_COLORS = {
     "reach-to-object": (120, 200, 255),
     "reach-to-door": (120, 200, 255),
+    "reach-to-handle": (120, 200, 255),
     "grasp": (255, 120, 200),
+    "grasp-handle": (255, 120, 200),
     "wrong-grasp": (255, 70, 70),
+    "disengage": (255, 100, 120),
     "transport": (255, 210, 90),
+    "pull": (255, 210, 90),
+    "push-back": (255, 140, 60),
     "place": (255, 140, 60),
     "insert-settle": (140, 255, 140),
     "release-settle": (140, 255, 140),
+    "open-done": (140, 255, 140),
     "terminal": (200, 200, 200),
 }
 
@@ -59,6 +65,8 @@ def _read_meta(pkl_path: Path) -> dict:
     return {
         "instruction": d.get("canonical_instruction") or d.get("task_description") or "",
         "feature_phases": list(d.get("feature_phases") or []),
+        # env-step 해상도 GT (있으면 우선; frame f → phase = env_step_phases[f*spr])
+        "env_step_phases": list(d.get("env_step_phases") or []),
         "steps_per_render": int(d.get("steps_per_render", 2)),
         "n_action_steps": int(d.get("n_action_steps", 5)),
         "success": int(d.get("episode_success", 0)),
@@ -66,13 +74,24 @@ def _read_meta(pkl_path: Path) -> dict:
     }
 
 
-def annotate(pkl_path: Path, mp4_path: Path, out_path: Path, banner_frac: float = 0.16) -> None:
-    meta = _read_meta(pkl_path)
-    phases = meta["feature_phases"]
-    R = len(phases)
+def _phase_at(meta: dict, f: int) -> tuple[str, int, str]:
+    """frame f 의 phase 를 env-step 해상도 우선으로 반환. (phase, env_step, 해상도라벨)."""
     spr = meta["steps_per_render"]
     nas = meta["n_action_steps"]
+    env_step = f * spr
+    esp = meta["env_step_phases"]
+    if esp:  # env-step GT: frame f ↔ env_step 직접 대응
+        return esp[min(env_step, len(esp) - 1)], env_step, "env-step"
+    phases = meta["feature_phases"]
+    R = len(phases)
+    r = min(max(env_step // nas, 0), R - 1) if R else 0
+    return (phases[r] if R else "?"), env_step, "record"
+
+
+def annotate(pkl_path: Path, mp4_path: Path, out_path: Path, banner_frac: float = 0.24) -> None:
+    meta = _read_meta(pkl_path)
     instr = meta["instruction"]
+    res_label = "env-step" if meta["env_step_phases"] else "record"
 
     reader = imageio.get_reader(str(mp4_path))
     fps = float(reader.get_meta_data().get("fps", 20) or 20)
@@ -81,38 +100,42 @@ def annotate(pkl_path: Path, mp4_path: Path, out_path: Path, banner_frac: float 
     if not frames:
         raise SystemExit(f"no frames in {mp4_path}")
     H, W = frames[0].shape[:2]
-    banner_h = max(48, int(round(H * banner_frac)))
-    f_main = _load_font(max(14, banner_h // 3))
-    f_small = _load_font(max(12, banner_h // 4))
+    # 배너: instruction(위) / 여백 / phase(큰 글씨) 3구역 + 하단 phase 색 띠.
+    banner_h = max(80, int(round(H * banner_frac)))
+    bar_h = max(6, banner_h // 12)              # phase 색 띠 두께
+    f_instr = _load_font(max(13, banner_h // 5))
+    f_phase = _load_font(max(20, banner_h // 3))  # phase 는 크게
 
     writer = imageio.get_writer(str(out_path), fps=fps, macro_block_size=None)
     for f, frame in enumerate(frames):
-        env_step = f * spr
-        r = min(max(env_step // nas, 0), R - 1) if R else 0
-        phase = phases[r] if R else "?"
+        phase, env_step, _ = _phase_at(meta, f)
         color = PHASE_COLORS.get(phase, (255, 255, 255))
 
         canvas = Image.new("RGB", (W, H + banner_h), (15, 15, 15))
         canvas.paste(Image.fromarray(frame[:, :, :3]), (0, banner_h))
         draw = ImageDraw.Draw(canvas)
-        # instruction (1행, 필요시 폭에 맞게 축약)
-        pad = 8
+        pad = 10
+        # instruction (맨 위 행, 폭 초과 시 축약)
         instr_txt = instr
-        while instr_txt and draw.textlength(instr_txt, font=f_small) > W - 140:
+        while instr_txt and draw.textlength(instr_txt, font=f_instr) > W - 2 * pad:
             instr_txt = instr_txt[:-2]
         if instr_txt != instr:
             instr_txt = instr_txt.rstrip() + "…"
-        draw.text((pad, 4), instr_txt, fill=(235, 235, 235), font=f_small)
-        # phase (2행, 색)
-        draw.text((pad, 4 + banner_h // 3), f"phase: {phase}", fill=color, font=f_main)
-        # step (우측)
-        step_txt = f"step {env_step}"
-        sw = draw.textlength(step_txt, font=f_main)
-        draw.text((W - sw - pad, 4 + banner_h // 3), step_txt, fill=(235, 235, 235), font=f_main)
+        draw.text((pad, 6), instr_txt, fill=(210, 210, 210), font=f_instr)
+        # phase (여백 아래, 큰 글씨·색) — instruction 과 분리된 구역
+        phase_y = 6 + int(banner_h * 0.42)
+        draw.text((pad, phase_y), f"phase: {phase}", fill=color, font=f_phase)
+        # step + 해상도 (우측)
+        info_txt = f"step {env_step}  [{res_label}]"
+        sw = draw.textlength(info_txt, font=f_instr)
+        draw.text((W - sw - pad, phase_y + 4), info_txt, fill=(200, 200, 200), font=f_instr)
+        # phase 색 띠 (배너 하단 = 영상 바로 위): 현재 phase 색으로 꽉 채움
+        draw.rectangle([0, banner_h - bar_h, W, banner_h], fill=color)
 
         writer.append_data(np.asarray(canvas))
     writer.close()
-    print(f"[ok] {out_path.name}  frames={len(frames)} R={R} succ={meta['success']} cell={meta['cell_id']}")
+    print(f"[ok] {out_path.name}  frames={len(frames)} res={res_label} "
+          f"succ={meta['success']} cell={meta['cell_id']}")
 
 
 def main() -> None:
@@ -121,7 +144,7 @@ def main() -> None:
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--only-fail", action="store_true", help="succ0 만")
     ap.add_argument("--max-ep", type=int, default=None, help="ep 번호 상한 (예: 29 → ep0-29만)")
-    ap.add_argument("--banner-frac", type=float, default=0.16)
+    ap.add_argument("--banner-frac", type=float, default=0.24)
     args = ap.parse_args()
 
     run_dir = Path(args.run_dir)
