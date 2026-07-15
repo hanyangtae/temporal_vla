@@ -64,6 +64,9 @@ junhyeong@166.104.35.50 / **a100 48** = junhyeong@166.104.35.48 / **로컬** 로
 1. **fit15 수집** (로컬 GPU 0/1/2, cell당 GPU 1개·serve 2개, **SHIP=1 승준 직송**):
    `pq3/README.md` §C 명령 그대로. SHIPPED.tsv(size+sha ledger)·5MB 상식 체크·원격 실물
    대조가 내장돼 있음(유실 사건 표준). natural reset 강제(ep-meta replay 금지).
+   **직송 목적지(실측 확정)**: `SJ_ROOT='~/datasets/temporal_vla_outputs/eval/robocasa/groot_n15/phase_event_pq3/raw_rollouts'`
+   — 승준 `~/datasets` 가 HDD(sda2, 283G 여유), `~/workspace` 는 **NVMe 라 금지**
+   (스크립트 기본값이 workspace 이므로 SJ_ROOT 오버라이드 필수).
 2. **C0** (병렬): `bash pq3/pq3_c0_scan.sh` — ppcc 신규 2종(빈도 기준, potato·bread 제외,
    60+ seed). 완료 후 ① `configs/robocasa/pq3_ppcc_new_cells.tsv` 생성됨 ② `pq/pq_lib.sh`
    CELLS 에 objA/objB 행 기입 ③ 신규 tsv 로 plan 생성.
