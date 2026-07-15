@@ -356,12 +356,27 @@ def main():
     import pickle as _pk
 
     # eval 예약 침범 검사 (fit 실행 자체가 필수 수행 — standalone check 생략 우회 봉쇄).
-    # 반복 지정으로 task-pooled manifest 의 소속 cell 전부를 덮는다. scene 열이 비숫자인
-    # 행은 검사 우회 경로이므로 fail-closed (Gate2 R2 높음#2).
+    # pq3 경로(require=all_token_full + manifest)에서는 **필수**이며, pooled manifest 의
+    # cell 집합(pkl 경로의 부모 디렉토리명)과 reserved 의 cell_id 집합이 정확히 일치해야
+    # 한다 — 한 cell 만 전달·무관 reserved 전달 우회 봉쇄 (Gate2 R3 높음#2).
+    if (args.require_capture_token_mode == FULLTOKEN_MODE and manifest_rows
+            and not args.eval_reserved):
+        print("[EVAL-SEED 침범 검사] pq3 fit 은 --eval-reserved 필수 (소속 cell 전부)",
+              file=sys.stderr)
+        sys.exit(5)
     if args.eval_reserved and manifest_rows:
         unseen = set()
+        reserved_cells = set()
         for rp in args.eval_reserved:
-            unseen |= {int(s) for s in json.loads(Path(rp).read_text())["unseen_seeds"]}
+            rj = json.loads(Path(rp).read_text())
+            unseen |= {int(s) for s in rj["unseen_seeds"]}
+            reserved_cells.add(str(rj.get("cell_id")))
+        manifest_cells = {Path(m["pkl"]).parent.name for m in manifest_rows}
+        if manifest_cells != reserved_cells:
+            print(f"[EVAL-SEED 침범 검사] manifest cell 집합 {sorted(manifest_cells)} != "
+                  f"reserved cell 집합 {sorted(reserved_cells)} — 소속 cell 전부 지정하라",
+                  file=sys.stderr)
+            sys.exit(5)
         malformed = [m for m in manifest_rows
                      if not str(m.get("scene", "")).strip().lstrip("-").isdigit()]
         if malformed:

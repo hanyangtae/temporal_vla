@@ -105,13 +105,20 @@ def main() -> None:
     ap.add_argument("--out", required=True)
     ap.add_argument("--expect-n", type=int, default=EXPECT_N)
     ap.add_argument("--fwer-sims", type=int, default=10000)
-    ap.add_argument("--gated-na-tasks", default="",
-                    help="gated 성립 게이트 미통과 task 키 콤마 목록 (drawer|ppcc) — "
-                         "해당 task 의 gated arm·H2/H3 를 사전 N/A 처리")
+    ap.add_argument("--gated-gate-report", required=True,
+                    help="pq3_gated_gate.py --enforce 산출 json — gated N/A 를 여기서 "
+                         "자동 파생 (수동 override 금지, Gate2 R3 높음#3)")
     ap.add_argument("--allow-incomplete", action="store_true",
                     help="미완주 arm 허용 (중간 점검용 — 판정 산출은 완주 시에만)")
     args = ap.parse_args()
-    gated_na = tuple(t.strip() for t in args.gated_na_tasks.split(",") if t.strip())
+    gate_report = json.loads(Path(args.gated_gate_report).read_text())
+    bad_enforce = [t for t, v in gate_report.items() if not v.get("enforce")]
+    if bad_enforce:
+        raise SystemExit(f"gate report 가 enforce 산출이 아님: {bad_enforce}")
+    gated_na = tuple(sorted({
+        ("drawer" if "Drawer" in task else "ppcc")
+        for task, v in gate_report.items() if not v.get("pass")
+    }))
 
     eval_root = Path(args.eval_root)
     manifest_dir = Path(args.manifest_dir)

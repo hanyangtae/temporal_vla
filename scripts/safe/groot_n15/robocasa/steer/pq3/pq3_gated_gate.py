@@ -97,13 +97,24 @@ def main() -> None:
                     help="phase 당 클래스별 record 하한 (0=미적용 — Gate D 에서 dwell 보고 확정)")
     ap.add_argument("--loo-floor", type=float, default=0.0,
                     help="LOO 유사도 하한 (0=보고만 — Gate D 에서 확정)")
+    ap.add_argument("--gated-npz-base", default=None,
+                    help="task=배포 phase NPZ base 콤마 목록 — enforce 필수. LOO 를 배포 "
+                         "NPZ metadata 의 selected_alpha_per_step 으로 계산하고(대표 α 아님) "
+                         "npz sha 를 report 에 결박 (Gate2 R3 치명#1)")
     ap.add_argument("--enforce", action="store_true",
-                    help="판정용 실행 (R2 치명#2): record/loo floor >0 필수, 전 scene LOO "
-                         "성공 필수 (report-only 기본과 구분 — queue 는 enforce 산출만 소비)")
+                    help="판정용 실행 (R2 치명#2): record/loo floor >0 + --gated-npz-base "
+                         "필수, 전 scene LOO 성공 필수 (queue 는 enforce 산출만 소비)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     if args.enforce and (args.record_floor <= 0 or args.loo_floor <= 0):
         raise SystemExit("--enforce 는 --record-floor·--loo-floor 명시(>0) 필수")
+    if args.enforce and not args.gated_npz_base:
+        raise SystemExit("--enforce 는 --gated-npz-base(배포 NPZ 결박) 필수")
+    npz_base_map = {}
+    if args.gated_npz_base:
+        for part in args.gated_npz_base.split(","):
+            t, p = part.split("=")
+            npz_base_map[t.strip()] = Path(p.strip())
 
     phase_map = {}
     for part in args.phases.split(","):
@@ -124,6 +135,28 @@ def main() -> None:
         phases = phase_map.get(task)
         if not phases:
             raise SystemExit(f"--phases 에 task {task} 누락")
+
+        # 배포 NPZ 결박: phase 별 metadata 의 selected_alpha_per_step + conceptors.npz sha
+        alpha_by_phase_step: dict[str, dict[int, float]] = {}
+        npz_shas: list[str] = []
+        if task in npz_base_map:
+            import hashlib as _hl2
+            base = npz_base_map[task]
+            for ph in phases:
+                npz_path = base / ph / f"dit_L{args.layer}" / "conceptors.npz"
+                meta_path = base / ph / f"dit_L{args.layer}" / "metadata.json"
+                if not npz_path.exists() or not meta_path.exists():
+                    raise SystemExit(f"{task}/{ph}: 배포 NPZ/metadata 없음 ({npz_path})")
+                npz_shas.append(_hl2.sha256(npz_path.read_bytes()).hexdigest()[:12])
+                sel = json.loads(meta_path.read_text()).get("selected_alpha_per_step")
+                if not sel:
+                    raise SystemExit(f"{task}/{ph}: metadata 에 selected_alpha_per_step 없음")
+                alpha_by_phase_step[ph] = {int(k): float(v) for k, v in sel.items()}
+        elif args.enforce:
+            raise SystemExit(f"--gated-npz-base 에 task {task} 누락")
+
+        def _alpha_of(ph, k):
+            return alpha_by_phase_step.get(ph, {}).get(k, args.alpha)
 
         table, checks, loo = {}, [], {}
         for ph in phases:
@@ -152,8 +185,9 @@ def main() -> None:
                 keep = [r for r in rolls if r["scene"] != sc]
                 per_step_sims = []
                 for k in range(K):
-                    C_full, _, _ = steer_conceptor(rolls, ph, lk, k, args.alpha)
-                    C_loo, _, _ = steer_conceptor(keep, ph, lk, k, args.alpha)
+                    a_k = _alpha_of(ph, k)  # 배포 α (metadata) — 대표 α 아님 (R3 치명#1)
+                    C_full, _, _ = steer_conceptor(rolls, ph, lk, k, a_k)
+                    C_loo, _, _ = steer_conceptor(keep, ph, lk, k, a_k)
                     if C_full is None or C_loo is None:
                         per_step_sims = []
                         break
@@ -186,6 +220,9 @@ def main() -> None:
             "pass": bool(task_pass),
             "enforce": bool(args.enforce),
             "layer": args.layer, "alpha": args.alpha, "phases": phases,
+            "alpha_by_phase_step": {p: {str(k): v for k, v in d.items()}
+                                    for p, d in alpha_by_phase_step.items()},
+            "npz_shas": sorted(set(npz_shas)),
             "manifest": manifest.strip(), "manifest_sha": manifest_sha,
             "token_pool": args.token_pool, "num_denoise_steps": int(K),
             "scenes": scenes,

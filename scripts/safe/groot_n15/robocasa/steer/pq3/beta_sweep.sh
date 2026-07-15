@@ -25,12 +25,14 @@ for arm in $ARMS; do
   esac
   for beta in $BETAS; do
     echo "[beta-sweep] ${CELL_ID} ${arm} β=${beta} (${N_SWEEP}판, fit seed 재사용)"
-    CELL_ID="$CELL_ID" TASK="$TASK" ENVN="$ENVN" CELL_INDEX="$CELL_INDEX" INSTR="$INSTR" \
-    ARM_TAG="sweep_${arm}_b${beta/./}" STEER_MODE="$arm" MANIFEST="$MANIFEST" \
-    NPZ_DIR="$NPZ" STEER_LAYERS="$LAYERS" STEER_BETA="$beta" NPZ_SHAS="$SHAS" \
-    ${GPH:+GATED_PHASES="$GPH"} \
-    OUT_TIER=sweep EXPECT_N="$N_SWEEP" GPUS_L="${GPUS_L:?}" PORTS_L="${PORTS_L:?}" \
-      bash "$HERE/pq3_cell_runner.sh"
+    # env 배열 사용 — `${VAR:+X=...}` 는 확장 후 대입어로 재분류되지 않아 rc=127
+    # (Gate2 R3 높음#1 실증)
+    ENVV=(CELL_ID="$CELL_ID" TASK="$TASK" ENVN="$ENVN" CELL_INDEX="$CELL_INDEX" INSTR="$INSTR"
+          ARM_TAG="sweep_${arm}_b${beta/./}" STEER_MODE="$arm" MANIFEST="$MANIFEST"
+          NPZ_DIR="$NPZ" STEER_LAYERS="$LAYERS" STEER_BETA="$beta" NPZ_SHAS="$SHAS"
+          OUT_TIER=sweep EXPECT_N="$N_SWEEP" GPUS_L="${GPUS_L:?}" PORTS_L="${PORTS_L:?}")
+    [ -n "$GPH" ] && ENVV+=(GATED_PHASES="$GPH")
+    env "${ENVV[@]}" bash "$HERE/pq3_cell_runner.sh"
   done
 done
 echo "[beta-sweep] ${CELL_ID} 완료 — beta_decide.py 로 판정"

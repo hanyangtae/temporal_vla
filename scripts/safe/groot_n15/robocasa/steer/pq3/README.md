@@ -53,9 +53,12 @@ python $FIT --cell x/pq3_OpenDrawer --manifest $MANI/task_OpenDrawer_fit.tsv \
 # 본 fit (선택 layer 만): perm 용 global + gated 용 phase-bin, per-step NPZ
 python $FIT ... --denoise per_step --layers <L> --alphas table14 --quota-floor 0.01 \
   --require-capture-token-mode all_token_full --eval-reserved <...전부> --out-dir <fit_out>
-# gated 성립 게이트 — 판정용은 --enforce + floor 명시 (통과해야 queue 가 gated arm 생성)
+# gated 성립 게이트 — 판정용은 --enforce + floor + 배포 NPZ 결박 필수
+# (LOO 는 배포 metadata 의 selected_alpha_per_step 로 계산, npz sha 가 report 에 기록되어
+#  build_pq3_queue 가 arm-config sha 와 집합 대조)
 python $PQ3/pq3_gated_gate.py --tasks OpenDrawer=$MANI/task_OpenDrawer_fit.tsv,... \
   --phases "OpenDrawer=reach-to-handle+grasp-handle+pull,..." --layer <L_gated> \
+  --gated-npz-base "OpenDrawer=<fit_out>/phase_base,..." \
   --enforce --record-floor <Gate D 확정> --loo-floor <Gate D 확정> --out <gate.json>
 # β sweep (fit seed 재사용 — 참조=수집 base 라벨; SHA·phase 필수)
 CELL_ID=... PERM_NPZ=... PERM_LAYERS=<L> PERM_NPZ_SHAS="<sha12...>" \
@@ -85,7 +88,8 @@ arm-config 의 npz_shas 는 필수 (Gate D 동결 sha12). host 는 cell-블록 �
 
 ```bash
 python3 $PQ3/aggregate_pq3.py --eval-root .../steer_eval_pq3/e1 --manifest-dir $MANI \
-  --arm-config <arm_config.json> --out <aggregate_out> [--gated-na-tasks drawer]
+  --arm-config <arm_config.json> --gated-gate-report <gate.json> --out <aggregate_out>
+# gated N/A 는 gate report 에서 자동 파생 (수동 override 금지)
 ```
 
 판정 규칙 단일 출처 = `pq3_decision.py` (Gate D 시점 동결 — eval 후 수정 금지, sha 가

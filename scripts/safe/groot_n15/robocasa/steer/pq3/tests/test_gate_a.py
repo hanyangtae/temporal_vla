@@ -314,15 +314,19 @@ def test_7_pkl_gate_and_per_step_npz(tmp: Path):
     for i in range(6):
         p = new_dir / f"ep{i}.pkl"
         _write_pkl(p, full=True, succ=int(i < 3))
-        rows.append(f"{p}\t{int(i < 3)}\tseed{i}")
+        rows.append(f"{p}\t{int(i < 3)}\t{100000 + i}")  # scene 열은 숫자 seed (fail-closed 계약)
     man_new.write_text("\n".join(rows) + "\n")
 
+    # pq3 fit 은 --eval-reserved 필수 + manifest cell 집합과 reserved cell_id 일치 강제
+    reserved = tmp / "eval_reserved_new.json"
+    reserved.write_text(json.dumps({"cell_id": "new", "unseen_seeds": []}))
     out_dir = tmp / "npz_out"
     r = subprocess.run(
         [sys.executable, str(fit), "--cell", "x/pq3_test", "--manifest", str(man_new),
          "--groups", "global", "--denoise", "per_step", "--alphas", "1,10",
          "--min-per-class", "3", "--layers", "0",
-         "--require-capture-token-mode", "all_token_full", "--out-dir", str(out_dir)],
+         "--require-capture-token-mode", "all_token_full",
+         "--eval-reserved", str(reserved), "--out-dir", str(out_dir)],
         capture_output=True, text=True, cwd=str(REPO),
     )
     assert r.returncode == 0, f"7 신 pkl fit 실패 rc={r.returncode}\n{r.stdout}\n{r.stderr}"
@@ -345,15 +349,25 @@ def test_7_pkl_gate_and_per_step_npz(tmp: Path):
     for i in range(6):
         p = old_dir / f"ep{i}.pkl"
         _write_pkl(p, full=False, succ=int(i < 3))
-        rows.append(f"{p}\t{int(i < 3)}\tseed{i}")
+        rows.append(f"{p}\t{int(i < 3)}\t{100000 + i}")
     man_old.write_text("\n".join(rows) + "\n")
+    reserved_old = tmp / "eval_reserved_old.json"
+    reserved_old.write_text(json.dumps({"cell_id": "old", "unseen_seeds": []}))
     r = subprocess.run(
         [sys.executable, str(fit), "--cell", "x/pq3_test", "--manifest", str(man_old),
          "--groups", "global", "--require-capture-token-mode", "all_token_full",
-         "--out-dir", str(tmp / "npz_old")],
+         "--eval-reserved", str(reserved_old), "--out-dir", str(tmp / "npz_old")],
         capture_output=True, text=True, cwd=str(REPO),
     )
     assert r.returncode == 4, f"7 구 pkl 게이트 rc={r.returncode} (기대 4)\n{r.stderr}"
+    # reserved 누락 시 pq3 fit 은 exit 5 (R3 높음#2 회귀)
+    r = subprocess.run(
+        [sys.executable, str(fit), "--cell", "x/pq3_test", "--manifest", str(man_new),
+         "--groups", "global", "--require-capture-token-mode", "all_token_full",
+         "--out-dir", str(tmp / "npz_x")],
+        capture_output=True, text=True, cwd=str(REPO),
+    )
+    assert r.returncode == 5, f"7 reserved 누락 게이트 rc={r.returncode} (기대 5)\n{r.stderr}"
     print("[gate-a] 7 구/신 pkl 게이트 + per-step NPZ 왕복 OK")
 
 

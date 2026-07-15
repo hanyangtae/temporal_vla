@@ -39,8 +39,16 @@ for ep in "${EPS[@]}"; do
   [ -n "${ENVSEED[$ep]:-}" ] || { echo "[collect ${CELL_ID}] ep=${ep} 가 collect_plan 에 없음 ABORT"; exit 13; }
 done
 
+kill_port() { docker exec lerobot bash -lc "pkill -f 'serve/lerobot.py.*--port ${1}' || true" 2>/dev/null || true; }
+kill_serves() { for port in "${PORTS[@]}"; do kill_port "$port"; done; sleep 5; }
+trap kill_serves EXIT
+
 start_serves() {
+  # 포트의 기존 서버 오인 방지 (eval 러너와 동일 — Gate2 R3 높음#4)
+  for i in $(seq 0 $((NW-1))); do kill_port "${PORTS[$i]}"; done
+  sleep 3
   for i in $(seq 0 $((NW-1))); do
+    docker exec lerobot bash -lc "rm -f /tmp/pq3c_${CELL_ID}_${PORTS[$i]}.log"
     docker exec -d -e CUDA_VISIBLE_DEVICES="${GPUS[$i]}" lerobot bash -lc \
       "cd /temporal_vla && setsid nohup python scripts/serve/lerobot.py --profile ${PROFILE} \
          --host '*' --port ${PORTS[$i]} --device cuda --collect --capture-vl \
@@ -54,15 +62,20 @@ start_serves() {
       [ -n "$st" ] && { ok=1; break; }; sleep 5
     done
     [ $ok = 1 ] || { echo "[collect ${CELL_ID}] serve ${port} TIMEOUT"; exit 11; }
-    if docker exec lerobot bash -lc "grep -qiE 'Traceback|FAILED|FileNotFound' /tmp/pq3c_${CELL_ID}_${port}.log"; then
-      echo "[collect ${CELL_ID}] serve ABORT ${port}"; docker exec lerobot bash -lc "tail -20 /tmp/pq3c_${CELL_ID}_${port}.log"; exit 11
+    LOG="/tmp/pq3c_${CELL_ID}_${port}.log"
+    if docker exec lerobot bash -lc "grep -qiE 'Traceback|FAILED|FileNotFound|Address already in use|Errno 98' ${LOG}"; then
+      echo "[collect ${CELL_ID}] serve ABORT ${port}"; docker exec lerobot bash -lc "tail -20 ${LOG}"; exit 11
     fi
+    boot_log=$(docker exec lerobot bash -lc "grep -o '\[serve-boot\] id=[0-9a-f]*' ${LOG}" | tail -1 | cut -d= -f2 || true)
+    health=$(docker exec lerobot bash -lc "curl -s -m 3 http://127.0.0.1:${port}/health")
+    boot_http=$(echo "$health" | grep -o '"boot_id":"[0-9a-f]*"' | cut -d'"' -f4 || true)
+    [ -n "$boot_log" ] && [ "$boot_log" = "$boot_http" ] \
+      || { echo "[collect ${CELL_ID}] boot_id 불일치 — 포트에 다른 서버 ABORT"; exit 12; }
     # full-token 캡처 preflight: health 의 capture_token_mode 확인 (구/신 혼입 방지)
-    hm=$(docker exec lerobot bash -lc "curl -s -m 3 http://127.0.0.1:${port}/health" | grep -o '"capture_token_mode":"all_token_full"' || true)
-    [ -n "$hm" ] || { echo "[collect ${CELL_ID}] serve ${port} capture_token_mode != all_token_full ABORT"; exit 12; }
+    echo "$health" | grep -q '"capture_token_mode":"all_token_full"' \
+      || { echo "[collect ${CELL_ID}] serve ${port} capture_token_mode != all_token_full ABORT"; exit 12; }
   done
 }
-kill_serves() { for port in "${PORTS[@]}"; do docker exec lerobot bash -lc "pkill -f 'serve/lerobot.py.*--port ${port}' || true" 2>/dev/null || true; done; sleep 5; }
 
 ship_ep() { # stem — pkl 승준 직송 후 3중 검증(체크섬·실물 size·상식 크기), 통과 시에만 로컬 삭제
   # [유실 사건 표준 2026-07-16] 이름 세기 금지 · 실물(-type f) 기준 · 평균 크기 상식 체크.
@@ -133,6 +146,7 @@ done
 WFAIL=0
 for p in "${PIDS[@]}"; do wait "$p" || WFAIL=1; done
 kill_serves
+trap - EXIT
 d="${OUT_HOST}/${TASK}/${CELL_ID}"
 # 완료 판정: 요청한 각 ep 의 csv 스템 존재 + (SHIP=1) ledger 등재·로컬 pkl 부재
 MISS=0

@@ -56,6 +56,7 @@ def main() -> None:
     gated_pass: dict[str, bool] = {}
     gated_phases: dict[str, str] = {}
     gated_layer: dict[str, int] = {}
+    report: dict = {}
     has_gated = any(arms[t]["mode"] == "gated" for t in ARM_ORDER if t in arms)
     if has_gated:
         if not args.gated_gate_report:
@@ -118,6 +119,15 @@ def main() -> None:
                     raise SystemExit(
                         f"gated layer 불일치: arm-config {layers} != gate report "
                         f"{gated_layer.get(task)} (task {task})"
+                    )
+                # 배포 NPZ 결박: gate 가 검증한 npz sha 집합 == arm-config 의 sha 집합
+                # (다른 데이터/α 로 만든 NPZ 의 우회 배포 봉쇄 — Gate2 R3 치명#1)
+                report_shas = set(report[task].get("npz_shas") or [])
+                config_shas = {s for s in shas.split(",") if s}
+                if not report_shas or report_shas != config_shas:
+                    raise SystemExit(
+                        f"gated NPZ sha 결박 실패 (task {task}): gate report "
+                        f"{sorted(report_shas)} != arm-config {sorted(config_shas)}"
                     )
             rows.append(
                 f"CELL={cell} TAG={tag} MODE={mode} NPZ={npz} LAYERS={layers} "
