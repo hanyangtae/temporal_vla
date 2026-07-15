@@ -72,7 +72,8 @@ start_serves() {
       echo "[${CELL_ID}/${ARM_TAG}] ABORT ${port}"; tail -20 "/tmp/pq3w_${CELL_ID}_${port}.log"; exit 11
     fi
     pf=$(grep '\[steer-preflight\]' "/tmp/pq3w_${CELL_ID}_${port}.log" || true)
-    reg=$(grep -E 'conceptor steering registered' "/tmp/pq3w_${CELL_ID}_${port}.log" || true)
+    # module logger INFO 는 serve 로그 파일에 안 남음 — print 기반 [steer-registered] 대조
+    reg=$(grep '\[steer-registered\]' "/tmp/pq3w_${CELL_ID}_${port}.log" || true)
     if [ "$STEER_MODE" = base ]; then
       [ -z "$pf$reg" ] || { echo "[${CELL_ID}/${ARM_TAG}] base 인데 steering 로드됨 ABORT"; exit 12; }
       continue

@@ -690,6 +690,13 @@ def _register_steering_if_requested(loaded_policy, args):
             phase_base, layers, phases, beta,
             token_select or "last_horizon(default)", denoise,
         )
+        # 러너 preflight 대조용 (module logger 는 serve 로그 파일에 안 남음 — print 필수)
+        print(
+            f"[steer-registered] path=gated layers={','.join(str(x) for x in layers)} "
+            f"phases={','.join(phases)} beta={beta:g} "
+            f"token_select={token_select or 'last_horizon(default)'} denoise={denoise}",
+            flush=True,
+        )
         return _steering
 
     # --- Multi-layer DiT steering (net-new): layer 마다 hook 하나씩 ---
@@ -716,6 +723,12 @@ def _register_steering_if_requested(loaded_policy, args):
             "token_select=%s denoise=%s",
             steering_npz_dir, layers, beta, key,
             token_select or "last_horizon(default)", denoise,
+        )
+        print(
+            f"[steer-registered] path=multi layers={','.join(str(x) for x in layers)} "
+            f"beta={beta:g} key={key} "
+            f"token_select={token_select or 'last_horizon(default)'} denoise={denoise}",
+            flush=True,
         )
         return _steering
 
@@ -756,6 +769,12 @@ def _register_steering_if_requested(loaded_policy, args):
         "layer=%s token_select=%s denoise=%s",
         steering_npz, pathway, beta, alpha, key, layer,
         token_select or f"{'all' if pathway == 'vl' else 'last_horizon'}(default)", denoise,
+    )
+    _ts = token_select or f"{'all' if pathway == 'vl' else 'last_horizon'}(default)"
+    print(
+        f"[steer-registered] path=single pathway={pathway} layer={layer} beta={beta:g} "
+        f"key={key} token_select={_ts} denoise={denoise}",
+        flush=True,
     )
     return _steering
 

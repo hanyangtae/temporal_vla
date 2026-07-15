@@ -80,7 +80,9 @@ start_serves() {
       echo "[${CELL_ID}/${ARM_TAG}] ABORT ${port}"; docker exec lerobot bash -lc "tail -20 /tmp/pq3_${CELL_ID}_${port}.log"; exit 11
     fi
     pf=$(docker exec lerobot bash -lc "grep '\[steer-preflight\]' /tmp/pq3_${CELL_ID}_${port}.log" || true)
-    reg=$(docker exec lerobot bash -lc "grep -E 'conceptor steering registered' /tmp/pq3_${CELL_ID}_${port}.log" || true)
+    # module logger INFO 는 serve 로그 파일에 안 남음(uvicorn 로거만 출력, 2026-07-15 실증)
+    # — 등록 대조는 print 기반 [steer-registered] 라인 사용
+    reg=$(docker exec lerobot bash -lc "grep '\[steer-registered\]' /tmp/pq3_${CELL_ID}_${port}.log" || true)
     if [ "$STEER_MODE" = base ]; then
       # 배선 위약: base serve 에 steering 이 붙어 있으면 즉시 abort
       [ -z "$pf$reg" ] || { echo "[${CELL_ID}/${ARM_TAG}] base 인데 steering 로드됨 ABORT: $pf$reg"; exit 12; }
