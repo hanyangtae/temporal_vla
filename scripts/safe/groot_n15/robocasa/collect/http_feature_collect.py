@@ -10,6 +10,7 @@ SAFE collector:
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import shutil
 import sys
@@ -69,6 +70,7 @@ from src.policies.groot.robocasa.io import convert_http_actions_to_groot_chunk  
 from src.policies.groot.robocasa.scenario_replay import (  # noqa: E402
     ep_meta_manifest_path,
     get_robocasa_ep_meta,
+    json_safe,
     load_ep_meta_manifest,
     set_robocasa_ep_meta,
 )
@@ -100,12 +102,18 @@ class N15LerobotHttpFeatureClient(VLAClient):
         *,
         timeout: float = 300.0,
         inference_seed: int | None = None,
+        no_features: bool = False,
     ):
         super().__init__(url, timeout=timeout)
         self.inference_seed = inference_seed
+        # pq3 eval 캡처-OFF 모드: /act 만 사용, records 를 만들지 않는다 (eval activation
+        # 미저장 규약). 추론 횟수는 n_calls 로 계수 (phase 정합·seed 증가에 사용).
+        self.no_features = no_features
+        self.n_calls = 0
         self.records: list[dict[str, Any]] = []
         self.task_description: str | None = None
         self.feature_kind: str | None = None
+        self.capture_token_mode: str | None = None
         self.feature_axes: list[str] | None = None
         self.feature_slice: str | None = None
         self.exported_action_token_count: int | None = None
@@ -122,8 +130,10 @@ class N15LerobotHttpFeatureClient(VLAClient):
 
     def reset(self) -> None:
         self.records.clear()
+        self.n_calls = 0
         self.task_description = None
         self.feature_kind = None
+        self.capture_token_mode = None
         self.feature_axes = None
         self.feature_slice = None
         self.exported_action_token_count = None
@@ -166,6 +176,9 @@ class N15LerobotHttpFeatureClient(VLAClient):
         )
         self.layer_count = _prefer_present(features.get("layer_count"), self.layer_count)
         self.token_count = _prefer_present(features.get("token_count"), self.token_count)
+        self.capture_token_mode = _prefer_present(
+            features.get("capture_token_mode"), self.capture_token_mode
+        )
         self.vl_feature_kind = _prefer_present(
             features.get("vl_feature_kind"), self.vl_feature_kind
         )
@@ -183,15 +196,28 @@ class N15LerobotHttpFeatureClient(VLAClient):
         images, states, instruction = official_obs_to_lerobot_inputs(observation)
         if self.task_description is None:
             self.task_description = instruction
+        # 캡처 모드는 구 배선(len(records)) 그대로, no-features 는 n_calls 로 동일 산법.
         call_inference_seed = (
-            None if self.inference_seed is None else self.inference_seed + len(self.records)
+            None
+            if self.inference_seed is None
+            else self.inference_seed
+            + (self.n_calls if self.no_features else len(self.records))
         )
+        if self.no_features:
+            actions, _latency_ms = self.predict(
+                images, states, instruction, inference_seed=call_inference_seed
+            )
+            self.n_calls += 1
+            if not isinstance(actions, dict):
+                raise RuntimeError("LeRobot GR00T N1.5 /act must return sub-keyed actions")
+            return _lerobot_action_to_official_chunk(actions), {}
         actions, features, _latency_ms = self.predict_with_features(
             images,
             states,
             instruction,
             inference_seed=call_inference_seed,
         )
+        self.n_calls += 1
         if not isinstance(actions, dict):
             raise RuntimeError("LeRobot GR00T N1.5 /act_with_features must return sub-keyed actions")
 
@@ -346,6 +372,15 @@ def parse_args() -> argparse.Namespace:
         help="매 env-step 후 별도 라벨러로 phase/성공 GT 기록 (env_step_* pkl 필드)",
     )
     parser.add_argument(
+        "--no-features",
+        action="store_true",
+        help=(
+            "pq3 eval 캡처-OFF 모드: /act 만 호출하고 activation 을 저장하지 않는다. "
+            "산출물은 pkl 삼중항 대신 경량 판정 사이드카 task*--ep*--succ{0|1}.json + mp4 "
+            "(eval activation 미저장 규약, memory: eval-activation-purged)."
+        ),
+    )
+    parser.add_argument(
         "--gated-steering",
         action="store_true",
         help=(
@@ -428,6 +463,7 @@ def run() -> dict[str, Any]:
         args.vla_server,
         timeout=args.timeout,
         inference_seed=args.inference_seed,
+        no_features=getattr(args, "no_features", False),
     )
     if args.wait_ready:
         policy.wait_until_ready(max_wait=args.timeout)
@@ -508,8 +544,11 @@ def run() -> dict[str, Any]:
             success = False
             first_success_step = None
             step_i = 0
+            no_features = getattr(args, "no_features", False)
             while step_i < max_steps:
-                records_before = len(policy.records)
+                # no-features(캡처 OFF) 모드는 records 가 없으므로 추론 호출 수(n_calls)로
+                # phase 정합을 잡는다 (groot 는 매 호출 추론 발화 — 두 계수 동치).
+                progress_before = policy.n_calls if no_features else len(policy.records)
                 # labeler.step() reads the CURRENT sim state (= the obs the policy will act
                 # on; env.step has not run yet), so calling it before or after get_action is
                 # equivalent for alignment. Gated steering needs the phase BEFORE inference
@@ -518,7 +557,8 @@ def run() -> dict[str, Any]:
                 if getattr(args, "gated_steering", False):
                     _post_steering_phase(args.vla_server, phase)
                 official_action, _ = policy.get_action(obs)
-                if len(policy.records) > records_before:
+                progress_after = policy.n_calls if no_features else len(policy.records)
+                if progress_after > progress_before:
                     feature_phases.append(phase)
                 obs, reward, terminated, truncated, info = env.step(official_action)
                 step_i += 1
@@ -531,10 +571,11 @@ def run() -> dict[str, Any]:
             # Terminal off-by-one: advance the timeline/event_steps once past the loop end
             # (no feature record here, so this phase is not appended to feature_phases).
             labeler.step()
-            if len(feature_phases) != len(policy.records):
+            n_inferences = policy.n_calls if no_features else len(policy.records)
+            if len(feature_phases) != n_inferences:
                 raise RuntimeError(
-                    "feature_phases/policy.records misaligned: "
-                    f"{len(feature_phases)} != {len(policy.records)}"
+                    "feature_phases/inference-count misaligned: "
+                    f"{len(feature_phases)} != {n_inferences}"
                 )
 
             rendered_video = env.render()
@@ -584,47 +625,81 @@ def run() -> dict[str, Any]:
                         "canonical_instruction": canonical_instruction,
                     }
                 )
-            write_safe_triplet(
-                output_dir=output_dir,
-                stem=stem,
-                policy=policy,
-                task_id=effective_task_id,
-                task_description=task_description,
-                episode_idx=episode_idx,
-                scenario_seed=scenario_seed,
-                episode_success=success,
-                env_name=env_name,
-                upstream_video_path=upstream_video_path,
-                ep_meta=captured_ep_meta,
-                n_action_steps=args.n_action_steps,
-                robocasa_env_source="robocasa365",
-                max_episode_steps=max_steps,
-                video_fps=args.video_fps,
-                steps_per_render=args.steps_per_render,
-                inference_seed=args.inference_seed,
-                model_family="lerobot_groot_n15",
-                policy_transport="http",
-                task_suite_name="lerobot_groot_n15_robocasa",
-                extra_metadata=extra_metadata,
-            )
-            pkl_path = output_dir / f"{stem}.pkl"
-            _append_summary(summary_path, effective_task_id, args.task, episode_idx, scenario_seed, pkl_path)
+            if no_features:
+                # pq3 eval 캡처-OFF: 판정 데이터만 — 경량 json 사이드카(스템 규약 동일) + mp4.
+                sidecar = {
+                    "task_suite_name": "lerobot_groot_n15_robocasa",
+                    "model_family": "lerobot_groot_n15",
+                    "policy_transport": "http",
+                    "capture": "none",
+                    "task_id": effective_task_id,
+                    "task": args.task,
+                    "task_description": task_description,
+                    "episode_idx": episode_idx,
+                    "scenario_seed": scenario_seed,
+                    "seed": scenario_seed,
+                    "inference_seed": args.inference_seed,
+                    "episode_success": int(success),
+                    "first_success_step": first_success_step,
+                    "steps": step_i,
+                    "n_inferences": n_inferences,
+                    "n_action_steps": args.n_action_steps,
+                    "max_episode_steps": max_steps,
+                    "env_name": env_name,
+                    "robocasa_env_source": "robocasa365",
+                    "ep_meta": captured_ep_meta,
+                    **extra_metadata,
+                }
+                out_path = output_dir / f"{stem}.json"
+                out_path.write_text(
+                    json.dumps(json_safe(sidecar), indent=2, ensure_ascii=False)
+                )
+                if upstream_video_path is not None and upstream_video_path.exists():
+                    shutil.copy2(upstream_video_path, output_dir / f"{stem}.mp4")
+                shutil.rmtree(upstream_video_dir, ignore_errors=True)
+            else:
+                write_safe_triplet(
+                    output_dir=output_dir,
+                    stem=stem,
+                    policy=policy,
+                    task_id=effective_task_id,
+                    task_description=task_description,
+                    episode_idx=episode_idx,
+                    scenario_seed=scenario_seed,
+                    episode_success=success,
+                    env_name=env_name,
+                    upstream_video_path=upstream_video_path,
+                    ep_meta=captured_ep_meta,
+                    n_action_steps=args.n_action_steps,
+                    robocasa_env_source="robocasa365",
+                    max_episode_steps=max_steps,
+                    video_fps=args.video_fps,
+                    steps_per_render=args.steps_per_render,
+                    inference_seed=args.inference_seed,
+                    model_family="lerobot_groot_n15",
+                    policy_transport="http",
+                    task_suite_name="lerobot_groot_n15_robocasa",
+                    extra_metadata=extra_metadata,
+                )
+                out_path = output_dir / f"{stem}.pkl"
+            _append_summary(summary_path, effective_task_id, args.task, episode_idx, scenario_seed, out_path)
             results.append(
                 {
                     "episode_idx": episode_idx,
                     "success": success,
                     "first_success_step": first_success_step,
                     "steps": step_i,
-                    "records": len(policy.records),
+                    "records": n_inferences,
                     "feature_phases": list(feature_phases),
                     "event_steps": dict(labeler.event_steps),
                     "max_phase": labeler.max_phase_label,
-                    "pkl": str(pkl_path),
+                    "pkl": str(out_path),
                 }
             )
             print(
                 f"wrote {stem}: steps={step_i} success={int(success)} "
-                f"records={len(policy.records)} feature_kind={policy.feature_kind} "
+                f"records={n_inferences} feature_kind={policy.feature_kind} "
+                f"capture={'off' if no_features else 'on'} "
                 f"max_phase={labeler.max_phase_label} events={dict(labeler.event_steps)}"
             )
         finally:
