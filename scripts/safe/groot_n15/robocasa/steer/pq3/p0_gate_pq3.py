@@ -43,6 +43,11 @@ def main() -> None:
     if outside:
         print(f"[p0-pq3] 수집 ep 가 plan 밖: {outside} (seed 구획 위반)", file=sys.stderr)
         sys.exit(4)
+    eps_sorted = sorted(collected)
+    if eps_sorted and eps_sorted != list(range(len(eps_sorted))):
+        # seed-순서 선발 강제: S0..S(n-1) prefix 만 허용 (중간 건너뜀 = 선택 편향 경로)
+        print(f"[p0-pq3] 수집 ep 가 plan prefix 가 아님: {eps_sorted}", file=sys.stderr)
+        sys.exit(4)
 
     # 목표 판수: fit_target + 이미 수행된 backfill 유지 (수집된 전 판이 fit 재료)
     need_more = max(0, args.fit_target - n)

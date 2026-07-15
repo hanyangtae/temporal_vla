@@ -26,6 +26,7 @@ import logging
 import random
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
@@ -110,6 +111,10 @@ _groot_dit_token_pool: str = "action_token_mean"  # pq3: "all_token_full" = full
 _groot_vl_capture_point: str = "vlln_mean"  # pq3: "post_vl_sa_full" = cross-attn 입력 full-token
 _steering = []  # list of registered steering hooks (multi-layer 지원)
 _gated_registry: dict = {}  # oracle phase-gated steering: {"hooks":{layer:hook},"matrices":{layer:{phase:M|M_seq}},"identity":{layer:I|[I]*K}}
+# 프로세스 지문: 러너가 "포트의 기존 서버"를 새 serve 로 오인하는 사고 방지 (Gate 2 치명#3)
+# — 로그의 [serve-boot] id 와 /health 의 boot_id 가 일치해야 같은 프로세스.
+_BOOT_ID = uuid.uuid4().hex[:12]
+_steering_spec: dict = {}  # /health 노출용 스티어링 지문 (mode/layers/β/npz sha/…)
 
 
 def _reset_steering_step_counters() -> None:
@@ -122,6 +127,30 @@ def _reset_steering_step_counters() -> None:
         reset = getattr(hook, "reset_step_counter", None)
         if reset is not None:
             reset()
+
+
+def _has_per_step_steering() -> bool:
+    return any(getattr(h, "per_step", False) for h in _steering)
+
+
+def _assert_per_step_hook_counts() -> None:
+    """chunk 추론 직후 Per-Step hook 이 정확히 K회 발화했는지 검증 (미발화 무음 방지).
+
+    초과 발화는 hook 자체가 RuntimeError — **미발화**(hook suppression·경로 분기·
+    torch.compile 변화)는 여기서 잡는다 (Gate 2 높음#1). per-step hook 이 없으면 no-op.
+    chunk 추론이 보장되는 경로(predict_action_chunk)에서만 호출할 것.
+    """
+    for hook in _steering:
+        if getattr(hook, "per_step", False):
+            expected = len(hook._M_seq)
+            if hook._k != expected:
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        f"per-step steering under-fire: fired {hook._k}/{expected} "
+                        f"(layer={hook.layer}) — denoise hook 배선 확인 필요"
+                    ),
+                )
 
 # payload 의 observation.state.* 서브키를 lerobot observation.state 로 합칠 때 사용할
 # canonical 정렬 순서 (벤치 공통). 체크포인트가 학습된 state dim 만큼 앞에서 truncate.
@@ -415,6 +444,14 @@ async def predict_action(payload: dict):
     profile = _profile
     assert profile is not None
 
+    if _has_per_step_steering():
+        # groot select_action 은 16-큐 팝 — 추론이 매 콜 발생하지 않아 per-step M_k
+        # 스와핑과 양립 불가 (무음 오적용 방지, Gate 2 치명#1/높음#1).
+        raise HTTPException(
+            status_code=409,
+            detail="per-step steering serve 는 /act(큐 팝) 미지원 — "
+            "/act_with_features (skip_features=1) 를 사용하라",
+        )
     inference_seed = _apply_inference_seed(payload)
     _reset_steering_step_counters()
     batch = parse_payload(payload)
@@ -462,6 +499,26 @@ async def predict_action_with_features(payload: dict):
     if preprocessor is not None:
         batch = preprocessor(batch)
 
+    if payload.get("skip_features"):
+        # pq3 eval 캡처-OFF: hook 없이 **캡처 경로와 동일한 chunk 추론 단위**를 사용
+        # (groot select_action 은 16-큐 팝이라 16콜당 1회만 추론 — noise pairing·실행
+        # 단위가 캡처 경로와 어긋남, Gate 2 치명#1). predict_action_chunk 를 직접 호출.
+        with torch.inference_mode():
+            if _policy_type == "groot" and hasattr(policy, "predict_action_chunk"):
+                action = policy.predict_action_chunk(batch)
+            else:
+                action = policy.select_action(batch)
+        _assert_per_step_hook_counts()
+        action = _postprocess_action_preserve_chunk(action)
+        action_np = _action_to_emit_array(action)
+        result = _emit_subkeys(action_np, profile)
+        result["has_feature"] = False
+        result["skip_features"] = True
+        if inference_seed is not None:
+            result["inference_seed"] = inference_seed
+        result["latency_ms"] = (time.time() - t0) * 1000
+        return result
+
     action, hidden, _axes, meta = safe_hooks.run_with_features(
         policy,
         batch,
@@ -472,6 +529,8 @@ async def predict_action_with_features(payload: dict):
         groot_dit_token_pool=_groot_dit_token_pool,
         vl_capture_point=_groot_vl_capture_point,
     )
+    if _policy_type == "groot":
+        _assert_per_step_hook_counts()
 
     action = _postprocess_action_preserve_chunk(action)
     action_np = _action_to_emit_array(action)
@@ -513,7 +572,7 @@ async def predict_action_with_features(payload: dict):
 @app.get("/health")
 async def health():
     if _profile is None:
-        return {"status": "not_loaded", "model": "lerobot"}
+        return {"status": "not_loaded", "model": "lerobot", "boot_id": _BOOT_ID}
     feature_metadata = _health_feature_metadata()
     return health_response(
         policy=policy,
@@ -524,6 +583,9 @@ async def health():
         action_keys=list(_profile.emits_subkeys),
         collect_mode=_collect_mode,
         capture_vl=_capture_vl_features,
+        # 러너 preflight: 로그의 [serve-boot] id 와 대조해 "포트의 남의 서버" 오인 방지
+        boot_id=_BOOT_ID,
+        steering=_steering_spec or None,
         **feature_metadata,
     )
 
@@ -548,7 +610,9 @@ def _health_feature_metadata() -> dict[str, Any]:
                 if _full
                 else GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES
             ),
-            "feature_dtype": "float32",
+            # wire dtype: assemble 이 fp16 으로 내보냄 — full 모드는 광고도 fp16 으로
+            # (구 모드 float32 광고는 legacy 계약 유지, Gate 2 높음#3)
+            "feature_dtype": "float16" if _full else "float32",
             "model_action_horizon": _n_action_steps,
             "groot_dit_capture_layers": [int(layer) for layer in _groot_dit_capture_layers],
             "capture_token_mode": _groot_dit_token_pool,
@@ -637,13 +701,35 @@ def _register_steering_if_requested(loaded_policy, args):
             raise ValueError("GR00T LeRobot policy is missing _groot_model for steering")
         expected_steps = int(_gm.action_head.num_inference_timesteps)
 
+    loaded_npz_shas: list[str] = []
+
     def _load_matrices(npz_path):
-        """denoise 모드에 맞는 M(단일) 또는 M_seq(list) 로드 + preflight 로그."""
+        """denoise 모드에 맞는 M(단일) 또는 M_seq(list) 로드 + preflight 로그 + sha 수집."""
+        import hashlib as _hashlib
+
+        loaded_npz_shas.append(
+            _hashlib.sha256(Path(npz_path).read_bytes()).hexdigest()[:12]
+        )
         if per_step:
             return load_steering_matrices_per_step(
                 str(npz_path), beta=beta, alpha=alpha, key=key, num_steps=expected_steps
             )
         return load_steering_matrix(str(npz_path), beta=beta, alpha=alpha, key=key)
+
+    def _set_steering_spec(mode: str, layers, phases=None):
+        """/health 노출용 스티어링 지문 (러너가 프로세스·설정 오인 방지에 사용)."""
+        global _steering_spec
+        _steering_spec = {
+            "mode": mode,
+            "layers": [int(x) for x in layers] if layers else [],
+            "beta": float(beta),
+            "alpha": None if alpha is None else float(alpha),
+            "key": key,
+            "token_select": token_select,
+            "denoise": denoise,
+            "npz_shas": sorted(set(loaded_npz_shas)),
+            "phases": sorted(phases) if phases else None,
+        }
 
     # --- Oracle phase-gated multi-layer steering: /steering_phase 로 M 스위칭 ---
     phase_base = getattr(args, "steering_phase_npz_base", None)
@@ -664,13 +750,27 @@ def _register_steering_if_requested(loaded_policy, args):
         )
         if not phases:
             raise FileNotFoundError(f"phase 서브디렉토리 없음: {base}")
+        # 기대 phase 목록이 주어지면 발견 집합과 정확히 일치해야 함 (부분 로드 무음 방지)
+        expected_phases = getattr(args, "steering_phases", None)
+        if expected_phases:
+            want = sorted(p.strip() for p in str(expected_phases).split(",") if p.strip())
+            if want != phases:
+                raise ValueError(
+                    f"--steering-phases 불일치: 기대 {want} != 발견 {phases} ({base})"
+                )
         hooks, matrices, identity = {}, {}, {}
         for lyr in layers:
             matrices[lyr] = {}
             for ph in phases:
                 npz_path = base / ph / f"dit_L{lyr}" / "conceptors.npz"
-                if npz_path.exists():
-                    matrices[lyr][ph] = _load_matrices(npz_path)
+                if not npz_path.exists():
+                    # layer×phase Cartesian 완전성 강제 — 일부 layer 만 조향되는
+                    # 부분-gated arm 이 정상 등록되는 사고 방지 (Gate 2 치명#2)
+                    raise FileNotFoundError(
+                        f"gated NPZ 누락: layer {lyr} 에 phase '{ph}' 없음 ({npz_path}) — "
+                        f"phase 집합 {phases} 은 전 layer 에 존재해야 한다"
+                    )
+                matrices[lyr][ph] = _load_matrices(npz_path)
             first = next(iter(matrices[lyr].values()))
             dim = (first[0] if isinstance(first, list) else first).shape[0]
             # per-step 이면 identity 도 [I]×K 로 통일 (전 요청에서 카운터 배선 동일 검증)
@@ -690,6 +790,7 @@ def _register_steering_if_requested(loaded_policy, args):
             phase_base, layers, phases, beta,
             token_select or "last_horizon(default)", denoise,
         )
+        _set_steering_spec("gated", layers, phases)
         # 러너 preflight 대조용 (module logger 는 serve 로그 파일에 안 남음 — print 필수)
         print(
             f"[steer-registered] path=gated layers={','.join(str(x) for x in layers)} "
@@ -697,6 +798,16 @@ def _register_steering_if_requested(loaded_policy, args):
             f"token_select={token_select or 'last_horizon(default)'} denoise={denoise}",
             flush=True,
         )
+        # dose 로깅 근거 (Gate 2 높음#10): phase×step 별 ‖M−I‖F — 사이드카의
+        # feature_phases + phase_gated_flags 와 조합해 오프라인에서 누적 dose 재구성.
+        for lyr in layers:
+            for ph in phases:
+                mats = matrices[lyr][ph]
+                seq = mats if isinstance(mats, list) else [mats]
+                for k, M in enumerate(seq):
+                    dI = float(_np.linalg.norm(M - _np.eye(M.shape[0]), "fro"))
+                    print(f"[steer-norms] layer={lyr} phase={ph} step={k} fro_M_minus_I={dI:.6f}",
+                          flush=True)
         return _steering
 
     # --- Multi-layer DiT steering (net-new): layer 마다 hook 하나씩 ---
@@ -724,12 +835,19 @@ def _register_steering_if_requested(loaded_policy, args):
             steering_npz_dir, layers, beta, key,
             token_select or "last_horizon(default)", denoise,
         )
+        _set_steering_spec("multi", layers)
         print(
             f"[steer-registered] path=multi layers={','.join(str(x) for x in layers)} "
             f"beta={beta:g} key={key} "
             f"token_select={token_select or 'last_horizon(default)'} denoise={denoise}",
             flush=True,
         )
+        import numpy as _np2
+        for hook in _steering:
+            for k, M in enumerate(getattr(hook, "_M_seq", []) or []):
+                dI = float(_np2.linalg.norm(M - _np2.eye(M.shape[0]), "fro"))
+                print(f"[steer-norms] layer={hook.layer} step={k} fro_M_minus_I={dI:.6f}",
+                      flush=True)
         return _steering
 
     # --- Single hook (--steering-npz) ---
@@ -770,6 +888,7 @@ def _register_steering_if_requested(loaded_policy, args):
         steering_npz, pathway, beta, alpha, key, layer,
         token_select or f"{'all' if pathway == 'vl' else 'last_horizon'}(default)", denoise,
     )
+    _set_steering_spec("single", [] if layer is None else [layer])
     _ts = token_select or f"{'all' if pathway == 'vl' else 'last_horizon'}(default)"
     print(
         f"[steer-registered] path=single pathway={pathway} layer={layer} beta={beta:g} "
@@ -1003,6 +1122,14 @@ def main():
         ),
     )
     parser.add_argument(
+        "--steering-phases",
+        default=None,
+        help=(
+            "gated 전용: 기대 phase 목록(콤마). 지정 시 NPZ 디렉토리에서 발견된 phase "
+            "집합과 정확히 일치하지 않으면 기동 abort (부분 gated arm 무음 방지)."
+        ),
+    )
+    parser.add_argument(
         "--steering-denoise",
         choices=("global", "per_step"),
         default="global",
@@ -1050,6 +1177,8 @@ def main():
     assert _profile.base_model == "lerobot", (
         f"profile.base_model={_profile.base_model!r}, but this server is lerobot"
     )
+    # 프로세스 지문 — 러너가 fresh 로그의 이 라인과 /health boot_id 를 대조 (치명#3 가드)
+    print(f"[serve-boot] id={_BOOT_ID} port={args.port}", flush=True)
 
     app.state.args = args
     run_uvicorn(app, args)

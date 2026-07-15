@@ -207,6 +207,7 @@ class VLAClient:
         states: dict[str, np.ndarray] | None = None,
         instruction: str = "",
         inference_seed: int | None = None,
+        extra_payload: dict | None = None,
     ):
         """``/act_with_features`` 호출. action sub-key dict + features dict 반환.
 
@@ -229,6 +230,8 @@ class VLAClient:
                 vl_feature_kind / vl_feature_axes / vl_feature_dim, optional
         """
         payload = self._build_payload(images, states, instruction, inference_seed)
+        if extra_payload:
+            payload.update(extra_payload)
         result, latency_ms = self._post_and_decode("/act_with_features", payload)
         actions = self._parse_action(result)
 

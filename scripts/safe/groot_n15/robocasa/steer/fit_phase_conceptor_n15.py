@@ -68,10 +68,13 @@ from src.conceptor import (  # noqa: E402
     not_conceptor,
 )
 
-# COAST Table 14 (p.29) GR00T RoboCasa aperture grid 그대로 (pq3 α 축 정렬).
-DEFAULT_ALPHAS = [0.1, 0.3, 0.5, 0.8, 1.0, 1.5, 2.0, 3.0, 5.0, 10.0]
+# legacy default 보존 (pq2 호출자 재실행 결과 불변 — Gate 2 높음#4).
+DEFAULT_ALPHAS = [0.1, 0.3, 1.0, 3.0, 10.0]
+# COAST Table 14 (p.29) GR00T RoboCasa aperture grid — pq3 는 --alphas table14 로 명시 사용.
+TABLE14_ALPHAS = [0.1, 0.3, 0.5, 0.8, 1.0, 1.5, 2.0, 3.0, 5.0, 10.0]
 OVERLAP_BAND = (0.85, 0.95)  # COAST A.10.2 Stage2
 FULLTOKEN_MODE = "all_token_full"  # serve --groot-dit-token-pool 신모드와 동일 enum
+FULLTOKEN_KIND = "groot_n15_dit_block_residual_full_tokens_denoise"  # safe_metadata 와 일치
 
 
 def carve_5phase(pkl_path, phases: list[str], w: int) -> list[str]:
@@ -184,15 +187,12 @@ def fit_one(Xs, Xf, alphas, band, quota_floor=0.0):
 
 
 def _content_sig(p: Path) -> str:
-    """pkl content 서명: size + 앞/뒤 1MB sha256 (동일 rollout 재유입 탐지용, 전체 해시는 IO 과다)."""
+    """pkl content 서명: 전체 streaming sha256 (Gate 2 높음#9 — 부분 해시는 수십 MB
+    full-token pkl 의 중간 변조를 못 잡음. Gate D hash 동결의 기반이므로 전체 해시)."""
     h = hashlib.sha256()
-    size = p.stat().st_size
-    h.update(str(size).encode())
     with open(p, "rb") as f:
-        h.update(f.read(1 << 20))
-        if size > (2 << 20):
-            f.seek(-(1 << 20), 2)
-            h.update(f.read())
+        for chunk in iter(lambda: f.read(1 << 22), b""):
+            h.update(chunk)
     return h.hexdigest()[:16]
 
 
@@ -309,8 +309,12 @@ def main():
     ap.add_argument("--layers", default=None,
                     help="fit 할 layer 필터 (물리 번호 콤마목록 + 'VL', 예: '10,15,VL'). "
                          "미지정 시 전 capture layer + VL")
-    ap.add_argument("--quota-floor", type=float, default=0.01,
-                    help="Stage2 α 후보의 quota_steer 하한 (퇴화 α 배제 guard)")
+    ap.add_argument("--quota-floor", type=float, default=0.0,
+                    help="Stage2 α 후보의 quota_steer 하한 (퇴화 α 배제 guard). "
+                         "기본 0=미적용(legacy 보존) — pq3 는 0.01 명시 권장")
+    ap.add_argument("--eval-reserved", default=None,
+                    help="eval_reserved.json 경로 — manifest 의 scene(seed)이 unseen 예약과 "
+                         "겹치면 exit 5 (fit 실행 자체가 침범 검사를 수행, Gate 2 높음#7)")
     ap.add_argument("--stage1-quota-sweep", action="store_true",
                     help="Stage1 layer 선택용 quota 표만 출력(NPZ 저장 없음): α₀에서 "
                          "layer별 global C_steer quota(perm regime) + phase-bin quota 평균"
@@ -350,10 +354,23 @@ def main():
         raise SystemExit(f"no pkl (cell={args.cell}, manifest={args.manifest})")
     import pickle as _pk
 
+    # eval 예약 침범 검사 (fit 실행 자체가 필수 수행 — standalone check 생략 우회 봉쇄)
+    if args.eval_reserved and manifest_rows:
+        unseen = set(
+            int(s) for s in json.loads(Path(args.eval_reserved).read_text())["unseen_seeds"]
+        )
+        bad = [m for m in manifest_rows if str(m.get("scene", "")).isdigit()
+               and int(m["scene"]) in unseen]
+        if bad:
+            print(f"[EVAL-SEED 침범] fit manifest 가 unseen 예약 seed 사용: "
+                  f"{[m['scene'] for m in bad][:5]}", file=sys.stderr)
+            sys.exit(5)
+
     # 로더 dispatch: pkl meta capture_token_mode 가 all_token_full 이면 자체 full-token
     # 로더(record [L,K,T,D] → token-pool → [L,K,D]), 아니면 기존 load_rollout(무수정 경로).
     require_mode = args.require_capture_token_mode
     rolls, fulltoken_flags = [], []
+    contract = None  # (feature_kind, capture_layers, K, T, D) 전 pkl 일치 강제 (혼입 게이트 심화)
     for p in pkls:
         with open(p, "rb") as f:
             d = _pk.load(f)
@@ -363,7 +380,22 @@ def main():
                   f"{require_mode!r} — 구/신 캡처 혼입", file=sys.stderr)
             sys.exit(4)
         if mode == FULLTOKEN_MODE:
-            rolls.append(load_rollout_fulltoken(d, p, args.token_pool))
+            kind = d.get("feature_kind")
+            if require_mode is not None and kind != FULLTOKEN_KIND:
+                print(f"[require-capture-token-mode] {p}: feature_kind={kind!r} != "
+                      f"{FULLTOKEN_KIND!r}", file=sys.stderr)
+                sys.exit(4)
+            r = load_rollout_fulltoken(d, p, args.token_pool)
+            sig = (kind, tuple(r["capture_layers"] or []),
+                   int(r["dit_k"].shape[2]), int(r["token_count"] or -1),
+                   int(r["dit_k"].shape[3]))
+            if contract is None:
+                contract = sig
+            elif sig != contract:
+                print(f"[contract 혼입] {p}: (kind,layers,K,T,D)={sig} != 첫 pkl {contract}",
+                      file=sys.stderr)
+                sys.exit(4)
+            rolls.append(r)
             fulltoken_flags.append(True)
         else:
             rolls.append(load_rollout(p))
@@ -371,10 +403,13 @@ def main():
     if manifest_rows:
         for r, m in zip(rolls, manifest_rows):
             r["success"] = m["label"]  # manifest 라벨이 pkl 내장값 override
+            r["scene"] = m.get("scene", "")  # scene 보존 (gated 성립 게이트·LOO 용)
     if args.denoise == "per_step" and not all(fulltoken_flags):
         raise SystemExit("--denoise per_step 은 full-token pkl 전용 (구 캡처 pkl 혼입)")
-    if args.stage1_quota_sweep and args.denoise != "stack":
-        raise SystemExit("--stage1-quota-sweep 은 --denoise stack 으로 실행 (전 step record 풀링)")
+    if args.stage1_quota_sweep and args.denoise != "per_step":
+        # 배치되는 연산자(step별 M_k)와 동일한 객체의 quota 로 층을 골라야 함 —
+        # pooled-stack conceptor 의 quota 는 다른 연산자 (Gate 2 높음#5)
+        raise SystemExit("--stage1-quota-sweep 은 --denoise per_step 로 실행")
     if args.denoise in ("stack", "step0"):
         # K 축 재정의 (COAST 대조 — docs/collab/2026-07-10 §COAST 감사): denoise 평균을
         # 풀고 step별 개별 record(stack) 또는 step0 만 사용. phase/vl 은 record 수에 맞춰
@@ -409,7 +444,10 @@ def main():
         ]
         if not layer_keys:
             raise SystemExit(f"--layers {args.layers} 에 해당하는 capture layer 없음 (cap={cap})")
-    alphas = [float(x) for x in args.alphas.split(",")] if args.alphas else DEFAULT_ALPHAS
+    if args.alphas == "table14":
+        alphas = list(TABLE14_ALPHAS)
+    else:
+        alphas = [float(x) for x in args.alphas.split(",")] if args.alphas else DEFAULT_ALPHAS
     groups = args.groups.split(",")
     cell_id = args.cell.split("/")[-1]
     out_root = Path(args.out_dir) if args.out_dir else run_dir.parent / "analysis" / "conceptor_steering_n15" / cell_id
@@ -417,52 +455,79 @@ def main():
     print(f"[cell {cell_id}] {len(rolls)} rollouts succ={n_s} fail={n_f}  layers={cap}+VL={has_vl}")
 
     if args.stage1_quota_sweep:
-        # Stage1 (COAST A.10.2 변형, regime별): α₀ 고정, 전 CAP layer 에 대해
-        #   perm regime  = global record C_steer quota
-        #   gated regime = phase-bin(groups 의 global 외 항목) C_steer quota 의 평균
-        # denoise=stack(전 step record 풀링 — 층 선택은 step-무관) 전제는 위에서 강제.
+        # Stage1 (COAST A.10.2 변형, regime별·**배치 연산자 동일 객체 기준** — Gate 2 높음#5):
+        # α₀ 고정, 전 CAP layer 에 대해 step k 별 C_steer 를 각각 fit 하고
+        #   perm regime  = mean_k quota(C_steer^{(k)} | global records)
+        #   gated regime = mean_{phase×k} quota(C_steer^{(phase,k)}) — phase×step 고정 그리드
+        # phase 의 min-class 판정은 layer-무관(episode 구성 동일)이라 분모는 전 층 동일.
         a0 = float(args.stage1_alpha)
         phase_groups = [g for g in groups if g != "global"]
+        K = rolls[0]["dit_k"].shape[2]
+        rolls_by_k = [
+            [{**r, "dit": r["dit_k"][:, :, k, :]} for r in rolls] for k in range(K)
+        ]
+
+        def _steer_quota(rolls_k, group, lk):
+            Xs, ns_ep = gather_class_records_eps(rolls_k, group, lk, 1)
+            Xf, nf_ep = gather_class_records_eps(rolls_k, group, lk, 0)
+            if Xs.size == 0 or Xf.size == 0 or ns_ep < args.min_per_class or nf_ep < args.min_per_class:
+                return None, ns_ep, nf_ep
+            Cs = compute_conceptor(Xs, a0)
+            Cf = compute_conceptor(Xf, a0)
+            return conceptor_quota(and_conceptor(Cs, not_conceptor(Cf))), ns_ep, nf_ep
+
         table = {}
         for lk in layer_keys:
             if lk == "VL":
                 continue  # Stage1 은 DiT 층 선택 전용
             tag = f"dit_L{cap[lk]}"
-            row = {"layer": int(cap[lk]), "perm_quota": None, "gated_quota_mean": None,
-                   "gated_per_phase": {}, "skipped_phases": []}
-            Xs, ns_ep = gather_class_records_eps(rolls, "global", lk, 1)
-            Xf, nf_ep = gather_class_records_eps(rolls, "global", lk, 0)
-            if Xs.size and Xf.size and ns_ep >= args.min_per_class and nf_ep >= args.min_per_class:
-                Cs = compute_conceptor(Xs, a0)
-                Cf = compute_conceptor(Xf, a0)
-                row["perm_quota"] = conceptor_quota(and_conceptor(Cs, not_conceptor(Cf)))
-                row["n_success"], row["n_failure"] = int(Xs.shape[0]), int(Xf.shape[0])
-            quotas = []
+            row = {"layer": int(cap[lk]), "perm_quota": None, "perm_quota_per_step": [],
+                   "gated_quota_mean": None, "gated_per_phase": {}, "skipped_phases": []}
+            perm_qs = []
+            for k in range(K):
+                q, ns_ep, nf_ep = _steer_quota(rolls_by_k[k], "global", lk)
+                if q is not None:
+                    perm_qs.append(q)
+                row.setdefault("global_eps", {"s": ns_ep, "f": nf_ep})
+            if len(perm_qs) == K:
+                row["perm_quota_per_step"] = perm_qs
+                row["perm_quota"] = float(np.mean(perm_qs))
+            phase_means = []
             for g in phase_groups:
-                Xs_g, ns_g = gather_class_records_eps(rolls, g, lk, 1)
-                Xf_g, nf_g = gather_class_records_eps(rolls, g, lk, 0)
-                if Xs_g.size == 0 or Xf_g.size == 0 or ns_g < args.min_per_class or nf_g < args.min_per_class:
-                    row["skipped_phases"].append({"phase": g, "eps_s": ns_g, "eps_f": nf_g})
-                    continue
-                Cs_g = compute_conceptor(Xs_g, a0)
-                Cf_g = compute_conceptor(Xf_g, a0)
-                q = conceptor_quota(and_conceptor(Cs_g, not_conceptor(Cf_g)))
-                row["gated_per_phase"][g] = q
-                quotas.append(q)
-            if quotas:
-                row["gated_quota_mean"] = float(np.mean(quotas))
+                qs = []
+                for k in range(K):
+                    q, ns_g, nf_g = _steer_quota(rolls_by_k[k], g, lk)
+                    if q is None:
+                        row["skipped_phases"].append({"phase": g, "eps_s": ns_g, "eps_f": nf_g})
+                        qs = []
+                        break
+                    qs.append(q)
+                if qs:
+                    row["gated_per_phase"][g] = {"per_step": qs, "mean": float(np.mean(qs))}
+                    phase_means.append(float(np.mean(qs)))
+            if phase_means:
+                row["gated_quota_mean"] = float(np.mean(phase_means))
+            # skipped_phases 중복 제거 (phase 당 1회)
+            seen_ph = set()
+            row["skipped_phases"] = [
+                s for s in row["skipped_phases"]
+                if not (s["phase"] in seen_ph or seen_ph.add(s["phase"]))
+            ]
             table[tag] = row
             print(f"  [stage1 {tag}] perm_quota={row['perm_quota']} "
-                  f"gated_mean={row['gated_quota_mean']} per_phase={row['gated_per_phase']} "
+                  f"gated_mean={row['gated_quota_mean']} "
                   f"skipped={[s['phase'] for s in row['skipped_phases']]}")
         def _argmax(key):
             rows = [(t, r[key]) for t, r in table.items() if r[key] is not None]
             return max(rows, key=lambda x: x[1])[0] if rows else None
-        report = {"cell": cell_id, "alpha0": a0, "denoise": "stack",
+        report = {"cell": cell_id, "alpha0": a0, "denoise": "per_step",
+                  "num_denoise_steps": int(K),
                   "token_pool": args.token_pool, "min_per_class_eps": args.min_per_class,
                   "groups": groups, "table": table,
                   "perm_argmax": _argmax("perm_quota"),
-                  "gated_argmax": _argmax("gated_quota_mean")}
+                  "gated_argmax": _argmax("gated_quota_mean"),
+                  "note": "quota = 배치 연산자(step별 C_steer)와 동일 객체 기준; "
+                          "record-pool 가중(긴 episode/dwell 과대)은 D단계 offline 민감도로 병기"}
         out_root.mkdir(parents=True, exist_ok=True)
         out_path = out_root / "stage1_quota_sweep.json"
         out_path.write_text(json.dumps(report, indent=2, ensure_ascii=False))
@@ -550,7 +615,8 @@ def main():
     (out_root / "fit_summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False))
     # 사용 표본 기록 (검증 가능성: split 교집합 게이트가 content 서명으로 대조)
     inputs = {"cell": cell_id, "manifest": args.manifest, "min_per_class_eps": args.min_per_class,
-              "episodes": [{"pkl": str(p), "label": int(r["success"]), "sig": _content_sig(p)}
+              "episodes": [{"pkl": str(p), "label": int(r["success"]),
+                            "scene": r.get("scene", ""), "sig": _content_sig(p)}
                            for p, r in zip(pkls, rolls)]}
     (out_root / "fit_inputs.json").write_text(json.dumps(inputs, indent=2, ensure_ascii=False))
     if not summary:

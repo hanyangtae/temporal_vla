@@ -224,9 +224,11 @@ def test_6_three_constructors_pass_token_select(tmp: Path):
         return SimpleNamespace(**d)
 
     try:
-        # single
+        # single (_load_matrices 가 파일 sha 를 계산하므로 실파일 필요)
+        single_npz = tmp / "single.npz"
+        single_npz.write_bytes(b"dummy")
         calls.clear()
-        lr._register_steering_if_requested(policy, base_args(steering_npz="x.npz"))
+        lr._register_steering_if_requested(policy, base_args(steering_npz=str(single_npz)))
         assert calls and calls[0]["token_select"] == "all", f"6 single token_select 미전달: {calls}"
         assert isinstance(calls[0]["M"], list) and len(calls[0]["M"]) == K, "6 single per-step M 미전달"
         # multi
@@ -260,6 +262,29 @@ def test_6_three_constructors_pass_token_select(tmp: Path):
         lr._steering = []
         lr._gated_registry = {}
     print("[gate-a] 6 three-constructor token_select/per-step 전달 OK")
+    return lr
+
+
+def test_6b_under_fire_assert(lr):
+    """per-step hook 미발화(K회 미만) 무음 통과 방지 — Gate 2 높음#1 회귀."""
+    _p, gm = _make_policy()
+    hook = steering_hooks.ConceptorSteering(gm, [np.eye(D)] * K, pathway="dit", layer=0)
+    lr._steering = [hook]
+    try:
+        hook._k = 2  # under-fire 시뮬레이션
+        try:
+            lr._assert_per_step_hook_counts()
+            raise AssertionError("6b under-fire 미검출")
+        except AssertionError:
+            raise
+        except Exception as exc:
+            msg = str(getattr(exc, "detail", exc))
+            assert "under-fire" in msg, f"6b 예외 메시지 불일치: {msg}"
+        hook._k = K
+        lr._assert_per_step_hook_counts()  # 정확히 K회 → 통과
+    finally:
+        lr._steering = []
+    print("[gate-a] 6b per-step under-fire assert OK")
 
 
 def _write_pkl(path: Path, *, full: bool, succ: int, n: int = 3):
@@ -276,6 +301,7 @@ def _write_pkl(path: Path, *, full: bool, succ: int, n: int = 3):
     }
     if full:
         d["capture_token_mode"] = "all_token_full"
+        d["feature_kind"] = "groot_n15_dit_block_residual_full_tokens_denoise"
     path.write_bytes(pickle.dumps(d))
 
 
@@ -385,7 +411,8 @@ def main() -> None:
         test_1_default_parity_and_2_full_raw_and_3_consistency()
         test_4_beta0_bitwise()
         test_5_per_step_swap()
-        test_6_three_constructors_pass_token_select(tmp)
+        lr = test_6_three_constructors_pass_token_select(tmp)
+        test_6b_under_fire_assert(lr)
         test_7_pkl_gate_and_per_step_npz(tmp)
         test_8_seed_separation_regression(tmp)
     print("[gate-a] ALL PASS")

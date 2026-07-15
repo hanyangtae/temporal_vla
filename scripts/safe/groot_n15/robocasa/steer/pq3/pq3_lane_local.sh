@@ -21,7 +21,8 @@ while :; do
   body=${line%|*}
   declare -A F=()
   for kv in $body; do F[${kv%%=*}]=${kv#*=}; done
-  row=$(row_of "${F[CELL]}") || { echo "[$LANE] unknown cell ${F[CELL]}"; requeue_pq3 "$line" "$LANE"; continue; }
+  row=$(pq3_row_of "${F[CELL]}")
+  [ -n "$row" ] || { echo "[$LANE] unknown cell ${F[CELL]}"; requeue_pq3 "$line" "$LANE"; continue; }
   IFS='|' read -r cell task envn cidx _seed instr <<<"$row"
   MANIFEST=$(pq3_manifest_of "$cell" eval_manifest)
   [ -f "$MANIFEST" ] || { echo "[$LANE] manifest 없음: $MANIFEST"; requeue_pq3 "$line" "$LANE"; sleep 30; continue; }

@@ -17,6 +17,20 @@ pq3_manifest_of() { # cell kind(collect_plan|eval_manifest|sweep_manifest) → �
   echo "$PQ3_REPO/$PQ3_MANIROOT/$1/$2.tsv"
 }
 
+# pq3_row_of <cell> — pq_lib CELLS 우선, 없으면 C0 산출 신규 cells-config 에서 파생
+# (Gate 2 높음#13: C0 신규 2 cell 이 실행 테이블에 연결되도록). 실패 시 rc=1·빈 출력.
+pq3_row_of() {
+  local r cfg
+  r=$(row_of "$1")
+  if [ -n "$r" ]; then printf '%s\n' "$r"; return 0; fi
+  cfg="$PQ3_REPO/configs/robocasa/pq3_ppcc_new_cells.tsv"
+  [ -f "$cfg" ] || return 1
+  # 열: cell_index cell_id task env_name canonical_instruction target_episodes seed_start
+  r=$(awk -F'\t' -v c="$1" 'NR>1 && $2==c { print $2 "|" $3 "|" $4 "|" $1 "|100000|" $5; exit }' "$cfg")
+  [ -n "$r" ] || return 1
+  printf '%s\n' "$r"
+}
+
 # pop_pq3 <host_class> <lane_id> → stdout 행, 없으면 rc=1
 # HOST 필드가 비었거나 any 이거나 host_class 와 일치하는 첫 행을 pop.
 pop_pq3() {

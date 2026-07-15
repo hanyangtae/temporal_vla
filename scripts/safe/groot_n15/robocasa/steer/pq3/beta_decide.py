@@ -9,7 +9,7 @@
   - 승자: 생존 β 중 승수 최대, 동률 → 0.1.
   - red flag: 양 β 모두 task-pool base-4판 이하 → 해당 arm 중단 신호(rc=6, 사용자 결정).
 
-exit: 0=선택 완료 | 6=red flag (arm 중단·사용자 보고)
+exit: 0=선택 완료 | 6=red flag (arm 중단·사용자 보고) | 7=생존 β 없음 (사용자 결정)
 """
 
 from __future__ import annotations
@@ -89,14 +89,15 @@ def main() -> None:
                 raise SystemExit(f"[beta-decide] {arm} β={beta} 미완주 {missing}판 — sweep 완료 후 재실행")
             wins_by_beta[beta] = total
             detail[beta] = per_cell
-        survivors = [b for b in betas if wins_by_beta[b] >= base_total - DOWNSIDE_GAMES]
+        # 하방 탈락: base 대비 −2판이면 탈락 (경계 포함 — 계획 규칙 문언 그대로, Gate2 높음#11)
+        survivors = [b for b in betas if wins_by_beta[b] > base_total - DOWNSIDE_GAMES]
         all_red = all(wins_by_beta[b] <= base_total - RED_FLAG_GAMES for b in betas)
         if all_red:
             sel, reason = None, "red_flag"
             red_flag = True
         elif not survivors:
-            # 하방 탈락만 있고 red flag 미달 — 보수 기본값 0.1 (동률 규칙과 동일 방향)
-            sel, reason = "0.1", "no_survivor_fallback"
+            # 전 β 하방 탈락 (red flag 미달) — 임의 부활 금지, 사용자 결정 gate
+            sel, reason = None, "no_survivor_user_gate"
         else:
             best = max(survivors, key=lambda b: wins_by_beta[b])
             ties = [b for b in survivors if wins_by_beta[b] == wins_by_beta[best]]

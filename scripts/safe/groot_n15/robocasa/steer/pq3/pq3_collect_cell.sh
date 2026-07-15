@@ -64,17 +64,34 @@ start_serves() {
 }
 kill_serves() { for port in "${PORTS[@]}"; do docker exec lerobot bash -lc "pkill -f 'serve/lerobot.py.*--port ${port}' || true" 2>/dev/null || true; done; sleep 5; }
 
-ship_ep() { # stem — pkl 승준 직송(-c 체크섬) 후 재검증·로컬 pkl 삭제
+ship_ep() { # stem — pkl 승준 직송 후 3중 검증(체크섬·실물 size·상식 크기), 통과 시에만 로컬 삭제
+  # [유실 사건 표준 2026-07-16] 이름 세기 금지 · 실물(-type f) 기준 · 평균 크기 상식 체크.
+  # 심링크는 애초에 만들지 않음(-L 불요, 실물 전송). SHIPPED.tsv ledger 에 size+sha 기록.
   local stem=$1 d="${OUT_HOST}/${TASK}/${CELL_ID}"
   local pkl="${d}/${stem}.pkl"
   [ -f "$pkl" ] || return 0
+  if [ -L "$pkl" ]; then echo "[ship] ${stem}.pkl 이 심링크 — 직송 금지·조사 필요"; return 1; fi
+  local lsize lsha
+  lsize=$(stat -c %s "$pkl")
+  # 상식 체크: full-token fit pkl 은 개당 수십 MB — 5MB 미만이면 껍데기/축소본 의심, 중단
+  if [ "$lsize" -lt 5000000 ]; then
+    echo "[ship] ${stem}.pkl size=${lsize}B < 5MB — full-token pkl 상식 위반, 중단·조사"; return 1
+  fi
+  lsha=$(sha256sum "$pkl" | cut -d' ' -f1)
   ssh -p "$SJ_PORT" "$SJ" "mkdir -p ${SJ_ROOT}/${TASK}/${CELL_ID}" || return 1
   rsync -c -e "ssh -p ${SJ_PORT}" "$pkl" "${SJ}:${SJ_ROOT}/${TASK}/${CELL_ID}/" || return 1
-  # 검증: 재-rsync dry-run 이 전송할 게 없어야 함 (체크섬 일치)
+  # 검증 ①: 원격 실물 size 대조 (find -type f 기준 — 심링크·부재 모두 실패)
+  local rsize
+  rsize=$(ssh -p "$SJ_PORT" "$SJ" "find ${SJ_ROOT}/${TASK}/${CELL_ID} -maxdepth 1 -type f -name '${stem}.pkl' -printf '%s'" 2>/dev/null || true)
+  [ "$rsize" = "$lsize" ] || { echo "[ship] ${stem}.pkl 원격 실물 size 불일치 (${rsize:-none}!=${lsize}) — 로컬 보존"; return 1; }
+  # 검증 ②: 재-rsync dry-run 이 전송할 게 없어야 함 (내용 체크섬 일치)
   local todo
   todo=$(rsync -c -n -e "ssh -p ${SJ_PORT}" "$pkl" "${SJ}:${SJ_ROOT}/${TASK}/${CELL_ID}/" | grep -c "$(basename "$pkl")" || true)
-  if [ "$todo" -eq 0 ]; then rm -f "$pkl"; echo "[ship] ${stem}.pkl -> 승준 (verified, local removed)"
-  else echo "[ship] ${stem}.pkl 체크섬 불일치 — 로컬 보존"; return 1; fi
+  [ "$todo" -eq 0 ] || { echo "[ship] ${stem}.pkl 체크섬 불일치 — 로컬 보존"; return 1; }
+  # ledger (Gate C 재검증·아카이브 감사 근거)
+  printf '%s\t%s\t%s\t%s\n' "$(date -u '+%FT%T')" "${stem}.pkl" "$lsize" "$lsha" >> "${d}/SHIPPED.tsv"
+  rm -f "$pkl"
+  echo "[ship] ${stem}.pkl -> 승준 (size+sha verified, local removed)"
 }
 
 run_w() {

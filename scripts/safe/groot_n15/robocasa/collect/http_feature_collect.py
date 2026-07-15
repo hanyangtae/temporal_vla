@@ -103,12 +103,14 @@ class N15LerobotHttpFeatureClient(VLAClient):
         timeout: float = 300.0,
         inference_seed: int | None = None,
         no_features: bool = False,
+        expect_chunk_len: int | None = None,
     ):
         super().__init__(url, timeout=timeout)
         self.inference_seed = inference_seed
-        # pq3 eval 캡처-OFF 모드: /act 만 사용, records 를 만들지 않는다 (eval activation
-        # 미저장 규약). 추론 횟수는 n_calls 로 계수 (phase 정합·seed 증가에 사용).
+        # pq3 eval 캡처-OFF 모드: skip_features 로 chunk 추론 경로만 사용, records 를
+        # 만들지 않는다 (eval activation 미저장 규약). 추론 횟수는 n_calls 로 계수.
         self.no_features = no_features
+        self.expect_chunk_len = expect_chunk_len
         self.n_calls = 0
         self.records: list[dict[str, Any]] = []
         self.task_description: str | None = None
@@ -204,13 +206,29 @@ class N15LerobotHttpFeatureClient(VLAClient):
             + (self.n_calls if self.no_features else len(self.records))
         )
         if self.no_features:
-            actions, _latency_ms = self.predict(
-                images, states, instruction, inference_seed=call_inference_seed
+            # /act 는 groot 16-큐 팝(16콜당 1추론)이라 캡처 경로와 실행 단위가 어긋남
+            # (Gate 2 치명#1) — skip_features 로 /act_with_features 의 chunk 추론 경로를
+            # hook 없이 그대로 사용 (매 콜 = denoise 1회, seed·phase 정합 보존).
+            actions, features, _latency_ms = self.predict_with_features(
+                images,
+                states,
+                instruction,
+                inference_seed=call_inference_seed,
+                extra_payload={"skip_features": 1},
             )
             self.n_calls += 1
+            if features is not None:
+                raise RuntimeError("skip_features 요청인데 features 가 반환됨 (serve 배선 확인)")
             if not isinstance(actions, dict):
-                raise RuntimeError("LeRobot GR00T N1.5 /act must return sub-keyed actions")
-            return _lerobot_action_to_official_chunk(actions), {}
+                raise RuntimeError("LeRobot GR00T N1.5 /act_with_features must return sub-keyed actions")
+            chunk = _lerobot_action_to_official_chunk(actions)
+            n_steps = next(iter(chunk.values())).shape[0] if chunk else 0
+            if self.expect_chunk_len and n_steps != self.expect_chunk_len:
+                raise RuntimeError(
+                    f"chunk 길이 {n_steps} != 기대 {self.expect_chunk_len} — "
+                    "queue-pop 경로 혼입 의심 (Gate 2 치명#1 가드)"
+                )
+            return chunk, {}
         actions, features, _latency_ms = self.predict_with_features(
             images,
             states,
@@ -246,8 +264,12 @@ class N15LerobotHttpFeatureClient(VLAClient):
         return official_action, {}
 
 
-def _post_steering_phase(server: str, phase: str) -> None:
-    """Oracle-gated steering: 현재 phase 를 serve 에 통지 (실패 시 즉시 예외 — 무음 미조향 방지)."""
+def _post_steering_phase(server: str, phase: str) -> bool:
+    """Oracle-gated steering: 현재 phase 를 serve 에 통지 (실패 시 즉시 예외 — 무음 미조향 방지).
+
+    Returns: 해당 phase 에 실제 matrix 가 등록돼 있는지 (False = identity fallback —
+    dose 로깅·부분 적용 감사용, Gate 2 높음#10).
+    """
     import json as _json
     import urllib.request as _rq
 
@@ -260,6 +282,8 @@ def _post_steering_phase(server: str, phase: str) -> None:
     with _rq.urlopen(req, timeout=5) as resp:
         if resp.status != 200:
             raise RuntimeError(f"/steering_phase HTTP {resp.status}")
+        body = _json.loads(resp.read().decode() or "{}")
+    return bool(body.get("gated", False))
 
 
 def _find_latest_video(video_dir: Path) -> Path | None:
@@ -375,10 +399,22 @@ def parse_args() -> argparse.Namespace:
         "--no-features",
         action="store_true",
         help=(
-            "pq3 eval 캡처-OFF 모드: /act 만 호출하고 activation 을 저장하지 않는다. "
+            "pq3 eval 캡처-OFF 모드: /act_with_features 를 skip_features 로 호출해 "
+            "캡처 없는 chunk 추론 경로를 사용하고 activation 을 저장하지 않는다. "
             "산출물은 pkl 삼중항 대신 경량 판정 사이드카 task*--ep*--succ{0|1}.json + mp4 "
             "(eval activation 미저장 규약, memory: eval-activation-purged)."
         ),
+    )
+    parser.add_argument(
+        "--expect-chunk-len",
+        type=int,
+        default=16,
+        help="--no-features 시 응답 chunk 길이 assert (queue-pop 혼입 가드, 기본 16)",
+    )
+    parser.add_argument(
+        "--run-tag",
+        default=None,
+        help="러너 ARM_SPEC sha 태그 — 사이드카에 기록해 재라벨링 오염을 집계가 탐지",
     )
     parser.add_argument(
         "--gated-steering",
@@ -464,6 +500,11 @@ def run() -> dict[str, Any]:
         timeout=args.timeout,
         inference_seed=args.inference_seed,
         no_features=getattr(args, "no_features", False),
+        expect_chunk_len=(
+            getattr(args, "expect_chunk_len", None)
+            if getattr(args, "no_features", False)
+            else None
+        ),
     )
     if args.wait_ready:
         policy.wait_until_ready(max_wait=args.timeout)
@@ -541,25 +582,28 @@ def run() -> dict[str, Any]:
                     _probe.set_gt(env_gt)
                     env_gt.start()
             feature_phases: list[str] = []
+            phase_gated_flags: list[bool] = []
             success = False
             first_success_step = None
             step_i = 0
             no_features = getattr(args, "no_features", False)
             while step_i < max_steps:
                 # no-features(캡처 OFF) 모드는 records 가 없으므로 추론 호출 수(n_calls)로
-                # phase 정합을 잡는다 (groot 는 매 호출 추론 발화 — 두 계수 동치).
+                # phase 정합을 잡는다 (skip_features 는 매 콜 chunk 추론 — 두 계수 동치).
                 progress_before = policy.n_calls if no_features else len(policy.records)
                 # labeler.step() reads the CURRENT sim state (= the obs the policy will act
                 # on; env.step has not run yet), so calling it before or after get_action is
                 # equivalent for alignment. Gated steering needs the phase BEFORE inference
                 # to switch the serve-side conceptor for this call.
                 phase = labeler.step()
+                gated_now = False
                 if getattr(args, "gated_steering", False):
-                    _post_steering_phase(args.vla_server, phase)
+                    gated_now = _post_steering_phase(args.vla_server, phase)
                 official_action, _ = policy.get_action(obs)
                 progress_after = policy.n_calls if no_features else len(policy.records)
                 if progress_after > progress_before:
                     feature_phases.append(phase)
+                    phase_gated_flags.append(gated_now)
                 obs, reward, terminated, truncated, info = env.step(official_action)
                 step_i += 1
                 success_now = step_success(reward, info, env=env)
@@ -647,6 +691,10 @@ def run() -> dict[str, Any]:
                     "max_episode_steps": max_steps,
                     "env_name": env_name,
                     "robocasa_env_source": "robocasa365",
+                    "run_tag": getattr(args, "run_tag", None),
+                    "expect_chunk_len": policy.expect_chunk_len,
+                    # gated dose 감사: 추론별 phase 가 실제 matrix 를 탔는지 (False=identity)
+                    "phase_gated_flags": phase_gated_flags,
                     "ep_meta": captured_ep_meta,
                     **extra_metadata,
                 }
