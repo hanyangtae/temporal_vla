@@ -31,7 +31,7 @@ t badthread-reject err "thread_id 형식"      resume 'foo;rm -rf' "$tmp" /tmp/o
 t noprompt-reject  err "prompt 파일 없음"    ask /nonexistent_prompt_file /tmp/o
 t review-unc       ok  "--uncommitted"       review /tmp/o uncommitted
 t review-base      ok  "--base origin/dev"   review /tmp/o base origin/dev
-t review-inst      ok  "test prompt"         review /tmp/o base origin/dev "$tmp"
+t review-inst      ok  'test\ prompt'        review /tmp/o base origin/dev "$tmp"
 t review-badtarget err "review 대상"         review /tmp/o everything
 rm -f "$tmp"
 
