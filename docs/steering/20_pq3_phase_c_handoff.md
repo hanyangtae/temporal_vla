@@ -59,7 +59,14 @@ junhyeong@166.104.35.50 / **a100 48** = junhyeong@166.104.35.48 / **로컬** 로
 | 판정 | {H1,H2,H3}×{drawer,ppcc} 6 Holm(α=.05, 단측 exact McNemar), null 관문 ±4판, 비재현 CI = paired bootstrap(seed 20260715) 상한 < +0.16, gated N/A 는 gate report 자동 파생 | `pq3/pq3_decision.py`(동결, sha 기록) |
 | serve/수집 | CAP 7층 0,2,4,8,10,12,15 · CHUNK_LEN 16 · n-action-steps 5 · max-episode-steps 720 · 캡처 OFF eval = `--no-features`(skip_features chunk 경로) | `pq3/pq3_cell_runner.sh` 등 |
 
-## 4. Phase C 절차 (지금 할 일)
+## 4. Phase C 절차 (새 세션에서 수행 — 사용자 지시 2026-07-16)
+
+**중단 시점 스냅샷** (이전 세션이 C 를 잠깐 기동했다 사용자 지시로 전부 중지·프로세스 정리):
+- 부분 수집: drawer_left 0판 / drawer_right 1판(csv+**로컬 pkl 잔존, 미직송**) /
+  ppcc_bread 1판(직송 완료 — SHIPPED.tsv 1행, 직송 파이프라인 실동작 확인됨).
+- **재개는 그대로 러너 재실행이면 됨** (resume-safe: csv 스템 존재 시 수집 스킵, 잔존
+  로컬 pkl 은 SHIP 루프가 재직송). C0 스캔도 `--resume` 사이드카가 있어 이어서 스캔됨.
+- GPU·serve·수집 프로세스는 전부 정리됨 (전 GPU 유휴).
 
 1. **fit15 수집** (로컬 GPU 0/1/2, cell당 GPU 1개·serve 2개, **SHIP=1 승준 직송**):
    `pq3/README.md` §C 명령 그대로. SHIPPED.tsv(size+sha ledger)·5MB 상식 체크·원격 실물
