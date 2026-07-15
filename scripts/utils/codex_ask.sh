@@ -74,16 +74,15 @@ case "$mode" in
     inst="${1:-}"
     if [[ -n "$inst" ]]; then
       [[ -f "$inst" ]] || die "instructions 파일 없음: $inst"
-      argv+=(-)
+      # codex 0.144.x: `codex review` 의 PROMPT 는 위치 인자 (stdin '-' 미지원 — usage
+      # rc=2 실증, 2026-07-15). 파일 내용을 위치 인자로 전달. flag 오인 방지 가드.
+      [[ "$(head -c1 "$inst")" != "-" ]] || die "instructions 파일은 '-' 로 시작 금지"
+      argv+=("$(cat "$inst")")
     fi
     dry_or_run "${argv[@]}" && exit 0
     mkdir -p "$out"
     rc=0
-    if [[ -n "$inst" ]]; then
-      "${argv[@]}" < "$inst" > "$out/review.md" 2>"$out/stderr.log" || rc=$?
-    else
-      "${argv[@]}" > "$out/review.md" 2>"$out/stderr.log" || rc=$?
-    fi
+    "${argv[@]}" > "$out/review.md" 2>"$out/stderr.log" || rc=$?
     [[ $rc -eq 0 ]] || die "review 실패 (rc=$rc): $(tail -n3 "$out/stderr.log" 2>/dev/null | tr '\n' ' ')"
     ;;
   *) die "unknown mode: $mode (ask|resume|review)" ;;
