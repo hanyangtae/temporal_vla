@@ -46,16 +46,21 @@ FIT=scripts/safe/groot_n15/robocasa/steer/fit_phase_conceptor_n15.py
 python $FIT --cell x/pq3_OpenDrawer --manifest $MANI/task_OpenDrawer_fit.tsv \
   --groups global,<phase...> --denoise per_step --stage1-quota-sweep --stage1-alpha 10 \
   --require-capture-token-mode all_token_full --alphas table14 --quota-floor 0.01 \
-  --eval-reserved $MANI/pq3_drawer_left/eval_reserved.json --out-dir <fit_out>
+  --eval-reserved $MANI/pq3_drawer_left/eval_reserved.json \
+  --eval-reserved $MANI/pq3_drawer_right/eval_reserved.json --out-dir <fit_out>
+  # ⚠ task-pooled manifest 는 소속 cell 의 eval_reserved 전부 반복 지정 (침범 검사 완전)
+  # Stage1 산출에 epeq(episode-equal) 순위 병기 — 불일치 시 사용자 게이트에서 보고
 # 본 fit (선택 layer 만): perm 용 global + gated 용 phase-bin, per-step NPZ
 python $FIT ... --denoise per_step --layers <L> --alphas table14 --quota-floor 0.01 \
-  --require-capture-token-mode all_token_full --eval-reserved <...> --out-dir <fit_out>
-# gated 성립 게이트 (통과해야 build_pq3_queue 가 gated arm 생성)
+  --require-capture-token-mode all_token_full --eval-reserved <...전부> --out-dir <fit_out>
+# gated 성립 게이트 — 판정용은 --enforce + floor 명시 (통과해야 queue 가 gated arm 생성)
 python $PQ3/pq3_gated_gate.py --tasks OpenDrawer=$MANI/task_OpenDrawer_fit.tsv,... \
-  --phases "OpenDrawer=reach-to-handle+grasp-handle+pull,..." --layer <L_gated> --out <gate.json>
-# β sweep (fit seed 재사용 — 참조=수집 base 라벨)
-CELL_ID=... PERM_NPZ=... PERM_LAYERS=<L> GATED_NPZ=... GATED_LAYERS=<L> GPUS_L=... PORTS_L=... \
-  bash $PQ3/beta_sweep.sh
+  --phases "OpenDrawer=reach-to-handle+grasp-handle+pull,..." --layer <L_gated> \
+  --enforce --record-floor <Gate D 확정> --loo-floor <Gate D 확정> --out <gate.json>
+# β sweep (fit seed 재사용 — 참조=수집 base 라벨; SHA·phase 필수)
+CELL_ID=... PERM_NPZ=... PERM_LAYERS=<L> PERM_NPZ_SHAS="<sha12...>" \
+  GATED_NPZ=... GATED_LAYERS=<L> GATED_NPZ_SHAS="<sha12...>" GATED_PHASES="<ph1,ph2,...>" \
+  GPUS_L=... PORTS_L=... bash $PQ3/beta_sweep.sh
 python3 $PQ3/beta_decide.py --sweep-root .../steer_eval_pq3/sweep --manifest-dir $MANI \
   --task OpenDrawer --cells pq3_drawer_left,pq3_drawer_right --out <beta.json>
 ```

@@ -25,6 +25,10 @@ STEER_ALPHA_FLAG=""; [ -n "${STEER_ALPHA:-}" ] && STEER_ALPHA_FLAG="--steering-a
 if [ "$STEER_MODE" != base ]; then
   : "${NPZ_SHAS:?steer arm 은 NPZ_SHAS(Gate D 동결 sha12 목록) 필수 — 생략 금지 (Gate2 높음#9)}"
 fi
+if [ "$STEER_MODE" = gated ]; then
+  # gate report 의 phase 집합이 실행 경로까지 전달돼야 함 (Gate2 R2 치명#1)
+  : "${GATED_PHASES:?gated arm 은 GATED_PHASES(성립 게이트 report 의 phase 집합) 필수}"
+fi
 OUT_TIER="${OUT_TIER:-e1}"
 EXPECT_N="${EXPECT_N:-30}"
 SEROOT="steer_eval_pq3/${OUT_TIER}"
@@ -48,12 +52,18 @@ for ep in "${EPS[@]}"; do
   [ -n "${ENVSEED[$ep]:-}" ] || { echo "[${CELL_ID}/${ARM_TAG}] EPLIST ep=${ep} 가 manifest 에 없음 ABORT"; exit 13; }
 done
 MANIFEST_SHA=$(sha256sum "$MANIFEST" | cut -c1-12)
-# eval 동결 대조: eval_reserved.json 이 곁에 있으면 기록된 manifest sha16 과 일치해야 함
+# eval 동결 대조: eval manifest 로 도는 run 은 eval_reserved.json 필수 (부재=미동결 ABORT,
+# Gate2 R2 높음#2). sweep manifest(fit 재사용)는 reserved 비대상.
 RESERVED="$(dirname "$MANIFEST")/eval_reserved.json"
+if [ "$(basename "$MANIFEST")" = "eval_manifest.tsv" ]; then
+  [ -f "$RESERVED" ] || { echo "[${CELL_ID}/${ARM_TAG}] eval_reserved.json 부재 — freeze 미완 ABORT"; exit 13; }
+fi
 if [ -f "$RESERVED" ]; then
   want16=$(grep -o '"eval_manifest_sha": *"[0-9a-f]*"' "$RESERVED" | grep -o '[0-9a-f]\{16\}')
   have16=$(sha256sum "$MANIFEST" | cut -c1-16)
-  [ "$want16" = "$have16" ] || { echo "[${CELL_ID}/${ARM_TAG}] eval manifest 가 동결본과 다름 (${have16}!=${want16}) ABORT"; exit 13; }
+  if [ "$(basename "$MANIFEST")" = "eval_manifest.tsv" ]; then
+    [ "$want16" = "$have16" ] || { echo "[${CELL_ID}/${ARM_TAG}] eval manifest 가 동결본과 다름 (${have16}!=${want16}) ABORT"; exit 13; }
+  fi
 fi
 
 steer_flags() {
@@ -139,10 +149,14 @@ start_serves() {
     echo "$pf" | grep -q "beta=${STEER_BETA}" || { echo "[${CELL_ID}/${ARM_TAG}] preflight beta 불일치"; exit 12; }
     echo "$reg" | grep -q "token_select=${STEER_TOKEN_SELECT}" || { echo "[${CELL_ID}/${ARM_TAG}] token_select 불일치: $reg"; exit 12; }
     echo "$reg" | grep -q "denoise=${STEER_DENOISE}" || { echo "[${CELL_ID}/${ARM_TAG}] denoise 등록 불일치: $reg"; exit 12; }
-    # Gate D NPZ sha 동결 대조 (전 sha 가 preflight 와 health 지문 양쪽에 존재해야 함)
+    # Gate D NPZ sha 동결 대조 — health 지문의 로드 집합과 **집합 동등성** (부분집합 검사는
+    # 승인 외 NPZ 혼입을 못 잡음, Gate2 R2 치명#3)
+    loaded_set=$(echo "$health" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(" ".join(sorted(set((d.get("steering") or {}).get("npz_shas") or []))))' 2>/dev/null)
+    want_set=$(echo ${NPZ_SHAS} | tr ' ' '\n' | sort -u | paste -sd' ')
+    [ -n "$loaded_set" ] && [ "$loaded_set" = "$want_set" ] \
+      || { echo "[${CELL_ID}/${ARM_TAG}] NPZ sha 집합 불일치 (loaded='${loaded_set}' want='${want_set}') ABORT"; exit 12; }
     for sha in ${NPZ_SHAS}; do
       echo "$pf" | grep -q "sha=${sha}" || { echo "[${CELL_ID}/${ARM_TAG}] Gate D NPZ sha=${sha} preflight 미로드 ABORT"; exit 12; }
-      echo "$health" | grep -q "${sha}" || { echo "[${CELL_ID}/${ARM_TAG}] health 지문에 sha=${sha} 없음 ABORT"; exit 12; }
     done
     echo "$health" | grep -q "\"denoise\":\"${STEER_DENOISE}\"" || { echo "[${CELL_ID}/${ARM_TAG}] health denoise 불일치 ABORT"; exit 12; }
     if [ "$STEER_MODE" = gated ]; then
@@ -154,7 +168,12 @@ start_serves() {
         [ "$want" = "$got" ] || { echo "[${CELL_ID}/${ARM_TAG}] gated phase 집합 불일치 (want=${want} got=${got}) ABORT"; exit 12; }
       fi
     fi
-    { echo "$pf"; echo "$reg"; } | sed "s/^/[preflight ${port}] /" >> "${LOGDIR}/${ARM_TAG}_preflight.log"
+    # dose 근거 영구화 (Gate2 R2 높음#6): norms·health 지문을 arm 디렉토리에 보존
+    norms=$(docker exec lerobot bash -lc "grep '\[steer-norms\]' ${LOG}" || true)
+    { echo "$pf"; echo "$reg"; echo "$norms"; } | sed "s/^/[preflight ${port}] /" >> "${LOGDIR}/${ARM_TAG}_preflight.log"
+    mkdir -p "${OUT_HOST}/${ARM_TAG}"
+    echo "$norms" > "${OUT_HOST}/${ARM_TAG}/steer_norms_${port}.log"
+    echo "$health" > "${OUT_HOST}/${ARM_TAG}/serve_fingerprint_${port}.json"
   done
 }
 
@@ -162,10 +181,9 @@ GATED_FLAG=""; [ "$STEER_MODE" = gated ] && GATED_FLAG="--gated-steering"
 PROX_FLAG="--proximity-phases"
 
 run_w() {
-  local wid=$1 port=$2 k=0
+  local wid=$1 port=$2 k=0 rc out existing fail=0
   for ep in "${EPS[@]}"; do
     k=$((k+1)); [ $(( (k-1) % NW )) -eq "$wid" ] || continue
-    local existing
     existing=$(ls "${OUT_HOST}/${ARM_TAG}/raw_rollouts/${TASK}/${CELL_ID}/task${CELL_INDEX}--ep${ep}--succ"*.json 2>/dev/null | head -1)
     if [ -n "$existing" ]; then
       # 재개 안전: 기존 사이드카가 현 spec 의 run_tag 와 일치할 때만 skip (재라벨링 방지)
@@ -173,16 +191,22 @@ run_w() {
       echo "[${CELL_ID}/${ARM_TAG}] ep${ep} 기존 사이드카 run_tag 불일치 — 오염 의심 ABORT" >&2
       exit 14
     fi
-    docker exec -e MUJOCO_GL=egl -e PYTHONPATH="$PYPATH" robocasa \
+    # collector rc 를 소거하지 않음 (Gate2 R2 높음#3 — `|| true` 무음 실패 봉쇄)
+    rc=0
+    out=$(docker exec -e MUJOCO_GL=egl -e PYTHONPATH="$PYPATH" robocasa \
       python /temporal_vla/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py \
       --vla-server "http://127.0.0.1:${port}" --task "$TASK" --env-name "$ENVN" \
       --output-dir "${OUT_CONT}/${ARM_TAG}/raw_rollouts" --cell-id "$CELL_ID" --cell-index "$CELL_INDEX" \
       --canonical-instruction "$INSTR" --episode-start-idx "$ep" --n-episodes 1 \
       --seed "${ENVSEED[$ep]}" --inference-seed "${NOISESEED[$ep]}" --n-action-steps "$NAS" \
       --max-episode-steps "$MAXEP" --video-fps 20 --steps-per-render 2 --wait-ready \
-      --no-features --expect-chunk-len "$CHUNK_LEN" --run-tag "$RUN_TAG" $PROX_FLAG $GATED_FLAG 2>&1 \
-      | grep -E "^wrote|Error|Traceback" || true
+      --no-features --expect-chunk-len "$CHUNK_LEN" --run-tag "$RUN_TAG" $PROX_FLAG $GATED_FLAG 2>&1) || rc=$?
+    echo "$out" | grep -E "^wrote|Error|Traceback" || true
+    if [ "$rc" -ne 0 ]; then
+      echo "[${CELL_ID}/${ARM_TAG}] ep${ep} collector rc=${rc}"; fail=1
+    fi
   done
+  return $fail
 }
 
 echo "[${CELL_ID}/${ARM_TAG}] $(date '+%F %T') mode=${STEER_MODE} eps=${#EPS[@]}/${EXPECT_N} tier=${OUT_TIER} manifest=${MANIFEST_SHA}"
@@ -202,11 +226,25 @@ fi
 printf '{"spec_sha":"%s","machine":"%s","manifest":"%s","core":%s}\n' \
   "$SPEC_SHA" "${MACHINE_TAG:-local}" "$MANIFEST" "$CORE_SPEC" > "${OUT_HOST}/${ARM_TAG}/ARM_SPEC.json"
 start_serves
-for wid in $(seq 0 $((NW-1))); do run_w "$wid" "${PORTS[$wid]}" > "${LOGDIR}/${ARM_TAG}_w${wid}.log" 2>&1 & done
-wait
+PIDS=()
+for wid in $(seq 0 $((NW-1))); do
+  run_w "$wid" "${PORTS[$wid]}" > "${LOGDIR}/${ARM_TAG}_w${wid}.log" 2>&1 & PIDS+=($!)
+done
+WFAIL=0
+for p in "${PIDS[@]}"; do wait "$p" || WFAIL=1; done
 kill_serves
 trap - EXIT
 d="${OUT_HOST}/${ARM_TAG}/raw_rollouts/${TASK}/${CELL_ID}"
+# 완료 판정 = 요청한 각 ep 에 현재 run_tag 사이드카가 **정확히 1개** (파일 수 세기 아님)
+MISS=0
+for ep in "${EPS[@]}"; do
+  cnt=$(ls "$d"/task${CELL_INDEX}--ep${ep}--succ*.json 2>/dev/null | wc -l)
+  if [ "$cnt" -ne 1 ]; then
+    echo "[${CELL_ID}/${ARM_TAG}] ep${ep} 사이드카 ${cnt}개 (기대 1)"; MISS=1; continue
+  fi
+  grep -q "\"run_tag\": \"${RUN_TAG}\"" "$d"/task${CELL_INDEX}--ep${ep}--succ*.json \
+    || { echo "[${CELL_ID}/${ARM_TAG}] ep${ep} run_tag 불일치"; MISS=1; }
+done
 s=$(ls "$d"/*succ1.json 2>/dev/null | wc -l); f=$(ls "$d"/*succ0.json 2>/dev/null | wc -l)
-echo "[${CELL_ID}/${ARM_TAG}] $(date '+%F %T') DONE ${s}/$((s+f)) (기대 ${#EPS[@]})"
-[ $((s+f)) -ge ${#EPS[@]} ]
+echo "[${CELL_ID}/${ARM_TAG}] $(date '+%F %T') DONE ${s}/$((s+f)) (기대 ${#EPS[@]}, wfail=${WFAIL} miss=${MISS})"
+[ "$WFAIL" -eq 0 ] && [ "$MISS" -eq 0 ]

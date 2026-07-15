@@ -500,6 +500,13 @@ async def predict_action_with_features(payload: dict):
         batch = preprocessor(batch)
 
     if payload.get("skip_features"):
+        if _collect_mode:
+            # 수집 serve 에서 hook 없는 첫 compile 이 캐시되면 이후 캡처가 무음 미발화
+            # (/act 거부와 같은 이유 — Gate 2 R2 중간#4)
+            raise HTTPException(
+                status_code=409,
+                detail="collect mode 에서 skip_features 금지 (hook 없는 compile 오염)",
+            )
         # pq3 eval 캡처-OFF: hook 없이 **캡처 경로와 동일한 chunk 추론 단위**를 사용
         # (groot select_action 은 16-큐 팝이라 16콜당 1회만 추론 — noise pairing·실행
         # 단위가 캡처 경로와 어긋남, Gate 2 치명#1). predict_action_chunk 를 직접 호출.

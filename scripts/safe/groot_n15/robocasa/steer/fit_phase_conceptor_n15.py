@@ -312,9 +312,10 @@ def main():
     ap.add_argument("--quota-floor", type=float, default=0.0,
                     help="Stage2 α 후보의 quota_steer 하한 (퇴화 α 배제 guard). "
                          "기본 0=미적용(legacy 보존) — pq3 는 0.01 명시 권장")
-    ap.add_argument("--eval-reserved", default=None,
-                    help="eval_reserved.json 경로 — manifest 의 scene(seed)이 unseen 예약과 "
-                         "겹치면 exit 5 (fit 실행 자체가 침범 검사를 수행, Gate 2 높음#7)")
+    ap.add_argument("--eval-reserved", action="append", default=None,
+                    help="eval_reserved.json 경로 (반복 지정 — task-pooled manifest 는 소속 "
+                         "cell 전부 필수). manifest 의 scene(seed)이 unseen 예약과 겹치면 "
+                         "exit 5 (fit 실행 자체가 침범 검사를 수행, Gate 2 높음#7/R2)")
     ap.add_argument("--stage1-quota-sweep", action="store_true",
                     help="Stage1 layer 선택용 quota 표만 출력(NPZ 저장 없음): α₀에서 "
                          "layer별 global C_steer quota(perm regime) + phase-bin quota 평균"
@@ -354,13 +355,20 @@ def main():
         raise SystemExit(f"no pkl (cell={args.cell}, manifest={args.manifest})")
     import pickle as _pk
 
-    # eval 예약 침범 검사 (fit 실행 자체가 필수 수행 — standalone check 생략 우회 봉쇄)
+    # eval 예약 침범 검사 (fit 실행 자체가 필수 수행 — standalone check 생략 우회 봉쇄).
+    # 반복 지정으로 task-pooled manifest 의 소속 cell 전부를 덮는다. scene 열이 비숫자인
+    # 행은 검사 우회 경로이므로 fail-closed (Gate2 R2 높음#2).
     if args.eval_reserved and manifest_rows:
-        unseen = set(
-            int(s) for s in json.loads(Path(args.eval_reserved).read_text())["unseen_seeds"]
-        )
-        bad = [m for m in manifest_rows if str(m.get("scene", "")).isdigit()
-               and int(m["scene"]) in unseen]
+        unseen = set()
+        for rp in args.eval_reserved:
+            unseen |= {int(s) for s in json.loads(Path(rp).read_text())["unseen_seeds"]}
+        malformed = [m for m in manifest_rows
+                     if not str(m.get("scene", "")).strip().lstrip("-").isdigit()]
+        if malformed:
+            print(f"[EVAL-SEED 침범 검사] scene 열 비숫자 행 (fail-closed): "
+                  f"{[str(m.get('scene')) for m in malformed][:5]}", file=sys.stderr)
+            sys.exit(5)
+        bad = [m for m in manifest_rows if int(m["scene"]) in unseen]
         if bad:
             print(f"[EVAL-SEED 침범] fit manifest 가 unseen 예약 seed 사용: "
                   f"{[m['scene'] for m in bad][:5]}", file=sys.stderr)
@@ -386,7 +394,8 @@ def main():
                       f"{FULLTOKEN_KIND!r}", file=sys.stderr)
                 sys.exit(4)
             r = load_rollout_fulltoken(d, p, args.token_pool)
-            sig = (kind, tuple(r["capture_layers"] or []),
+            sig = (kind, tuple(d.get("feature_axes") or []),
+                   tuple(r["capture_layers"] or []),
                    int(r["dit_k"].shape[2]), int(r["token_count"] or -1),
                    int(r["dit_k"].shape[3]))
             if contract is None:
@@ -467,10 +476,33 @@ def main():
             [{**r, "dit": r["dit_k"][:, :, k, :]} for r in rolls] for k in range(K)
         ]
 
-        def _steer_quota(rolls_k, group, lk):
-            Xs, ns_ep = gather_class_records_eps(rolls_k, group, lk, 1)
-            Xf, nf_ep = gather_class_records_eps(rolls_k, group, lk, 0)
+        def _gather_capped(rolls_k, group, lk, success, cap_n):
+            """episode 당 record 를 cap_n 개로 절단 (episode-equal 민감도용)."""
+            out, n_eps = [], 0
+            for r in rolls_k:
+                if r["success"] != success:
+                    continue
+                recs = _roll_records(r, group, lk)
+                if recs:
+                    n_eps += 1
+                    out.extend(recs[:cap_n])
+            return (np.asarray(out, dtype=np.float64) if out else np.empty((0, 0))), n_eps
+
+        def _min_ep_records(group, success):
+            counts = [len(_roll_records(r, group, 0)) for r in rolls_by_k[0]
+                      if r["success"] == success and _roll_records(r, group, 0)]
+            return min(counts) if counts else 0
+
+        def _steer_quota(rolls_k, group, lk, cap_n=None):
+            if cap_n:
+                Xs, ns_ep = _gather_capped(rolls_k, group, lk, 1, cap_n)
+                Xf, nf_ep = _gather_capped(rolls_k, group, lk, 0, cap_n)
+            else:
+                Xs, ns_ep = gather_class_records_eps(rolls_k, group, lk, 1)
+                Xf, nf_ep = gather_class_records_eps(rolls_k, group, lk, 0)
             if Xs.size == 0 or Xf.size == 0 or ns_ep < args.min_per_class or nf_ep < args.min_per_class:
+                return None, ns_ep, nf_ep
+            if Xs.shape[0] < 2 or Xf.shape[0] < 2:
                 return None, ns_ep, nf_ep
             Cs = compute_conceptor(Xs, a0)
             Cf = compute_conceptor(Xf, a0)
@@ -482,19 +514,28 @@ def main():
                 continue  # Stage1 은 DiT 층 선택 전용
             tag = f"dit_L{cap[lk]}"
             row = {"layer": int(cap[lk]), "perm_quota": None, "perm_quota_per_step": [],
-                   "gated_quota_mean": None, "gated_per_phase": {}, "skipped_phases": []}
-            perm_qs = []
+                   "perm_quota_epeq": None,
+                   "gated_quota_mean": None, "gated_quota_mean_epeq": None,
+                   "gated_per_phase": {}, "skipped_phases": []}
+            perm_qs, perm_qs_eq = [], []
+            cap_g = min(_min_ep_records("global", 1), _min_ep_records("global", 0)) or None
             for k in range(K):
                 q, ns_ep, nf_ep = _steer_quota(rolls_by_k[k], "global", lk)
                 if q is not None:
                     perm_qs.append(q)
+                q_eq, _, _ = _steer_quota(rolls_by_k[k], "global", lk, cap_n=cap_g)
+                if q_eq is not None:
+                    perm_qs_eq.append(q_eq)
                 row.setdefault("global_eps", {"s": ns_ep, "f": nf_ep})
             if len(perm_qs) == K:
                 row["perm_quota_per_step"] = perm_qs
                 row["perm_quota"] = float(np.mean(perm_qs))
-            phase_means = []
+            if len(perm_qs_eq) == K:
+                row["perm_quota_epeq"] = float(np.mean(perm_qs_eq))
+            phase_means, phase_means_eq = [], []
             for g in phase_groups:
-                qs = []
+                qs, qs_eq = [], []
+                cap_p = min(_min_ep_records(g, 1), _min_ep_records(g, 0)) or None
                 for k in range(K):
                     q, ns_g, nf_g = _steer_quota(rolls_by_k[k], g, lk)
                     if q is None:
@@ -502,11 +543,18 @@ def main():
                         qs = []
                         break
                     qs.append(q)
+                    q_eq, _, _ = _steer_quota(rolls_by_k[k], g, lk, cap_n=cap_p)
+                    if q_eq is not None:
+                        qs_eq.append(q_eq)
                 if qs:
                     row["gated_per_phase"][g] = {"per_step": qs, "mean": float(np.mean(qs))}
                     phase_means.append(float(np.mean(qs)))
+                    if len(qs_eq) == K:
+                        phase_means_eq.append(float(np.mean(qs_eq)))
             if phase_means:
                 row["gated_quota_mean"] = float(np.mean(phase_means))
+            if phase_means_eq and len(phase_means_eq) == len(phase_means):
+                row["gated_quota_mean_epeq"] = float(np.mean(phase_means_eq))
             # skipped_phases 중복 제거 (phase 당 1회)
             seen_ph = set()
             row["skipped_phases"] = [
@@ -526,8 +574,16 @@ def main():
                   "groups": groups, "table": table,
                   "perm_argmax": _argmax("perm_quota"),
                   "gated_argmax": _argmax("gated_quota_mean"),
+                  # episode-equal 민감도 (episode 당 record 를 최소 episode 수준으로 절단
+                  # — 긴 timeout/dwell 의 covariance 지배 진단, Gate2 R2 중간#2)
+                  "perm_argmax_epeq": _argmax("perm_quota_epeq"),
+                  "gated_argmax_epeq": _argmax("gated_quota_mean_epeq"),
+                  "layer_choice_stable_epeq": {
+                      "perm": _argmax("perm_quota") == _argmax("perm_quota_epeq"),
+                      "gated": _argmax("gated_quota_mean") == _argmax("gated_quota_mean_epeq"),
+                  },
                   "note": "quota = 배치 연산자(step별 C_steer)와 동일 객체 기준; "
-                          "record-pool 가중(긴 episode/dwell 과대)은 D단계 offline 민감도로 병기"}
+                          "epeq 불일치 시 layer 선택 불안정 — 사용자 게이트에서 병기 보고"}
         out_root.mkdir(parents=True, exist_ok=True)
         out_path = out_root / "stage1_quota_sweep.json"
         out_path.write_text(json.dumps(report, indent=2, ensure_ascii=False))

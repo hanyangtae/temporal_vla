@@ -113,6 +113,10 @@ def main() -> None:
     if red_flag:
         print("[beta-decide] RED FLAG — 해당 arm 중단·사용자 결정 필요", file=sys.stderr)
         sys.exit(6)
+    if any(v["selected_beta"] is None for v in result["arms"].values()):
+        # 전 β 하방 탈락(red flag 미달) — 성공 종료 금지, 사용자 결정 gate (R2 높음#1)
+        print("[beta-decide] 생존 β 없음 — 사용자 결정 필요", file=sys.stderr)
+        sys.exit(7)
 
 
 if __name__ == "__main__":

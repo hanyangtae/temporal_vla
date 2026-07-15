@@ -37,7 +37,8 @@ while :; do
   [ -n "${HF_HOME_OVERRIDE:-}" ] && ENVV+=(HF_HOME_OVERRIDE="$HF_HOME_OVERRIDE")
   if [ "${F[MODE]}" != base ]; then
     ENVV+=(NPZ_DIR="${PQ3_REPO}/${F[NPZ]}" STEER_LAYERS="${F[LAYERS]}" STEER_BETA="${F[BETA]}")
-    [ "${F[SHAS]:--}" != "-" ] && ENVV+=(NPZ_SHAS="${F[SHAS]}")
+    [ "${F[SHAS]:--}" != "-" ] && ENVV+=(NPZ_SHAS="${F[SHAS]//,/ }")
+    [ "${F[PHASES]:--}" != "-" ] && ENVV+=(GATED_PHASES="${F[PHASES]}")
   fi
   echo "[$LANE] $(date '+%F %T') RUN ${F[CELL]}/${F[TAG]}"
   if env "${ENVV[@]}" bash "$RUNNER"; then

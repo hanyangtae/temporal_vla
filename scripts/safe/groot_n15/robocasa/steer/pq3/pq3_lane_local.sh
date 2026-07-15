@@ -32,7 +32,9 @@ while :; do
         EXPECT_N="$EXPECT_N" GPUS_L="$GPU $GPU" PORTS_L="$PORTS" MACHINE_TAG="local-g${GPU}")
   if [ "${F[MODE]}" != base ]; then
     ENVV+=(NPZ_DIR="/temporal_vla/${F[NPZ]}" STEER_LAYERS="${F[LAYERS]}" STEER_BETA="${F[BETA]}")
-    [ "${F[SHAS]:--}" != "-" ] && ENVV+=(NPZ_SHAS="${F[SHAS]}")
+    [ "${F[SHAS]:--}" != "-" ] && ENVV+=(NPZ_SHAS="${F[SHAS]//,/ }")
+    # gated: gate report 의 phase 집합을 serve --steering-phases 까지 전달 (R2 치명#1)
+    [ "${F[PHASES]:--}" != "-" ] && ENVV+=(GATED_PHASES="${F[PHASES]}")
   fi
   echo "[$LANE] $(date '+%F %T') RUN ${F[CELL]}/${F[TAG]}"
   if env "${ENVV[@]}" bash "$RUNNER"; then

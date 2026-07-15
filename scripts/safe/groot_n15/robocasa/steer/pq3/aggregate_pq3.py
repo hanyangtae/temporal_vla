@@ -73,9 +73,28 @@ def read_eval_manifest(manifest_dir: Path, cell: str) -> dict[int, dict]:
     return rows
 
 
-def read_arm_spec(eval_root: Path, cell: str, arm: str) -> dict:
+def read_arm_spec(eval_root: Path, cell: str, arm: str) -> tuple[dict, str]:
     p = eval_root / cell / arm / "ARM_SPEC.json"
-    return json.loads(p.read_text()) if p.exists() else {}
+    if not p.exists():
+        return {}, ""
+    txt = p.read_text()
+    return json.loads(txt), txt
+
+
+def recompute_spec_sha(raw_text: str) -> str | None:
+    """ARM_SPEC 원문에서 core 원시 문자열을 추출해 spec_sha 를 재계산 (위조 탐지).
+
+    러너가 `..,"core":<CORE_SPEC>}\n` 형태로 기록 — core 부분 그대로 sha256[:12].
+    """
+    marker = '"core":'
+    idx = raw_text.find(marker)
+    if idx < 0:
+        return None
+    raw_core = raw_text[idx + len(marker):].rstrip()
+    if not raw_core.endswith("}"):
+        return None
+    raw_core = raw_core[:-1]  # 바깥 닫는 중괄호 제거 → core 자체 json
+    return hashlib.sha256(raw_core.encode()).hexdigest()[:12]
 
 
 def main() -> None:
@@ -117,19 +136,33 @@ def main() -> None:
                 continue  # gated 성립 게이트 미통과 — H2/H3 N/A
             rows, problems = read_arm(eval_root, cell, task, arm)
             integrity.extend(problems)
-            spec = read_arm_spec(eval_root, cell, arm)
+            spec, spec_raw = read_arm_spec(eval_root, cell, arm)
             machines[(cell, arm)] = spec.get("machine", "?")
-            expect_tag = f"{arm}:{spec.get('spec_sha', '')}" if spec.get("spec_sha") else None
+            # fail-closed: ARM_SPEC 부재/spec_sha 부재/재계산 불일치 전부 위반 (R2 높음#4)
+            if not spec or not spec.get("spec_sha"):
+                integrity.append(f"{cell}/{arm}: ARM_SPEC 부재 또는 spec_sha 없음")
+                expect_tag = None
+            else:
+                recomputed = recompute_spec_sha(spec_raw)
+                if recomputed != spec["spec_sha"]:
+                    integrity.append(
+                        f"{cell}/{arm}: spec_sha 재계산 불일치 ({recomputed} != {spec['spec_sha']})"
+                    )
+                expect_tag = f"{arm}:{spec['spec_sha']}"
             for ep, row in rows.items():
                 man = splits[cell].get(ep)
                 if man is None:
                     integrity.append(f"{cell}/{arm}: ep{ep} 가 eval manifest 에 없음")
                     continue
+                # 필수 필드 부재 = 위반 (None 허용은 대조 우회 경로 — R2 높음#4)
+                for field in ("env_seed", "noise_seed", "run_tag"):
+                    if row[field] is None:
+                        integrity.append(f"{cell}/{arm}: ep{ep} 사이드카 {field} 부재")
                 if row["env_seed"] is not None and int(row["env_seed"]) != man["env_seed"]:
                     integrity.append(f"{cell}/{arm}: ep{ep} env_seed {row['env_seed']} != manifest {man['env_seed']}")
                 if row["noise_seed"] is not None and int(row["noise_seed"]) != man["noise_seed"]:
                     integrity.append(f"{cell}/{arm}: ep{ep} noise_seed {row['noise_seed']} != manifest {man['noise_seed']}")
-                if expect_tag and row["run_tag"] != expect_tag:
+                if expect_tag and row["run_tag"] is not None and row["run_tag"] != expect_tag:
                     integrity.append(f"{cell}/{arm}: ep{ep} run_tag {row['run_tag']} != ARM_SPEC {expect_tag}")
             got = {ep: row["succ"] for ep, row in rows.items()}
             expect_eps = set(splits[cell])
@@ -235,7 +268,8 @@ def main() -> None:
         host_table[arm][cls] += 1
     block_violations = []
     for cell in cells:
-        classes = {machines[(cell, arm)].split("-")[0] for arm in ARM_TAGS}
+        # 실제 존재하는 arm 만 조회 (gated N/A task 의 KeyError 방지 — R2 높음#5)
+        classes = {m.split("-")[0] for (c, _a), m in machines.items() if c == cell}
         if len(classes) > 1:
             block_violations.append({"cell": cell, "classes": sorted(classes)})
 

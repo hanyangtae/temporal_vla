@@ -40,19 +40,30 @@ from fit_phase_conceptor_n15 import (  # noqa: E402
 
 
 def load_manifest_rolls(manifest: Path, token_pool: str):
+    """fit 로더와 동일한 계약 검사(kind/axes/layers/K/T/D 전 pkl 일치 — R2 중간#1)."""
     import pickle
 
-    rolls = []
+    rolls, contract = [], None
     for line in manifest.read_text().splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
         pkl, label, scene = line.split("\t")[:3]
+        if not scene.strip().lstrip("-").isdigit():
+            raise SystemExit(f"{manifest}: scene 열 비숫자 행 (fail-closed): {line[:60]}")
         with open(pkl, "rb") as f:
             d = pickle.load(f)
         if d.get("capture_token_mode") != FULLTOKEN_MODE:
             raise SystemExit(f"{pkl}: full-token pkl 아님 (gated 게이트는 pq3 수집분 전용)")
         r = load_rollout_fulltoken(d, pkl, token_pool)
+        sig = (d.get("feature_kind"), tuple(d.get("feature_axes") or []),
+               tuple(r["capture_layers"] or []),
+               int(r["dit_k"].shape[2]), int(r["token_count"] or -1),
+               int(r["dit_k"].shape[3]))
+        if contract is None:
+            contract = sig
+        elif sig != contract:
+            raise SystemExit(f"{pkl}: 계약 혼입 (kind,axes,layers,K,T,D)={sig} != {contract}")
         r["success"] = int(label)
         r["scene"] = scene
         rolls.append(r)
@@ -86,8 +97,13 @@ def main() -> None:
                     help="phase 당 클래스별 record 하한 (0=미적용 — Gate D 에서 dwell 보고 확정)")
     ap.add_argument("--loo-floor", type=float, default=0.0,
                     help="LOO 유사도 하한 (0=보고만 — Gate D 에서 확정)")
+    ap.add_argument("--enforce", action="store_true",
+                    help="판정용 실행 (R2 치명#2): record/loo floor >0 필수, 전 scene LOO "
+                         "성공 필수 (report-only 기본과 구분 — queue 는 enforce 산출만 소비)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
+    if args.enforce and (args.record_floor <= 0 or args.loo_floor <= 0):
+        raise SystemExit("--enforce 는 --record-floor·--loo-floor 명시(>0) 필수")
 
     phase_map = {}
     for part in args.phases.split(","):
@@ -148,19 +164,36 @@ def main() -> None:
                        "min": min((s["sim"] for s in sims), default=None)}
             table[ph] = row
 
-        loo_ok = all(
-            (loo[ph]["min"] is None and args.loo_floor <= 0)
-            or (loo[ph]["min"] is not None and loo[ph]["min"] >= args.loo_floor)
-            for ph in phases
-        )
+        if args.enforce:
+            # 판정용: 모든 scene 의 LOO fit 이 성공하고 min ≥ floor 여야 함
+            # (일부 scene LOO 실패가 sims 에서 빠져 통과하는 구멍 봉쇄 — R2 치명#2)
+            loo_ok = all(
+                len(loo[ph]["per_scene"]) == len(scenes)
+                and loo[ph]["min"] is not None
+                and loo[ph]["min"] >= args.loo_floor
+                for ph in phases
+            )
+        else:
+            loo_ok = all(
+                (loo[ph]["min"] is None and args.loo_floor <= 0)
+                or (loo[ph]["min"] is not None and loo[ph]["min"] >= args.loo_floor)
+                for ph in phases
+            )
         task_pass = all(c["class_ok"] and c["record_ok"] for c in checks) and loo_ok
+        import hashlib as _hl
+        manifest_sha = _hl.sha256(Path(manifest.strip()).read_bytes()).hexdigest()[:16]
         report[task] = {
             "pass": bool(task_pass),
+            "enforce": bool(args.enforce),
             "layer": args.layer, "alpha": args.alpha, "phases": phases,
+            "manifest": manifest.strip(), "manifest_sha": manifest_sha,
+            "token_pool": args.token_pool, "num_denoise_steps": int(K),
+            "scenes": scenes,
             "min_class_eps": args.min_class_eps, "record_floor": args.record_floor,
             "loo_floor": args.loo_floor,
             "table": table, "checks": checks, "loo": loo,
-            "note": "pass=False 인 task 는 H2/H3 전체 N/A (부분 cell 탈락 금지 — Codex R2#2)",
+            "note": "pass=False 인 task 는 H2/H3 전체 N/A (부분 cell 탈락 금지 — Codex R2#2). "
+                    "queue 는 enforce=True report 만 소비할 것",
         }
         print(f"[gated-gate] {task}: pass={task_pass} checks={checks} "
               f"loo_min={{ {', '.join(f'{p}:{loo[p]['min']}' for p in phases)} }}")

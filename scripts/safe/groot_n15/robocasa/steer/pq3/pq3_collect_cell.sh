@@ -95,33 +95,58 @@ ship_ep() { # stem — pkl 승준 직송 후 3중 검증(체크섬·실물 size�
 }
 
 run_w() {
-  local wid=$1 port=$2 k=0
+  local wid=$1 port=$2 k=0 rc out fail=0
   for ep in "${EPS[@]}"; do
     k=$((k+1)); [ $(( (k-1) % NW )) -eq "$wid" ] || continue
     local stem_glob="${OUT_HOST}/${TASK}/${CELL_ID}/task${CELL_INDEX}--ep${ep}--succ"
-    if ls "${stem_glob}"*.csv >/dev/null 2>&1; then continue; fi
-    docker exec -e MUJOCO_GL=egl -e PYTHONPATH="$PYPATH" robocasa \
-      python /temporal_vla/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py \
-      --vla-server "http://127.0.0.1:${port}" --task "$TASK" --env-name "$ENVN" \
-      --output-dir "${OUT_CONT}" --cell-id "$CELL_ID" --cell-index "$CELL_INDEX" \
-      --canonical-instruction "$INSTR" --episode-start-idx "$ep" --n-episodes 1 \
-      --seed "${ENVSEED[$ep]}" --inference-seed "${NOISESEED[$ep]}" --n-action-steps "$NAS" \
-      --max-episode-steps "$MAXEP" --video-fps 20 --steps-per-render 2 --wait-ready \
-      --proximity-phases 2>&1 | grep -E "^wrote|Error|Traceback" || true
+    if ! ls "${stem_glob}"*.csv >/dev/null 2>&1; then
+      # collector rc 소거 금지 (Gate2 R2 높음#3)
+      rc=0
+      out=$(docker exec -e MUJOCO_GL=egl -e PYTHONPATH="$PYPATH" robocasa \
+        python /temporal_vla/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py \
+        --vla-server "http://127.0.0.1:${port}" --task "$TASK" --env-name "$ENVN" \
+        --output-dir "${OUT_CONT}" --cell-id "$CELL_ID" --cell-index "$CELL_INDEX" \
+        --canonical-instruction "$INSTR" --episode-start-idx "$ep" --n-episodes 1 \
+        --seed "${ENVSEED[$ep]}" --inference-seed "${NOISESEED[$ep]}" --n-action-steps "$NAS" \
+        --max-episode-steps "$MAXEP" --video-fps 20 --steps-per-render 2 --wait-ready \
+        --proximity-phases 2>&1) || rc=$?
+      echo "$out" | grep -E "^wrote|Error|Traceback" || true
+      if [ "$rc" -ne 0 ]; then echo "[collect ${CELL_ID}] ep${ep} collector rc=${rc}"; fail=1; continue; fi
+    fi
     if [ "$SHIP" = 1 ]; then
       for st in "${stem_glob}"1 "${stem_glob}"0; do
-        [ -e "${st}.pkl" ] && ship_ep "$(basename "$st")"
+        if [ -e "${st}.pkl" ]; then
+          ship_ep "$(basename "$st")" || { echo "[collect ${CELL_ID}] ep${ep} 직송 실패"; fail=1; }
+        fi
       done
     fi
   done
+  return $fail
 }
 
 echo "[collect ${CELL_ID}] $(date '+%F %T') eps=${#EPS[@]} ship=${SHIP} manifest=$(sha256sum "$MANIFEST" | cut -c1-12)"
 start_serves
-for wid in $(seq 0 $((NW-1))); do run_w "$wid" "${PORTS[$wid]}" > "${LOGDIR}/collect_w${wid}.log" 2>&1 & done
-wait
+PIDS=()
+for wid in $(seq 0 $((NW-1))); do
+  run_w "$wid" "${PORTS[$wid]}" > "${LOGDIR}/collect_w${wid}.log" 2>&1 & PIDS+=($!)
+done
+WFAIL=0
+for p in "${PIDS[@]}"; do wait "$p" || WFAIL=1; done
 kill_serves
 d="${OUT_HOST}/${TASK}/${CELL_ID}"
+# 완료 판정: 요청한 각 ep 의 csv 스템 존재 + (SHIP=1) ledger 등재·로컬 pkl 부재
+MISS=0
+for ep in "${EPS[@]}"; do
+  cnt=$(ls "$d"/task${CELL_INDEX}--ep${ep}--succ*.csv 2>/dev/null | wc -l)
+  [ "$cnt" -eq 1 ] || { echo "[collect ${CELL_ID}] ep${ep} csv 스템 ${cnt}개 (기대 1)"; MISS=1; continue; }
+  if [ "$SHIP" = 1 ]; then
+    stem=$(basename "$(ls "$d"/task${CELL_INDEX}--ep${ep}--succ*.csv)" .csv)
+    grep -q "	${stem}.pkl	" "$d/SHIPPED.tsv" 2>/dev/null \
+      || { echo "[collect ${CELL_ID}] ep${ep} SHIPPED ledger 미등재"; MISS=1; }
+    [ ! -e "$d/${stem}.pkl" ] \
+      || { echo "[collect ${CELL_ID}] ep${ep} 직송 후 로컬 pkl 잔존 (검증 실패 흔적)"; MISS=1; }
+  fi
+done
 n=$(ls "$d"/task${CELL_INDEX}--ep*--succ*.csv 2>/dev/null | wc -l)
-echo "[collect ${CELL_ID}] $(date '+%F %T') DONE stems=${n} (기대 ${#EPS[@]})"
-[ "$n" -ge "${#EPS[@]}" ]
+echo "[collect ${CELL_ID}] $(date '+%F %T') DONE stems=${n} (기대 ${#EPS[@]}, wfail=${WFAIL} miss=${MISS})"
+[ "$WFAIL" -eq 0 ] && [ "$MISS" -eq 0 ]

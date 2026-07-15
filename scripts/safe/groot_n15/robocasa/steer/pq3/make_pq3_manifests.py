@@ -130,17 +130,26 @@ def _read_plan(out_dir: Path) -> list[dict]:
 def scan_collected(collected_dir: Path) -> dict[int, dict]:
     """수집 디렉토리의 succ 스템 스캔 → {ep_idx: {succ, stem}} (ep_idx = plan s_idx).
 
-    pkl > csv > json 우선 (pkl 은 승준 직송으로 로컬에 없을 수 있음 — csv 마커가 판정 유지).
+    같은 ep 에 succ 값이 **둘 이상**이면 abort (재수집 잔재의 무음 선택 방지 —
+    Gate2 R2 중간#3). 동일 stem 의 pkl/csv/json 공존만 중복 표현으로 허용
+    (pkl 은 승준 직송으로 로컬에 없을 수 있음 — csv 마커가 판정 유지).
     """
     rank = {".pkl": 0, ".csv": 1, ".json": 2}
     out: dict[int, dict] = {}
+    succs: dict[int, set] = {}
     for p in sorted(collected_dir.glob("task*--ep*--succ*")):
         m = STEM_RE.match(p.name)
         if not m:
             continue
         ep = int(m.group("ep"))
+        succs.setdefault(ep, set()).add(int(m.group("succ")))
         if ep not in out or rank[p.suffix] < rank[out[ep]["path"].suffix]:
             out[ep] = {"succ": int(m.group("succ")), "path": p, "stem": p.stem}
+    conflicts = {ep: sorted(v) for ep, v in succs.items() if len(v) > 1}
+    if conflicts:
+        raise SystemExit(
+            f"수집 ep 에 상충 succ 스템 공존: {conflicts} — 재수집 잔재 정리 후 재실행"
+        )
     return out
 
 
