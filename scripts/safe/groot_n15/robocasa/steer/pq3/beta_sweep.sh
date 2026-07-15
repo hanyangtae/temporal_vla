@@ -13,7 +13,7 @@ source "$HERE/pq3_lib.sh"
 BETAS="${BETAS:-0.1 0.3}"
 ARMS="${ARMS:-perm gated}"
 MANIFEST="${MANIFEST:-$(pq3_manifest_of "$CELL_ID" sweep_manifest)}"
-N_SWEEP=$(grep -cve '^\s*$' -e '^#' -e '^ep_idx' "$MANIFEST" || true)
+N_SWEEP=$(grep -cv -e '^$' -e '^#' -e '^ep_idx' "$MANIFEST" || true)
 
 for arm in $ARMS; do
   case "$arm" in
