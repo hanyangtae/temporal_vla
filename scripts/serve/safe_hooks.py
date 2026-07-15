@@ -41,7 +41,11 @@ from src.policies.safe_capture import SafeForwardCapture  # noqa: E402
 from src.policies.safe_metadata import (  # noqa: E402
     GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES,
     GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND,
+    GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FULLTOKEN_FEATURE_AXES,
+    GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FULLTOKEN_FEATURE_KIND,
     GROOT_N15_VL_FEATURE_KIND,
+    GROOT_N15_VL_POST_SA_FULLTOKEN_FEATURE_AXES,
+    GROOT_N15_VL_POST_SA_FULLTOKEN_FEATURE_KIND,
     GROOT_VL_FEATURE_AXES,
     PI05_EXPERT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES,
     PI05_EXPERT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND,
@@ -53,6 +57,16 @@ from src.policies.safe_metadata import (  # noqa: E402
 FLOW_MATCHING_TYPES = {"pi0", "pi05", "xvla", "groot"}
 AUTOREGRESSIVE_TYPES = {"pi0_fast"}
 SUPPORTED_TYPES = FLOW_MATCHING_TYPES | AUTOREGRESSIVE_TYPES
+
+# GR00T DiT block residual capture 의 token 풀링 모드 (pq3 COAST 토큰 축 정렬).
+#   action_token_mean: 구·default — 마지막 action_horizon 토큰 mean → [L, K, D]
+#   all_token_full   : 신규 — 전체 시퀀스 토큰(state+future+action) 보존 → [L, K, T, D]
+#                      (fp16, fit 수집 전용 — mean 은 fit 시점에 수행)
+GROOT_DIT_TOKEN_POOLS = ("action_token_mean", "all_token_full")
+# GR00T VL pathway capture 지점.
+#   vlln_mean       : 구·default — action_head.vlln 출력 seq-mean → [D_vl]
+#   post_vl_sa_full : 신규 — vl_self_attention 출력(=DiT cross-attn 입력) full-token → [T_vl, D_vl]
+GROOT_VL_CAPTURE_POINTS = ("vlln_mean", "post_vl_sa_full")
 
 
 def _resolve_target(
@@ -79,10 +93,14 @@ def _resolve_target(
     raise ValueError(f"Unsupported policy_type: {policy_type}")
 
 
-def _resolve_vl_target(policy: Any, policy_type: str) -> torch.nn.Module | None:
+def _resolve_vl_target(
+    policy: Any, policy_type: str, vl_capture_point: str = "vlln_mean"
+) -> torch.nn.Module | None:
     if policy_type != "groot":
         return None
     head = policy._groot_model.action_head
+    if vl_capture_point == "post_vl_sa_full":
+        return getattr(head, "vl_self_attention", None)
     return getattr(head, "vlln", None)
 
 
@@ -102,11 +120,25 @@ class SafeFeatureCapture:
         capture_vl: bool = False,
         groot_dit_layers: tuple[int, ...] | list[int] | None = None,
         pi05_expert_layers: tuple[int, ...] | list[int] | None = None,
+        groot_dit_token_pool: str = "action_token_mean",
+        vl_capture_point: str = "vlln_mean",
     ):
         if policy_type not in SUPPORTED_TYPES:
             raise ValueError(f"Unsupported policy_type: {policy_type}")
+        if groot_dit_token_pool not in GROOT_DIT_TOKEN_POOLS:
+            raise ValueError(
+                f"Unsupported groot_dit_token_pool: {groot_dit_token_pool} "
+                f"(expected {GROOT_DIT_TOKEN_POOLS})"
+            )
+        if vl_capture_point not in GROOT_VL_CAPTURE_POINTS:
+            raise ValueError(
+                f"Unsupported vl_capture_point: {vl_capture_point} "
+                f"(expected {GROOT_VL_CAPTURE_POINTS})"
+            )
         self.policy = policy
         self.policy_type = policy_type
+        self.groot_dit_token_pool = groot_dit_token_pool
+        self.vl_capture_point = vl_capture_point
         self.groot_dit_layers = (
             None if groot_dit_layers is None else [int(layer) for layer in groot_dit_layers]
         )
@@ -143,7 +175,11 @@ class SafeFeatureCapture:
             self.slicer = None
         else:
             self.module, self.mode, self.slicer = _resolve_target(policy, policy_type)
-        self.vl_module = _resolve_vl_target(policy, policy_type) if capture_vl else None
+        self.vl_module = (
+            _resolve_vl_target(policy, policy_type, vl_capture_point)
+            if capture_vl
+            else None
+        )
         self.buf: list[torch.Tensor] = []
         self.vl_buf: list[torch.Tensor] = []
         self._capture_ctx: SafeForwardCapture | None = None
@@ -186,10 +222,17 @@ class SafeFeatureCapture:
             )
             self._capture_ctx.__enter__()
         if self.vl_module is not None:
+            # vlln_mean(구): seq-mean → [B, D_vl] / post_vl_sa_full(신규): full-token
+            # 무슬라이스 → [B, T_vl, D_vl] (mean 은 fit 시점에).
+            vl_slicer = (
+                None
+                if self.vl_capture_point == "post_vl_sa_full"
+                else (lambda t: t.mean(dim=1))
+            )
             self._vl_capture_ctx = SafeForwardCapture(
                 self.vl_module,
                 "post",
-                lambda t: t.mean(dim=1),
+                vl_slicer,
                 to_cpu=True,
                 dtype=torch.float32,
             )
@@ -234,10 +277,14 @@ class SafeFeatureCapture:
     def assemble_blocks(self) -> np.ndarray | None:
         """GR00T DiT block residual features, COAST-faithful (A.7.2).
 
-        Per layer ``[K, B, T, D]`` -> slice the last ``action_horizon`` action tokens ->
-        mean-pool across those action tokens -> ``[K, D]`` (one vector per denoising step,
-        denoise axis K preserved). Stack layers -> ``[L, K, D]``. COAST §3: "mean-pooling
-        across action tokens to obtain one vector h per denoising step".
+        ``groot_dit_token_pool`` 에 따라:
+          - ``action_token_mean`` (구·default): per layer ``[K, B, T, D]`` -> slice the
+            last ``action_horizon`` action tokens -> mean-pool across those action
+            tokens -> ``[K, D]``. Stack layers -> ``[L, K, D]``. COAST §3: "mean-pooling
+            across action tokens to obtain one vector h per denoising step".
+          - ``all_token_full`` (pq3): 토큰 축 T(state+future+action 전체) 보존 ->
+            per layer ``[K, T, D]`` -> stack layers -> ``[L, K, T, D]`` (fp16, fit
+            수집 전용 — mean 은 fit 시점에 수행).
         """
         if self.groot_dit_layers is None:
             return None
@@ -256,9 +303,13 @@ class SafeFeatureCapture:
             if not feats:
                 raise RuntimeError(f"Failed to capture GR00T DiT block {layer} residual stream")
             stack = torch.stack(feats, dim=0)  # [K, B, T, D]
-            # COAST: mean-pool the last `horizon` action tokens, keep denoise step K.
-            layer_feats.append(stack[:, 0, -horizon:, :].mean(dim=1))  # [K, D]
-        return torch.stack(layer_feats, dim=0).numpy().astype(np.float16)  # [L, K, D]
+            if self.groot_dit_token_pool == "all_token_full":
+                layer_feats.append(stack[:, 0, :, :])  # [K, T, D]
+            else:
+                # COAST: mean-pool the last `horizon` action tokens, keep denoise step K.
+                layer_feats.append(stack[:, 0, -horizon:, :].mean(dim=1))  # [K, D]
+        # [L, K, D] (action_token_mean) | [L, K, T, D] (all_token_full)
+        return torch.stack(layer_feats, dim=0).numpy().astype(np.float16)
 
     def assemble_expert_blocks(self) -> np.ndarray | None:
         """pi05 action expert block residual features, COAST-faithful (A.7.1).
@@ -302,7 +353,12 @@ class SafeFeatureCapture:
         return int(len(feats)) if feats else None
 
     def assemble_vl(self) -> np.ndarray | None:
-        """GR00T VL pathway feature: ``action_head.vlln`` output seq-mean-pool."""
+        """GR00T VL pathway feature.
+
+        ``vlln_mean``: ``action_head.vlln`` 출력 seq-mean-pool → ``[D_vl]``.
+        ``post_vl_sa_full``: ``vl_self_attention`` 출력 full-token → ``[T_vl, D_vl]``.
+        어느 쪽이든 get_action 당 1회 발화 → 첫 buf 의 batch 0 사용.
+        """
         if not self.vl_buf:
             return None
         return self.vl_buf[0][0].numpy().astype(np.float16)
@@ -316,6 +372,8 @@ def run_with_features(
     capture_vl: bool = False,
     groot_dit_layers: tuple[int, ...] | list[int] | None = None,
     pi05_expert_layers: tuple[int, ...] | list[int] | None = None,
+    groot_dit_token_pool: str = "action_token_mean",
+    vl_capture_point: str = "vlln_mean",
 ) -> tuple[torch.Tensor, np.ndarray | None, list[str] | None, dict[str, Any]]:
     """SAFE hook 을 건 채 ``select_action`` 을 실행.
 
@@ -337,6 +395,8 @@ def run_with_features(
         capture_vl=capture_vl,
         groot_dit_layers=groot_dit_layers,
         pi05_expert_layers=pi05_expert_layers,
+        groot_dit_token_pool=groot_dit_token_pool,
+        vl_capture_point=vl_capture_point,
     )
     with torch.inference_mode(), cap:
         if policy_type == "groot" and hasattr(policy, "predict_action_chunk"):
@@ -354,18 +414,35 @@ def run_with_features(
         return action, None, None, {}
 
     if groot_dit_layers is not None:
-        # hidden is [L, K, D]: layer x denoise_step x feature_dim (action-token pooled).
-        axes = list(GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES)
-        meta = {
-            "feature_kind": GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND,
-            "feature_axes": axes,
-            "num_inference_timesteps": int(hidden.shape[1]),
-            "capture_layers": [int(layer) for layer in groot_dit_layers],
-            "layer_count": int(hidden.shape[0]),
-            "denoise_step_count": int(hidden.shape[1]),
-            "feature_dim": int(hidden.shape[2]),
-            "model_action_horizon": cap.groot_action_horizon,
-        }
+        if groot_dit_token_pool == "all_token_full":
+            # hidden is [L, K, T, D]: full-token capture (mean 은 fit 시점에).
+            axes = list(GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FULLTOKEN_FEATURE_AXES)
+            meta = {
+                "feature_kind": GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FULLTOKEN_FEATURE_KIND,
+                "feature_axes": axes,
+                "num_inference_timesteps": int(hidden.shape[1]),
+                "capture_layers": [int(layer) for layer in groot_dit_layers],
+                "layer_count": int(hidden.shape[0]),
+                "denoise_step_count": int(hidden.shape[1]),
+                "token_count": int(hidden.shape[2]),
+                "feature_dim": int(hidden.shape[3]),
+                "model_action_horizon": cap.groot_action_horizon,
+                "capture_token_mode": groot_dit_token_pool,
+            }
+        else:
+            # hidden is [L, K, D]: layer x denoise_step x feature_dim (action-token pooled).
+            axes = list(GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES)
+            meta = {
+                "feature_kind": GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND,
+                "feature_axes": axes,
+                "num_inference_timesteps": int(hidden.shape[1]),
+                "capture_layers": [int(layer) for layer in groot_dit_layers],
+                "layer_count": int(hidden.shape[0]),
+                "denoise_step_count": int(hidden.shape[1]),
+                "feature_dim": int(hidden.shape[2]),
+                "model_action_horizon": cap.groot_action_horizon,
+                "capture_token_mode": groot_dit_token_pool,
+            }
     elif pi05_expert_layers is not None:
         # hidden is [L, K, D]: layer x denoise_step x feature_dim (action-token pooled).
         axes = list(PI05_EXPERT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES)
@@ -401,7 +478,13 @@ def run_with_features(
     vl_hidden = cap.assemble_vl()
     if vl_hidden is not None:
         meta["vl_hidden_states"] = vl_hidden
-        meta["vl_feature_kind"] = GROOT_N15_VL_FEATURE_KIND
-        meta["vl_feature_axes"] = list(GROOT_VL_FEATURE_AXES)
+        if vl_capture_point == "post_vl_sa_full":
+            meta["vl_feature_kind"] = GROOT_N15_VL_POST_SA_FULLTOKEN_FEATURE_KIND
+            meta["vl_feature_axes"] = list(GROOT_N15_VL_POST_SA_FULLTOKEN_FEATURE_AXES)
+            meta["vl_token_count"] = int(vl_hidden.shape[0])
+        else:
+            meta["vl_feature_kind"] = GROOT_N15_VL_FEATURE_KIND
+            meta["vl_feature_axes"] = list(GROOT_VL_FEATURE_AXES)
         meta["vl_feature_dim"] = int(vl_hidden.shape[-1])
+        meta["vl_capture_point"] = vl_capture_point
     return action, hidden, axes, meta

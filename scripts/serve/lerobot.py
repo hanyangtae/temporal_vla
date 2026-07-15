@@ -58,7 +58,11 @@ from src.utils.common.feature_blob import (  # noqa: E402
 from src.policies.safe_metadata import (  # noqa: E402
     GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES,
     GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND,
+    GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FULLTOKEN_FEATURE_AXES,
+    GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FULLTOKEN_FEATURE_KIND,
     GROOT_N15_VL_FEATURE_KIND,
+    GROOT_N15_VL_POST_SA_FULLTOKEN_FEATURE_AXES,
+    GROOT_N15_VL_POST_SA_FULLTOKEN_FEATURE_KIND,
     GROOT_VL_FEATURE_AXES,
     PI05_EXPERT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES,
     PI05_EXPERT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND,
@@ -102,8 +106,22 @@ _collect_mode: bool = False
 _capture_vl_features: bool = False
 _groot_dit_capture_layers: tuple[int, ...] | None = None
 _pi05_expert_capture_layers: tuple[int, ...] | None = None
+_groot_dit_token_pool: str = "action_token_mean"  # pq3: "all_token_full" = full-token 수집
+_groot_vl_capture_point: str = "vlln_mean"  # pq3: "post_vl_sa_full" = cross-attn 입력 full-token
 _steering = []  # list of registered steering hooks (multi-layer 지원)
-_gated_registry: dict = {}  # oracle phase-gated steering: {"hooks":{layer:hook},"matrices":{layer:{phase:M}},"identity":{layer:I}}
+_gated_registry: dict = {}  # oracle phase-gated steering: {"hooks":{layer:hook},"matrices":{layer:{phase:M|M_seq}},"identity":{layer:I|[I]*K}}
+
+
+def _reset_steering_step_counters() -> None:
+    """Per-Step steering 의 denoise call 카운터를 요청 시작 시 리셋.
+
+    phase 는 요청 단위(/steering_phase), step 은 요청 내 denoise call 단위라 직교 —
+    /act·/act_with_features 진입부에서 매 요청 호출한다 (global M 단일 hook 은 no-op).
+    """
+    for hook in _steering:
+        reset = getattr(hook, "reset_step_counter", None)
+        if reset is not None:
+            reset()
 
 # payload 의 observation.state.* 서브키를 lerobot observation.state 로 합칠 때 사용할
 # canonical 정렬 순서 (벤치 공통). 체크포인트가 학습된 state dim 만큼 앞에서 truncate.
@@ -326,8 +344,9 @@ def steering_phase(payload: dict):
     phase = str(payload.get("phase", ""))
     for layer, hook in _gated_registry["hooks"].items():
         M = _gated_registry["matrices"][layer].get(phase)
-        hook.M = M if M is not None else _gated_registry["identity"][layer]
-        hook._Mt = None  # invalidate cached tensor so the new M takes effect
+        # set_matrices 가 M(단일) / M_seq(per-step 리스트) 모두 수용, 텐서 캐시·step
+        # 카운터도 함께 리셋한다 (구 ``hook.M=...; hook._Mt=None`` 배선 대체).
+        hook.set_matrices(M if M is not None else _gated_registry["identity"][layer])
     _gated_registry["current"] = phase
     return {"ok": True, "phase": phase, "gated": phase in next(iter(_gated_registry["matrices"].values()))}
 
@@ -397,6 +416,7 @@ async def predict_action(payload: dict):
     assert profile is not None
 
     inference_seed = _apply_inference_seed(payload)
+    _reset_steering_step_counters()
     batch = parse_payload(payload)
     batch = _apply_input_remap(batch)
 
@@ -435,6 +455,7 @@ async def predict_action_with_features(payload: dict):
 
     t0 = time.time()
     inference_seed = _apply_inference_seed(payload)
+    _reset_steering_step_counters()
     batch = parse_payload(payload)
     batch = _apply_input_remap(batch)
 
@@ -448,6 +469,8 @@ async def predict_action_with_features(payload: dict):
         capture_vl=_capture_vl_features,
         groot_dit_layers=_groot_dit_capture_layers,
         pi05_expert_layers=_pi05_expert_capture_layers,
+        groot_dit_token_pool=_groot_dit_token_pool,
+        vl_capture_point=_groot_vl_capture_point,
     )
 
     action = _postprocess_action_preserve_chunk(action)
@@ -512,13 +535,23 @@ def _health_feature_metadata() -> dict[str, Any]:
     _groot_block_mode = _policy_type == "groot" and _groot_dit_capture_layers is not None
     _pi05_block_mode = _policy_type == "pi05" and _pi05_expert_capture_layers is not None
     if _groot_block_mode:
+        _full = _groot_dit_token_pool == "all_token_full"
         metadata: dict[str, Any] = {
             "supports_features": True,
-            "feature_kind": GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND,
-            "feature_axes": list(GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES),
+            "feature_kind": (
+                GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FULLTOKEN_FEATURE_KIND
+                if _full
+                else GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND
+            ),
+            "feature_axes": list(
+                GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FULLTOKEN_FEATURE_AXES
+                if _full
+                else GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES
+            ),
             "feature_dtype": "float32",
             "model_action_horizon": _n_action_steps,
             "groot_dit_capture_layers": [int(layer) for layer in _groot_dit_capture_layers],
+            "capture_token_mode": _groot_dit_token_pool,
         }
     elif _pi05_block_mode:
         metadata = {
@@ -545,11 +578,21 @@ def _health_feature_metadata() -> dict[str, Any]:
         metadata["feature_action_horizon"] = _n_action_steps
         metadata["model_action_horizon"] = _n_action_steps
     if _policy_type == "groot" and _capture_vl_features:
+        _vl_full = _groot_vl_capture_point == "post_vl_sa_full"
         metadata.update(
             {
-                "vl_feature_kind": GROOT_N15_VL_FEATURE_KIND,
-                "vl_feature_axes": list(GROOT_VL_FEATURE_AXES),
+                "vl_feature_kind": (
+                    GROOT_N15_VL_POST_SA_FULLTOKEN_FEATURE_KIND
+                    if _vl_full
+                    else GROOT_N15_VL_FEATURE_KIND
+                ),
+                "vl_feature_axes": list(
+                    GROOT_N15_VL_POST_SA_FULLTOKEN_FEATURE_AXES
+                    if _vl_full
+                    else GROOT_VL_FEATURE_AXES
+                ),
                 "vl_feature_dim": 2048,
+                "vl_capture_point": _groot_vl_capture_point,
             }
         )
     return metadata
@@ -568,6 +611,7 @@ def _register_steering_if_requested(loaded_policy, args):
     from steering_hooks import (
         ConceptorSteering,
         Pi05ConceptorSteering,
+        load_steering_matrices_per_step,
         load_steering_matrix,
     )
 
@@ -579,6 +623,27 @@ def _register_steering_if_requested(loaded_policy, args):
     beta = getattr(args, "steering_beta", 0.3)
     alpha = getattr(args, "steering_alpha", None)
     key = getattr(args, "steering_key", "C_steer")
+    # pq3: token_select 는 default None(pathway 기본 보존 — dit=last_horizon, vl=all),
+    # denoise 는 global(구 단일 M) | per_step(step k 에 M_k 스와핑, groot dit 전용).
+    token_select = getattr(args, "steering_token_select", None)
+    denoise = getattr(args, "steering_denoise", "global") or "global"
+    per_step = denoise == "per_step"
+    expected_steps = None
+    if per_step:
+        if _policy_type != "groot":
+            raise ValueError("--steering-denoise per_step 은 groot 전용")
+        _gm = getattr(loaded_policy, "_groot_model", None)
+        if _gm is None:
+            raise ValueError("GR00T LeRobot policy is missing _groot_model for steering")
+        expected_steps = int(_gm.action_head.num_inference_timesteps)
+
+    def _load_matrices(npz_path):
+        """denoise 모드에 맞는 M(단일) 또는 M_seq(list) 로드 + preflight 로그."""
+        if per_step:
+            return load_steering_matrices_per_step(
+                str(npz_path), beta=beta, alpha=alpha, key=key, num_steps=expected_steps
+            )
+        return load_steering_matrix(str(npz_path), beta=beta, alpha=alpha, key=key)
 
     # --- Oracle phase-gated multi-layer steering: /steering_phase 로 M 스위칭 ---
     phase_base = getattr(args, "steering_phase_npz_base", None)
@@ -605,16 +670,25 @@ def _register_steering_if_requested(loaded_policy, args):
             for ph in phases:
                 npz_path = base / ph / f"dit_L{lyr}" / "conceptors.npz"
                 if npz_path.exists():
-                    matrices[lyr][ph] = load_steering_matrix(str(npz_path), beta=beta, alpha=alpha, key=key)
-            dim = next(iter(matrices[lyr].values())).shape[0]
-            identity[lyr] = _np.eye(dim)
-            hook = ConceptorSteering(groot_model, identity[lyr], pathway="dit", layer=lyr).register()
+                    matrices[lyr][ph] = _load_matrices(npz_path)
+            first = next(iter(matrices[lyr].values()))
+            dim = (first[0] if isinstance(first, list) else first).shape[0]
+            # per-step 이면 identity 도 [I]×K 로 통일 (전 요청에서 카운터 배선 동일 검증)
+            identity[lyr] = (
+                [_np.eye(dim)] * expected_steps if per_step else _np.eye(dim)
+            )
+            hook = ConceptorSteering(
+                groot_model, identity[lyr], pathway="dit", layer=lyr,
+                token_select=token_select,
+            ).register()
             hooks[lyr] = hook
             _steering.append(hook)
         _gated_registry = {"hooks": hooks, "matrices": matrices, "identity": identity, "current": None}
         logger.info(
-            "Phase-gated conceptor steering registered: base=%s layers=%s phases=%s beta=%s",
+            "Phase-gated conceptor steering registered: base=%s layers=%s phases=%s "
+            "beta=%s token_select=%s denoise=%s",
             phase_base, layers, phases, beta,
+            token_select or "last_horizon(default)", denoise,
         )
         return _steering
 
@@ -630,21 +704,27 @@ def _register_steering_if_requested(loaded_policy, args):
             npz_path = Path(steering_npz_dir) / f"dit_L{lyr}" / "conceptors.npz"
             if not npz_path.exists():
                 raise FileNotFoundError(f"multi-layer steering npz 없음: {npz_path}")
-            mat = load_steering_matrix(str(npz_path), beta=beta, alpha=alpha, key=key)
+            mat = _load_matrices(npz_path)
             _steering.append(
-                ConceptorSteering(groot_model, mat, pathway="dit", layer=lyr).register()
+                ConceptorSteering(
+                    groot_model, mat, pathway="dit", layer=lyr,
+                    token_select=token_select,
+                ).register()
             )
         logger.info(
-            "Multi-layer conceptor steering registered: dir=%s layers=%s beta=%s key=%s",
+            "Multi-layer conceptor steering registered: dir=%s layers=%s beta=%s key=%s "
+            "token_select=%s denoise=%s",
             steering_npz_dir, layers, beta, key,
+            token_select or "last_horizon(default)", denoise,
         )
         return _steering
 
     # --- Single hook (--steering-npz) ---
-    matrix = load_steering_matrix(steering_npz, beta=beta, alpha=alpha, key=key)
-
     if _policy_type == "pi05":
+        if per_step:
+            raise ValueError("--steering-denoise per_step 은 pi05 미지원 (groot dit 전용)")
         # COAST A.7.1 global: action expert decoder layer ℓ(default 11) residual stream.
+        matrix = load_steering_matrix(steering_npz, beta=beta, alpha=alpha, key=key)
         layer = getattr(args, "steering_layer", None)
         if layer is None:
             layer = 11
@@ -655,16 +735,27 @@ def _register_steering_if_requested(loaded_policy, args):
         )
         return _steering
 
+    matrix = _load_matrices(steering_npz)
+
     groot_model = getattr(loaded_policy, "_groot_model", None)
     if groot_model is None:
         raise ValueError("GR00T LeRobot policy is missing _groot_model for steering")
 
     pathway = getattr(args, "steering_pathway", "dit")
+    if per_step and pathway != "dit":
+        raise ValueError("--steering-denoise per_step 은 pathway='dit' 전용")
     layer = None if pathway == "vl" else getattr(args, "steering_layer", None)
-    _steering.append(ConceptorSteering(groot_model, matrix, pathway=pathway, layer=layer).register())
+    _steering.append(
+        ConceptorSteering(
+            groot_model, matrix, pathway=pathway, layer=layer,
+            token_select=token_select,
+        ).register()
+    )
     logger.info(
-        "Conceptor steering registered: npz=%s pathway=%s beta=%s alpha=%s key=%s layer=%s",
+        "Conceptor steering registered: npz=%s pathway=%s beta=%s alpha=%s key=%s "
+        "layer=%s token_select=%s denoise=%s",
         steering_npz, pathway, beta, alpha, key, layer,
+        token_select or f"{'all' if pathway == 'vl' else 'last_horizon'}(default)", denoise,
     )
     return _steering
 
@@ -769,7 +860,7 @@ def _load_model_impl():
 
 def main():
     global _profile, _collect_mode, _capture_vl_features, _groot_dit_capture_layers
-    global _pi05_expert_capture_layers
+    global _pi05_expert_capture_layers, _groot_dit_token_pool, _groot_vl_capture_point
 
     setup_serve_logging("lerobot_serve")
 
@@ -864,6 +955,44 @@ def main():
             "등록 안 된 phase 는 identity(no steer)."
         ),
     )
+    parser.add_argument(
+        "--groot-dit-token-pool",
+        choices=("action_token_mean", "all_token_full"),
+        default="action_token_mean",
+        help=(
+            "GR00T DiT block residual 캡처의 token 풀링 (pq3 COAST 토큰 축 정렬). "
+            "action_token_mean=구·default([L,K,D]) | all_token_full=전체 토큰 보존"
+            "([L,K,T,D] fp16, fit 수집 전용 — mean 은 fit 시점에)."
+        ),
+    )
+    parser.add_argument(
+        "--groot-vl-capture-point",
+        choices=("vlln_mean", "post_vl_sa_full"),
+        default="vlln_mean",
+        help=(
+            "GR00T VL pathway 캡처 지점. vlln_mean=구·default(vlln 출력 seq-mean [D]) | "
+            "post_vl_sa_full=vl_self_attention 출력(=DiT cross-attn 입력) full-token [T_vl,D]."
+        ),
+    )
+    parser.add_argument(
+        "--steering-token-select",
+        choices=("last_horizon", "all"),
+        default=None,
+        help=(
+            "Steering hook 의 적용 토큰. 미지정(None)=pathway 기본 보존"
+            "(dit=last_horizon, vl=all). pq3 COAST 정렬은 dit 에 all 을 명시 주입."
+        ),
+    )
+    parser.add_argument(
+        "--steering-denoise",
+        choices=("global", "per_step"),
+        default="global",
+        help=(
+            "denoise 축 steering 모드. global=구·default(전 step 같은 M) | per_step="
+            "step k 에 M_k 스와핑 (NPZ 키 step{k}_alpha{a}_*, groot dit 전용, "
+            "요청 시작마다 카운터 리셋)."
+        ),
+    )
     args = parser.parse_args()
 
     _collect_mode = bool(args.collect)
@@ -874,6 +1003,8 @@ def main():
     _pi05_expert_capture_layers = _parse_pi05_expert_capture_layers(
         args.pi05_expert_capture_layers
     )
+    _groot_dit_token_pool = str(args.groot_dit_token_pool)
+    _groot_vl_capture_point = str(args.groot_vl_capture_point)
     _profile = load_profile(args.profile)
     if _collect_mode:
         logger.info(
@@ -885,9 +1016,12 @@ def main():
         )
     if _groot_dit_capture_layers is not None:
         logger.info(
-            "SAFE GR00T DiT block residual capture ON: layers=%s",
+            "SAFE GR00T DiT block residual capture ON: layers=%s token_pool=%s",
             ",".join(str(layer) for layer in _groot_dit_capture_layers),
+            _groot_dit_token_pool,
         )
+    if _capture_vl_features and _groot_vl_capture_point != "vlln_mean":
+        logger.info("SAFE GR00T VL capture point: %s", _groot_vl_capture_point)
     if _pi05_expert_capture_layers is not None:
         logger.info(
             "SAFE pi05 expert block residual capture ON: layers=%s",
