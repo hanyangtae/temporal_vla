@@ -39,6 +39,13 @@ CELLS=(
   "ppcs_apple_s100504|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100504|Pick the apple from the plate and place it in the pan."
   "ppcs_apple_s100542|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100542|Pick the apple from the plate and place it in the pan."
   "ppcs_apple_s100632|PickPlaceCounterToStove|robocasa_panda_omron/PickPlaceCounterToStove_PandaOmron_Env|1|100632|Pick the apple from the plate and place it in the pan."
+  # --- pq3 cells (2026-07-15, cell=instruction — scene 은 manifest 의 seed 로 다양화;
+  #     SEED 열은 대표값일 뿐 pq3 러너는 make_pq3_manifests 산출 manifest 를 사용) ---
+  "pq3_drawer_left|OpenDrawer|robocasa_panda_omron/OpenDrawer_PandaOmron_Env|8|100001|Open the left drawer."
+  "pq3_drawer_right|OpenDrawer|robocasa_panda_omron/OpenDrawer_PandaOmron_Env|7|100000|Open the right drawer."
+  "pq3_ppcc_bread|PickPlaceCounterToCabinet|robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env|5|100084|Pick the bread from the counter and place it in the cabinet."
+  # pq3_ppcc_objA/objB: C0 스캔(pq3_c0_scan.sh) 확정 후 기입 — cell_index 15/16,
+  # instruction 은 configs/robocasa/pq3_ppcc_new_cells.tsv 의 canonical 과 일치시킬 것.
 )
 BREADS="ppcc_bread ppcc_bread_s300028 ppcc_bread_s300033 ppcc_bread_s400020"
 APPLES="ppcs_apple ppcs_apple_s100050 ppcs_apple_s100084 ppcs_apple_s100104"
