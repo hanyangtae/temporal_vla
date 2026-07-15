@@ -74,8 +74,10 @@ case "$mode" in
     inst="${1:-}"
     if [[ -n "$inst" ]]; then
       [[ -f "$inst" ]] || die "instructions 파일 없음: $inst"
-      # codex 0.144.x: `codex review` 의 PROMPT 는 위치 인자 (stdin '-' 미지원 — usage
-      # rc=2 실증, 2026-07-15). 파일 내용을 위치 인자로 전달. flag 오인 방지 가드.
+      # codex 0.144.x 실증(2026-07-15): PROMPT 는 stdin '-' 미지원 위치 인자이며
+      # --base/--commit 과는 동시 사용 불가(clap conflict) — uncommitted 에서만 허용.
+      [[ "$target" == uncommitted ]] || die \
+        "codex 0.144.x 제약: --base/--commit 리뷰는 instructions 동시 사용 불가 — 생략하라"
       [[ "$(head -c1 "$inst")" != "-" ]] || die "instructions 파일은 '-' 로 시작 금지"
       argv+=("$(cat "$inst")")
     fi
