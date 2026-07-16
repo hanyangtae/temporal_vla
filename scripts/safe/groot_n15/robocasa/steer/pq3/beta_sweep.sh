@@ -8,6 +8,8 @@
 #   (Stage1 layer·Gate D sha·성립 게이트 phase 확정본 — 러너 preflight 필수값, R2 높음#1)
 # env (선택): BETAS="0.1 0.3" ARMS="perm gated" MANIFEST(기본 pq3 manifests 경로)
 #   SWEEP_TIER(기본 sweep — 후보 layer 병행 시험 시 sweep_l4 등으로 출력 분리)
+#   RUNNER(기본 pq3_cell_runner.sh — 원격 워커에선 pq3_cell_runner_w2.sh 지정,
+#          HPY/HF_HOME_OVERRIDE/MACHINE_TAG 는 export 로 전달)
 set -euo pipefail
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/pq3_lib.sh"
@@ -33,7 +35,7 @@ for arm in $ARMS; do
           NPZ_DIR="$NPZ" STEER_LAYERS="$LAYERS" STEER_BETA="$beta" NPZ_SHAS="$SHAS"
           OUT_TIER="${SWEEP_TIER:-sweep}" EXPECT_N="$N_SWEEP" GPUS_L="${GPUS_L:?}" PORTS_L="${PORTS_L:?}")
     [ -n "$GPH" ] && ENVV+=(GATED_PHASES="$GPH")
-    env "${ENVV[@]}" bash "$HERE/pq3_cell_runner.sh"
+    env "${ENVV[@]}" bash "${RUNNER:-$HERE/pq3_cell_runner.sh}"
   done
 done
 echo "[beta-sweep] ${CELL_ID} 완료 — beta_decide.py 로 판정"
