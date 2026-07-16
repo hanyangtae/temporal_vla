@@ -32,9 +32,9 @@ junhyeong@166.104.35.50 / **a100 48** = junhyeong@166.104.35.48 / **로컬** 로
   S6 판정 특이 0/10 / S7 격리 / S8 push 완료.
 - **S5 drawer 7-phase 분포** (base 10판, tail seed): 성공(3ep) reach 47%·grasp-handle 27%·
   pull 26% / 실패(7ep) reach 58%·disengage 35%·grasp-handle 6%·**pull 0.1%(1 record)**.
-  → **pull phase 는 실패 클래스 희소.** 사용자 제시 선택지(Phase D dwell 표 보고 결정):
-  ① 해당 phase 는 **success-only steer**(C_success 사용) ② **none**(steer 안 함 = identity)
-  ③ **인접 phase 병합**. gated 성립 게이트(`pq3_gated_gate.py`)와 함께 사용자 게이트에서 결정.
+  → **pull phase 는 실패 클래스 희소.** **사용자 결정(2026-07-16, Phase C 착수 시)**:
+  ① **success-only steer**(C_success 사용) 먼저 → 실패 시 ② **none**(identity) → ③ **인접
+  phase 병합** 순차 시도. gated 성립 게이트(`pq3_gated_gate.py`) 결과와 함께 Phase D 에서 적용.
 - S9 host canary: 로컬 기준선 10판만 확보 — **3-host canary 는 E 직전** (당시 a100 50 GPU
   만석, a100 48 은 robocasa 컨테이너 GPU 상실 상태였음 — 사용 전 컨테이너 재시작 협의 필요).
 - base SR 참고치: drawer_left tail 10 seed 에서 3/10.

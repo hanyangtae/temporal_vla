@@ -44,8 +44,10 @@ CELLS=(
   "pq3_drawer_left|OpenDrawer|robocasa_panda_omron/OpenDrawer_PandaOmron_Env|8|100001|Open the left drawer."
   "pq3_drawer_right|OpenDrawer|robocasa_panda_omron/OpenDrawer_PandaOmron_Env|7|100000|Open the right drawer."
   "pq3_ppcc_bread|PickPlaceCounterToCabinet|robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env|5|100084|Pick the bread from the counter and place it in the cabinet."
-  # pq3_ppcc_objA/objB: C0 스캔(pq3_c0_scan.sh) 확정 후 기입 — cell_index 15/16,
-  # instruction 은 configs/robocasa/pq3_ppcc_new_cells.tsv 의 canonical 과 일치시킬 것.
+  # pq3 ppcc 신규 2종 (C0 스캔 2026-07-16 확정: 빈도 beer 9·pizza cutter 8 / 400, SR 미사용;
+  # configs/robocasa/pq3_ppcc_new_cells.tsv canonical 과 일치, SEED 열은 대표값)
+  "pq3_ppcc_beer|PickPlaceCounterToCabinet|robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env|15|100021|Pick the beer from the counter and place it in the cabinet."
+  "pq3_ppcc_pizza_cutter|PickPlaceCounterToCabinet|robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env|16|100146|Pick the pizza cutter from the counter and place it in the cabinet."
 )
 BREADS="ppcc_bread ppcc_bread_s300028 ppcc_bread_s300033 ppcc_bread_s400020"
 APPLES="ppcs_apple ppcs_apple_s100050 ppcs_apple_s100084 ppcs_apple_s100104"
