@@ -9,9 +9,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import random
 from pathlib import Path
-
-import numpy as np
 
 
 def main() -> None:
@@ -37,8 +36,9 @@ def main() -> None:
         rows.append(parts)
 
     labels = [int(p[1]) for p in rows]
-    perm = np.random.default_rng(args.perm_seed).permutation(len(rows))
-    new_labels = [labels[i] for i in perm]
+    idx = list(range(len(rows)))
+    random.Random(args.perm_seed).shuffle(idx)  # stdlib — seed 고정 결정성
+    new_labels = [labels[i] for i in idx]
     assert sorted(new_labels) == sorted(labels), "permutation 은 클래스 수 보존"
     if new_labels == labels:
         raise SystemExit("permutation 이 항등 — perm-seed 재고 필요")
