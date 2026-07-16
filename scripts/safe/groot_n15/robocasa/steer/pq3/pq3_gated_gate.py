@@ -233,8 +233,10 @@ def main() -> None:
             "note": "pass=False 인 task 는 H2/H3 전체 N/A (부분 cell 탈락 금지 — Codex R2#2). "
                     "queue 는 enforce=True report 만 소비할 것",
         }
+        # py<3.12: f-string 안 동일따옴표 중첩 불가 — 사전 계산 (승준 anaconda py3.11)
+        loo_str = ", ".join("%s:%s" % (p, loo[p]["min"]) for p in phases)
         print(f"[gated-gate] {task}: pass={task_pass} checks={checks} "
-              f"loo_min={{ {', '.join(f'{p}:{loo[p]['min']}' for p in phases)} }}")
+              f"loo_min={{ {loo_str} }}")
 
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out).write_text(json.dumps(report, indent=2, ensure_ascii=False))
