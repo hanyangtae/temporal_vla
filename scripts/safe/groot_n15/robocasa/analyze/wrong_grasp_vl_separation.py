@@ -704,6 +704,15 @@ def main() -> None:
         pd_out[pd_name] = {**st, "budget": d["budget"], "n_wg": d["n_pos"], "n_cmp": d["n_neg"],
                            "comparator_cls": list(d["cls"]), "names": d["names"],
                            "dwell_auroc": d["dwell_auroc"], "excluded": d["excluded"]}
+        # 시각화용 per-episode 데이터: LOO 점수(실제 통계) + 비지도 PCA 2D (라벨 미사용)
+        Xc = d["X"] - d["X"].mean(axis=0)
+        _, _, Vt = np.linalg.svd(Xc.astype(np.float64), full_matrices=False)
+        pca2 = Xc @ Vt[:2].T
+        pd_out[pd_name]["per_episode"] = [
+            {"name": n, "cls": c, "loo_score": float(s),
+             "pca1": float(p1), "pca2": float(p2), "postdrop_dwell": int(cnt)}
+            for n, c, s, (p1, p2), cnt in zip(
+                d["names"], d["cls"], fp.loo_scores(d["y"]), pca2, d["counts"])]
         print(f"[postdrop:{pd_name}] wg({d['n_pos']}) vs cmp({d['n_neg']}) budget={d['budget']}: "
               f"auroc={st['auroc']:.3f} p={st['p_perm']:.4f} null95={st['null95_upper']:.3f} "
               f"dwell(ctx)={d['dwell_auroc']:.3f} excluded={ {k: len(v) for k, v in d['excluded'].items()} }")
@@ -802,6 +811,44 @@ def _plots(results: dict, out_dir: Path) -> None:
     fig.tight_layout()
     fig.savefig(out_dir / "budget_sensitivity.png", dpi=150)
     plt.close(fig)
+
+    # 5) W_postdrop 분리 (보고용 핵심 그림): LOO score strip + 비지도 PCA 2D
+    pd = results.get("postdrop", {}).get("drop_succ")
+    if pd and "per_episode" in pd:
+        per = pd["per_episode"]
+        fig, axes = plt.subplots(1, 2, figsize=(9, 3.8))
+        col = {"wg": "tab:red", "succ": "tab:blue"}
+        lab = {"wg": "wrong-grasp bound (n=%d)" % pd["n_wg"],
+               "succ": "re-acquired bread, success (n=%d)" % pd["n_cmp"]}
+        # (a) LOO score strip — out-of-sample 점수, 실제 통계 근거
+        ax = axes[0]
+        for xi, cls in enumerate(("succ", "wg")):
+            pts = [e for e in per if (e["cls"] == "wg") == (cls == "wg")]
+            ax.scatter([xi] * len(pts), [e["loo_score"] for e in pts],
+                       c=col[cls], s=45, alpha=0.85, label=lab[cls])
+        ax.set_xticks([0, 1])
+        ax.set_xticklabels(["succ-drop", "wg"])
+        ax.set_ylabel("LOO LDA projection (out-of-sample)")
+        ax.set_title("W_postdrop VL: LOO scores\nAUROC=%.3f exact p=%.3f (budget=%d rec)"
+                     % (pd["auroc"], pd["p_perm"], pd["budget"]), fontsize=9)
+        ax.axhline(0, color="gray", lw=0.6)
+        # (b) 비지도 PCA 2D — 라벨 없이도 갈라지는지 (정직한 구조 확인)
+        ax = axes[1]
+        for cls in ("succ", "wg"):
+            pts = [e for e in per if (e["cls"] == "wg") == (cls == "wg")]
+            ax.scatter([e["pca1"] for e in pts], [e["pca2"] for e in pts],
+                       c=col[cls], s=45, alpha=0.85, label=lab[cls])
+        for e in per:
+            ax.annotate(e["name"].split("--")[1], (e["pca1"], e["pca2"]),
+                        fontsize=6, textcoords="offset points", xytext=(3, 3))
+        ax.set_xlabel("PC1 (unsupervised)")
+        ax.set_ylabel("PC2")
+        ax.set_title("VL mean of first %d post-drop re-search records\n(unsupervised PCA — labels unused)"
+                     % pd["budget"], fontsize=9)
+        ax.legend(fontsize=7)
+        fig.tight_layout()
+        fig.savefig(out_dir / "postdrop_separation.png", dpi=150)
+        plt.close(fig)
 
     # 4) reach dwell 분포
     cen = results["census"]
