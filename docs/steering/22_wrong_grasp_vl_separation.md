@@ -15,6 +15,8 @@
 
 - `phase_event_6p/.../ppcc_bread` 단일 cell (bread, 고정 seed·instruction), 60 에피소드
   = 성공 48 / 일반실패 5 / **wrong-grasp 실패 7**.
+- 시간 단위: **1 record = 1 inference step** (get_action 1회 = 5 env-step 실행,
+  chunk 16 예측/5 실행 표준). feature·phase 라벨 모두 per-record.
 - wrong-grasp 라벨 = 7-phase event labeler의 phase (¬target-grasped ∧ distractor-grasped).
   영상 육안검증 3/3 일치 (배·칼꽂이 파지 확인).
 - wrong-grasp은 이 cell 국소 현상: apple 실패 80개, potato 실패 54개, patchceil bread
@@ -64,7 +66,7 @@ reach → grasp(bread 정상 파지) → place(운반) → drop(rec 19~38)
 |---|---|---|---|
 | 초기 reach (W_pre, wg7 vs rest53) | 0.437 | 0.72 | 무신호 — **메커니즘상 당연** (초기엔 아무 문제 없음) |
 | 에피소드 절대 초기 (W_early 5/10) | 0.42/0.51 | n.s. | 초기조건형 아님 |
-| **drop 후 재탐색 (W_postdrop, wg6 vs succ-drop4, 첫 8 records)** | **1.000** | **0.071** | **완벽 분리 — 다만 6 vs 4에선 라벨을 우연히 섞어도 이런 극단 분리가 나올 확률 7%라 통계 확증은 불가** |
+| **drop 후 재탐색 (W_postdrop, wg6 vs succ-drop4, 첫 8 records)** | **1.000** | **0.071** | **완벽 분리 — 다만 6 vs 4에선 라벨을 우연히 섞어도 이런 극단 분리가 나올 확률 7%라 통계 확증은 불가** (그림 `postdrop_separation.png`: LOO score strip 겹침 0 + 비지도 PCA에서도 PC1 축 분리) |
 | wrong-grasp 중 (W_at) / 직전 (t_rel −1~−5) | 1.000 | — | 사후 판독 (당연; 파이프라인 유효성 확인용) |
 
 주의 깊게 볼 것:
@@ -122,4 +124,6 @@ Claim strength: **diagnostic evidence**.
 
 산출물: 스크립트 `scripts/safe/groot_n15/robocasa/analyze/wrong_grasp_vl_separation.py`,
 결과 `outputs/eval/robocasa/groot_n15/phase_event_6p/analysis/wrong_grasp_vl_separation/ppcc_bread/`
-(JSON + layer_profile/trel/budget/dwell 그림 4종).
+(JSON + 그림 5종: **postdrop_separation.png(보고용 핵심 — LOO strip + 비지도 PCA)**,
+layer_profile_wpre / trel_curve / budget_sensitivity / dwell_distributions).
+JSON의 `postdrop.drop_succ.per_episode`에 에피소드별 LOO 점수·PCA 좌표·재탐색 dwell 수록.
