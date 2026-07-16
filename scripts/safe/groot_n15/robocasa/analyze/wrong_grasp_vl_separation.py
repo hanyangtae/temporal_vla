@@ -27,6 +27,17 @@ docs/steering/14 의 중심 미해결 문제).
     ③ budget sweep ④ 라벨-fit 없는 succ-기준 diag-Mahalanobis anomaly (vl_anomaly_score 방식).
   - Leakage 사다리: W_early(절대 초기 k) → W_pre → onset-정렬 t_rel 곡선 (진단 전용).
 
+메커니즘 반영 추가 (2026-07-16 census·영상 실증 후):
+  wg 는 초기 오독이 아니라 [bread 정상 파지 → 운반 중 drop → bread 시야 밖 소실 →
+  재탐색 → distractor 파지] 의 2차 사건. 갈림은 drop 물리(bread 가 counter 에 남나 /
+  바닥으로 사라지나)가 결정 — 영상 3+2건 실증. 따라서:
+  - W_pre 무신호는 "가설 반증"이 아니라 메커니즘상 당연 (초기엔 아무 문제 없음).
+  - 올바른 event-matched 질문 = **W_postdrop**: drop 직후 ~ 다음 파지 이벤트 전
+    재탐색 reach 구간에서, 이후 wg 로 가는 에피소드 vs bread 재획득 에피소드 비교.
+    비교군 = drop 경험자만 (같은 event-state). drop 없는 wg(ep39 류)는 제외·별도 보고.
+  - 해석 가드레일: 여기서의 분리는 "target 소실 상태의 시각 판독"일 가능성이 지배적
+    (bread 가시성) — online trigger(target-lost 검출)로는 유용, "VL 오독 원인" 증거 아님.
+
 ``phase_separation.py`` 의 검증된 primitive 를 import 재사용 (수정하지 않음):
 load_rollout, phase_records, equal_budget_pool, rank_auroc, loo_auroc, _lda_project.
 LOO permutation 은 fold-별 PCA projection 이 y-무관임을 이용해 캐시(FoldProjector)로
@@ -96,6 +107,45 @@ def first_phase_index(roll: dict, phase: str) -> int | None:
         if p == phase:
             return i
     return None
+
+
+def load_rollout_with_events(pkl_path: Path) -> dict:
+    """ps.load_rollout + event 필드 (drop/grasp record 인덱스, record 단위 실증 완료)."""
+    import pickle
+
+    roll = ps.load_rollout(pkl_path)
+    with open(pkl_path, "rb") as f:
+        d = pickle.load(f)
+    roll["drop_steps"] = [int(v) for v in (d.get("drop_steps") or [])]
+    roll["grasp_steps"] = [int(v) for v in (d.get("grasp_steps") or [])]
+    return roll
+
+
+def postdrop_window(roll: dict) -> tuple[list[int], str]:
+    """W_postdrop: drop 직후 ~ 다음 획득 이벤트 전의 reach 레코드 (event-matched).
+
+    wg  : anchor = 첫 wg record **이전 마지막** drop, 끝 = 첫 wg record.
+          drop 없는 wg (ep39 류: insert 후 재탐색 중 wg) 는 제외 ("no_drop_before_wg").
+    비-wg: anchor = 첫 drop, 끝 = 그 뒤 첫 grasp 이벤트 (없으면 에피소드 끝).
+          drop 이 없는 에피소드는 event-state 부재로 제외 ("no_drop").
+    반환: (reach record 인덱스 리스트, 상태 문자열)
+    """
+    drops = roll.get("drop_steps") or []
+    phases = roll["phases"]
+    fw = first_wg_index(roll)
+    if fw is not None:
+        pre_drops = [s for s in drops if s < fw]
+        if not pre_drops:
+            return [], "no_drop_before_wg"
+        a, end = pre_drops[-1], fw
+    else:
+        if not drops:
+            return [], "no_drop"
+        a = drops[0]
+        later_grasps = [g for g in (roll.get("grasp_steps") or []) if g > a]
+        end = later_grasps[0] if later_grasps else len(phases)
+    idx = [i for i in range(a + 1, min(end, len(phases))) if phases[i] == REACH_PHASE]
+    return idx, "ok" if idx else "empty_window"
 
 
 def window_indices(roll: dict, window: str, k: int | None = None) -> list[int]:
@@ -168,6 +218,40 @@ def build_design(rolls: list[dict], labels: list[int], window: str, layer_key,
         "dwell_auroc": ps.rank_auroc(kept_counts, ys),
         "n_pos": int((ys == 1).sum()), "n_neg": int((ys == 0).sum()),
         "dropped": dropped,
+    }
+
+
+def build_postdrop_design(rolls: list[dict], layer_key, comparator_cls=("succ", "other_fail")) -> dict | None:
+    """W_postdrop event-matched 설계행렬 (에피소드당 1벡터).
+
+    포함 = postdrop_window 상태 "ok" 인 에피소드만 (event-state 매칭 — drop 없는
+    에피소드는 비교 불가 상태라 정의상 제외, budget-탈락과 다름). budget = global-min.
+    """
+    entries = []
+    excluded: dict[str, list[str]] = {}
+    for roll in rolls:
+        cls = classify_episode(roll)
+        if cls != "wg" and cls not in comparator_cls:
+            continue
+        idx, status = postdrop_window(roll)
+        if status != "ok":
+            excluded.setdefault(status, []).append(f"{roll['name']}({cls})")
+            continue
+        entries.append((roll, 1 if cls == "wg" else 0, idx, cls))
+    ys = np.array([y for _, y, _, _ in entries])
+    if len(entries) == 0 or int((ys == 1).sum()) < 2 or int((ys == 0).sum()) < 2:
+        return None
+    b = min(len(idx) for _, _, idx, _ in entries)
+    X = np.stack([ps.equal_budget_pool(episode_vectors(roll, layer_key, idx), b)
+                  for roll, _, idx, _ in entries], axis=0)
+    counts = np.array([len(idx) for _, _, idx, _ in entries], dtype=np.float64)
+    return {
+        "X": X, "y": ys, "budget": b, "counts": counts,
+        "names": [roll["name"] for roll, _, _, _ in entries],
+        "cls": [cls for _, _, _, cls in entries],
+        "dwell_auroc": ps.rank_auroc(counts, ys),
+        "n_pos": int((ys == 1).sum()), "n_neg": int((ys == 0).sum()),
+        "excluded": excluded,
     }
 
 
@@ -380,11 +464,14 @@ def census(rolls: list[dict]) -> dict:
     for roll in rolls:
         cls = classify_episode(roll)
         fw = first_wg_index(roll)
+        pd_idx, pd_status = postdrop_window(roll)
         per.append({
             "name": roll["name"], "cls": cls, "len": roll["length"],
             "first_wg_idx": fw,
             "pre_onset_reach": len(window_indices(roll, "W_pre")),
             "reach_total": sum(1 for p in roll["phases"] if p == REACH_PHASE),
+            "drop_steps": roll.get("drop_steps"), "grasp_steps": roll.get("grasp_steps"),
+            "postdrop_reach": len(pd_idx), "postdrop_status": pd_status,
             "phase_composition": {p: roll["phases"].count(p) for p in dict.fromkeys(roll["phases"])},
         })
     n = {c: sum(1 for e in per if e["cls"] == c) for c in ("succ", "other_fail", "wg")}
@@ -432,7 +519,7 @@ def main() -> None:
     out_dir = Path(args.out) if args.out else (
         run_dir.parent / "analysis" / "wrong_grasp_vl_separation" / args.cell)
 
-    rolls = [ps.load_rollout(p) for p in sorted(cell_dir.glob("*.pkl"))]
+    rolls = [load_rollout_with_events(p) for p in sorted(cell_dir.glob("*.pkl"))]
     if not rolls:
         raise SystemExit(f"no pkl under {cell_dir}")
     cen = census(rolls)
@@ -456,6 +543,12 @@ def main() -> None:
         for e in cen["per_episode"]:
             if e["cls"] == "other_fail":
                 print(f"  other_fail {e['name']} phases={e['phase_composition']}")
+        for e in cen["per_episode"]:
+            if e["postdrop_status"] == "ok":
+                print(f"  postdrop[{e['cls']}] {e['name']} reach={e['postdrop_reach']} "
+                      f"drops={e['drop_steps']}")
+            elif e["cls"] == "wg":
+                print(f"  postdrop[wg-EXCLUDED] {e['name']} status={e['postdrop_status']}")
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "census.json").write_text(json.dumps(cen, indent=2))
         print(f"[smoke] -> {out_dir / 'census.json'}")
@@ -481,6 +574,9 @@ def main() -> None:
             "layer_family": "W_pre x rest_all max-T familywise (공유 perm)",
             "other_fail_role": "exact perm 병기, descriptive 전용 (확증 불가)",
             "dwell_gate": "없음 — context 통계로만 병기 (equal-budget pool 이 count 경로 차단)",
+            "event_matched": "W_postdrop: drop 직후~다음 획득 전 reach, wg vs drop-경험 비교군 "
+                             "(메커니즘 실증 후 추가 — W_pre 무신호는 메커니즘상 당연으로 재해석). "
+                             "분리는 target-가시성 판독일 가능성 지배적 — 오독 원인 증거 아님.",
             "claim_ceiling": CLAIM_CEILING,
             "scope": SCOPE_NOTE,
         },
@@ -595,6 +691,37 @@ def main() -> None:
     print(f"[robustness] dwell_matched auroc={stm['auroc']:.3f} p={stm['p_perm']:.4f} | "
           f"score~dwell rho={rb['score_dwell_spearman_cmp']:.3f} | "
           f"mahal auroc={rb['mahal_anomaly']['auroc']:.3f}")
+
+    # ---------------- Event-matched: W_postdrop (메커니즘 반영 재설계) ----------------
+    pd_out = {}
+    for pd_name, keep in [("drop_all", ("succ", "other_fail")), ("drop_succ", ("succ",))]:
+        d = build_postdrop_design(rolls, "VL", comparator_cls=keep)
+        if d is None:
+            pd_out[pd_name] = {"status": "design failed (표본 부족)"}
+            continue
+        fp = FoldProjector(d["X"])
+        st = perm_stats(fp, d["y"], args.n_perm, rng)
+        pd_out[pd_name] = {**st, "budget": d["budget"], "n_wg": d["n_pos"], "n_cmp": d["n_neg"],
+                           "comparator_cls": list(d["cls"]), "names": d["names"],
+                           "dwell_auroc": d["dwell_auroc"], "excluded": d["excluded"]}
+        print(f"[postdrop:{pd_name}] wg({d['n_pos']}) vs cmp({d['n_neg']}) budget={d['budget']}: "
+              f"auroc={st['auroc']:.3f} p={st['p_perm']:.4f} null95={st['null95_upper']:.3f} "
+              f"dwell(ctx)={d['dwell_auroc']:.3f} excluded={ {k: len(v) for k, v in d['excluded'].items()} }")
+    # layer 프로파일 (drop_all, max-T)
+    pd_fps = {}
+    for lk in layer_keys:
+        d = build_postdrop_design(rolls, lk, comparator_cls=("succ", "other_fail"))
+        if d is not None:
+            pd_fps[layer_labels[str(lk)]] = (FoldProjector(d["X"]), d["y"])
+    if pd_fps:
+        y_pd = next(iter(pd_fps.values()))[1]
+        fam_pd = max_t_family({k: v[0] for k, v in pd_fps.items()}, y_pd, args.n_perm, rng)
+        pd_out["layer_family_drop_all"] = fam_pd
+        print("[postdrop layer-family] (max-T fw null95=%.3f):" % fam_pd["null95_fw_upper"])
+        for lab, v in sorted(fam_pd["layers"].items(), key=lambda kv: abs(kv[1]["auroc"] - 0.5),
+                             reverse=True):
+            print(f"    {lab:8s} auroc={v['auroc']:.3f} p_fw={v['p_familywise']:.4f}")
+    results["postdrop"] = pd_out
 
     # ---------------- t_rel 곡선 (진단) ----------------
     results["trel"] = {"VL": trel_curve(rolls, "VL")}

@@ -131,6 +131,49 @@ def test_signal_recovery():
           f"null p={st0['p_perm']:.3f}")
 
 
+def test_postdrop_window():
+    # wg: reach3 grasp5 place2 [drop@9] reach6(10-15) wg4(16-19) — postdrop = reach 10..15
+    r = make_roll("w", 0, ["reach-to-object"] * 3 + ["grasp"] * 5 + ["place"] * 2
+                  + ["reach-to-object"] * 6 + ["wrong-grasp"] * 4)
+    r["drop_steps"] = [9]; r["grasp_steps"] = [3]
+    idx, st = wg.postdrop_window(r)
+    assert st == "ok" and idx == [10, 11, 12, 13, 14, 15], (idx, st)
+    # drop 없는 wg → 제외
+    r2 = make_roll("w2", 0, ["reach-to-object"] * 3 + ["wrong-grasp"] * 2)
+    r2["drop_steps"] = []; r2["grasp_steps"] = []
+    assert wg.postdrop_window(r2) == ([], "no_drop_before_wg")
+    # 비-wg drop-재획득: [drop@5] reach(6-9) [grasp@10] — postdrop = 6..9
+    s = make_roll("s", 1, ["reach-to-object"] * 3 + ["grasp"] * 3
+                  + ["reach-to-object"] * 4 + ["grasp"] * 5)
+    s["drop_steps"] = [5]; s["grasp_steps"] = [3, 10]
+    idx, st = wg.postdrop_window(s)
+    assert st == "ok" and idx == [6, 7, 8, 9], (idx, st)
+    # drop 없는 비-wg → event-state 부재로 제외
+    s2 = make_roll("s2", 1, ["reach-to-object"] * 2 + ["grasp"] * 3)
+    s2["drop_steps"] = []; s2["grasp_steps"] = [2]
+    assert wg.postdrop_window(s2) == ([], "no_drop")
+    # build_postdrop_design: wg 2 + succ-drop 2 → budget=min, event-제외 목록 기록
+    rolls = []
+    for i in range(3):
+        rr = make_roll(f"w{i}", 0, ["reach-to-object"] * 3 + ["grasp"] * 3 + ["place"] * 2
+                       + ["reach-to-object"] * (4 + i) + ["wrong-grasp"] * 3, shift=1.0)
+        rr["drop_steps"] = [7]; rr["grasp_steps"] = [3]
+        rolls.append(rr)
+    for i in range(3):
+        ss = make_roll(f"s{i}", 1, ["reach-to-object"] * 3 + ["grasp"] * 3
+                       + ["reach-to-object"] * (5 + i) + ["grasp"] * 4)
+        ss["drop_steps"] = [5]; ss["grasp_steps"] = [3, 11 + i]
+        rolls.append(ss)
+    nd = make_roll("nodrop", 1, ["reach-to-object"] * 3 + ["grasp"] * 5)
+    nd["drop_steps"] = []; nd["grasp_steps"] = [3]
+    rolls.append(nd)
+    d = wg.build_postdrop_design(rolls, "VL")
+    assert d is not None and d["n_pos"] == 3 and d["n_neg"] == 3
+    assert d["excluded"].get("no_drop") == ["nodrop(succ)"]
+    assert d["budget"] == min(d["counts"]) and d["budget"] >= 4
+    print("[ok] postdrop_window / build_postdrop_design")
+
+
 def test_misc():
     a = np.array([1.0, 2, 3, 4, 5])
     assert abs(wg.spearman(a, a * 2 + 1) - 1.0) < 1e-9
@@ -153,5 +196,6 @@ if __name__ == "__main__":
     test_build_design_budget()
     test_exact_perm_count()
     test_signal_recovery()
+    test_postdrop_window()
     test_misc()
     print("\nALL OK")
