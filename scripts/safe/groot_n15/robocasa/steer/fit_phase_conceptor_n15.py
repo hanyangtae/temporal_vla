@@ -339,7 +339,7 @@ def main():
             if not line or line.startswith("#"):
                 continue
             parts = line.split("\t")
-            p = Path(parts[0])
+            p = Path(parts[0]).expanduser()  # freeze pkl-prefix 가 ~/datasets/... (승준 HDD)
             if not p.is_absolute():
                 p = REPO / p
             manifest_rows.append({"pkl": p, "label": int(parts[1]),

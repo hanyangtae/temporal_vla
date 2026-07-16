@@ -51,6 +51,7 @@ def load_manifest_rolls(manifest: Path, token_pool: str):
         pkl, label, scene = line.split("\t")[:3]
         if not scene.strip().lstrip("-").isdigit():
             raise SystemExit(f"{manifest}: scene 열 비숫자 행 (fail-closed): {line[:60]}")
+        pkl = str(Path(pkl).expanduser())  # freeze pkl-prefix 가 ~/datasets/... (승준 HDD)
         with open(pkl, "rb") as f:
             d = pickle.load(f)
         if d.get("capture_token_mode") != FULLTOKEN_MODE:
