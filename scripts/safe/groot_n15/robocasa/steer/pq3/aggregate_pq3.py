@@ -108,6 +108,8 @@ def main() -> None:
     ap.add_argument("--gated-gate-report", required=True,
                     help="pq3_gated_gate.py --enforce 산출 json — gated N/A 를 여기서 "
                          "자동 파생 (수동 override 금지, Gate2 R3 높음#3)")
+    ap.add_argument("--allow-resume-tags", action="store_true",
+                    help="재개 실행(run_tag 상이·spec_sha 동일) 허용 — summary 에 resumed arm 기록")
     ap.add_argument("--allow-incomplete", action="store_true",
                     help="미완주 arm 허용 (중간 점검용 — 판정 산출은 완주 시에만)")
     args = ap.parse_args()
@@ -135,6 +137,7 @@ def main() -> None:
     splits: dict[str, dict[int, dict]] = {}
     machines: dict[tuple[str, str], str] = {}
     incomplete, integrity = [], []
+    resumed = set()
     for cell, task in sorted(cells.items()):
         splits[cell] = read_eval_manifest(manifest_dir, cell)
         task_key = "drawer" if "Drawer" in task else "ppcc"
@@ -170,7 +173,13 @@ def main() -> None:
                 if row["noise_seed"] is not None and int(row["noise_seed"]) != man["noise_seed"]:
                     integrity.append(f"{cell}/{arm}: ep{ep} noise_seed {row['noise_seed']} != manifest {man['noise_seed']}")
                 if expect_tag and row["run_tag"] is not None and row["run_tag"] != expect_tag:
-                    integrity.append(f"{cell}/{arm}: ep{ep} run_tag {row['run_tag']} != ARM_SPEC {expect_tag}")
+                    # --allow-resume-tags: spec_sha 가 동일한 재개 실행(중단 후 같은 config 재발사)의
+                    # run_tag 상이는 허용 — env/noise seed·spec 대조는 그대로 강제 (fit30 운영 실증:
+                    # 호스트 재배치·중단 재개로 arm 당 복수 run_tag 발생, config 는 불변)
+                    if args.allow_resume_tags:
+                        resumed.add((cell, arm))
+                    else:
+                        integrity.append(f"{cell}/{arm}: ep{ep} run_tag {row['run_tag']} != ARM_SPEC {expect_tag}")
             got = {ep: row["succ"] for ep, row in rows.items()}
             expect_eps = set(splits[cell])
             if set(got) != expect_eps or len(got) != args.expect_n:
