@@ -60,6 +60,35 @@ ssh "${SSH_OPT[@]}" junhyeong@166.104.35.48 '
   done
 } > "$TMP/local" 2>/dev/null
 
+# ── sweep 진행 (perinstr β sweep, 로컬 sweep_perinstr) ───────────────────────
+# E work_queue 밖 단계 — cell×조건(perm/gated×b01/b03) 별 wrote/목표 집계.
+{
+  SWDIR="$SE/sweep_perinstr"
+  shown=0
+  if [ -d "$SWDIR" ]; then
+    for cd in "$SWDIR"/*/; do
+      [ -d "${cd}logs" ] || continue
+      cell=$(basename "$cd")
+      man="$SE/manifests/$cell/sweep_manifest.tsv"
+      tgt=$(awk -F'\t' '$0!~/^#/ && $1 ~ /^[0-9]+$/{c++} END{print c+0}' "$man" 2>/dev/null)
+      case "$tgt" in ''|*[!0-9]*|0) tgt='?';; esac
+      line=''
+      for cond in perm_b01 perm_b03 gated_b01 gated_b03; do
+        if ls "${cd}logs/sweep_${cond}_"w*.log >/dev/null 2>&1; then
+          n=$(grep -hE 'wrote task' "${cd}logs/sweep_${cond}_"w*.log 2>/dev/null | wc -l)
+          mk=''; [ "$n" = "$tgt" ] && mk='✓'
+          line="$line ${cond//_/ } ${n}/${tgt}${mk} ·"
+        else
+          line="$line ${cond//_/ } —/${tgt} ·"
+        fi
+      done
+      printf '  %-24s%s\n' "$cell" "${line% ·}"
+      shown=1
+    done
+  fi
+  [ "$shown" = 1 ] || echo "  (진행 중 sweep 없음)"
+} > "$TMP/sweep" 2>/dev/null
+
 # ── 전송 상태 ────────────────────────────────────────────────────────────────
 {
   tot=0
@@ -92,6 +121,8 @@ hr() { printf '─%.0s' $(seq 1 100); echo; }
 echo "pq3 전황판  $(date '+%F %T')  (read-only · watch -n 30 권장)"
 hr
 echo "[로컬]   수집/sweep GPU0-2"; cat "$TMP/local"
+hr
+echo "[sweep]   perinstr β sweep 진행 (wrote/목표 · ✓=완료 · E큐 밖 단계)"; cat "$TMP/sweep"
 hr
 echo "[승준 .37]   conceptor fit · gated 게이트 · HDD 아카이브"; cat "$TMP/sj"
 hr
