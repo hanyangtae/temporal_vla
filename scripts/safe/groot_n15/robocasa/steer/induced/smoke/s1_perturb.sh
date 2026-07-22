@@ -18,9 +18,14 @@ spec '{"mode":"G1_gripper_init","sham":false,"spec_seed":22,"sigma_xyz_m":0.10,"
 spec '{"mode":"P1_displace","sham":false,"spec_seed":23,"trigger_record":8,"magnitude":0.08,"tag":"real_p1"}' real_p1
 spec '{"mode":"P2_force","sham":false,"spec_seed":24,"trigger_record":10,"duration_records":2,"magnitude":15.0,"tag":"real_p2"}' real_p2
 
+# capture serve(csv 산출) + capture-OFF serve(base_nf 용 — collect serve 는 skip_features
+# 를 409 거부하므로 교차모드 검사는 별도 serve 필수. 같은 GPU serve 2 규칙 내).
+PORT_NF=$((PORT + 5))
 start_serve "$GPU" "$PORT" --collect --groot-dit-capture-layers 15
-trap 'kill_serve "$PORT"' EXIT
+start_serve "$GPU" "$PORT_NF"
+trap 'kill_serve "$PORT"; kill_serve "$PORT_NF"' EXIT
 wait_health "$PORT"
+wait_health "$PORT_NF"
 
 run_one() {  # name spec_name(""=없음) [extra...]
   local name=$1; shift
@@ -39,12 +44,15 @@ run_one() {  # name spec_name(""=없음) [extra...]
 
 run_one base_cap ""
 run_one base_cap2 ""
-run_one base_nf "" --no-features --expect-chunk-len 16
+if [ -z "$(ep_file "$S1/base_nf" json)" ]; then
+  echo "[s1] run base_nf (capture-OFF serve :${PORT_NF})"
+  run_ep "$PORT_NF" "$S1/base_nf" 0 0 --no-features --expect-chunk-len 16
+fi
 for s in sham_c1 sham_g1 sham_p1 sham_p1f sham_p2 real_c1 real_g1 real_p1 real_p2; do
   run_one "$s" "$s"
 done
 run_one real_c1_rerun real_c1
-kill_serve "$PORT"; trap - EXIT
+kill_serve "$PORT"; kill_serve "$PORT_NF"; trap - EXIT
 
 BASE_CSV="$(ep_file "$S1/base_cap" csv)"
 [ -n "$BASE_CSV" ] || { echo "ABORT: baseline csv 없음"; exit 12; }

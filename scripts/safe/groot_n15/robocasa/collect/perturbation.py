@@ -290,24 +290,39 @@ class Perturber:
                 "fovy_before": fovy0,
                 "fovy_after": float(fovy1),
             }
-        sim.forward()
+        # sim.forward() 호출 금지 — cam_pos/quat/fovy 는 렌더 전용 모델 필드라 물리 재계산이
+        # 불필요하고, forward() 는 warmstart 재계산으로 bitwise 를 깬다 (S1 sham_p1f 실측).
         return self._refresh_obs()
+
+    def _base_rot(self) -> np.ndarray:
+        """robot 루트(base) body 의 world 회전행렬 — OSC delta 는 base 프레임 입력."""
+        kenv = self.kenv
+        root = kenv.robots[0].robot_model.root_body
+        bid = kenv.sim.model.body_name2id(root)
+        return np.array(kenv.sim.data.body_xmat[bid], dtype=np.float64).reshape(3, 3)
 
     def _apply_gripper_init(self, obs: dict[str, Any]) -> dict[str, Any]:
         if self.spec.sham:
             self._sham_skipped = True
             return obs
+        # WAM 방식 closed-loop: OSC delta 는 base 프레임 + 관성으로 open-loop 추종이 ~20%
+        # 에 그침 (S1 실측) → 매 chunk 잔여 오차(world)를 base 프레임으로 회전해 명령,
+        # 도달(1cm) 또는 max_chunks 에서 중단. 전부 sim 상태의 함수라 결정적.
         delta = np.asarray(self.resolved["delta_xyz_m"], dtype=np.float64)
-        norm = float(np.linalg.norm(delta))
-        n_steps = max(1, int(math.ceil(norm / G1_MAX_STEP_DELTA_M)))
-        n_chunks = max(1, int(math.ceil(n_steps / self.nas)))
-        per_step = delta / (n_chunks * self.nas)
-        # 정규화 (OSC delta): 1.0 == 0.05 m/step. per_step 상한 4 cm 라 |정규화| ≤ 0.8.
-        step_norm = per_step / OSC_POS_SCALE_M
-        if float(np.max(np.abs(step_norm))) > 1.0:
-            raise RuntimeError(f"G1 per-step 정규화 포화: {step_norm}")
         eef0 = self._eef_pos()
-        for _ in range(n_chunks):
+        target = eef0 + delta
+        max_chunks = 8
+        n_chunks = 0
+        for _ in range(max_chunks):
+            err_w = target - self._eef_pos()
+            if float(np.linalg.norm(err_w)) < 0.01:
+                break
+            step_w = err_w / self.nas
+            n = float(np.linalg.norm(step_w))
+            if n > G1_MAX_STEP_DELTA_M:
+                step_w = step_w * (G1_MAX_STEP_DELTA_M / n)
+            step_b = self._base_rot().T @ step_w
+            step_norm = np.clip(step_b / OSC_POS_SCALE_M, -1.0, 1.0)
             chunk = {
                 "action.end_effector_position": np.tile(
                     step_norm.astype(np.float32), (self.nas, 1)
@@ -318,6 +333,7 @@ class Perturber:
                 "action.control_mode": np.zeros((self.nas, 1), dtype=np.float32),
             }
             obs, _reward, terminated, truncated, _info = self.env.step(chunk)
+            n_chunks += 1
             if terminated or truncated:
                 self._scripted_terminated = True
                 raise RuntimeError(
