@@ -194,10 +194,15 @@ def _quat_mul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 
 def _find_groot_env(env: Any) -> Any:
-    """wrapper 체인에서 GrootRoboCasaEnv (get_groot_observation 보유)를 찾는다."""
+    """wrapper 체인에서 **실제** GrootRoboCasaEnv 인스턴스를 찾는다.
+
+    주의: 인스턴스 hasattr 는 gymnasium Wrapper 의 __getattr__ 전달 때문에 wrapper 에서도
+    True 라서 쓰면 안 됨 (private 접근 시 "accessing private attribute ... is prohibited").
+    type-레벨 hasattr 로 메서드를 직접 정의/상속한 클래스만 매칭.
+    """
     e = env
     for _ in range(24):
-        if hasattr(e, "get_groot_observation"):
+        if hasattr(type(e), "get_groot_observation"):
             return e
         if hasattr(e, "env"):
             e = e.env

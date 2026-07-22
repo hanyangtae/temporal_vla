@@ -71,9 +71,10 @@ run_ep() {  # port out_host ep inf extra...
     --cell-index "$CELL_INDEX" --canonical-instruction "$INSTR" \
     --episode-start-idx "$ep" --n-episodes 1 --seed "$SEED" --inference-seed "$inf" \
     --n-action-steps "$NAS" --max-episode-steps "$MAXEP" \
-    --video-fps 20 --steps-per-render 2 --wait-ready "$@" 2>&1 \
+    --video-fps 20 --steps-per-render 2 --wait-ready --proximity-phases "$@" 2>&1 \
     | grep -E "^wrote|Error|Traceback|ABORT" || true
 }
+# --proximity-phases: passB(자연실패, bridge 대조측)와 동일한 6p 라벨 체계 유지
 
 done_mark() { ls "${1}/raw_rollouts/${TASK}/${CELL_ID}/task${CELL_INDEX}--ep${2}--succ"* >/dev/null 2>&1; }
 
