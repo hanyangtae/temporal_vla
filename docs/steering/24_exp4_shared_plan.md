@@ -66,7 +66,8 @@ exp4의 공략:
 - 공통 표준: EVAL_SEED=100000, fresh process per episode(gym.make 연속 생성 금지), setsid detach, CPU ≤40%(OMP/OPENBLAS ≤16), 수집 캡처는 exp4-2만 ON(eval은 OFF 정책 유지).
 - 결정론은 **머신 단위** — episode 재현·eval은 그 episode를 수집한 머신에서. cross-machine 비교는 각주 규칙(memory `a100-worker2-parallel-eval`).
 - 브랜치: exp4-1 `exp/exp4-1-oracle-rescue`, exp4-2 `exp/exp4-2-induced-failures` (dev 분기). patchceil worktree(`.claude/worktrees/patching-ceiling`)는 **포팅 원본으로만, 무접촉**.
-- 보고는 confound-audit skill 경유, 판정은 pre-registered primary contrast만. 결과 문서는 docs/steering/25(exp4-1)·26(exp4-2) 예약.
+- **동시 실행 규칙 (같은 머신에서 두 세션 병행 시)**: git 폴더 하나에는 브랜치 하나만 체크아웃되므로 두 세션이 본 트리를 공유할 수 없다 → **exp4-1은 본 트리, exp4-2는 전용 worktree**(`.claude/worktrees/` 밑, 자기 브랜치)에서 작업한다. worktree는 repo 안이라 robocasa 컨테이너 mount에 그대로 보이며, worktree 내 serve·수집은 patchceil에서 기검증(exp3와 병행 실적).
+- 보고는 confound-audit skill 경유, 판정은 pre-registered primary contrast만. 결과 문서 번호는 작성 시점의 dev 문서 목록을 보고 지정한다 (25번대는 patchceil 결과·CloseFridge 라벨러가 이미 사용 — 이 계획 작성 후 dev에서 번호 재편 있었음).
 
 ## 6. 게이트 흐름 (요약)
 

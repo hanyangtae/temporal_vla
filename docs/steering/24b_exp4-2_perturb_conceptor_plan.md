@@ -129,7 +129,9 @@ mid-rollout 실패 주입 선행(RePO-VLA 4종, FailGen 7종) 기준 2모드는 
 ```
 exp4-2(perturbation 유도 실패 → conceptor)를 실행한다.
 계획: docs/steering/24b_exp4-2_perturb_conceptor_plan.md (+ 공유 24_exp4_shared_plan.md) — 먼저 정독.
-브랜치: dev에서 exp/exp4-2-induced-failures 분기. patchceil worktree는 포팅 원본으로만(무접촉).
+worktree를 만들어 그 안에서 작업한다 (브랜치 exp/exp4-2-induced-failures, dev에서 분기) —
+exp4-1 세션이 본 트리를 쓰므로 (공유문서 §5 동시 실행 규칙). patchceil worktree는 포팅
+원본으로만(무접촉).
 순서: ① Track P perturbation.py + collect 연결, Track I 포팅(+PatchSteeringVL 신작) 병렬 구현
 ② smoke S1–S5 (하드 게이트, 통과 못 하면 중단·보고) ③ P0 파일럿 → 실패율 40–70% 게이트
 → **bridge 게이트(유도축↔자연축 정렬, 분석만)** → 사용자 보고 후 P1 본수집(3분할 계약 준수)
