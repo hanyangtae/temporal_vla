@@ -23,7 +23,7 @@
 | OpenStandMixerHead | **신규 cell** — 없음 (스모크 SR 0.33·이봉판정·instruction 1종·fixture 1종, docs/steering/26) | 없음 | ① **scene feasibility 스캔** seed 100000-100099 (`analyze/mixer_scene_feasibility.py` 기성, 실측 100010 BLOCKED) ② feasible seed에서 C0 스캔(exp3 `c0_scan` 패턴)으로 결정적 실패 확보 → baseline + 사이드카 + 재현 검증 |
 
 - **feasibility 필터는 4 task 공통 선행**: mixer는 스크립트 기성, drawer/ppcc는 4-파라미터 이식 후 스캔(오염 여부 미확인 — 기존 patchceil 77판·exp3 실패분도 스캔해서 불가 seed 발견 시 분모에서 제외·기록). 제외 seed·q_max는 annotation manifest에 컬럼으로 기록.
-- 결정론은 **머신 단위** — 각 episode는 수집한 머신에서 재현·eval (로컬/w2 층화, cross-machine 비교는 각주 규칙).
+- 결정론은 **머신 단위** — 각 episode는 수집한 머신에서 재현·eval (로컬/srv50(구 w2) 층화, cross-machine 비교는 각주 규칙).
 - **ITT 분모 (Codex 반영)**: task별 headline rescue rate의 분모는 "**feasibility 통과한** 결정적 실패 전체"로 고정. 사용자가 주석을 생략한 episode는 **비구제로 계상**(별도로 주석 부분집합 rate 병기). 분모 선별 편향 방지 — 단 기하 불가 seed 제외는 편향이 아님(정책·arm 무관, seed만의 함수·전 arm 동일 적용).
 - 1차 착수는 ppcc_bread(준비 완료, feasibility 사후 스캔 병행), 나머지 3 task는 준비 작업과 병행.
 
