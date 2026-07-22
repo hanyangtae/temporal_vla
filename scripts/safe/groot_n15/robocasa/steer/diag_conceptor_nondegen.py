@@ -30,11 +30,11 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "16")
 
 import numpy as np
 
-REPO = Path(__file__).resolve().parents[5]
-sys.path.insert(0, str(REPO))
-sys.path.insert(0, str(REPO / "scripts/safe/groot_n15/robocasa/analyze"))
+_INDUCED = Path(__file__).resolve().parent / "induced"
+if str(_INDUCED) not in sys.path:
+    sys.path.insert(0, str(_INDUCED))
 
-from phase_separation import load_rollout  # noqa: E402
+from induced_common import REPO, load_roll_any  # noqa: E402  (sys.path 부수효과 포함)
 from src.conceptor import (  # noqa: E402
     and_conceptor,
     compute_conceptor,
@@ -79,7 +79,7 @@ def _load_records(rows, rs_map, capture_layer: int, group: str):
     """manifest → episode 별 [n_i, D] record 행렬 리스트 (+라벨)."""
     eps = []
     for p, label in rows:
-        r = load_rollout(p)
+        r = load_roll_any(p)
         cap = r["capture_layers"]
         if capture_layer not in cap:
             raise SystemExit(f"{p.name}: capture layer {capture_layer} 없음 (cap={cap})")

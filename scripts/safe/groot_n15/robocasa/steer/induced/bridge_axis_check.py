@@ -26,50 +26,23 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "16")
 
 import numpy as np
 
-REPO = Path(__file__).resolve().parents[6]
-sys.path.insert(0, str(REPO))
-sys.path.insert(0, str(REPO / "scripts/safe/groot_n15/robocasa/analyze"))
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
 
-from phase_separation import load_rollout  # noqa: E402
+from induced_common import REPO, load_roll_any, read_manifest, read_record_start  # noqa: E402
 
 DEFAULT_BINS = ("global", "reach-to-object", "transport", "insert-settle")
 
-
-def _read_manifest(path: str) -> list[tuple[Path, int]]:
-    rows = []
-    for line in Path(path).read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        parts = line.split("\t")
-        p = Path(parts[0]).expanduser()
-        if not p.is_absolute():
-            p = REPO / p
-        rows.append((p, int(parts[1])))
-    return rows
-
-
-def _read_rs(path: str | None) -> dict[str, int]:
-    if not path:
-        return {}
-    out = {}
-    for line in Path(path).read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        parts = line.split("\t")
-        p = Path(parts[0]).expanduser()
-        if not p.is_absolute():
-            p = REPO / p
-        out[str(p.resolve())] = int(parts[1])
-    return out
+_read_manifest = read_manifest
+_read_rs = read_record_start
 
 
 def _load_side(rows, rs_map, capture_layer, mode_map=None):
     """→ list of dict(ep): {X_bin: {bin: [n,D]}, label, mode}"""
     eps = []
     for p, label in rows:
-        r = load_rollout(p)
+        r = load_roll_any(p)
         cap = r["capture_layers"]
         if capture_layer not in cap:
             raise SystemExit(f"{p.name}: layer {capture_layer} 없음 (cap={cap})")
