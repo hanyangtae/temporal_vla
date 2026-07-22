@@ -31,8 +31,10 @@ if [ "$PATHWAY" = "dit" ]; then
 else
   PATCH_ARGS="--patch-pathway vl"
 fi
+# 캡처 kind 는 fit 호환 규약 (24b §2.1): action_token_mean + vlln_mean.
+# post_vl_sa_full 은 B1 donor 추출 전용 (record당 3.4MB — 본 수집에 쓰면 디스크 폭증).
 SERVE_EXTRA="${PATCH_ARGS} --patch-allow-collect --collect --capture-vl \
-  --groot-vl-capture-point post_vl_sa_full --groot-dit-capture-layers ${CAP}"
+  --groot-dit-capture-layers ${CAP}"
 
 start_serves() {
   for i in $(seq 0 $((NW - 1))); do

@@ -34,7 +34,8 @@ to_cont() { echo "${1/#${MAIN_HOST}//temporal_vla}"; }
 serve_extra=""
 collect_extra="--no-features --expect-chunk-len 16"
 if [ "$PHASE" = "capture" ]; then
-  serve_extra="--collect --capture-vl --groot-vl-capture-point post_vl_sa_full --groot-dit-capture-layers ${CAP}"
+  # fit 호환 캡처 규약 (24b §2.1): action_token_mean + vlln_mean (post_vl_sa_full 은 donor 전용)
+  serve_extra="--collect --capture-vl --groot-dit-capture-layers ${CAP}"
   collect_extra=""
 fi
 
