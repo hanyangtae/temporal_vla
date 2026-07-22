@@ -118,7 +118,7 @@ if [ "$ARM" = "A0" ] || [ "$ARM" = "A" ] || [ "$POOL" = "eval" ]; then
   FLAGS=""
   case "$ARM" in
     A0) FLAGS="" ;;
-    A) FLAGS=$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/A" conceptor "$BETA_A") || exit 12 ;;
+    A) FLAGS="$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/A" conceptor "$BETA_A") --steering-denoise ${DENOISE_A:-per_step}" || exit 12 ;;
     setM) FLAGS=$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/setM" setpoint "$BETA_SETM") || exit 12 ;;
     setM_pl) FLAGS=$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/setM_pl" setpoint "$BETA_SETM") || exit 12 ;;
     *) echo "unknown ARM: $ARM"; exit 2 ;;
