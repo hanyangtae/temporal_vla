@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(scripts/utils/codex_ask.sh:*)",
+      "Bash(bash scripts/utils/codex_ask.sh:*)"
+    ]
+  },
+  "worktree": {
+    "bgIsolation": "none"
+  }
+}

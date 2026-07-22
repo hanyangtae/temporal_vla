@@ -56,6 +56,9 @@ model token 전체를 pooling하는 것이다.
 - [00 Latent Steering Explorer](00_groot_steering_explorer.html) — 위 flow map과
   latent steering 핵심 수식(conceptor, hidden-state gate, VL/DiT pathway)을 한 화면에서
   추적하는 self-contained interactive HTML 지도
+- [00 Data Catalog](00_groot_data_catalog.md) — GR00T N1.5/N1.6 rollout·activation이
+  로컬/원격(승준 HDD) 어느 경로에 무엇이 있는지, raw인지 analysis 산출물뿐인지 정리한 지도.
+  원격 데이터 작업 전 먼저 본다
 
 ## N1.6 Reading Order
 

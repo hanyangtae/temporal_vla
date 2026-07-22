@@ -29,6 +29,16 @@ GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES = [
     "denoise_step",
     "feature_dim",
 ]
+# pq3 full-token capture: 전 시퀀스 토큰(state+future+action, T=token_count) 보존,
+# mean 은 fit 시점에 수행. Shape per env-step = [layer, denoise_step, model_token,
+# feature_dim] (fp16 저장, fit 수집 전용). axes[0]="layer" 라 collect_artifacts 의
+# action-token horizon 불변식에서 면제된다.
+GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FULLTOKEN_FEATURE_AXES = [
+    "layer",
+    "denoise_step",
+    "model_token",
+    "feature_dim",
+]
 
 GROOT_N16_VALID_FEATURE_KIND = "groot_n16_dit_valid_action_tokens_pre_velocity"
 GROOT_N16_ALL_FEATURE_KIND = "groot_n16_dit_all_action_tokens_pre_velocity"
@@ -36,9 +46,16 @@ GROOT_N15_DIT_BLOCK_RESIDUAL_FEATURE_KIND = "groot_n15_dit_block_residual_tokens
 GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND = (
     "groot_n15_dit_block_residual_action_tokens_denoise"
 )
+GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FULLTOKEN_FEATURE_KIND = (
+    "groot_n15_dit_block_residual_full_tokens_denoise"
+)
 GROOT_VL_FEATURE_AXES = ["feature_dim"]
 GROOT_N15_VL_FEATURE_KIND = "groot_n15_vlln_seq_meanpool"
 GROOT_N16_VL_FEATURE_KIND = "groot_n16_vlln_seq_meanpool"
+# pq3: post-VL-SA(=DiT cross-attn 입력, vlln→vl_self_attention 출력) full-token 캡처.
+# Shape per env-step = [vl_token, feature_dim] (T_vl 은 런타임 기록).
+GROOT_N15_VL_POST_SA_FULLTOKEN_FEATURE_AXES = ["vl_token", "feature_dim"]
+GROOT_N15_VL_POST_SA_FULLTOKEN_FEATURE_KIND = "groot_n15_vl_post_sa_full_tokens"
 
 # COAST A.7.1 pi05: π0.5 action expert(Gemma2, 18 layer, d=1024)의 decoder layer
 # residual stream에서 마지막 chunk_size action token을 mean-pool, denoise step K 보존.

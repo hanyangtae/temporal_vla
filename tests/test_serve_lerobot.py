@@ -1286,9 +1286,10 @@ class TestSafeHooks(unittest.TestCase):
 
 class TestSteeringRegistration(unittest.TestCase):
     def tearDown(self):
-        if getattr(serve_lerobot, "_steering", None) is not None:
-            serve_lerobot._steering.unregister()
-            serve_lerobot._steering = None
+        # _steering is a list of hooks (multi-layer 지원)
+        for _h in getattr(serve_lerobot, "_steering", None) or []:
+            _h.unregister()
+        serve_lerobot._steering = []
         serve_lerobot._policy_type = "unknown"
 
     def test_register_steering_noops_without_npz(self):
@@ -1298,7 +1299,7 @@ class TestSteeringRegistration(unittest.TestCase):
         result = serve_lerobot._register_steering_if_requested(policy, args)
 
         self.assertIsNone(result)
-        self.assertIsNone(serve_lerobot._steering)
+        self.assertEqual(serve_lerobot._steering, [])
 
     def test_register_steering_attaches_vl_hook_to_groot_model(self):
         conceptor_path = Path(tempfile.mkdtemp()) / "conceptors.npz"
@@ -1327,9 +1328,11 @@ class TestSteeringRegistration(unittest.TestCase):
 
         self.assertIsNotNone(steering)
         self.assertIs(serve_lerobot._steering, steering)
-        self.assertEqual(steering.pathway, "vl")
-        self.assertIsNone(steering.layer)
-        self.assertIs(steering.module, groot_model.action_head.vlln)
+        self.assertEqual(len(steering), 1)
+        hook = steering[0]
+        self.assertEqual(hook.pathway, "vl")
+        self.assertIsNone(hook.layer)
+        self.assertIs(hook.module, groot_model.action_head.vlln)
 
     def test_register_steering_rejects_non_groot_policy(self):
         args = SimpleNamespace(
@@ -1340,9 +1343,10 @@ class TestSteeringRegistration(unittest.TestCase):
             steering_layer=None,
             steering_pathway="dit",
         )
-        serve_lerobot._policy_type = "pi05"
+        # pi05 는 이제 지원되므로 실제 미지원 타입으로 reject 확인.
+        serve_lerobot._policy_type = "openvla"
 
-        with self.assertRaisesRegex(ValueError, "requires policy_type='groot'"):
+        with self.assertRaisesRegex(ValueError, "requires policy_type in"):
             serve_lerobot._register_steering_if_requested(SimpleNamespace(), args)
 
 

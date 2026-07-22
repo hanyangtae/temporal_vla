@@ -63,6 +63,10 @@ N1.5와 N1.6의 DiT token layout은 대칭이 아니므로 feature shape 비교 
 quick reference를 먼저 확인한다. 핵심 차이는 N1.6 full residual `T=51 = state(1)+action(50)`,
 N1.5 aligned residual `T=49 = state(1)+future_tokens(32)+action(16)`이다.
 
+GR00T rollout·activation 데이터가 로컬/원격(승준 HDD) 어느 경로에 무엇이 있는지는
+[GR00T Data Catalog](groot/00_groot_data_catalog.md)에 정리돼 있다. 원격 데이터로 분석·fit을
+돌리기 전에 먼저 본다.
+
 처음 구조를 파악할 때는 [GR00T Flow Map](groot/00_groot_flow_map.md)을 먼저 본다. 이 문서는
 LeRobot/native, RoboCasa365, ZMQ/HTTP entry point가 어떤 파일과 함수를 지나 어떤 값을 전달하는지
 초보자용 call chain으로 정리한다. 같은 흐름을 latent steering 수식과 함께 화면에서 훑을 때는

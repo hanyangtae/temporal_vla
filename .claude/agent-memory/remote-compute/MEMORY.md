@@ -1,0 +1,2 @@
+- [Remote scipy/sklearn available](remote-python-scipy-sklearn-available.md) — as of 2026-07-01 ~/anaconda3/bin/python HAS scipy+sklearn (contradicts older "no scipy" claim); verify per-package, don't trust stale doc
+- [Remote imageio-ffmpeg pip install](remote-imageio-ffmpeg-pip-install.md) — imageio present but imageio-ffmpeg missing for mp4 read/write; `pip install --user imageio-ffmpeg` works, no root/sudo needed
