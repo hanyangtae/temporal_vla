@@ -66,6 +66,7 @@ from lerobot_http_eval import (  # noqa: E402
 )
 from robocasa_event_labeler import make_robocasa_event_labeler  # noqa: E402
 from env_step_phase import EnvStepGT, StepPhaseProbeWrapper, find_probe_wrapper  # noqa: E402
+from perturbation import Perturber, PerturbSpec  # noqa: E402
 from src.policies.groot.robocasa.io import convert_http_actions_to_groot_chunk  # noqa: E402
 from src.policies.groot.robocasa.scenario_replay import (  # noqa: E402
     ep_meta_manifest_path,
@@ -481,6 +482,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--perturb-spec",
+        default=None,
+        help=(
+            "exp4-2 Track P 섭동 spec — inline json('{'로 시작) 또는 json 파일 경로 "
+            "(perturbation.PerturbSpec 스키마). resolved spec/창/실측치는 "
+            "사이드카·pkl 의 perturb_* 키로 기록된다."
+        ),
+    )
+    parser.add_argument(
         "--n_action_steps",
         "--n-action-steps",
         dest="n_action_steps",
@@ -640,6 +650,16 @@ def run() -> dict[str, Any]:
                     env_gt = EnvStepGT(env, env_name, getattr(args, "proximity_phases", False))
                     _probe.set_gt(env_gt)
                     env_gt.start()
+            perturber = None
+            if getattr(args, "perturb_spec", None):
+                # env_gt.start() 이후에 실행해 G1 scripted env-step 도 GT 타임라인에 계수
+                # (record↔env-step 정렬은 perturb_env_step_offset 으로 보정).
+                perturber = Perturber(
+                    env,
+                    PerturbSpec.from_json(args.perturb_spec),
+                    n_action_steps=args.n_action_steps,
+                )
+                obs = perturber.on_episode_start(obs)
             feature_phases: list[str] = []
             phase_gated_flags: list[bool] = []
             success = False
@@ -659,6 +679,8 @@ def run() -> dict[str, Any]:
                 if getattr(args, "gated_steering", False):
                     gated_now = _post_steering_phase(args.vla_server, phase)
                 official_action, _ = policy.get_action(obs)
+                if perturber is not None:
+                    official_action = perturber.maybe_apply(progress_before, official_action)
                 progress_after = policy.n_calls if no_features else len(policy.records)
                 if progress_after > progress_before:
                     feature_phases.append(phase)
@@ -720,6 +742,8 @@ def run() -> dict[str, Any]:
                 _kenv = _kenv.env
             _ever = getattr(_kenv, "_pq2_succ_ever", None)
             extra_metadata["succ_ever_th"] = dict(_ever) if _ever is not None else None
+            if perturber is not None:
+                extra_metadata.update(perturber.export())
             if cell_id is not None:
                 extra_metadata.update(
                     {

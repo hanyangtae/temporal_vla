@@ -286,6 +286,35 @@ def load_rollout_fulltoken(d: dict, pkl_path, token_pool: str):
     }
 
 
+def _apply_record_start(r: dict, pkl_path: Path, rs_map: dict) -> None:
+    """--record-start-manifest 절단 (exp4-2 유도실패 시간분리 — 창끝+2 이후만 fit).
+
+    로드 직후(denoise 변환·carve 이전) record<start 를 dit/dit_k/vl/phases 에서 일괄
+    제거한다. manifest 미등재 pkl·범위 밖 start 는 fail-loud.
+    """
+    key = str(pkl_path.resolve())
+    if key not in rs_map:
+        raise SystemExit(f"--record-start-manifest 에 없는 pkl (fail-loud): {pkl_path}")
+    start = int(rs_map[key])
+    n = int(r["dit"].shape[0])
+    if start < 0 or start >= n:
+        raise SystemExit(
+            f"record start {start} 범위 밖 (records={n}): {pkl_path.name}"
+        )
+    r["fit_start_record"] = start
+    if start:
+        r["dit"] = r["dit"][start:]
+        if r.get("dit_k") is not None:
+            r["dit_k"] = r["dit_k"][start:]
+        if r.get("vl") is not None:
+            r["vl"] = r["vl"][start:]
+        r["phases"] = r["phases"][start:]
+        if "length" in r:
+            r["length"] = int(r["dit"].shape[0])
+    # denoise stack 변환이 record 수를 K배 하므로 절단 시점 record 수를 별도 보존 (S4 대조용).
+    r["fit_records_after_start"] = int(r["dit"].shape[0])
+
+
 def main():
     ap = argparse.ArgumentParser(description="N1.5 phase-event 대조 conceptor fit")
     ap.add_argument("--run-dir", default="outputs/eval/robocasa/groot_n15/phase_event_aligned_4cell/raw_rollouts")
@@ -328,7 +357,28 @@ def main():
                          "override (corrected/위약 라벨 주입 경로). 경로는 절대 또는 repo-root 상대.")
     ap.add_argument("--carve-window", type=int, default=0,
                     help=">0 이면 5-phase carving: event 직전 W record 를 pre-grasp/pre-place 로 재라벨")
+    ap.add_argument("--record-start-manifest", default=None,
+                    help="pkl별 fit 시작 record 절단 tsv (pkl_path\\tstart_record, # 주석 허용). "
+                         "exp4-2 유도실패 시간분리(창끝+2) — 로드 직후 record<start 를 제거. "
+                         "모든 로드 pkl 이 manifest 에 있어야 하며(fail-loud), 절대 record "
+                         "인덱스를 쓰는 --carve-window 와 병용 금지.")
     args = ap.parse_args()
+
+    rs_map = None
+    if args.record_start_manifest:
+        if args.carve_window > 0:
+            raise SystemExit("--record-start-manifest 는 --carve-window 와 병용 금지 "
+                             "(carve 가 절대 record idx 를 사용 — 절단 후 어긋남)")
+        rs_map = {}
+        for line in Path(args.record_start_manifest).read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split("\t")
+            p = Path(parts[0]).expanduser()
+            if not p.is_absolute():
+                p = REPO / p
+            rs_map[str(p.resolve())] = int(parts[1])
 
     run_dir = Path(args.run_dir)
     manifest_rows = None
@@ -419,10 +469,15 @@ def main():
                 print(f"[contract 혼입] {p}: (kind,layers,K,T,D)={sig} != 첫 pkl {contract}",
                       file=sys.stderr)
                 sys.exit(4)
+            if rs_map is not None:
+                _apply_record_start(r, p, rs_map)
             rolls.append(r)
             fulltoken_flags.append(True)
         else:
-            rolls.append(load_rollout(p))
+            r = load_rollout(p)
+            if rs_map is not None:
+                _apply_record_start(r, p, rs_map)
+            rolls.append(r)
             fulltoken_flags.append(False)
     if manifest_rows:
         for r, m in zip(rolls, manifest_rows):
@@ -445,6 +500,11 @@ def main():
                 with open(p, "rb") as f:
                     d = _pk.load(f)
                 raw = np.stack([np.asarray(x, dtype=np.float32) for x in d["hidden_states"]], axis=0)  # [n,L,K,D]
+                # --record-start-manifest 절단은 pkl 재로드 경로에도 동일 적용
+                # (r["phases"] 는 이미 절단됨 — raw 와 정렬 유지).
+                _rs = int(r.get("fit_start_record", 0) or 0)
+                if _rs:
+                    raw = raw[_rs:]
             n, L, K, D = raw.shape
             if args.denoise == "step0":
                 r["dit"] = raw[:, :, 0, :]
@@ -686,8 +746,11 @@ def main():
     (out_root / "fit_summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False))
     # 사용 표본 기록 (검증 가능성: split 교집합 게이트가 content 서명으로 대조)
     inputs = {"cell": cell_id, "manifest": args.manifest, "min_per_class_eps": args.min_per_class,
+              "record_start_manifest": args.record_start_manifest,
               "episodes": [{"pkl": str(p), "label": int(r["success"]),
-                            "scene": r.get("scene", ""), "sig": _content_sig(p)}
+                            "scene": r.get("scene", ""), "sig": _content_sig(p),
+                            "fit_start_record": int(r.get("fit_start_record", 0) or 0),
+                            "fit_records": int(r.get("fit_records_after_start", r["dit"].shape[0]))}
                            for p, r in zip(pkls, rolls)]}
     (out_root / "fit_inputs.json").write_text(json.dumps(inputs, indent=2, ensure_ascii=False))
     if not summary:

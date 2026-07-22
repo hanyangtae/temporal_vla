@@ -171,12 +171,14 @@ def _assert_patch_hook_counts() -> None:
     여기서 잡는다 — per-step steering 의 _assert_per_step_hook_counts 와 동일 규약.
     """
     for layer, hook in _patch_hooks.items():
-        if hook._k != hook.expected_k:
+        # DiT hook 은 요청당 K회(denoise), VL hook 은 요청당 1회 (expected_fires 우선).
+        expected = getattr(hook, "expected_fires", None) or hook.expected_k
+        if hook._k != expected:
             raise HTTPException(
                 status_code=500,
                 detail=(
-                    f"patch hook under-fire: fired {hook._k}/{hook.expected_k} "
-                    f"(layer={layer}) — denoise hook 배선 확인 필요"
+                    f"patch hook under-fire: fired {hook._k}/{expected} "
+                    f"(layer={layer}) — hook 배선 확인 필요"
                 ),
             )
 
@@ -419,7 +421,7 @@ def patch_arm(payload: dict):
     """
     if not _patch_hooks:
         raise HTTPException(status_code=409, detail="patch hooks not enabled (--patch-layers)")
-    from patching_hooks import load_donor_npz
+    from patching_hooks import load_donor_npz, load_vl_donor_npz
 
     try:
         start_record = int(payload["start_record"])
@@ -430,12 +432,17 @@ def patch_arm(payload: dict):
     tag = str(payload.get("tag", "")) or None
 
     npz = payload.get("npz")
-    expected_k = next(iter(_patch_hooks.values())).expected_k
+    is_vl = _patch_spec.get("pathway") == "vl"
     if npz:
         try:
-            arrays, meta, sha12 = load_donor_npz(
-                npz, list(_patch_hooks.keys()), expected_k=expected_k
-            )
+            if is_vl:
+                vl_arr, meta, sha12 = load_vl_donor_npz(npz)
+                arrays = {"VL": vl_arr}
+            else:
+                expected_k = next(iter(_patch_hooks.values())).expected_k
+                arrays, meta, sha12 = load_donor_npz(
+                    npz, list(_patch_hooks.keys()), expected_k=expected_k
+                )
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=f"donor npz 로드 실패: {exc}") from exc
         _patch_donor_arrays.clear()
@@ -1193,7 +1200,13 @@ def _register_patching_if_requested(loaded_policy, args):
     global _patch_hooks, _patch_spec
     patch_layers = getattr(args, "patch_layers", None)
     patch_npz = getattr(args, "patch_npz", None)
-    if not patch_layers:
+    patch_pathway = getattr(args, "patch_pathway", "dit") or "dit"
+    if patch_pathway == "vl" and patch_layers:
+        raise ValueError(
+            "--patch-pathway vl 은 --patch-layers 와 상호 배타 "
+            "(vl 주입은 vl_self_attention 단일 지점 — layer 개념 없음)"
+        )
+    if not patch_layers and patch_pathway != "vl":
         if patch_npz:
             raise ValueError("--patch-npz 는 --patch-layers 와 함께 지정해야 한다")
         return None
@@ -1201,45 +1214,63 @@ def _register_patching_if_requested(loaded_policy, args):
         raise ValueError("patch hook 은 groot (GR00T N1.5) 전용")
     if _collect_mode and not getattr(args, "patch_allow_collect", False):
         raise ValueError(
-            "--patch-layers 는 --collect 와 동시 사용 금지 — patch rollout 은 캡처 OFF "
+            "patch hook 은 --collect 와 동시 사용 금지 — patch rollout 은 캡처 OFF "
             "(/act_with_features skip_features=1) 표준. anchor(A2/A3) 검증처럼 emitted "
             "actions 저장이 필요한 경우에만 --patch-allow-collect 로 명시 허용."
         )
     if _steering or _gated_registry:
-        raise ValueError("--patch-layers 는 --steering-* 와 동시 사용 금지 (해석 오염)")
+        raise ValueError("patch hook 은 --steering-* 와 동시 사용 금지 (해석 오염)")
 
-    from patching_hooks import PatchSteering, load_donor_npz
+    from patching_hooks import PatchSteering, PatchSteeringVL, load_donor_npz, load_vl_donor_npz
 
     _gm = getattr(loaded_policy, "_groot_model", None)
     if _gm is None:
         raise ValueError("GR00T LeRobot policy is missing _groot_model for patching")
     expected_k = int(_gm.action_head.num_inference_timesteps)
-    layers = [int(x) for x in str(patch_layers).split(",") if x.strip() != ""]
-    if not layers:
-        raise ValueError("--patch-layers 가 비어 있다")
     token_select = getattr(args, "patch_token_select", "all") or "all"
 
     for _h in _patch_hooks.values():
         _h.unregister()
     _patch_hooks = {}
-    for layer in layers:
-        hook = PatchSteering(
-            _gm, layer=layer, expected_k=expected_k, token_select=token_select
-        ).register()
-        _patch_hooks[layer] = hook
-    _patch_spec = {
-        "mode": "transplant",
-        "layers": layers,
-        "token_select": token_select,
-        "expected_k": expected_k,
-        "armed_tag": None,
-        "donor_npz_sha": None,
-    }
+    if patch_pathway == "vl":
+        layers = ["VL"]
+        _patch_hooks["VL"] = PatchSteeringVL(_gm).register()
+        _patch_spec = {
+            "mode": "transplant",
+            "pathway": "vl",
+            "layers": layers,
+            "token_select": "all",
+            "expected_fires": 1,
+            "armed_tag": None,
+            "donor_npz_sha": None,
+        }
+    else:
+        layers = [int(x) for x in str(patch_layers).split(",") if x.strip() != ""]
+        if not layers:
+            raise ValueError("--patch-layers 가 비어 있다")
+        for layer in layers:
+            hook = PatchSteering(
+                _gm, layer=layer, expected_k=expected_k, token_select=token_select
+            ).register()
+            _patch_hooks[layer] = hook
+        _patch_spec = {
+            "mode": "transplant",
+            "pathway": "dit",
+            "layers": layers,
+            "token_select": token_select,
+            "expected_k": expected_k,
+            "armed_tag": None,
+            "donor_npz_sha": None,
+        }
 
     # 정적 arm (스모크·anchor 용): --patch-npz + --patch-start-record 지정 시 기동 즉시 arm.
     # 본 실행은 rollout 마다 /patch_arm 으로 동적 arm 한다.
     if patch_npz:
-        arrays, meta, sha12 = load_donor_npz(patch_npz, layers, expected_k=expected_k)
+        if patch_pathway == "vl":
+            vl_arr, meta, sha12 = load_vl_donor_npz(patch_npz)
+            arrays = {"VL": vl_arr}
+        else:
+            arrays, meta, sha12 = load_donor_npz(patch_npz, layers, expected_k=expected_k)
         _patch_donor_arrays.clear()
         _patch_donor_arrays.update(arrays)
         _patch_spec["donor_npz_sha"] = sha12
@@ -1266,8 +1297,8 @@ def _register_patching_if_requested(loaded_policy, args):
                 }
             )
     logger.info(
-        "[patch-preflight] layers=%s token_select=%s K=%d npz=%s sha=%s armed=%s",
-        layers, token_select, expected_k, patch_npz,
+        "[patch-preflight] pathway=%s layers=%s token_select=%s K=%d npz=%s sha=%s armed=%s",
+        patch_pathway, layers, token_select, expected_k, patch_npz,
         _patch_spec.get("donor_npz_sha"), _patch_spec.get("armed_tag"),
     )
     return _patch_hooks
@@ -1442,6 +1473,16 @@ def main():
             "patchceil transplant 주입 layer (콤마, DiT transformer_block idx). 지정 시 "
             "donor-trajectory transplant hook 등록 — --steering-*/--collect 와 상호 배타. "
             "rollout 별 창은 /patch_arm 으로 동적 설정."
+        ),
+    )
+    parser.add_argument(
+        "--patch-pathway",
+        choices=("dit", "vl"),
+        default="dit",
+        help=(
+            "transplant 주입 pathway (exp4-2). dit=기존 --patch-layers 경로 | "
+            "vl=action_head.vl_self_attention 출력 통째 교체 (B1 — donor NPZ 키 VL="
+            "[R,T_vl,D], 요청당 1 fire, --patch-layers 와 상호 배타)."
         ),
     )
     parser.add_argument(
