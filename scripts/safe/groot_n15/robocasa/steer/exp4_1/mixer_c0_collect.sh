@@ -4,9 +4,17 @@
 #                episode 완료 즉시 승준 HDD 직송 + 로컬 pkl 삭제 (디스크 압박·수집 직송 관례)
 #   PHASE=eval : 다음 30개, 캡처 OFF(--no-features) — ep 30..59
 # feasibility 필터: mixer_feasibility.json 의 feasible=true seed 만 (공유문서 §5).
-# env: GPU(기본 4) PORTS="8600 8601" PHASE=fit|eval
+# env: PHASE=fit|eval SERVE_MODE=docker|host GPU PORTS
+#   kanu:  SERVE_MODE=docker GPU=<빈GPU> PORTS 2개 (GPU당 serve 2)
+#   srv50: SERVE_MODE=host   GPU=2       PORTS 6개 (GPU 1개 × serve 6 — 07-22 규칙)
 set -uo pipefail
-GPU="${GPU:-4}"; PORTS=(${PORTS:-8600 8601}); NW=${#PORTS[@]}
+SERVE_MODE="${SERVE_MODE:-docker}"
+if [ "$SERVE_MODE" = host ]; then
+  GPU="${GPU:-2}"; PORTS=(${PORTS:-8600 8601 8602 8603 8604 8605})
+else
+  GPU="${GPU:-4}"; PORTS=(${PORTS:-8600 8601})
+fi
+NW=${#PORTS[@]}
 PHASE="${PHASE:?fit|eval}"
 CELL_ID=exp41_mixer; TASK=OpenStandMixerHead
 ENVN=robocasa_panda_omron/OpenStandMixerHead_PandaOmron_Env
@@ -42,10 +50,18 @@ else
 fi
 
 for i in $(seq 0 $((NW-1))); do
-  docker exec -d -e CUDA_VISIBLE_DEVICES="$GPU" lerobot bash -c \
-    "cd /temporal_vla && setsid nohup python scripts/serve/lerobot.py --profile $PROFILE \
-     --host '*' --port ${PORTS[$i]} --device cuda $SERVE_EXTRA \
-     > /tmp/exp41_mixer_${PORTS[$i]}.log 2>&1"
+  if [ "$SERVE_MODE" = host ]; then
+    ( cd "$REPO_ROOT" && setsid nohup env CUDA_VISIBLE_DEVICES="$GPU" \
+        PYTHONPATH="$REPO_ROOT/lerobot/src" \
+        "$HOME/miniconda3/envs/lerobot_050_groot/bin/python" scripts/serve/lerobot.py \
+        --profile $PROFILE --host '*' --port "${PORTS[$i]}" --device cuda $SERVE_EXTRA \
+        > "/tmp/exp41_mixer_${PORTS[$i]}.log" 2>&1 < /dev/null & )
+  else
+    docker exec -d -e CUDA_VISIBLE_DEVICES="$GPU" lerobot bash -c \
+      "cd /temporal_vla && setsid nohup python scripts/serve/lerobot.py --profile $PROFILE \
+       --host '*' --port ${PORTS[$i]} --device cuda $SERVE_EXTRA \
+       > /tmp/exp41_mixer_${PORTS[$i]}.log 2>&1"
+  fi
 done
 for port in "${PORTS[@]}"; do
   ok=0; for _ in $(seq 1 150); do
@@ -93,7 +109,11 @@ run_w() {
 for wid in $(seq 0 $((NW-1))); do run_w "$wid" "${PORTS[$wid]}" > "$LOGDIR/w${wid}.log" 2>&1 & done
 wait
 for port in "${PORTS[@]}"; do
-  docker exec lerobot bash -c "pkill -f 'lerobot.py.*--port $port'" 2>/dev/null || true
+  if [ "$SERVE_MODE" = host ]; then
+    pkill -f "lerobot.py.*--port $port" 2>/dev/null || true
+  else
+    docker exec lerobot bash -c "pkill -f 'lerobot.py.*--port $port'" 2>/dev/null || true
+  fi
 done
 d="$OUT_HOST/raw_rollouts/$TASK/$CELL_ID"
 s=$(ls "$d"/*succ1.json 2>/dev/null | wc -l); f=$(ls "$d"/*succ0.json 2>/dev/null | wc -l)
