@@ -65,18 +65,12 @@ def write_safe_triplet(
     task_suite_name: str = "groot_n16_robocasa",
     video_source: str = "groot_upstream_video_recording_wrapper",
     extra_metadata: dict[str, Any] | None = None,
-    include_hidden_states: bool = True,
 ) -> None:
     if not policy.records:
         raise RuntimeError("No feature records were collected during rollout")
     # Block-residual/multilayer features are not exported action-token chunks, so the
     # per-token export horizon invariant only applies to action-token SAFE features.
-    # hidden_states 를 저장하지 않는 수집(--attn-only-records)에서는 무의미 — skip.
-    if (
-        include_hidden_states
-        and _uses_action_token_horizon(policy)
-        and policy.exported_action_token_count != n_action_steps
-    ):
+    if _uses_action_token_horizon(policy) and policy.exported_action_token_count != n_action_steps:
         raise RuntimeError(
             "SAFE feature export horizon must match executed action steps: "
             f"exported_action_token_count={policy.exported_action_token_count}, "
@@ -106,6 +100,7 @@ def write_safe_triplet(
         "scenario_seed": scenario_seed,
         "episode_success": int(episode_success),
         "ep_meta": json_safe(ep_meta),
+        "hidden_states": [record["hidden_state"] for record in policy.records],
         "actions": [record["action"] for record in policy.records],
         "action_vectors": np.stack(
             [record["groot_action_vector"] for record in policy.records], axis=0
@@ -128,12 +123,6 @@ def write_safe_triplet(
         "robocasa_env_source": robocasa_env_source,
         "video_source": video_source,
     }
-    if include_hidden_states:
-        payload["hidden_states"] = [record["hidden_state"] for record in policy.records]
-    else:
-        # cam-attention 전용 수집(--attn-only-records): activation 텐서 미저장
-        # (eval purge 규약) — cross_attn 요약만 아래에서 기록.
-        payload["hidden_states_omitted"] = True
     if extra_metadata:
         payload.update(json_safe(extra_metadata))
     for key in (
@@ -146,24 +135,8 @@ def write_safe_triplet(
         value = getattr(policy, key, None)
         if value is not None:
             payload[key] = json_safe(value)
-    # DiT cross-attention 카메라 뷰별 mass (--capture-cross-attn). 모든 step 에 있을 때만.
-    if all("cross_attn" in record for record in policy.records):
-        # [n_records, n_cross_blocks, K, qgroup, kgroup] float32 (record 축이 맨 앞).
-        payload["cross_attn"] = np.stack(
-            [record["cross_attn"] for record in policy.records], axis=0
-        )
-        for key in (
-            "cross_attn_axes",
-            "cross_attn_blocks",
-            "cross_attn_qgroups",
-            "cross_attn_kgroups",
-            "view_token_spans",
-        ):
-            value = getattr(policy, key, None)
-            if value is not None:
-                payload[key] = json_safe(value)
     # VL(goal) pathway feature (multilayer --capture-vl). 모든 step 에 있을 때만 기록.
-    if include_hidden_states and all("vl_hidden_state" in record for record in policy.records):
+    if all("vl_hidden_state" in record for record in policy.records):
         payload["vl_hidden_states"] = [record["vl_hidden_state"] for record in policy.records]
         payload["vl_feature_kind"] = getattr(policy, "vl_feature_kind", None)
         payload["vl_feature_axes"] = getattr(policy, "vl_feature_axes", None)

@@ -107,11 +107,8 @@ _collect_mode: bool = False
 _capture_vl_features: bool = False
 _groot_dit_capture_layers: tuple[int, ...] | None = None
 _pi05_expert_capture_layers: tuple[int, ...] | None = None
-_groot_dit_token_pool: str = "action_token_mean"  # exp3(구 pq3): "all_token_full" = full-token 수집
-_groot_vl_capture_point: str = "vlln_mean"  # exp3: "post_vl_sa_full" = cross-attn 입력 full-token
-# DiT cross-attention 카메라 뷰별 mass 캡처 (attn_hooks.CrossAttnCapture, groot 전용).
-# boot 시 1회 install — per-request 설치/해제는 compile 캐시와 상호작용할 수 있어 피한다.
-_cross_attn_capture = None
+_groot_dit_token_pool: str = "action_token_mean"  # pq3: "all_token_full" = full-token 수집
+_groot_vl_capture_point: str = "vlln_mean"  # pq3: "post_vl_sa_full" = cross-attn 입력 full-token
 _steering = []  # list of registered steering hooks (multi-layer 지원)
 _gated_registry: dict = {}  # oracle phase-gated steering: {"hooks":{layer:hook},"matrices":{layer:{phase:M|M_seq}},"identity":{layer:I|[I]*K}}
 # 프로세스 지문: 러너가 "포트의 기존 서버"를 새 serve 로 오인하는 사고 방지 (Gate 2 치명#3)
@@ -636,7 +633,7 @@ async def predict_action_with_features(payload: dict):
                 status_code=409,
                 detail="collect mode 에서 skip_features 금지 (hook 없는 compile 오염)",
             )
-        # exp3 eval 캡처-OFF: hook 없이 **캡처 경로와 동일한 chunk 추론 단위**를 사용
+        # pq3 eval 캡처-OFF: hook 없이 **캡처 경로와 동일한 chunk 추론 단위**를 사용
         # (groot select_action 은 16-큐 팝이라 16콜당 1회만 추론 — noise pairing·실행
         # 단위가 캡처 경로와 어긋남, Gate 2 치명#1). predict_action_chunk 를 직접 호출.
         with torch.inference_mode():
@@ -665,13 +662,9 @@ async def predict_action_with_features(payload: dict):
         pi05_expert_layers=_pi05_expert_capture_layers,
         groot_dit_token_pool=_groot_dit_token_pool,
         vl_capture_point=_groot_vl_capture_point,
-        cross_attn_capture=_cross_attn_capture,
     )
     if _policy_type == "groot":
         _assert_per_step_hook_counts()
-    # ndarray 는 JSON 직렬화 불가 — meta 에서 분리해 feature blob 으로 동봉.
-    cross_attn_arr = meta.pop("cross_attn", None)
-    cross_attn_maps_arr = meta.pop("cross_attn_maps", None)
 
     action = _postprocess_action_preserve_chunk(action)
     action_np = _action_to_emit_array(action)
@@ -704,15 +697,6 @@ async def predict_action_with_features(payload: dict):
             )
     else:
         result["has_feature"] = False
-    if cross_attn_arr is not None:
-        result["features.cross_attn"] = encode_feature_blob(np.asarray(cross_attn_arr))
-        if cross_attn_maps_arr is not None:
-            result["features.cross_attn_maps"] = encode_feature_blob(
-                np.asarray(cross_attn_maps_arr)
-            )
-        if hidden is None:
-            # hidden 없는 경로에서도 cross-attn 축/그룹 메타는 동봉 (groot 는 비발생).
-            result.update({k: v for k, v in meta.items() if k.startswith("cross_attn") or k == "view_token_spans"})
     if inference_seed is not None:
         result["inference_seed"] = inference_seed
     result["latency_ms"] = (time.time() - t0) * 1000
@@ -810,19 +794,6 @@ def _health_feature_metadata() -> dict[str, Any]:
                 "vl_capture_point": _groot_vl_capture_point,
             }
         )
-    if _policy_type == "groot" and _cross_attn_capture is not None:
-        metadata.update(
-            {
-                "capture_cross_attn": True,
-                "cross_attn_blocks": [
-                    int(i) for i in _cross_attn_capture.cross_block_indices
-                ],
-                "cross_attn_qgroups": list(_cross_attn_capture.qgroups),
-                "cross_attn_kgroups": list(_cross_attn_capture.kgroups),
-                "cross_attn_keep_heads": bool(_cross_attn_capture.keep_heads),
-                "cross_attn_full_maps": bool(_cross_attn_capture.full_maps),
-            }
-        )
     return metadata
 
 
@@ -851,7 +822,7 @@ def _register_steering_if_requested(loaded_policy, args):
     beta = getattr(args, "steering_beta", 0.3)
     alpha = getattr(args, "steering_alpha", None)
     key = getattr(args, "steering_key", "C_steer")
-    # exp3: token_select 는 default None(pathway 기본 보존 — dit=last_horizon, vl=all),
+    # pq3: token_select 는 default None(pathway 기본 보존 — dit=last_horizon, vl=all),
     # denoise 는 global(구 단일 M) | per_step(step k 에 M_k 스와핑, groot dit 전용).
     token_select = getattr(args, "steering_token_select", None)
     denoise = getattr(args, "steering_denoise", "global") or "global"
@@ -1125,27 +1096,6 @@ def _load_model_impl():
     _register_steering_if_requested(policy, args)
     _register_patching_if_requested(policy, args)
 
-    global _cross_attn_capture
-    if getattr(args, "capture_cross_attn", False):
-        if _policy_type != "groot":
-            raise ValueError("--capture-cross-attn requires policy_type='groot'")
-        import attn_hooks
-
-        _cross_attn_capture = attn_hooks.CrossAttnCapture(
-            policy,
-            keep_heads=bool(getattr(args, "cross_attn_keep_heads", False)),
-            full_maps=bool(getattr(args, "cross_attn_full_maps", False)),
-        ).install()
-        # 러너 preflight 대조용 지문 한 줄.
-        print(
-            f"[attn-preflight] cross_blocks={_cross_attn_capture.cross_block_indices} "
-            f"image_token_index={_cross_attn_capture.image_token_index} "
-            f"qgroups={_cross_attn_capture.qgroups} kgroups={_cross_attn_capture.kgroups} "
-            f"keep_heads={_cross_attn_capture.keep_heads} "
-            f"full_maps={_cross_attn_capture.full_maps}",
-            flush=True,
-        )
-
     from lerobot.configs.types import FeatureType
     from lerobot.utils.constants import ACTION
 
@@ -1302,25 +1252,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--capture-cross-attn",
-        action="store_true",
-        help=(
-            "GR00T N1.5 /act_with_features 에서 DiT cross-attention 의 카메라 뷰별 "
-            "attention mass(features.cross_attn, [n_cross_blocks, K, qgroup, kgroup])를 "
-            "함께 반환한다. kgroup=(text,left,right,wrist). 출력 action 은 불변."
-        ),
-    )
-    parser.add_argument(
-        "--cross-attn-full-maps",
-        action="store_true",
-        help="cross-attn 원맵 [T_q, S](head-mean, fp16)도 반환 (smoke/정성 확인 전용 — 용량 큼).",
-    )
-    parser.add_argument(
-        "--cross-attn-keep-heads",
-        action="store_true",
-        help="cross-attn mass 의 head 축 보존 ([n_blocks, K, heads, qgroup, kgroup]).",
-    )
-    parser.add_argument(
         "--groot-dit-capture-layers",
         default=None,
         help=(
@@ -1394,7 +1325,7 @@ def main():
         choices=("action_token_mean", "all_token_full"),
         default="action_token_mean",
         help=(
-            "GR00T DiT block residual 캡처의 token 풀링 (exp3 COAST 토큰 축 정렬). "
+            "GR00T DiT block residual 캡처의 token 풀링 (pq3 COAST 토큰 축 정렬). "
             "action_token_mean=구·default([L,K,D]) | all_token_full=전체 토큰 보존"
             "([L,K,T,D] fp16, fit 수집 전용 — mean 은 fit 시점에)."
         ),
@@ -1414,7 +1345,7 @@ def main():
         default=None,
         help=(
             "Steering hook 의 적용 토큰. 미지정(None)=pathway 기본 보존"
-            "(dit=last_horizon, vl=all). exp3 COAST 정렬은 dit 에 all 을 명시 주입."
+            "(dit=last_horizon, vl=all). pq3 COAST 정렬은 dit 에 all 을 명시 주입."
         ),
     )
     parser.add_argument(
