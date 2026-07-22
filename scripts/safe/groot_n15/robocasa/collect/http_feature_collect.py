@@ -104,12 +104,16 @@ class N15LerobotHttpFeatureClient(VLAClient):
         inference_seed: int | None = None,
         no_features: bool = False,
         expect_chunk_len: int | None = None,
+        attn_only: bool = False,
     ):
         super().__init__(url, timeout=timeout)
         self.inference_seed = inference_seed
-        # pq3 eval 캡처-OFF 모드: skip_features 로 chunk 추론 경로만 사용, records 를
+        # exp3(구 pq3) eval 캡처-OFF 모드: skip_features 로 chunk 추론 경로만 사용, records 를
         # 만들지 않는다 (eval activation 미저장 규약). 추론 횟수는 n_calls 로 계수.
         self.no_features = no_features
+        # cam-attention 전용 수집: record 에서 hidden_state/vl_hidden_state 텐서를
+        # 버리고 cross_attn 요약만 유지 (pkl 수 MB 이하 — eval purge 규약 준수).
+        self.attn_only = attn_only
         self.expect_chunk_len = expect_chunk_len
         self.n_calls = 0
         self.records: list[dict[str, Any]] = []
@@ -129,6 +133,11 @@ class N15LerobotHttpFeatureClient(VLAClient):
         self.vl_feature_kind: str | None = None
         self.vl_feature_axes: list[str] | None = None
         self.vl_feature_dim: int | None = None
+        self.cross_attn_axes: list[str] | None = None
+        self.cross_attn_blocks: list[int] | None = None
+        self.cross_attn_qgroups: list[str] | None = None
+        self.cross_attn_kgroups: list[str] | None = None
+        self.view_token_spans: list[list[int]] | None = None
 
     def reset(self) -> None:
         self.records.clear()
@@ -149,6 +158,11 @@ class N15LerobotHttpFeatureClient(VLAClient):
         self.vl_feature_kind = None
         self.vl_feature_axes = None
         self.vl_feature_dim = None
+        self.cross_attn_axes = None
+        self.cross_attn_blocks = None
+        self.cross_attn_qgroups = None
+        self.cross_attn_kgroups = None
+        self.view_token_spans = None
         super().reset()
 
     def _update_metadata(self, features: dict[str, Any]) -> None:
@@ -190,6 +204,27 @@ class N15LerobotHttpFeatureClient(VLAClient):
         self.vl_feature_dim = _prefer_present(
             features.get("vl_feature_dim"), self.vl_feature_dim
         )
+        self.cross_attn_axes = _prefer_present(
+            features.get("cross_attn_axes"), self.cross_attn_axes
+        )
+        self.cross_attn_blocks = _prefer_present(
+            features.get("cross_attn_blocks"), self.cross_attn_blocks
+        )
+        self.cross_attn_qgroups = _prefer_present(
+            features.get("cross_attn_qgroups"), self.cross_attn_qgroups
+        )
+        self.cross_attn_kgroups = _prefer_present(
+            features.get("cross_attn_kgroups"), self.cross_attn_kgroups
+        )
+        spans = features.get("view_token_spans")
+        if spans is not None:
+            spans = [[int(s), int(e)] for s, e in spans]
+            if self.view_token_spans is not None and spans != self.view_token_spans:
+                # 같은 에피소드 내 instruction/이미지 토큰 배치는 불변이어야 함.
+                raise RuntimeError(
+                    f"view_token_spans changed mid-episode: {self.view_token_spans} -> {spans}"
+                )
+            self.view_token_spans = spans
 
     def get_action(
         self, observation: dict[str, Any], options: dict[str, Any] | None = None
@@ -259,6 +294,18 @@ class N15LerobotHttpFeatureClient(VLAClient):
             record["vl_hidden_state"] = torch.from_numpy(
                 np.ascontiguousarray(np.asarray(vl_hidden_states))
             )
+        cross_attn = features.get("cross_attn")
+        if cross_attn is not None:
+            # [n_cross_blocks, K, qgroup, kgroup] float32 — 요약뿐이라 numpy 로 유지.
+            record["cross_attn"] = np.asarray(cross_attn, dtype=np.float32)
+        if self.attn_only:
+            if cross_attn is None:
+                raise RuntimeError(
+                    "--attn-only-records 인데 features.cross_attn 이 없음 "
+                    "(serve 를 --capture-cross-attn 으로 띄웠는지 확인)"
+                )
+            record.pop("hidden_state", None)
+            record.pop("vl_hidden_state", None)
         self._update_metadata(features)
         self.records.append(record)
         return official_action, {}
@@ -399,10 +446,19 @@ def parse_args() -> argparse.Namespace:
         "--no-features",
         action="store_true",
         help=(
-            "pq3 eval 캡처-OFF 모드: /act_with_features 를 skip_features 로 호출해 "
+            "exp3 eval 캡처-OFF 모드: /act_with_features 를 skip_features 로 호출해 "
             "캡처 없는 chunk 추론 경로를 사용하고 activation 을 저장하지 않는다. "
             "산출물은 pkl 삼중항 대신 경량 판정 사이드카 task*--ep*--succ{0|1}.json + mp4 "
             "(eval activation 미저장 규약, memory: eval-activation-purged)."
+        ),
+    )
+    parser.add_argument(
+        "--attn-only-records",
+        action="store_true",
+        help=(
+            "cam-attention 전용 수집: record 에서 hidden_state/vl_hidden_state 텐서를 "
+            "버리고 cross_attn 요약(뷰별 mass)만 pkl 에 기록 (serve 는 --capture-cross-attn "
+            "필요, pkl 수 MB 이하)."
         ),
     )
     parser.add_argument(
@@ -505,7 +561,10 @@ def run() -> dict[str, Any]:
             if getattr(args, "no_features", False)
             else None
         ),
+        attn_only=getattr(args, "attn_only_records", False),
     )
+    if getattr(args, "attn_only_records", False) and getattr(args, "no_features", False):
+        raise ValueError("--attn-only-records 와 --no-features 는 동시 사용 불가")
     if args.wait_ready:
         policy.wait_until_ready(max_wait=args.timeout)
 
@@ -653,7 +712,8 @@ def run() -> dict[str, Any]:
                 "wrong_grasp_steps": list(getattr(labeler, "wrong_grasp_steps", []) or []),
                 "wrong_grasp_timeline": list(getattr(labeler, "wrong_grasp_timeline", []) or []),
             }
-            # pq2 이중 채점 (docs/steering/18): apple corrected env fork 가 노출하는
+            # exp2(구 pq2) 이중 채점 (docs/steering/18): apple corrected env fork 가 노출하는
+            # (_pq2_* attr 명은 robocasa fork 계약 — rename 금지)
             # per-episode ever 플래그 {"0.07": bool, "0.1": bool}. 미지원 task 는 None.
             _kenv = env
             while hasattr(_kenv, "env") and not hasattr(_kenv, "_pq2_succ_ever"):
@@ -670,7 +730,7 @@ def run() -> dict[str, Any]:
                     }
                 )
             if no_features:
-                # pq3 eval 캡처-OFF: 판정 데이터만 — 경량 json 사이드카(스템 규약 동일) + mp4.
+                # exp3 eval 캡처-OFF: 판정 데이터만 — 경량 json 사이드카(스템 규약 동일) + mp4.
                 sidecar = {
                     "task_suite_name": "lerobot_groot_n15_robocasa",
                     "model_family": "lerobot_groot_n15",
@@ -728,6 +788,7 @@ def run() -> dict[str, Any]:
                     policy_transport="http",
                     task_suite_name="lerobot_groot_n15_robocasa",
                     extra_metadata=extra_metadata,
+                    include_hidden_states=not getattr(args, "attn_only_records", False),
                 )
                 out_path = output_dir / f"{stem}.pkl"
             _append_summary(summary_path, effective_task_id, args.task, episode_idx, scenario_seed, out_path)
