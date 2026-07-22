@@ -61,6 +61,9 @@ class PerturbSpec:
     mode: str
     spec_seed: int = 0
     sham: bool = False
+    # P1-sham 변형: sim write 를 skip 하지 않고 **원값 재기록 + sim.forward() 실행**
+    # (S1 에서 warmstart 재계산이 bitwise 를 깨는지 실측하는 용도 — 24b sham 규약).
+    sham_forward: bool = False
     tag: str = ""
     # C1
     scale: float = 1.0
@@ -333,11 +336,17 @@ class Perturber:
     def _maybe_p1(self, record_idx: int) -> None:
         if record_idx != self.resolved.get("trigger_record", -10):
             return
-        if self.spec.sham:
-            self._sham_skipped = True
-            return
         kenv = self.kenv
         jname = kenv.objects[self.spec.target].joints[0]
+        if self.spec.sham:
+            if self.spec.sham_forward:
+                # δ=0 + 원값 재기록 + forward — warmstart bitwise 실측 변형.
+                q = np.array(kenv.sim.data.get_joint_qpos(jname), dtype=np.float64)
+                kenv.sim.data.set_joint_qpos(jname, q)
+                kenv.sim.forward()
+            else:
+                self._sham_skipped = True
+            return
         q = np.array(kenv.sim.data.get_joint_qpos(jname), dtype=np.float64)
         dxy = np.asarray(self.resolved["direction_xy"])
         q[0:2] += self.spec.magnitude * dxy
