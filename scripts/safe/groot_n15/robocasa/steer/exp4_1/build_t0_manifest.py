@@ -40,6 +40,9 @@ MACHINES = {
     ("pq3_ppcc_beer", "fit"): "kanu",
     ("pq3_drawer_left", "fit"): "kanu",
     ("pq3_drawer_right", "fit"): "kanu",
+    # mixer 는 신규 cell — 수집·eval 모두 srv50 귀속 (2026-07-22, kanu GPU 소진으로 전환)
+    ("exp41_mixer", "fit"): "srv50",
+    ("exp41_mixer", "eval"): "srv50",
 }
 
 # scene feasibility (24 공유문서 §5 + 본 세션 사용자 결정: ppcc 는 필터 생략)
@@ -48,6 +51,8 @@ FEAS_DEFAULT = {
     "pq3_ppcc_beer": ("1", "not_applied"),
     "pq3_drawer_left": ("1", "pending_scan"),
     "pq3_drawer_right": ("1", "pending_scan"),
+    # mixer 는 수집 자체가 feasible seed 만 사용 (스캔 95/100, BLOCKED 5 제외 — 07-22)
+    "exp41_mixer": ("1", "joint_sweep"),
 }
 
 
