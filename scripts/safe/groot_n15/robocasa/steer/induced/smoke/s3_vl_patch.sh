@@ -65,7 +65,11 @@ if [ -z "$(ep_file "$S3/trim" pkl)" ]; then
 fi
 kill_serve "$PORT"; trap - EXIT
 
-check "self-VL bitwise ≡ baseline" judge csv-bitwise "$(ep_file "$S3/base" csv)" "$(ep_file "$S3/selfpatch" csv)"
+# VL 캡처는 fp16 저장인데 원값이 fp32 라 self-donor bitwise 는 원리적으로 불가 (S3 실측:
+# record0 편차 ~1e-3 = 양자화 스케일, 이후 closed-loop 증폭). 하드 기준 = 첫 편차 ≤ 5e-3.
+check "self-VL ≈ baseline (첫 편차 양자화 스케일)" \
+  judge csv-first-diff "$(ep_file "$S3/base" csv)" "$(ep_file "$S3/selfpatch" csv)"
+check_soft "self-VL bitwise (참고 기록)" judge csv-bitwise "$(ep_file "$S3/base" csv)" "$(ep_file "$S3/selfpatch" csv)"
 check "self-VL 전창 1-fire"       judge status-audit "$S3/status_self.json" --expect-full
 check "trim-VL 실효(≠base)"       judge csv-bitwise "$(ep_file "$S3/base" csv)" "$(ep_file "$S3/trim" csv)" --expect-diff
 check "trim-VL 창 발화 일치"      judge status-audit "$S3/status_trim.json" --expect-start 0 --expect-len 6 --expect-total 6

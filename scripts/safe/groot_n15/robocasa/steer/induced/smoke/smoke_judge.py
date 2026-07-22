@@ -56,12 +56,16 @@ def cmd_csv_bitwise(args: argparse.Namespace) -> int:
     import csv
 
     def rows(p):
+        out = []
         with open(p) as f:
-            return [
-                [float(x) for x in row]
-                for row in csv.reader(f)
-                if row and not any(c.isalpha() for c in "".join(row))
-            ]
+            for row in csv.reader(f):
+                if not row:
+                    continue
+                try:
+                    out.append([float(x) for x in row])  # 지수표기(1e-05) 포함 수치행
+                except ValueError:
+                    continue  # 헤더 등 비수치행
+        return out
 
     ra, rb = rows(Path(args.a)), rows(Path(args.b))
     if len(ra) != len(rb):
@@ -73,6 +77,40 @@ def cmd_csv_bitwise(args: argparse.Namespace) -> int:
         for va, vb in zip(xa, xb):
             max_d = max(max_d, abs(va - vb))
     return _fail(f"csv-bitwise: NOT identical, rows={len(ra)} max|delta|={max_d:.3e}")
+
+
+def cmd_csv_first_diff(args: argparse.Namespace) -> int:
+    """첫 발산 record 의 max|Δ| 가 양자화 스케일 이내인지 (self-donor ≈ 판정의 하드 기준).
+
+    전 record 대입(패치 창 = 전창) self-donor 는 캡처 fp16 양자화 때문에 bitwise 가
+    원리적으로 불가할 수 있음 (VL: fp32 원값 — S3 실측 1e-3). closed-loop 증폭 전의
+    **첫 편차**가 양자화 스케일이면 배선은 항등으로 판정.
+    """
+    import csv
+
+    def rows(p):
+        out = []
+        with open(p) as f:
+            for row in csv.reader(f):
+                try:
+                    out.append([float(x) for x in row])
+                except ValueError:
+                    continue
+        return out
+
+    ra, rb = rows(Path(args.a)), rows(Path(args.b))
+    if Path(args.a).read_bytes() == Path(args.b).read_bytes():
+        return _ok("csv-first-diff: bitwise identical")
+    for i, (xa, xb) in enumerate(zip(ra, rb)):
+        d = max(abs(u - v) for u, v in zip(xa, xb))
+        if d > 0:
+            if d <= args.max_first_delta:
+                return _ok(f"csv-first-diff: record {i} 첫 편차 {d:.2e} ≤ "
+                           f"{args.max_first_delta:g} (양자화 스케일 — 배선 항등)")
+            return _fail(f"csv-first-diff: record {i} 첫 편차 {d:.2e} > {args.max_first_delta:g}")
+    if len(ra) != len(rb):
+        return _fail(f"csv-first-diff: 공통 구간 동일하나 행수 {len(ra)} != {len(rb)}")
+    return _ok("csv-first-diff: 수치 동일")
 
 
 def cmd_fields(args: argparse.Namespace) -> int:
@@ -226,6 +264,10 @@ def main() -> int:
     p.add_argument("a")
     p.add_argument("b")
     p.add_argument("--expect-diff", action="store_true")
+    p = sub.add_parser("csv-first-diff")
+    p.add_argument("a")
+    p.add_argument("b")
+    p.add_argument("--max-first-delta", type=float, default=5e-3)
     p = sub.add_parser("fields")
     p.add_argument("a")
     p.add_argument("b")
@@ -245,6 +287,7 @@ def main() -> int:
     args = ap.parse_args()
     return {
         "csv-bitwise": cmd_csv_bitwise,
+        "csv-first-diff": cmd_csv_first_diff,
         "fields": cmd_fields,
         "perturb-audit": cmd_perturb_audit,
         "status-audit": cmd_status_audit,

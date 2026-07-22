@@ -68,3 +68,6 @@ docker exec lerobot python .../induced/bridge_axis_check.py --induced-manifest .
 - `docker exec` heredoc 은 `-i` 필수.
 - 6p proximity 라벨 어휘에 "transport" 없음 — carry 구간은 "place".
 - `--expect-chunk-len` 은 serve chunk 길이(16), 실행 단위(NAS=5)와 별개.
+- **VL self-donor 는 bitwise 불가**: VL 캡처는 fp16 저장인데 원값이 fp32 (DiT 는 bf16→fp16
+  무손실이라 S2 는 bitwise). S3 실측 record0 편차 9.77e-04 → 판정 기준 = 첫 편차 ≤ 5e-3
+  (`smoke_judge csv-first-diff`). B1 해석에는 무영향 (의도 주입이 거시적).
