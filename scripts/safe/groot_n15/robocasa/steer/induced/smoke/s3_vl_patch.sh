@@ -30,7 +30,8 @@ if [ ! -f "$DONOR" ]; then
     || { echo "ABORT: self-VL-donor 추출 실패"; exit 13; }
 fi
 if [ ! -f "$TRIM" ]; then
-  docker exec lerobot python - "$(to_cont "$DONOR")" "$(to_cont "$TRIM")" <<'PY' || exit 13
+  # docker exec 는 -i 없이는 heredoc(stdin)을 전달하지 않음 — python - 이 빈 입력으로 무음 종료
+  docker exec -i lerobot python - "$(to_cont "$DONOR")" "$(to_cont "$TRIM")" <<'PY' || exit 13
 import json, sys
 import numpy as np
 src, dst = sys.argv[1], sys.argv[2]
