@@ -7,7 +7,8 @@
 - **연산자: setpoint형(Ms) + 기존 conceptor(A)만.** 제거형(ablation-to-zero)은 arm에서 제외 (Ms의 s≈0 특수경우로 흡수됨; fit 후 s 값 보고로 갈음).
 - **WA-LQR(W): 타당성 게이트 통과 시 추가 시도** (§5). 불가 판정이면 근거 기록 후 생략.
 - **축: within-instruction + cross-scene만. cross-instruction은 유예.**
-- **Task 4종: CloseFridge, OpenDrawer, PickPlaceCounterToCabinet(bread), PickPlaceCounterToCabinet(beer).**
+- **Task 4종: OpenStandMixerHead, OpenDrawer, PickPlaceCounterToCabinet(bread), PickPlaceCounterToCabinet(beer).** (07-22 재결정: CloseFridge 탈락 — 실행5/예측16 SR 0/14 chunk-길이 함정. mixer 근거·라벨러 = docs/steering/26, fridge 기록 = 25.)
+- **Scene 실현가능성 필터 필수 선행** (공유문서 §5, NOTICE_scene_feasibility_for_exp4.txt): 기하적으로 성공 불가능한 seed는 fit·eval 양쪽에서 동일 제외. rescue 실험에서 특히 치명 — 불가 scene은 어떤 steering으로도 구제 불가라 ITT 분모를 오염시킴.
 
 ## 목표
 
@@ -19,11 +20,12 @@
 |---|---|---|---|
 | ppcc_bread (s300033/s400020) | patchceil 77판 (77/77 bitwise 재현 검증) | **완비** (`patchceil/*/rollouts/nopatch/.../task5--ep*--succ0.{mp4,json}`, env_step GT 인라인) | 없음 — 즉시 주석 가능 |
 | ppcc_beer, OpenDrawer | exp3 fit15/fit30 수집 실패분 — (scenario_seed, inference_seed, **머신**) 기록 보유 | mp4 있음, env-step 사이드카 없음 | baseline 1회 재실행(수집 머신에서)으로 사이드카 생성 → 주석 팩 |
-| CloseFridge | **신규 cell** — 없음 | 없음 | C0 seed 스캔(exp3 `c0_scan` 패턴)으로 결정적 실패 seed 확보 → baseline + 사이드카 + 재현 검증 |
+| OpenStandMixerHead | **신규 cell** — 없음 (스모크 SR 0.33·이봉판정·instruction 1종·fixture 1종, docs/steering/26) | 없음 | ① **scene feasibility 스캔** seed 100000-100099 (`analyze/mixer_scene_feasibility.py` 기성, 실측 100010 BLOCKED) ② feasible seed에서 C0 스캔(exp3 `c0_scan` 패턴)으로 결정적 실패 확보 → baseline + 사이드카 + 재현 검증 |
 
+- **feasibility 필터는 4 task 공통 선행**: mixer는 스크립트 기성, drawer/ppcc는 4-파라미터 이식 후 스캔(오염 여부 미확인 — 기존 patchceil 77판·exp3 실패분도 스캔해서 불가 seed 발견 시 분모에서 제외·기록). 제외 seed·q_max는 annotation manifest에 컬럼으로 기록.
 - 결정론은 **머신 단위** — 각 episode는 수집한 머신에서 재현·eval (로컬/w2 층화, cross-machine 비교는 각주 규칙).
-- **ITT 분모 (Codex 반영)**: task별 headline rescue rate의 분모는 "확보된 결정적 실패 전체"로 고정. 사용자가 주석을 생략한 episode는 **비구제로 계상**(별도로 주석 부분집합 rate 병기). 분모 선별 편향 방지.
-- 1차 착수는 ppcc_bread(준비 완료), 나머지 3 task는 준비 작업과 병행.
+- **ITT 분모 (Codex 반영)**: task별 headline rescue rate의 분모는 "**feasibility 통과한** 결정적 실패 전체"로 고정. 사용자가 주석을 생략한 episode는 **비구제로 계상**(별도로 주석 부분집합 rate 병기). 분모 선별 편향 방지 — 단 기하 불가 seed 제외는 편향이 아님(정책·arm 무관, seed만의 함수·전 arm 동일 적용).
+- 1차 착수는 ppcc_bread(준비 완료, feasibility 사후 스캔 병행), 나머지 3 task는 준비 작업과 병행.
 
 ## 2. t0 지정 — 사용자 수동 주석
 
@@ -119,14 +121,14 @@ cell	episode_idx	scenario_seed	inference_seed	t0_env_step	t0_record	note
 
 ## 9. 예산 (4 task)
 
-- 준비: ppcc_bread 즉시 / beer·drawer 사이드카 재실행 각 수 시간 / CloseFridge C0 스캔 + baseline ~1일.
+- 준비: ppcc_bread 즉시 / beer·drawer 사이드카 재실행 각 수 시간 / mixer feasibility 스캔(CPU, seed당 수초)+C0 스캔+baseline ~1일.
 - 주석: task당 실패 수십 편 (사용자 시간; batch 분할).
 - 1차 eval: task당 실패 N × arm 4(A0 sentinel 제외 시 실질 3.2) ≈ ppcc_bread 기준 ~250 rollout, 빈 GPU 2장 반나절. 4 task 전체 ≈ 2–3일 (병렬·머신 층화 포함). W·B는 도착 시 +1 arm씩.
 - fit·진단: CPU (원격 가능).
 
 ## 10. 리스크
 
-- R1 주석 동결 위반(oracle 과대) → §2.2. R2 off-by-one → smoke 3. R3 identity≠no-hook → smoke 2·4. R4 fit-eval 겹침 → leave-target-out. R5 무음 미적용 → flags 감사. R6 머신 층화 위반 → manifest에 machine 컬럼. R7 affine hook 신규 배선 → smoke 4 + Gate2 코드 리뷰. R8 CloseFridge 실패 풀 부족 가능성 → C0 스캔 결과로 task 유지/교체 사용자 보고.
+- R1 주석 동결 위반(oracle 과대) → §2.2. R2 off-by-one → smoke 3. R3 identity≠no-hook → smoke 2·4. R4 fit-eval 겹침 → leave-target-out. R5 무음 미적용 → flags 감사. R6 머신 층화 위반 → manifest에 machine 컬럼. R7 affine hook 신규 배선 → smoke 4 + Gate2 코드 리뷰. R8 mixer 결정적 실패 풀 부족 가능성(스모크 SR 0.33이라 실패는 많을 것이나 feasibility 제외 후 규모 미정) → 스캔 결과로 사용자 보고. R9 feasibility 스크립트의 한계(정적·관절만, 그리퍼 걸림 미검출·StandMixer 전용이라 타 task는 4-파라미터 이식 필요) → NOTICE §5 숙지, 이식분은 실측 교차검증(rollout 최대 도달값 대조) 후 사용.
 
 ## 11. 새 세션 시작 프롬프트 (복붙용)
 
@@ -135,7 +137,8 @@ exp4-1(oracle-timing 실패 구제)을 실행한다.
 계획: docs/steering/24a_exp4-1_oracle_rescue_plan.md (+ 공유 24_exp4_shared_plan.md) — 먼저 정독.
 브랜치: dev에서 exp/exp4-1-oracle-rescue 분기.
 순서: ① annotate_phase_video.py 이벤트 마커 확장 → ppcc_bread 77판 주석 팩 생성 후 경로 보고
-(내가 annotation_t0.tsv를 채운다) ∥ beer·drawer 사이드카 재실행, CloseFridge C0 스캔
+(내가 annotation_t0.tsv를 채운다) ∥ beer·drawer 사이드카 재실행, mixer feasibility 스캔(100000-100099,
+NOTICE_scene_feasibility_for_exp4.txt)+feasible seed C0 스캔, 기존 실패 풀(ppcc·drawer)도 feasibility 사후 스캔
 ② setpoint affine hook(~120 LOC) + fit_mean_diff.py + Pr(라벨 순열) + client latch + 러너 구현,
 구현 완료 시 Codex Gate2 리뷰 ③ WA-LQR F1 타당성 게이트(eval 0판) — 결과 보고 후 W arm 여부 결정
 ④ 내 주석 도착 후 smoke 5종 → A0 sentinel → 본 eval(A/Ms/Pr[/W]).

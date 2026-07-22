@@ -2,7 +2,7 @@
 
 작성 2026-07-21, **확정 2026-07-22** (Codex Gate1 반영 + 사용자 최종 결정. 원장: `docs/collab/2026-07-22-exp4-plan-gate1.md`). 공유 배경·arm 정의·게이트는 [`24_exp4_shared_plan.md`](24_exp4_shared_plan.md) (이하 "공유문서") — 반드시 먼저 읽을 것.
 
-확정 스코프 주석: exp4 task 4종(CloseFridge/OpenDrawer/ppcc_bread/ppcc_beer) 중 exp4-2 파일럿·본수집은 ppcc_bread 중심, P2 확장 후보가 나머지 3종. steering 축의 cross-instruction 유예는 **fit/eval 축** 기준이며, B1(타 instruction donor 주입)은 실패 *생성* 메커니즘이라 유지 — 단 사용자가 B1도 유예를 원하면 P0에서 제외 가능(스모크 비용만 소액).
+확정 스코프 주석: exp4 task 4종(OpenStandMixerHead/OpenDrawer/ppcc_bread/ppcc_beer — 07-22 재결정, CloseFridge 탈락) 중 exp4-2 파일럿·본수집은 ppcc_bread 중심, P2 확장 후보가 나머지 3종. **섭동 대상 seed도 scene feasibility 필터 선행**(공유문서 §5) — 기하 불가 scene에 섭동을 주면 그 실패는 latent가 아니라 기하라 fail 클래스를 오염시킴. steering 축의 cross-instruction 유예는 **fit/eval 축** 기준이며, B1(타 instruction donor 주입)은 실패 *생성* 메커니즘이라 유지 — 단 사용자가 B1도 유예를 원하면 P0에서 제외 가능(스모크 비용만 소액).
 
 ## 목표·가설
 
@@ -72,7 +72,7 @@ mid-rollout 실패 주입 선행(RePO-VLA 4종, FailGen 7종) 기준 2모드는 
 | P0 | Track P 캘리브레이션 grid(P3/P1/P2) ~54 + B2/B4 창·scale ~32 + B1/B3 스모크 ~12 | ~98 | smoke S1–S5 통과 후; 실패율 40–70% config 선정 |
 | **bridge 게이트** | P0 데이터만으로 유도실패 축 ↔ 자연실패 축 정렬 검사: induced/natural mean-diff cosine, cross-AUROC(held-out), WA-LQR식 SVM 분리도 사전 측정(24c §3) | 0 (분석) | **정렬 신호 없으면 P1 중단** — 자연실패와 직교한 연산자에 200ep를 쓰지 않음 (Gate1) |
 | P1 | Track P 2~3모드 × 40+ + B군 통과 변형 × 40 | ~200+ | P0·bridge 통과분만; **진입 변형은 fail ≥20ep 목표** (Gate1 — 10ep는 episode-level AUROC·McNemar에 과소) |
-| P2 (조건부) | 최우수 1–2 변형을 잔여 task(OpenDrawer[P5 포함]·ppcc_beer·CloseFridge) 확장 | ~40/task | P1 유의 시 |
+| P2 (조건부) | 최우수 1–2 변형을 잔여 task(OpenDrawer[P5 포함]·ppcc_beer·OpenStandMixerHead) 확장 | ~40/task | P1 유의 시; 대상 seed는 feasibility 통과분만 |
 
 - fail class = 유도실패(변형·intervention-source 라벨 부착). **primary fit 대조 = perturbed-fail vs perturbed-succ (동일 변형·dose·trigger, 동등 가중) — Gate1 반영**: clean succ 460개를 섞으면 "perturbation 받음 ≈ fail"이 되어 물리 서명을 학습함. 자연 성공(clean succ 460, perturbed-succ 별도 라벨 보존)은 **secondary fit·transfer 평가 전용**.
 - **데이터 3분할 계약 (Gate1)**: calibration(P0) / fit(P1 일부) / locked test(P1 잔여 + 자연실패) — episode 교집합 0을 manifest hash로 강제. 변형×layer×α 선택은 fit split에서만, headline(H2·TYPE)은 locked test에서 1회.
