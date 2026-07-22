@@ -154,7 +154,8 @@ def load_cell_rolls(manifest: Path, cell: str):
         r["success"] = m["label"]  # manifest 라벨 override (fit_phase_conceptor 관례)
         r["scene"] = m["scene"]
         r["episode_idx"] = int(d.get("episode_idx", -1))
-        r["inference_seed"] = d.get("inference_seed")
+        r["inference_seed"] = int(d.get("inference_seed", -1))
+        r["scenario_seed"] = int(d.get("scenario_seed", -1))
         rolls.append(r)
     return rolls
 
@@ -170,9 +171,11 @@ def load_targets(targets_tsv: Path, cell: str):
         r = dict(zip(header, ln.split("\t")))
         if r["cell"] != cell:
             continue
-        out[r["pool"]].append(
-            {"episode_idx": int(r["episode_idx"]), "scenario_seed": int(r["scenario_seed"])}
-        )
+        out[r["pool"]].append({
+            "episode_idx": int(r["episode_idx"]),
+            "scenario_seed": int(r["scenario_seed"]),
+            "inference_seed": int(r["inference_seed"]),
+        })
     return out
 
 
@@ -207,13 +210,23 @@ def main() -> None:
         if b not in cap_layers:
             raise SystemExit(f"layer {b} 는 capture {cap_layers} 에 없음")
 
-    # ---- 침범 검사: eval-풀 대상 episode 가 fit rolls 에 들어있으면 안 됨 (hard assert)
-    fit_eps = {(r["episode_idx"]) for r in rolls}
-    bad = [t for t in targets["eval"] if t["episode_idx"] in fit_eps]
+    # ---- 침범 검사: rollout 정체성 = (scenario_seed, inference_seed). exp3 eval 의
+    # seen 블록(ep0-29)은 fit 과 같은 scene·다른 inference_seed 계열(35xx000 vs 10xx000)
+    # 이라 episode_idx 비교는 오탐 — 실측 대조로 확정(2026-07-22).
+    fit_ids = {(r["scenario_seed"], r["inference_seed"]) for r in rolls}
+    fit_scenes = {r["scenario_seed"] for r in rolls}
+    bad = [t for t in targets["eval"]
+           if (t["scenario_seed"], t["inference_seed"]) in fit_ids]
     if bad:
-        raise SystemExit(f"eval-풀 대상이 fit 표본과 겹침(설계 위반): {bad[:3]}")
+        raise SystemExit(f"eval-풀 대상이 fit 표본과 동일 rollout(설계 위반): {bad[:3]}")
+    # seen(fit scene 재사용)/unseen 층화 플래그 — 집계에서 별도 보고 (scene-level leakage 표기)
+    eval_targets_flagged = [
+        {**t, "seen_scene": t["scenario_seed"] in fit_scenes} for t in targets["eval"]
+    ]
     # fit-풀 대상은 반드시 fit rolls 안에 있어야 LOO 가 성립
-    missing_loo = [t for t in targets["fit"] if t["episode_idx"] not in fit_eps]
+    fit_pair_ids = {(r["episode_idx"], r["inference_seed"]) for r in rolls}
+    missing_loo = [t for t in targets["fit"]
+                   if (t["episode_idx"], t["inference_seed"]) not in fit_pair_ids]
     if missing_loo:
         raise SystemExit(f"fit-풀 대상이 fit 표본에 없음: {missing_loo[:3]}")
 
@@ -322,7 +335,11 @@ def main() -> None:
         "n_rollouts": len(rolls), "n_succ": int(n_s), "n_fail": int(len(rolls) - n_s),
         "s": s_full, "dose_median_fitset": dose_m,
         "layer_sweep_ref": "../layer_sweep.json", "rng_seed": RNG_SEED,
-        "note": "s≈0 이면 제거형(I−βr̂r̂ᵀ)과 동치 (24a §4.1)",
+        "eval_targets": eval_targets_flagged,
+        "n_eval_seen": sum(t["seen_scene"] for t in eval_targets_flagged),
+        "n_eval_unseen": sum(not t["seen_scene"] for t in eval_targets_flagged),
+        "note": "s≈0 이면 제거형(I−βr̂r̂ᵀ)과 동치 (24a §4.1); seen_scene 대상은 "
+                "fit 이 같은 scene 의 다른 rollout 을 봄 — 집계에서 seen/unseen 층화",
     }
     save_setpoint_npz(out_cell / "setM", blk, v_full, s_full, base_meta)
     save_setpoint_npz(out_cell / "setM_pl", blk, pl_sel["v"], pl_sel["s"], {
