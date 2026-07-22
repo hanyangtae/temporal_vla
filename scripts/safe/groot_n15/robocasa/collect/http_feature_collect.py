@@ -333,6 +333,27 @@ def _post_steering_phase(server: str, phase: str) -> bool:
     return bool(body.get("gated", False))
 
 
+def _get_serve_identity(server: str) -> dict:
+    """serve /health 에서 GPU·boot 지문을 1회 조회 (exp4-1 arm×GPU confound 사후 감사용).
+
+    실패해도 수집은 계속한다 (지문 없음으로 기록) — steering 무결성과 달리 감사 메타라
+    fail-loud 대상이 아님.
+    """
+    import json as _json
+    import urllib.request as _rq
+
+    try:
+        with _rq.urlopen(f"{server.rstrip('/')}/health", timeout=5) as resp:
+            body = _json.loads(resp.read().decode() or "{}")
+        return {
+            "serve_gpu": body.get("serve_gpu"),
+            "serve_boot_id": body.get("boot_id"),
+            "serve_steering": body.get("steering"),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"serve_gpu": None, "serve_boot_id": None, "serve_health_error": str(exc)}
+
+
 def _find_latest_video(video_dir: Path) -> Path | None:
     videos = sorted(video_dir.glob("*.mp4"), key=lambda path: path.stat().st_mtime)
     return videos[-1] if videos else None
@@ -481,6 +502,18 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--steer-from-record",
+        type=int,
+        default=None,
+        metavar="K",
+        help=(
+            "exp4-1 oracle latch: inference 직전 record 수(progress_before)>=K 이면 "
+            "phase 'steer', 아니면 'off' 를 /steering_phase 로 POST — K번째 record 부터 "
+            "episode 끝까지 steering ON (serve 는 phase 디렉토리 'steer' 하나 등록, "
+            "'off' 는 미등록→identity). --gated-steering 과 상호배타."
+        ),
+    )
+    parser.add_argument(
         "--n_action_steps",
         "--n-action-steps",
         dest="n_action_steps",
@@ -565,8 +598,14 @@ def run() -> dict[str, Any]:
     )
     if getattr(args, "attn_only_records", False) and getattr(args, "no_features", False):
         raise ValueError("--attn-only-records 와 --no-features 는 동시 사용 불가")
+    steer_from_record = getattr(args, "steer_from_record", None)
+    if steer_from_record is not None and getattr(args, "gated_steering", False):
+        raise ValueError("--steer-from-record 와 --gated-steering 은 상호배타 (latch vs phase-gated)")
+    if steer_from_record is not None and steer_from_record < 0:
+        raise ValueError(f"--steer-from-record 는 음수 불가: {steer_from_record}")
     if args.wait_ready:
         policy.wait_until_ready(max_wait=args.timeout)
+    serve_identity = _get_serve_identity(args.vla_server)
 
     max_steps = args.max_episode_steps
     results: list[dict[str, Any]] = []
@@ -658,6 +697,11 @@ def run() -> dict[str, Any]:
                 gated_now = False
                 if getattr(args, "gated_steering", False):
                     gated_now = _post_steering_phase(args.vla_server, phase)
+                elif steer_from_record is not None:
+                    # exp4-1 latch: K번째 record 부터 끝까지 'steer' (record r ⇔ env-step
+                    # [nas·r, nas·r+nas)). labeler phase 는 feature_phases 라벨용으로 유지.
+                    want = "steer" if progress_before >= steer_from_record else "off"
+                    gated_now = _post_steering_phase(args.vla_server, want)
                 official_action, _ = policy.get_action(obs)
                 progress_after = policy.n_calls if no_features else len(policy.records)
                 if progress_after > progress_before:
@@ -755,6 +799,9 @@ def run() -> dict[str, Any]:
                     "expect_chunk_len": policy.expect_chunk_len,
                     # gated dose 감사: 추론별 phase 가 실제 matrix 를 탔는지 (False=identity)
                     "phase_gated_flags": phase_gated_flags,
+                    # exp4-1 latch 감사: sum(flags)==n_inferences-K && first_true==K 대조용
+                    "steer_from_record": steer_from_record,
+                    **serve_identity,
                     "ep_meta": captured_ep_meta,
                     **extra_metadata,
                 }

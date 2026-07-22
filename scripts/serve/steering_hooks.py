@@ -33,7 +33,9 @@ from src.conceptor import build_steering_matrix  # noqa: E402
 __all__ = [
     "load_steering_matrix",
     "load_steering_matrices_per_step",
+    "load_steering_setpoint",
     "ConceptorSteering",
+    "SetpointSteering",
     "Pi05ConceptorSteering",
 ]
 
@@ -158,6 +160,50 @@ def load_steering_matrices_per_step(
         )
         mats.append(build_steering_matrix(z[want].astype(np.float64), beta))
     return mats
+
+
+def load_steering_setpoint(
+    npz_path: str | Path,
+    *,
+    alpha: float | None = None,
+) -> tuple[np.ndarray, float]:
+    """setpoint형 mean-diff(setM) NPZ 에서 (r̂, s) 를 반환 (exp4-1, docs/steering/24a §4.1).
+
+    NPZ 키 계약 (fit_mean_diff.py 산출): ``alpha{a}_v_steer`` [D] 단위벡터 +
+    ``alpha{a}_s`` 스칼라(성공 평균의 r̂ 좌표 = setpoint). α 선택 규칙은
+    ``load_steering_matrix`` 와 동일 (explicit > metadata selected_alpha > 첫 키).
+    β 는 hook(``SetpointSteering``) 쪽 인자 — M 에 굽는 conceptor 경로와 달리
+    적용식 h' = h − β[(h·r̂)−s]r̂ 에서 실행 시 곱한다.
+    """
+    z = np.load(npz_path)
+    v_keys = [k for k in z.files if k.endswith("_v_steer")]
+    if not v_keys:
+        raise KeyError(f"{npz_path} 에 *_v_steer 없음 (keys={z.files})")
+    alpha_src = "explicit"
+    if alpha is None:
+        meta_path = Path(npz_path).with_name("metadata.json")
+        if meta_path.exists():
+            alpha = json.loads(meta_path.read_text()).get("selected_alpha")
+            alpha_src = "meta"
+    if alpha is not None:
+        chosen = f"alpha{alpha:g}_v_steer"
+        if chosen not in v_keys:
+            raise KeyError(f"{chosen} 없음 (있는 키={v_keys}, alpha_src={alpha_src})")
+    else:
+        chosen = v_keys[0]
+        alpha_src = "first-key"
+    s_key = chosen.replace("_v_steer", "_s")
+    if s_key not in z.files:
+        raise KeyError(f"{npz_path} 에 {s_key} 없음 (setpoint 스칼라 누락)")
+    v = z[chosen].astype(np.float64).reshape(-1)
+    nrm = float(np.linalg.norm(v))
+    if not (0.99 < nrm < 1.01):
+        raise ValueError(f"v_steer 는 단위벡터여야 함: ‖v‖={nrm:.4f} ({npz_path})")
+    s = float(np.asarray(z[s_key]).reshape(()))
+    sha = hashlib.sha256(Path(npz_path).read_bytes()).hexdigest()[:12]
+    print(f"[steer-preflight] npz={npz_path} key={chosen} alpha_src={alpha_src} "
+          f"op=setpoint s={s:.4f} dim={v.shape[0]} sha={sha}", flush=True)
+    return v, s
 
 
 PATHWAYS: tuple[str, ...] = ("dit", "vl")
@@ -312,6 +358,111 @@ class ConceptorSteering:
             self._handle = None
 
     def __enter__(self) -> "ConceptorSteering":
+        return self.register()
+
+    def __exit__(self, *_exc: Any) -> bool:
+        self.unregister()
+        return False
+
+
+class SetpointSteering:
+    """setpoint형 mean-diff(setM) affine hook (exp4-1, docs/steering/24a §4.1).
+
+    적용식: ``h' = h − β[(h·r̂) − s]·r̂`` — 오차 비례 개입, (h·r̂)=s 도달 시 개입량 0
+    (자기 소멸), β≤1 이면 목표 초과 불가. 선행: ACE(2411.09003)·LEACE·WA-LQR setpoint.
+    conceptor 경로(h'=hMᵀ, β를 M 에 굽기)와 달리 bias 항이 있는 affine 이라 별도 hook.
+
+    주입 지점·발화 규약은 ``ConceptorSteering`` 의 dit 경로와 동일
+    (``transformer_blocks[layer]`` 출력 residual stream D=1536, denoise call 마다 발화,
+    ``last_horizon`` 이면 마지막 action token 만). per-step vec 시퀀스는 미지원.
+
+    phase-gated 스위칭 API: ``set_vector(v, s)`` 활성 / ``set_vector(None)`` 비활성.
+    비활성이면 hook 은 **출력 텐서를 그대로 반환** (clone 없음) — no-hook 과 구성상
+    동일해 off≡identity smoke(24a §8-2·4)가 구조적으로 성립한다.
+    ``reset_step_counter`` 는 registry 폴리모픽 순회 호환용 no-op.
+    """
+
+    def __init__(
+        self,
+        groot_model: Any,
+        vec_s: tuple[np.ndarray, float] | None,
+        beta: float,
+        *,
+        pathway: str = "dit",
+        layer: int | None = None,
+        horizon: int | None = None,
+        token_select: str | None = None,
+    ):
+        if pathway != "dit":
+            raise ValueError("SetpointSteering 은 pathway='dit' 전용 (exp4-1 스코프).")
+        head = groot_model.action_head
+        self.pathway = pathway
+        self.layer = layer
+        self.beta = float(beta)
+        self.module = head.model if layer is None else head.model.transformer_blocks[layer]
+        self.token_select = token_select or "last_horizon"
+        if self.token_select not in TOKEN_SELECTS:
+            raise ValueError(
+                f"Unsupported token_select: {self.token_select} (expected {TOKEN_SELECTS})"
+            )
+        self.horizon = int(horizon if horizon is not None else head.action_horizon)
+        self._handle = None
+        self.set_vector(*(vec_s if vec_s is not None else (None,)))
+
+    @property
+    def per_step(self) -> bool:
+        return False
+
+    def set_vector(self, v: np.ndarray | None, s: float | None = None) -> None:
+        """(r̂, s) 활성화 또는 None 비활성화. 텐서 캐시 리셋."""
+        if v is None:
+            self._v = None
+            self._s = 0.0
+        else:
+            if isinstance(v, (list, tuple)):
+                raise ValueError("per-step vec 시퀀스는 미지원 (exp4-1 은 denoise global).")
+            arr = np.asarray(v, dtype=np.float64).reshape(-1)
+            if s is None:
+                raise ValueError("set_vector(v, s): 활성화에는 setpoint s 필요.")
+            self._v = arr
+            self._s = float(s)
+        self._vt_cache: torch.Tensor | None = None
+
+    def reset_step_counter(self) -> None:
+        """요청 시작 훅 호환용 no-op (setpoint 는 denoise step 무관 동일 적용)."""
+
+    def _hook(self, _module: Any, _args: tuple, output: Any) -> Any:
+        if self._v is None:  # off phase — 원본 그대로 (no-hook 과 bitwise 동일)
+            return output
+        is_tuple = isinstance(output, tuple)
+        out = output[0] if is_tuple else output
+        vt = self._vt_cache
+        if vt is None or vt.device != out.device or vt.dtype != out.dtype:
+            vt = torch.as_tensor(self._v, device=out.device, dtype=out.dtype)
+            self._vt_cache = vt
+        steered = out.clone()
+        if self.token_select == "last_horizon":
+            hs = steered[..., -self.horizon :, :]
+            proj = hs @ vt  # [..., horizon]
+            steered[..., -self.horizon :, :] = hs - self.beta * (proj - self._s).unsqueeze(-1) * vt
+        else:  # "all"
+            proj = steered @ vt
+            steered = steered - self.beta * (proj - self._s).unsqueeze(-1) * vt
+        if is_tuple:
+            return (steered, *output[1:])
+        return steered
+
+    def register(self) -> "SetpointSteering":
+        if self._handle is None:
+            self._handle = self.module.register_forward_hook(self._hook)
+        return self
+
+    def unregister(self) -> None:
+        if self._handle is not None:
+            self._handle.remove()
+            self._handle = None
+
+    def __enter__(self) -> "SetpointSteering":
         return self.register()
 
     def __exit__(self, *_exc: Any) -> bool:
