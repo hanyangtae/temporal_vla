@@ -115,6 +115,10 @@ _gated_registry: dict = {}  # oracle phase-gated steering: {"hooks":{layer:hook}
 # — 로그의 [serve-boot] id 와 /health 의 boot_id 가 일치해야 같은 프로세스.
 _BOOT_ID = uuid.uuid4().hex[:12]
 _steering_spec: dict = {}  # /health 노출용 스티어링 지문 (mode/layers/β/npz sha/…)
+# patchceil donor-trajectory transplant (docs/collab/2026-07-16-patching-transplant-gate1.md)
+_patch_hooks: dict = {}  # {layer(int): PatchSteering}
+_patch_spec: dict = {}  # /health 노출용 patch 지문 (layers/token/K/armed tag/npz sha)
+_patch_donor_arrays: dict = {}  # 마지막 로드 donor {layer: [R,K,T,D]} — npz 생략 재-arm 용
 
 
 def _reset_steering_step_counters() -> None:
@@ -127,6 +131,10 @@ def _reset_steering_step_counters() -> None:
         reset = getattr(hook, "reset_step_counter", None)
         if reset is not None:
             reset()
+    # patch hook 은 같은 호출이 k 리셋 + record cursor 전진을 겸한다
+    # (요청 1개 = record 1개 규약, patching_hooks.PatchSteering docstring)
+    for hook in _patch_hooks.values():
+        hook.reset_step_counter()
 
 
 def _has_per_step_steering() -> bool:
@@ -151,6 +159,23 @@ def _assert_per_step_hook_counts() -> None:
                         f"(layer={hook.layer}) — denoise hook 배선 확인 필요"
                     ),
                 )
+
+
+def _assert_patch_hook_counts() -> None:
+    """chunk 추론 직후 patch hook 이 정확히 K회 발화했는지 검증 (미발화 무음 방지).
+
+    over-fire 는 hook 자체가 RuntimeError. 미발화(hook suppression·compile 경로 변화)는
+    여기서 잡는다 — per-step steering 의 _assert_per_step_hook_counts 와 동일 규약.
+    """
+    for layer, hook in _patch_hooks.items():
+        if hook._k != hook.expected_k:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"patch hook under-fire: fired {hook._k}/{hook.expected_k} "
+                    f"(layer={layer}) — denoise hook 배선 확인 필요"
+                ),
+            )
 
 # payload 의 observation.state.* 서브키를 lerobot observation.state 로 합칠 때 사용할
 # canonical 정렬 순서 (벤치 공통). 체크포인트가 학습된 state dim 만큼 앞에서 truncate.
@@ -380,8 +405,101 @@ def steering_phase(payload: dict):
     return {"ok": True, "phase": phase, "gated": phase in next(iter(_gated_registry["matrices"].values()))}
 
 
+@app.post("/patch_arm")
+def patch_arm(payload: dict):
+    """patchceil: rollout 1개 분의 transplant 파라미터를 원자적으로 arm.
+
+    러너가 collector 기동 **직전** 호출한다 (collector 의 policy.reset() → /reset 은
+    카운터만 리셋하고 arm 은 유지). payload:
+      {"npz": donor NPZ 경로(생략 시 직전 로드 재사용), "start_record": int,
+       "donor_start": int=0, "patch_len": int=-1(-1=donor 고갈까지), "tag": str}
+    """
+    if not _patch_hooks:
+        raise HTTPException(status_code=409, detail="patch hooks not enabled (--patch-layers)")
+    from patching_hooks import load_donor_npz
+
+    try:
+        start_record = int(payload["start_record"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="start_record(int) 필수") from exc
+    donor_start = int(payload.get("donor_start", 0))
+    patch_len = int(payload.get("patch_len", -1))
+    tag = str(payload.get("tag", "")) or None
+
+    npz = payload.get("npz")
+    expected_k = next(iter(_patch_hooks.values())).expected_k
+    if npz:
+        try:
+            arrays, meta, sha12 = load_donor_npz(
+                npz, list(_patch_hooks.keys()), expected_k=expected_k
+            )
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=f"donor npz 로드 실패: {exc}") from exc
+        _patch_donor_arrays.clear()
+        _patch_donor_arrays.update(arrays)
+        _patch_spec["donor_npz_sha"] = sha12
+        _patch_spec["donor_meta"] = {
+            k: meta.get(k)
+            for k in ("cell", "episode_idx", "scenario_seed", "inference_seed", "n_records")
+        }
+    if not _patch_donor_arrays:
+        raise HTTPException(status_code=409, detail="donor 미로드 — payload 에 npz 경로 필요")
+
+    try:
+        for layer, hook in _patch_hooks.items():
+            hook.arm(
+                _patch_donor_arrays[layer],
+                start_record=start_record,
+                donor_start=donor_start,
+                patch_len=patch_len,
+                tag=tag,
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _patch_spec.update(
+        {
+            "armed_tag": tag,
+            "start_record": start_record,
+            "donor_start": donor_start,
+            "patch_len": patch_len,
+        }
+    )
+    logger.info(
+        "[patch-arm] tag=%s start_record=%d donor_start=%d patch_len=%d sha=%s",
+        tag, start_record, donor_start, patch_len, _patch_spec.get("donor_npz_sha"),
+    )
+    return {"ok": True, "boot_id": _BOOT_ID, "patch": dict(_patch_spec)}
+
+
+@app.post("/patch_disarm")
+def patch_disarm():
+    """patchceil: no-patch 대조(재실행) rollout 용 — donor 를 내리고 카운터 초기화."""
+    if not _patch_hooks:
+        raise HTTPException(status_code=409, detail="patch hooks not enabled (--patch-layers)")
+    for hook in _patch_hooks.values():
+        hook.disarm()
+    _patch_spec["armed_tag"] = None
+    return {"ok": True, "boot_id": _BOOT_ID}
+
+
+@app.get("/patch_status")
+def patch_status():
+    """patchceil: rollout 종료 후 러너가 실제 발화 창을 기대와 대조 (무음 오적용 방지)."""
+    if not _patch_hooks:
+        raise HTTPException(status_code=409, detail="patch hooks not enabled (--patch-layers)")
+    return {
+        "boot_id": _BOOT_ID,
+        "patch": dict(_patch_spec),
+        "hooks": {str(layer): hook.status() for layer, hook in _patch_hooks.items()},
+    }
+
+
 @app.post("/reset")
 async def reset():
+    # patchceil: 에피소드 경계 — record cursor·발화 로그만 초기화, arm 은 유지
+    # (러너의 /patch_arm → collector 기동(내부 /reset) 순서 때문).
+    for hook in _patch_hooks.values():
+        hook.reset_episode()
     return reset_policy(policy)
 
 
@@ -452,6 +570,14 @@ async def predict_action(payload: dict):
             detail="per-step steering serve 는 /act(큐 팝) 미지원 — "
             "/act_with_features (skip_features=1) 를 사용하라",
         )
+    if _patch_hooks:
+        # record cursor 는 "요청 1개 = record 1개" 를 전제 — /act 큐 팝(16콜당 1추론)과
+        # 양립 불가 (무음 커서 어긋남 방지).
+        raise HTTPException(
+            status_code=409,
+            detail="patch serve 는 /act(큐 팝) 미지원 — "
+            "/act_with_features (skip_features=1) 를 사용하라",
+        )
     inference_seed = _apply_inference_seed(payload)
     _reset_steering_step_counters()
     batch = parse_payload(payload)
@@ -516,6 +642,7 @@ async def predict_action_with_features(payload: dict):
             else:
                 action = policy.select_action(batch)
         _assert_per_step_hook_counts()
+        _assert_patch_hook_counts()
         action = _postprocess_action_preserve_chunk(action)
         action_np = _action_to_emit_array(action)
         result = _emit_subkeys(action_np, profile)
@@ -593,6 +720,7 @@ async def health():
         # 러너 preflight: 로그의 [serve-boot] id 와 대조해 "포트의 남의 서버" 오인 방지
         boot_id=_BOOT_ID,
         steering=_steering_spec or None,
+        patch=_patch_spec or None,
         **feature_metadata,
     )
 
@@ -966,6 +1094,7 @@ def _load_model_impl():
     preprocessor = loaded.preprocessor
     postprocessor = loaded.postprocessor
     _register_steering_if_requested(policy, args)
+    _register_patching_if_requested(policy, args)
 
     from lerobot.configs.types import FeatureType
     from lerobot.utils.constants import ACTION
@@ -1001,6 +1130,97 @@ def _load_model_impl():
 
 
 # ─── Entry point ─────────────────────────────────────────────────────────────
+
+
+def _register_patching_if_requested(loaded_policy, args):
+    """patchceil donor-trajectory transplant hook 등록 (--patch-layers).
+
+    conceptor steering 과 달리 M 변환이 아니라 donor activation 대입이며, rollout record
+    cursor 상태를 가진다 (patching_hooks.PatchSteering). patch rollout 은 캡처 OFF 가
+    표준이라 --collect 와 동시 사용을 금지하고, 해석 오염 방지를 위해 --steering-* 와도
+    상호 배타다.
+    """
+    global _patch_hooks, _patch_spec
+    patch_layers = getattr(args, "patch_layers", None)
+    patch_npz = getattr(args, "patch_npz", None)
+    if not patch_layers:
+        if patch_npz:
+            raise ValueError("--patch-npz 는 --patch-layers 와 함께 지정해야 한다")
+        return None
+    if _policy_type != "groot":
+        raise ValueError("patch hook 은 groot (GR00T N1.5) 전용")
+    if _collect_mode and not getattr(args, "patch_allow_collect", False):
+        raise ValueError(
+            "--patch-layers 는 --collect 와 동시 사용 금지 — patch rollout 은 캡처 OFF "
+            "(/act_with_features skip_features=1) 표준. anchor(A2/A3) 검증처럼 emitted "
+            "actions 저장이 필요한 경우에만 --patch-allow-collect 로 명시 허용."
+        )
+    if _steering or _gated_registry:
+        raise ValueError("--patch-layers 는 --steering-* 와 동시 사용 금지 (해석 오염)")
+
+    from patching_hooks import PatchSteering, load_donor_npz
+
+    _gm = getattr(loaded_policy, "_groot_model", None)
+    if _gm is None:
+        raise ValueError("GR00T LeRobot policy is missing _groot_model for patching")
+    expected_k = int(_gm.action_head.num_inference_timesteps)
+    layers = [int(x) for x in str(patch_layers).split(",") if x.strip() != ""]
+    if not layers:
+        raise ValueError("--patch-layers 가 비어 있다")
+    token_select = getattr(args, "patch_token_select", "all") or "all"
+
+    for _h in _patch_hooks.values():
+        _h.unregister()
+    _patch_hooks = {}
+    for layer in layers:
+        hook = PatchSteering(
+            _gm, layer=layer, expected_k=expected_k, token_select=token_select
+        ).register()
+        _patch_hooks[layer] = hook
+    _patch_spec = {
+        "mode": "transplant",
+        "layers": layers,
+        "token_select": token_select,
+        "expected_k": expected_k,
+        "armed_tag": None,
+        "donor_npz_sha": None,
+    }
+
+    # 정적 arm (스모크·anchor 용): --patch-npz + --patch-start-record 지정 시 기동 즉시 arm.
+    # 본 실행은 rollout 마다 /patch_arm 으로 동적 arm 한다.
+    if patch_npz:
+        arrays, meta, sha12 = load_donor_npz(patch_npz, layers, expected_k=expected_k)
+        _patch_donor_arrays.clear()
+        _patch_donor_arrays.update(arrays)
+        _patch_spec["donor_npz_sha"] = sha12
+        _patch_spec["donor_meta"] = {
+            k: meta.get(k)
+            for k in ("cell", "episode_idx", "scenario_seed", "inference_seed", "n_records")
+        }
+        start = getattr(args, "patch_start_record", None)
+        if start is not None:
+            for layer in layers:
+                _patch_hooks[layer].arm(
+                    _patch_donor_arrays[layer],
+                    start_record=int(start),
+                    donor_start=int(getattr(args, "patch_donor_start", 0) or 0),
+                    patch_len=int(getattr(args, "patch_len", -1)),
+                    tag="static",
+                )
+            _patch_spec.update(
+                {
+                    "armed_tag": "static",
+                    "start_record": int(start),
+                    "donor_start": int(getattr(args, "patch_donor_start", 0) or 0),
+                    "patch_len": int(getattr(args, "patch_len", -1)),
+                }
+            )
+    logger.info(
+        "[patch-preflight] layers=%s token_select=%s K=%d npz=%s sha=%s armed=%s",
+        layers, token_select, expected_k, patch_npz,
+        _patch_spec.get("donor_npz_sha"), _patch_spec.get("armed_tag"),
+    )
+    return _patch_hooks
 
 
 def main():
@@ -1145,6 +1365,45 @@ def main():
             "step k 에 M_k 스와핑 (NPZ 키 step{k}_alpha{a}_*, groot dit 전용, "
             "요청 시작마다 카운터 리셋)."
         ),
+    )
+    parser.add_argument(
+        "--patch-layers",
+        default=None,
+        help=(
+            "patchceil transplant 주입 layer (콤마, DiT transformer_block idx). 지정 시 "
+            "donor-trajectory transplant hook 등록 — --steering-*/--collect 와 상호 배타. "
+            "rollout 별 창은 /patch_arm 으로 동적 설정."
+        ),
+    )
+    parser.add_argument(
+        "--patch-npz",
+        default=None,
+        help="donor NPZ 경로 (키 L{layer}=[R,K,T,D] fp16 + meta_json). 기동 시 preload.",
+    )
+    parser.add_argument(
+        "--patch-token-select",
+        choices=("all", "action"),
+        default="all",
+        help="대입 토큰: all=전 토큰(기본, full-token donor 필수) | action=마지막 horizon 개.",
+    )
+    parser.add_argument(
+        "--patch-start-record",
+        type=int,
+        default=None,
+        help="정적 arm 스모크용 t0 (record idx). 본 실행은 /patch_arm 사용.",
+    )
+    parser.add_argument("--patch-donor-start", type=int, default=0)
+    parser.add_argument(
+        "--patch-allow-collect",
+        action="store_true",
+        help="anchor(A2/A3) 전용: --collect 캡처 serve 에 patch hook 동시 허용 "
+        "(emitted actions 를 pkl 로 남겨 donor/baseline 과 수치 대조).",
+    )
+    parser.add_argument(
+        "--patch-len",
+        type=int,
+        default=-1,
+        help="패치 창 길이 (records). -1=donor 고갈까지 (고갈 후 합성 없음 — 기록만).",
     )
     args = parser.parse_args()
 
