@@ -36,7 +36,7 @@
 
 ## 후속 결정 (2026-07-22, 같은 날)
 
-- **Task 교체: CloseFridge → OpenStandMixerHead** — CloseFridge는 실행5/예측16에서 SR 0/14 (chunk-길이 함정, docs/steering/25), mixer는 실행5에서도 생존 (docs/steering/26).
+- **Task 교체: CloseFridge → OpenStandMixerHead** — CloseFridge는 실행5/예측16에서 SR 0/14 (chunk-길이 함정, docs/steering/26), mixer는 실행5에서도 생존 (docs/steering/27).
 - **Scene 실현가능성 필터 채택** (`docs/steering/NOTICE_scene_feasibility_for_exp4.txt`): 기하 불가 seed(실측 mixer 100010)를 정책 무관 관절 스윕으로 fit·eval 양쪽 동일 제외, manifest에 기록. rescue 분모 오염 방지.
 - 동시 실행 규칙 명문화 (exp4-1 본 트리 / exp4-2 worktree) — ca7dc40.
 

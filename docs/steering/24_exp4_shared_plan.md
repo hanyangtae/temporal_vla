@@ -10,7 +10,7 @@
   - 연산자는 **setpoint형 mean-diff(Ms) + 기존 conceptor(A)**만. 제거형(ablation-to-zero)은 제외.
   - **WA-LQR(W)**: 타당성 게이트(24a §5) 통과 시 추가 시도.
   - 축은 **within-instruction + cross-scene**만. **cross-instruction 유예** (steering fit/eval 축 기준. exp4-2 B1의 "타 instruction donor 주입"은 실패 *생성* 메커니즘이라 별개 유지).
-  - **Task 4종: OpenStandMixerHead, OpenDrawer, PPCC-bread, PPCC-beer** (07-22 재결정: CloseFridge 탈락 — 실행5/예측16에서 SR 0/14 chunk-길이 함정, mixer는 실행5에서도 생존. 근거 docs/steering/25·26 라벨러 문서. mixer는 신규 cell — 준비 절차 24a §1).
+  - **Task 4종: OpenStandMixerHead, OpenDrawer, PPCC-bread, PPCC-beer** (07-22 재결정: CloseFridge 탈락 — 실행5/예측16에서 SR 0/14 chunk-길이 함정, mixer는 실행5에서도 생존. 근거 docs/steering/26·27 라벨러 문서. mixer는 신규 cell — 준비 절차 24a §1).
 
 ## 1. 배경 (exp3 사후 진단 — 왜 이 두 갈래인가)
 
