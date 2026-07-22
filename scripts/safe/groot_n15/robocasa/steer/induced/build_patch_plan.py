@@ -25,8 +25,9 @@ from pathlib import Path
 
 import numpy as np
 
-TARGET_PHASE = {"b1": "reach-to-object", "b2": "transport", "b3": "transport",
-                "b4": "transport"}
+# 6p proximity 라벨 어휘: reach-to-object/grasp/place/insert-settle ("transport" 없음).
+# 24b 의 "transport 초입" ≈ 6p 의 "place" 시작 (파지 후 이동 구간).
+TARGET_PHASE = {"b1": "reach-to-object", "b2": "place", "b3": "place", "b4": "place"}
 DONOR_PHASE_B2 = "insert-settle"
 
 

@@ -32,7 +32,8 @@ if str(_HERE) not in sys.path:
 
 from induced_common import REPO, load_roll_any, read_manifest, read_record_start  # noqa: E402
 
-DEFAULT_BINS = ("global", "reach-to-object", "transport", "insert-settle")
+# 6p proximity 라벨 어휘 기준 (transport 라벨은 6p 에 없음 — carry 구간 ≈ "place")
+DEFAULT_BINS = ("global", "reach-to-object", "grasp", "place", "insert-settle")
 
 _read_manifest = read_manifest
 _read_rs = read_record_start
