@@ -268,10 +268,10 @@ class Perturber:
             quat0 = np.array(sim.model.cam_quat[camid], dtype=np.float64)
             fovy0 = float(sim.model.cam_fovy[camid])
             if self.spec.sham:
-                # 원값 재기록 — 물리 비접촉 write 경로까지 실행하되 값 불변.
-                sim.model.cam_pos[camid] = pos0
-                sim.model.cam_quat[camid] = quat0
-                sim.model.cam_fovy[camid] = fovy0
+                # 완전 no-op (write·obs 재취득 모두 skip): 재취득 렌더는 reset 첫 렌더와
+                # 체계적으로 다름 (EGL 첫-프레임 warmup — S1 실측: sham 재취득 시 발산,
+                # 재취득끼리는 결정적). 실섭동의 처치 정의 = shift+재취득이며 perturbed
+                # fail/succ 양 클래스 공통이라 primary 대조에서 confound 아님.
                 pos1, quat1, fovy1 = pos0, quat0, fovy0
             else:
                 pos1 = pos0 + np.asarray(delta["dpos"])
@@ -292,6 +292,9 @@ class Perturber:
             }
         # sim.forward() 호출 금지 — cam_pos/quat/fovy 는 렌더 전용 모델 필드라 물리 재계산이
         # 불필요하고, forward() 는 warmstart 재계산으로 bitwise 를 깬다 (S1 sham_p1f 실측).
+        if self.spec.sham:
+            self._sham_skipped = True
+            return obs
         return self._refresh_obs()
 
     def _base_rot(self) -> np.ndarray:

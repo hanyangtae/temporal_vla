@@ -20,7 +20,9 @@ spec '{"mode":"P2_force","sham":false,"spec_seed":24,"trigger_record":10,"durati
 
 # capture serve(csv 산출) + capture-OFF serve(base_nf 용 — collect serve 는 skip_features
 # 를 409 거부하므로 교차모드 검사는 별도 serve 필수. 같은 GPU serve 2 규칙 내).
-PORT_NF=$((PORT + 5))
+# 포트 배정 규약: smoke 8470-8478 / P0 grid 8480대 / Track I 8490대 — PORT+5 는 Track I
+# 8475 와 충돌해 pkill 이 남의 serve 를 죽인 사고(07-22) 재발 방지.
+PORT_NF="${PORT_NF:-8478}"
 start_serve "$GPU" "$PORT" --collect --groot-dit-capture-layers 15
 start_serve "$GPU" "$PORT_NF"
 trap 'kill_serve "$PORT"; kill_serve "$PORT_NF"' EXIT
