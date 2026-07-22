@@ -596,12 +596,406 @@ class DrawerPhaseLabeler:
         return sorted(self.event_steps, key=self.event_steps.get)
 
 
+# ── Fridge 도어 계열 (OpenFridge/CloseFridge) 전용 라벨러 ────────────────────────
+# Drawer 와 같은 구조(연속 관절 + 손잡이 근접)지만 세 가지가 다르다:
+#  (1) 도어가 여러 개일 수 있다 — FridgeFrenchDoor 는 fridge 도어 2개이고 env 의
+#      _check_success = fxtr.is_closed(compartment="fridge") 는 **모든** fridge 도어가
+#      닫혀야 True. 따라서 q 는 "아직 남은 최악의 도어"로 잡고(close=max, open=min),
+#      거리도 그 도어 기준으로 재 계산한다(한 짝 닫고 다른 짝으로 이동이 자연히 잡힘).
+#      freezer 도어/서랍 관절은 성공 판정에 안 들어가므로 제외한다.
+#  (2) Fridge fixture 에는 get_door_state 도 handle_name 도 없다(=None). 관절은
+#      fxtr._fridge_door_joint_names, 손잡이는 geom "<door>_handle_main|_1|_2",
+#      패널은 geom "<door>_main" 으로 직접 해석한다(실측 확인, 3 모델 공통).
+#  (3) 닫기는 파지가 아니라 밀기 — grasp 대신 contact-door(근접) 를 쓴다.
+# 임계 q: env 와 동일하게 close 성공 = 정규화 열림도 ≤ 0.005 (Fixture.is_closed th),
+#         open 성공 = ≥ 0.90 (Fixture.is_open th).
+_FRIDGE_PHASE_RANK = {
+    "reach-to-door": 0.0, "wrong-grasp": 0.25, "disengage": 0.5,
+    "swing-open": 0.75, "contact-door": 1.0, "push-close": 2.0, "close-done": 3.0,
+}
+# fit/분석에서 제외 권장: close-done(=success 종결, 프레임 극소 [[terminal 동치]]).
+FRIDGE_TERMINAL_PHASES = frozenset({"close-done"})
+
+
+class FridgePhaseLabeler:
+    NEAR_DOOR_TH = 0.06     # m — gripper site ↔ 대상 도어 표면(손잡이/패널, surface distance)
+    DQ_EPS = 1e-3           # 스텝당 열림비율 변화 (밀기/되열림 판정)
+    DD_EPS = 3e-3           # 스텝당 gripper-door 거리 변화 (재접근/후퇴 판정)
+    HOLD = 2                # debounce (호출 단위: env-step 구동이면 env-step 스케일)
+    CLOSED_TH = 0.005       # Fixture.is_closed 기본 th 와 동일
+    OPEN_TH = 0.90          # Fixture.is_open 기본 th 와 동일
+    TARGET_MARGIN = 0.03    # m — 다짝 도어 대상 전환 히스테리시스
+    # phase/event 라벨 (StandMixer 등 같은 구조의 fixture 태스크가 이름만 교체해 재사용)
+    PH_REACH = "reach-to-door"
+    PH_CONTACT = "contact-door"
+    PH_PROGRESS = "push-close"
+    PH_REGRESS = "swing-open"
+    PH_DISENGAGE = "disengage"
+    PH_WRONG = "wrong-grasp"
+    PH_DONE = "close-done"
+    EV_NEAR = "near:door"
+    EV_START = "close-start"
+    EV_DONE = "close-done"
+    EV_DISENGAGE = "disengage:door"
+    PHASE_RANK = _FRIDGE_PHASE_RANK
+
+    def __init__(self, env: Any, behavior: str = "close", grasp_hold: int = 2):
+        self._env = find_robocasa_env(env)
+        self._behavior = behavior
+        self.HOLD = int(grasp_hold)
+        self._geom_cache: dict = {}
+        self.reset()
+
+    # -- 내부 술어 --------------------------------------------------------------
+    def _fxtr(self):
+        return getattr(self._env, "fxtr", None)
+
+    def _door_joints(self) -> List[str]:
+        fx = self._fxtr()
+        if fx is None:
+            return []
+        # fridge 칸 도어만 (freezer/drawer 는 성공 판정 대상 아님)
+        return list(getattr(fx, "_fridge_door_joint_names", []) or [])
+
+    def _door_states(self) -> dict:
+        fx = self._fxtr()
+        joints = self._door_joints()
+        if fx is None or not joints:
+            return {}
+        try:
+            return dict(fx.get_joint_state(self._env, joints))
+        except Exception:
+            return {}
+
+    def _q_and_target(self):
+        """(q, 대상 도어 관절명) — **아직 안 끝났고 그리퍼에 가장 가까운** 도어.
+
+        French door(2짝)에서 "가장 열린 짝"을 대상으로 잡으면, 로봇이 덜 열린 짝을 먼저
+        닫는 동안 q 가 안 변해 push-close 가 아예 안 잡힌다(실측: ep0 에서 push 5 step).
+        실제로 로봇이 지금 다루는 도어 = 손이 가 있는 도어이므로 거리로 고른다.
+        """
+        st = self._door_states()
+        if not st:
+            return (0.0 if self._behavior == "close" else 1.0), None
+        remaining = [n for n, v in st.items() if not self._joint_done(v)]
+        if not remaining:  # 전부 목표 달성 → 마지막으로 다룬 도어를 유지
+            name = self._target_prev if self._target_prev in st else next(iter(st))
+            return float(st[name]), name
+        if len(remaining) == 1:
+            name = remaining[0]
+        else:
+            name = min(remaining, key=self._grip_door_dist)
+            # 히스테리시스: 대상이 바뀌면 Δq·Δd 연속성이 끊겨 push 검출이 죽는다.
+            # 직전 대상이 아직 남아 있으면 새 후보가 TARGET_MARGIN 이상 가까울 때만 교체.
+            prev = self._target_prev
+            if prev in remaining and name != prev:
+                if self._grip_door_dist(prev) - self._grip_door_dist(name) < self.TARGET_MARGIN:
+                    name = prev
+        return float(st[name]), name
+
+    def _joint_done(self, v: float) -> bool:
+        return v <= self.CLOSED_TH if self._behavior == "close" else v >= self.OPEN_TH
+
+    def _done(self, _q: float) -> bool:
+        """env 판정과 동일: **모든** fridge 도어가 목표 상태여야 성공."""
+        st = self._door_states()
+        if not st:
+            return False
+        return all(self._joint_done(v) for v in st.values())
+
+    def _door_geoms(self, joint_name: str):
+        """대상 도어의 손잡이/패널 geom (kind, name) 목록 — 최초 1회 해석 후 캐시."""
+        if joint_name in self._geom_cache:
+            return self._geom_cache[joint_name]
+        base = joint_name[: -len("_joint")] if joint_name.endswith("_joint") else joint_name
+        sim = self._env.sim
+        found = []
+        for suffix in ("_handle_main", "_handle_1", "_handle_2", "_main"):
+            nm = base + suffix
+            for kind in ("geom", "body", "site"):
+                try:
+                    getattr(sim.model, f"{kind}_name2id")(nm)
+                    found.append((kind, nm))
+                    break
+                except Exception:
+                    continue
+        if not found:  # 최후 fallback: 도어 body 자체
+            for kind in ("body", "geom"):
+                try:
+                    getattr(sim.model, f"{kind}_name2id")(base)
+                    found.append((kind, base))
+                    break
+                except Exception:
+                    continue
+        self._geom_cache[joint_name] = found
+        return found
+
+    def _geom_surface_dist(self, gid: int, p) -> float:
+        """점 p 에서 geom **표면**까지의 거리.
+
+        중심거리를 쓰면 안 된다 — 도어 패널 geom 은 큰 박스(실측 half-extent 0.22×0.005×0.86,
+        = 0.45m×1.7m 판)라 가장자리를 밀어도 중심에서 0.8m 넘게 나온다(초안에서 contact 미검출
+        원인). 박스/원통/구는 정확히, 그 외(mesh 등)는 중심거리로 fallback.
+        """
+        import numpy as np
+        sim = self._env.sim
+        c = np.asarray(sim.data.geom_xpos[gid])
+        gt = int(sim.model.geom_type[gid])
+        s = np.asarray(sim.model.geom_size[gid], dtype=float)
+        d = np.asarray(p) - c
+        try:
+            local = np.asarray(sim.data.geom_xmat[gid]).reshape(3, 3).T @ d
+        except Exception:
+            return float(np.linalg.norm(d))
+        if gt == 6:      # box: size = half extents
+            return float(np.linalg.norm(np.maximum(np.abs(local) - s[:3], 0.0)))
+        if gt == 5:      # cylinder: size = (radius, half-length) along local z
+            rad = max(float(np.linalg.norm(local[:2])) - s[0], 0.0)
+            ax = max(abs(float(local[2])) - s[1], 0.0)
+            return float((rad * rad + ax * ax) ** 0.5)
+        if gt == 3:      # capsule: size = (radius, half-length) along local z
+            z = min(max(float(local[2]), -s[1]), s[1])
+            return max(float(np.linalg.norm(local - np.array([0.0, 0.0, z]))) - s[0], 0.0)
+        if gt == 2:      # sphere
+            return max(float(np.linalg.norm(local)) - s[0], 0.0)
+        return float(np.linalg.norm(d))
+
+    def _grip_door_dist(self, joint_name) -> float:
+        import numpy as np
+        if joint_name is None:
+            return float("inf")
+        sim = self._env.sim
+        try:
+            gp = np.asarray(sim.data.site_xpos[self._env.robots[0].eef_site_id["right"]])
+        except Exception:
+            return float("inf")
+        best = float("inf")
+        for kind, nm in self._door_geoms(joint_name):
+            try:
+                gid = getattr(sim.model, f"{kind}_name2id")(nm)
+                if kind == "geom":
+                    best = min(best, self._geom_surface_dist(gid, gp))
+                else:  # body/site 는 크기 정보가 없어 중심거리
+                    arr = getattr(sim.data, f"{kind}_xpos")
+                    best = min(best, float(np.linalg.norm(gp - arr[gid])))
+            except Exception:
+                continue
+        return best
+
+    def _wrong_grasped(self) -> bool:
+        """도어와 무관한 물체(door_obj/distractor)를 집고 있으면 wrong-grasp."""
+        try:
+            import robocasa.utils.object_utils as OU
+            raw = any(OU.check_obj_grasped(self._env, n) for n in self._env.objects)
+        except Exception:
+            raw = False
+        self._wg_streak = self._wg_streak + 1 if raw else 0
+        return self._wg_streak >= self.HOLD
+
+    # -- 인터페이스 --------------------------------------------------------------
+    def reset(self) -> None:
+        self.phase_timeline: List[str] = []
+        self.event_steps: dict = {}
+        self.wrong_grasp_steps: List[int] = []
+        self.wrong_grasp_timeline: List[bool] = []
+        self.grasp_steps: List[int] = []   # PnP 호환용 (fridge 에선 미사용)
+        self.drop_steps: List[int] = []
+        self.door_timeline: List[float] = []        # 대상 도어 정규화 열림도 (진단용)
+        self.door_worst_timeline: List[float] = []  # 전체 도어 중 목표에서 가장 먼 값
+        #   = 성공 판정을 지배하는 값. th 0.005 근처 near-miss 판별에 쓴다.
+        self._t = 0
+        self._q_prev = None
+        self._target_prev = None
+        self._push_streak = 0
+        self._swing_streak = 0
+        self._wg_streak = 0
+        self._wg_prev = False
+        self._engaged = False   # 한 번이라도 contact-door/push-close 였나 (후퇴 구분용)
+        self._disengaged_prev = False
+        self._d_prev = None
+        self._retreat_streak = 0
+        self._approach_streak = 0
+        self._diseng_state = False
+
+    def step(self) -> str:
+        q, target = self._q_and_target()
+        # 대상 도어가 바뀌면(한 짝 닫고 다음 짝) Δq·Δd 연속성이 깨지므로 리셋
+        if target != self._target_prev:
+            self._q_prev = None
+            self._d_prev = None
+            self._push_streak = self._swing_streak = 0
+            self._retreat_streak = self._approach_streak = 0
+        dq = 0.0 if self._q_prev is None else q - self._q_prev
+        # progress = 목표 방향으로의 관절 변화
+        progressing = dq < -self.DQ_EPS if self._behavior == "close" else dq > self.DQ_EPS
+        regressing = dq > self.DQ_EPS if self._behavior == "close" else dq < -self.DQ_EPS
+        self._push_streak = self._push_streak + 1 if progressing else 0
+        self._swing_streak = self._swing_streak + 1 if regressing else 0
+        wg = self._wrong_grasped()
+
+        d = self._grip_door_dist(target)
+        dd = 0.0 if self._d_prev is None or d == float("inf") else d - self._d_prev
+        self._retreat_streak = self._retreat_streak + 1 if dd > self.DD_EPS else 0
+        self._approach_streak = self._approach_streak + 1 if dd < -self.DD_EPS else 0
+        if self._retreat_streak >= self.HOLD:
+            self._diseng_state = True
+        elif self._approach_streak >= self.HOLD:
+            self._diseng_state = False
+
+        near = d < self.NEAR_DOOR_TH
+        if self._done(q):
+            ph = self.PH_DONE
+        elif wg:
+            ph = self.PH_WRONG
+        elif self._push_streak >= self.HOLD:
+            ph = self.PH_PROGRESS
+        elif self._swing_streak >= self.HOLD:
+            ph = self.PH_REGRESS
+        elif near:
+            ph = self.PH_CONTACT
+        elif self._engaged and self._diseng_state:
+            ph = self.PH_DISENGAGE  # 접촉 실패 후 대상에서 멀어지는 중
+        else:
+            ph = self.PH_REACH      # 첫 접근 또는 후퇴 뒤 재접근
+
+        if ph in (self.PH_CONTACT, self.PH_PROGRESS):
+            self._engaged = True
+        self._d_prev = d if d != float("inf") else self._d_prev
+
+        if wg and not self._wg_prev:
+            self.wrong_grasp_steps.append(self._t)
+        self.wrong_grasp_timeline.append(wg)
+        self._wg_prev = wg
+        if ph == self.PH_DISENGAGE and not self._disengaged_prev:
+            self.event_steps.setdefault(self.EV_DISENGAGE, self._t)
+        self._disengaged_prev = ph == self.PH_DISENGAGE
+        thresh_start = 0.95 if self._behavior == "close" else 0.05
+        started = q < thresh_start if self._behavior == "close" else q > thresh_start
+        if started:
+            self.event_steps.setdefault(self.EV_START, self._t)
+        if self._done(q):
+            self.event_steps.setdefault(self.EV_DONE, self._t)
+        if ph == self.PH_CONTACT:
+            self.event_steps.setdefault(self.EV_NEAR, self._t)
+        self.phase_timeline.append(ph)
+        self.door_timeline.append(q)
+        _st = self._door_states()
+        if _st:
+            self.door_worst_timeline.append(
+                max(_st.values()) if self._behavior == "close" else min(_st.values())
+            )
+        self._q_prev = q
+        self._target_prev = target
+        self._t += 1
+        return ph
+
+    @property
+    def max_phase_label(self) -> str:
+        if not self.phase_timeline:
+            return self.PH_REACH
+        return max(self.phase_timeline, key=lambda p: self.PHASE_RANK.get(p, 0.0))
+
+    @property
+    def event_order_keys(self) -> List[str]:
+        return sorted(self.event_steps, key=self.event_steps.get)
+
+
+# ── StandMixer head 계열 (OpenStandMixerHead/CloseStandMixerHead) ──────────────────
+# 구조는 Fridge 와 동일(연속 관절 1개 + 그 관절이 움직이는 body 표면 근접)이라
+# FridgePhaseLabeler 를 상속하고 ① fixture 참조 ② 관절 ③ 대상 geom ④ 라벨 이름만 바꾼다.
+# 차이점(실측):
+#  - fixture 참조는 `env.stand_mixer` (도어 태스크의 `env.fxtr` 아님).
+#  - 판정 관절은 `fxtr._joint_names["head"]` 하나뿐 — 다짝 문제 없음.
+#    env 판정: OpenStandMixerHead = head > 0.99, Close = head < 0.01.
+#  - 손잡이 geom 이름이 없다(head body 하위가 전부 g0..gN 익명) → head **body 소속 geom
+#    전체**에 대해 표면거리를 재고 그 최소값을 쓴다.
+#  - `env.objects` 가 비어 있어(distractor 없음) wrong-grasp 은 구조상 발생하지 않는다.
+_MIXER_PHASE_RANK = {
+    "reach-to-head": 0.0, "wrong-grasp": 0.25, "disengage": 0.5,
+    "push-down": 0.75, "contact-head": 1.0, "lift-open": 2.0, "open-done": 3.0,
+}
+MIXER_TERMINAL_PHASES = frozenset({"open-done"})
+
+
+class StandMixerPhaseLabeler(FridgePhaseLabeler):
+    NEAR_DOOR_TH = 0.06
+    OPEN_TH = 0.99          # OpenStandMixerHead._check_success 와 동일
+    CLOSED_TH = 0.01        # CloseStandMixerHead._check_success 와 동일
+    PH_REACH = "reach-to-head"
+    PH_CONTACT = "contact-head"
+    PH_PROGRESS = "lift-open"
+    PH_REGRESS = "push-down"
+    PH_DONE = "open-done"
+    EV_NEAR = "near:head"
+    EV_START = "open-start"
+    EV_DONE = "open-done"
+    EV_DISENGAGE = "disengage:head"
+    PHASE_RANK = _MIXER_PHASE_RANK
+
+    def __init__(self, env: Any, behavior: str = "open", grasp_hold: int = 2):
+        super().__init__(env, behavior=behavior, grasp_hold=grasp_hold)
+
+    def _fxtr(self):
+        return getattr(self._env, "stand_mixer", None)
+
+    def _door_joints(self) -> List[str]:
+        fx = self._fxtr()
+        if fx is None:
+            return []
+        jn = (getattr(fx, "_joint_names", {}) or {}).get("head")
+        if not jn:
+            return []
+        try:
+            if jn not in self._env.sim.model.joint_names:
+                return []
+        except Exception:
+            pass
+        return [jn]
+
+    def _door_geoms(self, joint_name: str):
+        """head body 소속 geom 전부 (이름 붙은 손잡이 geom 이 없음)."""
+        if joint_name in self._geom_cache:
+            return self._geom_cache[joint_name]
+        sim = self._env.sim
+        base = joint_name[: -len("_joint")] if joint_name.endswith("_joint") else joint_name
+        found = []
+        try:
+            bid = sim.model.body_name2id(base)
+            found = [
+                ("geom", sim.model.geom_id2name(g))
+                for g in range(sim.model.ngeom)
+                if int(sim.model.geom_bodyid[g]) == bid and sim.model.geom_id2name(g)
+            ]
+        except Exception:
+            found = []
+        if not found:
+            found = [("body", base)]
+        self._geom_cache[joint_name] = found
+        return found
+
+
 def make_robocasa_event_labeler(
     env: Any,
     task_name: str,
     grasp_hold: int = 2,
     proximity_phases: bool = False,
 ) -> EventPhaseLabeler:
+    if "StandMixerHead" in task_name:
+        return StandMixerPhaseLabeler(
+            env,
+            behavior="close" if "CloseStandMixerHead" in task_name else "open",
+            grasp_hold=grasp_hold,
+        )
+    # Fridge 도어 조작(OpenFridge/CloseFridge). OpenFridgeDrawer/CloseFridgeDrawer 는
+    # 서랍 태스크이므로 제외하고 아래 Drawer 분기로 보낸다.
+    if ("OpenFridge" in task_name or "CloseFridge" in task_name) and (
+        "FridgeDrawer" not in task_name
+    ):
+        return FridgePhaseLabeler(
+            env,
+            behavior="close" if "CloseFridge" in task_name else "open",
+            grasp_hold=grasp_hold,
+        )
     if "Drawer" in task_name:
         return DrawerPhaseLabeler(
             env, behavior="close" if "Close" in task_name else "open", grasp_hold=grasp_hold

@@ -53,7 +53,7 @@ plan `~/.claude/plans/pq3-wise-mist.md`.
 
 - 구제 = target(원 실패)이 해당 arm 에서 성공.
 - **primary statistic**: donor-success arm vs {placebo-fail, donor-shuffle} 각각 paired
-  (target ep 단위) exact McNemar one-sided (`pq3_decision.exact_mcnemar_one_sided`
+  (target ep 단위) exact McNemar one-sided (`exp3_decision(구 pq3_decision).exact_mcnemar_one_sided`
   import) → **p_final = max(p_vs_placebo, p_vs_shuffle)**, α=0.05, cell-stratified 합산
   + cell 별 병기.
 - primary 비유의 → exploratory 미실행 (규모 자체가 결론). 유의 → t0 곡선·layer 분해.

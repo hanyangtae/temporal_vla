@@ -102,7 +102,7 @@ drop 발생 ──[재탐색 8 records(≈40 env-step): VL로 판독 가능(AURO
 - **표본**: 6 vs 4 — 완벽 분리로도 p=0.071이 최소치. 확증하려면 drop-경험 에피소드 확대
   필요 (succ-drop n≥10이면 exact p<0.05 도달 가능).
 - **단일 cell** (1 task×1 object×1 seed×1 instruction) — 일반화 불가, cell-내 존재 증명.
-  pq3 라운드 종료 후 pq3 셀(bread/beer/pizza_cutter) census → wg 있으면 동일 스크립트
+  exp3(구 pq3) 라운드 종료 후 exp3 셀(bread/beer/pizza_cutter) census → wg 있으면 동일 스크립트
   무변경 복제.
 - "VL이 bread 가시성을 읽는다"는 해석의 직접 확인: sim state의 bread 위치(GT)와 post-drop
   VL 신호의 대응 검증이 후속 실험.

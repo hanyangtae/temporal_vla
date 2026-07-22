@@ -27,7 +27,7 @@ GROOT = REPO / "outputs/eval/robocasa/groot_n15"
 CELLS = ["ppcc_bread_s300033", "ppcc_bread_s400020"]
 STRIDE = 1000  # heldout_round_cell.sh: --inference-seed $((ep * STRIDE))
 SEEDS = {"ppcc_bread_s300033": 300033, "ppcc_bread_s400020": 400020}
-# ho_base(ep60-119) 실측 기대값 (steer_eval_pq2/aggregate_v2/matrix.md 대조) — 어긋나면 중단
+# ho_base(ep60-119) 실측 기대값 (steer_eval_exp2/aggregate_v2/matrix.md 대조) — 어긋나면 중단
 EXPECT = {"ppcc_bread_s300033": (25, 60), "ppcc_bread_s400020": (21, 60)}
 # fit 수집분(ep0-59) 실측 기대값 (승준 HDD 파일명 집계, 2026-07-16)
 EXPECT_FIT = {"ppcc_bread_s300033": (20, 60), "ppcc_bread_s400020": (23, 60)}

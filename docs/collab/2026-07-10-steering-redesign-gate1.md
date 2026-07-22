@@ -63,7 +63,7 @@ estimand 명시.
   이부모델로 실증됨(밴드 scene 부재, 재사용 ppcs_apple 0.74 가 유일 예외).
   → 게이트 = **succ≥6 ∧ fail≥6** (corrected), fit30 은 fail≥12∧succ≥12 일 때만
   (미달 scene 은 fit15 전용), 천장/바닥 각주 필수. 선발은 여전히 seed 순서.
-  구현: pq2/p0_gate.py. 통과 scene 3개 확보까지 배치 스캔 계속.
+  구현: exp2/p0_gate.py. 통과 scene 3개 확보까지 배치 스캔 계속.
 
 ## COAST 대조 감사 (2026-07-11, P3 중간 — perm 해악 패턴 계기)
 
@@ -79,7 +79,7 @@ perm 파이프라인은 COAST 와 수식·주입점(α 선택 포함) 일치 확
    우리는 mean-pool. 토큰 풀링도 상이(COAST GR00T=49토큰 전체, 우리=action 16개 —
    fit·적용 모두). rollout 단위 pool 은 양쪽 다 안 함.
 기록: perm 이 base 를 깨끗이 넘은 기록은 전 라운드 통틀어 0 (최선 동률) —
-단 pq2 P3 에서 s300033 perm_ps_fit15 +10판·s300028 cross 계열 +2~+5 첫 양성 관측.
+단 exp2(구 pq2) P3 에서 s300033 perm_ps_fit15 +10판·s300028 cross 계열 +2~+5 첫 양성 관측.
 
 ### denoise 진단 결과 (2026-07-13) — 전면 비교 라운드 미발동
 직접 전후쌍: s300033 pool +10 vs K-stack +1 (**pool 우세**), s400020 −2 vs 0 (동등).
@@ -98,7 +98,7 @@ COAST +0.16 미재현의 잔여 후보 = 49토큰 풀링(fit·적용)·평가 �
 
 ## 구현 상태 (이 세션에서 배선 완료)
 
-- fit v2 + `pq2/make_fit_manifests.py` (a6311c5) — 승준 원격 스모크·회귀(rc=3) 통과
+- fit v2 + `exp2/make_fit_manifests.py` (a6311c5) — 승준 원격 스모크·회귀(rc=3) 통과
 - robocasa fork 술어 0.10 + 이중 채점 (서브모듈 459c70f, daf532a) — 컨테이너 스모크 통과
 - steering loader meta-α 폴백 + preflight 로그 (5615da9) — 3-모드 테스트 통과
 - 실행 계획 전문: `~/.claude/plans/sleepy-giggling-newell.md`
@@ -106,8 +106,8 @@ COAST +0.16 미재현의 잔여 후보 = 49토큰 풀링(fit·적용)·평가 �
 ## 최종 결과 (2026-07-13, P3 완주 — 라운드 종결)
 
 115 arm × 60 ep held-out 완주 (경고 0, fit/eval 분리 아티팩트 검증: fit 29건 ep≤59 ∧
-eval 117건 ep60-119). 집계: `outputs/eval/robocasa/groot_n15/steer_eval_pq2/aggregate_v2/`,
-Notion "pq2 재설계 라운드 최종 보고" (parent 38e63918…03a3).
+eval 117건 ep60-119). 집계: `outputs/eval/robocasa/groot_n15/steer_eval_exp2/aggregate_v2/`,
+Notion "pq2 재설계 라운드 최종 보고" (실제 페이지 제목, parent 38e63918…03a3).
 
 - **Primary contrast(gated-ps-fit15 vs base): pooled Δ = +6판/8 cell — δ(+4.5판/cell) 명확 미달.**
 - **위약이 결정타**: 최대 양성 s300033(perm ps15 +10, gated ps15 +8)은 같은 cell 위약 +8과

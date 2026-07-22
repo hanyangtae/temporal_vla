@@ -42,19 +42,19 @@ scene-seed 매트릭스(8 cell × ~23 arm, ~11,000 rollouts)가 양-머신(로�
 ## 3. 이번 세션(07-07~10)에서 구축·수정된 것 (재사용 자산)
 
 ### 인프라 (전부 검증·가동 실적 있음)
-- **pq 양-머신 arm 큐**: `scripts/safe/groot_n15/robocasa/steer/pq/` — pq_lib(flock pop/requeue/
+- **queue(구 pq) 양-머신 arm 큐**: `scripts/safe/groot_n15/robocasa/steer/queue/` — queue_lib(flock pop/requeue/
   ledger/MACHINE.txt 출처기록), `lane_runner_local_v2.sh`(⚠️ v1은 `${var:+X=y}` 셸 함정으로 layer
-  인자 유실 — v2가 `env` 경유 수정본), `lane_runner_w2_v2.sh`(A100 산출물 **승준 직송** — 로컬은
-  파이프만, 경량 manifest_w2.txt만 로컬 보관), `monitor_pq.sh`(이벤트 시 종료→보고),
+  인자 유실 — v2가 `env` 경유 수정본), `lane_runner_srv50_v2.sh`(A100 산출물 **승준 직송** — 로컬은
+  파이프만, 경량 manifest_w2.txt만 로컬 보관), `monitor_queue.sh`(이벤트 시 종료→보고),
   `rename_arms.sh`(arm 폴더 새 명명 일괄 mv, dry-run 지원, 러너 가동 중 자동 거부).
-- **worker2(A100) serve**: `heldout_round_cell_host.sh` — 호스트 conda `lerobot_050_groot` +
+- **srv50(A100)(구 worker2) serve**: `heldout_round_cell_host.sh` — 호스트 conda `lerobot_050_groot` +
   `PYTHONPATH=~/pkt_ws/temporal_vla/lerobot/src`(서브모듈 v0.5.1 강제). GPU2만, serve 6개=36GB.
-  ckpt·robocasa 이미지·kitchen asset 11GB 이관 완료. [[a100-worker2-parallel-eval]]
+  ckpt·robocasa 이미지·kitchen asset 11GB 이관 완료. [[a100-srv50-parallel-eval]]
 - **hardware calibration**: 머신 효과 < n=60 검출한계 → cell 혼용 허용(각주 필수). trajectory는
   머신 간 발산 = 독립 재표본 (per-seed flip은 머신 내 한정).
 - **재채점 파이프라인**: rejudge_success.py — 승준 20코어 5-샤드 + 로컬 병렬 실행 패턴 확립
   (에피소드당 fresh subprocess 필수 — gym.make 연속 생성 시 scene 오염).
-- **fit**: `pq/apple_fits.sh` — lerobot 컨테이너 python(libero_bench env 소실 대응), staging
+- **fit**: `queue/apple_fits.sh` — lerobot 컨테이너 python(libero_bench env 소실 대응), staging
   심링크 **상대경로**(`ln -srf` — 절대경로는 컨테이너에서 깨짐), fit 무결성 게이트.
   ⚠️ 게이트 구멍: 클래스 표본 부족 시 빈 fit({} 2바이트)도 [done] 통과 — 재설계에서 보완 필요.
 - **aggregate**: `aggregate_final_scene.py` — manifest_w2 폴백(승준 직송 arm), machine 열,
@@ -62,16 +62,16 @@ scene-seed 매트릭스(8 cell × ~23 arm, ~11,000 rollouts)가 양-머신(로�
 
 ### 문서·기록
 - `docs/a100_offload_plan.md`(§6 hardware confound 처방), 문서 17·18(병렬 세션 작성).
-- 메모리 신설/갱신: [[a100-worker2-parallel-eval]] [[alpha-wiring-audit]]
+- 메모리 신설/갱신: [[a100-srv50-parallel-eval]] [[alpha-wiring-audit]]
   [[conceptor-steering-final-verdict]](07-10 최종판정) [[feedback-verify-before-relay]].
-- 커밋: `3a32240`(pq 시스템) `e62e702`(v2 러너·fits 수정) — 승준(sync/rung2-20260707 병합됨)·
-  worker2(pq-sync-20260707)에 동기화. **GitHub origin push는 미완**(이 머신에 credential 없음 —
+- 커밋: `3a32240`(queue(구 pq) 시스템) `e62e702`(v2 러너·fits 수정) — 승준(sync/rung2-20260707 병합됨)·
+  srv50(pq-sync-20260707)에 동기화. **GitHub origin push는 미완**(이 머신에 credential 없음 —
   사용자가 `git push origin exp/rung2-n15-phase-separation` 한 번 실행 필요).
 
 ## 4. 지금 돌아가고 있는 것 (새 세션 인수 대상)
 
 - **gxL sweep 잔여**: gxL4/gxL812 16 arm 중 마지막 ~7 arm — 로컬 L5/L6(GPU5·6) + A100 W1/W2.
-  감시: `pq/monitor_pq.sh` 재발사로 인수(이전 세션 watcher는 소멸). 완료 판정 = queue 0 + running 0.
+  감시: `queue/monitor_queue.sh` 재발사로 인수(이전 세션 watcher는 소멸). 완료 판정 = queue 0 + running 0.
 - **apple 재채점**: 승준 5-샤드 + 로컬 1-샤드, 07-10 06:41 기준 76% —
   tsv는 `rejudge_matrix_apple/rejudge_m_s*.tsv`(승준 `workspace/temporal_vla` + 로컬 동일 경로).
 - 완료 시 R1(구 라운드 마감) 실행 → §6.
@@ -113,11 +113,11 @@ scene-seed 매트릭스(8 cell × ~23 arm, ~11,000 rollouts)가 양-머신(로�
 - **P2(0.5~1일)**: 후보 config × β × fit-seed(ep0–29) 30판 — corrected-일치 채점, granularity별
   선택(ps=scene/x=instruction/gx=전역), 수치는 selection_report.json에만(보고 금지).
 - **P3(~2일)**: cell당 15 arm = base(재사용 3 cell skip) + **null 대조**(셔플 fit) + positive-only
-  + {perm,gated}×{ps,x,gx}×fit{15,30} → **120 arm**, pq 큐 + 새 명명 + 직송 + MACHINE.txt.
+  + {perm,gated}×{ps,x,gx}×fit{15,30} → **120 arm**, queue 큐 + 새 명명 + 직송 + MACHINE.txt.
 - **집계**: aggregate_v2(corrected-일치 SR·가변 n·원판정 병기·null 대비 Δ·machine) →
   confound-audit → Notion·판정.
 
-신규 파일 권장 위치: `scripts/safe/groot_n15/robocasa/steer/pq2/`
+신규 파일 권장 위치: `scripts/safe/groot_n15/robocasa/steer/exp2/`
 (p0_gate.sh / p1_screen.sh / p2_select.sh / build_p3_queue.sh / aggregate_v2.py).
 
 ## 7. 새 세션이 보완할 포인트 (실행 전 확인)
@@ -147,7 +147,7 @@ scene-seed 매트릭스(8 cell × ~23 arm, ~11,000 rollouts)가 양-머신(로�
 8. serve NPZ 로더 첫 키 함정(§2) — STEER_ALPHA 항상 명시.
 9. 빈 fit(클래스 0~2판)이 [done] 통과 — min-class 게이트를 fit 스크립트 안에서 강제할 것.
 10. 에피소드당 fresh 프로세스(재채점 replay), gym.make 연속 생성 금지.
-11. 공유 자원: 로컬 GPU0-3 동료·GPU 3개 상한 / worker2 GPU2만 / CPU cap OMP≤16 / 장시간 run
+11. 공유 자원: 로컬 GPU0-3 동료·GPU 3개 상한 / srv50 GPU2만 / CPU cap OMP≤16 / 장시간 run
     setsid / 검증(rc=0+개수·용량) 전 삭제 금지.
 
 ## 9. 미결·사용자 대기 항목
@@ -155,7 +155,7 @@ scene-seed 매트릭스(8 cell × ~23 arm, ~11,000 rollouts)가 양-머신(로�
 - GitHub origin push (사용자 터미널에서 1회 — §3 끝).
 - wrong-grasp 검출 false negative(폭 넓은 물체) threshold 보완 — 라벨러 개선 후보, 재설계 P0 전
   적용 여부 미정.
-- worker2 `outputs/train`(26.6GB, 5월 N1.5 finetune ckpt 유일본 가능성) 삭제 보류 중.
+- srv50 `outputs/train`(26.6GB, 5월 N1.5 finetune ckpt 유일본 가능성) 삭제 보류 중.
 - potato instruction(6/54로 게이트 탈락)의 처리 — 재설계는 bread/apple 2 instruction 유지.
 - 구 라운드 fit 수집 원본(phase_event_6p/raw_rollouts, SAE 학습 재료 후보)의 로컬 보존 여부는
   SAE 착수 시 결정 (승준 아카이브는 완료 상태 유지).

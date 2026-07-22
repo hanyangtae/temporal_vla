@@ -96,6 +96,14 @@ class EnvStepGT:
             ),
             "env_step_n_action_steps": int(n_action_steps),
         }
+        # fixture 태스크(drawer/fridge) 진단용 관절 열림도 궤적 (없는 라벨러는 생략)
+        door_tl = getattr(self._labeler, "door_timeline", None)
+        if door_tl:
+            out["env_step_door_state"] = [float(v) for v in door_tl]
+        # 성공을 지배하는 값(전체 도어 중 목표에서 가장 먼 것) — near-miss 사후 집계용.
+        worst_tl = getattr(self._labeler, "door_worst_timeline", None)
+        if worst_tl:
+            out["env_step_door_worst"] = [float(v) for v in worst_tl]
         if feature_phases is not None:
             mism = sum(
                 1

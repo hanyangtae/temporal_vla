@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# heldout_round_cell.sh 의 worker2(A100) 변형: serve 를 lerobot 컨테이너가 아니라
+# heldout_round_cell.sh 의 srv50(구 w2/worker2, A100) 변형: serve 를 lerobot 컨테이너가 아니라
 # 호스트 conda(lerobot_050_groot)로 기동. collector 는 동일하게 robocasa 컨테이너.
 # 스모크·calibration(2026-07-07)에서 검증된 호스트 serve 커맨드 사용.
 # env: CELL_ID TASK ENVN CELL_INDEX SEED INSTR GPUS_L PORTS_L [EP0 EP1 SUF ARMS NPZ_ROOT(호스트 절대경로) STEER_* PROX]

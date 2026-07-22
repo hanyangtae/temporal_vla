@@ -94,7 +94,7 @@ def load_steering_matrices_per_step(
 ) -> list[np.ndarray]:
     """Per-Step conceptor NPZ 에서 step별 M_k=(1-β)I+β·C_steer^{(k)} 리스트 반환.
 
-    NPZ 키 계약 (pq3 fit --denoise per_step): ``step{k}_alpha{a}_{key}``, k=0..K-1.
+    NPZ 키 계약 (exp3(구 pq3) fit --denoise per_step): ``step{k}_alpha{a}_{key}``, k=0..K-1.
     α 선택: explicit ``alpha``(전 step 공통) > sibling metadata.json 의
     ``selected_alpha_per_step``({"0": a0, ...}) > 없으면 KeyError (α 오배선 방지 —
     per-step 은 첫-키 폴백을 두지 않는다).
@@ -184,7 +184,7 @@ class ConceptorSteering:
     Args:
         groot_model: ``Gr00tN1d6`` (``.action_head.{model, vlln}``).
         M: (D, D) steering matrix **또는 list[(D, D)]** (Per-Step — denoise call k 에
-            M_seq[k] 적용, pq3 신규 배선). D 는 주입 지점 hidden dim 과 일치해야 함
+            M_seq[k] 적용, exp3 신규 배선). D 는 주입 지점 hidden dim 과 일치해야 함
             (dit_final=1024, dit_block=1536, vl=2048).
         pathway: ``"dit"`` | ``"vl"``. Per-Step(list)은 dit 전용 — vl 은 get_action 당
             1회만 발화하므로 list 를 주면 배선 오류로 ValueError.

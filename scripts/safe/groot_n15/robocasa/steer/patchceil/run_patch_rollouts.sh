@@ -4,7 +4,7 @@
 # STAGE=anchors : A2/A3 (캡처 ON serve 1개 — emitted actions 를 pkl 로 남겨 수치 대조)
 # STAGE=main    : nopatch/donor/placebo/shuffle (캡처 OFF --no-features, serve N개)
 #
-# serve = worktree(exp/patching-ceiling) lerobot.py — pq3 트리 무접촉. 클라이언트는
+# serve = worktree(exp/patching-ceiling) lerobot.py — exp3(구 pq3) 트리 무접촉. 클라이언트는
 # main tree http_feature_collect.py 그대로 (patch 트리거는 serve record 카운터).
 # 러너 절차(rollout 1개): /patch_arm(또는 disarm) → collector 1ep → /patch_status 저장.
 #
@@ -61,7 +61,7 @@ start_serves() {
       || { echo "[${STAGE}] ABORT ${port}: /health 에 patch 지문 없음 (worktree serve 아님?)"; exit 12; }
   done
 }
-# patchceil_serve.py = lerobot.py 심링크 — cmdline 을 분리해 pq3 등 외부의
+# patchceil_serve.py = lerobot.py 심링크 — cmdline 을 분리해 exp3 등 외부의
 # 'serve/lerobot.py' 광범위 pkill 에 면역 (2026-07-16 17:23 serve 피격 사고 재발 방지)
 kill_serves() { for port in "${PORTS[@]}"; do docker exec lerobot bash -lc "pkill -f 'serve/patchceil_serve.py.*--port ${port}' || true" 2>/dev/null || true; done; sleep 5; }
 trap kill_serves EXIT

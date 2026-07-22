@@ -17,7 +17,7 @@ cells = [c for c in CELLS if (not bread_only) or c.startswith("ppcc")]
 
 
 def _episodes(cell, tag):
-    """(ep→succ) 맵. 로컬 pkl 우선, worker2 직송 arm은 manifest_w2.txt 폴백(파일명만 로컬 보관)."""
+    """(ep→succ) 맵. 로컬 pkl 우선, srv50(구 w2/worker2) 직송 arm은 manifest_w2.txt 폴백(파일명만 로컬 보관)."""
     ci, T = CELLS[cell]
     d = f"{E}/{cell}/{tag}/raw_rollouts/{T}/{cell}"
     eps = {}
@@ -38,13 +38,13 @@ def _episodes(cell, tag):
 
 
 def machine_of(cell, tag):
-    """MACHINE.txt 기반 산출 머신 표기: L=로컬, W=worker2(A100), LW=혼합, ?=기록없음."""
+    """MACHINE.txt 기반 산출 머신 표기: L=로컬, W=srv50(구 w2/worker2, A100), LW=혼합, ?=기록없음."""
     p = f"{E}/{cell}/{tag}/MACHINE.txt"
     if not os.path.exists(p):
         return "L?"  # 큐 이전(마스터 시대) 산출 = 로컬
     txt = open(p).read()
     has_l = "local" in txt
-    has_w = "worker2" in txt
+    has_w = "worker2" in txt or "srv50" in txt  # srv50 = 신명, worker2 = 구 MACHINE.txt 행 호환
     return "LW" if (has_l and has_w) else ("W" if has_w else "L")
 
 

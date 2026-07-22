@@ -107,7 +107,7 @@ fit60 제거** (구판 21 arm/168 은 폐기, Gate1 원장 docs/collab/2026-07-1
 
 ## 배선 체크리스트 (main 세션)
 - serve: STEER_ALPHA 명시 필수 (미지정 시 NPZ 첫 키 로드 함정), STEER_LAYERS=선택값
-- 신규 파일 원칙 (실행 중 스크립트 무수정), pq 큐 arm type으로 통합, MACHINE.txt 출처 기록
+- 신규 파일 원칙 (실행 중 스크립트 무수정), queue 큐 arm type으로 통합, MACHINE.txt 출처 기록
 - 선택/보고 seed 분리 검증은 artifacts 기준 (fit ep0–59 ∩ eval ep60–119 = ∅)
 - 고아 상태 ab_sweep_chain은 이 설계로 흡수 (bread84 파일럿으로 P1→P3 절차 먼저 1 cell 검증)
 - 통계: n=60 SE≈6.5%p; per-seed flip 분해는 머신 내 한정; cell별 machine 각주
