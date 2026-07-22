@@ -51,7 +51,9 @@ from fit_phase_conceptor_n15 import (  # noqa: E402
     load_rollout_fulltoken,
 )
 
-N_PERM = 20
+N_PERM = 20        # layer-sweep null 분포용 (CV 비용 때문에 소수)
+N_PERM_PL = 200    # 위약 후보 풀 (full-fit 만 — 준직교 후보 확보용)
+PL_COS_MAX = 0.3   # 위약-처치 |cos| 상한: 정렬(처치 희석)·반정렬(반처치) 모두 불공정
 N_BOOT = 200
 RNG_SEED = 424101  # exp4-1 고정 (재현)
 
@@ -298,17 +300,21 @@ def main() -> None:
     Xf = gather(rolls, labels, li, cap, 0)
     v_full, s_full = mean_diff(Xs, Xf)
 
-    # ---- setM_pl: dose-match 순열 선택 — held-out 없이 fit-표본 record 사영으로 근사
-    # (dose = |(h·r̂)−s| 분포 중앙값이 setM 의 ±25% 내인 순열 중 중앙값 순위 중간 것)
+    # ---- setM_pl: 위약 순열 선택 — ① |cos(r̂p, r̂setM)| ≤ PL_COS_MAX (준직교 — 정렬은
+    # 처치 희석, 반정렬은 반처치라 양쪽 다 불공정. 실측: 20개 풀은 지배 분산축을 물려받아
+    # cos ±0.6~0.8 → 후보 200개로 확장) ② 그중 dose(중앙값 |(h·r̂)−s|)-match ±25% 밴드,
+    # 밴드 내 dose-closest. 후보 부족 시 최소-|cos| 폴백(기록).
     all_rec = np.concatenate([episode_records(r, li, cap) for r in rolls], axis=0)
     dose_m = float(np.median(np.abs(all_rec @ v_full - s_full)))
+    prng = np.random.default_rng(RNG_SEED + 555)
     perms = []
-    for pi, pl in enumerate(perm_labels_list):
+    for pi in range(N_PERM_PL):
+        pl = labels_arr.copy()
+        prng.shuffle(pl)
+        pl = pl.tolist()
         try:
-            Xsp = gather(rolls, pl, li, cap, 1)
-            Xfp = gather(rolls, pl, li, cap, 0)
-            vp, sp = mean_diff(Xsp, Xfp)
-        except (ValueError, SystemExit):
+            vp, sp = mean_diff(gather(rolls, pl, li, cap, 1), gather(rolls, pl, li, cap, 0))
+        except ValueError:
             continue
         dp = float(np.median(np.abs(all_rec @ vp - sp)))
         ap_ = auroc(np.asarray([x for r, y in zip(rolls, labels) if y == 0
@@ -316,14 +322,21 @@ def main() -> None:
                     np.asarray([x for r, y in zip(rolls, labels) if y == 1
                                 for x in episode_records(r, li, cap) @ vp]))
         perms.append({"perm_id": pi, "v": vp, "s": sp, "dose_median": dp,
-                      "true_label_auroc": ap_, "labels": pl})
-    in_band = [p for p in perms if 0.75 * dose_m <= p["dose_median"] <= 1.25 * dose_m]
-    pool = in_band if in_band else perms
+                      "cos_setm": float(vp @ v_full), "true_label_auroc": ap_, "labels": pl})
+    ortho = [p for p in perms if abs(p["cos_setm"]) <= PL_COS_MAX]
+    fallback = ""
+    if not ortho:
+        perms.sort(key=lambda p: abs(p["cos_setm"]))
+        ortho = perms[:5]
+        fallback = f"no-ortho(min|cos|={abs(ortho[0]['cos_setm']):.2f})"
+    in_band = [p for p in ortho if 0.75 * dose_m <= p["dose_median"] <= 1.25 * dose_m]
+    pool = in_band if in_band else ortho
     pool.sort(key=lambda p: abs(p["dose_median"] - dose_m))
     pl_sel = pool[0]
-    print(f"[setM_pl] perm_id={pl_sel['perm_id']} dose={pl_sel['dose_median']:.3f} "
-          f"(setM {dose_m:.3f}) in_band={len(in_band)}/{len(perms)} "
-          f"true_label_auroc={pl_sel['true_label_auroc']:.3f}", flush=True)
+    print(f"[setM_pl] perm_id={pl_sel['perm_id']} cos={pl_sel['cos_setm']:+.3f} "
+          f"dose={pl_sel['dose_median']:.3f} (setM {dose_m:.3f}) "
+          f"ortho={len(ortho)}/{len(perms)} in_band={len(in_band)} "
+          f"true_label_auroc={pl_sel['true_label_auroc']:.3f} {fallback}", flush=True)
 
     # ---- 저장 (full-fit)
     out_cell = args.out_root / args.cell
@@ -345,6 +358,10 @@ def main() -> None:
     save_setpoint_npz(out_cell / "setM_pl", blk, pl_sel["v"], pl_sel["s"], {
         **base_meta, "operator": "setM_pl", "perm_id": pl_sel["perm_id"],
         "dose_median": pl_sel["dose_median"], "true_label_auroc": pl_sel["true_label_auroc"],
+        "cos_setm": pl_sel["cos_setm"], "pl_cos_max": PL_COS_MAX,
+        "dose_ratio_vs_setm": pl_sel["dose_median"] / dose_m if dose_m else None,
+        "pl_pool": {"n_perm": N_PERM_PL, "n_ortho": len(ortho), "n_in_band": len(in_band),
+                    "fallback": fallback or None},
     })
 
     # ---- fit-풀 대상 per-target LOO (setM + pairing 위약: 같은 순열 라벨에서 대상 제외)
