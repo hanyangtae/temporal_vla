@@ -1,4 +1,4 @@
-"""patchceil pass A 결정론 게이트 — 재수집 성공 패턴 vs pq2 ho_base 기록(targets.tsv) 대조.
+"""patchceil pass A 결정론 게이트 — 재수집 성공 패턴 vs exp2(구 pq2) ho_base 기록(targets.tsv) 대조.
 
 전 60판 × cell 에서 succ 플래그(파일명 스템)가 정확히 일치해야 한다. 하나라도 다르면
 결정론 전제가 깨진 것 — 실험 중단·보고 (plan v2 §검증 1).
@@ -39,7 +39,7 @@ def check_cell(cell: str) -> bool:
     if missing:
         print(f"  missing ep: {missing}")
     if mismatch:
-        print(f"  MISMATCH (ep, pq2, 재수집): {mismatch}")
+        print(f"  MISMATCH (ep, exp2, 재수집): {mismatch}")
         print("  → 결정론 전제 위반 — 원인 규명 전 patchceil 진행 금지")
     return not missing and not mismatch
 

@@ -80,6 +80,6 @@ fit(ep0–59) 라벨 교정: ppcs_apple 43/17→45/15 (flip ep43,59) / **s100050
   HANDOFF §1 의 "최악 grand-gated15 8/60" 류 수치는 과장이었으나 해악 방향은 실재.
 - gated 계열이 perm 보다 여전히 해악 폭이 큼 (corrected 후에도 −11~−32 층 존재).
 
-pq2 재설계 라운드와의 정합: corrected base 천장(0.95+)은 P0 게이트 완화 때 관측한
+exp2(구 pq2) 재설계 라운드와의 정합: corrected base 천장(0.95+)은 P0 게이트 완화 때 관측한
 apple all-or-nothing 이부모델과 일치 — 대조 fit 가능한 apple scene 이 희소하다는 판단을
 재확인.

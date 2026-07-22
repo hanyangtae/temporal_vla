@@ -18,6 +18,7 @@ pkl은 torch 텐서를 담아 unpickle에 torch 필요(원격은 ~/anaconda3/bin
 from __future__ import annotations
 
 import argparse
+import json
 import pickle
 from pathlib import Path
 
@@ -37,6 +38,14 @@ PHASE_COLORS = {
     "reach-to-handle": (120, 200, 255),
     "grasp": (255, 120, 200),
     "grasp-handle": (255, 120, 200),
+    "contact-door": (255, 120, 200),
+    "push-close": (255, 210, 90),
+    "swing-open": (255, 140, 60),
+    "close-done": (140, 255, 140),
+    "reach-to-head": (120, 200, 255),
+    "contact-head": (255, 120, 200),
+    "lift-open": (255, 210, 90),
+    "push-down": (255, 140, 60),
     "wrong-grasp": (255, 70, 70),
     "disengage": (255, 100, 120),
     "transport": (255, 210, 90),
@@ -60,8 +69,12 @@ def _load_font(size: int):
 
 
 def _read_meta(pkl_path: Path) -> dict:
-    with open(pkl_path, "rb") as f:
-        d = pickle.load(f)
+    # 캡처-ON 은 pkl, 캡처-OFF(--no-features) 는 동일 스템의 경량 json 사이드카.
+    if pkl_path.suffix == ".json":
+        d = json.loads(pkl_path.read_text())
+    else:
+        with open(pkl_path, "rb") as f:
+            d = pickle.load(f)
     return {
         "instruction": d.get("canonical_instruction") or d.get("task_description") or "",
         "feature_phases": list(d.get("feature_phases") or []),
@@ -150,11 +163,16 @@ def main() -> None:
     run_dir = Path(args.run_dir)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    pkls = sorted(run_dir.glob("*/*/*.pkl"))
+    # cell 하위디렉토리 유무(= --cell-id 사용 여부)와 캡처 ON/OFF 를 모두 커버
+    pkls: list[Path] = []
+    for pat in ("*/*/*.pkl", "*/*/*.json", "*/*.pkl", "*/*.json"):
+        pkls = sorted(run_dir.glob(pat))
+        if pkls:
+            break
     n = 0
     import re
     for pkl_path in pkls:
-        if args.only_fail and not pkl_path.name.endswith("succ0.pkl"):
+        if args.only_fail and not pkl_path.stem.endswith("succ0"):
             continue
         if args.max_ep is not None:
             m = re.search(r"--ep(\d+)--", pkl_path.name)

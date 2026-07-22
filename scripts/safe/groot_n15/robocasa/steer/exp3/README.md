@@ -1,0 +1,97 @@
+# exp3(구 pq3) 실행 런북 (COAST 축 정렬 검증 — 계획서 dynamic-riding-aurora v9)
+
+설계 단일 출처: `~/.claude/plans/dynamic-riding-aurora.md` (v9) + `docs/steering/19_exp3_execution_handoff.md`.
+Gate 1/2 원장: `docs/collab/2026-07-13-exp3-gate1.md`, `docs/collab/2026-07-15-exp3-gate2.md`.
+
+**컨테이너 규칙**: 검증·실행 모두 기존 컨테이너에 `docker exec` — 컨테이너 생성/재시작 금지
+(수집기·VNC 세션 사고, 2026-07-16 공지).
+
+## 0. manifest (수집 전 — seed·noise 시리즈 단일 출처)
+
+```bash
+EXP3=scripts/safe/groot_n15/robocasa/steer/exp3
+SEEDS=outputs/eval/robocasa/groot_n15/coast4_reused_remote/manifests/selected_instruction_seeds.tsv
+MANI=outputs/eval/robocasa/groot_n15/steer_eval_exp3/manifests
+python3 $EXP3/make_exp3_manifests.py plan --seeds-tsv $SEEDS --cell-id pq3_drawer_left  --tsv-cell-index 8 --out-dir $MANI
+python3 $EXP3/make_exp3_manifests.py plan --seeds-tsv $SEEDS --cell-id pq3_drawer_right --tsv-cell-index 7 --out-dir $MANI
+python3 $EXP3/make_exp3_manifests.py plan --seeds-tsv $SEEDS --cell-id pq3_ppcc_bread   --tsv-cell-index 5 --out-dir $MANI
+# ppcc 신규 2종: bash $EXP3/exp3_c0_scan.sh 후 산출 tsv 로 동일하게 plan
+```
+
+## C. fit15 수집 (로컬 GPU 0/1/2 · full-token · 즉시 승준 직송)
+
+```bash
+CELL=pq3_drawer_left
+row=$(source $EXP3/exp3_lib.sh && exp3_row_of $CELL) && IFS='|' read -r c task envn cidx _ instr <<<"$row"
+CELL_ID=$CELL TASK=$task ENVN=$envn CELL_INDEX=$cidx INSTR="$instr" \
+  MANIFEST=$MANI/$CELL/collect_plan.tsv SHIP=1 GPUS_L="0 0" PORTS_L="8410 8411" \
+  bash $EXP3/exp3_collect_cell.sh          # 기본 S0..S14; backfill 은 EPLIST="15 16 ..." 로
+python3 $EXP3/p0_gate_exp3.py --collected-dir outputs/eval/robocasa/groot_n15/phase_event_exp3/raw_rollouts/$task/$CELL \
+  --manifest-dir $MANI/$CELL             # rc=2 → BACKFILL_EPLIST 출력, rc=3 → cell 탈락
+python3 $EXP3/make_exp3_manifests.py freeze --seeds-tsv $SEEDS --cell-id $CELL --tsv-cell-index 8 \
+  --collected-dir <위 collected-dir> --out-dir $MANI \
+  --pkl-prefix '~/workspace/temporal_vla/outputs/eval/robocasa/groot_n15/phase_event_pq3/raw_rollouts/'$task/$CELL
+  # ↑ pkl-prefix 는 승준 원격 경로 — 원격은 구명(pq) 유지
+python3 $EXP3/make_exp3_manifests.py pool --out-dir $MANI --cells pq3_drawer_left,pq3_drawer_right \
+  --task-manifest $MANI/task_OpenDrawer_fit.tsv
+```
+
+수집 검증 표준(유실 사건 2026-07-16): SHIPPED.tsv(size+sha) 대조, `find -type f` 실물 카운트,
+du 용량, 평균 크기 상식(fit pkl 수십 MB — ~1MB 면 중단). 심링크 서브셋 금지(манifest 직접 참조).
+
+## D. fit (승준 anaconda python, 스레드 cap) — Stage1 → 사용자 게이트 → 본 fit
+
+```bash
+FIT=scripts/safe/groot_n15/robocasa/steer/fit_phase_conceptor_n15.py
+# Stage1 (regime별 layer 선택 — 결과는 사용자 보고 게이트)
+python $FIT --cell x/pq3_OpenDrawer --manifest $MANI/task_OpenDrawer_fit.tsv \
+  --groups global,<phase...> --denoise per_step --stage1-quota-sweep --stage1-alpha 10 \
+  --require-capture-token-mode all_token_full --alphas table14 --quota-floor 0.01 \
+  --eval-reserved $MANI/pq3_drawer_left/eval_reserved.json \
+  --eval-reserved $MANI/pq3_drawer_right/eval_reserved.json --out-dir <fit_out>
+  # ⚠ task-pooled manifest 는 소속 cell 의 eval_reserved 전부 반복 지정 (침범 검사 완전)
+  # Stage1 산출에 epeq(episode-equal) 순위 병기 — 불일치 시 사용자 게이트에서 보고
+# 본 fit (선택 layer 만): perm 용 global + gated 용 phase-bin, per-step NPZ
+python $FIT ... --denoise per_step --layers <L> --alphas table14 --quota-floor 0.01 \
+  --require-capture-token-mode all_token_full --eval-reserved <...전부> --out-dir <fit_out>
+# gated 성립 게이트 — 판정용은 --enforce + floor + 배포 NPZ 결박 필수
+# (LOO 는 배포 metadata 의 selected_alpha_per_step 로 계산, npz sha 가 report 에 기록되어
+#  build_exp3_queue 가 arm-config sha 와 집합 대조)
+python $EXP3/exp3_gated_gate.py --tasks OpenDrawer=$MANI/task_OpenDrawer_fit.tsv,... \
+  --phases "OpenDrawer=reach-to-handle+grasp-handle+pull,..." --layer <L_gated> \
+  --gated-npz-base "OpenDrawer=<fit_out>/phase_base,..." \
+  --enforce --record-floor <Gate D 확정> --loo-floor <Gate D 확정> --out <gate.json>
+# β sweep (fit seed 재사용 — 참조=수집 base 라벨; SHA·phase 필수)
+CELL_ID=... PERM_NPZ=... PERM_LAYERS=<L> PERM_NPZ_SHAS="<sha12...>" \
+  GATED_NPZ=... GATED_LAYERS=<L> GATED_NPZ_SHAS="<sha12...>" GATED_PHASES="<ph1,ph2,...>" \
+  GPUS_L=... PORTS_L=... bash $EXP3/beta_sweep.sh
+python3 $EXP3/beta_decide.py --sweep-root .../steer_eval_exp3/sweep --manifest-dir $MANI \
+  --task OpenDrawer --cells pq3_drawer_left,pq3_drawer_right --out <beta.json>
+```
+
+주의: fit CLI 기본값은 exp2 legacy 보존 — exp3 는 반드시 `--alphas table14 --quota-floor 0.01
+--require-capture-token-mode all_token_full --denoise per_step --eval-reserved <...>` 명시.
+
+## E. eval 600판 (분산·캡처 OFF)
+
+```bash
+python3 $EXP3/build_exp3_queue.py --arm-config <gate_d_arm_config.json> \
+  --qroot outputs/eval/robocasa/groot_n15/steer_eval_exp3/work_queue \
+  --gated-gate-report <gate.json>
+# lane (로컬): GPU=0 PORTS="8410 8411" bash $EXP3/exp3_lane_local.sh
+# lane (srv50/.50, 구 w2/worker2): GPU=2 PORTS="8410 8411" CLS=srv50 bash $EXP3/exp3_lane_srv50.sh
+# lane (srv48, 구 w48):    GPU=2 PORTS="8410 8411" CLS=srv48 MACHINE_TAG=srv48-48 HF_HOME_OVERRIDE=... bash $EXP3/exp3_lane_srv50.sh
+```
+
+arm-config 의 npz_shas 는 필수 (Gate D 동결 sha12). host 는 cell-블록 배정.
+
+## F. 판정
+
+```bash
+python3 $EXP3/aggregate_exp3.py --eval-root .../steer_eval_exp3/e1 --manifest-dir $MANI \
+  --arm-config <arm_config.json> --gated-gate-report <gate.json> --out <aggregate_out>
+# gated N/A 는 gate report 에서 자동 파생 (수동 override 금지)
+```
+
+판정 규칙 단일 출처 = `exp3_decision.py` (Gate D 시점 동결 — eval 후 수정 금지, sha 가
+summary 에 기록됨). 보고 전 confound-audit 스킬 필수.

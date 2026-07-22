@@ -21,11 +21,11 @@ DiT layer_tag `dit_L<blk>` 의 <blk> 를 그대로 --steering-layer 로 넘긴�
   - `--min-per-class` 는 **episode 수** 기준 (구판은 record 수 — timeout 실패의 record 과대가중
     탓에 1 episode 로도 통과하던 구멍).
   - `--manifest` 로 fit 표본을 외부 명시 (pkl_path\tlabel[\tscene]): 30/30 split 층화 샘플링·
-    corrected 라벨·위약(라벨 permutation) 은 전부 manifest 생성 단계(pq2)에서 결정되고, 이
+    corrected 라벨·위약(라벨 permutation) 은 전부 manifest 생성 단계(exp2(구 pq2))에서 결정되고, 이
     스크립트는 소비만 한다. 사용 표본·content 서명은 out_root/fit_inputs.json 에 기록.
   - 유효 fit 이 0 개면 exit 3 (빈 fit 이 [done] 으로 통과하던 게이트 구멍 봉합).
 
-pq3 확장 (계획서 dynamic-riding-aurora v9, 2026-07-15):
+exp3(구 pq3) 확장 (계획서 dynamic-riding-aurora v9, 2026-07-15):
   - **full-token pkl 지원**: capture_token_mode="all_token_full" pkl(record [L,K,T,D])을
     자체 로더로 소비 — `--token-pool {mean,state,future,action}` 으로 fit 시점 세그먼트
     mean (COAST 49토큰 정렬 = mean). 공용 load_rollout(pool_denoise ndim==3 강제)은 무수정.
@@ -68,9 +68,9 @@ from src.conceptor import (  # noqa: E402
     not_conceptor,
 )
 
-# legacy default 보존 (pq2 호출자 재실행 결과 불변 — Gate 2 높음#4).
+# legacy default 보존 (exp2 호출자 재실행 결과 불변 — Gate 2 높음#4).
 DEFAULT_ALPHAS = [0.1, 0.3, 1.0, 3.0, 10.0]
-# COAST Table 14 (p.29) GR00T RoboCasa aperture grid — pq3 는 --alphas table14 로 명시 사용.
+# COAST Table 14 (p.29) GR00T RoboCasa aperture grid — exp3 는 --alphas table14 로 명시 사용.
 TABLE14_ALPHAS = [0.1, 0.3, 0.5, 0.8, 1.0, 1.5, 2.0, 3.0, 5.0, 10.0]
 OVERLAP_BAND = (0.85, 0.95)  # COAST A.10.2 Stage2
 FULLTOKEN_MODE = "all_token_full"  # serve --groot-dit-token-pool 신모드와 동일 enum
@@ -142,7 +142,7 @@ def select_alpha(sweep, band, quota_floor=0.0):
 
     후보 = quota_steer≥floor. 밴드 내 후보가 있으면 최소 α("band"), 없으면 후보 중
     밴드에 가장 가까운 α("closest"). 전 α 가 floor 미달이면 (None, "floor_exhausted")
-    — 퇴화 α(C_steer≈0 → M≈(1-β)I 균일수축) 채택 방지 (pq2 함정 봉합).
+    — 퇴화 α(C_steer≈0 → M≈(1-β)I 균일수축) 채택 방지 (exp2 함정 봉합).
     """
     lo, hi = band
     eligible = [r for r in sweep if r.get("quota_steer", 1.0) >= quota_floor]
@@ -240,7 +240,7 @@ def load_rollout_fulltoken(d: dict, pkl_path, token_pool: str):
 
     record [L,K,T,D] 를 record 단위로 token-pool 해 [L,K,D] 로 줄인 뒤 stack
     ([n,L,K,T,D] 를 통째로 올리지 않음 — 메모리). vl full-token([T_vl,Dvl])은
-    load 시 mean 으로 기존 [n,Dvl] 계약 유지 (pq3 arm 은 DiT 전용).
+    load 시 mean 으로 기존 [n,Dvl] 계약 유지 (exp3 arm 은 DiT 전용).
     """
     hs = d.get("hidden_states") or []
     if not hs:
@@ -298,7 +298,7 @@ def main():
     ap.add_argument("--denoise", choices=["pool", "stack", "step0", "per_step"], default="pool",
                     help="K(denoise) 축 처리: pool=평균(현행) | stack=step별 개별 record"
                          "(COAST Global 충실 — inference step당 K개 표본) | step0=첫 step만 | "
-                         "per_step=step k별 conceptor 산출(pq3 — NPZ 키 step{k}_alpha{a}_*, "
+                         "per_step=step k별 conceptor 산출(exp3 — NPZ 키 step{k}_alpha{a}_*, "
                          "full-token pkl 전용)")
     ap.add_argument("--require-capture-token-mode", default=None,
                     help="pkl meta capture_token_mode 강제 (예: all_token_full). 불일치/부재 "
@@ -311,7 +311,7 @@ def main():
                          "미지정 시 전 capture layer + VL")
     ap.add_argument("--quota-floor", type=float, default=0.0,
                     help="Stage2 α 후보의 quota_steer 하한 (퇴화 α 배제 guard). "
-                         "기본 0=미적용(legacy 보존) — pq3 는 0.01 명시 권장")
+                         "기본 0=미적용(legacy 보존) — exp3 는 0.01 명시 권장")
     ap.add_argument("--eval-reserved", action="append", default=None,
                     help="eval_reserved.json 경로 (반복 지정 — task-pooled manifest 는 소속 "
                          "cell 전부 필수). manifest 의 scene(seed)이 unseen 예약과 겹치면 "
@@ -356,12 +356,12 @@ def main():
     import pickle as _pk
 
     # eval 예약 침범 검사 (fit 실행 자체가 필수 수행 — standalone check 생략 우회 봉쇄).
-    # pq3 경로(require=all_token_full + manifest)에서는 **필수**이며, pooled manifest 의
+    # exp3 경로(require=all_token_full + manifest)에서는 **필수**이며, pooled manifest 의
     # cell 집합(pkl 경로의 부모 디렉토리명)과 reserved 의 cell_id 집합이 정확히 일치해야
     # 한다 — 한 cell 만 전달·무관 reserved 전달 우회 봉쇄 (Gate2 R3 높음#2).
     if (args.require_capture_token_mode == FULLTOKEN_MODE and manifest_rows
             and not args.eval_reserved):
-        print("[EVAL-SEED 침범 검사] pq3 fit 은 --eval-reserved 필수 (소속 cell 전부)",
+        print("[EVAL-SEED 침범 검사] exp3 fit 은 --eval-reserved 필수 (소속 cell 전부)",
               file=sys.stderr)
         sys.exit(5)
     if args.eval_reserved and manifest_rows:
@@ -616,7 +616,7 @@ def main():
             tag = "vl" if lk == "VL" else f"dit_L{cap[lk]}"
 
             if args.denoise == "per_step":
-                # -- Per-Step: step k 별 conceptor (pq3 신규 NPZ 계약) -------------
+                # -- Per-Step: step k 별 conceptor (exp3 신규 NPZ 계약) -------------
                 if lk == "VL":
                     print(f"  [skip {group}/vl] per_step 은 DiT 전용 (VL 은 K 축 없음)")
                     continue

@@ -1,7 +1,7 @@
 # Gate 1 — Activation Patching "상한" 실험 계획 반론 (Codex)
 
 - 게이트: Gate 1 (계획 토론). thread_id: `019f6910-b493-7040-a11b-d6451dc5edb3` (1라운드).
-- 계획 초안: `/home/dongkyu/.claude/plans/pq3-wise-mist.md` (doc 21 기반, pq2 데이터 단독 변형).
+- 계획 초안: `/home/dongkyu/.claude/plans/pq3-wise-mist.md` (doc 21 기반, exp2(구 pq2) 데이터 단독 변형).
 - Codex 역할: 비판적 리뷰어 (반례·confound·단순 대안). 아래 채택 항목은 전부
   **레포 코드로 검증 후** 수용 (규약: 무검증 채택 금지).
 
@@ -75,9 +75,9 @@ replay → action-equivalence anchor → 단일 primary arm 순" 권고를 실�
 - **s300033/s400020 fit 수집분(ep0-59) pkl.zst 60판×2 실존**:
   `~/datasets/temporal_vla_outputs/eval/robocasa/groot_n15/phase_event_6p/raw_rollouts/`
   `PickPlaceCounterToCabinet/<cell>/task5--ep*--succ*.pkl.zst` (du 707M/614M).
-  NOTICE_pq2_fit_loss_for_pq3 의 "유실 5-cell" 판정은 **`.pkl` 만 세고 `.pkl.zst` 를
+  NOTICE_exp2_fit_loss_for_exp3 의 "유실 5-cell" 판정은 **`.pkl` 만 세고 `.pkl.zst` 를
   놓친 검증 구멍**으로 추정 — NOTICE §3 이 경고한 "이름 세기" 함정의 변형.
-  (NOTICE 본문 정정은 pq3 세션 혼선 방지를 위해 pq3 안정 후 — 사용자 중계 권장.)
+  (NOTICE 본문 정정은 exp3(구 pq3) 세션 혼선 방지를 위해 exp3 안정 후 — 사용자 중계 권장.)
 - 1판 원격 스키마 실측 (s300033 ep22): `hidden_states` [7,4,1536] fp16 **토큰-풀링본**
   (full-token 아님 — donor 재수집 필요성은 유지), `actions` 90 record × 16-step 전체
   chunk, `feature_phases`/`phase_timeline`/`event_steps`/`grasp_steps` 동봉,

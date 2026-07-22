@@ -1,4 +1,4 @@
-"""patchceil primary 판정 (PROTOCOL §판정) — stdlib + pq3_decision.exact_mcnemar import.
+"""patchceil primary 판정 (PROTOCOL §판정) — stdlib + exp3_decision(구 pq3_decision).exact_mcnemar import.
 
 입력: rollouts/<arm>/raw_rollouts 결과(성공은 스템 succ0/1) + status_ep*.json (발화 창 검증).
 출력: cell×arm 구제표, donor 별 분해, paired exact McNemar
@@ -21,8 +21,8 @@ TASK = "PickPlaceCounterToCabinet"
 CELLS = ["ppcc_bread_s300033", "ppcc_bread_s400020"]
 MAIN_ARMS = ["nopatch", "donor", "placebo", "shuffle"]
 
-sys.path.insert(0, str(REPO / "scripts/safe/groot_n15/robocasa/steer/pq3"))
-from pq3_decision import exact_mcnemar_one_sided  # noqa: E402  (import 만 — 파일 수정 금지)
+sys.path.insert(0, str(REPO / "scripts/safe/groot_n15/robocasa/steer/exp3"))
+from exp3_decision import exact_mcnemar_one_sided  # noqa: E402  (import 만 — 파일 수정 금지)
 
 
 def rollout_succ(plan_cell: str, arm: str, env_cell: str, ep: int) -> int | None:

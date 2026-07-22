@@ -265,6 +265,22 @@ class VLAClient:
                 features["vl_feature_kind"] = result.get("vl_feature_kind")
                 features["vl_feature_axes"] = result.get("vl_feature_axes")
                 features["vl_feature_dim"] = result.get("vl_feature_dim")
+            ca_blob = result.get("features.cross_attn")
+            if isinstance(ca_blob, dict):
+                # DiT cross-attention 카메라 뷰별 mass [n_cross_blocks, K, qgroup, kgroup]
+                features["cross_attn"] = decode_feature_blob(ca_blob)
+                for key in (
+                    "cross_attn_axes",
+                    "cross_attn_blocks",
+                    "cross_attn_qgroups",
+                    "cross_attn_kgroups",
+                    "view_token_spans",
+                ):
+                    if key in result:
+                        features[key] = result.get(key)
+                maps_blob = result.get("features.cross_attn_maps")
+                if isinstance(maps_blob, dict):
+                    features["cross_attn_maps"] = decode_feature_blob(maps_blob)
             return actions, features, latency_ms
 
         if result.get("has_feature") is False:

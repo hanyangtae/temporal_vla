@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # patchceil 재실행 러너 — 지정 ep 구간을 결정적 재수집 (경량 캡처 CAP 1층 pooled).
 #
-# v2.1 역할 (plan pq3-wise-mist, 구 pass A 는 승준 zst 실존 확인으로 삭제):
+# v2.1 역할 (plan pq3-wise-mist(파일명 유지), 구 pass A 는 승준 zst 실존 확인으로 삭제):
 #   ① Phase 4 결정론 스모크 — 소수 ep (EP0..EP1) 재실행 후 succ + actions 를 승준
 #      zst 기록과 대조 (check_passA.py 는 ho_base 대조용 — fit 대조는 스모크 스크립트).
 #   ② 필요 시 임의 ep 구간 재생 (레시피 = fit 수집·heldout 공통: seed=scenario,
 #      inference_seed=ep*1000, NAS=5, MAXEP=720, profile ckpt120000).
 #
-# 사용 (GPU 배정은 사용자 게이트 — pq3 점유 확인 후):
+# 사용 (GPU 배정은 사용자 게이트 — exp3(구 pq3) 점유 확인 후):
 #   EP0=0 EP1=4 GPUS_L="4 5 6" PORTS_L="8490 8491 8492" \
 #     bash scripts/safe/groot_n15/robocasa/steer/patchceil/rerun_episodes.sh \
 #     ppcc_bread_s300033 ppcc_bread_s400020
@@ -25,7 +25,7 @@ declare -A SEEDS=([ppcc_bread_s300033]=300033 [ppcc_bread_s400020]=400020)
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../../../.." && pwd)"
 PYPATH="/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla/src/benchmarks/robocasa:/temporal_vla"
-GPUS=(${GPUS_L:?"GPUS_L 필요 (예: \"4 5 6\") — 발사 전 nvidia-smi/pq3 확인(사용자 게이트)"})
+GPUS=(${GPUS_L:?"GPUS_L 필요 (예: \"4 5 6\") — 발사 전 nvidia-smi/exp3 확인(사용자 게이트)"})
 PORTS=(${PORTS_L:?"PORTS_L 필요 (예: \"8490 8491 8492\")"})
 NW=${#PORTS[@]}
 [ ${#GPUS[@]} -eq $NW ] || { echo "GPUS_L/PORTS_L 길이 불일치"; exit 2; }
