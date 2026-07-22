@@ -22,6 +22,10 @@ BETA_A="${BETA_A:-0.1}"; BETA_SETM="${BETA_SETM:-1.0}"
 STRIDE_NAS=5; MAXEP=720
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$HERE/../../../../../.." && pwd)"
+# 상대경로 입력 정규화 — OUT_CONT 의 /temporal_vla 매핑이 절대경로 전제 (srv48 사고 교훈)
+case "$OUT_ROOT" in /*) ;; *) OUT_ROOT="$REPO_ROOT/$OUT_ROOT" ;; esac
+case "$T0_MANIFEST" in /*) ;; *) T0_MANIFEST="$REPO_ROOT/$T0_MANIFEST" ;; esac
+[ -z "$NPZ_ROOT" ] || case "$NPZ_ROOT" in /*) ;; *) NPZ_ROOT="$REPO_ROOT/$NPZ_ROOT" ;; esac
 source "$HERE/cells.env"; cell_params "$CELL_ID"
 PROFILE=configs/checkpoints/lerobot_groot_n15__robocasa365_ckpt120000.yaml
 PYPATH="/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla/src/benchmarks/robocasa:/temporal_vla"
