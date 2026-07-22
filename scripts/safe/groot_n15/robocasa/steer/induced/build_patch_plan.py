@@ -66,11 +66,26 @@ def main() -> int:
         print("ABORT: baseline 성공 사이드카 없음", file=sys.stderr)
         return 2
 
-    donors = sorted(glob.glob(args.donor_glob))
-    if not donors:
-        print(f"ABORT: donor 없음 ({args.donor_glob})", file=sys.stderr)
-        return 2
     windows = [int(w) for w in args.windows.split(",")]
+    donors_all = sorted(glob.glob(args.donor_glob))
+    # B2 donor 사전 필터: insert-settle 앵커 존재 + 최대 창(w_max) 여유 — 부적격 donor 로
+    # target 을 잃지 않도록 skip 이 아니라 목록에서 제외.
+    w_max = max(windows)
+    donors = []
+    for dn in donors_all:
+        meta = _npz_meta(dn)
+        d0 = _phase_anchor(meta.get("feature_phases") or [], DONOR_PHASE_B2)
+        n_rec = int(meta.get("n_records") or 0)
+        if d0 is None:
+            print(f"WARN: donor {Path(dn).name} 에 {DONOR_PHASE_B2} 없음 — 목록 제외")
+        elif d0 + w_max > n_rec:
+            print(f"WARN: donor {Path(dn).name} 창 여유 부족 (d0={d0} w_max={w_max} "
+                  f"R={n_rec}) — 목록 제외")
+        else:
+            donors.append(dn)
+    if not donors:
+        print(f"ABORT: 유효 donor 없음 ({args.donor_glob})", file=sys.stderr)
+        return 2
 
     rows = []
 
@@ -78,38 +93,33 @@ def main() -> int:
         tag = f"{variant}_ep{ep_idx}_t{t0}_w{plen}"
         rows.append((variant, pathway, ep_idx, inf, npz, t0, d0, plen, tag))
 
-    # B2: passB succ donor, target transport 초입 ← donor insert-settle 시작 (타 phase)
+    # B2: passB succ donor, target place(carry) 초입 ← donor insert-settle 시작 (타 phase)
     for w in windows:
         for i, (ep_idx, inf, phases) in enumerate(targets[: args.n_targets]):
             t0 = _phase_anchor(phases, TARGET_PHASE["b2"])
             if t0 is None:
-                print(f"WARN: ep{ep_idx} transport 앵커 없음 — skip")
+                print(f"WARN: ep{ep_idx} {TARGET_PHASE['b2']} 앵커 없음 — skip")
                 continue
             dn = donors[i % len(donors)]
             meta = _npz_meta(dn)
-            d_phases = meta.get("feature_phases") or []
-            d0 = _phase_anchor(d_phases, DONOR_PHASE_B2)
-            if d0 is None:
-                print(f"WARN: donor {Path(dn).name} 에 {DONOR_PHASE_B2} 없음 — skip")
-                continue
+            d0 = _phase_anchor(meta.get("feature_phases") or [], DONOR_PHASE_B2)
             n_rec = int(meta.get("n_records") or 0)
-            assert d0 + w <= n_rec, f"donor {dn} 창 초과 (d0={d0} w={w} R={n_rec})"
+            assert d0 is not None and d0 + w <= n_rec, \
+                f"donor {dn} 창 초과 (d0={d0} w={w} R={n_rec})"
             add(f"b2_w{w}", "dit", ep_idx, inf, dn, t0, d0, w)
 
-    # B4: noise NPZ (donor 통계 매칭) — 같은 창 규약
+    # B4: noise NPZ (donor 통계 매칭) — scale(=noise 파일)별 config, 같은 창 규약
     if args.noise_dir:
-        noises = sorted(Path(args.noise_dir).glob("*.npz"))
-        for w in windows:
-            for i, (ep_idx, inf, phases) in enumerate(targets[: args.n_targets]):
-                t0 = _phase_anchor(phases, TARGET_PHASE["b4"])
-                if t0 is None or not noises:
-                    continue
-                nz = noises[i % len(noises)]
-                meta = _npz_meta(str(nz))
-                d_phases = meta.get("feature_phases") or []
-                d0 = _phase_anchor(d_phases, DONOR_PHASE_B2) or 0
-                scale = meta.get("scale")
-                add(f"b4_s{scale}_w{w}", "dit", ep_idx, inf, str(nz), t0, d0, w)
+        for nz in sorted(Path(args.noise_dir).glob("*.npz")):
+            meta = _npz_meta(str(nz))
+            scale = meta.get("scale")
+            d0 = _phase_anchor(meta.get("feature_phases") or [], DONOR_PHASE_B2) or 0
+            for w in windows:
+                for ep_idx, inf, phases in targets[: args.n_targets]:
+                    t0 = _phase_anchor(phases, TARGET_PHASE["b4"])
+                    if t0 is None:
+                        continue
+                    add(f"b4_s{scale}_w{w}", "dit", ep_idx, inf, str(nz), t0, d0, w)
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

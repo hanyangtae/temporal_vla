@@ -22,13 +22,16 @@ start_serve "$GPU" "$PORT" --collect --groot-dit-capture-layers 15
 trap 'kill_serve "$PORT"' EXIT
 wait_health "$PORT"
 
-run_one() {  # name [spec_name] [extra...]
+run_one() {  # name spec_name(""=없음) [extra...]
   local name=$1; shift
   local out="$S1/$name"
   if [ -n "$(ep_file "$out" pkl)$(ep_file "$out" json)" ]; then echo "[s1] skip $name"; return; fi
   local extra=()
-  if [ $# -ge 1 ] && [ -n "$1" ]; then
-    extra=(--perturb-spec "$(to_cont "$S1/specs/$1.json")"); shift
+  if [ $# -ge 1 ]; then
+    # 빈 spec_name 슬롯도 반드시 소비 — "" 가 collector argv 로 새어 argparse 를
+    # 조용히 깨는 함정 (base 3종 미산출 사고, 07-22)
+    if [ -n "$1" ]; then extra=(--perturb-spec "$(to_cont "$S1/specs/$1.json")"); fi
+    shift
   fi
   echo "[s1] run $name"
   run_ep "$PORT" "$out" 0 0 "${extra[@]}" "$@"
