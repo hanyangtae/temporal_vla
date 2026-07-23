@@ -200,8 +200,11 @@ def load_targets(targets_tsv: Path, cell: str):
     return out
 
 
-def save_setpoint_npz(out_dir: Path, layer_blk: int, v: np.ndarray, s: float, meta: dict):
-    d = out_dir / "steer" / f"dit_L{layer_blk}"
+def save_setpoint_npz(out_dir: Path, layer_blk: int, v: np.ndarray, s: float, meta: dict,
+                      subdir: str | None = "steer"):
+    """subdir='steer'=permanent 규약(<base>/steer/dit_L*), None=gated(phase 디렉토리가
+    곧 phase 명 — serve 계약 <base>/<phase>/dit_L*, 추가 레벨 금지)."""
+    d = (out_dir / subdir if subdir else out_dir) / f"dit_L{layer_blk}"
     d.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(d / "conceptors.npz",
                         alpha0_v_steer=v.astype(np.float32), alpha0_s=np.float32(s))
@@ -349,11 +352,11 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
             print(f"  [{ph}] Nrec s/f={entry['n_rec_succ']}/{entry['n_rec_fail']} "
                   f"SKIP(quota 미달 → 무개입)", flush=True)
             continue
-        save_setpoint_npz(out_cell / "setM_gated" / ph, blk, v_ph, s_ph, {
+        save_setpoint_npz(out_cell / "setM_gated" / ph, blk, v_ph, s_ph, subdir=None, meta={
             "operator": "setM_gated", "cell": args.cell, "phase": ph, "layer": blk,
             "cap_records": cap, **{k: entry[k] for k in entry if k != "phase"},
         })
-        save_setpoint_npz(out_cell / "setM_gated_placebo" / ph, blk, v_pp, s_pp, {
+        save_setpoint_npz(out_cell / "setM_gated_placebo" / ph, blk, v_pp, s_pp, subdir=None, meta={
             "operator": "setM_gated_placebo", "cell": args.cell, "phase": ph, "layer": blk,
             "perm_id": entry["placebo_perm_id"], "cos_vs_setm_ph": entry["placebo_cos_vs_setm_ph"],
             "dose_ratio": entry["placebo_dose_ratio"], "pl_cos_max": PL_COS_MAX,
