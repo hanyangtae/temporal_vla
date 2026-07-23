@@ -10,7 +10,7 @@ for c in pq3_ppcc_bread:task_PPCC_fit pq3_ppcc_beer:task_PPCC_fit \
   cell="${c%%:*}" mf="${c##*:}"
   echo "=== [conceptor_sweep] $cell $(date -u '+%FT%T') ==="
   "$PY" scripts/safe/groot_n15/robocasa/steer/exp4_1/conceptor_layer_sweep.py \
-    --manifest "$M/$mf.tsv" --cell "$cell" --out "$O/$cell/A_layer_sweep.json" \
+    --manifest "$M/$mf.tsv" --cell "$cell" --out "$O/$cell/conceptor_layer_sweep.json" \
     || { echo "[FAIL] $cell"; rc=1; }
 done
 echo "=== [conceptor_sweep] all done rc=$rc $(date -u '+%FT%T') ==="

@@ -15,7 +15,7 @@ truncation cap 은 setM fit 과 동일 (성공 길이 ceil(μ+1σ)) — 길이 c
 
 사용 (승준):
   python conceptor_layer_sweep.py --manifest <task_PPCC_fit.tsv> --cell pq3_ppcc_bread \
-    --out <...>/npz/pq3_ppcc_bread/A_layer_sweep.json
+    --out <...>/npz/pq3_ppcc_bread/conceptor_layer_sweep.json
 """
 from __future__ import annotations
 

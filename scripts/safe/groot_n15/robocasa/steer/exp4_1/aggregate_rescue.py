@@ -10,7 +10,7 @@ Holm: task(=cell 묶음: bread/beer/drawer_left/drawer_right… 또는 --task-ma
 
 사용:
   python aggregate_rescue.py --t0-manifest <t0_manifest.tsv> \
-      --arm setM:<루트> --arm setM_pl:<루트> [--arm A:<루트> --arm A0:<루트>] \
+      --arm setM:<루트> --arm setM_pl:<루트> [--arm conceptor:<루트> --arm A0:<루트>] \
       [--setm-npz-root <npz 루트 — seen/unseen 층화용 metadata>] --out <json>
   python aggregate_rescue.py --self-test   # McNemar 단위검증
 """

@@ -7,18 +7,18 @@
 #   fit-풀 전부 → kanu (SERVE_MODE=docker, 빈 GPU × serve 2)
 #
 # env:
-#   CELL_ID ARM(A0|A|setM|setM_pl) T0_MANIFEST NPZ_ROOT OUT_ROOT
+#   CELL_ID ARM(A0|conceptor|setM|setM_pl) T0_MANIFEST NPZ_ROOT OUT_ROOT
 #   SERVE_MODE=host|docker  GPUS_L="2 2 2 2 2 2"  PORTS_L="8480 ... 8485"
 #   POOL=eval|fit|all(기본 eval)  ROW_FILTER(옵션: episode_idx 콤마목록 — sentinel/스모크용)
-#   BETA_A=0.1  BETA_SETM=1.0  STEER_EXTRA(옵션)
-# arm 별 NPZ base: $NPZ_ROOT/$CELL_ID/{A,setM,setM_pl}/steer/dit_L*/conceptors.npz
+#   BETA_CONCEPTOR=0.1  BETA_SETM=1.0  STEER_EXTRA(옵션)
+# arm 별 NPZ base: $NPZ_ROOT/$CELL_ID/{conceptor,setM,setM_pl}/steer/dit_L*/conceptors.npz
 # fit-풀 setM/setM_pl 은 per-target LOO base($NPZ_ROOT/$CELL_ID/setM_loo/ep$E)로 ep당 serve 재기동.
 set -uo pipefail
 : "${CELL_ID:?}" "${ARM:?}" "${T0_MANIFEST:?}" "${OUT_ROOT:?}"
 SERVE_MODE="${SERVE_MODE:-host}"
 POOL="${POOL:-eval}"
 NPZ_ROOT="${NPZ_ROOT:-}"
-BETA_A="${BETA_A:-0.1}"; BETA_SETM="${BETA_SETM:-1.0}"
+BETA_CONCEPTOR="${BETA_CONCEPTOR:-0.1}"; BETA_SETM="${BETA_SETM:-1.0}"
 STRIDE_NAS=5; MAXEP=720
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$HERE/../../../../../.." && pwd)"
@@ -117,12 +117,12 @@ if [ "$POOL" = "all" ] && { [ "$ARM" = "setM" ] || [ "$ARM" = "setM_pl" ]; }; th
   # setM 계열은 fit-풀이 LOO NPZ 라 풀 혼합 실행 금지 — eval/fit 별도 호출
   echo "[$CELL_ID/$ARM] POOL=all 금지 (LOO 분리) — POOL=eval 과 POOL=fit 으로 나눠 실행"; exit 2
 fi
-if [ "$ARM" = "A0" ] || [ "$ARM" = "A" ] || [ "$POOL" = "eval" ]; then
+if [ "$ARM" = "A0" ] || [ "$ARM" = "conceptor" ] || [ "$POOL" = "eval" ]; then
   # 공유 NPZ 1개 — serve 일괄 기동 후 worker striping
   FLAGS=""
   case "$ARM" in
     A0) FLAGS="" ;;
-    A) FLAGS="$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/A" conceptor "$BETA_A") --steering-denoise ${DENOISE_A:-per_step}" || exit 12 ;;
+    conceptor) FLAGS="$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/conceptor" conceptor "$BETA_CONCEPTOR") --steering-denoise ${DENOISE_CONCEPTOR:-per_step}" || exit 12 ;;
     setM) FLAGS=$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/setM" setpoint "$BETA_SETM") || exit 12 ;;
     setM_pl) FLAGS=$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/setM_pl" setpoint "$BETA_SETM") || exit 12 ;;
     *) echo "unknown ARM: $ARM"; exit 2 ;;
