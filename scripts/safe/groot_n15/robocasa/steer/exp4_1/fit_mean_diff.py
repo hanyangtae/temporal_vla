@@ -870,22 +870,26 @@ def main() -> None:
                          subdir=None, seg_mask=np.asarray([0.0, 1.0, 0.0], dtype=np.float32),
                          meta={**seg_meta, "operator": "setM_future_only_loo",
                                "loo_episode_idx": t["episode_idx"], "seg_diag": sd_t})
-        pl_l = [pl_sel["labels"][i] for i in keep]
-        try:
-            Xs_p = np.concatenate([r["tok"][:cap, li] for r, y in zip(kr, pl_l) if y == 1], axis=0)
-            Xf_p = np.concatenate([r["tok"][:cap, li] for r, y in zip(kr, pl_l) if y == 0], axis=0)
-            v_seg_pt, s_tok_pt, sd_pt = fit_seg_setpoint(Xs_p, Xf_p)
-        except ValueError:
-            v_seg_pt, s_tok_pt, sd_pt = v_seg_p, s_tok_p, seg_diag_p  # 클래스 고갈 → full 위약
-        # dose-match 스케일도 LOO 표본에서 재산출 (처치 LOO 대비 — full-fit 값 전용 금지)
-        X_loo = np.concatenate([r["tok"][:cap, li] for r in kr], axis=0)
-        sc_t = seg_dose_by_segment(X_loo, v_seg_t, s_tok_t)
-        sc_p = seg_dose_by_segment(X_loo, v_seg_pt, s_tok_pt)
-        pl_scale_t = np.clip(sc_t / np.maximum(sc_p, 1e-12), PL_SCALE_MIN, PL_SCALE_MAX)
-        loo_pl_meta = {"perm_id": pl_sel["perm_id"], "loo_episode_idx": t["episode_idx"],
+        # 위약도 **LOO 표본에서 독립 선택** — 전체fit 순열을 물려받아 재fit 하면 대상 1판을
+        # 뺀 부분표본에서 방향이 회전해 준직교가 깨진다 (실측 max|cos_seg| bread 0.72 ·
+        # drawer_right 0.47 · beer 0.30). gated 의 phase 별 독립 선택과 같은 이유.
+        # pairing 은 episode 단위(arm 간 같은 대상)라 대상마다 순열이 달라도 유지된다.
+        sel_t = select_placebo_seg([ep_tok[i] for i in keep], np.asarray(kl),
+                                   v_seg_t, s_tok_t,
+                                   np.random.default_rng(RNG_SEED + 555 + t["episode_idx"]),
+                                   tag=f" LOO ep{t['episode_idx']}")
+        v_seg_pt, s_tok_pt, pl_scale_t = sel_t["v_seg"], sel_t["s_tok"], sel_t["scale"]
+        pl_l = sel_t["labels"]
+        Xs_p = np.concatenate([r["tok"][:cap, li] for r, y in zip(kr, pl_l) if y == 1], axis=0)
+        Xf_p = np.concatenate([r["tok"][:cap, li] for r, y in zip(kr, pl_l) if y == 0], axis=0)
+        _vc, _sc, sd_pt = fit_seg_setpoint(Xs_p, Xf_p)
+        check_seg_equiv(_vc, _sc, v_seg_pt, s_tok_pt, f"placebo_loo ep{t['episode_idx']}")
+        loo_pl_meta = {"perm_id": sel_t["perm_id"], "loo_episode_idx": t["episode_idx"],
                        "dose_match_scale": pl_scale_t.tolist(),
-                       "cos_seg_vs_treat": [float(v_seg_pt[i] @ v_seg_t[i])
-                                            for i in range(len(SEGMENTS))],
+                       "scale_clipped": sel_t["scale_clipped"],
+                       "cos_seg_vs_treat": sel_t["cos_seg"], "cos_seg_max": sel_t["cos_max"],
+                       "pl_pool": {"n_drawn": sel_t["n_drawn"], "n_ortho": sel_t["n_ortho"],
+                                   "fallback": sel_t["fallback"]},
                        "seg_diag": sd_pt}
         save_segment_npz(out_cell / "setM_permanent_placebo_loo" / ep_ph, blk,
                          v_seg_pt, s_tok_pt, subdir=None, seg_mask=pl_scale_t,

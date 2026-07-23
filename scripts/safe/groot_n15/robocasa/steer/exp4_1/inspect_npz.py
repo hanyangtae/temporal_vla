@@ -127,6 +127,10 @@ def main() -> None:
                 continue
             line = (f"  {arm:28s} L{r['layer']} npz={'ok' if r['npz_ok'] else 'BAD'} "
                     f"mask={r.get('mask')} 이동/갭={r.get('move_over_gap')}")
+            if r.get("seg_dose") and r.get("seg_dose_treat"):
+                # 위약의 실제 이동량 = raw dose × scale — 처치와 같아야 dose-match 성립
+                eff = [round(d * s, 1) for d, s in zip(r["seg_dose"], r["dose_match_scale"])]
+                line += f" dose(위약×scale)={eff} vs 처치={[round(x, 1) for x in r['seg_dose_treat']]}"
             if "cos_seg_vs_treat" in r:
                 line += (f" cos_seg={[round(c, 2) for c in r['cos_seg_vs_treat']]}"
                          f"{'' if r['ortho_ok'] else ' ✗준직교'}")
