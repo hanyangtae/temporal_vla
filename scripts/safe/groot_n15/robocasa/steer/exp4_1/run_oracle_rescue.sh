@@ -120,7 +120,8 @@ run_row() {  # port pool ep scen inf k
     A0) latch="" ;;
     noise_resample) latch="--reseed-from-record $k" ;;
     *_gated|*_gated_placebo) latch="--steer-from-record $k --steer-phase-mode current" ;;
-    *) latch="--steer-from-record $k" ;;
+    *) latch="--steer-from-record $k"
+       [ "$pool" = fit ] && latch="$latch --steer-phase-name ep${ep}" ;;
   esac
   docker exec -e MUJOCO_GL=egl -e PYTHONPATH="$PYPATH" robocasa \
     python /temporal_vla/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py \
@@ -136,50 +137,40 @@ run_row() {  # port pool ep scen inf k
   return "$rc"
 }
 
-if [ "$POOL" != "eval" ] && { [[ "$ARM" == setM_permanent* ]]; }; then
-  [ "$POOL" = "fit" ] || { echo "[$CELL_ID/$ARM] POOL=all 금지 (LOO 분리)"; exit 2; }
-fi
-if [ "$POOL" = "fit" ] && { [[ "$ARM" == *_gated* ]] || [[ "$ARM" == *future_only* ]]; }; then
-  echo "[$CELL_ID/$ARM] 이 arm 은 fit-풀 LOO 미생성 — eval-풀 전용"; exit 2
-fi
-if [ "$ARM" = "A0" ] || [ "$ARM" = "noise_resample" ] || [[ "$ARM" == conceptor* ]] \
-   || [[ "$ARM" == *_gated* ]] || [ "$POOL" = "eval" ]; then
-  # 공유 NPZ 1개(또는 무 NPZ) — serve 일괄 기동 후 worker striping
-  FLAGS=""
+# fit-풀 arm 정책 (2026-07-23): LOO 연산자가 있는 setM_permanent/future_only 계열 + 방향 없는
+# noise_resample 만. gated·conceptor 는 LOO 미산출 → **eval-풀 전용**(in-sample 평가 금지).
+# A0 는 fit30 수집 자체가 무개입 실패분이라 재실행 불요 (sentinel 48/48 로 결정론 확인 완료).
+if [ "$POOL" = "fit" ]; then
   case "$ARM" in
-    A0|noise_resample) FLAGS="" ;;
-    conceptor_permanent|conceptor_gated)
-      # exp3 배포와 동일 정렬: pooled fit → 전 토큰 적용 (token-select all)
-      FLAGS="$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/$ARM" conceptor "$BETA_CONCEPTOR") --steering-denoise ${DENOISE_CONCEPTOR:-per_step} --steering-token-select all" || exit 12 ;;
-    setM_*)
-      # 세그먼트 연산자(v2)는 전 토큰 위치별 적용 필수 — token-select all 고정
-      FLAGS="$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/$ARM" setpoint_seg "$BETA_SETM") --steering-token-select all" || exit 12 ;;
-    *) echo "unknown ARM: $ARM"; exit 2 ;;
+    setM_permanent|setM_permanent_placebo|setM_future_only|setM_future_only_placebo|noise_resample) ;;
+    *) echo "[$CELL_ID/$ARM] fit-풀 미허용 arm (LOO 없음 → in-sample). eval-풀 전용"; exit 2 ;;
   esac
-  start_serves $FLAGS
-  run_worker() {
-    local wid=$1 i nfail=0
-    for i in "${!ROWS[@]}"; do
-      [ $((i % NW)) -eq "$wid" ] || continue
-      IFS=$'\t' read -r pool ep scen inf k <<< "${ROWS[$i]}"
-      run_row "${PORTS[$wid]}" "$pool" "$ep" "$scen" "$inf" "$k" || nfail=$((nfail+1))
-    done
-    echo "$nfail" > "${LOGDIR}/w${wid}.nfail"
-  }
-  for wid in $(seq 0 $((NW-1))); do run_worker "$wid" > "${LOGDIR}/w${wid}.log" 2>&1 & done
-  wait
-  kill_serves
-else
-  # fit-풀 setM_permanent 계열 — per-target LOO NPZ 로 ep 당 serve 재기동 (worker 0 단독)
-  LOO_DIR=$([ "$ARM" = setM_permanent ] && echo setM_permanent_loo || echo setM_permanent_placebo_loo)
-  for i in "${!ROWS[@]}"; do
-    IFS=$'\t' read -r pool ep scen inf k <<< "${ROWS[$i]}"
-    FLAGS=$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/$LOO_DIR/ep$ep" setpoint "$BETA_SETM") || exit 12
-    start_serves $FLAGS
-    run_row "${PORTS[0]}" "$pool" "$ep" "$scen" "$inf" "$k" >> "${LOGDIR}/loo.log" 2>&1
-    kill_serves
-  done
 fi
+if [ "$POOL" = "all" ]; then echo "[$CELL_ID/$ARM] POOL=all 금지 (풀별 오염 구조 상이)"; exit 2; fi
+FLAGS=""
+case "$ARM" in
+  A0|noise_resample) FLAGS="" ;;
+  conceptor_permanent|conceptor_gated)
+    # exp3 배포와 동일 정렬: pooled fit → 전 토큰 적용 (token-select all)
+    FLAGS="$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/$ARM" conceptor "$BETA_CONCEPTOR") --steering-denoise ${DENOISE_CONCEPTOR:-per_step} --steering-token-select all" || exit 12 ;;
+  setM_*)
+    _NB="$NPZ_ROOT/$CELL_ID/$ARM"; [ "$POOL" = fit ] && _NB="${_NB}_loo"
+    FLAGS="$(serve_steer_flags "$_NB" setpoint_seg "$BETA_SETM") --steering-token-select all" || exit 12 ;;
+  *) echo "unknown ARM: $ARM"; exit 2 ;;
+esac
+start_serves $FLAGS
+run_worker() {
+  local wid=$1 i nfail=0
+  for i in "${!ROWS[@]}"; do
+    [ $((i % NW)) -eq "$wid" ] || continue
+    IFS=$'\t' read -r pool ep scen inf k <<< "${ROWS[$i]}"
+    run_row "${PORTS[$wid]}" "$pool" "$ep" "$scen" "$inf" "$k" || nfail=$((nfail+1))
+  done
+  echo "$nfail" > "${LOGDIR}/w${wid}.nfail"
+}
+for wid in $(seq 0 $((NW-1))); do run_worker "$wid" > "${LOGDIR}/w${wid}.log" 2>&1 & done
+wait
+kill_serves
 
 # ---- 결과 요약 + 완주 게이트 — 선택된 ROWS 의 행별 산출 존재로 판정 (Gate2 확인라운드
 # P1: 디렉토리 전체 카운트는 ROW_FILTER/부분 재실행에서 false INCOMPLETE·fake DONE 양쪽 가능)

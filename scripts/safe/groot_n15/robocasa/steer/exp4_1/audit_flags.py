@@ -62,6 +62,12 @@ def audit_one(sidecar: Path, t0map: dict, arm: str) -> tuple[bool, str]:
     if k_str == "NA":
         return False, f"미주석(t0=NA) episode 가 steering arm 에 존재: {key}"
     k = int(k_str)
+    # LOO arm: phase 이름 = ep{E} (phase registry 스위칭). 불변식은 permanent 와 동일하되
+    # 사이드카의 steer_phase_name 이 그 episode 와 일치하는지도 확인 (타 episode 연산자 오적용 차단)
+    want_ph = d.get("steer_phase_name")
+    if want_ph and want_ph.startswith("ep"):
+        if want_ph != f"ep{d.get('episode_idx')}":
+            return False, f"steer_phase_name {want_ph} != ep{d.get('episode_idx')} (LOO 오적용)"
     if d.get("steer_from_record") != k:
         return False, f"steer_from_record {d.get('steer_from_record')} != manifest K {k}"
     if d.get("steer_phase_mode") == "current":

@@ -357,7 +357,9 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
 
     # cos 진단용 global 방향 (배포 폴백 아님 — 미달 phase 는 미등록=identity)
     z_g = np.load(next((out_cell / "setM_permanent" / "steer").glob("dit_L*/conceptors.npz")))
-    v_g = z_g["alpha0_v_steer"].astype(np.float64)
+    # v2 permanent 는 세그먼트 방향 [S,D] — 진단용 기준축은 future 세그먼트(4/4 cell 최강)
+    v_g_seg = z_g["alpha0_v_seg"].astype(np.float64)
+    v_g = v_g_seg[1]
     # 재실행 stale phase 디렉토리 방지
     import shutil
     for d in ("setM_gated", "setM_gated_placebo",
@@ -419,7 +421,7 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
             mu_n, sd_n = (float(np.mean(null)), float(np.std(null))) if null else (float("nan"),) * 2
             z = (a_fit - mu_n) / sd_n if null and sd_n > 1e-9 else float("nan")
             entry.update({"fit_auroc": a_fit, "null_mean": mu_n, "null_std": sd_n,
-                          "perm_z": z, "cos_vs_global": float(v_ph @ v_g),
+                          "perm_z": z, "cos_vs_global_future": float(v_ph @ v_g),
                           "s": s_ph, "fallback": False})
             # placebo: phase 별 독립 선택 — 준직교(|cos|≤PL_COS_MAX) 필터 후 dose-match
             ph_rec = np.concatenate(
@@ -433,7 +435,7 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
                                            gather_phase(rolls, pl, li, 0, ph, dcap)[0])
                 except ValueError:
                     continue
-                cands.append({"perm_id": pi, "v": vp_c, "s": sp_c,
+                cands.append({"perm_id": pi, "v": vp_c, "s": sp_c, "labels": pl,
                               "cos": float(vp_c @ v_ph),
                               "dose": float(np.median(np.abs(ph_rec @ vp_c - sp_c)))})
             if not cands:
@@ -473,6 +475,8 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
         Xf_t = gather_phase_tok(rolls, labels, li, 0, ph, dcap)[0]
         v_seg_ph, s_tok_ph, sd_ph = fit_seg_setpoint(Xs_t, Xf_t)
         entry["seg_diag"] = sd_ph
+        entry["cos_seg_vs_permanent"] = [float(v_seg_ph[i] @ v_g_seg[i])
+                                         for i in range(len(SEGMENTS))]
         save_segment_npz(out_cell / "setM_gated" / ph, blk, v_seg_ph, s_tok_ph, subdir=None,
                          meta={"operator": "setM_gated", "cell": args.cell, "phase": ph,
                                "layer": blk, "dwell_cap": dcap,
@@ -503,7 +507,7 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
         diag.append(entry)
         print(f"  [{ph}] Nrec s/f={entry['n_rec_succ']}/{entry['n_rec_fail']} "
               f"auroc={entry['fit_auroc']:.3f} z={entry['perm_z']:.2f} "
-              f"cos_g={entry['cos_vs_global']:+.2f}", flush=True)
+              f"cos_gfut={entry['cos_vs_global_future']:+.2f}", flush=True)
 
     (out_cell / "setM_gated_diag.json").write_text(json.dumps({
         "cell": args.cell, "layer": blk, "cap_records": cap, "phases": diag,
@@ -668,6 +672,10 @@ def main() -> None:
 
     # ---- 저장 (full-fit)
     out_cell = args.out_root / args.cell
+    import shutil as _sh
+    for _d in ("setM_permanent_loo", "setM_permanent_placebo_loo",
+               "setM_future_only_loo", "setM_future_only_placebo_loo"):
+        _sh.rmtree(out_cell / _d, ignore_errors=True)   # 구 규약(steer/) 잔재 제거
     manifest_sha = hashlib.sha256(args.manifest.read_bytes()).hexdigest()[:12]
     targets_sha = hashlib.sha256(args.targets.read_bytes()).hexdigest()[:12]
     base_meta = {
@@ -732,9 +740,17 @@ def main() -> None:
         Xs_t = np.concatenate([r["tok"][:cap, li] for r, y in zip(kr, kl) if y == 1], axis=0)
         Xf_t = np.concatenate([r["tok"][:cap, li] for r, y in zip(kr, kl) if y == 0], axis=0)
         v_seg_t, s_tok_t, sd_t = fit_seg_setpoint(Xs_t, Xf_t)
-        save_segment_npz(out_cell / "setM_permanent_loo" / f"ep{t['episode_idx']}", blk,
-                         v_seg_t, s_tok_t, {**seg_meta, "operator": "setM_permanent_loo",
-                                            "loo_episode_idx": t["episode_idx"], "seg_diag": sd_t})
+        # phase-registry 재활용: phase 이름 = ep{E} → serve 1회 기동으로 전 LOO 스위칭
+        ep_ph = f"ep{t['episode_idx']}"
+        save_segment_npz(out_cell / "setM_permanent_loo" / ep_ph, blk, v_seg_t, s_tok_t,
+                         subdir=None,
+                         meta={**seg_meta, "operator": "setM_permanent_loo",
+                               "loo_episode_idx": t["episode_idx"], "seg_diag": sd_t})
+        # future_only LOO 는 같은 연산자에 mask 만 다름 (추가 fit 비용 0)
+        save_segment_npz(out_cell / "setM_future_only_loo" / ep_ph, blk, v_seg_t, s_tok_t,
+                         subdir=None, seg_mask=np.asarray([0.0, 1.0, 0.0], dtype=np.float32),
+                         meta={**seg_meta, "operator": "setM_future_only_loo",
+                               "loo_episode_idx": t["episode_idx"], "seg_diag": sd_t})
         pl_l = [pl_sel["labels"][i] for i in keep]
         try:
             Xs_p = np.concatenate([r["tok"][:cap, li] for r, y in zip(kr, pl_l) if y == 1], axis=0)
@@ -742,10 +758,17 @@ def main() -> None:
             v_seg_pt, s_tok_pt, sd_pt = fit_seg_setpoint(Xs_p, Xf_p)
         except ValueError:
             v_seg_pt, s_tok_pt, sd_pt = v_seg_p, s_tok_p, seg_diag_p  # 클래스 고갈 → full 위약
-        save_segment_npz(out_cell / "setM_permanent_placebo_loo" / f"ep{t['episode_idx']}", blk,
-                         v_seg_pt, s_tok_pt, {**seg_meta, "operator": "setM_permanent_placebo_loo",
-                                              "loo_episode_idx": t["episode_idx"],
-                                              "perm_id": pl_sel["perm_id"], "seg_diag": sd_pt})
+        save_segment_npz(out_cell / "setM_permanent_placebo_loo" / ep_ph, blk,
+                         v_seg_pt, s_tok_pt, subdir=None,
+                         meta={**seg_meta, "operator": "setM_permanent_placebo_loo",
+                               "loo_episode_idx": t["episode_idx"],
+                               "perm_id": pl_sel["perm_id"], "seg_diag": sd_pt})
+        save_segment_npz(out_cell / "setM_future_only_placebo_loo" / ep_ph, blk,
+                         v_seg_pt, s_tok_pt, subdir=None,
+                         seg_mask=np.asarray([0.0, 1.0, 0.0], dtype=np.float32),
+                         meta={**seg_meta, "operator": "setM_future_only_placebo_loo",
+                               "loo_episode_idx": t["episode_idx"],
+                               "perm_id": pl_sel["perm_id"], "seg_diag": sd_pt})
 
     (out_cell / "layer_sweep.json").write_text(json.dumps({
         "cell": args.cell, "sweep": sweep, "selected_layer": blk,

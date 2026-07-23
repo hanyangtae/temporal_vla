@@ -44,7 +44,7 @@ def holm(pvals: dict) -> dict:
     return adj
 
 
-def load_t0(path: Path):
+def load_t0(path: Path, pool: str = "eval"):
     lines = path.read_text().splitlines()
     header = lines[0].split("\t")
     rows = []
@@ -52,6 +52,8 @@ def load_t0(path: Path):
         if not ln.strip():
             continue
         r = dict(zip(header, ln.split("\t")))
+        if pool != "all" and r.get("pool") != pool:
+            continue
         if str(r.get("feasible", "1")) != "1":
             continue  # 기하 불가 seed 는 분모 제외 (fit·eval 양쪽 동일 — 공유문서 §5)
         rows.append(r)
@@ -82,6 +84,9 @@ def main() -> None:
                     "pq3_drawer_left:drawer,pq3_drawer_right:drawer,exp41_mixer:mixer")
     ap.add_argument("--setm-npz-root", type=Path, default=None,
                     help="setM metadata 의 eval_targets seen/unseen 층화용")
+    ap.add_argument("--pool", choices=("eval", "fit", "all"), default="eval",
+                    help="집계 대상 풀 — eval=primary(완전 held-out) / fit=secondary(LOO) "
+                         "(2026-07-23: 오염 구조가 달라 합산 금지)")
     ap.add_argument("--contrast", action="append", default=None,
                     help="'처치:위약' McNemar 쌍 (반복). 기본: setM_permanent:setM_permanent_placebo"
                          " + setM_gated:setM_gated_placebo — 각 쌍이 자체 4-task Holm family")
@@ -102,7 +107,7 @@ def main() -> None:
         return
 
     assert args.t0_manifest and args.arm, "--t0-manifest / --arm 필요"
-    t0rows = [r for p in args.t0_manifest for r in load_t0(p)]
+    t0rows = [r for p in args.t0_manifest for r in load_t0(p, args.pool)]
     task_of = dict(kv.split(":") for kv in args.task_map.split(","))
     arms = {}
     for spec in args.arm:
@@ -121,7 +126,10 @@ def main() -> None:
     contrasts = [tuple(c.split(":")) for c in
                  (args.contrast or ["setM_permanent:setM_permanent_placebo",
                                     "setM_gated:setM_gated_placebo"])]
-    report = {"tasks": {}, "arms": sorted(arms),
+    report = {"pool": args.pool,
+              "pool_role": ("primary(완전 held-out)" if args.pool == "eval"
+                            else "secondary(LOO — fit 표본 포함)"),
+              "tasks": {}, "arms": sorted(arms),
               "contrasts": [f"{a} vs {b}" for a, b in contrasts]}
     pvals = {}
     for task in sorted(set(task_of.values())):

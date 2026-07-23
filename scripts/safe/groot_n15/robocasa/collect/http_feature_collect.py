@@ -516,6 +516,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--steer-phase-name",
+        default=None,
+        metavar="NAME",
+        help=(
+            "latch ON 시 POST 할 phase 이름 (기본 'steer'). LOO arm 은 ep{E} 를 넘겨 "
+            "serve 의 phase registry 에 등록된 per-episode 연산자를 스위칭 — serve 재기동 0회."
+        ),
+    )
+    parser.add_argument(
         "--steer-phase-mode",
         choices=("global", "current"),
         default="global",
@@ -741,7 +750,7 @@ def run() -> dict[str, Any]:
                     elif getattr(args, "steer_phase_mode", "global") == "current":
                         want = phase
                     else:
-                        want = "steer"
+                        want = getattr(args, "steer_phase_name", None) or "steer"
                     gated_now = _post_steering_phase(args.vla_server, want)
                 official_action, _ = policy.get_action(obs)
                 progress_after = policy.n_calls if no_features else len(policy.records)
@@ -843,6 +852,7 @@ def run() -> dict[str, Any]:
                     # exp4-1 latch 감사: sum(flags)==n_inferences-K && first_true==K 대조용
                     "steer_from_record": steer_from_record,
                     "steer_phase_mode": getattr(args, "steer_phase_mode", "global"),
+                    "steer_phase_name": getattr(args, "steer_phase_name", None),
                     "reseed_from_record": reseed_from_record,
                     "reseed_offset": (int(getattr(args, "reseed_offset", 500000))
                                       if reseed_from_record is not None else None),
