@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import cv2
@@ -120,8 +122,28 @@ def annotate(sidecar: Path, steps_per_render: int, overwrite: bool = False) -> P
         i += 1
     cap.release()
     writer.release()
+    _reencode_h264(out)
     print(f"[wrote] {out.name} frames={i} timeline={len(timeline)}")
     return out
+
+
+def _reencode_h264(path: Path) -> None:
+    """cv2 VideoWriter 는 이 env 에서 mp4v(MPEG-4 Part 2)만 지원 — VSCode/브라우저
+    (Chromium)가 재생 못 함. ffmpeg(libx264 확인됨)로 H.264/yuv420p 재인코딩해 교체.
+    ffmpeg 부재 시 mp4v 유지 + 경고 (VLC 등에서는 재생 가능)."""
+    if shutil.which("ffmpeg") is None:
+        print(f"[warn] ffmpeg 없음 — {path.name} 은 mp4v (VSCode 재생 불가)")
+        return
+    tmp = path.with_suffix(".h264.mp4")
+    r = subprocess.run(
+        ["ffmpeg", "-y", "-v", "error", "-i", str(path), "-c:v", "libx264",
+         "-pix_fmt", "yuv420p", "-crf", "23", "-preset", "veryfast", str(tmp)],
+        capture_output=True, text=True)
+    if r.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
+        tmp.replace(path)
+    else:
+        tmp.unlink(missing_ok=True)
+        print(f"[warn] H.264 재인코딩 실패({path.name}): {r.stderr.strip()[:120]}")
 
 
 def main() -> None:
