@@ -154,8 +154,11 @@ def seg_dose_by_segment(X_tok: np.ndarray, v_seg: np.ndarray, s_tok: np.ndarray)
     return np.asarray([float(np.median(move[:, lo:hi])) for _n, lo, hi in SEGMENTS])
 
 
-SEG_EQUIV_V_TOL = 2e-3   # 방향 cos 이탈 허용 (float32 누적 오차)
-SEG_EQUIV_S_RTOL = 2e-3  # setpoint 상대 오차 허용
+# 두 경로 일치 판정: **방향 cos 이 주 기준**이다. 라벨이 어긋나면 cos 이 크게 떨어지고
+# (자체검증: 라벨 1개만 뒤집어도 min cos 0.74 · Δs 57%), 같은 라벨이면 float32 평균 누적
+# 오차만 남아 cos=1.000000 · Δs 는 |s|max 의 0.2~0.3% 수준이다 (drawer_right 실측 0.236%).
+SEG_EQUIV_COS_MIN = 0.999
+SEG_EQUIV_S_RTOL = 1e-2
 
 
 def check_seg_equiv(v_a, s_a, v_b, s_b, tag: str) -> None:
@@ -171,9 +174,9 @@ def check_seg_equiv(v_a, s_a, v_b, s_b, tag: str) -> None:
     scale = float(np.abs(s_b).max()) + 1e-9
     print(f"  [equiv {tag}] Δv={dv:.2e} min cos={cosmin:.6f} Δs={ds:.3f} "
           f"({ds / scale * 100:.3f}% of |s|max)", flush=True)
-    if dv > SEG_EQUIV_V_TOL or ds / scale > SEG_EQUIV_S_RTOL:
+    if cosmin < SEG_EQUIV_COS_MIN or ds / scale > SEG_EQUIV_S_RTOL:
         raise SystemExit(f"[{tag}] 세그먼트 연산자 불일치 — 라벨/표본 어긋남 의심 "
-                         f"(Δv={dv:.2e} Δs/|s|={ds / scale:.2e})")
+                         f"(min cos={cosmin:.6f} Δv={dv:.2e} Δs/|s|={ds / scale:.2e})")
 
 
 def select_placebo_seg(ep_tok, labels_arr, v_seg_ref, s_tok_ref, rng, tag=""):
