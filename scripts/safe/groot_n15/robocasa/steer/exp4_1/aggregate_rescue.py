@@ -6,7 +6,7 @@ ITT 규칙 (24a §1): 분모 = t0 manifest 의 feasible 행 전체. 미주석(t0
 
 pairing: 같은 (cell, episode_idx, inference_seed) 의 setM vs setM_pl 결과 쌍.
 McNemar exact: discordant b(setM만 성공)·c(pl만 성공), p = 2·P(Bin(b+c,½) ≤ min(b,c)) capped 1.
-Holm: task(=cell 묶음: bread/beer/drawer_left/drawer_right… 또는 --task-map) 단위 4건.
+Holm: 사전등록 task family 4건 = bread / beer / drawer(좌우 pooled) / mixer (--task-map).
 
 사용:
   python aggregate_rescue.py --t0-manifest <t0_manifest.tsv> \
