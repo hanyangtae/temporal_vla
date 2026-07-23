@@ -58,7 +58,11 @@ MOVE_GAP_RATIO_MAX = 3.0   # 배포 게이트: |이동량| 중앙값 ≤ succ/fa
 N_PERM = 20        # layer-sweep null 분포용 (CV 비용 때문에 소수)
 N_PERM_PL = 200    # 위약 후보 풀 배치 크기 (준직교 후보 확보용)
 N_PERM_PL_MAX = 1000  # 준직교 후보를 찾을 때까지 순열 풀을 확장하는 상한
-PL_SCALE_MIN, PL_SCALE_MAX = 0.5, 2.0  # 위약 dose-match 스케일 클립 (벗어나면 기록)
+# 위약 dose-match 스케일 클립. 상한 3.0 (2026-07-24): dose 를 런타임(실패) 분포에서
+# calibration 하면 처치가 실패에서 크게 움직여 필요 스케일이 2.0~2.4 로 커진다(구 상한 2.0
+# 은 succ+fail calibration 기준이라 이제 잔차 발생). 처치의 실패 이동량을 위약이 공정히
+# 맞추려면 상한을 넓혀야 한다(실측 최대 raw 2.42 + 마진). 넘으면 여전히 clip·기록.
+PL_SCALE_MIN, PL_SCALE_MAX = 0.5, 3.0
 PL_COS_MAX = 0.3   # 위약-처치 |cos| 상한: 정렬(처치 희석)·반정렬(반처치) 모두 불공정
 N_BOOT = 200
 RNG_SEED = 424101  # exp4-1 고정 (재현)
