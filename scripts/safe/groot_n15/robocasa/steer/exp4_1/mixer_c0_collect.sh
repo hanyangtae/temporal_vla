@@ -29,7 +29,8 @@ OUT_HOST="$REPO_ROOT/outputs/eval/robocasa/groot_n15/exp4_1/mixer_c0/$PHASE"
 OUT_CONT="/temporal_vla/outputs/eval/robocasa/groot_n15/exp4_1/mixer_c0/$PHASE"
 SHIP_DEST="kimseungjun@166.104.146.37"
 SHIP_PORT=11112
-SHIP_ROOT="datasets/temporal_vla_outputs/eval/robocasa/groot_n15/exp41_mixer/$PHASE"
+# cell 디렉토리 보존 배송 — 소비자(load_cell_rolls·extract)가 parent 명으로 cell 을 판정 (Gate2 P2-7)
+SHIP_ROOT="datasets/temporal_vla_outputs/eval/robocasa/groot_n15/exp41_mixer/$PHASE/raw_rollouts/$TASK/$CELL_ID"
 LOGDIR="$OUT_HOST/logs"; mkdir -p "$LOGDIR"
 
 mapfile -t SEEDS < <(python3 -c "
@@ -92,7 +93,9 @@ run_w() {
   for idx in "${!SEEDS[@]}"; do
     [ $((idx % NW)) -eq "$wid" ] || continue
     ep=$((EP0 + idx)); seed="${SEEDS[$idx]}"
-    if ls "$OUT_HOST/raw_rollouts/$TASK/$CELL_ID/task${CELL_INDEX}--ep${ep}--succ"*.json >/dev/null 2>&1; then
+    # resume 판정: fit 은 triplet(pkl 은 직송 후 삭제)이라 mp4 기준, eval 은 json (Gate2 P2-6)
+    RES_EXT=$([ "$PHASE" = fit ] && echo mp4 || echo json)
+    if ls "$OUT_HOST/raw_rollouts/$TASK/$CELL_ID/task${CELL_INDEX}--ep${ep}--succ"*.$RES_EXT >/dev/null 2>&1; then
       continue
     fi
     docker exec -e MUJOCO_GL=egl -e PYTHONPATH="$PYPATH" robocasa \

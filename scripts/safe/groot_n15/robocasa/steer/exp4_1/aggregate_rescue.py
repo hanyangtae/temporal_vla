@@ -73,10 +73,13 @@ def scan_arm(root: Path):
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--t0-manifest", type=Path)
+    ap.add_argument("--t0-manifest", type=Path, action="append",
+                    help="t0_manifest.tsv (반복 가능 — legacy + mixer 별도 파일)")
     ap.add_argument("--arm", action="append", default=[], help="'이름:rollout루트' 반복")
+    # 사전등록 task 4종 = bread / beer / OpenDrawer(좌우 cell 풀링) / mixer (Gate2 P1-4 —
+    # drawer 를 cell 별로 나누면 Holm family 5가 되고 mixer 가 누락됨)
     ap.add_argument("--task-map", default="pq3_ppcc_bread:bread,pq3_ppcc_beer:beer,"
-                    "pq3_drawer_left:drawer_left,pq3_drawer_right:drawer_right")
+                    "pq3_drawer_left:drawer,pq3_drawer_right:drawer,exp41_mixer:mixer")
     ap.add_argument("--setm-npz-root", type=Path, default=None,
                     help="setM metadata 의 eval_targets seen/unseen 층화용")
     ap.add_argument("--out", type=Path, default=None)
@@ -95,8 +98,8 @@ def main() -> None:
         print("SELF-TEST PASS")
         return
 
-    assert args.t0_manifest is not None and args.arm, "--t0-manifest / --arm 필요"
-    t0rows = load_t0(args.t0_manifest)
+    assert args.t0_manifest and args.arm, "--t0-manifest / --arm 필요"
+    t0rows = [r for p in args.t0_manifest for r in load_t0(p)]
     task_of = dict(kv.split(":") for kv in args.task_map.split(","))
     arms = {}
     for spec in args.arm:

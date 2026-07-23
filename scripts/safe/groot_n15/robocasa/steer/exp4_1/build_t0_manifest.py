@@ -111,6 +111,13 @@ def cmd_build(args) -> None:
     lines = Path(args.annot).read_text().splitlines()
     header = lines[0].split("\t")
     assert header == COLUMNS, f"컬럼 불일치: {header}"
+    # feasibility 스캔 미수행 상태로 동결 금지 (Gate2 P2 — 기하 불가 seed 가 ITT 오염)
+    pending = [ln.split("\t")[0] for ln in lines[1:]
+               if ln.strip() and dict(zip(header, ln.split("\t")))["feas_method"] == "pending_scan"]
+    if pending and not args.allow_pending:
+        raise SystemExit(
+            f"feas_method=pending_scan 행 {len(pending)}개 (cell 예: {sorted(set(pending))[:2]}) — "
+            "drawer feasibility 스캔을 먼저 반영하거나 --allow-pending 으로 명시 승인")
     out_rows, n_annot = [], 0
     seen = set()
     for ln in lines[1:]:
@@ -162,6 +169,8 @@ def main() -> None:
     p_build = sub.add_parser("build")
     p_build.add_argument("--annot", type=Path, required=True)
     p_build.add_argument("--out", type=Path, required=True)
+    p_build.add_argument("--allow-pending", action="store_true",
+                        help="pending_scan 상태로 동결 강행 (근거 기록 필수)")
     p_build.set_defaults(fn=cmd_build)
     args = ap.parse_args()
     args.fn(args)

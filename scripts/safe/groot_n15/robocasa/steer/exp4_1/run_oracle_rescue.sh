@@ -51,10 +51,13 @@ echo "[$CELL_ID/$ARM] rows=${#ROWS[@]} pool=$POOL mode=$SERVE_MODE gpus=${GPUS[*
 
 # ---- serve ---------------------------------------------------------------------------
 serve_steer_flags() {  # $1 = NPZ base 디렉토리 (steer/dit_L*/conceptors.npz 포함)
-  local base="$1" op="$2" beta="$3" lyr
+  local base="$1" op="$2" beta="$3" lyr serve_base
   lyr=$(basename "$(ls -d "$base"/steer/dit_L* 2>/dev/null | head -1)" | sed 's/dit_L//')
   [ -n "$lyr" ] || { echo "[$CELL_ID/$ARM] NPZ 없음: $base/steer/dit_L*" >&2; return 1; }
-  echo "--steering-phase-npz-base $base --steering-phases steer --steering-layers $lyr --steering-op $op --steering-beta $beta"
+  # docker 모드 serve 는 컨테이너 안 — repo mount(/temporal_vla) 경로로 번역 (Gate2 P1-1)
+  serve_base="$base"
+  [ "$SERVE_MODE" = host ] || serve_base="/temporal_vla${base#"$REPO_ROOT"}"
+  echo "--steering-phase-npz-base $serve_base --steering-phases steer --steering-layers $lyr --steering-op $op --steering-beta $beta"
 }
 start_serves() {  # $@ = 추가 serve 플래그
   local i
@@ -97,20 +100,25 @@ kill_serves() {
 
 # ---- collector -----------------------------------------------------------------------
 run_row() {  # port pool ep scen inf k
-  local port=$1 pool=$2 ep=$3 scen=$4 inf=$5 k=$6 latch=""
-  if ls "${OUT_HOST}/raw_rollouts/${TASK}/${CELL_ID}/task${CELL_INDEX}--ep${ep}--succ"*.json >/dev/null 2>&1; then
+  local port=$1 pool=$2 ep=$3 scen=$4 inf=$5 k=$6 latch="" rc
+  # pool 별 하위 디렉토리 — fit/eval 의 episode_idx 충돌로 resume 이 타 pool 행을
+  # 건너뛰는 ITT 무음 탈락 방지 (Gate2 P1-2)
+  if ls "${OUT_HOST}/${pool}/raw_rollouts/${TASK}/${CELL_ID}/task${CELL_INDEX}--ep${ep}--succ"*.json >/dev/null 2>&1; then
     return 0  # idempotent resume
   fi
   [ "$ARM" != "A0" ] && latch="--steer-from-record $k"
   docker exec -e MUJOCO_GL=egl -e PYTHONPATH="$PYPATH" robocasa \
     python /temporal_vla/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py \
     --vla-server "http://127.0.0.1:${port}" --task "$TASK" --env-name "$ENVN" \
-    --output-dir "${OUT_CONT}/raw_rollouts" --cell-id "$CELL_ID" --cell-index "$CELL_INDEX" \
+    --output-dir "${OUT_CONT}/${pool}/raw_rollouts" --cell-id "$CELL_ID" --cell-index "$CELL_INDEX" \
     --canonical-instruction "$INSTR" --episode-start-idx "$ep" --n-episodes 1 \
     --seed "$scen" --inference-seed "$inf" --n-action-steps "$STRIDE_NAS" \
     --max-episode-steps "$MAXEP" --video-fps 20 --steps-per-render 2 --wait-ready \
     --no-features --proximity-phases $latch ${STEER_EXTRA:-} 2>&1 \
-    | grep -E "wrote|Error|Traceback" || true
+    | grep -E "wrote|Error|Traceback"
+  rc=${PIPESTATUS[0]}  # grep 무매치는 무시, collector 실패는 전파 (Gate2 P1-3)
+  [ "$rc" -eq 0 ] || echo "[collector FAIL rc=$rc] pool=$pool ep=$ep" >&2
+  return "$rc"
 }
 
 if [ "$POOL" = "all" ] && { [ "$ARM" = "setM" ] || [ "$ARM" = "setM_pl" ]; }; then
@@ -129,12 +137,13 @@ if [ "$ARM" = "A0" ] || [ "$ARM" = "conceptor" ] || [ "$POOL" = "eval" ]; then
   esac
   start_serves $FLAGS
   run_worker() {
-    local wid=$1 i
+    local wid=$1 i nfail=0
     for i in "${!ROWS[@]}"; do
       [ $((i % NW)) -eq "$wid" ] || continue
       IFS=$'\t' read -r pool ep scen inf k <<< "${ROWS[$i]}"
-      run_row "${PORTS[$wid]}" "$pool" "$ep" "$scen" "$inf" "$k"
+      run_row "${PORTS[$wid]}" "$pool" "$ep" "$scen" "$inf" "$k" || nfail=$((nfail+1))
     done
+    echo "$nfail" > "${LOGDIR}/w${wid}.nfail"
   }
   for wid in $(seq 0 $((NW-1))); do run_worker "$wid" > "${LOGDIR}/w${wid}.log" 2>&1 & done
   wait
@@ -151,8 +160,14 @@ else
   done
 fi
 
-# ---- 결과 요약 ------------------------------------------------------------------------
-d="${OUT_HOST}/raw_rollouts/${TASK}/${CELL_ID}"
-s=$(ls "$d"/*succ1.json 2>/dev/null | wc -l); f=$(ls "$d"/*succ0.json 2>/dev/null | wc -l)
-echo -e "[$CELL_ID/$ARM] done\trescued=${s}\tfail=${f}\ttotal=$((s+f))/${#ROWS[@]}"
+# ---- 결과 요약 + 완주 게이트 (Gate2 P1-3: 결측·수집실패 시 DONE 금지 — fake-done 방지) --
+CNT_DIR="$OUT_HOST"; [ "$POOL" = all ] || CNT_DIR="$OUT_HOST/$POOL"
+s=$(find "$CNT_DIR" -name '*--succ1.json' 2>/dev/null | wc -l)
+f=$(find "$CNT_DIR" -name '*--succ0.json' 2>/dev/null | wc -l)
+echo -e "[$CELL_ID/$ARM] rescued=${s}\tfail=${f}\ttotal=$((s+f))/${#ROWS[@]}"
+if [ $((s+f)) -ne "${#ROWS[@]}" ]; then
+  echo "[$CELL_ID/$ARM] INCOMPLETE — 산출 $((s+f)) != 대상 ${#ROWS[@]} (worker nfail: $(cat "${LOGDIR}"/w*.nfail 2>/dev/null | tr '\n' ' '))"
+  exit 13
+fi
 touch "${LOGDIR}/EXP41_${CELL_ID}_${ARM}_${POOL}_DONE"
+echo "[$CELL_ID/$ARM] done"
