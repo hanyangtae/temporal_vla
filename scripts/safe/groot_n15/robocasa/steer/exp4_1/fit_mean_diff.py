@@ -210,7 +210,7 @@ def save_setpoint_npz(out_dir: Path, layer_blk: int, v: np.ndarray, s: float, me
 
 
 # ---------------------------------------------------------------------------- main
-GATED_MIN_REC = 50     # phase 등록 최소 record/클래스 — 미달 phase 는 global 폴백
+GATED_MIN_REC = 50     # phase 등록 최소 record/클래스 — 미달 phase 는 무개
 GATED_MIN_EPS = 3
 TERMINAL_PHASES = {"open-done", "insert-settle-done"}  # terminal 동치 phase 제외
 
@@ -221,36 +221,34 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
     phase 별 (r̂_ph, s_ph) fit + 유의성 진단 (사용자: 유의성부터 판단).
     quota(record ≥GATED_MIN_REC/클래스·episode ≥GATED_MIN_EPS) 미달 phase 는 **NPZ 미생성 =
     serve 미등록 → identity(무개입)** — 실패 증거 없는 phase 에 global 방향을 씌우는 외삽
-    금지 (2026-07-23 사용자 결정). placebo 도 같은 phase 집합만 생성(pairing). 재실행 시
-    stale phase 디렉토리 오염 방지 위해 setM_gated{,_placebo} 를 먼저 삭제.
+    금지 (2026-07-23 사용자 결정). 재실행 시 stale phase 디렉토리 오염 방지 위해
+    setM_gated{,_placebo} 를 먼저 삭제.
+
+    placebo (2026-07-23 리뷰 반영): permanent 동결 순열의 phase 재fit 은 phase 부분표본의
+    지배축을 물려받아 준직교가 깨짐(실측 cos +0.62/−0.71) → **phase 별 독립 선택** —
+    순열 후보 N_PERM_PL 에서 |cos(vs r̂_ph)|≤PL_COS_MAX 필터 후 phase-record dose-match.
+    pairing 은 episode 단위(arm 간 동일 episode)라 phase 마다 순열이 달라도 유지. 위약 fit
+    불가 phase 는 처치·위약 양쪽 제외(dose 대칭).
     """
-    sweep_p = out_cell / "layer_sweep.json"
     meta_perm = json.loads(
         next((out_cell / "setM_permanent" / "steer").glob("dit_L*/metadata.json")).read_text())
-    pl_meta = json.loads(
-        next((out_cell / "setM_permanent_placebo" / "steer").glob("dit_L*/metadata.json")).read_text())
     blk = int(meta_perm["layer"])
     cap = int(meta_perm["cap_records"])
     cap_layers = [int(x) for x in rolls[0]["capture_layers"]]
     li = cap_layers.index(blk)
     labels_arr = np.asarray(labels)
 
-    # 동결 순열 재생성 (permanent placebo 와 동일 RNG 스트림 — perm_id 로 특정)
+    # 순열 후보 풀 (phase 별 위약 선택용 — permanent 와 같은 RNG 스트림이지만 선택은 독립)
     prng = np.random.default_rng(RNG_SEED + 555)
-    perm_labels = None
-    for pi in range(N_PERM_PL):
+    perm_pool = []
+    for _ in range(N_PERM_PL):
         pl = labels_arr.copy()
         prng.shuffle(pl)
-        if pi == int(pl_meta["perm_id"]):
-            perm_labels = pl.tolist()
-            break
-    assert perm_labels is not None, "동결 순열 재생성 실패"
+        perm_pool.append(pl.tolist())
 
     # cos 진단용 global 방향 (배포 폴백 아님 — 미달 phase 는 미등록=identity)
     z_g = np.load(next((out_cell / "setM_permanent" / "steer").glob("dit_L*/conceptors.npz")))
     v_g = z_g["alpha0_v_steer"].astype(np.float64)
-    z_gp = np.load(next((out_cell / "setM_permanent_placebo" / "steer").glob("dit_L*/conceptors.npz")))
-    v_gp, s_gp = z_gp["alpha0_v_steer"].astype(np.float64), float(z_gp["alpha0_s"])
     # 재실행 stale phase 디렉토리 방지
     import shutil
     for d in ("setM_gated", "setM_gated_placebo"):
@@ -304,15 +302,46 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
             entry.update({"fit_auroc": a_fit, "null_mean": mu_n, "null_std": sd_n,
                           "perm_z": z, "cos_vs_global": float(v_ph @ v_g),
                           "s": s_ph, "fallback": False})
-            # placebo: 동결 순열로 phase 재fit (클래스 고갈 시 global placebo 폴백)
-            try:
-                v_pp, s_pp = mean_diff(gather_phase(rolls, perm_labels, li, cap, 1, ph)[0],
-                                       gather_phase(rolls, perm_labels, li, cap, 0, ph)[0])
-                pl_fb = False
-            except ValueError:
-                v_pp, s_pp, pl_fb = v_gp, s_gp, True
-            entry["placebo_cos_vs_setm_ph"] = float(v_pp @ v_ph)
-            entry["placebo_fallback"] = pl_fb
+            # placebo: phase 별 독립 선택 — 준직교(|cos|≤PL_COS_MAX) 필터 후 dose-match
+            ph_rec = np.concatenate(
+                [episode_phase_records(r, li, cap, ph) for r in rolls
+                 if len(episode_phase_records(r, li, cap, ph))], axis=0)
+            dose_ref = float(np.median(np.abs(ph_rec @ v_ph - s_ph)))
+            cands = []
+            for pi, pl in enumerate(perm_pool):
+                try:
+                    vp_c, sp_c = mean_diff(gather_phase(rolls, pl, li, cap, 1, ph)[0],
+                                           gather_phase(rolls, pl, li, cap, 0, ph)[0])
+                except ValueError:
+                    continue
+                cands.append({"perm_id": pi, "v": vp_c, "s": sp_c,
+                              "cos": float(vp_c @ v_ph),
+                              "dose": float(np.median(np.abs(ph_rec @ vp_c - sp_c)))})
+            if not cands:
+                # 위약 성립 불가 → 처치도 이 phase 제외 (dose 대칭 — 미등록=identity)
+                entry.update({"skipped_identity": True,
+                              "skip_reason": "placebo 후보 0 (순열 클래스 고갈)"})
+                diag.append(entry)
+                print(f"  [{ph}] SKIP(위약 불가 → 양쪽 무개입)", flush=True)
+                continue
+            ortho = [c for c in cands if abs(c["cos"]) <= PL_COS_MAX]
+            fb = ""
+            if not ortho:
+                cands.sort(key=lambda c: abs(c["cos"]))
+                ortho = cands[:5]
+                fb = f"no-ortho(min|cos|={abs(ortho[0]['cos']):.2f})"
+            band = [c for c in ortho if 0.75 * dose_ref <= c["dose"] <= 1.25 * dose_ref]
+            pool_c = band if band else ortho
+            pool_c.sort(key=lambda c: abs(c["dose"] - dose_ref))
+            sel = pool_c[0]
+            v_pp, s_pp = sel["v"], sel["s"]
+            entry.update({
+                "placebo_perm_id": sel["perm_id"],
+                "placebo_cos_vs_setm_ph": sel["cos"],
+                "placebo_dose_ratio": sel["dose"] / dose_ref if dose_ref else None,
+                "placebo_pool": {"n_cand": len(cands), "n_ortho": len(ortho),
+                                 "n_in_band": len(band), "fallback": fb or None},
+            })
         else:
             # 미달 phase — NPZ 미생성 (미등록 → serve identity, 무개입. 사용자 결정 07-23)
             entry.update({"skipped_identity": True})
@@ -326,7 +355,9 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
         })
         save_setpoint_npz(out_cell / "setM_gated_placebo" / ph, blk, v_pp, s_pp, {
             "operator": "setM_gated_placebo", "cell": args.cell, "phase": ph, "layer": blk,
-            "perm_id": pl_meta["perm_id"], "fallback": entry.get("placebo_fallback"),
+            "perm_id": entry["placebo_perm_id"], "cos_vs_setm_ph": entry["placebo_cos_vs_setm_ph"],
+            "dose_ratio": entry["placebo_dose_ratio"], "pl_cos_max": PL_COS_MAX,
+            "pool": entry["placebo_pool"],
         })
         diag.append(entry)
         print(f"  [{ph}] Nrec s/f={entry['n_rec_succ']}/{entry['n_rec_fail']} "
