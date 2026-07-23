@@ -154,6 +154,28 @@ def seg_dose_by_segment(X_tok: np.ndarray, v_seg: np.ndarray, s_tok: np.ndarray)
     return np.asarray([float(np.median(move[:, lo:hi])) for _n, lo, hi in SEGMENTS])
 
 
+SEG_EQUIV_V_TOL = 2e-3   # 방향 cos 이탈 허용 (float32 누적 오차)
+SEG_EQUIV_S_RTOL = 2e-3  # setpoint 상대 오차 허용
+
+
+def check_seg_equiv(v_a, s_a, v_b, s_b, tag: str) -> None:
+    """같은 라벨에서 나온 두 경로(재fit=float32 누적 vs 선택=episode합 float64)의 일치 확인.
+
+    배포본은 float64 경로(선택 단계 산출)를 쓴다 — 더 정확하기 때문. 여기서는 두 경로가
+    수치오차 수준에서만 다른지 확인해 라벨/표본이 어긋난 사고를 잡는다 (완전 일치 요구는
+    float32 평균 누적 때문에 성립하지 않는다 — 07-23 beer 에서 실측).
+    """
+    dv = float(np.abs(v_a - v_b).max())
+    cosmin = float(np.min([v_a[i] @ v_b[i] for i in range(v_a.shape[0])]))
+    ds = float(np.abs(s_a - s_b).max())
+    scale = float(np.abs(s_b).max()) + 1e-9
+    print(f"  [equiv {tag}] Δv={dv:.2e} min cos={cosmin:.6f} Δs={ds:.3f} "
+          f"({ds / scale * 100:.3f}% of |s|max)", flush=True)
+    if dv > SEG_EQUIV_V_TOL or ds / scale > SEG_EQUIV_S_RTOL:
+        raise SystemExit(f"[{tag}] 세그먼트 연산자 불일치 — 라벨/표본 어긋남 의심 "
+                         f"(Δv={dv:.2e} Δs/|s|={ds / scale:.2e})")
+
+
 def select_placebo_seg(ep_tok, labels_arr, v_seg_ref, s_tok_ref, rng, tag=""):
     """위약 순열 선택 — **세그먼트 공간에서** 준직교 + dose-match (2026-07-23 교정).
 
@@ -589,8 +611,7 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
         Xs_tp = gather_phase_tok(rolls, sel["labels"], li, 1, ph, dcap)[0]
         Xf_tp = gather_phase_tok(rolls, sel["labels"], li, 0, ph, dcap)[0]
         _v_chk, _s_chk, sd_pp = fit_seg_setpoint(Xs_tp, Xf_tp)
-        assert np.allclose(_v_chk, v_seg_pp, atol=1e-8) and np.allclose(_s_chk, s_tok_pp, atol=1e-6), \
-            f"[{ph}] 위약 세그먼트 연산자 불일치 (선택 경로 vs 재fit)"
+        check_seg_equiv(_v_chk, _s_chk, v_seg_pp, s_tok_pp, f"setM_gated_placebo[{ph}]")
         pl_scale_ph = sel["scale"]
         pl_meta_ph = {"perm_id": sel["perm_id"], "cos_seg_vs_treat": sel["cos_seg"],
                       "cos_seg_max": sel["cos_max"], "pl_cos_max": PL_COS_MAX,
@@ -802,8 +823,7 @@ def main() -> None:
     Xs_tok_p = np.concatenate([r["tok"][:cap, li] for r, y in zip(rolls, pl_labels) if y == 1], axis=0)
     Xf_tok_p = np.concatenate([r["tok"][:cap, li] for r, y in zip(rolls, pl_labels) if y == 0], axis=0)
     v_chk, s_chk, seg_diag_p = fit_seg_setpoint(Xs_tok_p, Xf_tok_p)
-    assert np.allclose(v_chk, v_seg_p, atol=1e-8) and np.allclose(s_chk, s_tok_p, atol=1e-6), \
-        "위약 세그먼트 연산자 불일치 (선택 경로 vs 재fit)"
+    check_seg_equiv(v_chk, s_chk, v_seg_p, s_tok_p, "setM_permanent_placebo")
     pl_scale = pl_sel["scale"]                                   # [S] dose-match 승수
     pl_scale_fut = np.asarray([0.0, pl_scale[1], 0.0])           # future-only 위약
     pl_meta = {"perm_id": pl_sel["perm_id"], "cos_seg_vs_treat": pl_sel["cos_seg"],
