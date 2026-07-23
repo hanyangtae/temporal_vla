@@ -147,6 +147,45 @@ bread 는 200 순열 중 밴드(±25%) 통과가 **0개**여서 위약이 처치
 
 ---
 
+### 2.7 위약 dose-match 를 런타임(실패) 분포로 교정 (07-24 Codex 리뷰 + 진단)
+
+리뷰 3건 처리 결과. 앞 2건은 무해/이식성이고, 3번째가 실배포 fairness 문제였다.
+
+**① Codex "serve 가 seg_mask 를 0/1 스킵으로만 해석" → false positive.**
+serve `_apply_segment` 는 `delta=β·mask·(h·r̂−s)·r̂` 로 mask 를 **세그먼트별 float 게인 승수**로
+곱한다(mask=[2,2,2]→delta 정확히 2배, 실 NPZ dose 매칭 성립). 주석이 "1=steer,0=무개입"으로
+오해를 유발한 게 원인 — 주석 정정 + 회귀 가드 3종(`tests/test_steering_hook.py`).
+
+**② Sonnet "테스트 torch 하드임포트 → 이식성".**
+`pytest.importorskip` 으로 torch/numpy 없는 env graceful skip (numpy-only 재구현은 real
+`_apply_segment` 대신 사본을 테스트해 가드 무효화라 미채택).
+
+**③ Codex "위약 dose 표본 불일치" → 실측 확증(실배포 fairness 문제).**
+위약 게인(`dose_match_scale`)을 fit truncation window `[:cap]`(succ+fail)에서 calibration 했으나,
+런타임 개입은 rescue 대상=**실패 토큰**(cap 너머까지). 실패는 success setpoint 에서 크게 발산
+(특히 future=world-model)해 처치 dose 가 커지는데 위약(준직교)은 안 커짐 → 런타임에서 위약이
+state·future 를 **~2× under-dose**. `diag_dose_robustness.py` 실측(fail 창 dose 비율 위약/처치):
+
+| cell | state | future | action |
+|---|---|---|---|
+| drawer_right | 0.57 | **0.24** | 1.00 |
+| bread | 0.77 | **0.40** | 1.02 |
+| beer | 0.54 | 0.54 | 1.00 |
+| drawer_left | 0.86 | 0.76 | 0.99 |
+
+- **방향**: 위약이 처치보다 **약함** → 처치가 dose 우위에도 위약을 못 이긴 것이라 **기존 null 은
+  보수적**(false positive 아님). 완료된 primary(beer·mixer)·secondary(4-task) null 결론 불변.
+- **교정**: `select_placebo_seg(dose_ep_tok=…)` — dose 스케일을 **un-truncated 실패 기록**에서
+  calibration. 방향/준직교 선택은 불변(품질 무영향). 스케일 상한 2.0→3.0(실패 calib 은 더 큰
+  스케일 필요, 실측 raw ≤2.42). permanent·gated·LOO 3 경로 전부.
+- **검증**: beer 재fit 로그가 직접 실증 — 신 scale=[1.75,2.04,0.97], 실패창 dose 비율
+  scale·위약/처치 = **[0.997, 0.998, 0.999]** (구 0.54 → ~1.00). 단위검증도 0.27→1.00.
+- **상태**: fit 코드 커밋 완료. 전 placebo 재fit 진행 중(승준 HDD I/O 병목 ~4h/cell). corrected
+  placebo 는 srv48 이 나야 rollout 에 쓰므로 급하지 않음. **완료 rollout 재실행 여부는 사용자 판단**
+  (null 은 보수적이라 결론 불변 — 재실행은 confirmatory 청결도용).
+
+---
+
 ## 3. arm 정의 (9종, 실행 순서 = 사용자 확정)
 
 | # | arm | 개입 | fit-풀 |
