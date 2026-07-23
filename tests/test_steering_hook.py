@@ -9,8 +9,12 @@ from __future__ import annotations
 import os
 import sys
 
-import numpy as np
-import torch
+import pytest
+
+# numpy·torch 없으면 파일 전체 graceful skip (collection ImportError 방지). _apply_segment 는
+# 본질적으로 torch 연산이라 real serve 경로 검증에 torch 필수 — numpy-only 사본은 가드 무효화.
+np = pytest.importorskip("numpy")
+torch = pytest.importorskip("torch")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts", "serve"))
