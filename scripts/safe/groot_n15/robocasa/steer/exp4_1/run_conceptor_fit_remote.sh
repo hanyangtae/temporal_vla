@@ -21,6 +21,7 @@ for c in pq3_ppcc_bread:PickPlaceCounterToCabinet pq3_ppcc_beer:PickPlaceCounter
       --groups global --layers "$lyr" --alphas table14 --denoise per_step \
       --token-pool mean --require-capture-token-mode all_token_full \
       --quota-floor "$1" --eval-reserved "$MROOT/$cell/eval_reserved.json" \
+      --length-control \
       --out-dir "$O/$cell/conceptor_fitraw"
   }
   fit_once 0.01

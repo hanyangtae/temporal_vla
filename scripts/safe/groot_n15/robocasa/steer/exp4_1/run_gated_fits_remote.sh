@@ -39,6 +39,7 @@ for cell in "${CELLS[@]}"; do
     --manifest "$cellts" --cell "$task/$cell" --groups "$groups" --layers "$lyr" \
     --alphas table14 --denoise per_step --token-pool mean \
     --require-capture-token-mode all_token_full --quota-floor 0.01 \
+      --length-control \
     --eval-reserved "$M/$cell/eval_reserved.json" \
     --out-dir "$O/$cell/conceptor_gated" \
     || { echo "[FAIL] $cell conceptor_gated"; rc=1; }
