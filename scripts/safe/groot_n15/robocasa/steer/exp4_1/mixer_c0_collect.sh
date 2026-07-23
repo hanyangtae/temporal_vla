@@ -93,9 +93,12 @@ run_w() {
   for idx in "${!SEEDS[@]}"; do
     [ $((idx % NW)) -eq "$wid" ] || continue
     ep=$((EP0 + idx)); seed="${SEEDS[$idx]}"
-    # resume 판정: fit 은 triplet(pkl 은 직송 후 삭제)이라 mp4 기준, eval 은 json (Gate2 P2-6)
+    # resume 판정: fit 은 triplet(pkl 은 직송 후 삭제)이라 mp4 기준, 단 **배송은 재보증**
+    # (mp4 존재=수집 완료지만 ship 실패/중단 후 재실행이 배송을 건너뛰면 승준 데이터 결손 —
+    # Gate2 확인라운드 P1. ship_ep 는 rsync idempotent + pkl 잔존 시에만 삭제라 재호출 안전)
     RES_EXT=$([ "$PHASE" = fit ] && echo mp4 || echo json)
     if ls "$OUT_HOST/raw_rollouts/$TASK/$CELL_ID/task${CELL_INDEX}--ep${ep}--succ"*.$RES_EXT >/dev/null 2>&1; then
+      [ "$PHASE" = fit ] && ship_ep "$ep"
       continue
     fi
     docker exec -e MUJOCO_GL=egl -e PYTHONPATH="$PYPATH" robocasa \

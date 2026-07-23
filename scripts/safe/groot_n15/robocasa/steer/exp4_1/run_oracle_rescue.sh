@@ -160,13 +160,18 @@ else
   done
 fi
 
-# ---- 결과 요약 + 완주 게이트 (Gate2 P1-3: 결측·수집실패 시 DONE 금지 — fake-done 방지) --
-CNT_DIR="$OUT_HOST"; [ "$POOL" = all ] || CNT_DIR="$OUT_HOST/$POOL"
-s=$(find "$CNT_DIR" -name '*--succ1.json' 2>/dev/null | wc -l)
-f=$(find "$CNT_DIR" -name '*--succ0.json' 2>/dev/null | wc -l)
-echo -e "[$CELL_ID/$ARM] rescued=${s}\tfail=${f}\ttotal=$((s+f))/${#ROWS[@]}"
-if [ $((s+f)) -ne "${#ROWS[@]}" ]; then
-  echo "[$CELL_ID/$ARM] INCOMPLETE — 산출 $((s+f)) != 대상 ${#ROWS[@]} (worker nfail: $(cat "${LOGDIR}"/w*.nfail 2>/dev/null | tr '\n' ' '))"
+# ---- 결과 요약 + 완주 게이트 — 선택된 ROWS 의 행별 산출 존재로 판정 (Gate2 확인라운드
+# P1: 디렉토리 전체 카운트는 ROW_FILTER/부분 재실행에서 false INCOMPLETE·fake DONE 양쪽 가능)
+s=0; f=0; miss=0
+for i in "${!ROWS[@]}"; do
+  IFS=$'\t' read -r pool ep scen inf k <<< "${ROWS[$i]}"
+  j=$(ls "${OUT_HOST}/${pool}/raw_rollouts/${TASK}/${CELL_ID}/task${CELL_INDEX}--ep${ep}--succ"*.json 2>/dev/null | head -1)
+  if [ -z "$j" ]; then miss=$((miss+1)); continue; fi
+  case "$j" in *succ1.json) s=$((s+1)) ;; *) f=$((f+1)) ;; esac
+done
+echo -e "[$CELL_ID/$ARM] rescued=${s}\tfail=${f}\tmiss=${miss}\t/${#ROWS[@]}"
+if [ "$miss" -ne 0 ]; then
+  echo "[$CELL_ID/$ARM] INCOMPLETE — 결측 ${miss}행 (worker nfail: $(cat "${LOGDIR}"/w*.nfail 2>/dev/null | tr '\n' ' '))"
   exit 13
 fi
 touch "${LOGDIR}/EXP41_${CELL_ID}_${ARM}_${POOL}_DONE"
