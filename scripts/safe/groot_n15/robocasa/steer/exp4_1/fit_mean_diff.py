@@ -90,19 +90,36 @@ def episode_records(roll, layer_idx: int, cap: int) -> np.ndarray:
     return X[:cap]
 
 
-def episode_phase_records(roll, layer_idx: int, cap: int, ph: str) -> np.ndarray:
-    """cap 내에서 phase==ph 인 record 만 (setM_gated fit 용 — per-record·phase 정합)."""
-    X = roll["dit"][:cap, layer_idx, :]
-    mask = np.asarray([p == ph for p in roll["phases"][:cap]], dtype=bool)
-    return X[mask]
+def episode_phase_records(roll, layer_idx: int, ph: str, dwell_cap: int) -> np.ndarray:
+    """episode **전체 길이**에서 phase==ph 인 record 를 앞에서부터 dwell_cap 개까지.
+
+    길이 통제는 phase 별 dwell cap 으로 한다 (2026-07-23 사용자 지적): episode 전역 cap 을
+    먼저 걸면 cap 밖의 후반 phase(place·pull 등) record 가 통째로 소실. dwell cap 은
+    성공 episode 들의 그 phase 체류 길이 스케일 — 실패의 timeout 체류 과대가중만 제어."""
+    X = roll["dit"][:, layer_idx, :]
+    idx = [i for i, p in enumerate(roll["phases"]) if p == ph][:dwell_cap]
+    return X[idx]
 
 
-def gather_phase(rolls, labels, layer_idx, cap, cls, ph):
+def phase_dwell_caps(rolls, labels, phases) -> dict:
+    """phase 별 dwell cap = 성공 episode 체류 길이(>0)의 ceil(μ+1σ). 성공 dwell 없는
+    phase 는 미포함 (대조 불가 — 호출부에서 skip)."""
+    caps = {}
+    for ph in phases:
+        dw = [sum(1 for p in r["phases"] if p == ph)
+              for r, y in zip(rolls, labels) if y == 1]
+        dw = [d for d in dw if d > 0]
+        if dw:
+            caps[ph] = int(np.ceil(np.mean(dw) + np.std(dw)))
+    return caps
+
+
+def gather_phase(rolls, labels, layer_idx, cls, ph, dwell_cap):
     out, n_eps = [], 0
     for r, y in zip(rolls, labels):
         if y != cls:
             continue
-        recs = episode_phase_records(r, layer_idx, cap, ph)
+        recs = episode_phase_records(r, layer_idx, ph, dwell_cap)
         if len(recs):
             out.append(recs)
             n_eps += 1
@@ -257,7 +274,9 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
     for d in ("setM_gated", "setM_gated_placebo"):
         shutil.rmtree(out_cell / d, ignore_errors=True)
 
-    phases = sorted({p for r in rolls for p in r["phases"][:cap]} - TERMINAL_PHASES)
+    # phase 집합·dwell cap 은 episode 전체 길이 기준 (전역 cap 미적용 — 후반 phase 보존)
+    phases = sorted({p for r in rolls for p in r["phases"]} - TERMINAL_PHASES)
+    dwell_caps = phase_dwell_caps(rolls, labels, phases)
     # layer-sweep null 순열 (유의성 진단용, N_PERM 개)
     rng = np.random.default_rng(RNG_SEED + 777)
     null_perms = []
@@ -268,35 +287,42 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
 
     diag = []
     for ph in phases:
-        Xs, ns_eps = gather_phase(rolls, labels, li, cap, 1, ph)
-        Xf, nf_eps = gather_phase(rolls, labels, li, cap, 0, ph)
-        entry = {"phase": ph, "n_rec_succ": int(len(Xs)), "n_rec_fail": int(len(Xf)),
+        if ph not in dwell_caps:
+            diag.append({"phase": ph, "skipped_identity": True,
+                         "skip_reason": "성공 episode dwell 없음 (대조 불가)"})
+            print(f"  [{ph}] SKIP(성공 dwell 없음)", flush=True)
+            continue
+        dcap = dwell_caps[ph]
+        Xs, ns_eps = gather_phase(rolls, labels, li, 1, ph, dcap)
+        Xf, nf_eps = gather_phase(rolls, labels, li, 0, ph, dcap)
+        entry = {"phase": ph, "dwell_cap": dcap,
+                 "n_rec_succ": int(len(Xs)), "n_rec_fail": int(len(Xf)),
                  "n_eps_succ": ns_eps, "n_eps_fail": nf_eps}
         quota_ok = (len(Xs) >= GATED_MIN_REC and len(Xf) >= GATED_MIN_REC
                     and ns_eps >= GATED_MIN_EPS and nf_eps >= GATED_MIN_EPS)
         if quota_ok:
             v_ph, s_ph = mean_diff(Xs, Xf)
-            proj_f = np.concatenate([episode_phase_records(r, li, cap, ph) @ v_ph
+            proj_f = np.concatenate([episode_phase_records(r, li, ph, dcap) @ v_ph
                                      for r, y in zip(rolls, labels) if y == 0 and
-                                     len(episode_phase_records(r, li, cap, ph))])
-            proj_s = np.concatenate([episode_phase_records(r, li, cap, ph) @ v_ph
+                                     len(episode_phase_records(r, li, ph, dcap))])
+            proj_s = np.concatenate([episode_phase_records(r, li, ph, dcap) @ v_ph
                                      for r, y in zip(rolls, labels) if y == 1 and
-                                     len(episode_phase_records(r, li, cap, ph))])
+                                     len(episode_phase_records(r, li, ph, dcap))])
             a_fit = auroc(proj_f, proj_s)  # fit-표본 (참고)
             # 순열 null: 같은 phase 절차를 순열 라벨로
             null = []
             for pl in null_perms:
                 try:
-                    vp, _sp = mean_diff(gather_phase(rolls, pl, li, cap, 1, ph)[0],
-                                        gather_phase(rolls, pl, li, cap, 0, ph)[0])
+                    vp, _sp = mean_diff(gather_phase(rolls, pl, li, 1, ph, dcap)[0],
+                                        gather_phase(rolls, pl, li, 0, ph, dcap)[0])
                 except ValueError:
                     continue
-                pf = np.concatenate([episode_phase_records(r, li, cap, ph) @ vp
+                pf = np.concatenate([episode_phase_records(r, li, ph, dcap) @ vp
                                      for r, y in zip(rolls, pl) if y == 0 and
-                                     len(episode_phase_records(r, li, cap, ph))] or [np.empty(0)])
-                ps_ = np.concatenate([episode_phase_records(r, li, cap, ph) @ vp
+                                     len(episode_phase_records(r, li, ph, dcap))] or [np.empty(0)])
+                ps_ = np.concatenate([episode_phase_records(r, li, ph, dcap) @ vp
                                       for r, y in zip(rolls, pl) if y == 1 and
-                                      len(episode_phase_records(r, li, cap, ph))] or [np.empty(0)])
+                                      len(episode_phase_records(r, li, ph, dcap))] or [np.empty(0)])
                 a_n = auroc(pf, ps_)
                 if np.isfinite(a_n):
                     null.append(a_n)
@@ -307,14 +333,14 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
                           "s": s_ph, "fallback": False})
             # placebo: phase 별 독립 선택 — 준직교(|cos|≤PL_COS_MAX) 필터 후 dose-match
             ph_rec = np.concatenate(
-                [episode_phase_records(r, li, cap, ph) for r in rolls
-                 if len(episode_phase_records(r, li, cap, ph))], axis=0)
+                [episode_phase_records(r, li, ph, dcap) for r in rolls
+                 if len(episode_phase_records(r, li, ph, dcap))], axis=0)
             dose_ref = float(np.median(np.abs(ph_rec @ v_ph - s_ph)))
             cands = []
             for pi, pl in enumerate(perm_pool):
                 try:
-                    vp_c, sp_c = mean_diff(gather_phase(rolls, pl, li, cap, 1, ph)[0],
-                                           gather_phase(rolls, pl, li, cap, 0, ph)[0])
+                    vp_c, sp_c = mean_diff(gather_phase(rolls, pl, li, 1, ph, dcap)[0],
+                                           gather_phase(rolls, pl, li, 0, ph, dcap)[0])
                 except ValueError:
                     continue
                 cands.append({"perm_id": pi, "v": vp_c, "s": sp_c,
