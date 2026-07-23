@@ -56,7 +56,9 @@ SEGMENTS = (("state", 0, 1), ("future", 1, 33), ("action", 33, 49))
 MOVE_GAP_RATIO_MAX = 3.0   # 배포 게이트: |이동량| 중앙값 ≤ succ/fail 갭 × 3
 
 N_PERM = 20        # layer-sweep null 분포용 (CV 비용 때문에 소수)
-N_PERM_PL = 200    # 위약 후보 풀 (full-fit 만 — 준직교 후보 확보용)
+N_PERM_PL = 200    # 위약 후보 풀 배치 크기 (준직교 후보 확보용)
+N_PERM_PL_MAX = 1000  # 준직교 후보를 찾을 때까지 순열 풀을 확장하는 상한
+PL_SCALE_MIN, PL_SCALE_MAX = 0.5, 2.0  # 위약 dose-match 스케일 클립 (벗어나면 기록)
 PL_COS_MAX = 0.3   # 위약-처치 |cos| 상한: 정렬(처치 희석)·반정렬(반처치) 모두 불공정
 N_BOOT = 200
 RNG_SEED = 424101  # exp4-1 고정 (재현)
@@ -117,6 +119,127 @@ def fit_seg_setpoint(Xs_tok: np.ndarray, Xf_tok: np.ndarray):
                           "move_median_per_token": move,
                           "move_over_gap_median": float(np.median(ratio)),
                           "move_over_gap_max": float(np.max(ratio))}
+
+
+def seg_from_means(mu_s_tok: np.ndarray, mu_f_tok: np.ndarray):
+    """클래스 토큰평균 [T,D] 두 개 → (v_seg [S,D], s_tok [T]).
+
+    fit_seg_setpoint 와 **정의 동일** (record 수가 토큰마다 같으므로 세그먼트 평균 =
+    토큰평균의 세그먼트 내 평균). 순열 후보를 매번 concat 없이 평가하기 위한 경로.
+    """
+    v_seg = []
+    for _n, lo, hi in SEGMENTS:
+        d = mu_f_tok[lo:hi].mean(axis=0) - mu_s_tok[lo:hi].mean(axis=0)
+        nrm = float(np.linalg.norm(d))
+        if nrm == 0.0:
+            raise ValueError("μ_fail == μ_succ — 세그먼트 방향 없음")
+        v_seg.append(d / nrm)
+    v_seg = np.stack(v_seg, axis=0)
+    s_tok = np.asarray([float(mu_s_tok[t] @ v_seg[seg_of_token(t)])
+                        for t in range(mu_s_tok.shape[0])])
+    return v_seg, s_tok
+
+
+def seg_dose(X_tok: np.ndarray, v_seg: np.ndarray, s_tok: np.ndarray) -> float:
+    """세그먼트 연산자가 실제로 만드는 이동량 중앙값 median_t,n |h_t·r̂_seg(t) − s_t|."""
+    v_tok = np.stack([v_seg[seg_of_token(t)] for t in range(X_tok.shape[1])])  # [T,D]
+    proj = np.einsum("ntd,td->nt", X_tok.astype(np.float64), v_tok)
+    return float(np.median(np.abs(proj - s_tok[None, :])))
+
+
+def seg_dose_by_segment(X_tok: np.ndarray, v_seg: np.ndarray, s_tok: np.ndarray) -> np.ndarray:
+    """세그먼트별 이동량 중앙값 [S] — 위약 dose-match 스케일 산출용."""
+    v_tok = np.stack([v_seg[seg_of_token(t)] for t in range(X_tok.shape[1])])
+    move = np.abs(np.einsum("ntd,td->nt", X_tok.astype(np.float64), v_tok) - s_tok[None, :])
+    return np.asarray([float(np.median(move[:, lo:hi])) for _n, lo, hi in SEGMENTS])
+
+
+def select_placebo_seg(ep_tok, labels_arr, v_seg_ref, s_tok_ref, rng, tag=""):
+    """위약 순열 선택 — **세그먼트 공간에서** 준직교 + dose-match (2026-07-23 교정).
+
+    구 기준은 49토큰 pooled 방향/스칼라 s 로 골랐는데 배포 연산자는 세그먼트별 r̂_seg +
+    토큰별 s_t 다. 그래서 pooled cos 가 통과해도 실제 개입 축에서는 정렬이 깨졌다
+    (실측: drawer_left [-0.55,-0.46,+0.44], mixer [-0.43,-0.13,+0.35], bread action +0.41).
+
+    기준 (2026-07-23 확정):
+      ① 준직교 — max_s |cos(r̂_seg^pl, r̂_seg^treat)| ≤ PL_COS_MAX. 후보가 없으면 순열 풀을
+         N_PERM_PL 씩 N_PERM_PL_MAX 까지 확장, 그래도 없으면 max|cos| 최소 폴백(기록).
+      ② dose-match — 순열 방향은 실제 클래스 갭이 없어 이동량이 구조적으로 작다
+         (밴드 ±25% 가 아예 도달 불가한 cell 존재: 구 기준 bread in_band=0). 그래서 밴드로
+         거르는 대신 **세그먼트별 스케일** scale_s = dose_s^treat / dose_s^pl 를 연산자의
+         seg_mask 에 실어(hook 은 mask 를 float 승수로 적용) 이동량을 처치와 **정확히** 맞춘다.
+         후보는 필요한 스케일이 1에 가장 가까운 것(max_s |ln ratio| 최소)을 고르고,
+         스케일은 [PL_SCALE_MIN, PL_SCALE_MAX] 로 클립(클립 시 기록).
+
+    ep_tok: episode 별 토큰보존 record [n_i, T, D] 리스트 (labels_arr 와 같은 순서·길이).
+    """
+    keep = [i for i, X in enumerate(ep_tok) if len(X)]
+    if not keep:
+        raise ValueError("표본 있는 episode 0개")
+    sums = {i: ep_tok[i].astype(np.float64).sum(axis=0) for i in keep}
+    cnts = {i: len(ep_tok[i]) for i in keep}
+    X_all = np.concatenate([ep_tok[i] for i in keep], axis=0)
+    dose_ref = seg_dose(X_all, v_seg_ref, s_tok_ref)
+    dose_ref_seg = seg_dose_by_segment(X_all, v_seg_ref, s_tok_ref)
+
+    def build(pl):
+        si = [i for i in keep if pl[i] == 1]
+        fi = [i for i in keep if pl[i] == 0]
+        if not si or not fi:
+            raise ValueError("클래스 고갈")
+        mu_s = sum(sums[i] for i in si) / sum(cnts[i] for i in si)
+        mu_f = sum(sums[i] for i in fi) / sum(cnts[i] for i in fi)
+        return seg_from_means(mu_s, mu_f)
+
+    cands, n_drawn, ortho = [], 0, []
+    while n_drawn < N_PERM_PL_MAX:
+        for _ in range(N_PERM_PL):
+            pl = labels_arr.copy()
+            rng.shuffle(pl)
+            pl = pl.tolist()
+            n_drawn += 1
+            try:
+                v_c, s_c = build(pl)
+            except ValueError:
+                continue
+            cos_seg = [float(v_c[s] @ v_seg_ref[s]) for s in range(len(SEGMENTS))]
+            cands.append({"perm_id": n_drawn - 1, "labels": pl, "v_seg": v_c, "s_tok": s_c,
+                          "cos_seg": cos_seg, "cos_max": max(abs(c) for c in cos_seg),
+                          "dose": None})
+        ortho = [c for c in cands if c["cos_max"] <= PL_COS_MAX]
+        if ortho:
+            break
+    if not cands:
+        raise ValueError("위약 후보 0 — 전 순열에서 클래스 고갈")
+    fb = None
+    if not ortho:  # 준직교 후보 없음 — max|cos| 최소 폴백 (기록)
+        ortho = sorted(cands, key=lambda c: c["cos_max"])[:5]
+        fb = f"no-ortho(min max|cos_seg|={ortho[0]['cos_max']:.2f}, n={n_drawn})"
+    for c in ortho:  # dose 는 준직교 통과분만 계산 (비용 절감)
+        c["dose_seg"] = seg_dose_by_segment(X_all, c["v_seg"], c["s_tok"])
+        c["dose"] = seg_dose(X_all, c["v_seg"], c["s_tok"])
+        c["scale_raw"] = dose_ref_seg / np.maximum(c["dose_seg"], 1e-12)
+        c["scale_gap"] = float(np.max(np.abs(np.log(c["scale_raw"]))))
+    ortho.sort(key=lambda c: c["scale_gap"])   # 스케일 보정이 가장 적게 필요한 후보
+    sel = ortho[0]
+    scale = np.clip(sel["scale_raw"], PL_SCALE_MIN, PL_SCALE_MAX)
+    clipped = bool(np.any(scale != sel["scale_raw"]))
+    if clipped:
+        fb = (fb + " | " if fb else "") + \
+             f"scale-clip({[round(x, 2) for x in sel['scale_raw'].tolist()]})"
+    sel = {**sel, "dose_ref": dose_ref, "dose_ref_seg": dose_ref_seg.tolist(),
+           "dose_seg": sel["dose_seg"].tolist(),
+           "dose_ratio": sel["dose"] / dose_ref if dose_ref else None,
+           "scale": scale.astype(np.float64), "scale_clipped": clipped,
+           "fallback": fb, "n_drawn": n_drawn, "n_cand": len(cands),
+           "n_ortho": len([c for c in cands if c["cos_max"] <= PL_COS_MAX])}
+    print(f"  [placebo{tag}] perm={sel['perm_id']} cos_seg="
+          f"{[round(c, 2) for c in sel['cos_seg']]} dose_seg="
+          f"{[round(x, 1) for x in sel['dose_seg']]} (처치 "
+          f"{[round(x, 1) for x in dose_ref_seg.tolist()]}) → scale="
+          f"{[round(x, 2) for x in scale.tolist()]} 후보={sel['n_cand']} "
+          f"ortho={sel['n_ortho']}" + (f" FALLBACK {fb}" if fb else ""), flush=True)
+    return sel
 
 
 def auroc(pos: np.ndarray, neg: np.ndarray) -> float:
@@ -347,13 +470,8 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
     li = cap_layers.index(blk)
     labels_arr = np.asarray(labels)
 
-    # 순열 후보 풀 (phase 별 위약 선택용 — permanent 와 같은 RNG 스트림이지만 선택은 독립)
-    prng = np.random.default_rng(RNG_SEED + 555)
-    perm_pool = []
-    for _ in range(N_PERM_PL):
-        pl = labels_arr.copy()
-        prng.shuffle(pl)
-        perm_pool.append(pl.tolist())
+    # 위약 순열은 phase 마다 select_placebo_seg 가 독립 추출 (같은 RNG 시드에서 시작하되
+    # 필터가 phase 별 세그먼트 축 기준이라 선택 결과는 phase 마다 다르다)
 
     # cos 진단용 global 방향 (배포 폴백 아님 — 미달 phase 는 미등록=identity)
     z_g = np.load(next((out_cell / "setM_permanent" / "steer").glob("dit_L*/conceptors.npz")))
@@ -423,45 +541,34 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
             entry.update({"fit_auroc": a_fit, "null_mean": mu_n, "null_std": sd_n,
                           "perm_z": z, "cos_vs_global_future": float(v_ph @ v_g),
                           "s": s_ph, "fallback": False})
-            # placebo: phase 별 독립 선택 — 준직교(|cos|≤PL_COS_MAX) 필터 후 dose-match
-            ph_rec = np.concatenate(
-                [episode_phase_records(r, li, ph, dcap) for r in rolls
-                 if len(episode_phase_records(r, li, ph, dcap))], axis=0)
-            dose_ref = float(np.median(np.abs(ph_rec @ v_ph - s_ph)))
-            cands = []
-            for pi, pl in enumerate(perm_pool):
-                try:
-                    vp_c, sp_c = mean_diff(gather_phase(rolls, pl, li, 1, ph, dcap)[0],
-                                           gather_phase(rolls, pl, li, 0, ph, dcap)[0])
-                except ValueError:
-                    continue
-                cands.append({"perm_id": pi, "v": vp_c, "s": sp_c, "labels": pl,
-                              "cos": float(vp_c @ v_ph),
-                              "dose": float(np.median(np.abs(ph_rec @ vp_c - sp_c)))})
-            if not cands:
+            # 배포 연산자(세그먼트)를 먼저 만들고, 위약은 **그 공간에서** 고른다
+            # (pooled 기준으로 고르면 실제 개입 축의 준직교가 깨진다 — 07-23 교정)
+            Xs_t = gather_phase_tok(rolls, labels, li, 1, ph, dcap)[0]
+            Xf_t = gather_phase_tok(rolls, labels, li, 0, ph, dcap)[0]
+            v_seg_ph, s_tok_ph, sd_ph = fit_seg_setpoint(Xs_t, Xf_t)
+            ep_tok_ph = []
+            for r in rolls:
+                idx = [i for i, p in enumerate(r["phases"]) if p == ph][:dcap]
+                ep_tok_ph.append(r["tok"][idx, li] if idx else np.empty((0, 0, 0)))
+            try:
+                sel = select_placebo_seg(ep_tok_ph, labels_arr, v_seg_ph, s_tok_ph,
+                                         np.random.default_rng(RNG_SEED + 555), tag=f" {ph}")
+            except ValueError as e:
                 # 위약 성립 불가 → 처치도 이 phase 제외 (dose 대칭 — 미등록=identity)
                 entry.update({"skipped_identity": True,
-                              "skip_reason": "placebo 후보 0 (순열 클래스 고갈)"})
+                              "skip_reason": f"placebo 후보 0 ({e})"})
                 diag.append(entry)
                 print(f"  [{ph}] SKIP(위약 불가 → 양쪽 무개입)", flush=True)
                 continue
-            ortho = [c for c in cands if abs(c["cos"]) <= PL_COS_MAX]
-            fb = ""
-            if not ortho:
-                cands.sort(key=lambda c: abs(c["cos"]))
-                ortho = cands[:5]
-                fb = f"no-ortho(min|cos|={abs(ortho[0]['cos']):.2f})"
-            band = [c for c in ortho if 0.75 * dose_ref <= c["dose"] <= 1.25 * dose_ref]
-            pool_c = band if band else ortho
-            pool_c.sort(key=lambda c: abs(c["dose"] - dose_ref))
-            sel = pool_c[0]
-            v_pp, s_pp = sel["v"], sel["s"]
             entry.update({
                 "placebo_perm_id": sel["perm_id"],
-                "placebo_cos_vs_setm_ph": sel["cos"],
-                "placebo_dose_ratio": sel["dose"] / dose_ref if dose_ref else None,
-                "placebo_pool": {"n_cand": len(cands), "n_ortho": len(ortho),
-                                 "n_in_band": len(band), "fallback": fb or None},
+                "placebo_cos_seg_vs_treat": sel["cos_seg"],
+                "placebo_cos_seg_max": sel["cos_max"],
+                "placebo_dose_ratio": sel["dose_ratio"],
+                "placebo_pool": {"n_drawn": sel["n_drawn"], "n_cand": sel["n_cand"],
+                                 "n_ortho": sel["n_ortho"], "n_in_band": sel["n_in_band"],
+                                 "fallback": sel["fallback"],
+                                 "criterion": "segment-space: max_s|cos_seg|≤0.3 ∧ dose ±25%"},
             })
         else:
             # 미달 phase — NPZ 미생성 (미등록 → serve identity, 무개입. 사용자 결정 07-23)
@@ -470,10 +577,7 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
             print(f"  [{ph}] Nrec s/f={entry['n_rec_succ']}/{entry['n_rec_fail']} "
                   f"SKIP(quota 미달 → 무개입)", flush=True)
             continue
-        # 세그먼트 연산자 (v2): phase 표본을 토큰 보존으로 다시 모아 r̂_seg + s_t 산출
-        Xs_t = gather_phase_tok(rolls, labels, li, 1, ph, dcap)[0]
-        Xf_t = gather_phase_tok(rolls, labels, li, 0, ph, dcap)[0]
-        v_seg_ph, s_tok_ph, sd_ph = fit_seg_setpoint(Xs_t, Xf_t)
+        # (세그먼트 연산자 v_seg_ph·s_tok_ph 는 위약 선택 직전에 산출됨)
         entry["seg_diag"] = sd_ph
         entry["cos_seg_vs_permanent"] = [float(v_seg_ph[i] @ v_g_seg[i])
                                          for i in range(len(SEGMENTS))]
@@ -481,29 +585,33 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
                          meta={"operator": "setM_gated", "cell": args.cell, "phase": ph,
                                "layer": blk, "dwell_cap": dcap,
                                **{k: entry[k] for k in entry if k != "phase"}})
+        v_seg_pp, s_tok_pp = sel["v_seg"], sel["s_tok"]
         Xs_tp = gather_phase_tok(rolls, sel["labels"], li, 1, ph, dcap)[0]
         Xf_tp = gather_phase_tok(rolls, sel["labels"], li, 0, ph, dcap)[0]
-        try:
-            v_seg_pp, s_tok_pp, sd_pp = fit_seg_setpoint(Xs_tp, Xf_tp)
-        except ValueError:
-            v_seg_pp, s_tok_pp, sd_pp = v_seg_ph, s_tok_ph, sd_ph
+        _v_chk, _s_chk, sd_pp = fit_seg_setpoint(Xs_tp, Xf_tp)
+        assert np.allclose(_v_chk, v_seg_pp, atol=1e-8) and np.allclose(_s_chk, s_tok_pp, atol=1e-6), \
+            f"[{ph}] 위약 세그먼트 연산자 불일치 (선택 경로 vs 재fit)"
+        pl_scale_ph = sel["scale"]
+        pl_meta_ph = {"perm_id": sel["perm_id"], "cos_seg_vs_treat": sel["cos_seg"],
+                      "cos_seg_max": sel["cos_max"], "pl_cos_max": PL_COS_MAX,
+                      "seg_dose": sel["dose_seg"], "seg_dose_treat": sel["dose_ref_seg"],
+                      "dose_match_scale": pl_scale_ph.tolist(),
+                      "scale_clipped": sel["scale_clipped"], "fallback": sel["fallback"]}
         save_segment_npz(out_cell / "setM_gated_placebo" / ph, blk, v_seg_pp, s_tok_pp,
-                         subdir=None,
+                         subdir=None, seg_mask=pl_scale_ph,
                          meta={"operator": "setM_gated_placebo", "cell": args.cell,
-                               "phase": ph, "layer": blk, "perm_id": sel["perm_id"],
-                               "cos_seg_vs_treat": [float(v_seg_pp[i] @ v_seg_ph[i])
-                                                    for i in range(len(SEGMENTS))],
-                               "seg_diag": sd_pp})
+                               "phase": ph, "layer": blk, **pl_meta_ph, "seg_diag": sd_pp})
         fmask = np.asarray([0.0, 1.0, 0.0], dtype=np.float32)
         save_segment_npz(out_cell / "setM_gated_future_only" / ph, blk, v_seg_ph, s_tok_ph,
                          subdir=None, seg_mask=fmask,
                          meta={"operator": "setM_gated_future_only", "cell": args.cell,
                                "phase": ph, "layer": blk, "seg_diag": sd_ph})
         save_segment_npz(out_cell / "setM_gated_future_only_placebo" / ph, blk,
-                         v_seg_pp, s_tok_pp, subdir=None, seg_mask=fmask,
+                         v_seg_pp, s_tok_pp, subdir=None,
+                         seg_mask=np.asarray([0.0, pl_scale_ph[1], 0.0]),
                          meta={"operator": "setM_gated_future_only_placebo",
                                "cell": args.cell, "phase": ph, "layer": blk,
-                               "perm_id": sel["perm_id"], "seg_diag": sd_pp})
+                               **pl_meta_ph, "seg_diag": sd_pp})
         diag.append(entry)
         print(f"  [{ph}] Nrec s/f={entry['n_rec_succ']}/{entry['n_rec_fail']} "
               f"auroc={entry['fit_auroc']:.3f} z={entry['perm_z']:.2f} "
@@ -632,43 +740,35 @@ def main() -> None:
     Xf = gather(rolls, labels, li, cap, 0)
     v_full, s_full = mean_diff(Xs, Xf)
 
-    # ---- setM_pl: 위약 순열 선택 — ① |cos(r̂p, r̂setM)| ≤ PL_COS_MAX (준직교 — 정렬은
-    # 처치 희석, 반정렬은 반처치라 양쪽 다 불공정. 실측: 20개 풀은 지배 분산축을 물려받아
-    # cos ±0.6~0.8 → 후보 200개로 확장) ② 그중 dose(중앙값 |(h·r̂)−s|)-match ±25% 밴드,
-    # 밴드 내 dose-closest. 후보 부족 시 최소-|cos| 폴백(기록).
+    # ---- 세그먼트 연산자 (v2 배포본, 2026-07-23): r̂_seg [S,D] + s_t [T]
+    # 위약 선택보다 **먼저** 산출한다 — 위약의 준직교·dose 기준축이 바로 이 연산자이기 때문.
+    Xs_tok = np.concatenate([r["tok"][:cap, li] for r, y in zip(rolls, labels) if y == 1], axis=0)
+    Xf_tok = np.concatenate([r["tok"][:cap, li] for r, y in zip(rolls, labels) if y == 0], axis=0)
+    v_seg, s_tok, seg_diag = fit_seg_setpoint(Xs_tok, Xf_tok)
+    gaps_txt = " ".join(f"{d_['segment']}:{d_['gap_fail_minus_succ']:+.1f}"
+                        for d_ in seg_diag["segments"])
+    print(f"[seg] 갭 {gaps_txt} | 이동/갭 중앙 {seg_diag['move_over_gap_median']:.2f} "
+          f"최대 {seg_diag['move_over_gap_max']:.2f}", flush=True)
+    gate_ok = seg_diag["move_over_gap_median"] <= MOVE_GAP_RATIO_MAX
+
+    # ---- setM_pl: 위약 순열 선택 — **세그먼트 공간** 준직교 ∧ dose-match
+    # (구 pooled 기준의 실패는 select_placebo_seg docstring 참조)
+    ep_tok = [r["tok"][:cap, li] for r in rolls]
+    pl_sel = select_placebo_seg(ep_tok, labels_arr, v_seg, s_tok,
+                                np.random.default_rng(RNG_SEED + 555))
+    pl_labels = pl_sel["labels"]
+    v_seg_p, s_tok_p = pl_sel["v_seg"], pl_sel["s_tok"]
+
+    # 참고용 pooled(v1) 지표 — 배포 아님, 구 기준과의 대조 기록용
     all_rec = np.concatenate([episode_records(r, li, cap) for r in rolls], axis=0)
     dose_m = float(np.median(np.abs(all_rec @ v_full - s_full)))
-    prng = np.random.default_rng(RNG_SEED + 555)
-    perms = []
-    for pi in range(N_PERM_PL):
-        pl = labels_arr.copy()
-        prng.shuffle(pl)
-        pl = pl.tolist()
-        try:
-            vp, sp = mean_diff(gather(rolls, pl, li, cap, 1), gather(rolls, pl, li, cap, 0))
-        except ValueError:
-            continue
-        dp = float(np.median(np.abs(all_rec @ vp - sp)))
-        ap_ = auroc(np.asarray([x for r, y in zip(rolls, labels) if y == 0
-                                for x in episode_records(r, li, cap) @ vp]),
-                    np.asarray([x for r, y in zip(rolls, labels) if y == 1
-                                for x in episode_records(r, li, cap) @ vp]))
-        perms.append({"perm_id": pi, "v": vp, "s": sp, "dose_median": dp,
-                      "cos_setm": float(vp @ v_full), "true_label_auroc": ap_, "labels": pl})
-    ortho = [p for p in perms if abs(p["cos_setm"]) <= PL_COS_MAX]
-    fallback = ""
-    if not ortho:
-        perms.sort(key=lambda p: abs(p["cos_setm"]))
-        ortho = perms[:5]
-        fallback = f"no-ortho(min|cos|={abs(ortho[0]['cos_setm']):.2f})"
-    in_band = [p for p in ortho if 0.75 * dose_m <= p["dose_median"] <= 1.25 * dose_m]
-    pool = in_band if in_band else ortho
-    pool.sort(key=lambda p: abs(p["dose_median"] - dose_m))
-    pl_sel = pool[0]
-    print(f"[setM_pl] perm_id={pl_sel['perm_id']} cos={pl_sel['cos_setm']:+.3f} "
-          f"dose={pl_sel['dose_median']:.3f} (setM {dose_m:.3f}) "
-          f"ortho={len(ortho)}/{len(perms)} in_band={len(in_band)} "
-          f"true_label_auroc={pl_sel['true_label_auroc']:.3f} {fallback}", flush=True)
+    v_pool_p, s_pool_p = mean_diff(gather(rolls, pl_labels, li, cap, 1),
+                                   gather(rolls, pl_labels, li, cap, 0))
+    dose_pool_p = float(np.median(np.abs(all_rec @ v_pool_p - s_pool_p)))
+    auroc_pool_p = auroc(np.asarray([x for r, y in zip(rolls, labels) if y == 0
+                                     for x in episode_records(r, li, cap) @ v_pool_p]),
+                         np.asarray([x for r, y in zip(rolls, labels) if y == 1
+                                     for x in episode_records(r, li, cap) @ v_pool_p]))
 
     # ---- 저장 (full-fit)
     out_cell = args.out_root / args.cell
@@ -690,15 +790,6 @@ def main() -> None:
         "note": "s≈0 이면 제거형(I−βr̂r̂ᵀ)과 동치 (24a §4.1); seen_scene 대상은 "
                 "fit 이 같은 scene 의 다른 rollout 을 봄 — 집계에서 seen/unseen 층화",
     }
-    # ---- 세그먼트 연산자 (v2 배포본, 2026-07-23): r̂_seg [S,D] + s_t [T]
-    Xs_tok = np.concatenate([r["tok"][:cap, li] for r, y in zip(rolls, labels) if y == 1], axis=0)
-    Xf_tok = np.concatenate([r["tok"][:cap, li] for r, y in zip(rolls, labels) if y == 0], axis=0)
-    v_seg, s_tok, seg_diag = fit_seg_setpoint(Xs_tok, Xf_tok)
-    gaps_txt = " ".join(f"{d_['segment']}:{d_['gap_fail_minus_succ']:+.1f}"
-                        for d_ in seg_diag["segments"])
-    print(f"[seg] 갭 {gaps_txt} | 이동/갭 중앙 {seg_diag['move_over_gap_median']:.2f} "
-          f"최대 {seg_diag['move_over_gap_max']:.2f}", flush=True)
-    gate_ok = seg_diag["move_over_gap_median"] <= MOVE_GAP_RATIO_MAX
     seg_meta = {**base_meta, "operator": "setM_permanent", "seg_diag": seg_diag,
                 "move_gate_ok": gate_ok, "move_gap_ratio_max": MOVE_GAP_RATIO_MAX}
     save_segment_npz(out_cell / "setM_permanent", blk, v_seg, s_tok, seg_meta)
@@ -706,30 +797,38 @@ def main() -> None:
     save_segment_npz(out_cell / "setM_future_only", blk, v_seg, s_tok,
                      {**seg_meta, "operator": "setM_future_only"},
                      seg_mask=np.asarray([0.0, 1.0, 0.0], dtype=np.float32))
-    # 위약: 동결 순열 라벨로 같은 세그먼트 절차 재fit (방향·setpoint 모두 위약 공간)
-    pl_labels = pl_sel["labels"]
+    # 위약: 선택된 순열 라벨의 세그먼트 연산자 (v_seg_p·s_tok_p 는 선택 단계에서 산출됨).
+    # 이동/갭 진단만 fit_seg_setpoint 로 다시 받는다 (수치 동일 — 검증 assert).
     Xs_tok_p = np.concatenate([r["tok"][:cap, li] for r, y in zip(rolls, pl_labels) if y == 1], axis=0)
     Xf_tok_p = np.concatenate([r["tok"][:cap, li] for r, y in zip(rolls, pl_labels) if y == 0], axis=0)
-    v_seg_p, s_tok_p, seg_diag_p = fit_seg_setpoint(Xs_tok_p, Xf_tok_p)
-    cos_seg = [float(v_seg_p[i] @ v_seg[i]) for i in range(len(SEGMENTS))]
-    print(f"[seg placebo] perm={pl_sel['perm_id']} cos_seg={[round(c,2) for c in cos_seg]}", flush=True)
-    save_segment_npz(out_cell / "setM_permanent_placebo", blk, v_seg_p, s_tok_p, {
-        **seg_meta, "operator": "setM_permanent_placebo", "perm_id": pl_sel["perm_id"],
-        "cos_seg_vs_treat": cos_seg, "seg_diag": seg_diag_p})
+    v_chk, s_chk, seg_diag_p = fit_seg_setpoint(Xs_tok_p, Xf_tok_p)
+    assert np.allclose(v_chk, v_seg_p, atol=1e-8) and np.allclose(s_chk, s_tok_p, atol=1e-6), \
+        "위약 세그먼트 연산자 불일치 (선택 경로 vs 재fit)"
+    pl_scale = pl_sel["scale"]                                   # [S] dose-match 승수
+    pl_scale_fut = np.asarray([0.0, pl_scale[1], 0.0])           # future-only 위약
+    pl_meta = {"perm_id": pl_sel["perm_id"], "cos_seg_vs_treat": pl_sel["cos_seg"],
+               "cos_seg_max": pl_sel["cos_max"], "pl_cos_max": PL_COS_MAX,
+               "seg_dose": pl_sel["dose_seg"], "seg_dose_treat": pl_sel["dose_ref_seg"],
+               "dose_match_scale": pl_scale.tolist(), "scale_clipped": pl_sel["scale_clipped"],
+               "pl_pool": {"n_drawn": pl_sel["n_drawn"], "n_cand": pl_sel["n_cand"],
+                           "n_ortho": pl_sel["n_ortho"], "fallback": pl_sel["fallback"],
+                           "criterion": "segment-space: max_s|cos_seg|≤0.3, dose 는 "
+                                        "seg_mask 스케일로 처치와 정확 매칭"}}
+    save_segment_npz(out_cell / "setM_permanent_placebo", blk, v_seg_p, s_tok_p,
+                     {**seg_meta, "operator": "setM_permanent_placebo", **pl_meta,
+                      "seg_diag": seg_diag_p}, seg_mask=pl_scale)
     save_segment_npz(out_cell / "setM_future_only_placebo", blk, v_seg_p, s_tok_p,
-                     {**seg_meta, "operator": "setM_future_only_placebo",
-                      "perm_id": pl_sel["perm_id"], "cos_seg_vs_treat": cos_seg},
-                     seg_mask=np.asarray([0.0, 1.0, 0.0], dtype=np.float32))
+                     {**seg_meta, "operator": "setM_future_only_placebo", **pl_meta},
+                     seg_mask=pl_scale_fut)
 
     # ---- 구(v1) pooled 산출물은 진단 보관용으로만 유지 (배포 금지 — 공간 불일치)
     save_setpoint_npz(out_cell / "_v1_pooled_setM", blk, v_full, s_full, base_meta)
-    save_setpoint_npz(out_cell / "_v1_pooled_setM_placebo", blk, pl_sel["v"], pl_sel["s"], {
+    save_setpoint_npz(out_cell / "_v1_pooled_setM_placebo", blk, v_pool_p, s_pool_p, {
         **base_meta, "operator": "setM_permanent_placebo", "perm_id": pl_sel["perm_id"],
-        "dose_median": pl_sel["dose_median"], "true_label_auroc": pl_sel["true_label_auroc"],
-        "cos_setm": pl_sel["cos_setm"], "pl_cos_max": PL_COS_MAX,
-        "dose_ratio_vs_setm": pl_sel["dose_median"] / dose_m if dose_m else None,
-        "pl_pool": {"n_perm": N_PERM_PL, "n_ortho": len(ortho), "n_in_band": len(in_band),
-                    "fallback": fallback or None},
+        "dose_median": dose_pool_p, "true_label_auroc": auroc_pool_p,
+        "cos_setm": float(v_pool_p @ v_full), "pl_cos_max": PL_COS_MAX,
+        "dose_ratio_vs_setm": dose_pool_p / dose_m if dose_m else None,
+        "note": "pooled 지표는 진단 기록용 — 선택은 세그먼트 공간에서 수행됨",
     })
 
     # ---- fit-풀 대상 per-target LOO (setM + pairing 위약: 같은 순열 라벨에서 대상 제외)
@@ -758,17 +857,25 @@ def main() -> None:
             v_seg_pt, s_tok_pt, sd_pt = fit_seg_setpoint(Xs_p, Xf_p)
         except ValueError:
             v_seg_pt, s_tok_pt, sd_pt = v_seg_p, s_tok_p, seg_diag_p  # 클래스 고갈 → full 위약
+        # dose-match 스케일도 LOO 표본에서 재산출 (처치 LOO 대비 — full-fit 값 전용 금지)
+        X_loo = np.concatenate([r["tok"][:cap, li] for r in kr], axis=0)
+        sc_t = seg_dose_by_segment(X_loo, v_seg_t, s_tok_t)
+        sc_p = seg_dose_by_segment(X_loo, v_seg_pt, s_tok_pt)
+        pl_scale_t = np.clip(sc_t / np.maximum(sc_p, 1e-12), PL_SCALE_MIN, PL_SCALE_MAX)
+        loo_pl_meta = {"perm_id": pl_sel["perm_id"], "loo_episode_idx": t["episode_idx"],
+                       "dose_match_scale": pl_scale_t.tolist(),
+                       "cos_seg_vs_treat": [float(v_seg_pt[i] @ v_seg_t[i])
+                                            for i in range(len(SEGMENTS))],
+                       "seg_diag": sd_pt}
         save_segment_npz(out_cell / "setM_permanent_placebo_loo" / ep_ph, blk,
-                         v_seg_pt, s_tok_pt, subdir=None,
+                         v_seg_pt, s_tok_pt, subdir=None, seg_mask=pl_scale_t,
                          meta={**seg_meta, "operator": "setM_permanent_placebo_loo",
-                               "loo_episode_idx": t["episode_idx"],
-                               "perm_id": pl_sel["perm_id"], "seg_diag": sd_pt})
+                               **loo_pl_meta})
         save_segment_npz(out_cell / "setM_future_only_placebo_loo" / ep_ph, blk,
                          v_seg_pt, s_tok_pt, subdir=None,
-                         seg_mask=np.asarray([0.0, 1.0, 0.0], dtype=np.float32),
+                         seg_mask=np.asarray([0.0, pl_scale_t[1], 0.0]),
                          meta={**seg_meta, "operator": "setM_future_only_placebo_loo",
-                               "loo_episode_idx": t["episode_idx"],
-                               "perm_id": pl_sel["perm_id"], "seg_diag": sd_pt})
+                               **loo_pl_meta})
 
     (out_cell / "layer_sweep.json").write_text(json.dumps({
         "cell": args.cell, "sweep": sweep, "selected_layer": blk,
