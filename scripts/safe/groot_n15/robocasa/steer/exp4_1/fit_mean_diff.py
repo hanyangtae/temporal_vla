@@ -434,7 +434,15 @@ def save_segment_npz(out_dir: Path, layer_blk: int, v_seg: np.ndarray, s_tok: np
     """세그먼트별 방향 + 토큰별 setpoint NPZ (exp4-1 v2 규약, 2026-07-23).
 
     키: alpha0_v_seg [S,D] · alpha0_s_tok [T] · alpha0_seg_bounds [S,2] ·
-        alpha0_seg_mask [S] (1=steer, 0=무개입 — future_only arm 용).
+        alpha0_seg_mask [S].
+    ★ seg_mask 는 0/1 플래그가 아니라 **세그먼트별 게인 승수**다. serve 는
+      delta = β·mask·(h·r̂_seg − s_t)·r̂_seg 로 mask 를 float 승수로 곱한다:
+        - 처치(setM_permanent/gated): 1.0 (기본, seg_mask=None → ones)
+        - future_only: [0,1,0] (state·action 게인 0 = 스킵, future 게인 1)
+        - 위약(setM_pl): dose-match 스케일 (예: [1.95, 2.0, 1.18]). 위약 방향은 실제
+          클래스 갭이 없어 raw 이동량이 작으므로, 게인으로 세그먼트별 이동량을 처치와
+          정확히 맞춘다 (select_placebo_seg 참조). future_only 위약은 [0, scale, 0].
+      즉 mask 를 0/1 로 강제하면 위약 dose 매칭이 깨진다 — serve/fit 양쪽 게인 반의미 필수.
     serve(SetpointSteering)가 토큰 위치 → 세그먼트 → (r̂_seg, s_t) 로 적용.
     """
     d = (out_dir / subdir if subdir else out_dir) / f"dit_L{layer_blk}"

@@ -447,8 +447,10 @@ class SetpointSteering:
     def set_segment(self, spec) -> None:
         """세그먼트 연산자 활성화: spec=(v_seg [S,D], s_tok [T], bounds [S,2], mask [S]) 또는 None.
 
-        토큰 위치 t 마다 그 세그먼트의 방향으로 h'_t = h_t − β[(h_t·r̂_seg)−s_t]r̂_seg.
-        mask=0 세그먼트는 무개입(future_only arm). set_vector(구 pooled)와 상호배타.
+        토큰 위치 t 마다 그 세그먼트의 방향으로 h'_t = h_t − β·mask·[(h_t·r̂_seg)−s_t]r̂_seg.
+        ★ mask 는 0/1 플래그가 아니라 **세그먼트별 게인 승수**(_apply_segment 참조):
+          처치=1.0, future_only=0(스킵), 위약=dose-match 스케일(예 1.95). 0/1 로 강제하면
+          위약 dose 매칭이 깨진다. set_vector(구 pooled)와 상호배타.
         """
         if spec is None:
             self._seg = None
@@ -528,6 +530,8 @@ class SetpointSteering:
             mk = torch.zeros(T, device=out.device, dtype=out.dtype)
             for si, (lo, hi) in enumerate(bounds):
                 idx[int(lo):int(hi)] = si
+                # mask 는 세그먼트별 **게인 승수**(0=스킵·1=처치·위약=dose-match 스케일).
+                # 아래 delta 에 그대로 곱해진다 — bool 로 강등하면 위약 dose 매칭이 깨짐.
                 mk[int(lo):int(hi)] = float(mask[si])
             v_tok = vt[idx]                                                       # [T,D]
             self._seg_cache = cache = (v_tok, st, mk)

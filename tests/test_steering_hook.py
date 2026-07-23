@@ -15,7 +15,7 @@ import torch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts", "serve"))
 
-from steering_hooks import ConceptorSteering  # noqa: E402
+from steering_hooks import ConceptorSteering, SetpointSteering  # noqa: E402
 
 
 class _FakeDiT(torch.nn.Module):
@@ -181,3 +181,56 @@ def test_vl_pathway_rejects_layer():
     except ValueError:
         return
     raise AssertionError("pathway='vl' 에 layer 를 주면 ValueError 여야 함")
+
+
+# --------------------------------------------------------------------------- #
+# 세그먼트 setpoint(setM) — seg_mask 는 0/1 플래그가 아니라 게인 승수 (회귀 방지)
+# 배경: Codex 리뷰가 "serve 가 mask 를 0/1 스킵으로만 해석 → 위약 dose 매칭 붕괴"
+# 라고 지적(false positive). 실제로는 mask 를 float 게인으로 곱한다. 아래 테스트가
+# 그 반의미를 잠근다 — 누군가 bool 로 강등하면 즉시 실패.
+# --------------------------------------------------------------------------- #
+def _seg_op(beta: float, v_seg, s_tok, bounds, mask):
+    """모델 없이 _apply_segment 만 검증하는 최소 SetpointSteering 객체."""
+    op = object.__new__(SetpointSteering)
+    op.beta = float(beta)
+    op._seg = (np.asarray(v_seg, float), np.asarray(s_tok, float),
+               np.asarray(bounds, int), np.asarray(mask, float))
+    op._seg_cache = None
+    return op
+
+
+def _seg_fixture(T=49, D=8, seed=0):
+    rng = np.random.default_rng(seed)
+    bounds = np.array([[0, 1], [1, 33], [33, T]])
+    v = rng.normal(size=(3, D)); v /= np.linalg.norm(v, axis=1, keepdims=True)
+    s = rng.normal(size=T)
+    x = torch.as_tensor(rng.normal(size=(4, T, D)) * 5.0, dtype=torch.float64)
+    return bounds, v, s, x
+
+
+def test_seg_mask_is_gain_multiplier():
+    """mask=[2,2,2] 의 delta 는 mask=[1,1,1] 의 정확히 2배 (게인 승수)."""
+    bounds, v, s, x = _seg_fixture()
+    d1 = x - _seg_op(1.0, v, s, bounds, [1, 1, 1])._apply_segment(x)
+    d2 = x - _seg_op(1.0, v, s, bounds, [2, 2, 2])._apply_segment(x)
+    ratio = float(d2.abs().sum() / d1.abs().sum())
+    assert abs(ratio - 2.0) < 1e-6, f"seg_mask 가 게인 승수가 아님 (비율 {ratio}); bool 강등 의심"
+
+
+def test_seg_mask_zero_skips_segment():
+    """mask=[0,1,0] 은 state·action 세그먼트를 무개입, future 만 개입 (future_only arm)."""
+    bounds, v, s, x = _seg_fixture()
+    d = (x - _seg_op(1.0, v, s, bounds, [0, 1, 0])._apply_segment(x)).abs()
+    assert float(d[:, 0:1].sum()) == 0.0 and float(d[:, 33:].sum()) == 0.0
+    assert float(d[:, 1:33].sum()) > 0.0
+
+
+def test_seg_mask_fractional_gain_scales_dose():
+    """위약 dose-match: mask=scale 이면 세그먼트 이동량이 scale 배 (raw×scale=처치)."""
+    bounds, v, s, x = _seg_fixture()
+    scale = [1.951, 2.0, 1.178]
+    d_raw = (x - _seg_op(1.0, v, s, bounds, [1, 1, 1])._apply_segment(x)).abs()
+    d_scaled = (x - _seg_op(1.0, v, s, bounds, scale)._apply_segment(x)).abs()
+    for si, (lo, hi) in enumerate(bounds):
+        got = float(d_scaled[:, lo:hi].sum() / d_raw[:, lo:hi].sum())
+        assert abs(got - scale[si]) < 1e-6, f"seg {si} 이동량 배율 {got} != scale {scale[si]}"
