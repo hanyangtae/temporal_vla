@@ -136,6 +136,51 @@ record** — DiT 의 mean-diff 방향이 서브샘플 시 최대 ~30°(자연 L8
 데이터 실측 근거). conceptor 는 상대적으로 강건(자연 이득 불변)하나 비교 가능성을 위해
 동일 규약 권장. VL 연산자는 dwell 무관(서브샘플 불요).
 
+## 8. 추록 (07-23) — P1 본수집·fit·진단·자연 전이 (H2a)
+
+**P1 수집 완료** (전부 scene 100084, 캡처 ON 직수집): baseline 60ep(48 succ) → 채택 4 config
+× 48 target (fail: c1 30 / g1 18 / p1 27 / p2 30) + Track I b4_w3 2 scale × 20 (fail 12+12) +
+**B1 VL donor 4개**(`--instruction-override` 경로 — ep_meta lang 편집은 kitchen 이 lang 을
+재생성해 무효임을 실측·정정) + **B3 donor 3개**(OpenDrawer succ 3/8). **B2 폐기**(사용자 결정).
+**3분할 계약**: calibration 55 / fit 82 / locked 94 (ep 짝=fit·홀=locked 사전등록, 교집합 0
+— split_contract.json). g1 fit split 은 fail 4ep 로 얇음(parity 우연 — caveat).
+
+**P1 fit** (fit split, dwell 서브샘플 k=20, 시간분리 절단): 4 config 전부 global L8/L12/VL
+비퇴화 산출 (overlap@sel 0.57–0.90). **b4_w3(noise)는 전 층 quota-floor 퇴화로 skip** —
+무구조 noise 유도 실패는 서브샘플 규약 하에서 2차 모멘트 대조가 소멸 (구조화 섭동과의 대비
+자체가 발견; B4 는 dose-matched 대조 역할로 족함).
+
+**진단** (held = calibration split, 순열 null 100):
+
+| config (global) | effR L8/L12 | gain_held L8/L12 | 비고 |
+|---|---|---|---|
+| c1_s200 | 87 / 82 | 0.059 / 0.071 | p_up 1.0 / 0.43 |
+| g1_x015 | 120 / 73 | 0.081 / **0.098** | L12 p_up 0.02 (상한 유의) |
+| p1_d003 | 111 / 122 | 0.074 / 0.055 | |
+| p2_f040d2 | 83 / 84 | 0.068 / 0.046 | |
+
+전부 exp3 기준(0.006–0.007)의 **7–14배**, 포화 없음 — **H1(비퇴화) P1 에서 재확정**.
+
+**H2a — 자연 전이 (headline)**: fit-split 축 → **비중첩 자연 31판**(strict 12 fail + 궤적
+비중첩 succ 19)로 1회 평가:
+
+| 축 | pooled cos | AUROC(ep) | 모드별 AUROC |
+|---|---|---|---|
+| DiT L8 | 0.732 (p=.003) | **0.987** | G1 .97 / P1 .97 / P2 .87 / C1 .84 |
+| DiT L12 | 0.788 (p=.003) | **1.000** | G1 .97 / P1 .98 / P2 1.0 / C1 .89 |
+| VL | 0.818 (p=.003) | **0.961** | G1 .97 / C1 .75 |
+
+**유도실패 축으로 자연 실패를 사실상 완전 분리** — H2(전이) 분리 측면은 강하게 지지.
+모드 서열 G1 > P1 > P2 > C1(경계 유의) 유지. 남은 것은 **인과(rescue ΔSR)** — exp4-1 배선.
+
+**exp4-1 전달**: `outputs/.../exp42_induced/deliver_expB/<config>/steer/dit_L{8,12}/` (계약
+레이아웃, README 동봉). 권고 우선순위 **g1_x015** > p1_d003 > p2_f040d2 > c1_s200.
+
+**caveats (audit §5 연장)**: ① 분리 지표는 여전히 관찰 등급 — 인과는 rescue 필요 ② 자연
+eval 소표본(fail 12) + 단일 scene ③ g1 fit fail 4ep ④ dwell 은 서브샘플로 완화했으나
+phase-bin dwell-matched 정밀판은 미실행 ⑤ C1 은 전이 경계 유의 — 사용자 결정대로 유지하되
+음성 대조 성격 병기.
+
 ## 부록 — 재현 경로
 
 - runbook: `scripts/safe/groot_n15/robocasa/steer/induced/README.md`
