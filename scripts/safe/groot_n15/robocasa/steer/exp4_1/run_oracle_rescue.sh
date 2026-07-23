@@ -7,7 +7,10 @@
 #   fit-풀 전부 → kanu (SERVE_MODE=docker, 빈 GPU × serve 2)
 #
 # env:
-#   CELL_ID ARM(A0|conceptor|setM|setM_pl) T0_MANIFEST NPZ_ROOT OUT_ROOT
+#   CELL_ID ARM(A0|noise_resample|setM_permanent|setM_permanent_placebo|setM_gated|
+#            setM_gated_placebo|conceptor_permanent|conceptor_gated) T0_MANIFEST NPZ_ROOT OUT_ROOT
+#   (gated arm = client 가 t0 이후 현재 phase 를 POST — phase 별 NPZ 디렉토리 필요.
+#    noise_resample = steering 없이 t0 이후 denoise seed offset — 방향 없는 개입 대조)
 #   SERVE_MODE=host|docker  GPUS_L="2 2 2 2 2 2"  PORTS_L="8480 ... 8485"
 #   POOL=eval|fit|all(기본 eval)  ROW_FILTER(옵션: episode_idx 콤마목록 — sentinel/스모크용)
 #   BETA_CONCEPTOR=0.1  BETA_SETM=1.0  STEER_EXTRA(옵션)
@@ -50,14 +53,18 @@ fi
 echo "[$CELL_ID/$ARM] rows=${#ROWS[@]} pool=$POOL mode=$SERVE_MODE gpus=${GPUS[*]} ports=${PORTS[*]}"
 
 # ---- serve ---------------------------------------------------------------------------
-serve_steer_flags() {  # $1 = NPZ base 디렉토리 (steer/dit_L*/conceptors.npz 포함)
-  local base="$1" op="$2" beta="$3" lyr serve_base
-  lyr=$(basename "$(ls -d "$base"/steer/dit_L* 2>/dev/null | head -1)" | sed 's/dit_L//')
-  [ -n "$lyr" ] || { echo "[$CELL_ID/$ARM] NPZ 없음: $base/steer/dit_L*" >&2; return 1; }
+serve_steer_flags() {  # $1 = NPZ base (하위 = phase 디렉토리들: permanent='steer' 1개, gated=phase명들)
+  local base="$1" op="$2" beta="$3" lyr serve_base phases ph
+  phases=""
+  for ph in "$base"/*/; do
+    [ -d "$ph" ] && ls "$ph"dit_L* >/dev/null 2>&1 && phases="${phases:+$phases,}$(basename "$ph")"
+  done
+  [ -n "$phases" ] || { echo "[$CELL_ID/$ARM] NPZ phase 디렉토리 없음: $base" >&2; return 1; }
+  lyr=$(basename "$(ls -d "$base/${phases%%,*}"/dit_L* 2>/dev/null | head -1)" | sed 's/dit_L//')
   # docker 모드 serve 는 컨테이너 안 — repo mount(/temporal_vla) 경로로 번역 (Gate2 P1-1)
   serve_base="$base"
   [ "$SERVE_MODE" = host ] || serve_base="/temporal_vla${base#"$REPO_ROOT"}"
-  echo "--steering-phase-npz-base $serve_base --steering-phases steer --steering-layers $lyr --steering-op $op --steering-beta $beta"
+  echo "--steering-phase-npz-base $serve_base --steering-phases $phases --steering-layers $lyr --steering-op $op --steering-beta $beta"
 }
 start_serves() {  # $@ = 추가 serve 플래그
   local i
@@ -106,7 +113,12 @@ run_row() {  # port pool ep scen inf k
   if ls "${OUT_HOST}/${pool}/raw_rollouts/${TASK}/${CELL_ID}/task${CELL_INDEX}--ep${ep}--succ"*.json >/dev/null 2>&1; then
     return 0  # idempotent resume
   fi
-  [ "$ARM" != "A0" ] && latch="--steer-from-record $k"
+  case "$ARM" in
+    A0) latch="" ;;
+    noise_resample) latch="--reseed-from-record $k" ;;
+    *_gated|*_gated_placebo) latch="--steer-from-record $k --steer-phase-mode current" ;;
+    *) latch="--steer-from-record $k" ;;
+  esac
   docker exec -e MUJOCO_GL=egl -e PYTHONPATH="$PYPATH" robocasa \
     python /temporal_vla/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py \
     --vla-server "http://127.0.0.1:${port}" --task "$TASK" --env-name "$ENVN" \
@@ -121,18 +133,22 @@ run_row() {  # port pool ep scen inf k
   return "$rc"
 }
 
-if [ "$POOL" = "all" ] && { [ "$ARM" = "setM" ] || [ "$ARM" = "setM_pl" ]; }; then
-  # setM 계열은 fit-풀이 LOO NPZ 라 풀 혼합 실행 금지 — eval/fit 별도 호출
-  echo "[$CELL_ID/$ARM] POOL=all 금지 (LOO 분리) — POOL=eval 과 POOL=fit 으로 나눠 실행"; exit 2
+if [ "$POOL" != "eval" ] && { [[ "$ARM" == setM_permanent* ]]; }; then
+  [ "$POOL" = "fit" ] || { echo "[$CELL_ID/$ARM] POOL=all 금지 (LOO 분리)"; exit 2; }
 fi
-if [ "$ARM" = "A0" ] || [ "$ARM" = "conceptor" ] || [ "$POOL" = "eval" ]; then
-  # 공유 NPZ 1개 — serve 일괄 기동 후 worker striping
+if [ "$POOL" = "fit" ] && { [[ "$ARM" == *_gated* ]]; }; then
+  echo "[$CELL_ID/$ARM] gated arm 의 fit-풀 LOO 미구현 — eval-풀만 실행 가능"; exit 2
+fi
+if [ "$ARM" = "A0" ] || [ "$ARM" = "noise_resample" ] || [[ "$ARM" == conceptor* ]] \
+   || [[ "$ARM" == *_gated* ]] || [ "$POOL" = "eval" ]; then
+  # 공유 NPZ 1개(또는 무 NPZ) — serve 일괄 기동 후 worker striping
   FLAGS=""
   case "$ARM" in
-    A0) FLAGS="" ;;
-    conceptor) FLAGS="$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/conceptor" conceptor "$BETA_CONCEPTOR") --steering-denoise ${DENOISE_CONCEPTOR:-per_step}" || exit 12 ;;
-    setM) FLAGS=$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/setM" setpoint "$BETA_SETM") || exit 12 ;;
-    setM_pl) FLAGS=$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/setM_pl" setpoint "$BETA_SETM") || exit 12 ;;
+    A0|noise_resample) FLAGS="" ;;
+    conceptor_permanent|conceptor_gated)
+      FLAGS="$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/$ARM" conceptor "$BETA_CONCEPTOR") --steering-denoise ${DENOISE_CONCEPTOR:-per_step}" || exit 12 ;;
+    setM_permanent|setM_permanent_placebo|setM_gated|setM_gated_placebo)
+      FLAGS=$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/$ARM" setpoint "$BETA_SETM") || exit 12 ;;
     *) echo "unknown ARM: $ARM"; exit 2 ;;
   esac
   start_serves $FLAGS
@@ -149,8 +165,8 @@ if [ "$ARM" = "A0" ] || [ "$ARM" = "conceptor" ] || [ "$POOL" = "eval" ]; then
   wait
   kill_serves
 else
-  # fit-풀 setM/setM_pl — per-target LOO NPZ 로 ep 당 serve 재기동 (worker 0 단독)
-  LOO_DIR=$([ "$ARM" = setM ] && echo setM_loo || echo setM_pl_loo)
+  # fit-풀 setM_permanent 계열 — per-target LOO NPZ 로 ep 당 serve 재기동 (worker 0 단독)
+  LOO_DIR=$([ "$ARM" = setM_permanent ] && echo setM_permanent_loo || echo setM_permanent_placebo_loo)
   for i in "${!ROWS[@]}"; do
     IFS=$'\t' read -r pool ep scen inf k <<< "${ROWS[$i]}"
     FLAGS=$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/$LOO_DIR/ep$ep" setpoint "$BETA_SETM") || exit 12

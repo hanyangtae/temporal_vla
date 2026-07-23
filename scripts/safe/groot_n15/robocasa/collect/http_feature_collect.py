@@ -234,12 +234,15 @@ class N15LerobotHttpFeatureClient(VLAClient):
         if self.task_description is None:
             self.task_description = instruction
         # 캡처 모드는 구 배선(len(records)) 그대로, no-features 는 n_calls 로 동일 산법.
-        call_inference_seed = (
-            None
-            if self.inference_seed is None
-            else self.inference_seed
-            + (self.n_calls if self.no_features else len(self.records))
-        )
+        calls_done = self.n_calls if self.no_features else len(self.records)
+        seed_base = self.inference_seed
+        # noise_resample arm (exp4-1): K번째 record 부터 offset 가산 → denoise noise 재샘플
+        # (steering 없음 — 방향 없는 개입 대조. offset 고정이라 결정적.)
+        if (seed_base is not None
+                and getattr(self, "reseed_from_call", None) is not None
+                and calls_done >= self.reseed_from_call):
+            seed_base += self.reseed_offset
+        call_inference_seed = None if seed_base is None else seed_base + calls_done
         if self.no_features:
             # /act 는 groot 16-큐 팝(16콜당 1추론)이라 캡처 경로와 실행 단위가 어긋남
             # (Gate 2 치명#1) — skip_features 로 /act_with_features 의 chunk 추론 경로를
@@ -508,10 +511,36 @@ def parse_args() -> argparse.Namespace:
         metavar="K",
         help=(
             "exp4-1 oracle latch: inference 직전 record 수(progress_before)>=K 이면 "
-            "phase 'steer', 아니면 'off' 를 /steering_phase 로 POST — K번째 record 부터 "
-            "episode 끝까지 steering ON (serve 는 phase 디렉토리 'steer' 하나 등록, "
-            "'off' 는 미등록→identity). --gated-steering 과 상호배타."
+            "steering ON POST, 아니면 'off' — K번째 record 부터 episode 끝까지. "
+            "POST 값은 --steer-phase-mode 참조. --gated-steering 과 상호배타."
         ),
+    )
+    parser.add_argument(
+        "--steer-phase-mode",
+        choices=("global", "current"),
+        default="global",
+        help=(
+            "latch ON 시 POST 할 phase: global='steer' 고정(permanent arm — serve 는 "
+            "phase 디렉토리 steer 하나) | current=라벨러의 현재 phase 명(gated arm — "
+            "serve 는 phase 별 NPZ 등록, 미등록 phase 는 identity)."
+        ),
+    )
+    parser.add_argument(
+        "--reseed-from-record",
+        type=int,
+        default=None,
+        metavar="K",
+        help=(
+            "noise_resample arm: K번째 record 부터 inference_seed 에 --reseed-offset 을 "
+            "더해 denoise noise 를 재샘플 (steering 없음 — 방향 없는 개입 대조). "
+            "결정적(offset 고정)."
+        ),
+    )
+    parser.add_argument(
+        "--reseed-offset",
+        type=int,
+        default=500000,
+        help="--reseed-from-record 의 seed offset (사전등록 고정값)",
     )
     parser.add_argument(
         "--n_action_steps",
@@ -603,6 +632,12 @@ def run() -> dict[str, Any]:
         raise ValueError("--steer-from-record 와 --gated-steering 은 상호배타 (latch vs phase-gated)")
     if steer_from_record is not None and steer_from_record < 0:
         raise ValueError(f"--steer-from-record 는 음수 불가: {steer_from_record}")
+    reseed_from_record = getattr(args, "reseed_from_record", None)
+    if reseed_from_record is not None and steer_from_record is not None:
+        raise ValueError("--reseed-from-record 는 steering latch 와 상호배타 (noise_resample 단독 arm)")
+    if reseed_from_record is not None:
+        policy.reseed_from_call = int(reseed_from_record)
+        policy.reseed_offset = int(getattr(args, "reseed_offset", 500000))
     if args.wait_ready:
         policy.wait_until_ready(max_wait=args.timeout)
     serve_identity = _get_serve_identity(args.vla_server)
@@ -698,9 +733,15 @@ def run() -> dict[str, Any]:
                 if getattr(args, "gated_steering", False):
                     gated_now = _post_steering_phase(args.vla_server, phase)
                 elif steer_from_record is not None:
-                    # exp4-1 latch: K번째 record 부터 끝까지 'steer' (record r ⇔ env-step
-                    # [nas·r, nas·r+nas)). labeler phase 는 feature_phases 라벨용으로 유지.
-                    want = "steer" if progress_before >= steer_from_record else "off"
+                    # exp4-1 latch: K번째 record 부터 끝까지 ON (record r ⇔ env-step
+                    # [nas·r, nas·r+nas)). global='steer' 고정 / current=라벨러 현재 phase
+                    # (gated arm — 미등록 phase 는 serve identity 폴백).
+                    if progress_before < steer_from_record:
+                        want = "off"
+                    elif getattr(args, "steer_phase_mode", "global") == "current":
+                        want = phase
+                    else:
+                        want = "steer"
                     gated_now = _post_steering_phase(args.vla_server, want)
                 official_action, _ = policy.get_action(obs)
                 progress_after = policy.n_calls if no_features else len(policy.records)
@@ -801,6 +842,10 @@ def run() -> dict[str, Any]:
                     "phase_gated_flags": phase_gated_flags,
                     # exp4-1 latch 감사: sum(flags)==n_inferences-K && first_true==K 대조용
                     "steer_from_record": steer_from_record,
+                    "steer_phase_mode": getattr(args, "steer_phase_mode", "global"),
+                    "reseed_from_record": reseed_from_record,
+                    "reseed_offset": (int(getattr(args, "reseed_offset", 500000))
+                                      if reseed_from_record is not None else None),
                     **serve_identity,
                     "ep_meta": captured_ep_meta,
                     **extra_metadata,

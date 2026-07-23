@@ -90,6 +90,25 @@ def episode_records(roll, layer_idx: int, cap: int) -> np.ndarray:
     return X[:cap]
 
 
+def episode_phase_records(roll, layer_idx: int, cap: int, ph: str) -> np.ndarray:
+    """cap 내에서 phase==ph 인 record 만 (setM_gated fit 용 — per-record·phase 정합)."""
+    X = roll["dit"][:cap, layer_idx, :]
+    mask = np.asarray([p == ph for p in roll["phases"][:cap]], dtype=bool)
+    return X[mask]
+
+
+def gather_phase(rolls, labels, layer_idx, cap, cls, ph):
+    out, n_eps = [], 0
+    for r, y in zip(rolls, labels):
+        if y != cls:
+            continue
+        recs = episode_phase_records(r, layer_idx, cap, ph)
+        if len(recs):
+            out.append(recs)
+            n_eps += 1
+    return (np.concatenate(out, axis=0) if out else np.empty((0, 0))), n_eps
+
+
 def gather(rolls, labels, layer_idx, cap, cls):
     out = []
     for r, y in zip(rolls, labels):
@@ -191,6 +210,129 @@ def save_setpoint_npz(out_dir: Path, layer_blk: int, v: np.ndarray, s: float, me
 
 
 # ---------------------------------------------------------------------------- main
+GATED_MIN_REC = 50     # phase 등록 최소 record/클래스 — 미달 phase 는 global 폴백
+GATED_MIN_EPS = 3
+TERMINAL_PHASES = {"open-done", "insert-settle-done"}  # terminal 동치 phase 제외
+
+
+def fit_gated(args, rolls, labels, out_cell: Path) -> None:
+    """setM_gated / setM_gated_placebo — permanent fit 산출물(선정 layer·동결 순열) 전제.
+
+    phase 별 (r̂_ph, s_ph) fit + CV AUROC·순열 null z 유의성 진단 (사용자: 유의성부터 판단).
+    quota(record ≥GATED_MIN_REC/클래스·episode ≥GATED_MIN_EPS) 미달 phase 는 **global 연산자
+    폴백** (identity 구멍 대신 dose 연속성 유지 — metadata 기록). placebo 는 permanent 와
+    같은 동결 순열(perm_id, RNG 재생성)로 phase 별 재fit — pairing 유지.
+    """
+    sweep_p = out_cell / "layer_sweep.json"
+    meta_perm = json.loads(
+        next((out_cell / "setM_permanent" / "steer").glob("dit_L*/metadata.json")).read_text())
+    pl_meta = json.loads(
+        next((out_cell / "setM_permanent_placebo" / "steer").glob("dit_L*/metadata.json")).read_text())
+    blk = int(meta_perm["layer"])
+    cap = int(meta_perm["cap_records"])
+    cap_layers = [int(x) for x in rolls[0]["capture_layers"]]
+    li = cap_layers.index(blk)
+    labels_arr = np.asarray(labels)
+
+    # 동결 순열 재생성 (permanent placebo 와 동일 RNG 스트림 — perm_id 로 특정)
+    prng = np.random.default_rng(RNG_SEED + 555)
+    perm_labels = None
+    for pi in range(N_PERM_PL):
+        pl = labels_arr.copy()
+        prng.shuffle(pl)
+        if pi == int(pl_meta["perm_id"]):
+            perm_labels = pl.tolist()
+            break
+    assert perm_labels is not None, "동결 순열 재생성 실패"
+
+    # 전역(global) 폴백 연산자 = permanent NPZ
+    z_g = np.load(next((out_cell / "setM_permanent" / "steer").glob("dit_L*/conceptors.npz")))
+    v_g, s_g = z_g["alpha0_v_steer"].astype(np.float64), float(z_g["alpha0_s"])
+    z_gp = np.load(next((out_cell / "setM_permanent_placebo" / "steer").glob("dit_L*/conceptors.npz")))
+    v_gp, s_gp = z_gp["alpha0_v_steer"].astype(np.float64), float(z_gp["alpha0_s"])
+
+    phases = sorted({p for r in rolls for p in r["phases"][:cap]} - TERMINAL_PHASES)
+    # layer-sweep null 순열 (유의성 진단용, N_PERM 개)
+    rng = np.random.default_rng(RNG_SEED + 777)
+    null_perms = []
+    for _ in range(N_PERM):
+        pl = labels_arr.copy()
+        rng.shuffle(pl)
+        null_perms.append(pl.tolist())
+
+    diag = []
+    for ph in phases:
+        Xs, ns_eps = gather_phase(rolls, labels, li, cap, 1, ph)
+        Xf, nf_eps = gather_phase(rolls, labels, li, cap, 0, ph)
+        entry = {"phase": ph, "n_rec_succ": int(len(Xs)), "n_rec_fail": int(len(Xf)),
+                 "n_eps_succ": ns_eps, "n_eps_fail": nf_eps}
+        quota_ok = (len(Xs) >= GATED_MIN_REC and len(Xf) >= GATED_MIN_REC
+                    and ns_eps >= GATED_MIN_EPS and nf_eps >= GATED_MIN_EPS)
+        if quota_ok:
+            v_ph, s_ph = mean_diff(Xs, Xf)
+            proj_f = np.concatenate([episode_phase_records(r, li, cap, ph) @ v_ph
+                                     for r, y in zip(rolls, labels) if y == 0 and
+                                     len(episode_phase_records(r, li, cap, ph))])
+            proj_s = np.concatenate([episode_phase_records(r, li, cap, ph) @ v_ph
+                                     for r, y in zip(rolls, labels) if y == 1 and
+                                     len(episode_phase_records(r, li, cap, ph))])
+            a_fit = auroc(proj_f, proj_s)  # fit-표본 (참고)
+            # 순열 null: 같은 phase 절차를 순열 라벨로
+            null = []
+            for pl in null_perms:
+                try:
+                    vp, _sp = mean_diff(gather_phase(rolls, pl, li, cap, 1, ph)[0],
+                                        gather_phase(rolls, pl, li, cap, 0, ph)[0])
+                except ValueError:
+                    continue
+                pf = np.concatenate([episode_phase_records(r, li, cap, ph) @ vp
+                                     for r, y in zip(rolls, pl) if y == 0 and
+                                     len(episode_phase_records(r, li, cap, ph))] or [np.empty(0)])
+                ps_ = np.concatenate([episode_phase_records(r, li, cap, ph) @ vp
+                                      for r, y in zip(rolls, pl) if y == 1 and
+                                      len(episode_phase_records(r, li, cap, ph))] or [np.empty(0)])
+                a_n = auroc(pf, ps_)
+                if np.isfinite(a_n):
+                    null.append(a_n)
+            mu_n, sd_n = (float(np.mean(null)), float(np.std(null))) if null else (float("nan"),) * 2
+            z = (a_fit - mu_n) / sd_n if null and sd_n > 1e-9 else float("nan")
+            entry.update({"fit_auroc": a_fit, "null_mean": mu_n, "null_std": sd_n,
+                          "perm_z": z, "cos_vs_global": float(v_ph @ v_g),
+                          "s": s_ph, "fallback": False})
+            # placebo: 동결 순열로 phase 재fit (클래스 고갈 시 global placebo 폴백)
+            try:
+                v_pp, s_pp = mean_diff(gather_phase(rolls, perm_labels, li, cap, 1, ph)[0],
+                                       gather_phase(rolls, perm_labels, li, cap, 0, ph)[0])
+                pl_fb = False
+            except ValueError:
+                v_pp, s_pp, pl_fb = v_gp, s_gp, True
+            entry["placebo_cos_vs_setm_ph"] = float(v_pp @ v_ph)
+            entry["placebo_fallback"] = pl_fb
+        else:
+            v_ph, s_ph, v_pp, s_pp = v_g, s_g, v_gp, s_gp
+            entry.update({"fallback": True, "placebo_fallback": True})
+        save_setpoint_npz(out_cell / "setM_gated" / ph, blk, v_ph, s_ph, {
+            "operator": "setM_gated", "cell": args.cell, "phase": ph, "layer": blk,
+            "cap_records": cap, **{k: entry[k] for k in entry if k != "phase"},
+        })
+        save_setpoint_npz(out_cell / "setM_gated_placebo" / ph, blk, v_pp, s_pp, {
+            "operator": "setM_gated_placebo", "cell": args.cell, "phase": ph, "layer": blk,
+            "perm_id": pl_meta["perm_id"], "fallback": entry.get("placebo_fallback"),
+        })
+        diag.append(entry)
+        tag = "FALLBACK(global)" if entry.get("fallback") else \
+            f"auroc={entry['fit_auroc']:.3f} z={entry['perm_z']:.2f} cos_g={entry['cos_vs_global']:+.2f}"
+        print(f"  [{ph}] Nrec s/f={entry['n_rec_succ']}/{entry['n_rec_fail']} {tag}", flush=True)
+
+    (out_cell / "setM_gated_diag.json").write_text(json.dumps({
+        "cell": args.cell, "layer": blk, "cap_records": cap, "phases": diag,
+        "quota": {"min_rec": GATED_MIN_REC, "min_eps": GATED_MIN_EPS},
+        "note": "유의성(perm_z)은 fit-표본 AUROC 기준 진단 — phase 별 표본이 작아 CV 생략, "
+                "배포 게이트는 quota(폴백)로만. placebo 는 permanent 동결 순열 재사용(pairing).",
+    }, indent=2, ensure_ascii=False))
+    print(f"[gated done] {out_cell}/setM_gated (+placebo) phases={len(phases)}", flush=True)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--manifest", type=Path, required=True, help="fit30 tsv (pkl\\tlabel\\tscene)")
@@ -200,12 +342,17 @@ def main() -> None:
     ap.add_argument("--out-root", type=Path, required=True)
     ap.add_argument("--layers", default=None,
                     help="sweep 할 DiT 물리 layer 콤마목록 (기본: capture 전부)")
+    ap.add_argument("--gated", action="store_true",
+                    help="setM_gated/placebo 만 fit (permanent 산출물 전제 — 같은 layer·동결 순열)")
     args = ap.parse_args()
 
     rng = np.random.default_rng(RNG_SEED)
     rolls = load_cell_rolls(args.manifest, args.cell)
-    targets = load_targets(args.targets, args.cell)
     labels = [r["success"] for r in rolls]
+    if args.gated:
+        fit_gated(args, rolls, labels, args.out_root / args.cell)
+        return
+    targets = load_targets(args.targets, args.cell)
     cap_layers = [int(x) for x in rolls[0]["capture_layers"]]
     layer_blks = ([int(x) for x in args.layers.split(",")] if args.layers else cap_layers)
     for b in layer_blks:
@@ -343,7 +490,7 @@ def main() -> None:
     manifest_sha = hashlib.sha256(args.manifest.read_bytes()).hexdigest()[:12]
     targets_sha = hashlib.sha256(args.targets.read_bytes()).hexdigest()[:12]
     base_meta = {
-        "operator": "setM", "cell": args.cell, "layer": blk, "cap_records": cap,
+        "operator": "setM_permanent", "cell": args.cell, "layer": blk, "cap_records": cap,
         "cap_mean_alt": cap_mean, "manifest_sha": manifest_sha, "targets_sha": targets_sha,
         "n_rollouts": len(rolls), "n_succ": int(n_s), "n_fail": int(len(rolls) - n_s),
         "s": s_full, "dose_median_fitset": dose_m,
@@ -354,9 +501,9 @@ def main() -> None:
         "note": "s≈0 이면 제거형(I−βr̂r̂ᵀ)과 동치 (24a §4.1); seen_scene 대상은 "
                 "fit 이 같은 scene 의 다른 rollout 을 봄 — 집계에서 seen/unseen 층화",
     }
-    save_setpoint_npz(out_cell / "setM", blk, v_full, s_full, base_meta)
-    save_setpoint_npz(out_cell / "setM_pl", blk, pl_sel["v"], pl_sel["s"], {
-        **base_meta, "operator": "setM_pl", "perm_id": pl_sel["perm_id"],
+    save_setpoint_npz(out_cell / "setM_permanent", blk, v_full, s_full, base_meta)
+    save_setpoint_npz(out_cell / "setM_permanent_placebo", blk, pl_sel["v"], pl_sel["s"], {
+        **base_meta, "operator": "setM_permanent_placebo", "perm_id": pl_sel["perm_id"],
         "dose_median": pl_sel["dose_median"], "true_label_auroc": pl_sel["true_label_auroc"],
         "cos_setm": pl_sel["cos_setm"], "pl_cos_max": PL_COS_MAX,
         "dose_ratio_vs_setm": pl_sel["dose_median"] / dose_m if dose_m else None,
@@ -370,8 +517,8 @@ def main() -> None:
         kl = [labels[i] for i in keep]
         kr = [rolls[i] for i in keep]
         v_t, s_t = mean_diff(gather(kr, kl, li, cap, 1), gather(kr, kl, li, cap, 0))
-        save_setpoint_npz(out_cell / "setM_loo" / f"ep{t['episode_idx']}", blk, v_t, s_t, {
-            **base_meta, "operator": "setM_loo", "loo_episode_idx": t["episode_idx"],
+        save_setpoint_npz(out_cell / "setM_permanent_loo" / f"ep{t['episode_idx']}", blk, v_t, s_t, {
+            **base_meta, "operator": "setM_permanent_loo", "loo_episode_idx": t["episode_idx"],
             "s": s_t,
         })
         pl_l = [pl_sel["labels"][i] for i in keep]
@@ -379,8 +526,8 @@ def main() -> None:
             v_pt, s_pt = mean_diff(gather(kr, pl_l, li, cap, 1), gather(kr, pl_l, li, cap, 0))
         except ValueError:
             v_pt, s_pt = pl_sel["v"], pl_sel["s"]  # 순열 클래스 고갈 시 full 위약 재사용
-        save_setpoint_npz(out_cell / "setM_pl_loo" / f"ep{t['episode_idx']}", blk, v_pt, s_pt, {
-            **base_meta, "operator": "setM_pl_loo", "loo_episode_idx": t["episode_idx"],
+        save_setpoint_npz(out_cell / "setM_permanent_placebo_loo" / f"ep{t['episode_idx']}", blk, v_pt, s_pt, {
+            **base_meta, "operator": "setM_permanent_placebo_loo", "loo_episode_idx": t["episode_idx"],
             "perm_id": pl_sel["perm_id"], "s": s_pt,
         })
 

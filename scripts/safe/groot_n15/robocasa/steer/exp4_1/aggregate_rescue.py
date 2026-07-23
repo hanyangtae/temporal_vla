@@ -109,7 +109,7 @@ def main() -> None:
     # seen/unseen 층화 플래그 (setM metadata)
     seen_flag = {}
     if args.setm_npz_root:
-        for meta_p in args.setm_npz_root.glob("*/setM/steer/dit_L*/metadata.json"):
+        for meta_p in args.setm_npz_root.glob("*/setM_permanent/steer/dit_L*/metadata.json"):
             meta = json.loads(meta_p.read_text())
             for t in meta.get("eval_targets", []):
                 seen_flag[(meta["cell"], int(t["episode_idx"]), int(t["inference_seed"]))] = \

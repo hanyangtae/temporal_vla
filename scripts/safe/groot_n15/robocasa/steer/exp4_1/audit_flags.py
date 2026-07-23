@@ -53,6 +53,20 @@ def audit_one(sidecar: Path, t0map: dict, arm: str) -> tuple[bool, str]:
     k = int(k_str)
     if d.get("steer_from_record") != k:
         return False, f"steer_from_record {d.get('steer_from_record')} != manifest K {k}"
+    if d.get("steer_phase_mode") == "current":
+        # gated arm: K 이후 flag[i] == (그 시점 phase 가 serve 에 등록됨) — 미등록 phase 는
+        # identity 폴백이 정상. 불변식: K 전 전부 False + K 이후는 등록 phase 집합과 일치.
+        if any(flags[:k]):
+            return False, f"gated: K={k} 이전에 True 존재"
+        reg = set((d.get("serve_steering") or {}).get("phases") or [])
+        ph = d.get("feature_phases") or []
+        if len(ph) == n_inf and reg:
+            bad = [i for i in range(k, n_inf) if flags[i] != (ph[i] in reg)]
+            if bad:
+                return False, f"gated: flag≠(phase∈등록집합) {len(bad)}건 (첫 idx {bad[0]})"
+        elif not any(flags[k:]) and n_inf > k:
+            return False, "gated: K 이후 전부 False (등록 phase 미통과 의심)"
+        return True, "ok(gated)"
     want_true = max(0, n_inf - k)
     if sum(flags) != want_true:
         return False, f"sum(flags)={sum(flags)} != n_inf−K={want_true}"
