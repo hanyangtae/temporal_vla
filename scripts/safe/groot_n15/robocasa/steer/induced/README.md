@@ -71,3 +71,8 @@ docker exec lerobot python .../induced/bridge_axis_check.py --induced-manifest .
 - **VL self-donor 는 bitwise 불가**: VL 캡처는 fp16 저장인데 원값이 fp32 (DiT 는 bf16→fp16
   무손실이라 S2 는 bitwise). S3 실측 record0 편차 9.77e-04 → 판정 기준 = 첫 편차 ≤ 5e-3
   (`smoke_judge csv-first-diff`). B1 해석에는 무영향 (의도 주입이 거시적).
+- **bash 특수변수 `GROUPS` 대입 금지**: bash 내장(사용자 gid 배열)이라 대입이 조용히 무시되고
+  `$GROUPS`→gid(예: 1004)로 확장 — fit `--groups` 가 통째로 오염된 실사고(07-23). 러너
+  변수명은 FIT_GROUPS 처럼 비예약어로. (UID/EUID/HOSTNAME/RANDOM/SECONDS 등도 동일 주의)
+- **kitchen lang 은 ep_meta 소비가 아니라 task 재생성** — 타 instruction 주입은 collector
+  `--instruction-override` 로 (B1 실사고 07-23).
