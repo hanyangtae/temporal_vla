@@ -22,28 +22,13 @@ MAIN_HOST="$(cd -- "${WT_HOST}/../../.." && pwd)"
 WT_CONT="/temporal_vla/.claude/worktrees/exp4-2-induced-failures"
 PYPATH="/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite:/temporal_vla"
 B1="${MAIN_HOST}/outputs/eval/robocasa/groot_n15/exp42_induced/b1_donors"
-BASE_SIDE="${MAIN_HOST}/outputs/eval/robocasa/groot_n15/exp42_induced/p0/baseline/raw_rollouts/${TASK}/ppcc_bread/task5--ep2--succ1.json"
 mkdir -p "$B1"
 
 to_cont() { echo "${1/#${MAIN_HOST}//temporal_vla}"; }
 
-# 1) ep_meta manifest 2종 (lang 만 교체 — scene 기하 동일).
-#    주의: collector 가 --ep-meta-dir 를 <dir>/<TASK>/<cell_id>/ 로 해석 (cell 모드).
-python3 - "$BASE_SIDE" "$B1" "$ENVN" "$SEED" "$TASK" "$INSTR1" "$INSTR2" <<'PY'
-import json, sys
-from pathlib import Path
-side, out, env, seed, task = sys.argv[1], Path(sys.argv[2]), sys.argv[3], int(sys.argv[4]), sys.argv[5]
-langs = sys.argv[6:8]
-em = json.load(open(side))["ep_meta"]
-safe = "".join(c if c.isalnum() else "_" for c in env).strip("_")
-for i, lang in enumerate(langs, 1):
-    m = dict(em); m["lang"] = lang
-    d = out / f"instr{i}" / task / f"b1_instr{i}"
-    d.mkdir(parents=True, exist_ok=True)
-    (d / f"{safe}--seed{seed}.json").write_text(json.dumps(
-        {"env_name": env, "scenario_seed": seed, "ep_meta": m}, indent=1))
-    print(f"wrote instr{i}: {lang}")
-PY
+# (07-23 정정) kitchen 은 lang 을 ep_meta 에서 읽지 않고 task 로직에서 재생성 — ep_meta
+# lang 편집 replay 는 무효 (실측: 원 지시로 원복). 대신 collector 의 --instruction-override
+# 로 모델에 보내는 instruction 만 교체한다 (env 는 원 과제 정상 실행 — scene/물리 동일).
 
 # 2) serve (VL full 캡처)
 docker exec -d -e CUDA_VISIBLE_DEVICES="$GPU" lerobot bash -lc \
@@ -73,8 +58,8 @@ for i in 1 2; do
         --episode-start-idx "$ep" --n-episodes 1 --seed "$SEED" \
         --inference-seed "$((900000 + i * 1000 + ep))" --n-action-steps "$NAS" \
         --max-episode-steps "$MAXEP" --video-fps 20 --steps-per-render 2 --wait-ready \
-        --proximity-phases --ep-meta-dir "$(to_cont "$B1")/instr$i" \
-        --ep-meta-load-env-name "$ENVN" 2>&1 | grep -E "^wrote|Error|Traceback" || true
+        --proximity-phases --instruction-override "$INSTR" 2>&1 \
+        | grep -E "^wrote|Error|Traceback" || true
     fi
     pkl=$(ls "$out/raw_rollouts/${TASK}/b1_instr$i/task${CELL_INDEX}--ep${ep}--succ"*.pkl 2>/dev/null | head -1)
     if [ -n "$pkl" ] && [ ! -f "$B1/donor_instr${i}_ep${ep}.npz" ]; then
