@@ -586,11 +586,12 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
                 "placebo_perm_id": sel["perm_id"],
                 "placebo_cos_seg_vs_treat": sel["cos_seg"],
                 "placebo_cos_seg_max": sel["cos_max"],
-                "placebo_dose_ratio": sel["dose_ratio"],
+                "placebo_dose_match_scale": sel["scale"].tolist(),
+                "placebo_scale_clipped": sel["scale_clipped"],
                 "placebo_pool": {"n_drawn": sel["n_drawn"], "n_cand": sel["n_cand"],
-                                 "n_ortho": sel["n_ortho"], "n_in_band": sel["n_in_band"],
-                                 "fallback": sel["fallback"],
-                                 "criterion": "segment-space: max_s|cos_seg|≤0.3 ∧ dose ±25%"},
+                                 "n_ortho": sel["n_ortho"], "fallback": sel["fallback"],
+                                 "criterion": "segment-space: max_s|cos_seg|≤0.3, dose 는 "
+                                              "seg_mask 스케일로 처치와 정확 매칭"},
             })
         else:
             # 미달 phase — NPZ 미생성 (미등록 → serve identity, 무개입. 사용자 결정 07-23)
