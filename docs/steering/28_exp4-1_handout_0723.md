@@ -116,6 +116,37 @@ bread 는 200 순열 중 밴드(±25%) 통과가 **0개**여서 위약이 처치
 
 ---
 
+### 2.6 conceptor 길이통제 정합 (07-23 저녁, 사용자 지적)
+
+"conceptor gated 가 phase 별로 길이제어하는 게 setM 이랑 다른가?" → **달랐다. 아예 없었다.**
+
+| | 길이통제 |
+|---|---|
+| `setM_gated` | phase 별 성공 dwell 의 `ceil(μ+1σ)` (`phase_dwell_caps`) |
+| `setM_permanent` | 성공 episode record 수의 `ceil(μ+1σ)` |
+| `conceptor_*` (구) | **없음** — `phase_records()` 가 "raw, truncate 전", phase 내 전 record pool |
+
+실패는 phase 안에 오래 머무는 경향(timeout 계열)이라 무제한 pooling 은 실패 공분산을 긴 dwell 이
+지배한다 — succ/fail 대비에 길이가 섞인다.
+
+**교정**: `fit_phase_conceptor_n15.py --length-control` (`compute_length_caps` → `_roll_records`
+가 cap 만큼만 반환). setM 과 같은 규약이고 global(=permanent)도 함께 통제. `fit_inputs.json` 에
+`length_control`·`length_caps` 기록. 미지정 시 구 동작 유지.
+
+실측 cap (setM 과 동일값):
+| cell | global | phase 별 |
+|---|---|---|
+| bread | 50 | — |
+| beer | 77 | reach 10 · grasp 22 · transport 4 · place 24 · insert-settle 29 |
+| drawer_left | 51 | reach-to-handle 27 · grasp-handle 16 · pull 13 · push-back 3 |
+| drawer_right | 76 | (동일 절차) |
+| mixer | 62 | reach-to-head 14 · contact-head 20 · push-down 71 · lift-open 16 · disengage 16 |
+
+교정 전 연산자로 시작하려던 beer eval `conceptor_permanent` run 은 중단·삭제(0판)했고,
+5 cell 전부 재fit 후 재배포했다.
+
+---
+
 ## 3. arm 정의 (9종, 실행 순서 = 사용자 확정)
 
 | # | arm | 개입 | fit-풀 |
