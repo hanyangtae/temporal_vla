@@ -315,6 +315,26 @@ def _apply_record_start(r: dict, pkl_path: Path, rs_map: dict) -> None:
     r["fit_records_after_start"] = int(r["dit"].shape[0])
 
 
+def _apply_ep_subsample(r: dict, k: int) -> None:
+    """per-episode 균등 간격 record 서브샘플 (dwell 통제 — dwell_weight_probe 실증, 07-23).
+
+    timeout 실패의 stuck 구간 반복 record 가 클래스 통계를 지배하는 것을 막는다
+    (자연 데이터 실측: 서브샘플 시 mean-diff 방향 최대 ~30° 회전). 절단 이후 적용.
+    """
+    n = int(r["dit"].shape[0])
+    if n <= k:
+        return
+    idx = np.linspace(0, n - 1, k).round().astype(int)
+    r["dit"] = r["dit"][idx]
+    if r.get("dit_k") is not None:
+        r["dit_k"] = r["dit_k"][idx]
+    if r.get("vl") is not None:
+        r["vl"] = r["vl"][idx]
+    r["phases"] = [r["phases"][i] for i in idx]
+    if "length" in r:
+        r["length"] = int(r["dit"].shape[0])
+
+
 def main():
     ap = argparse.ArgumentParser(description="N1.5 phase-event 대조 conceptor fit")
     ap.add_argument("--run-dir", default="outputs/eval/robocasa/groot_n15/phase_event_aligned_4cell/raw_rollouts")
@@ -362,7 +382,12 @@ def main():
                          "exp4-2 유도실패 시간분리(창끝+2) — 로드 직후 record<start 를 제거. "
                          "모든 로드 pkl 이 manifest 에 있어야 하며(fail-loud), 절대 record "
                          "인덱스를 쓰는 --carve-window 와 병용 금지.")
+    ap.add_argument("--ep-subsample-k", type=int, default=0,
+                    help=">0 이면 episode 당 균등 간격 k record 서브샘플 (dwell 통제 — "
+                         "07-23 실증). 절단 후 적용, --denoise stack/step0 과 병용 금지.")
     args = ap.parse_args()
+    if args.ep_subsample_k > 0 and args.denoise in ("stack", "step0"):
+        raise SystemExit("--ep-subsample-k 는 --denoise stack/step0 과 병용 금지")
 
     rs_map = None
     if args.record_start_manifest:
@@ -471,12 +496,16 @@ def main():
                 sys.exit(4)
             if rs_map is not None:
                 _apply_record_start(r, p, rs_map)
+            if args.ep_subsample_k > 0:
+                _apply_ep_subsample(r, args.ep_subsample_k)
             rolls.append(r)
             fulltoken_flags.append(True)
         else:
             r = load_rollout(p)
             if rs_map is not None:
                 _apply_record_start(r, p, rs_map)
+            if args.ep_subsample_k > 0:
+                _apply_ep_subsample(r, args.ep_subsample_k)
             rolls.append(r)
             fulltoken_flags.append(False)
     if manifest_rows:

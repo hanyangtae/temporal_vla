@@ -54,8 +54,15 @@ def main() -> int:
                     help="Track I 변형 루트 (<dir>/raw_rollouts/**/*.pkl + status_ep*.json)")
     ap.add_argument("--role", required=True, choices=["calibration", "fit", "locked"],
                     help="이번 호출 행들의 3분할 역할 (교집합 0 강제)")
+    ap.add_argument("--include-eps", default=None,
+                    help="포함할 episode_idx 콤마 목록 (3분할 사전등록 분배용 — 미지정=전체)")
     ap.add_argument("--out-dir", required=True)
     args = ap.parse_args()
+    include_eps = (None if args.include_eps is None
+                   else {int(x) for x in args.include_eps.split(",") if x.strip()})
+
+    def _ep_ok(d: dict) -> bool:
+        return include_eps is None or int(d.get("episode_idx", -1)) in include_eps
 
     import torch  # noqa: F401 — pkl unpickle (컨테이너 전용)
 
@@ -67,6 +74,8 @@ def main() -> int:
         for p in sorted(rootp.glob("*/raw_rollouts/*/*/task*--ep*--succ*.pkl")):
             config = p.relative_to(rootp).parts[0]
             d = pickle.load(open(p, "rb"))
+            if not _ep_ok(d):
+                continue
             spec = d.get("perturb_spec") or {}
             if not spec:
                 excluded.append((str(p), "perturb_spec 없음"))
@@ -118,6 +127,8 @@ def main() -> int:
                 excluded.append((str(p), "fired 0 (미발화)"))
                 continue
             d = pickle.load(open(p, "rb"))
+            if not _ep_ok(d):
+                continue
             start = max(fired_all) + 2
             n_rec = len(d.get("hidden_states") or [])
             if start >= n_rec:
