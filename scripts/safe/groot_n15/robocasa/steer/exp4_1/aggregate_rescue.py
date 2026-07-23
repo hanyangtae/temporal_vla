@@ -82,6 +82,9 @@ def main() -> None:
                     "pq3_drawer_left:drawer,pq3_drawer_right:drawer,exp41_mixer:mixer")
     ap.add_argument("--setm-npz-root", type=Path, default=None,
                     help="setM metadata 의 eval_targets seen/unseen 층화용")
+    ap.add_argument("--contrast", action="append", default=None,
+                    help="'처치:위약' McNemar 쌍 (반복). 기본: setM_permanent:setM_permanent_placebo"
+                         " + setM_gated:setM_gated_placebo — 각 쌍이 자체 4-task Holm family")
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
@@ -115,7 +118,11 @@ def main() -> None:
                 seen_flag[(meta["cell"], int(t["episode_idx"]), int(t["inference_seed"]))] = \
                     bool(t["seen_scene"])
 
-    report = {"tasks": {}, "arms": sorted(arms)}
+    contrasts = [tuple(c.split(":")) for c in
+                 (args.contrast or ["setM_permanent:setM_permanent_placebo",
+                                    "setM_gated:setM_gated_placebo"])]
+    report = {"tasks": {}, "arms": sorted(arms),
+              "contrasts": [f"{a} vs {b}" for a, b in contrasts]}
     pvals = {}
     for task in sorted(set(task_of.values())):
         cells = [c for c, t in task_of.items() if t == task]
@@ -138,18 +145,23 @@ def main() -> None:
                     per[f"rescued_{lab}"] = sum(res.get(k, 0) for k in sk)
                     per[f"n_{lab}"] = len(sk)
             entry["per_arm"][name] = per
-        if "setM" in arms and "setM_pl" in arms:
+        entry["mcnemar"] = {}
+        for trt, pl in contrasts:
+            if trt not in arms or pl not in arms:
+                continue
             b = sum(1 for k in annotated
-                    if arms["setM"].get(k, 0) == 1 and arms["setM_pl"].get(k, 0) == 0)
+                    if arms[trt].get(k, 0) == 1 and arms[pl].get(k, 0) == 0)
             c = sum(1 for k in annotated
-                    if arms["setM"].get(k, 0) == 0 and arms["setM_pl"].get(k, 0) == 1)
-            entry["mcnemar"] = {"b_setM_only": b, "c_pl_only": c, "p": mcnemar_exact(b, c)}
-            pvals[task] = entry["mcnemar"]["p"]
+                    if arms[trt].get(k, 0) == 0 and arms[pl].get(k, 0) == 1)
+            entry["mcnemar"][trt] = {"b_treat_only": b, "c_placebo_only": c,
+                                     "p": mcnemar_exact(b, c)}
+            pvals.setdefault(trt, {})[task] = entry["mcnemar"][trt]["p"]
         report["tasks"][task] = entry
-    if pvals:
-        adj = holm(pvals)
-        for task in pvals:
-            report["tasks"][task]["mcnemar"]["p_holm"] = adj[task]
+    # Holm 은 contrast(family)별로 4-task 보정 (Gate2 P1-4 사전등록 family 유지)
+    for trt, per_task in pvals.items():
+        adj = holm(per_task)
+        for task in per_task:
+            report["tasks"][task]["mcnemar"][trt]["p_holm"] = adj[task]
 
     txt = json.dumps(report, indent=2, ensure_ascii=False)
     print(txt)
