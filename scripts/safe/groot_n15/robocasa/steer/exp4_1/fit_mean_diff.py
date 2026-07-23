@@ -179,7 +179,7 @@ def check_seg_equiv(v_a, s_a, v_b, s_b, tag: str) -> None:
                          f"(min cos={cosmin:.6f} Δv={dv:.2e} Δs/|s|={ds / scale:.2e})")
 
 
-def select_placebo_seg(ep_tok, labels_arr, v_seg_ref, s_tok_ref, rng, tag=""):
+def select_placebo_seg(ep_tok, labels_arr, v_seg_ref, s_tok_ref, rng, tag="", dose_ep_tok=None):
     """위약 순열 선택 — **세그먼트 공간에서** 준직교 + dose-match (2026-07-23 교정).
 
     구 기준은 49토큰 pooled 방향/스칼라 s 로 골랐는데 배포 연산자는 세그먼트별 r̂_seg +
@@ -197,6 +197,14 @@ def select_placebo_seg(ep_tok, labels_arr, v_seg_ref, s_tok_ref, rng, tag=""):
          스케일은 [PL_SCALE_MIN, PL_SCALE_MAX] 로 클립(클립 시 기록).
 
     ep_tok: episode 별 토큰보존 record [n_i, T, D] 리스트 (labels_arr 와 같은 순서·길이).
+        방향/준직교 선택에 쓰인다(처치 fit 창과 동일하게 truncation-cap 적용본).
+    dose_ep_tok: dose-match 스케일 calibration 표본 (없으면 ep_tok 로 폴백). ★2026-07-24
+        Codex 리뷰 + 실측 진단(diag_dose_robustness): dose 를 succ+fail truncation window
+        [:cap] 에서 calibration 하면, 런타임 개입 분포(rescue 대상=실패 토큰, cap 너머까지)
+        에서 위약이 state·future 세그먼트를 ~2× under-dose 한다(bread future 0.4·beer 0.54).
+        원인 = 실패는 success setpoint 에서 크게 발산(특히 future=world-model)해 처치 dose 가
+        커지는데 위약(준직교)은 안 커짐 + cap 이 success 길이라 실패 후반이 빠짐. → dose 는
+        **un-truncated 실패 기록**(dose_ep_tok 의 labels==0)으로 calibration 해 런타임 정합.
     """
     keep = [i for i, X in enumerate(ep_tok) if len(X)]
     if not keep:
@@ -204,8 +212,15 @@ def select_placebo_seg(ep_tok, labels_arr, v_seg_ref, s_tok_ref, rng, tag=""):
     sums = {i: ep_tok[i].astype(np.float64).sum(axis=0) for i in keep}
     cnts = {i: len(ep_tok[i]) for i in keep}
     X_all = np.concatenate([ep_tok[i] for i in keep], axis=0)
-    dose_ref = seg_dose(X_all, v_seg_ref, s_tok_ref)
-    dose_ref_seg = seg_dose_by_segment(X_all, v_seg_ref, s_tok_ref)
+    # dose calibration 표본: dose_ep_tok(un-truncated) 의 실패 episode. 없으면 구 동작(X_all).
+    if dose_ep_tok is not None:
+        di = [i for i in range(len(dose_ep_tok))
+              if len(dose_ep_tok[i]) and labels_arr[i] == 0]
+        X_dose = np.concatenate([dose_ep_tok[i] for i in di], axis=0) if di else X_all
+    else:
+        X_dose = X_all
+    dose_ref = seg_dose(X_dose, v_seg_ref, s_tok_ref)
+    dose_ref_seg = seg_dose_by_segment(X_dose, v_seg_ref, s_tok_ref)
 
     def build(pl):
         si = [i for i in keep if pl[i] == 1]
@@ -240,9 +255,9 @@ def select_placebo_seg(ep_tok, labels_arr, v_seg_ref, s_tok_ref, rng, tag=""):
     if not ortho:  # 준직교 후보 없음 — max|cos| 최소 폴백 (기록)
         ortho = sorted(cands, key=lambda c: c["cos_max"])[:5]
         fb = f"no-ortho(min max|cos_seg|={ortho[0]['cos_max']:.2f}, n={n_drawn})"
-    for c in ortho:  # dose 는 준직교 통과분만 계산 (비용 절감)
-        c["dose_seg"] = seg_dose_by_segment(X_all, c["v_seg"], c["s_tok"])
-        c["dose"] = seg_dose(X_all, c["v_seg"], c["s_tok"])
+    for c in ortho:  # dose 는 준직교 통과분만 계산 (비용 절감). calibration 표본=X_dose(실패)
+        c["dose_seg"] = seg_dose_by_segment(X_dose, c["v_seg"], c["s_tok"])
+        c["dose"] = seg_dose(X_dose, c["v_seg"], c["s_tok"])
         c["scale_raw"] = dose_ref_seg / np.maximum(c["dose_seg"], 1e-12)
         c["scale_gap"] = float(np.max(np.abs(np.log(c["scale_raw"]))))
     ortho.sort(key=lambda c: c["scale_gap"])   # 스케일 보정이 가장 적게 필요한 후보
@@ -579,13 +594,17 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
             Xs_t = gather_phase_tok(rolls, labels, li, 1, ph, dcap)[0]
             Xf_t = gather_phase_tok(rolls, labels, li, 0, ph, dcap)[0]
             v_seg_ph, s_tok_ph, sd_ph = fit_seg_setpoint(Xs_t, Xf_t)
-            ep_tok_ph = []
+            ep_tok_ph, dose_tok_ph = [], []
             for r in rolls:
-                idx = [i for i, p in enumerate(r["phases"]) if p == ph][:dcap]
+                ph_idx = [i for i, p in enumerate(r["phases"]) if p == ph]
+                idx = ph_idx[:dcap]
                 ep_tok_ph.append(r["tok"][idx, li] if idx else np.empty((0, 0, 0)))
+                # dose calibration: dwell-cap 없는 전체 phase 기록(런타임 개입 분포)
+                dose_tok_ph.append(r["tok"][ph_idx, li] if ph_idx else np.empty((0, 0, 0)))
             try:
                 sel = select_placebo_seg(ep_tok_ph, labels_arr, v_seg_ph, s_tok_ph,
-                                         np.random.default_rng(RNG_SEED + 555), tag=f" {ph}")
+                                         np.random.default_rng(RNG_SEED + 555), tag=f" {ph}",
+                                         dose_ep_tok=dose_tok_ph)
             except ValueError as e:
                 # 위약 성립 불가 → 처치도 이 phase 제외 (dose 대칭 — 미등록=identity)
                 entry.update({"skipped_identity": True,
@@ -787,8 +806,9 @@ def main() -> None:
     # ---- setM_pl: 위약 순열 선택 — **세그먼트 공간** 준직교 ∧ dose-match
     # (구 pooled 기준의 실패는 select_placebo_seg docstring 참조)
     ep_tok = [r["tok"][:cap, li] for r in rolls]
+    dose_tok = [r["tok"][:, li] for r in rolls]   # dose calibration: un-truncated(실패 런타임)
     pl_sel = select_placebo_seg(ep_tok, labels_arr, v_seg, s_tok,
-                                np.random.default_rng(RNG_SEED + 555))
+                                np.random.default_rng(RNG_SEED + 555), dose_ep_tok=dose_tok)
     pl_labels = pl_sel["labels"]
     v_seg_p, s_tok_p = pl_sel["v_seg"], pl_sel["s_tok"]
 
@@ -889,7 +909,8 @@ def main() -> None:
         sel_t = select_placebo_seg([ep_tok[i] for i in keep], np.asarray(kl),
                                    v_seg_t, s_tok_t,
                                    np.random.default_rng(RNG_SEED + 555 + t["episode_idx"]),
-                                   tag=f" LOO ep{t['episode_idx']}")
+                                   tag=f" LOO ep{t['episode_idx']}",
+                                   dose_ep_tok=[dose_tok[i] for i in keep])
         v_seg_pt, s_tok_pt, pl_scale_t = sel_t["v_seg"], sel_t["s_tok"], sel_t["scale"]
         pl_l = sel_t["labels"]
         Xs_p = np.concatenate([r["tok"][:cap, li] for r, y in zip(kr, pl_l) if y == 1], axis=0)
