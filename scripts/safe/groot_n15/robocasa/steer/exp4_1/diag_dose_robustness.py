@@ -46,7 +46,7 @@ def _seg_dose(recs, v_seg, s_tok):
 
 
 def _load_op(npz_dir):
-    p = next(Path(npz_dir).glob("dit_L*/conceptors.npz"))
+    p = next(Path(npz_dir).rglob("dit_L*/conceptors.npz"))  # steer/ 서브디렉토리 유무 무관
     z = np.load(p)
     return (z["alpha0_v_seg"].astype(np.float64), z["alpha0_s_tok"].astype(np.float64).reshape(-1),
             z["alpha0_seg_mask"].astype(np.float64).reshape(-1))
@@ -81,7 +81,7 @@ def main() -> None:
     v_t, s_t, mask_t = _load_op(args.npz_root / args.cell / "setM_permanent")
     v_p, s_p, scale = _load_op(args.npz_root / args.cell / "setM_permanent_placebo")
     blk = int(json.loads(next((args.npz_root / args.cell / "setM_permanent")
-                              .glob("dit_L*/metadata.json")).read_text())["layer"])
+                              .rglob("dit_L*/metadata.json")).read_text())["layer"])
     rolls = load_cell_rolls(args.manifest, args.cell)  # [{tok:[n,L,T,D], success, episode_idx, ...}]
     li = [int(x) for x in rolls[0]["capture_layers"]].index(blk)
     succ_lens = [r["length"] for r in rolls if r["success"] == 1]
