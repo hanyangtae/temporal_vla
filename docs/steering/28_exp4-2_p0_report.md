@@ -107,6 +107,35 @@ exp3 자연실패 fit 기준값: R-가중 이득 **0.006–0.007 (≈영행렬)*
 5. **개선 항목(P1 전)**: sham 출력 디렉토리 분리(스템 충돌), fit record 서브샘플링(dwell 통제,
    Gate1 공통 통제의 fit 적용), dwell-matched bridge 재계산, 자연측 VL 축 재수집(nopatch 6–8판).
 
+## 7. 추록 (07-23) — 사용자 결정 반영 · same-scene 자연축 · dwell 프로브
+
+**사용자 결정 (07-23)**: ① 유도↔자연 분포 유사성은 전제 아님 — **성공과의 분리가 판정축**,
+bridge 는 기술 통계로 강등 ② **C1 유지** (VL 분리 좋으면 VL steer 후보) ③ **B2 폐기**
+(같은 instruction 타 phase 삽입 = 사실상 시간 지연) ④ B1/B3 donor 수집 병행 ⑤ sham 출력
+분리(반영 완료) ⑥ subsampling 은 실증 후 적용 ⑦ 자연 VL 은 승준 HDD 기존 자산 사용.
+
+**7.1 same-scene 자연축** (승준 HDD `phase_event_strict` 60판 회수 — scene 100084,
+12 fail/48 succ, VL 포함): pooled cos **L8 0.78 / L12 0.85 / VL 0.79** (전부 p=0.003,
+cross-AUROC 0.98+) — §4 의 cross-scene passB(0.34) 대비 2.5배. **이전의 "낮은 정렬"은
+상당 부분 scene 차이였음.** 모드별로도 전 모드 유의(C1 0.39–0.53 포함, P2 는 VL 에서 0.82
+최고). trackI(B4, DiT 주입)는 VL 축 정렬 0 (주입이 DiT 하류에만 작용 — 내부 타당성 증거).
+succ 궤적 중첩 민감도(P0 대상 ep 의 succ 제외, 48판): cos 0.74/0.83/0.79 로 유지 — 편향 미미.
+
+**7.2 dwell 가중 프로브** (`dwell_weight_probe.py`, 유도 4 config + 자연 strict):
+
+| 지표 | DiT (L8/L12) | VL |
+|---|---|---|
+| r̂ cos pooled↔ep-equal | 0.94–1.00 | 0.99+ |
+| r̂ cos pooled↔subsample(k=20) | **0.75–0.98** (자연 0.86/0.92) | 0.99+ |
+| conceptor 이득 pooled→sub | 유도 ~±25% 변동 | — |
+| conceptor 이득 (자연) | 0.083→0.083 불변 | — |
+
+해석: 문제는 에피소드 간 가중(ep-equal 거의 불변)이 아니라 **에피소드 내 dwell 반복
+record** — DiT 의 mean-diff 방향이 서브샘플 시 최대 ~30°(자연 L8 기준) 회전. **setM 처럼
+방향이 전부인 연산자는 exp4-1 에도 per-episode 균등 서브샘플(k≈20) 적용이 맞다** (자연
+데이터 실측 근거). conceptor 는 상대적으로 강건(자연 이득 불변)하나 비교 가능성을 위해
+동일 규약 권장. VL 연산자는 dwell 무관(서브샘플 불요).
+
 ## 부록 — 재현 경로
 
 - runbook: `scripts/safe/groot_n15/robocasa/steer/induced/README.md`

@@ -40,16 +40,21 @@ _read_rs = read_record_start
 
 
 def _load_side(rows, rs_map, capture_layer, mode_map=None):
-    """→ list of dict(ep): {X_bin: {bin: [n,D]}, label, mode}"""
+    """→ list of dict(ep): {X_bin: {bin: [n,D]}, label, mode}. capture_layer: int | "VL"."""
     eps = []
     for p, label in rows:
         r = load_roll_any(p)
-        cap = r["capture_layers"]
-        if capture_layer not in cap:
-            raise SystemExit(f"{p.name}: layer {capture_layer} 없음 (cap={cap})")
-        li = cap.index(capture_layer)
         start = rs_map.get(str(p.resolve()), 0)
-        X = r["dit"][start:, li, :].astype(np.float32)
+        if capture_layer == "VL":
+            if r.get("vl") is None:
+                raise SystemExit(f"{p.name}: VL 없음")
+            X = np.asarray(r["vl"], dtype=np.float32)[start:]
+        else:
+            cap = r["capture_layers"]
+            if capture_layer not in cap:
+                raise SystemExit(f"{p.name}: layer {capture_layer} 없음 (cap={cap})")
+            li = cap.index(capture_layer)
+            X = r["dit"][start:, li, :].astype(np.float32)
         phases = r["phases"][start:]
         if not X.shape[0]:
             continue
@@ -206,7 +211,9 @@ def main() -> int:
     nat_rows = _read_manifest(args.natural_manifest)
     bins = [b.strip() for b in args.bins.split(",") if b.strip()]
     result = {"config": vars(args), "layers": {}}
-    for layer in [int(x) for x in args.layers.split(",")]:
+    layer_keys = ["VL" if x.strip() == "VL" else int(x)
+                  for x in args.layers.split(",") if x.strip()]
+    for layer in layer_keys:
         ind = _load_side(ind_rows, rs, layer, mode_map)
         nat = _load_side(nat_rows, {}, layer)
         lay = {}

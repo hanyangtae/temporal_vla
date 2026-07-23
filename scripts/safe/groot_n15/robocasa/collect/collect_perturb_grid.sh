@@ -100,7 +100,13 @@ worker_grid() {  # wid port
       [[ "$tag" == *_sham_* ]] && continue   # 캡처 재실행은 실섭동만
       local out="${P0}/capture/${config}"
     else
+      # grid 톱업: CONFIGS 지정 시 해당 config 만 (미지정 = 전체)
+      if [ -n "${CONFIGS:-}" ]; then
+        case " ${CONFIGS} " in *" ${config} "*) ;; *) continue ;; esac
+      fi
       local out="${P0}/grid/${config}"
+      # sham 은 출력 분리 — 같은 ep 의 real 행과 스템 충돌(P0 실측: real ep10 1판 skip) 방지
+      [[ "$tag" == *_sham_* ]] && out="${P0}/grid/${config}__sham"
     fi
     done_mark "$out" "$ep_idx" && continue
     echo "[w${wid}] ${PHASE} ${tag}"

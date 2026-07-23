@@ -36,7 +36,8 @@ def main() -> int:
     warns = []
     by_cfg: dict[str, list[dict]] = defaultdict(list)
     for p in sorted((p0 / "grid").glob("*/raw_rollouts/*/*/task*--ep*--succ*.json")):
-        config = p.relative_to(p0 / "grid").parts[0]
+        # sham 분리 디렉토리(<config>__sham)는 원 config 로 귀속 (spec.sham 으로 재구분)
+        config = p.relative_to(p0 / "grid").parts[0].removesuffix("__sham")
         d = json.loads(p.read_text())
         d["_file"] = str(p)
         by_cfg[config].append(d)
