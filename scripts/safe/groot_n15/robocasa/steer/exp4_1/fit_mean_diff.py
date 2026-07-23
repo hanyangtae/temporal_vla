@@ -218,10 +218,11 @@ TERMINAL_PHASES = {"open-done", "insert-settle-done"}  # terminal 동치 phase �
 def fit_gated(args, rolls, labels, out_cell: Path) -> None:
     """setM_gated / setM_gated_placebo — permanent fit 산출물(선정 layer·동결 순열) 전제.
 
-    phase 별 (r̂_ph, s_ph) fit + CV AUROC·순열 null z 유의성 진단 (사용자: 유의성부터 판단).
-    quota(record ≥GATED_MIN_REC/클래스·episode ≥GATED_MIN_EPS) 미달 phase 는 **global 연산자
-    폴백** (identity 구멍 대신 dose 연속성 유지 — metadata 기록). placebo 는 permanent 와
-    같은 동결 순열(perm_id, RNG 재생성)로 phase 별 재fit — pairing 유지.
+    phase 별 (r̂_ph, s_ph) fit + 유의성 진단 (사용자: 유의성부터 판단).
+    quota(record ≥GATED_MIN_REC/클래스·episode ≥GATED_MIN_EPS) 미달 phase 는 **NPZ 미생성 =
+    serve 미등록 → identity(무개입)** — 실패 증거 없는 phase 에 global 방향을 씌우는 외삽
+    금지 (2026-07-23 사용자 결정). placebo 도 같은 phase 집합만 생성(pairing). 재실행 시
+    stale phase 디렉토리 오염 방지 위해 setM_gated{,_placebo} 를 먼저 삭제.
     """
     sweep_p = out_cell / "layer_sweep.json"
     meta_perm = json.loads(
@@ -245,11 +246,15 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
             break
     assert perm_labels is not None, "동결 순열 재생성 실패"
 
-    # 전역(global) 폴백 연산자 = permanent NPZ
+    # cos 진단용 global 방향 (배포 폴백 아님 — 미달 phase 는 미등록=identity)
     z_g = np.load(next((out_cell / "setM_permanent" / "steer").glob("dit_L*/conceptors.npz")))
-    v_g, s_g = z_g["alpha0_v_steer"].astype(np.float64), float(z_g["alpha0_s"])
+    v_g = z_g["alpha0_v_steer"].astype(np.float64)
     z_gp = np.load(next((out_cell / "setM_permanent_placebo" / "steer").glob("dit_L*/conceptors.npz")))
     v_gp, s_gp = z_gp["alpha0_v_steer"].astype(np.float64), float(z_gp["alpha0_s"])
+    # 재실행 stale phase 디렉토리 방지
+    import shutil
+    for d in ("setM_gated", "setM_gated_placebo"):
+        shutil.rmtree(out_cell / d, ignore_errors=True)
 
     phases = sorted({p for r in rolls for p in r["phases"][:cap]} - TERMINAL_PHASES)
     # layer-sweep null 순열 (유의성 진단용, N_PERM 개)
@@ -309,8 +314,12 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
             entry["placebo_cos_vs_setm_ph"] = float(v_pp @ v_ph)
             entry["placebo_fallback"] = pl_fb
         else:
-            v_ph, s_ph, v_pp, s_pp = v_g, s_g, v_gp, s_gp
-            entry.update({"fallback": True, "placebo_fallback": True})
+            # 미달 phase — NPZ 미생성 (미등록 → serve identity, 무개입. 사용자 결정 07-23)
+            entry.update({"skipped_identity": True})
+            diag.append(entry)
+            print(f"  [{ph}] Nrec s/f={entry['n_rec_succ']}/{entry['n_rec_fail']} "
+                  f"SKIP(quota 미달 → 무개입)", flush=True)
+            continue
         save_setpoint_npz(out_cell / "setM_gated" / ph, blk, v_ph, s_ph, {
             "operator": "setM_gated", "cell": args.cell, "phase": ph, "layer": blk,
             "cap_records": cap, **{k: entry[k] for k in entry if k != "phase"},
@@ -320,9 +329,9 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
             "perm_id": pl_meta["perm_id"], "fallback": entry.get("placebo_fallback"),
         })
         diag.append(entry)
-        tag = "FALLBACK(global)" if entry.get("fallback") else \
-            f"auroc={entry['fit_auroc']:.3f} z={entry['perm_z']:.2f} cos_g={entry['cos_vs_global']:+.2f}"
-        print(f"  [{ph}] Nrec s/f={entry['n_rec_succ']}/{entry['n_rec_fail']} {tag}", flush=True)
+        print(f"  [{ph}] Nrec s/f={entry['n_rec_succ']}/{entry['n_rec_fail']} "
+              f"auroc={entry['fit_auroc']:.3f} z={entry['perm_z']:.2f} "
+              f"cos_g={entry['cos_vs_global']:+.2f}", flush=True)
 
     (out_cell / "setM_gated_diag.json").write_text(json.dumps({
         "cell": args.cell, "layer": blk, "cap_records": cap, "phases": diag,

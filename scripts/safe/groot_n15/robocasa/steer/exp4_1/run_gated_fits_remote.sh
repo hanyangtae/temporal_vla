@@ -34,6 +34,7 @@ for cell in "${CELLS[@]}"; do
     --manifest "$cellts" --cell "$cell" --targets "$T" --out-root "$O" --gated \
     || { echo "[FAIL] $cell setM_gated"; rc=1; }
   lyr=$("$PY" -c "import json;print(json.load(open('$O/$cell/conceptor_layer_sweep.json'))['selected_layer'])")
+  rm -rf "$O/$cell/conceptor_gated"  # 재실행 stale phase 디렉토리 방지 (quota-skip phase 는 미등록=identity)
   "$PY" scripts/safe/groot_n15/robocasa/steer/fit_phase_conceptor_n15.py \
     --manifest "$cellts" --cell "$task/$cell" --groups "$groups" --layers "$lyr" \
     --alphas table14 --denoise per_step --token-pool mean \
