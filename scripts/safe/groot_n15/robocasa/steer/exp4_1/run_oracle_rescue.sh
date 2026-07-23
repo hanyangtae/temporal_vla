@@ -7,8 +7,11 @@
 #   fit-풀 전부 → kanu (SERVE_MODE=docker, 빈 GPU × serve 2)
 #
 # env:
-#   CELL_ID ARM(A0|noise_resample|setM_permanent|setM_permanent_placebo|setM_gated|
-#            setM_gated_placebo|conceptor_permanent|conceptor_gated) T0_MANIFEST NPZ_ROOT OUT_ROOT
+#   CELL_ID ARM T0_MANIFEST NPZ_ROOT OUT_ROOT
+#   arm 순서(2026-07-23 사용자 확정): A0 · noise_resample ·
+#     setM_permanent · setM_permanent_placebo · setM_gated · setM_gated_placebo ·
+#     setM_future_only · setM_future_only_placebo (setM 계열 마지막) ·
+#     conceptor_permanent · conceptor_gated (맨 뒤)
 #   (gated arm = client 가 t0 이후 현재 phase 를 POST — phase 별 NPZ 디렉토리 필요.
 #    noise_resample = steering 없이 t0 이후 denoise seed offset — 방향 없는 개입 대조)
 #   SERVE_MODE=host|docker  GPUS_L="2 2 2 2 2 2"  PORTS_L="8480 ... 8485"
@@ -136,8 +139,8 @@ run_row() {  # port pool ep scen inf k
 if [ "$POOL" != "eval" ] && { [[ "$ARM" == setM_permanent* ]]; }; then
   [ "$POOL" = "fit" ] || { echo "[$CELL_ID/$ARM] POOL=all 금지 (LOO 분리)"; exit 2; }
 fi
-if [ "$POOL" = "fit" ] && { [[ "$ARM" == *_gated* ]]; }; then
-  echo "[$CELL_ID/$ARM] gated arm 의 fit-풀 LOO 미구현 — eval-풀만 실행 가능"; exit 2
+if [ "$POOL" = "fit" ] && { [[ "$ARM" == *_gated* ]] || [[ "$ARM" == *future_only* ]]; }; then
+  echo "[$CELL_ID/$ARM] 이 arm 은 fit-풀 LOO 미생성 — eval-풀 전용"; exit 2
 fi
 if [ "$ARM" = "A0" ] || [ "$ARM" = "noise_resample" ] || [[ "$ARM" == conceptor* ]] \
    || [[ "$ARM" == *_gated* ]] || [ "$POOL" = "eval" ]; then
@@ -146,9 +149,11 @@ if [ "$ARM" = "A0" ] || [ "$ARM" = "noise_resample" ] || [[ "$ARM" == conceptor*
   case "$ARM" in
     A0|noise_resample) FLAGS="" ;;
     conceptor_permanent|conceptor_gated)
-      FLAGS="$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/$ARM" conceptor "$BETA_CONCEPTOR") --steering-denoise ${DENOISE_CONCEPTOR:-per_step}" || exit 12 ;;
-    setM_permanent|setM_permanent_placebo|setM_gated|setM_gated_placebo)
-      FLAGS=$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/$ARM" setpoint "$BETA_SETM") || exit 12 ;;
+      # exp3 배포와 동일 정렬: pooled fit → 전 토큰 적용 (token-select all)
+      FLAGS="$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/$ARM" conceptor "$BETA_CONCEPTOR") --steering-denoise ${DENOISE_CONCEPTOR:-per_step} --steering-token-select all" || exit 12 ;;
+    setM_*)
+      # 세그먼트 연산자(v2)는 전 토큰 위치별 적용 필수 — token-select all 고정
+      FLAGS="$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/$ARM" setpoint_seg "$BETA_SETM") --steering-token-select all" || exit 12 ;;
     *) echo "unknown ARM: $ARM"; exit 2 ;;
   esac
   start_serves $FLAGS

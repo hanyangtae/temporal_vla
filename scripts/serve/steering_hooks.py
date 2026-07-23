@@ -206,6 +206,35 @@ def load_steering_setpoint(
     return v, s
 
 
+def load_steering_segment(npz_path: str | Path):
+    """세그먼트 setpoint NPZ → (v_seg [S,D], s_tok [T], seg_bounds [S,2], seg_mask [S]).
+
+    exp4-1 v2 규약 (2026-07-23, fit_mean_diff.save_segment_npz 산출):
+    방향은 토큰 **종류(state/future/action)별**, setpoint 는 토큰 **위치별**.
+    구 pooled 규약(단일 r̂ + 스칼라 s)은 fit 공간(49토큰 평균)과 적용 공간(action 16토큰)이
+    달라 β=1 이 최대 4σ 오프매니폴드 이동을 일으켰다 — 그 회귀의 교정본.
+    """
+    z = np.load(npz_path)
+    need = ("alpha0_v_seg", "alpha0_s_tok", "alpha0_seg_bounds", "alpha0_seg_mask")
+    missing = [k for k in need if k not in z.files]
+    if missing:
+        raise KeyError(f"{npz_path}: 세그먼트 키 누락 {missing} (keys={z.files})")
+    v_seg = z["alpha0_v_seg"].astype(np.float64)
+    s_tok = z["alpha0_s_tok"].astype(np.float64).reshape(-1)
+    bounds = z["alpha0_seg_bounds"].astype(int)
+    mask = z["alpha0_seg_mask"].astype(np.float64).reshape(-1)
+    nrms = np.linalg.norm(v_seg, axis=1)
+    if not np.all((nrms > 0.99) & (nrms < 1.01)):
+        raise ValueError(f"v_seg 각 행은 단위벡터여야 함: ‖v‖={nrms} ({npz_path})")
+    if int(bounds[-1, 1]) != s_tok.shape[0]:
+        raise ValueError(f"seg_bounds 끝 {bounds[-1, 1]} != T {s_tok.shape[0]}")
+    sha = hashlib.sha256(Path(npz_path).read_bytes()).hexdigest()[:12]
+    print(f"[steer-preflight] npz={npz_path} op=setpoint_seg S={v_seg.shape[0]} "
+          f"T={s_tok.shape[0]} dim={v_seg.shape[1]} mask={mask.tolist()} "
+          f"s_tok[min,max]=[{s_tok.min():.2f},{s_tok.max():.2f}] sha={sha}", flush=True)
+    return v_seg, s_tok, bounds, mask
+
+
 PATHWAYS: tuple[str, ...] = ("dit", "vl")
 TOKEN_SELECTS: tuple[str, ...] = ("last_horizon", "all")
 
@@ -407,14 +436,37 @@ class SetpointSteering:
             )
         self.horizon = int(horizon if horizon is not None else head.action_horizon)
         self._handle = None
+        self._seg = None
+        self._seg_cache = None
         self.set_vector(*(vec_s if vec_s is not None else (None,)))
 
     @property
     def per_step(self) -> bool:
         return False
 
+    def set_segment(self, spec) -> None:
+        """세그먼트 연산자 활성화: spec=(v_seg [S,D], s_tok [T], bounds [S,2], mask [S]) 또는 None.
+
+        토큰 위치 t 마다 그 세그먼트의 방향으로 h'_t = h_t − β[(h_t·r̂_seg)−s_t]r̂_seg.
+        mask=0 세그먼트는 무개입(future_only arm). set_vector(구 pooled)와 상호배타.
+        """
+        if spec is None:
+            self._seg = None
+        else:
+            v_seg, s_tok, bounds, mask = spec
+            self._seg = (np.asarray(v_seg, dtype=np.float64),
+                         np.asarray(s_tok, dtype=np.float64),
+                         np.asarray(bounds, dtype=int),
+                         np.asarray(mask, dtype=np.float64))
+        self._v = None
+        self._s = 0.0
+        self._seg_cache = None
+        self._vt_cache = None
+
     def set_vector(self, v: np.ndarray | None, s: float | None = None) -> None:
         """(r̂, s) 활성화 또는 None 비활성화. 텐서 캐시 리셋."""
+        self._seg = None
+        self._seg_cache = None
         if v is None:
             self._v = None
             self._s = 0.0
@@ -432,10 +484,13 @@ class SetpointSteering:
         """요청 시작 훅 호환용 no-op (setpoint 는 denoise step 무관 동일 적용)."""
 
     def _hook(self, _module: Any, _args: tuple, output: Any) -> Any:
-        if self._v is None:  # off phase — 원본 그대로 (no-hook 과 bitwise 동일)
+        if self._v is None and self._seg is None:  # off — 원본 그대로 (no-hook 과 동일)
             return output
         is_tuple = isinstance(output, tuple)
         out = output[0] if is_tuple else output
+        if self._seg is not None:
+            steered = self._apply_segment(out)
+            return (steered, *output[1:]) if is_tuple else steered
         vt = self._vt_cache
         if vt is None or vt.device != out.device or vt.dtype != out.dtype:
             vt = torch.as_tensor(self._v, device=out.device, dtype=out.dtype)
@@ -451,6 +506,35 @@ class SetpointSteering:
         if is_tuple:
             return (steered, *output[1:])
         return steered
+
+    def _apply_segment(self, out):
+        """토큰 위치별 세그먼트 연산자 적용 — h'_t = h_t − β[(h_t·r̂_seg)−s_t]r̂_seg.
+
+        토큰 축은 마지막에서 두 번째(out [..., T, D]). NPZ 의 T 와 실제 T 가 다르면
+        무음 오적용이 되므로 RuntimeError (fail loud).
+        """
+        v_seg, s_tok, bounds, mask = self._seg
+        T = out.shape[-2]
+        if T != s_tok.shape[0]:
+            raise RuntimeError(
+                f"setpoint_seg: NPZ T={s_tok.shape[0]} != 실제 토큰 수 {T} — "
+                "fit 캡처 토큰 규약(all_token_full)과 serve 주입 지점 불일치")
+        cache = self._seg_cache
+        if (cache is None or cache[0].device != out.device or cache[0].dtype != out.dtype):
+            vt = torch.as_tensor(v_seg, device=out.device, dtype=out.dtype)      # [S,D]
+            st = torch.as_tensor(s_tok, device=out.device, dtype=out.dtype)      # [T]
+            # 토큰→세그먼트 인덱스, mask 를 토큰 단위로 펼침
+            idx = torch.zeros(T, dtype=torch.long, device=out.device)
+            mk = torch.zeros(T, device=out.device, dtype=out.dtype)
+            for si, (lo, hi) in enumerate(bounds):
+                idx[int(lo):int(hi)] = si
+                mk[int(lo):int(hi)] = float(mask[si])
+            v_tok = vt[idx]                                                       # [T,D]
+            self._seg_cache = cache = (v_tok, st, mk)
+        v_tok, st, mk = cache
+        proj = (out * v_tok).sum(dim=-1)                    # [..., T]
+        delta = (self.beta * mk * (proj - st)).unsqueeze(-1) * v_tok
+        return out - delta
 
     def register(self) -> "SetpointSteering":
         if self._handle is None:

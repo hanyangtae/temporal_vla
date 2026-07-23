@@ -403,8 +403,15 @@ def steering_phase(payload: dict):
     for layer, hook in _gated_registry["hooks"].items():
         M = _gated_registry["matrices"][layer].get(phase)
         if hasattr(hook, "set_vector"):
-            # setpoint(setM) hook: 등록 phase → (r̂, s) 활성, 미등록 → 비활성(no-op)
-            hook.set_vector(*M) if M is not None else hook.set_vector(None)
+            # setpoint hook: 등록 phase → 활성, 미등록 → 비활성(no-op).
+            # 4-튜플=세그먼트 연산자(v_seg,s_tok,bounds,mask), 2-튜플=구 pooled (r̂,s)
+            if M is None:
+                hook.set_segment(None)
+                hook.set_vector(None)
+            elif len(M) == 4:
+                hook.set_segment(M)
+            else:
+                hook.set_vector(*M)
         else:
             # set_matrices 가 M(단일) / M_seq(per-step 리스트) 모두 수용, 텐서 캐시·step
             # 카운터도 함께 리셋한다 (구 ``hook.M=...; hook._Mt=None`` 배선 대체).
@@ -849,6 +856,7 @@ def _register_steering_if_requested(loaded_policy, args):
         SetpointSteering,
         load_steering_matrices_per_step,
         load_steering_matrix,
+        load_steering_segment,
         load_steering_setpoint,
     )
 
@@ -935,11 +943,13 @@ def _register_steering_if_requested(loaded_policy, args):
         # 연산자 판정 (exp4-1): NPZ 키 스니핑(*_v_steer=setpoint) + --steering-op assert.
         # 러너가 arm 마다 op 를 명시해 NPZ 오배치를 기동 시점에 잡는다 (무음 오적용 방지).
         first_npz = base / phases[0] / f"dit_L{layers[0]}" / "conceptors.npz"
-        detected_op = (
-            "setpoint"
-            if any(k.endswith("_v_steer") for k in _np.load(first_npz).files)
-            else "conceptor"
-        )
+        _first_keys = _np.load(first_npz).files
+        if any(k.endswith("_v_seg") for k in _first_keys):
+            detected_op = "setpoint_seg"      # exp4-1 v2: 세그먼트 방향 + 토큰별 setpoint
+        elif any(k.endswith("_v_steer") for k in _first_keys):
+            detected_op = "setpoint"          # v1 pooled (배포 금지 — 공간 불일치)
+        else:
+            detected_op = "conceptor" 
         want_op = getattr(args, "steering_op", "auto") or "auto"
         if want_op != "auto" and want_op != detected_op:
             raise ValueError(
@@ -955,6 +965,14 @@ def _register_steering_if_requested(loaded_policy, args):
             loaded_npz_shas.append(
                 _hashlib.sha256(Path(npz_path).read_bytes()).hexdigest()[:12]
             )
+            if op == "setpoint_seg":
+                # fit(토큰 보존) ↔ serve(token_select) 정합 게이트: 세그먼트 연산자는
+                # 전 토큰에 위치별로 적용해야 한다 (2026-07-23 배선 회귀 재발 방지)
+                if (token_select or "last_horizon") != "all":
+                    raise ValueError(
+                        "setpoint_seg 는 --steering-token-select all 필수 "
+                        f"(현재 {token_select!r}) — fit 은 전 토큰 위치별 s_t 를 산출했다")
+                return load_steering_segment(str(npz_path))
             return load_steering_setpoint(str(npz_path), alpha=alpha)
 
         hooks, matrices, identity = {}, {}, {}
@@ -970,10 +988,11 @@ def _register_steering_if_requested(loaded_policy, args):
                         f"phase 집합 {phases} 은 전 layer 에 존재해야 한다"
                     )
                 matrices[lyr][ph] = (
-                    _load_setpoint(npz_path) if op == "setpoint" else _load_matrices(npz_path)
+                    _load_setpoint(npz_path) if op in ("setpoint", "setpoint_seg")
+                    else _load_matrices(npz_path)
                 )
-            if op == "setpoint":
-                # off = set_vector(None) 명시적 no-op — identity 행렬 불필요
+            if op in ("setpoint", "setpoint_seg"):
+                # off = set_vector/set_segment(None) 명시적 no-op — identity 행렬 불필요
                 identity[lyr] = None
                 hook = SetpointSteering(
                     groot_model, None, beta, layer=lyr, token_select=token_select,
@@ -1013,6 +1032,13 @@ def _register_steering_if_requested(loaded_policy, args):
         for lyr in layers:
             for ph in phases:
                 mats = matrices[lyr][ph]
+                if op == "setpoint_seg":
+                    v_seg, s_tok, _b, mk = mats
+                    print(f"[steer-norms] layer={lyr} phase={ph} op=setpoint_seg "
+                          f"beta={beta:g} S={v_seg.shape[0]} T={s_tok.shape[0]} "
+                          f"mask={list(mk)} s_tok[min,max]="
+                          f"[{float(s_tok.min()):.2f},{float(s_tok.max()):.2f}]", flush=True)
+                    continue
                 if op == "setpoint":
                     v, s = mats
                     print(
@@ -1029,7 +1055,7 @@ def _register_steering_if_requested(loaded_policy, args):
         return _steering
 
     # setpoint(setM) 은 gated 경로 전용 — 이하 경로에서 지정 시 fail loud
-    if (getattr(args, "steering_op", "auto") or "auto") == "setpoint":
+    if (getattr(args, "steering_op", "auto") or "auto") in ("setpoint", "setpoint_seg"):
         raise ValueError("--steering-op setpoint 는 --steering-phase-npz-base(gated) 전용")
 
     # --- Multi-layer DiT steering (net-new): layer 마다 hook 하나씩 ---
@@ -1495,7 +1521,7 @@ def main():
     )
     parser.add_argument(
         "--steering-op",
-        choices=("auto", "conceptor", "setpoint"),
+        choices=("auto", "conceptor", "setpoint", "setpoint_seg"),
         default="auto",
         help=(
             "steering 연산자 (exp4-1). auto=NPZ 키로 감지(*_v_steer=setpoint). "
