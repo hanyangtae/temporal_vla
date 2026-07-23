@@ -75,6 +75,8 @@ def scan_pool(pool: str, root: Path) -> list[dict]:
             "sidecar_path": str(j), "ann_mp4": str(ann) if ann.exists() else "",
             "t0_env_step": "", "t0_record": "", "note": "",
         })
+    # 폴더 탐색기와 동일한 숫자 정렬 (경로 사전식 ep1,ep11,..,ep2 방지 — 사용자 주석 편의)
+    rows.sort(key=lambda r: (r["cell"], int(r["episode_idx"])))
     return rows
 
 
