@@ -77,6 +77,45 @@
 
 ---
 
+### 2.5 ★ 위약 선택 공간 교정 (07-23 오후, 배선 버그와 같은 층위)
+
+배포 연산자는 v2 세그먼트형인데 **위약 순열 선택 기준만 구 pooled(49토큰 평균 방향·스칼라 s)로
+남아 있었다.** pooled |cos| 가 통과해도 실제 개입 축에서는 준직교가 깨진다:
+
+| cell | 교정 전 cos_seg [state, future, action] | pooled cos(구 기준) | 교정 후 |
+|---|---|---|---|
+| drawer_left | **−0.55, −0.46, +0.44** | −0.03 통과 | +0.03, −0.07, +0.07 |
+| mixer | **−0.43**, −0.13, **+0.35** | −0.01 통과 | −0.24, −0.02, −0.24 |
+| bread | +0.15, +0.10, **+0.41** | +0.18 통과 | −0.22, −0.19, −0.13 |
+| beer | −0.22, −0.19, +0.16 | −0.11 통과 | +0.06, +0.04, −0.10 |
+| drawer_right | −0.03, +0.03, +0.18 | +0.08 통과 | +0.10, +0.06, −0.29 |
+
+gated 위약은 더 심했다 (bread 3 phase 전부 위반: 0.40 / 0.34 / 0.41).
+LOO 위약도 전체fit 순열을 물려받아 재fit 하는 구조라 부분표본에서 회전
+(**bread 0.72** · drawer_right 0.47 · drawer_left 0.36 · beer 0.30).
+
+**dose 문제**도 겹쳤다. 순열 방향은 실제 클래스 갭이 없어 이동량이 구조적으로 작다 —
+bread 는 200 순열 중 밴드(±25%) 통과가 **0개**여서 위약이 처치의 65% 세기로만 개입했다
+(위약에 유리한 비대칭).
+
+**교정 규약 (현행)**
+1. 후보마다 세그먼트 연산자를 만들어 `max_s |cos(r̂_seg^pl, r̂_seg^treat)| ≤ 0.3`.
+   후보 없으면 순열 풀 200 → 1000 확장, 그래도 없으면 최소-cos 폴백(metadata 기록).
+2. dose 는 밴드 필터 대신 **세그먼트별 스케일** `scale_s = dose_s^treat / dose_s^pl` 을
+   `alpha0_seg_mask` 에 실어 처치와 **정확히** 매칭. hook 이 mask 를 float 승수로 쓰므로
+   serve 변경 불필요. 스케일은 [0.5, 2.0] 클립(클립 시 기록 — bread future 2.01→2.00).
+3. permanent · gated(phase별) · LOO(대상별) **전부 독립 선택**. pairing 은 episode 단위라 유지.
+4. 선택 경로(episode 토큰합 float64)와 재fit 경로(float32 누적)의 일치 검사:
+   Δv ≤ 2e-3 · Δs/|s|max ≤ 2e-3 (실측 Δv~1e-4, min cos=1.000000). 라벨 1개만 뒤집어도
+   Δv=0.32 로 검출됨을 자체검증.
+
+검수 도구: `steer/exp4_1/inspect_npz.py` (처치·위약·LOO·gated 일괄, 위반 시 exit 1).
+
+**처치 연산자는 이 교정과 무관** — 재fit 전후 배열 sha256 **비트 동일**(5 cell × 2 arm 확인)
+이라 교정 전에 돌린 처치 rollout 은 그대로 유효하다.
+
+---
+
 ## 3. arm 정의 (9종, 실행 순서 = 사용자 확정)
 
 | # | arm | 개입 | fit-풀 |
@@ -137,16 +176,23 @@ setM_gated 등록 phase (quota: record ≥50·episode ≥3/클래스, 미달은 
 - drawer_right: **reach-to-handle(3.56)**·**grasp-handle(4.38)** / 나머지 SKIP
 - mixer: reach-to-head(0.87)·contact-head·lift-open / push-down·disengage SKIP
 
-### 4.4 rollout 현황
-**유효(재사용 가능)** — 배선과 무관한 arm만 남김:
-| cell | A0 | noise_resample |
-|---|---|---|
-| drawer_left (fit-풀) | 13판 (구제 0) | 13판 (구제 2) |
-| drawer_right (fit-풀) | 14판 (구제 0) | 14판 (구제 2) |
-| bread (fit-풀) | 7판 (구제 0) | 7판 (구제 2) |
+### 4.4 rollout 현황 (07-23 저녁 기준)
+**폐기분에서 복원**: `noise_resample` 은 steering 을 전혀 쓰지 않는 arm(사이드카
+`steering_npz=null`·`serve_steering=null`, 개입은 `--reseed-from-record` 뿐)이라 토큰 배선
+버그와 무관한데 폐기 배치에 함께 옮겨져 있었다. audit 전수 통과(beer eval 16/16, mixer 7/7)
+확인 후 원위치 복원 — 사유는 `eval/RESTORED_noise_resample_0723.md`.
 
-**폐기** — `eval/_invalid_tokenwiring_0723/` (README에 사유 기록):
-beer eval 7arm×16, mixer 전 arm, legacy fit-풀의 conceptor/setM arm.
+| cell·풀 | A0 | noise_resample | setM_permanent | setM_future_only |
+|---|---|---|---|---|
+| drawer_left fit(13) | 13 | 13 | 13 ✔ | 진행 |
+| drawer_right fit(14) | 14 | 14 | 14 ✔ | 진행 |
+| bread fit(7) | 7 | 7 | 7 ✔ | 7 ✔ |
+| beer fit(8) | — (fit30 수집 자체가 무개입) | 대기 | 대기 | 대기 |
+| beer eval(16) | — (exp3 ho_base 실패분) | 16 | 16 ✔ | 16 ✔ |
+| mixer eval(7)·fit(9) | — | 7(eval) | 대기 | 대기 |
+
+**폐기 유지** — `eval/_invalid_tokenwiring_0723/`: beer eval 6arm×16, mixer 6arm×7
+(conceptor 는 `token_select` 정렬도 어긋나 함께 폐기), legacy fit-풀의 구 setM arm.
 
 ---
 
@@ -201,8 +247,15 @@ python scripts/safe/groot_n15/robocasa/steer/exp4_1/aggregate_rescue.py \
 
 ## 6. 지금 실행 중 / 다음 할 일
 
-**실행 중**: 승준에서 permanent+LOO 재fit (`/tmp/remote_compute_logs/refit_loo.log`,
-12:23 시작, drawer_left 진행 중, 5 cell 순차 ~30분 추정). gated 재fit 은 5/5 완료(실패 0).
+**실행 중 (07-23 13:20 UTC)**
+- 승준: 위약 교정 반영 재fit 3회차 (`/tmp/remote_compute_logs/refit_r3.log`) —
+  permanent+LOO 5 cell → gated 5 cell 순차. LOO 위약이 대상마다 독립 선택되면서
+  cell 당 5~8분.
+- srv50 GPU3(serve 6): beer eval — 처치 2종 완주(16+16) → `setM_permanent_placebo` 진행 중
+  → `setM_future_only_placebo`. conceptor NPZ(beer·mixer) 스테이징 완료.
+- kanu GPU 2·3·4(각 serve 2): fit-풀 — drawer 좌/우 `setM_future_only` 진행,
+  bread 완주 후 beer fit-풀로 이동.
+- srv48: 4 GPU 전부 타인 점유 → bread·drawer **eval**-풀(91판) 대기.
 
 **다음 순서**
 1. refit 완료 확인 → `rsync` 로 `npz/` 회수 → 검수 (세그먼트 갭·이동/갭 ≤3·위약 cos ≤0.3·LOO 판수)
