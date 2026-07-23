@@ -46,6 +46,17 @@ def audit_one(sidecar: Path, t0map: dict, arm: str) -> tuple[bool, str]:
             return False, "A0 인데 gated flag True 존재"
         return True, "ok(A0)"
     k_str = t0map.get(key)
+    if arm == "noise_resample":
+        # steering 없음 — flags 전부 False + reseed K 가 manifest 와 일치 + offset 기록
+        if d.get("steer_from_record") is not None or any(flags):
+            return False, "noise_resample 인데 steering 흔적 존재"
+        if k_str is None or k_str == "NA":
+            return False, f"t0 manifest 미주석/부재: {key}"
+        if d.get("reseed_from_record") != int(k_str):
+            return False, (f"reseed_from_record {d.get('reseed_from_record')} != K {k_str}")
+        if not d.get("reseed_offset"):
+            return False, "reseed_offset 미기록"
+        return True, "ok(noise_resample)"
     if k_str is None:
         return False, f"t0 manifest 에 없는 episode: {key}"
     if k_str == "NA":
