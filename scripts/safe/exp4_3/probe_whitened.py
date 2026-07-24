@@ -117,18 +117,20 @@ def main() -> None:
     ap.add_argument("--manifest", type=Path, required=True)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--capture-layers", default=None)
+    ap.add_argument("--layers", default=None, help="probe 대상 물리 layer 제한 (콤마)")
     ap.add_argument("--k", type=int, default=TOP_K)
     args = ap.parse_args()
     cl = [int(x) for x in args.capture_layers.split(",")] if args.capture_layers else None
     rolls = load_cell_rolls(args.manifest, args.cell, cl)
     labels = [r["success"] for r in rolls]
     cap_layers = rolls[0]["capture_layers"]
+    blks = ([int(x) for x in args.layers.split(",")] if args.layers else cap_layers)
     succ_len = [r["length"] for r, y in zip(rolls, labels) if y == 1]
     cap = int(np.ceil(np.mean(succ_len) + np.std(succ_len)))
     print(f"[{args.model}/{args.cell}] rollouts={len(rolls)} succ={sum(labels)} "
           f"cap={cap} k={args.k} layers={cap_layers}", flush=True)
     cells = []
-    for blk in cap_layers:
+    for blk in blks:
         li = cap_layers.index(blk)
         row = {"model": args.model, "cell": args.cell, "layer": blk, "cap": cap, "k": args.k}
         for kind in ("raw", "lda", "qda"):
