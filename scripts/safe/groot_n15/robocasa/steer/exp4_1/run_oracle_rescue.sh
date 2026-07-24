@@ -119,7 +119,10 @@ run_row() {  # port pool ep scen inf k
   case "$ARM" in
     A0) latch="" ;;
     noise_resample) latch="--reseed-from-record $k" ;;
-    *_gated|*_gated_placebo) latch="--steer-from-record $k --steer-phase-mode current" ;;
+    # 모든 gated 계열은 phase 조건부 — *_gated_future_only·*_gated_future_only_placebo 포함.
+    # (구 `*_gated|*_gated_placebo` 는 _future_only 접미사를 놓쳐 permanent latch 로 빠지고
+    #  want="steer" → 미등록 phase → serve identity 무음화 되는 버그였음, 2026-07-24 수정.)
+    *_gated|*_gated_*) latch="--steer-from-record $k --steer-phase-mode current" ;;
     *) latch="--steer-from-record $k"
        [ "$pool" = fit ] && latch="$latch --steer-phase-name ep${ep}" ;;
   esac
@@ -153,6 +156,11 @@ case "$ARM" in
   conceptor_permanent|conceptor_gated)
     # exp3 배포와 동일 정렬: pooled fit → 전 토큰 적용 (token-select all)
     FLAGS="$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/$ARM" conceptor "$BETA_CONCEPTOR") --steering-denoise ${DENOISE_CONCEPTOR:-per_step} --steering-token-select all" || exit 12 ;;
+  conceptor_permanent_future_only|conceptor_gated_future_only)
+    # future_only = 같은 conceptor M(base NPZ 재사용, 재fit 불요) 을 future 세그먼트
+    # 토큰([1:T-horizon]) 에만 적용 (token-select future). setM future_only 와 정렬.
+    _cb="${ARM%_future_only}"
+    FLAGS="$(serve_steer_flags "$NPZ_ROOT/$CELL_ID/$_cb" conceptor "$BETA_CONCEPTOR") --steering-denoise ${DENOISE_CONCEPTOR:-per_step} --steering-token-select future" || exit 12 ;;
   setM_*)
     _NB="$NPZ_ROOT/$CELL_ID/$ARM"; [ "$POOL" = fit ] && _NB="${_NB}_loo"
     FLAGS="$(serve_steer_flags "$_NB" setpoint_seg "$BETA_SETM") --steering-token-select all" || exit 12 ;;

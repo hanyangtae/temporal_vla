@@ -236,7 +236,9 @@ def load_steering_segment(npz_path: str | Path):
 
 
 PATHWAYS: tuple[str, ...] = ("dit", "vl")
-TOKEN_SELECTS: tuple[str, ...] = ("last_horizon", "all")
+# "future": setM future_only 정렬 — future 세그먼트 토큰([1 : T-horizon]) 만 steer
+# (state[0:1]·action[마지막 horizon] 제외). conceptor_*_future_only arm 용.
+TOKEN_SELECTS: tuple[str, ...] = ("last_horizon", "all", "future")
 
 
 class ConceptorSteering:
@@ -369,6 +371,13 @@ class ConceptorSteering:
         # h' = h @ Mᵀ (마지막 D 축). token_select 로 적용 토큰 결정.
         if self.token_select == "last_horizon":
             steered[..., -self.horizon :, :] = steered[..., -self.horizon :, :] @ Mt.T
+        elif self.token_select == "future":
+            # future 세그먼트만 ([1 : T-horizon]) — state[0:1]·action[마지막 horizon] 제외.
+            # setM future_only(seg_mask[0,1,0]) 와 정렬한 conceptor future_only.
+            _t = steered.shape[-2]
+            steered[..., 1 : _t - self.horizon, :] = (
+                steered[..., 1 : _t - self.horizon, :] @ Mt.T
+            )
         else:  # "all" — 전체 토큰 (COAST 49토큰 정렬 / VL goal pathway)
             steered = steered @ Mt.T
         if is_tuple:
