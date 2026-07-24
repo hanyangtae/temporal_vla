@@ -299,10 +299,14 @@ def main() -> None:
                 Xs_, eps_s = gather_phase(rolls, labels, li, 1, ph, dcap)
                 Xf_, eps_f = gather_phase(rolls, labels, li, 0, ph, dcap)
                 ns, nf = len(Xs_), len(Xf_)
+            try:  # quota 도 공분산 기반 → N<2 phase 에서 크래시 가능(try 블록 밖이라 별도 격리)
+                quota_val = coast_quota(rolls, labels, li, ph, dcap)
+            except Exception:
+                quota_val = None
             rec = {"model": args.model, "cell": args.cell, "layer": blk, "phase": ph_name,
                    "dwell_cap": dcap, "n_rec_s": int(ns), "n_rec_f": int(nf),
                    "n_eps_s": int(eps_s), "n_eps_f": int(eps_f),
-                   "quota": coast_quota(rolls, labels, li, ph, dcap)}
+                   "quota": quota_val}
             quota_ok = (ns >= GATED_MIN_REC and nf >= GATED_MIN_REC
                         and eps_s >= GATED_MIN_EPS and eps_f >= GATED_MIN_EPS)
             if ph is None or quota_ok:
@@ -321,7 +325,7 @@ def main() -> None:
                   f"mean_z={mz if mz is None else round(mz,2)!s:>6} "
                   f"kl_z={kz if kz is None else round(kz,2)!s:>6} "
                   f"mfrac={mf if mf is None else round(mf,2)!s:>5} "
-                  f"quota={rec['quota']:.4f} n={ns}/{nf}"
+                  f"quota={'None' if rec['quota'] is None else format(rec['quota'], '.4f')} n={ns}/{nf}"
                   + (f"  [{rec['skip_reason']}]" if rec.get("skip_reason") else ""), flush=True)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
