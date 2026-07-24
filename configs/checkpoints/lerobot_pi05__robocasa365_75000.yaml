@@ -74,12 +74,16 @@ model_specific:
   policy_type: pi05
   # config.json 에 camera 없음 → external_config.camera_keys 로 _force_external.
   # camera_keys = {통일API src key → pi05 model input_features key}.
-  # dict 삽입 순서 = input_features(=image token) 순서 → openpi 표준 슬롯 순서 유지:
+  # dict 삽입 순서 = input_features(=image token) 순서 → openpi 표준 슬롯 순서:
   #   base_0_rgb, left_wrist_0_rgb, right_wrist_0_rgb.
   # robosuite 3카메라(agentview_left/right, eye_in_hand) → RoboCasaObsProcessor(--three-cameras)가
   #   observation.images.left / .right / .wrist alias 로 emit.
-  # slot↔camera 대응은 openpi robocasa 변환 카메라 리스트 순서(agentview_left, agentview_right,
-  #   eye_in_hand)를 positional 로 매핑한 것 — SR 게이트로 실측 검증.
+  # slot↔camera: openpi single-arm 관례를 따라 THE 손목(eye_in_hand)을 left_wrist_0_rgb 슬롯에,
+  #   외부뷰 2개(agentview_left/right)를 base_0_rgb / right_wrist_0_rgb 에 배치.
+  #   (LIBERO single-Franka 관례 = base(exterior)+left_wrist(wrist) 확장.)
+  #   ⚠️ SR 미검증: 이 mapping 도 대안(wrist→right_wrist_0_rgb)도 OpenDrawer SR=0.
+  #      둘 다 task-conditioned 대형 action 은 생성(serve 검증됨). 정확한 slot 대응은
+  #      SR>0 task 로 재확정 필요 (convert 스크립트/학습 dataset info.json 부재).
   external_config:
     image_shape: [3, 224, 224]
     state_shape: [32]
@@ -87,5 +91,5 @@ model_specific:
     dtype: bfloat16
     camera_keys:
       observation.images.left:  observation.images.base_0_rgb
-      observation.images.right:  observation.images.left_wrist_0_rgb
-      observation.images.wrist:  observation.images.right_wrist_0_rgb
+      observation.images.wrist:  observation.images.left_wrist_0_rgb
+      observation.images.right:  observation.images.right_wrist_0_rgb
