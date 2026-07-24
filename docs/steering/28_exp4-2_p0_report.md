@@ -181,6 +181,23 @@ eval 소표본(fail 12) + 단일 scene ③ g1 fit fail 4ep ④ dwell 은 서브�
 phase-bin dwell-matched 정밀판은 미실행 ⑤ C1 은 전이 경계 유의 — 사용자 결정대로 유지하되
 음성 대조 성격 병기.
 
+## 9. 추록 (07-24) — clean baseline activation 확보 (state-matched pair)
+
+**문제**: P0/P1 의 로컬 baseline 은 `--no-features`(판정 json 만) 로 수집돼, 섭동을 준 바로
+그 에피소드들의 **clean activation 이 로컬에 없었다** → perturbed − clean 차이(WAM 식
+state-matched pair, C1 처럼 순수 관측 섭동의 방향 격리)를 계산 불가. `natural_strict`(승준
+회수분)는 같은 seed·capture ON 이나 **타 머신 수집이라 state-matched 아님**(머신-로컬 결정론).
+
+**수정**: 러너에 `PHASE=baseline CAPTURE=1` 모드 신설 → 같은 seed(100084, inf=ep×1000)로
+clean baseline **60판을 capture ON 재수집**(→ `baseline_cap/`, 48 succ). **state-match 실측
+검증**: P1 ep18(trigger record 12)의 clean vs perturbed **record0 max|Δ|=0.0** — trigger
+이전 bitwise 동일(같은 머신 결정론 확인). 이제 각 perturbed 에피소드에 clean 짝이 존재:
+- P1/P2(mid-trigger): trigger 이전 동일 → 차이 = 순수 섭동 효과
+- C1/G1(pre-record): 시작부터 발산 (관측/물리 변경)
+
+**불록 해제**: clean-succ 로컬 축(exp4-1 rescue 의 올바른 기준선), state-matched Δh 방향
+분석, "perturbed-succ vs clean-succ" 오염 감시(24b §6). 다음 분석에서 활용.
+
 ## 부록 — 재현 경로
 
 - runbook: `scripts/safe/groot_n15/robocasa/steer/induced/README.md`
