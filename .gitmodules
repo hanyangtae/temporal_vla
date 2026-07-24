@@ -27,4 +27,4 @@
 [submodule "task_classification"]
 	path = task_classification
 	url = https://github.com/robots-oh/task_classification.git
-	branch = phase_post_hoc_analysis
+	branch = main
