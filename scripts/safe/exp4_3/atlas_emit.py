@@ -11,8 +11,9 @@ import json
 from pathlib import Path
 
 COLS = ["model", "cell", "layer", "phase", "var_z", "var_gain", "mean_z", "mean_auroc",
-        "quota", "n_rec_s", "n_rec_f", "n_eps_s", "n_eps_f", "dwell_cap", "alpha",
-        "skip_reason"]
+        "kl_z", "kl_mean_z", "kl_cov_z", "kl_total", "kl_mean_term", "kl_cov_term",
+        "mean_frac", "k", "quota", "n_rec_s", "n_rec_f", "n_eps_s", "n_eps_f",
+        "dwell_cap", "alpha", "skip_reason"]
 
 
 def fmt(v) -> str:

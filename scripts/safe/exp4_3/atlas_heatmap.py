@@ -41,7 +41,8 @@ def load(tsv: Path):
     with open(tsv) as f:
         for r in csv.DictReader(f, delimiter="\t"):
             r["layer"] = int(r["layer"])
-            for k in ("var_z", "mean_z", "quota", "var_gain", "mean_auroc"):
+            for k in ("var_z", "mean_z", "quota", "var_gain", "mean_auroc",
+                      "kl_z", "kl_mean_z", "kl_cov_z", "mean_frac"):
                 r[k] = float(r[k]) if r.get(k) else float("nan")
             for k in ("n_rec_s", "n_rec_f"):
                 r[k] = int(r[k]) if r.get(k) else 0
@@ -66,28 +67,27 @@ def _grid(ax, M, xt, yt, title, cmap, vmin, vmax, cbar_label, annot=True):
 
 def fig_global(rows, out: Path):
     g = [r for r in rows if r["phase"] == "__global__"]
-    models = sorted({r["model"] for r in g})
     cells = sorted({(r["model"], r["cell"]) for r in g})
     layers = sorted({r["layer"] for r in g})
     by = {(r["model"], r["cell"], r["layer"]): r for r in g}
-    fig, axes = plt.subplots(1, 3, figsize=(4.6 * 3, 0.42 * len(cells) + 2.4))
+    panels = [
+        ("mean_z", "RdBu_r", (-Z_LIM, Z_LIM), "평균분리 z (setM)"),
+        ("var_z", "RdBu_r", (-Z_LIM, Z_LIM), "분산분리 z (conceptor)"),
+        ("kl_z", "RdBu_r", (-Z_LIM, Z_LIM), "통합 KL z (총 분리도)"),
+        ("mean_frac", "PuOr", (0.0, 1.0), "성분 비율 (1=평균형·0=분산형)"),
+        ("quota", "viridis", None, "COAST quota tr(C)/D"),
+    ]
+    fig, axes = plt.subplots(1, len(panels), figsize=(4.5 * len(panels), 0.42 * len(cells) + 2.6))
     ylab = [f"{m}/{c}".replace("pq3_", "") for m, c in cells]
-    for ax, key, cmap, lim, lab in (
-        (axes[0], "mean_z", "RdBu_r", Z_LIM, "평균분리 z"),
-        (axes[1], "var_z", "RdBu_r", Z_LIM, "분산분리 z"),
-        (axes[2], "quota", "viridis", None, "COAST quota tr(C)/D"),
-    ):
+    for ax, (key, cmap, rng, lab) in zip(axes, panels):
         M = np.full((len(cells), len(layers)), np.nan)
         for i, (m, c) in enumerate(cells):
             for j, l in enumerate(layers):
                 r = by.get((m, c, l))
                 if r:
                     M[i, j] = r[key]
-        if lim is not None:
-            im = _grid(ax, M, [f"L{l}" for l in layers], ylab, lab, cmap, -lim, lim, lab)
-        else:
-            im = _grid(ax, M, [f"L{l}" for l in layers], ylab, lab, cmap,
-                       np.nanmin(M), np.nanmax(M), lab)
+        vmin, vmax = rng if rng else (np.nanmin(M), np.nanmax(M))
+        im = _grid(ax, M, [f"L{l}" for l in layers], ylab, lab, cmap, vmin, vmax, lab)
         fig.colorbar(im, ax=ax, fraction=0.035)
         ax.set_xlabel("DiT layer")
     fig.suptitle("exp4-3 분리도 지도 — global (길이통제: 성공길이 mean+1sd cap)", fontsize=11)
