@@ -80,7 +80,8 @@ def load_one(pkl_path: Path, capture_layers_override=None) -> dict:
     r["success"] = int(d.get("episode_success", 0))
     r["feature_kind"] = d.get("feature_kind")
     for k in ("episode_idx", "inference_seed", "scenario_seed"):
-        r[k] = int(d.get(k, -1))
+        v = d.get(k)  # 키가 존재하나 None 인 경우(예: inference_seed 미지정) 대비
+        r[k] = int(v) if v is not None else -1
     return r
 
 
