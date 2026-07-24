@@ -32,9 +32,11 @@ for cell in "${cells[@]}"; do
   echo "=== [atlas] n16/$cell ($n rollouts) layers=$LAYERS $(date -u '+%FT%T') ==="
   "$PY" scripts/safe/exp4_3/atlas_sweep.py --model n16 --cell "$cell" \
     --manifest "$MF" --layers "$LAYERS" --out "$O/$cell.json" || { echo "[FAIL atlas] $cell"; rc=1; }
-  echo "=== [probe] n16/$cell $(date -u '+%FT%T') ==="
-  "$PY" scripts/safe/exp4_3/probe_whitened.py --model n16 --cell "$cell" \
-    --manifest "$MF" --layers "$LAYERS" --out "$OP/$cell.json" || { echo "[FAIL probe] $cell"; rc=1; }
+  if [ "${ATLAS_ONLY:-0}" != "1" ]; then
+    echo "=== [probe] n16/$cell $(date -u '+%FT%T') ==="
+    "$PY" scripts/safe/exp4_3/probe_whitened.py --model n16 --cell "$cell" \
+      --manifest "$MF" --layers "$LAYERS" --out "$OP/$cell.json" || { echo "[FAIL probe] $cell"; rc=1; }
+  fi
 done
 echo "=== [n16 atlas] all done rc=$rc $(date -u '+%FT%T') ==="
 exit $rc
