@@ -373,6 +373,56 @@ def _append_summary(summary_path: Path, task_id: int, task: str, episode_idx: in
         )
 
 
+def _action_tremor_summary(
+    traj: list, steer_on: list, t0_record: "int | None"
+) -> "dict[str, Any] | None":
+    """개입(steering)이 액션 궤적에 주는 떨림(jitter) 진단 — record 해상도.
+
+    traj = record 별 groot action 벡터(`_extract_groot_action_vector`, 첫 실행 스텝) → [R, D].
+    replan(get_action) 단위로 명령이 얼마나 튀는지를 잰다:
+      speed_r = ‖a_r − a_{r-1}‖   (record 간 명령 변화율)
+      jerk_r  = ‖Δ³a_r‖           (3차 차분 = 고주파 떨림 대리지표)
+    base(무개입/개입 전)와 개입 이후를 나눠 저장 → offline 에서 같은 episode 의 base arm
+    (noise_resample/A0) 대비 개입 후 떨림 증가량(Δjerk)을 비교한다. steer_on 은 record 별
+    개입 활성 flag (steer_from_record, 없으면 reseed_from_record 기준). 판정에는 무영향,
+    사이드카에 진단 필드만 추가한다.
+    """
+    if not traj or len(traj) < 4:
+        return None
+    A = np.asarray(traj, dtype=np.float64)                                   # [R, D]
+    R, D = A.shape[0], (A.shape[1] if A.ndim == 2 else 1)
+    if A.ndim == 1:
+        A = A.reshape(R, 1)
+    speed = np.concatenate([[0.0], np.linalg.norm(np.diff(A, axis=0), axis=1)])          # [R]
+    jerk = np.concatenate([[0.0, 0.0, 0.0], np.linalg.norm(np.diff(A, n=3, axis=0), axis=1)])
+    steer = np.asarray(steer_on, dtype=bool)[:R]
+
+    def _agg(mask: "np.ndarray") -> "dict[str, Any] | None":
+        m = np.asarray(mask, dtype=bool)
+        if int(m.sum()) < 2:
+            return None
+        return {
+            "n": int(m.sum()),
+            "speed_mean": float(speed[m].mean()),
+            "speed_p95": float(np.percentile(speed[m], 95)),
+            "jerk_mean": float(jerk[m].mean()),
+            "jerk_p95": float(np.percentile(jerk[m], 95)),
+            "jerk_max": float(jerk[m].max()),
+        }
+
+    return {
+        "dim": int(D),
+        "n_records": int(R),
+        "t0_record": (int(t0_record) if t0_record is not None else None),
+        # record 해상도 배열 — 개입 전후 정렬·base arm 대조를 offline 에서 하기 위한 원자료
+        "speed": [round(float(x), 6) for x in speed],
+        "jerk": [round(float(x), 6) for x in jerk],
+        # 개입 활성 여부로 split (base arm 은 pre 만; steered arm 은 post 가 개입 구간)
+        "pre_intervention": _agg(~steer),
+        "post_intervention": _agg(steer),
+    }
+
+
 def _resolve_task_dir(root_or_task_dir: Path, task: str) -> Path:
     """Return the task-specific directory used by the N1.6 collection layout."""
 
@@ -729,6 +779,14 @@ def run() -> dict[str, Any]:
             first_success_step = None
             step_i = 0
             no_features = getattr(args, "no_features", False)
+            # 떨림(jitter) 진단: record(=replan) 별 action 벡터·개입 활성 flag 누적.
+            # 개입점 = steer_from_record(steered arm) 없으면 reseed_from_record(noise base) —
+            # base·steered 를 같은 t0 로 split 해 개입 후 떨림 증가량을 대조한다.
+            action_traj: list = []
+            action_steer_on: list = []
+            _interv_record = (
+                steer_from_record if steer_from_record is not None else reseed_from_record
+            )
             while step_i < max_steps:
                 # no-features(캡처 OFF) 모드는 records 가 없으므로 추론 호출 수(n_calls)로
                 # phase 정합을 잡는다 (skip_features 는 매 콜 chunk 추론 — 두 계수 동치).
@@ -757,6 +815,11 @@ def run() -> dict[str, Any]:
                 if progress_after > progress_before:
                     feature_phases.append(phase)
                     phase_gated_flags.append(gated_now)
+                    # 떨림 진단: 이 record 의 명령 action 벡터(첫 실행 스텝)와 개입 활성 여부.
+                    action_traj.append(_extract_groot_action_vector(official_action))
+                    action_steer_on.append(
+                        _interv_record is not None and progress_before >= _interv_record
+                    )
                 obs, reward, terminated, truncated, info = env.step(official_action)
                 step_i += 1
                 success_now = step_success(reward, info, env=env)
@@ -806,6 +869,10 @@ def run() -> dict[str, Any]:
                 "wrong_grasp_steps": list(getattr(labeler, "wrong_grasp_steps", []) or []),
                 "wrong_grasp_timeline": list(getattr(labeler, "wrong_grasp_timeline", []) or []),
             }
+            # 떨림(jitter) 진단 — 개입이 액션 궤적에 준 speed/jerk (record 해상도, 판정 무영향).
+            extra_metadata["action_kinematics"] = _action_tremor_summary(
+                action_traj, action_steer_on, _interv_record
+            )
             # exp2(구 pq2) 이중 채점 (docs/steering/18): apple corrected env fork 가 노출하는
             # (_pq2_* attr 명은 robocasa fork 계약 — rename 금지)
             # per-episode ever 플래그 {"0.07": bool, "0.1": bool}. 미지원 task 는 None.
