@@ -27,23 +27,35 @@ sys.path.insert(0, str(REPO / "scripts/safe/groot_n15/robocasa/steer"))
 from fit_phase_conceptor_n15 import load_rollout_fulltoken  # noqa: E402
 
 
-def _load_pooled(d: dict, pkl_path) -> dict:
-    """record [L,K,D] (T 이미 pool — N1.6 pooled / π0.5 expert 캡처)."""
+def _load_pooled(d: dict, pkl_path, keep_dit_k: bool = False) -> dict:
+    """record [L,K,D] (T 이미 pool — N1.6 pooled / π0.5 expert 캡처).
+
+    메모리: K-mean 을 record 단위로 스트리밍해 dit [n,L,D] 만 유지한다. N1.6 full 모드는
+    K=T=51 이라 dit_k [n,L,51,D] float32 전체 유지 시 실패판당 ~1.4GB → 30판이면 승준(31GB) OOM.
+    dit_k 는 analysis 파이프라인이 안 쓰므로(atlas/probe/kl 모두 dit 만) 기본 미유지, per-token
+    분석이 필요할 때만 keep_dit_k=True 로 build."""
     hs = d.get("hidden_states") or []
     if not hs:
         raise ValueError(f"{pkl_path}: hidden_states 비어 있음")
-    dit_k = np.stack([np.asarray(r, dtype=np.float32) for r in hs], axis=0)  # [n,L,K,D]
-    if dit_k.ndim != 4:
-        raise ValueError(f"{pkl_path}: pooled 기대 [n,L,K,D], got {dit_k.shape}")
+    dit_rows = []
+    for r in hs:
+        a = np.asarray(r, dtype=np.float32)  # [L,K,D] — 매 반복 해제(거대 중간배열 회피)
+        if a.ndim != 3:
+            raise ValueError(f"{pkl_path}: pooled record 기대 [L,K,D], got {a.shape}")
+        dit_rows.append(a.mean(axis=1))       # [L,D]
+    dit = np.stack(dit_rows, axis=0)          # [n,L,D]
     phases = list(d.get("feature_phases") or [])
-    if len(phases) != dit_k.shape[0]:
-        raise ValueError(f"{pkl_path}: feature_phases {len(phases)} != records {dit_k.shape[0]}")
-    return {"dit_k": dit_k, "dit": dit_k.mean(axis=2), "phases": phases,
-            "length": int(dit_k.shape[0])}
+    if len(phases) != dit.shape[0]:
+        raise ValueError(f"{pkl_path}: feature_phases {len(phases)} != records {dit.shape[0]}")
+    dit_k = None
+    if keep_dit_k:
+        dit_k = np.stack([np.asarray(r, dtype=np.float32) for r in hs], axis=0)  # [n,L,K,D]
+    return {"dit_k": dit_k, "dit": dit, "phases": phases, "length": int(dit.shape[0])}
 
 
-def _load_slot(d: dict, pkl_path) -> dict:
-    """record [L,D] (Cosmos action-슬롯). K=1 확장."""
+def _load_slot(d: dict, pkl_path, keep_dit_k: bool = False) -> dict:
+    """record [L,D] (Cosmos action-슬롯). K=1 확장. (dit_k 는 [n,L,1,D] 로 저렴 → 항상 build)"""
+    del keep_dit_k
     hs = d.get("hidden_states") or []
     if not hs:
         raise ValueError(f"{pkl_path}: hidden_states 비어 있음")
@@ -57,16 +69,16 @@ def _load_slot(d: dict, pkl_path) -> dict:
             "length": int(dit.shape[0])}
 
 
-def load_one(pkl_path: Path, capture_layers_override=None) -> dict:
+def load_one(pkl_path: Path, capture_layers_override=None, keep_dit_k: bool = False) -> dict:
     with open(pkl_path, "rb") as f:
         d = pickle.load(f)
     rec0 = np.asarray((d.get("hidden_states") or [None])[0])
     if rec0.ndim == 4:
         r = load_rollout_fulltoken(d, pkl_path, "mean")
     elif rec0.ndim == 3:
-        r = _load_pooled(d, pkl_path)
+        r = _load_pooled(d, pkl_path, keep_dit_k)
     elif rec0.ndim == 2:
-        r = _load_slot(d, pkl_path)
+        r = _load_slot(d, pkl_path, keep_dit_k)
     else:
         raise ValueError(f"{pkl_path}: 알 수 없는 record ndim={rec0.ndim}")
     cl = (r.get("capture_layers") or d.get("capture_layers")
@@ -85,8 +97,11 @@ def load_one(pkl_path: Path, capture_layers_override=None) -> dict:
     return r
 
 
-def load_cell_rolls(manifest: Path, cell: str, capture_layers_override=None) -> list:
-    """manifest tsv(pkl \t label [\t scene]) 에서 cell 행만 로드. label 이 내장값 override."""
+def load_cell_rolls(manifest: Path, cell: str, capture_layers_override=None,
+                    keep_dit_k: bool = False) -> list:
+    """manifest tsv(pkl \t label [\t scene]) 에서 cell 행만 로드. label 이 내장값 override.
+    keep_dit_k=False(기본): dit_k 미유지 — analysis 파이프라인은 dit 만 쓰고, N1.6 full 은
+    dit_k 전체 유지 시 승준 OOM."""
     rows = []
     for line in Path(manifest).read_text().splitlines():
         line = line.strip()
@@ -107,7 +122,7 @@ def load_cell_rolls(manifest: Path, cell: str, capture_layers_override=None) -> 
     rolls = []
     contract = None
     for p, label in rows:
-        r = load_one(p, capture_layers_override)
+        r = load_one(p, capture_layers_override, keep_dit_k)
         r["success"] = label
         sig = (tuple(r["capture_layers"]), r["dit"].shape[2])  # (L 목록, D)
         if contract is None:
