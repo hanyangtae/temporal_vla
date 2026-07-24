@@ -38,6 +38,13 @@ if [ "$PHASE" = "capture" ]; then
   serve_extra="--collect --capture-vl --groot-dit-capture-layers ${CAP}"
   collect_extra=""
 fi
+# PHASE=baseline + CAPTURE=1: clean baseline 을 capture ON 으로 (섭동 없는 activation 확보 —
+# perturbed 짝의 state-matched clean, 같은 머신 결정론). 출력은 baseline_cap 로 분리.
+if [ "$PHASE" = "baseline" ] && [ "${CAPTURE:-0}" = "1" ]; then
+  serve_extra="--collect --capture-vl --groot-dit-capture-layers ${CAP}"
+  collect_extra=""
+  BASELINE_OUT="${P0}/baseline_cap"
+fi
 
 start_serves() {
   for i in $(seq 0 $((NW - 1))); do
@@ -83,7 +90,7 @@ worker_baseline() {  # wid port
   local wid=$1 port=$2
   for idx in $(seq 0 $((N_BASE - 1))); do
     [ $((idx % NW)) -eq "$wid" ] || continue
-    local out="${P0}/baseline"
+    local out="${BASELINE_OUT:-${P0}/baseline}"
     done_mark "$out" "$idx" && { echo "[w${wid}] skip ep${idx}"; continue; }
     echo "[w${wid}] baseline ep${idx}"
     run_ep "$port" "$out" "$idx" $((idx * STRIDE)) $collect_extra
@@ -127,5 +134,6 @@ for wid in $(seq 0 $((NW - 1))); do
 done
 wait
 kill_serves; trap - EXIT
-echo "[p0-${PHASE}] $(date '+%F %T') DONE"
-touch "${LOGDIR}/P0_${PHASE}_DONE"
+DONE_TAG="${PHASE}$([ "${CAPTURE:-0}" = "1" ] && echo _cap)"
+echo "[p0-${DONE_TAG}] $(date '+%F %T') DONE"
+touch "${LOGDIR}/P0_${DONE_TAG}_DONE"
