@@ -24,3 +24,7 @@
 [submodule "Isaac-GR00T-N1.5"]
 	path = src/policies/Isaac-GR00T-N1.5
 	url = https://github.com/NVIDIA/Isaac-GR00T.git
+[submodule "task_classification"]
+	path = task_classification
+	url = https://github.com/robots-oh/task_classification.git
+	branch = phase_post_hoc_analysis
