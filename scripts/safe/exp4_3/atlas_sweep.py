@@ -40,6 +40,7 @@ sys.path.insert(0, str(REPO / "scripts/safe/groot_n15/robocasa/steer/exp4_1"))
 
 from src.conceptor import and_conceptor, compute_conceptor, not_conceptor  # noqa: E402
 from atlas_loader import load_cell_rolls  # noqa: E402
+from kl_decomp import HELD_FRAC as KL_HELD_FRAC, kl_split  # noqa: E402
 from conceptor_layer_sweep import (  # noqa: E402
     N_PERM as VAR_N_PERM,
     RNG_SEED as VAR_SEED,
@@ -56,6 +57,7 @@ from fit_mean_diff import (  # noqa: E402
     TERMINAL_PHASES,
     auroc,
     cv_auroc,
+    episode_records,
     episode_phase_records,
     gather,
     gather_phase,
@@ -166,6 +168,61 @@ def _phase_fit_auroc(rolls, labels, li, ph, dcap) -> float:
     return auroc(np.concatenate(pf), np.concatenate(ps))
 
 
+# ------------------------------------------------- 통합 진단: KL 분해 (평균+분산 성분)
+def _kl_records(rolls, labels, li, ph, dcap, rng):
+    """episode split → (Xs_tr, Xf_tr, Xs_he, Xf_he). phase=None 이면 global cap."""
+    def recs(i):
+        return (episode_records(rolls[i], li, dcap) if ph is None
+                else episode_phase_records(rolls[i], li, ph, dcap))
+    idx_s = [i for i in range(len(rolls)) if labels[i] == 1 and len(recs(i))]
+    idx_f = [i for i in range(len(rolls)) if labels[i] == 0 and len(recs(i))]
+    if len(idx_s) < 3 or len(idx_f) < 3:
+        return None
+    rng.shuffle(idx_s)
+    rng.shuffle(idx_f)
+    h_s = idx_s[: max(1, int(len(idx_s) * KL_HELD_FRAC))]
+    h_f = idx_f[: max(1, int(len(idx_f) * KL_HELD_FRAC))]
+    t_s = [i for i in idx_s if i not in set(h_s)]
+    t_f = [i for i in idx_f if i not in set(h_f)]
+    if not t_s or not t_f:
+        return None
+    cat = lambda ids: np.concatenate([recs(i) for i in ids], axis=0)  # noqa: E731
+    return cat(t_s), cat(t_f), cat(h_s), cat(h_f)
+
+
+def kl_diag(rolls, labels, li, blk, ph, dcap, perms) -> dict:
+    """KL 총량·평균성분·분산성분 + 각각의 episode-라벨 순열 null z (통합 진단 축)."""
+    got = _kl_records(rolls, labels, li, ph, dcap, np.random.default_rng(VAR_SEED + 5 + blk))
+    if got is None:
+        return {}
+    obs = kl_split(*got)
+    if obs is None:
+        return {}
+    nulls = {"kl_total": [], "kl_mean_term": [], "kl_cov_term": []}
+    for pi, pl in enumerate(perms):
+        g = _kl_records(rolls, pl, li, ph, dcap,
+                        np.random.default_rng(VAR_SEED + 5 + blk + 131 * (pi + 1)))
+        if g is None:
+            continue
+        r = kl_split(*g)
+        if r is None:
+            continue
+        for k in nulls:
+            nulls[k].append(r[k])
+    out = {k: obs[k] for k in ("kl_total", "kl_mean_term", "kl_cov_term",
+                               "mean_frac", "k", "lam_s", "lam_f")}
+    for key, zname in (("kl_total", "kl_z"), ("kl_mean_term", "kl_mean_z"),
+                       ("kl_cov_term", "kl_cov_z")):
+        v = [x for x in nulls[key] if np.isfinite(x)]
+        if len(v) >= 5:
+            mu, sd = float(np.mean(v)), float(np.std(v))
+            out[zname] = (obs[key] - mu) / sd if sd > 1e-12 else None
+            out[zname + "_null"] = mu
+        else:
+            out[zname] = None
+    return out
+
+
 # --------------------------------------------------------------------- COAST quota
 def coast_quota(rolls, labels, li, ph, dcap) -> float:
     """in-sample tr(C_steer)/D, α=10, **길이통제 없이** phase pool (COAST 원본 규약)."""
@@ -251,12 +308,16 @@ def main() -> None:
             if ph is None or quota_ok:
                 rec.update(var_sep(rolls, labels, li, blk, ph, dcap, perms))
                 rec.update(mean_sep(rolls, labels, li, blk, ph, dcap, perms))
+                rec.update(kl_diag(rolls, labels, li, blk, ph, dcap, perms))
             else:
                 rec["skip_reason"] = f"quota 미달 (rec {ns}/{nf}, eps {eps_s}/{eps_f})"
             cells.append(rec)
             vz, mz = rec.get("var_z"), rec.get("mean_z")
+            kz, mf = rec.get("kl_z"), rec.get("mean_frac")
             print(f"  L{blk:<3} {ph_name:16s} var_z={vz if vz is None else round(vz,2)!s:>6} "
                   f"mean_z={mz if mz is None else round(mz,2)!s:>6} "
+                  f"kl_z={kz if kz is None else round(kz,2)!s:>6} "
+                  f"mfrac={mf if mf is None else round(mf,2)!s:>5} "
                   f"quota={rec['quota']:.4f} n={ns}/{nf}"
                   + (f"  [{rec['skip_reason']}]" if rec.get("skip_reason") else ""), flush=True)
 
