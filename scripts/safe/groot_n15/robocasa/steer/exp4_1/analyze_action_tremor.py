@@ -29,6 +29,16 @@ STEER_ARMS = [
     "setM_future_only_placebo", "setM_gated_future_only_placebo",
 ]
 
+# ★핵심 비교: future_only(future 세그먼트만·mask[0,1,0])가 full(전 세그먼트·mask[1,1,1])보다
+# 더 부드럽게(낮은 jerk) 개입하는가. (future_only arm, full counterpart) 쌍 — 같은 episode paired.
+FUTURE_ONLY_PAIRS = [
+    ("setM_future_only", "setM_permanent"),
+    ("setM_gated_future_only", "setM_gated"),
+    # conceptor_future_only 는 아직 arm 미존재 (사용자 검토 중) — 생기면 추가
+    ("conceptor_future_only", "conceptor_permanent"),
+    ("conceptor_gated_future_only", "conceptor_gated"),
+]
+
 
 def _load_sidecars(arm_dir: Path, pool: str) -> dict:
     """episode_idx → action_kinematics (있는 것만)."""
@@ -119,6 +129,46 @@ def main() -> None:
             print(f"{cell:16} {arm:30} {n:3d} {bp_m:9.4f} {ap_m:9.4f} "
                   f"{dj:+8.4f} {rt:6.2f} {pp_m:8.2f}")
         report["cells"][cell] = cell_rep
+
+    # ── ★future_only vs full 개입 매끄러움 대조 (사용자 핵심 질문) ──────────────────
+    # Δjerk = jerk_post(future_only) − jerk_post(full).  < 0 → future_only 가 더 부드러움.
+    print("\n" + "=" * 78)
+    print("future_only vs full — 개입 후 jerk 비교 (Δ<0 = future_only 가 더 부드러움)")
+    print("=" * 78)
+    print(f"{'cell':16} {'future_only vs full':34} {'n':>3} {'fo_jerk':>8} {'full_jerk':>9} "
+          f"{'Δjerk':>8} {'ratio':>6}")
+    print("-" * 90)
+    fo_report = {}
+    for cell in cells:
+        cdir = args.eval_root / cell
+        for fo_arm, full_arm in FUTURE_ONLY_PAIRS:
+            fo = _load_sidecars(cdir / fo_arm, args.pool)
+            full = _load_sidecars(cdir / full_arm, args.pool)
+            eps = sorted(set(fo) & set(full))
+            rows = []
+            for ep in eps:
+                jf = _post(fo[ep]["kin"])
+                jl = _post(full[ep]["kin"])
+                if jf is None or jl is None or jl <= 0:
+                    continue
+                rows.append({"ep": ep, "fo_jerk": jf, "full_jerk": jl,
+                             "delta": jf - jl, "ratio": jf / jl})
+            if not rows:
+                continue
+            n = len(rows)
+            fj = median(r["fo_jerk"] for r in rows)
+            lj = median(r["full_jerk"] for r in rows)
+            dj = median(r["delta"] for r in rows)
+            rt = median(r["ratio"] for r in rows)
+            fo_report[f"{cell}:{fo_arm}_vs_{full_arm}"] = {
+                "n": n, "fo_jerk": fj, "full_jerk": lj,
+                "delta_jerk_median": dj, "ratio_median": rt, "per_episode": rows,
+            }
+            smoother = "  ← 더 부드러움" if dj < 0 else ""
+            print(f"{cell:16} {fo_arm+' vs '+full_arm:34} {n:3d} {fj:8.4f} {lj:9.4f} "
+                  f"{dj:+8.4f} {rt:6.2f}{smoother}")
+    report["future_only_vs_full"] = fo_report
+
     if args.out:
         args.out.write_text(json.dumps(report, indent=2, ensure_ascii=False))
         print(f"\n→ {args.out}")
