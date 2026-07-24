@@ -306,9 +306,12 @@ def main() -> None:
             quota_ok = (ns >= GATED_MIN_REC and nf >= GATED_MIN_REC
                         and eps_s >= GATED_MIN_EPS and eps_f >= GATED_MIN_EPS)
             if ph is None or quota_ok:
-                rec.update(var_sep(rolls, labels, li, blk, ph, dcap, perms))
-                rec.update(mean_sep(rolls, labels, li, blk, ph, dcap, perms))
-                rec.update(kl_diag(rolls, labels, li, blk, ph, dcap, perms))
+                try:  # degenerate sub-split(held-out/permutation 에서 N<2) 이 한 phase 를
+                    rec.update(var_sep(rolls, labels, li, blk, ph, dcap, perms))  # 죽여도 셀 전체는
+                    rec.update(mean_sep(rolls, labels, li, blk, ph, dcap, perms))  # 완성되게 격리
+                    rec.update(kl_diag(rolls, labels, li, blk, ph, dcap, perms))
+                except Exception as e:
+                    rec["skip_reason"] = f"metric 계산 실패(N 부족 등): {type(e).__name__}: {e}"
             else:
                 rec["skip_reason"] = f"quota 미달 (rec {ns}/{nf}, eps {eps_s}/{eps_f})"
             cells.append(rec)
