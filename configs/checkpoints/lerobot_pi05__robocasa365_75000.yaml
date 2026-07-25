@@ -41,18 +41,14 @@ gripper_encoding:
   sign_flip: false
   threshold: 0.0
 
-# pi0.5 는 QUANTILES([q01,q99]→[-1,1]) 로 학습됨 (PI05Config 기본 normalization_mapping).
-# 원본 norm_stats.json 은 q01/q99=null (mean/std 만) → pi.py 가 QUANTILES→MEAN_STD 로 무조건 치환
-#   (pi.py:111-117). 역정규화 스케일이 (q99-q01)/2=2.326·std 대신 std → action·state ~2.326배 undershoot.
-# QUANTILES 로 교정: (1) norm_stats.json 에 q01/q99 Gaussian 근사(mean∓2.326·std) patch(호스트, 원본 백업),
-#   (2) external_config.normalization_mapping 명시 → pi.py MEAN_STD 치환 우회(cfg 기본 QUANTILES 유지).
-# ⚠️ 결과(2026-07-25 실측): undershoot 는 실재·교정됨(action 2.3배↑, eef_pos peak 1.56 clip 확인)했으나
-#   **OpenDrawer SR 여전히 0/10** — 정규화는 SR=0 의 충분원인 아님. 모델이 해당 scene 에서 저-commit
-#   (action |mean| 0.082, arm 0.05m/60step). QUANTILES 자체는 아키텍처상 정답이라 유지.
-#   정밀 교정은 openpi 원본 q01/q99 필요(현 인프라 부재, 별도 추적). 다음 후보: action_type·camera slot·scene OOD.
+# config 상 pi0.5 는 QUANTILES 지만, openpi 원본 norm_stats (=HF robocasa365_checkpoints
+#   pi05_pretrain_human300/.../75000/assets/norm_stats.json, 우리 lerobot ckpt 의 변환 원본) **에도 q01/q99=None**
+#   (mean/std 만). quantile 결측은 변환 손실이 아니라 원본에도 없음 → openpi 가 이 ckpt 에 mean/std 를 쓴 것으로 판단.
+#   따라서 pi.py 의 QUANTILES→MEAN_STD 치환(기본 동작)이 원본 stats 와 정합 = 충실 서빙. → scheme: mean_std 유지.
+# (2026-07-25 QUANTILES Gaussian-근사 실험: action 2.3배↑ 됐으나 SR 0/10 그대로 → 스케일은 SR 블로커 아님, 되돌림.)
 normalization:
-  scheme: q01_q99
-  stats_file: norm_stats.json      # q01/q99 patched (Gaussian 근사). 원본 백업=norm_stats.json.orig
+  scheme: mean_std
+  stats_file: norm_stats.json
   key_selection: []
 
 # 학습 state(16D, quirks §4): [base_to_eef_pos(3), base_to_eef_quat(4, xyzw),
@@ -96,9 +92,7 @@ model_specific:
     state_shape: [32]
     action_shape: [32]
     dtype: bfloat16
-    # non-None → pi.py 의 QUANTILES→MEAN_STD 무조건 치환을 skip (cfg 기본값 QUANTILES 유지).
-    # 값 자체는 pi.py 가 cfg 에 적용하지 않지만(skip 만 담당), 문서용으로 학습 설정 명시.
-    normalization_mapping: {VISUAL: IDENTITY, STATE: QUANTILES, ACTION: QUANTILES}
+    # normalization_mapping 미지정 → pi.py 가 QUANTILES→MEAN_STD 치환(기본) → 원본 openpi mean/std stats 와 정합.
     camera_keys:
       observation.images.left:  observation.images.base_0_rgb
       observation.images.wrist:  observation.images.left_wrist_0_rgb
