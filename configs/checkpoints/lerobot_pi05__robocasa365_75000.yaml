@@ -42,12 +42,14 @@ gripper_encoding:
   threshold: 0.0
 
 # pi0.5 는 QUANTILES([q01,q99]→[-1,1]) 로 학습됨 (PI05Config 기본 normalization_mapping).
-# ⚠️ 원본 norm_stats.json 은 q01/q99=null (mean/std 만) → pi.py 가 QUANTILES→MEAN_STD 로
-#   무조건 치환(pi.py:111-117). 그러면 역정규화 스케일이 (q99-q01)/2=2.326·std 대신 std 가 되어
-#   action·state 가 ~2.326배 undershoot → arm 접근하나 미완결 (SR=0 근본원인, 2026-07-25 진단).
-# Fix: (1) norm_stats.json 에 q01/q99 를 Gaussian 근사(mean∓2.326·std)로 채우고(호스트 patch),
-#      (2) external_config.normalization_mapping 을 명시해 pi.py 의 MEAN_STD 치환을 우회
-#          (override != None → 치환 skip → cfg 기본값 QUANTILES 유지) → QUANTILES normalizer 가 q01/q99 소비.
+# 원본 norm_stats.json 은 q01/q99=null (mean/std 만) → pi.py 가 QUANTILES→MEAN_STD 로 무조건 치환
+#   (pi.py:111-117). 역정규화 스케일이 (q99-q01)/2=2.326·std 대신 std → action·state ~2.326배 undershoot.
+# QUANTILES 로 교정: (1) norm_stats.json 에 q01/q99 Gaussian 근사(mean∓2.326·std) patch(호스트, 원본 백업),
+#   (2) external_config.normalization_mapping 명시 → pi.py MEAN_STD 치환 우회(cfg 기본 QUANTILES 유지).
+# ⚠️ 결과(2026-07-25 실측): undershoot 는 실재·교정됨(action 2.3배↑, eef_pos peak 1.56 clip 확인)했으나
+#   **OpenDrawer SR 여전히 0/10** — 정규화는 SR=0 의 충분원인 아님. 모델이 해당 scene 에서 저-commit
+#   (action |mean| 0.082, arm 0.05m/60step). QUANTILES 자체는 아키텍처상 정답이라 유지.
+#   정밀 교정은 openpi 원본 q01/q99 필요(현 인프라 부재, 별도 추적). 다음 후보: action_type·camera slot·scene OOD.
 normalization:
   scheme: q01_q99
   stats_file: norm_stats.json      # q01/q99 patched (Gaussian 근사). 원본 백업=norm_stats.json.orig
