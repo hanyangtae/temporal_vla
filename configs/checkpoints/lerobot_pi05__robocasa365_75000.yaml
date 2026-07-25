@@ -41,11 +41,16 @@ gripper_encoding:
   sign_flip: false
   threshold: 0.0
 
-# norm_stats.json 은 pi.py external 경로가 ckpt 루트에서 rglob 자동 로드 후
-# MEAN_STD 로 적용 (q01/q99=null 은 필터). 아래 scheme/stats_file 은 문서용.
+# pi0.5 는 QUANTILES([q01,q99]→[-1,1]) 로 학습됨 (PI05Config 기본 normalization_mapping).
+# ⚠️ 원본 norm_stats.json 은 q01/q99=null (mean/std 만) → pi.py 가 QUANTILES→MEAN_STD 로
+#   무조건 치환(pi.py:111-117). 그러면 역정규화 스케일이 (q99-q01)/2=2.326·std 대신 std 가 되어
+#   action·state 가 ~2.326배 undershoot → arm 접근하나 미완결 (SR=0 근본원인, 2026-07-25 진단).
+# Fix: (1) norm_stats.json 에 q01/q99 를 Gaussian 근사(mean∓2.326·std)로 채우고(호스트 patch),
+#      (2) external_config.normalization_mapping 을 명시해 pi.py 의 MEAN_STD 치환을 우회
+#          (override != None → 치환 skip → cfg 기본값 QUANTILES 유지) → QUANTILES normalizer 가 q01/q99 소비.
 normalization:
-  scheme: mean_std
-  stats_file: norm_stats.json
+  scheme: q01_q99
+  stats_file: norm_stats.json      # q01/q99 patched (Gaussian 근사). 원본 백업=norm_stats.json.orig
   key_selection: []
 
 # 학습 state(16D, quirks §4): [base_to_eef_pos(3), base_to_eef_quat(4, xyzw),
@@ -89,6 +94,9 @@ model_specific:
     state_shape: [32]
     action_shape: [32]
     dtype: bfloat16
+    # non-None → pi.py 의 QUANTILES→MEAN_STD 무조건 치환을 skip (cfg 기본값 QUANTILES 유지).
+    # 값 자체는 pi.py 가 cfg 에 적용하지 않지만(skip 만 담당), 문서용으로 학습 설정 명시.
+    normalization_mapping: {VISUAL: IDENTITY, STATE: QUANTILES, ACTION: QUANTILES}
     camera_keys:
       observation.images.left:  observation.images.base_0_rgb
       observation.images.wrist:  observation.images.left_wrist_0_rgb
