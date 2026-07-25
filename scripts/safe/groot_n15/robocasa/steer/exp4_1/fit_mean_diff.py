@@ -539,6 +539,10 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
     # phase 집합·dwell cap 은 episode 전체 길이 기준 (전역 cap 미적용 — 후반 phase 보존)
     phases = sorted({p for r in rolls for p in r["phases"]} - TERMINAL_PHASES)
     dwell_caps = phase_dwell_caps(rolls, labels, phases)
+    if getattr(args, "no_length_control", False):
+        # 전체 길이 변형: phase dwell cap 해제 (실패의 긴 체류 record 전부 사용)
+        dwell_caps = {ph: 10**9 for ph in dwell_caps}
+        print(f"[no-length-control] gated dwell cap 해제 — phases={sorted(dwell_caps)}", flush=True)
     # layer-sweep null 순열 (유의성 진단용, N_PERM 개)
     rng = np.random.default_rng(RNG_SEED + 777)
     null_perms = []
@@ -693,6 +697,10 @@ def main() -> None:
                     help="sweep 할 DiT 물리 layer 콤마목록 (기본: capture 전부)")
     ap.add_argument("--gated", action="store_true",
                     help="setM_gated/placebo 만 fit (permanent 산출물 전제 — 같은 layer·동결 순열)")
+    ap.add_argument("--no-length-control", action="store_true",
+                    help="길이 confound 통제 해제 — truncation cap·phase dwell cap 없이 전체 "
+                         "길이 사용 (COAST/WA-LQR 원 논문 정렬 변형, 2026-07-25 사용자 지시). "
+                         "주의: 연산자가 길이/후반-phase 신호를 학습할 수 있음(의도된 실험).")
     args = ap.parse_args()
 
     rng = np.random.default_rng(RNG_SEED)
@@ -734,6 +742,12 @@ def main() -> None:
         raise SystemExit("성공 episode 0개 — fit 불가")
     cap = int(np.ceil(np.mean(succ_lens) + np.std(succ_lens)))
     cap_mean = int(np.ceil(np.mean(succ_lens)))
+    if args.no_length_control:
+        # 전체 길이 사용: cap 을 최장 episode 이상으로 → episode_records X[:cap] 이 no-op.
+        # gated 는 meta_perm["cap_records"] 를 읽으므로 이 값이 그대로 전파된다.
+        cap = max(r["length"] for r in rolls)
+        print(f"[no-length-control] truncation 해제 — cap={cap}(최장 episode), "
+              f"길이/후반-phase confound 미통제 변형", flush=True)
 
     n_s = sum(labels)
     print(f"[{args.cell}] rollouts={len(rolls)} succ={n_s} fail={len(rolls)-n_s} "
@@ -837,6 +851,7 @@ def main() -> None:
     targets_sha = hashlib.sha256(args.targets.read_bytes()).hexdigest()[:12]
     base_meta = {
         "operator": "setM_permanent", "cell": args.cell, "layer": blk, "cap_records": cap,
+        "length_control": not args.no_length_control,
         "cap_mean_alt": cap_mean, "manifest_sha": manifest_sha, "targets_sha": targets_sha,
         "n_rollouts": len(rolls), "n_succ": int(n_s), "n_fail": int(len(rolls) - n_s),
         "s": s_full, "dose_median_fitset": dose_m,
