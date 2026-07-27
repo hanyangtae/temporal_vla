@@ -124,6 +124,99 @@ _patch_hooks: dict = {}  # {layer(int): PatchSteering}
 _patch_spec: dict = {}  # /health 노출용 patch 지문 (layers/token/K/armed tag/npz sha)
 _patch_donor_arrays: dict = {}  # 마지막 로드 donor {layer: [R,K,T,D]} — npz 생략 재-arm 용
 
+# ---------------------------------------------------------------- online phase readout
+# 추론 중(inference-time) action-phase 판정. DiT layer residual → task_classification 의
+# 사후-이산화 AE/SAE(kmeans) 로 현재 phase 를 읽어 /act_with_features 응답에 실어 보낸다.
+# 학습 데이터와 동일하게: layer L 의 마지막 denoise step, 전체 토큰 mean-pool → [D] → clf.
+# all_token_full 캡처(=학습 데이터 규격) + 해당 layer 캡처가 켜져 있어야 한다.
+_phase_readouts: list = []       # [{"name": "ae"|"sae", "clf": OnlinePhaseClassifier}]
+_phase_layer: int = 12           # 물리 DiT block layer (capture_layers 에 존재해야 함)
+_phase_denoise: int | None = None  # denoise step index (None=마지막). 학습=3=마지막(K=4)
+_phase_spec: dict = {}           # /health 노출용
+
+
+def _phase_layer_index() -> int:
+    """물리 layer(_phase_layer) → features.hidden_states 의 L축 인덱스.
+
+    hidden_states 는 --groot-dit-capture-layers 순서대로 layer 축을 쌓는다.
+    """
+    layers = list(_groot_dit_capture_layers or [])
+    if _phase_layer not in layers:
+        raise RuntimeError(
+            f"phase-readout: layer {_phase_layer} 가 capture layers {layers} 에 없음 "
+            f"(--groot-dit-capture-layers 에 {_phase_layer} 포함 필요)"
+        )
+    return layers.index(_phase_layer)
+
+
+def _phase_from_hidden(hidden_np) -> dict | None:
+    """features.hidden_states [L, K, T, D] → {name: {cluster, phase, purity}}.
+
+    학습 파이프라인과 동일한 축약: layer L, 마지막(또는 지정) denoise step, 전체 T 토큰
+    mean-pool → [D]. clf 가 내부에서 PCA-64 → encode → kmeans → phase 로 잇는다.
+    """
+    if not _phase_readouts:
+        return None
+    arr = np.asarray(hidden_np)
+    if arr.ndim != 4:                       # all_token_full 이 아니면 [L,K,D] 등 — 미지원
+        return None
+    li = _phase_layer_index()
+    ki = _phase_denoise if _phase_denoise is not None else arr.shape[1] - 1  # 마지막 denoise
+    h = arr[li, ki].astype(np.float32).mean(axis=0)   # [T, D] → [D] (전체 토큰 평균)
+    return {r["name"]: r["clf"].infer(h) for r in _phase_readouts}
+
+
+def _load_phase_readouts_if_requested(args) -> None:
+    """--phase-readout 시 AE/SAE 분류기를 로드하고 캡처 설정 정합을 검증한다.
+
+    readout 은 학습 데이터와 같은 tensor(전체 토큰 보존 residual)가 필요하므로
+    all_token_full 캡처 + 해당 layer 캡처가 켜져 있어야 한다. 안 맞으면 조용히
+    틀린 phase 를 내기보다 즉시 실패한다.
+    """
+    global _phase_readouts, _phase_layer, _phase_denoise, _phase_spec
+    if not getattr(args, "phase_readout", False):
+        return
+    if _policy_type != "groot":
+        raise ValueError("--phase-readout 은 policy_type='groot' 전용")
+    if _groot_dit_capture_layers is None:
+        raise ValueError(
+            "--phase-readout 은 --groot-dit-capture-layers 필요 "
+            "(DiT residual 캡처가 켜져야 phase 를 읽는다)"
+        )
+    if _groot_dit_token_pool != "all_token_full":
+        raise ValueError(
+            "--phase-readout 은 --groot-dit-token-pool all_token_full 필요 "
+            f"(현재 {_groot_dit_token_pool!r}) — clf 는 전체 토큰 mean 으로 학습됨"
+        )
+    _phase_layer = int(args.phase_layer)
+    _phase_denoise = None if args.phase_denoise is None else int(args.phase_denoise)
+    _phase_layer_index()  # capture layers 에 _phase_layer 존재하는지 preflight
+
+    from src.phase_online import OnlinePhaseClassifier
+
+    runs = [r.strip() for r in str(args.phase_run_dirs).split(",") if r.strip()]
+    _phase_readouts = []
+    for run in runs:
+        run_path = Path(run)
+        if not run_path.is_absolute():
+            run_path = Path(__file__).resolve().parents[2] / run
+        name = run_path.name.split("-")[0]  # ae-log_likelihood-s0 → "ae"
+        clf = OnlinePhaseClassifier.from_run(
+            run_dir=run_path, pca_path=args.phase_pca, map_path=args.phase_map,
+            device=args.phase_device,
+        )
+        _phase_readouts.append({"name": name, "clf": clf})
+    _phase_spec = {
+        "enabled": True, "layer": _phase_layer,
+        "denoise": "last" if _phase_denoise is None else _phase_denoise,
+        "runs": [r["name"] for r in _phase_readouts],
+        "device": args.phase_device,
+    }
+    logger.info(
+        "online phase readout ON: layer=%s denoise=%s runs=%s",
+        _phase_layer, _phase_spec["denoise"], _phase_spec["runs"],
+    )
+
 
 def _reset_steering_step_counters() -> None:
     """Per-Step steering 의 denoise call 카운터를 요청 시작 시 리셋.
@@ -696,6 +789,11 @@ async def predict_action_with_features(payload: dict):
         # unified /act_with_features contract used by VLAClient and GR00T HTTP.
         result["hidden_states_b64"] = encode_legacy_feature_array(hidden_np)
         result["features.hidden_states"] = encode_feature_blob(hidden_np)
+        # inference-time action-phase readout (DiT residual → AE/SAE kmeans phase).
+        if _phase_readouts:
+            phase = _phase_from_hidden(hidden_np)
+            if phase is not None:
+                result["features.phase"] = phase
         vl_hidden = meta.get("vl_hidden_states")
         result.update(
             {k: v for k, v in meta.items() if k != "vl_hidden_states"}
@@ -749,6 +847,7 @@ async def health():
         boot_id=_BOOT_ID,
         steering=_steering_spec or None,
         patch=_patch_spec or None,
+        phase_readout=_phase_spec or None,
         # exp4-1: client 가 사이드카에 GPU 를 기록해 arm×GPU confound 를 사후 감사
         serve_gpu=os.environ.get("CUDA_VISIBLE_DEVICES"),
         **feature_metadata,
@@ -1208,6 +1307,7 @@ def _load_model_impl():
     postprocessor = loaded.postprocessor
     _register_steering_if_requested(policy, args)
     _register_patching_if_requested(policy, args)
+    _load_phase_readouts_if_requested(args)
 
     global _cross_attn_capture
     if getattr(args, "capture_cross_attn", False):
@@ -1482,6 +1582,54 @@ def main():
             "action_token_mean=구·default([L,K,D]) | all_token_full=전체 토큰 보존"
             "([L,K,T,D] fp16, fit 수집 전용 — mean 은 fit 시점에)."
         ),
+    )
+    parser.add_argument(
+        "--phase-readout",
+        action="store_true",
+        help=(
+            "inference-time action-phase 판정 ON: DiT residual → task_classification "
+            "AE/SAE(kmeans) 로 현재 phase 를 읽어 /act_with_features 응답의 "
+            "features.phase 로 노출. --groot-dit-capture-layers(해당 layer 포함) + "
+            "--groot-dit-token-pool all_token_full 필요."
+        ),
+    )
+    parser.add_argument(
+        "--phase-run-dirs",
+        type=str,
+        default="task_classification/runs/ae-log_likelihood-s0,"
+                "task_classification/runs/sae-log_likelihood-s0",
+        help="phase 분류기 run 디렉토리(model.pt) 콤마 구분. 이름은 basename 접두어(ae/sae).",
+    )
+    parser.add_argument(
+        "--phase-pca",
+        type=str,
+        default="task_classification/datasets_local/phase_cls_pq3/"
+                "derived/L12-D3-pca64w/pca.npz",
+        help="PCA-whiten 통계(pca.npz) 경로 (mu/V/sqrt_lam).",
+    )
+    parser.add_argument(
+        "--phase-map",
+        type=str,
+        default="task_classification/runs/cluster_phase_map.json",
+        help="cluster→phase 이름 매핑 json (선택). 없으면 cluster id 만 반환.",
+    )
+    parser.add_argument(
+        "--phase-layer",
+        type=int,
+        default=12,
+        help="phase readout 에 쓰는 물리 DiT block layer (capture layers 에 있어야 함).",
+    )
+    parser.add_argument(
+        "--phase-denoise",
+        type=int,
+        default=None,
+        help="denoise step index (기본 None=마지막 step). 학습=마지막(K=4 의 3).",
+    )
+    parser.add_argument(
+        "--phase-device",
+        type=str,
+        default="cpu",
+        help="phase 분류기 device (cpu 권장 — 연산량 미미, GPU 경합 회피).",
     )
     parser.add_argument(
         "--groot-vl-capture-point",

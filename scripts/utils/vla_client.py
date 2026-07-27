@@ -281,6 +281,9 @@ class VLAClient:
                 maps_blob = result.get("features.cross_attn_maps")
                 if isinstance(maps_blob, dict):
                     features["cross_attn_maps"] = decode_feature_blob(maps_blob)
+            # online phase readout (serve --phase-readout): plain JSON, pass through as-is.
+            if "features.phase" in result:
+                features["phase"] = result.get("features.phase")
             return actions, features, latency_ms
 
         if result.get("has_feature") is False:
