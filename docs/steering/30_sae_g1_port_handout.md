@@ -169,8 +169,10 @@ G2 = scene-selective feature 성분 제거(잔차화) 후 succ/fail read: **길�
 
 **base = dev.**
 - exp4-1(oracle rescue·tremor·conceptor future_only·SAE 이식 문서)은 **dev 로 머지**된다
-  (2026-07-27 결정, 진행 상태는 §끝 각주 확인). SAE 문서·atlas·fit 코드가 전부 dev 에 있어야
-  exp5 가 읽는다.
+  — **PR #68** (exp/exp4-1-oracle-rescue → dev, 2026-07-27 생성). SAE 문서·atlas·fit 코드가
+  전부 dev 에 있어야 exp5 가 읽는다. **exp5 는 이 PR 머지 후 시작**(dev 에 문서 확인:
+  `git show origin/dev:docs/steering/30_sae_g1_port_handout.md`). 미머지면 exp5 는
+  exp/exp4-1-oracle-rescue 기준으로 문서를 읽되 작업 브랜치는 dev 분기 원칙 유지.
 - **exp5 작업 브랜치 = `feat/scene-sae`, dev 에서 분기**:
   ```
   git checkout dev && git pull origin dev
