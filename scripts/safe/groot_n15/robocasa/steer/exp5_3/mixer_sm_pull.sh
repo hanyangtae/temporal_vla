@@ -1,7 +1,7 @@
 #!/bin/bash
 # exp5-3 mixer scene-matched 배송 — **승준 노드에서 실행** (home→승준 직결 불가라 pull 방식).
-# 5분 주기: home 산출물 rsync pull (전 종류 — 아카이브 완전성 규칙) → 크기 검증된 pkl 만
-# home 에서 삭제 (3분 이상 경과분 = 쓰기 완료). mixer_sm.DONE 후 최종 pull 하고 종료.
+# 5분 주기: home 산출물 rsync pull (전 종류 — 아카이브 완전성 규칙, 3분 경과분 = 쓰기 완료).
+# ★home 원본은 삭제하지 않는다 (2026-07-27 사용자 지시 — 복사만). mixer_sm.DONE 후 최종 pull.
 set -u
 HOME_HOST="rudxo@218.152.144.220"; HP=11111
 SRC="workspace/temporal_vla/outputs/eval/robocasa/groot_n15/exp5_3_mixer_sm"
@@ -14,23 +14,16 @@ pull_once() {
   rsync -a --partial -e "ssh -p $HP -o BatchMode=yes" \
     --exclude '*.pkl' --exclude '.groot_video_tmp/' \
     "$HOME_HOST:$SRC/" "$DEST/" >> "$LOG" 2>&1
-  # 2) 완료 pkl (mmin+3) pull → 크기 대조 → home 측 삭제
+  # 2) 완료 pkl (mmin+3) pull — ★home 원본 보존 (복사만, 삭제 금지)
   local lst
   lst=$(ssh -p $HP -o BatchMode=yes "$HOME_HOST" \
         "cd $SRC && find . -name '*.pkl' -mmin +3" 2>/dev/null)
   [ -z "$lst" ] && return 0
   while IFS= read -r f; do
+    [ -e "$DEST/$f" ] && continue
     rsync -a --partial -e "ssh -p $HP -o BatchMode=yes" \
       "$HOME_HOST:$SRC/$f" "$DEST/$f" >> "$LOG" 2>&1 || continue
-    local rsz lsz
-    rsz=$(ssh -p $HP -o BatchMode=yes "$HOME_HOST" "stat -c%s $SRC/$f" 2>/dev/null)
-    lsz=$(stat -c%s "$DEST/$f" 2>/dev/null)
-    if [ -n "$rsz" ] && [ "$rsz" = "$lsz" ]; then
-      ssh -p $HP -o BatchMode=yes "$HOME_HOST" "rm $SRC/$f" 2>/dev/null
-      echo "[pull+del] $f ($lsz B) $(date -u +%T)" >> "$LOG"
-    else
-      echo "[검증실패-보존] $f local=$lsz remote=$rsz" >> "$LOG"
-    fi
+    echo "[pull] $f ($(stat -c%s "$DEST/$f" 2>/dev/null) B) $(date -u +%T)" >> "$LOG"
   done <<< "$lst"
 }
 
