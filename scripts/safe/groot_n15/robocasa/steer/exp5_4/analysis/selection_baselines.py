@@ -25,7 +25,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _sel_common import (load, to_matrix, loso_select, score_select,  # noqa: E402
-                         delta_stat, pb_pvalue)
+                         delta_stat, pb_pvalue, seed_permutations)
 from _sel_baselines import (activation_norm_scores, seed_only_scores,  # noqa: E402
                             action_scores, handle_oracle_scores, load_handle_tsv,
                             DEPLOYABLE)
@@ -40,14 +40,22 @@ NOISE_NOTE = (
     "seed_only 음성대조와 동치.")
 
 
-def eval_scores(name, sc, Y, folds, ascending):
+def seedperm_p(select_fn, Y, perms, obs_delta):
+    null = np.array([delta_stat(select_fn(Y[:, list(pi)]))["delta"] for pi in perms])
+    return float((np.sum(null >= obs_delta) + 1) / (len(perms) + 1)), null
+
+
+def eval_scores(name, sc, Y, folds, ascending, perms):
     rows, deltas = [], []
     for fname, test_mask in folds:
         r = score_select(sc, Y, eval_seeds=test_mask, ascending=ascending)
         st = delta_stat(r)
         v = r["valid"]
         p, _ = pb_pvalue(r["base"][v].astype(float), int(r["top1"][v].sum()))
-        rows.append(dict(fold=fname, **st, p_exact_pb=float(p)))
+        psp, _n = seedperm_p(lambda Yp: score_select(sc, Yp, eval_seeds=test_mask,
+                                                     ascending=ascending),
+                             Y, perms, st["delta"])
+        rows.append(dict(fold=fname, **st, p_exact_pb=float(p), p_seedperm=psp))
         deltas.append(st["delta"])
     return dict(name=name, ascending=ascending, delta_pooled=float(np.mean(deltas)),
                 folds=rows)
@@ -63,10 +71,13 @@ def main():
     ap.add_argument("--with-oracle", action="store_true",
                     help="손잡이 기하 oracle (drawer 전용, scene 당 pkl 1개 로드)")
     ap.add_argument("--handle-tsv", default="/home/kimseungjun/exp53_analysis/handle_all.tsv")
+    ap.add_argument("--n-perm-seed", type=int, default=40320,
+                    help="seed column 공통 순열 (8!=40320 이면 전수)")
     ap.add_argument("--seed", type=int, default=424101)
     ap.add_argument("--out", default="/home/kimseungjun/exp54_results/selection_baselines.json")
     a = ap.parse_args()
 
+    rng = np.random.default_rng(a.seed)
     want_layers = [int(x) for x in a.layers.split(",")]
     out = dict(config=vars(a), noise_baseline_note=NOISE_NOTE, cells={})
 
@@ -81,7 +92,9 @@ def main():
         infold = [("infold", np.ones(J, bool))]
         prosp = [("fold1", np.arange(J) >= half), ("fold2", np.arange(J) < half)]
         # fold 이름은 test seed 집합 기준: fold1 = 뒤 4 seed 가 후보(train=앞 4)
-        print(f"\n{'='*96}\n{cell}: {S} scene × {J} draw · SR {Y.mean():.3f}")
+        perms, exhaustive = seed_permutations(J, a.n_perm_seed, rng)
+        print(f"\n{'='*96}\n{cell}: {S} scene × {J} draw · SR {Y.mean():.3f}"
+              f" · seed 순열 {len(perms)}개({'전수' if exhaustive else '부분표본'})")
         cell_out = dict(n_scene=S, n_seed=J, sr_all=float(Y.mean()),
                         infold={}, prospective={})
 
@@ -121,14 +134,18 @@ def main():
                     st = delta_stat(r)
                     v = r["valid"]
                     p, _ = pb_pvalue(r["base"][v].astype(float), int(r["top1"][v].sum()))
-                    fr.append(dict(fold=fname, **st, p_exact_pb=float(p)))
+                    psp, _n = seedperm_p(
+                        lambda Yp: loso_select(A, Yp, fit_seeds=fit_mask,
+                                               eval_seeds=test_mask),
+                        Y, perms, st["delta"])
+                    fr.append(dict(fold=fname, **st, p_exact_pb=float(p), p_seedperm=psp))
                     dd.append(st["delta"])
                 rows.append(dict(name=f"학습축(mean-diff) L{L}", ascending=True,
                                  delta_pooled=float(np.mean(dd)), folds=fr,
                                  kind="learned"))
             for bname, sc in sorted(scores.items()):
                 for asc in (True, False):
-                    e = eval_scores(bname, sc, Y, folds, asc)
+                    e = eval_scores(bname, sc, Y, folds, asc, perms)
                     e["kind"] = ("negative_control" if bname == "seed_only" else
                                  "oracle" if bname.startswith("oracle") else
                                  "deployable" if (bname in DEPLOYABLE
@@ -145,7 +162,8 @@ def main():
                       f"{e.get('kind','learned'):16} {e['delta_pooled']:+8.3f} "
                       f"{np.mean([x['sr_top1'] for x in d]):7.3f} "
                       f"{np.mean([x['sr_base'] for x in d]):7.3f} "
-                      + " ".join(f"{x['p_exact_pb']:.3f}" for x in d))
+                      + " ".join(f"ex{x['p_exact_pb']:.3f}/sp{x['p_seedperm']:.3f}"
+                                 for x in d))
 
             best_l = max((e for e in rows if e.get("kind") == "learned"),
                          key=lambda e: e["delta_pooled"], default=None)

@@ -34,6 +34,15 @@ from _sel_baselines import (activation_norm_scores, seed_only_scores,  # noqa: E
                             action_scores, DEPLOYABLE)
 
 
+def seedperm_null(select_fn, Y, perms, obs_delta):
+    """seed column 공통 순열 null: 라벨 행렬의 열을 π 로 재배치해 통계량 재계산."""
+    null = np.empty(len(perms))
+    for k, pi in enumerate(perms):
+        null[k] = delta_stat(select_fn(Y[:, list(pi)]))["delta"]
+    p = float((np.sum(null >= obs_delta) + 1) / (len(perms) + 1))
+    return p, null
+
+
 def pb_p(res):
     """관측 m_i 조건부 exact p (P(H ≥ h_obs))."""
     v = res["valid"]
@@ -98,14 +107,12 @@ def main():
                 st = delta_stat(res)
                 p_pb, h_obs, exp_h = pb_p(res)
 
-                # seed column 공통 순열 null
+                # seed column 공통 순열 null (fit 까지 재실행)
                 t0 = time.time()
-                null = np.empty(len(perms))
-                for k, pi in enumerate(perms):
-                    Yp = Y[:, list(pi)]
-                    r = loso_select(A, Yp, fit_seeds=train_mask, eval_seeds=test_mask)
-                    null[k] = delta_stat(r)["delta"]
-                p_seed = float((np.sum(null >= st["delta"]) + 1) / (len(perms) + 1))
+                p_seed, null = seedperm_null(
+                    lambda Yp: loso_select(A, Yp, fit_seeds=train_mask,
+                                           eval_seeds=test_mask),
+                    Y, perms, st["delta"])
                 sec = time.time() - t0
 
                 key = f"L{L}_{fname}"
@@ -132,7 +139,11 @@ def main():
                     r = score_select(sc, Y, eval_seeds=test_mask, ascending=asc)
                     st = delta_stat(r)
                     p_pb, h_obs, exp_h = pb_p(r)
-                    arr.append(dict(fold=fname, **st, p_exact_pb=p_pb))
+                    p_sp, _n = seedperm_null(
+                        lambda Yp: score_select(sc, Yp, eval_seeds=test_mask,
+                                                ascending=asc),
+                        Y, perms, st["delta"])
+                    arr.append(dict(fold=fname, **st, p_exact_pb=p_pb, p_seedperm=p_sp))
                 d = float(np.mean([x["delta"] for x in arr]))
                 tag = "낮은쪽선택" if asc else "높은쪽선택"
                 cell_out["baselines"][f"{bname}|{tag}"] = dict(
@@ -140,7 +151,8 @@ def main():
                     deployable=bool(bname.startswith("act_norm") or bname in DEPLOYABLE),
                     negative_control=bool(bname == "seed_only"))
                 print(f"  [baseline] {bname:22} {tag}  Δ̂(fold평균) {d:+.3f}  "
-                      + " ".join(f"{x['fold']}:{x['delta']:+.3f}(p{x['p_exact_pb']:.3f})"
+                      + " ".join(f"{x['fold']}:{x['delta']:+.3f}"
+                                 f"(p_ex{x['p_exact_pb']:.3f}/p_sp{x['p_seedperm']:.3f})"
                                  for x in arr))
 
         # ── pooled 판정
