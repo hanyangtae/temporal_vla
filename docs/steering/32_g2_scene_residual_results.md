@@ -77,6 +77,23 @@ episode축 SAE(L12/L10/L8) × {scenario_seed, layout_id} probe 순열 50회가 �
 (순열당 ~90s). 완료 시 이 절 갱신. 예비 신호: scene축 SAE 의 layout probe 가
 CV(본 scene) 0.99 vs held-out scene 0.63 — scene 일반화 격차 큼(§3-③ 과 정합).
 
+## 4.5 exp5-3 실패축 판정과의 교차 검증 (2026-07-27 추가, exp5-3_fail_axis_drawer_mixer.txt)
+
+exp5-3 이 같은 데이터에서 독립적으로 확립한 사실과의 정합:
+- **G2 정답지(그쪽 §5-1)**: "잔차화 후 실패축 생존" 기준 = drawer L12 AUROC ≥0.85·같은 창 38.
+  우리 linear_between r12~19 잔차화 후 read 0.88~0.90 — **기준 충족**. LOSO 부호 12/13 대응
+  지표는 후속 산출 예정.
+- **실패축은 전 layer 실재**(drawer 0.83~0.88, LOSO+위약 p<0.0001), **peak 는 task 의존**:
+  drawer L12 / **mixer L2**. → mixer 재현은 L12 만으론 부족, L0·L2 추가 빌드·실행(진행 중).
+  layer 는 cell 별 재선정이 원칙 (31 문서의 "단일 layer 확정 금지"와 정합).
+- **전역 방향 ≈ 난이도 축**(cos 0.92~0.93, 그쪽 §3): exp4-1 cross-scene fit 이 왜 실패했는지의
+  표현 수준 설명. within-scene 이득의 실질은 전패 scene 배제.
+- **읽힘 ≠ 밀림(그쪽 §5-5)**: exp5-3 의 setM write 는 대해악(SR 0.344→0.025). 본 문서의
+  어떤 결론도 "steering 이 된다"로 확대 금지 — G3 는 별도 인과 시험.
+- SAE 필요성 논거(그쪽 §5-3: scene 성분이 손잡이 기하로 설명 안 됨·난이도/실패 얽힘)와
+  우리 §3-② (현 selective 집합은 열세)는 모순이 아니라 "고차원 분해가 필요하나 지금
+  선택법이 부족"으로 종합된다.
+
 ## 5. 다음 단계 (사용자 결정 대기)
 
 - **G3 후보 확정**: between r12~19 잔차화 + within-scene mean-diff 방향으로 write
