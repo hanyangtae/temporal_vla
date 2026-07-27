@@ -13,9 +13,15 @@ head body geom 이 **믹서 자신·로봇 이외의 geom** 과 접촉하는지 
 정책·체크포인트·chunk 설정과 무관하고 seed 만의 함수라, 모든 arm 에 동일하게 적용되며
 succ/fail 어느 쪽으로도 편향을 만들지 않는다.
 
+부산물: seed 별 `ep_lang` (= `env.get_ep_meta()["lang"]`) 도 같이 기록한다. **OpenDrawer 는
+seed 마다 좌/우 variant 가 바뀌므로**(kitchen_drawer.py `_place_robot` → `drawer_side`,
+lang "Open the {side} drawer.") 이 필드가 exp5-2 `drawer_left` cell 의 seed 가 정말 left 인지
+정책 없이 판정하는 근거다. 결과 JSON 은 `--out` 으로 지정한 경로에만 쓴다 (main-tree outputs
+하드코딩 없음).
+
 사용 (robocasa 컨테이너):
-  python mixer_scene_feasibility.py --seeds 100000-100011 [--task OpenStandMixerHead]
-  python mixer_scene_feasibility.py --task OpenDrawer --fixture drawer --seeds <...>
+  python mixer_scene_feasibility.py --seeds 100000-100011 [--task OpenStandMixerHead] --out <path>
+  python mixer_scene_feasibility.py --task OpenDrawer --fixture drawer --seeds <...> --out <path>
 
 Drawer 이식 (exp4-1 B3, Gate2 P2): 관절 = `{name}_slidejoint` (sign −1, size[1]·0.55 로
 정규화 — get_door_state 와 동일 규약), 성공역 open ≥0.95 → 임계 0.95. 함정: 서랍 **안**의
@@ -57,6 +63,10 @@ def probe_one(env_name: str, seed: int, steps: int, fixture: str = "stand_mixer"
     env.reset(seed=seed)
     k = find_robocasa_env(env)
     sim = k.sim
+    try:  # instruction variant (OpenDrawer 좌/우 판정용) — 정책 무관, reset 만의 함수
+        ep_lang = str((k.get_ep_meta() or {}).get("lang", ""))
+    except Exception:
+        ep_lang = ""
 
     if fixture == "stand_mixer":
         fx = k.stand_mixer
@@ -142,6 +152,7 @@ def probe_one(env_name: str, seed: int, steps: int, fixture: str = "stand_mixer"
         "blocked_at": blocked_at,
         "blocker_geom": blocker,
         "fixture_prefix": pref,
+        "ep_lang": ep_lang,
     }
 
 
@@ -201,7 +212,14 @@ def main() -> None:
         rows.append(row)
         mark = "OK  " if row["feasible"] else "BLOCKED"
         print(f"[feas] seed {row['seed']}  q_max={row['q_max_feasible']:.3f}  {mark}"
-              f"  blocker={row['blocker_geom']}", flush=True)
+              f"  blocker={row['blocker_geom']}  lang={row.get('ep_lang', '')!r}", flush=True)
+
+    langs = sorted({r.get("ep_lang", "") for r in rows if r.get("ep_lang")})
+    if len(langs) > 1:  # OpenDrawer 좌/우처럼 seed 마다 instruction 이 갈리는 경우
+        print(f"[lang] instruction variant {len(langs)}종: {langs}", flush=True)
+        for lg in langs:
+            seeds_lg = [r["seed"] for r in rows if r.get("ep_lang") == lg]
+            print(f"[lang]   {lg!r}: seeds={seeds_lg}", flush=True)
 
     n_bad = sum(1 for r in rows if not r["feasible"])
     print(f"\n[summary] {len(rows)} seeds  infeasible={n_bad} "

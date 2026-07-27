@@ -4,18 +4,56 @@
 set -uo pipefail
 
 PROFILE=configs/checkpoints/lerobot_groot_n15__robocasa365_ckpt120000.yaml
-TASK=PickPlaceCounterToCabinet
-ENVN="robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env"
-CELL_INDEX=5; CELL_ID=ppcc_bread
-INSTR="Pick the bread from the counter and place it in the cabinet."
-NAS=5; MAXEP=720; SEED=100084
+# cell 정의는 collect/collect_perturb_grid.sh 와 같은 이름·값 (docs/steering/29 §0).
+# 기본값 = exp4-2 ppcc_bread → 기존 smoke 호출은 무변경.
+CELL="${CELL:-ppcc_bread}"
+case "$CELL" in
+  ppcc_bread)
+    TASK=PickPlaceCounterToCabinet
+    ENVN="robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env"
+    CELL_INDEX=5; SEED=100084
+    INSTR="Pick the bread from the counter and place it in the cabinet."
+    ;;
+  drawer_left)  # ⚠️ seed 의 좌/우 variant 는 reset 으로 확인 필요 (collect 러너 주석 참조)
+    TASK=OpenDrawer
+    ENVN="robocasa_panda_omron/OpenDrawer_PandaOmron_Env"
+    CELL_INDEX="${DRAWER_CELL_INDEX:-8}"; SEED="${DRAWER_SEED:-100001}"
+    INSTR="Open the left drawer."
+    ;;
+  mixer)
+    TASK=OpenStandMixerHead
+    ENVN="robocasa_panda_omron/OpenStandMixerHead_PandaOmron_Env"
+    CELL_INDEX="${MIXER_CELL_INDEX:?mixer cell_index 필요}"
+    SEED="${MIXER_SEED:?mixer seed 필요 — feasibility 통과 seed}"
+    INSTR="Open the stand mixer head."
+    ;;
+  *) echo "ABORT: unknown CELL=$CELL"; exit 10 ;;
+esac
+CELL_ID="$CELL"
+NAS=5; MAXEP="${MAXEP:-720}"
+# S1 용 P1/P2 spec 조각 (perturbation.py target 문법). ppcc 는 빈 문자열 = 기존 spec 그대로.
+case "$CELL" in
+  ppcc_bread)  P1_EXTRA=""; P2_EXTRA=""; S1_P1_MAG="${S1_P1_MAG:-0.08}" ;;
+  drawer_left) P1_EXTRA=',"target":"fixture:drawer:slidejoint","direction":[-1.0,0.0]'
+               P2_EXTRA=""  # drawer 는 P2 미사용 (사용자 결정 07-27)
+               S1_P1_MAG="${S1_P1_MAG:-0.05}" ;;
+  mixer)       P1_EXTRA=',"target":"fixture:stand_mixer:head","direction":[1.0,0.0]'
+               P2_EXTRA=',"target":"fixture:stand_mixer:head"'
+               S1_P1_MAG="${S1_P1_MAG:-0.10}" ;;
+esac
+S1_P2_MAG="${S1_P2_MAG:-15.0}"
 
 _SMOKE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 WT_HOST="$(cd -- "${_SMOKE_DIR}/../../../../../../.." && pwd)"          # worktree root
 MAIN_HOST="$(cd -- "${WT_HOST}/../../.." && pwd)"                       # main repo root
-WT_CONT="/temporal_vla/.claude/worktrees/exp4-2-induced-failures"
+# 컨테이너 경로는 호스트 worktree 에서 유도 (worktree 이름 하드코딩 시 남의 트리 코드를 도는 사고)
+WT_CONT="${WT_HOST/#${MAIN_HOST}//temporal_vla}"
 PYPATH="/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite:/temporal_vla"
-SMOKE_ROOT="${MAIN_HOST}/outputs/eval/robocasa/groot_n15/exp42_induced/smoke"
+if [ "$CELL" = "ppcc_bread" ]; then
+  SMOKE_ROOT="${MAIN_HOST}/outputs/eval/robocasa/groot_n15/exp42_induced/smoke"
+else
+  SMOKE_ROOT="${MAIN_HOST}/outputs/eval/robocasa/groot_n15/exp52_induced/${CELL}/smoke"
+fi
 JUDGE="${_SMOKE_DIR}/smoke_judge.py"
 JUDGE_CONT="${WT_CONT}/scripts/safe/groot_n15/robocasa/steer/induced/smoke/smoke_judge.py"
 

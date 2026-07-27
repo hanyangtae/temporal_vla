@@ -11,6 +11,19 @@
 - **P2_force**: trigger record 에서 `xfrc_applied[bid,:3]` 수평 wrench set, duration record
   경계에서 명시적 0 해제 (mujoco 가 매 물리스텝 자동 적용 — per-step 훅 불필요).
 
+target 문법 (exp5-2 확장 — P1/P2 공통, 2026-07-27):
+- ``"obj"`` 등 평문 = `env.objects` / `env.obj_body_id` 의 **자유관절 물체** (ppcc 기존 경로,
+  P1 = xy 평면 δ, P2 = body 수평 wrench). 기본값이라 ppcc 동작은 무변경.
+- ``"fixture:<env_attr>:<joint_key>"`` = **fixture 관절** 대상 (drawer/mixer 처럼 조작 대상이
+  자유물체가 아닌 task). 예 `fixture:drawer:slidejoint`, `fixture:stand_mixer:head`.
+  - P1 = 그 관절 qpos[0] 에 ``magnitude × sign`` 가산 (**raw 관절 단위** — slide=m, hinge=rad).
+    sign 은 `direction`(미지정 시 spec_seed 샘플)의 x 성분 부호. 물리적 의미가 task 마다
+    다르므로(예 Drawer 는 qpos<0 이 열림 — cabinets.py get_door_state sign −1) cell 기본값에서
+    `direction` 을 **명시**한다.
+  - P2 = 그 관절이 움직이는 body(`jnt_bodyid`)에 수평 wrench.
+  - ⚠️ GPU 세션 검증 필요: 관절 range/부호와 magnitude 스케일은 정적으로 확정 불가
+    (S1 sham/실효 smoke + grid 실패율 40–70% 캘리브레이션에서 확정).
+
 결정론 규약: 모든 확률량은 `spec_seed` 의 `np.random.default_rng` 로만 샘플하고, `resolve()`
 가 확정한 resolved dict 를 사이드카/pkl 에 기록한다 (spec+seed 의 순수 함수).
 
@@ -53,6 +66,9 @@ OSC_POS_SCALE_M = 0.05
 # G1 per-step 이동 상한 (정규화 0.8 = 4 cm — 포화 여유).
 G1_MAX_STEP_DELTA_M = 0.04
 
+# P1/P2 target 이 자유물체가 아니라 fixture 관절일 때의 접두사 (exp5-2 drawer/mixer).
+FIXTURE_TARGET_PREFIX = "fixture:"
+
 
 @dataclass
 class PerturbSpec:
@@ -70,7 +86,7 @@ class PerturbSpec:
     cameras: tuple[str, ...] = DEFAULT_C1_CAMERAS
     # G1
     sigma_xyz_m: float = 0.10
-    # P1/P2 공통
+    # P1/P2 공통 — "obj"(자유물체) | "fixture:<env_attr>:<joint_key>" (모듈 docstring 참조)
     target: str = "obj"
     trigger_record: int = -1
     magnitude: float = 0.0  # P1: |δ| m / P2: |F| N
@@ -234,8 +250,48 @@ class Perturber:
         self._achieved_delta: list[float] | None = None
         self._cam_before_after: dict[str, Any] = {}
         self._scripted_terminated = False
+        self._fixture_target_cache: tuple[str, int] | None = None
+        self._joint_before_after: dict[str, Any] = {}
 
     # -- 내부 헬퍼 ---------------------------------------------------------------
+    def _fixture_target(self) -> tuple[str, int] | None:
+        """target 이 ``fixture:<env_attr>:<joint_key>`` 면 (joint_name, body_id), 아니면 None.
+
+        drawer/mixer 처럼 조작 대상이 자유물체가 아닌 task 용 (exp5-2). 평문 target 은
+        None 을 돌려 기존 `env.objects` 경로를 그대로 쓴다 (ppcc 무변경).
+        """
+        t = self.spec.target
+        if not t.startswith(FIXTURE_TARGET_PREFIX):
+            return None
+        if self._fixture_target_cache is not None:
+            return self._fixture_target_cache
+        parts = t.split(":")
+        if len(parts) != 3:
+            raise ValueError(f"fixture target 형식 오류: {t!r} (fixture:<attr>:<joint_key>)")
+        _, attr, key = parts
+        fx = getattr(self.kenv, attr, None)
+        if fx is None:
+            raise RuntimeError(f"kitchen env 에 fixture 속성 {attr!r} 없음 (target={t!r})")
+        # StandMixer 는 _joint_names 맵(head/bowl/...), Drawer 는 f"{name}_slidejoint" 규약.
+        jname = (getattr(fx, "_joint_names", {}) or {}).get(key) or f"{fx.name}_{key}"
+        sim = self.kenv.sim
+        try:
+            jid = int(sim.model.joint_name2id(jname))
+        except Exception as exc:  # noqa: BLE001 — 모델에 관절 부재 = 설정 오류로 즉시 중단
+            raise RuntimeError(f"관절 {jname!r} 을 모델에서 찾지 못함 (target={t!r})") from exc
+        self._fixture_target_cache = (jname, int(sim.model.jnt_bodyid[jid]))
+        return self._fixture_target_cache
+
+    def _target_body_id(self) -> int:
+        ft = self._fixture_target()
+        if ft is not None:
+            return ft[1]
+        return int(self.kenv.obj_body_id[self.spec.target])
+
+    def _sign_x(self) -> float:
+        """1-DoF 관절 δ 의 부호 — direction 의 x 성분(미지정 시 spec_seed 샘플) 부호."""
+        return 1.0 if float(self.resolved["direction_xy"][0]) >= 0.0 else -1.0
+
     def _refresh_obs(self) -> dict[str, Any]:
         """카메라 변조 후 reset 과 동일한 경로로 obs 재취득 (gymnasium_basic 재현)."""
         rsenv = self.genv.env
@@ -361,6 +417,10 @@ class Perturber:
         if record_idx != self.resolved.get("trigger_record", -10):
             return
         kenv = self.kenv
+        ft = self._fixture_target()
+        if ft is not None:
+            self._p1_fixture_joint(record_idx, ft[0])
+            return
         jname = kenv.objects[self.spec.target].joints[0]
         if self.spec.sham:
             if self.spec.sham_forward:
@@ -378,11 +438,36 @@ class Perturber:
         kenv.sim.forward()
         self._applied_env_steps.append(record_idx * self.nas + self._env_step_offset)
 
+    def _p1_fixture_joint(self, record_idx: int, jname: str) -> None:
+        """fixture 1-DoF 관절 qpos 에 δ 가산 (drawer slide / mixer head). raw 관절 단위."""
+        kenv = self.kenv
+        q = np.atleast_1d(np.array(kenv.sim.data.get_joint_qpos(jname), dtype=np.float64))
+        q_before = float(q[0])
+        if self.spec.sham:
+            if self.spec.sham_forward:
+                kenv.sim.data.set_joint_qpos(jname, q_before if q.size == 1 else q)
+                kenv.sim.forward()
+            else:
+                self._sham_skipped = True
+            self._joint_before_after = {"joint": jname, "qpos_before": q_before,
+                                        "qpos_after": q_before}
+            return
+        q[0] = q_before + self.spec.magnitude * self._sign_x()
+        kenv.sim.data.set_joint_qpos(jname, float(q[0]) if q.size == 1 else q)
+        kenv.sim.forward()
+        # 실측 후값 재확인 (관절 range 클램프로 요청 δ 가 다 안 들어갈 수 있음 — 캘리브레이션 근거)
+        q_after = float(np.atleast_1d(
+            np.array(kenv.sim.data.get_joint_qpos(jname), dtype=np.float64))[0])
+        self._joint_before_after = {"joint": jname, "qpos_before": q_before,
+                                    "qpos_after": q_after,
+                                    "qpos_delta_achieved": q_after - q_before}
+        self._applied_env_steps.append(record_idx * self.nas + self._env_step_offset)
+
     def _maybe_p2(self, record_idx: int) -> None:
         trig = self.resolved.get("trigger_record", -10)
         dur = self.resolved.get("duration_records", 0)
         kenv = self.kenv
-        bid = kenv.obj_body_id[self.spec.target]
+        bid = self._target_body_id()
         if record_idx == trig:
             dxy = np.asarray(self.resolved["direction_xy"])
             force = 0.0 if self.spec.sham else self.spec.magnitude
@@ -428,6 +513,12 @@ class Perturber:
             out["perturb_achieved_delta"] = self._achieved_delta
         if self.spec.mode == "P2_force":
             out["perturb_released"] = self._released
+        if self.spec.mode in ("P1_displace", "P2_force"):
+            ft = self._fixture_target_cache
+            if ft is not None:
+                out["perturb_fixture_target"] = {"joint": ft[0], "body_id": ft[1]}
+            if self._joint_before_after:
+                out["perturb_joint_state"] = self._joint_before_after
         if self._sham_skipped:
             out["sham_skipped_sim_write"] = True
         return out

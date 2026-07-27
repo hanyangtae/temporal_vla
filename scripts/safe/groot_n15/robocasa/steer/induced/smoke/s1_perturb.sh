@@ -10,13 +10,14 @@ S1="${SMOKE_ROOT}/s1"; mkdir -p "$S1/specs"
 spec() { echo "$1" > "$S1/specs/$2.json"; }
 spec '{"mode":"C1_camera","sham":true,"spec_seed":11,"scale":1.0,"tag":"sham_c1"}' sham_c1
 spec '{"mode":"G1_gripper_init","sham":true,"spec_seed":12,"sigma_xyz_m":0.10,"tag":"sham_g1"}' sham_g1
-spec '{"mode":"P1_displace","sham":true,"spec_seed":13,"trigger_record":8,"magnitude":0.08,"tag":"sham_p1"}' sham_p1
-spec '{"mode":"P1_displace","sham":true,"sham_forward":true,"spec_seed":13,"trigger_record":8,"magnitude":0.08,"tag":"sham_p1f"}' sham_p1f
-spec '{"mode":"P2_force","sham":true,"spec_seed":14,"trigger_record":10,"duration_records":2,"magnitude":15.0,"tag":"sham_p2"}' sham_p2
+# P1/P2 spec 은 cell 별 target/magnitude 조각을 주입 (ppcc 는 빈 조각 = 기존과 동일 문자열).
+spec '{"mode":"P1_displace","sham":true,"spec_seed":13,"trigger_record":8,"magnitude":'"${S1_P1_MAG}${P1_EXTRA}"',"tag":"sham_p1"}' sham_p1
+spec '{"mode":"P1_displace","sham":true,"sham_forward":true,"spec_seed":13,"trigger_record":8,"magnitude":'"${S1_P1_MAG}${P1_EXTRA}"',"tag":"sham_p1f"}' sham_p1f
+spec '{"mode":"P2_force","sham":true,"spec_seed":14,"trigger_record":10,"duration_records":2,"magnitude":'"${S1_P2_MAG}${P2_EXTRA}"',"tag":"sham_p2"}' sham_p2
 spec '{"mode":"C1_camera","sham":false,"spec_seed":21,"scale":1.0,"tag":"real_c1"}' real_c1
 spec '{"mode":"G1_gripper_init","sham":false,"spec_seed":22,"sigma_xyz_m":0.10,"tag":"real_g1"}' real_g1
-spec '{"mode":"P1_displace","sham":false,"spec_seed":23,"trigger_record":8,"magnitude":0.08,"tag":"real_p1"}' real_p1
-spec '{"mode":"P2_force","sham":false,"spec_seed":24,"trigger_record":10,"duration_records":2,"magnitude":15.0,"tag":"real_p2"}' real_p2
+spec '{"mode":"P1_displace","sham":false,"spec_seed":23,"trigger_record":8,"magnitude":'"${S1_P1_MAG}${P1_EXTRA}"',"tag":"real_p1"}' real_p1
+spec '{"mode":"P2_force","sham":false,"spec_seed":24,"trigger_record":10,"duration_records":2,"magnitude":'"${S1_P2_MAG}${P2_EXTRA}"',"tag":"real_p2"}' real_p2
 
 # capture serve(csv 산출) + capture-OFF serve(base_nf 용 — collect serve 는 skip_features
 # 를 409 거부하므로 교차모드 검사는 별도 serve 필수. 같은 GPU serve 2 규칙 내).
