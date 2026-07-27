@@ -95,11 +95,20 @@ t=0 값은 전 arm 0.66~0.73 (raw|all 0.729 = exp5-3 일치). 공식 verdict 는
    noise 추첨이 최종 성패를 예측한다는 뜻이며, 이 신호가 "실패 원인 방향"인지 "운 좋은
    노이즈 방향"인지는 G3 개입만이 가른다.
 
-## 4. G1-재판정 (drawer_right, scenario_seed 20클래스) — 진행 중
+## 4. G1-재판정 (drawer_right, scenario_seed 20클래스) — **전부 PASS** (07-27 완료)
 
-episode축 SAE(L12/L10/L8) × {scenario_seed, layout_id} probe 순열 50회가 실행 중
-(순열당 ~90s). 완료 시 이 절 갱신. 예비 신호: scene축 SAE 의 layout probe 가
-CV(본 scene) 0.99 vs held-out scene 0.63 — scene 일반화 격차 큼(§3-③ 과 정합).
+episode축 SAE × probe (창 38, 순열 50, episode-held-out):
+
+| L | scenario_seed(20클래스): z-acc / 회복률 / null_z | layout: z-acc / 회복률 |
+|---|---|---|
+| 8 | 0.836 / 0.84 / 37.3 | 0.982 / 0.97 |
+| 10 | 0.849 / 0.86 / 38.2 | 0.993 / 0.99 |
+| 12 | **0.898 / 0.93 / 38.6** | 0.996 / 1.00 |
+
+31 문서의 한계("scene 라벨 해상도 = layout 5클래스 상한")가 해소됨 — SAE feature 는
+**scenario_seed 수준의 scene 정체성**을 held-out episode 에서 읽는다(우연 0.05 대비 압도적).
+단 이는 episode-held-out(본 scene) 기준 — scene-held-out 일반화 격차(CV 0.99 vs 새 scene
+0.63)는 §3-③(암기) 그대로. G1 결론은 완전 해상도에서 성립.
 
 ## 4.5 exp5-3 실패축 판정과의 교차 검증 (2026-07-27 추가, exp5-3_fail_axis_drawer_mixer.txt)
 
@@ -161,8 +170,10 @@ exp5 라운드의 기획("SAE 로 scene 을 분리한다")에 대한 **직접 �
 - 근거 1 = 위 표 (removal 성능 열세). 근거 2 = §4.8-[4-2] 실패 신호가 **1차원**이라
   (c)안(feature 집합 연산자)의 재개 조건도 기각됨. SAE 산출물(코어·G1 결과)은 "N1.5 DiT 에서
   scene 은 sparse feature 로 읽힌다(단 scene-특이적)"라는 관찰 기록으로만 남긴다.
-- 유일한 잔여 반론(scenario_seed 기반 selectivity 재산정)은 발견 A(scene 방향이 scene-특이적
-  이라 selective feature 도 전이 불가)로 사전 기대가 낮다 — 시도하려면 1회로 제한.
+- ~~유일한 잔여 반론(scenario_seed 기반 selectivity 재산정)~~ → **시도했고 기각 확정**
+  (07-27 저녁, `g2_L12_sae_rebuttal.json`, ep축 ckpt·exploratory): scenario_seed 기반
+  selective(live 의 2.2~3.3%, layout 기반의 4~6배 규모) 제거로도 본 scene 식별 0.767→0.697,
+  read 무변화(0.800→0.803) — layout 기반과 동일한 실패 패턴. **반론 소진, (b) 결론 확정.**
 
 ## 4.8 추가 계산 4건 (결정문 §4, 전부 기존 데이터)
 
