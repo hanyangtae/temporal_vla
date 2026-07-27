@@ -1,0 +1,79 @@
+# 31. exp5-3 — within-scene setM steering (drawer) + mixer scene-matched 확장
+
+> 2026-07-27. 단일 출처: 이 문서 + 승준 `~/sm_*{drawer,mixer}*.json`·`~/exp53_npz/fit_report.json`.
+> 스크립트: `scripts/safe/groot_n15/robocasa/steer/exp5_3/`. 실행 머신 = rudxo_home(4090, serve 3).
+> 배경: scene-matched 진단(같은 scenario_seed 에 inference_seed 8종 변주 → scene 안 succ/fail
+> 혼재)에서 drawer 분리 실재(L12 0.837, t=0에 0.71) + **cross-scene fit 은 scene 구조 학습**
+> 판명. exp2(scene 고정·conceptor·bread/apple)의 drawer·setM·within-scene 재수행.
+
+## 1. Fit — within-scene 방향, LOO-by-seed, per-scene setpoint
+
+- 방향 = 혼재 13 scene 별 (μ_fail−μ_succ) 세그먼트별(state/future/action) 평균 → 정규화.
+  fold = leave-one-seed-out 8종 (평가 seed 의 episode 는 fit 미기여 — in-sample 차단).
+- ★설계 교정(게이트가 잡음): **전역 setpoint 는 scene offset 을 못 따라감** — seed-out
+  비중심 read-out 0.59 로 붕괴, scene-중심은 0.868. → permanent 배포를 **per-scene setpoint
+  registry**(`scene{S}/dit_L12/conceptors.npz`, client `--steer-phase-name scene{S}`)로 변경.
+  exp2 의 per-scene fit 정신과 일치. fold 에 그 scene 성공이 없으면 전역 fallback(무음 off 방지).
+- 게이트: scene-중심 read-out 0.868 ✓ · move/gap 2.92≤3(within-scene gap 기준) ✓ ·
+  fold-cos ≥0.907 ✓. gated 채택 phase = reach-to-handle·grasp-handle (succ/fail 각 ≥50 rec).
+- 배선 함정: `setpoint_seg` 는 serve 에 **`--steering-token-select all` 필수** (누락 시 기동 실패).
+
+## 2. drawer steering 결과 — β=1.0 파괴적 해악 (사용자 중단)
+
+grid = scene 20 × inference_seed 8 (수집과 동일; baseline = srv50 수집 320판).
+A0 앵커 40판(home)으로 머신 이동 확인: 0.350 vs srv50 동일칸 0.375 → **이동 없음**.
+
+| arm | n | SR | base(동일칸) | Δ판 | 구제/해악 | McNemar p† |
+|---|---|---|---|---|---|---|
+| setM_within_permanent | 160 | **0.025** | 0.344 | **−51** | 1 / 52 | <1e-4 |
+| setM_within_gated | 27(부분) | 0.222 | 0.519 | −8 | 1 / 9 | 0.02 |
+
+† cross-machine (srv50 baseline vs home eval) — trajectory 짝 아닌 조건 짝, 각주 필수.
+단 A0 앵커가 이동 없음을 보여 방향성 판정에는 충분.
+
+- **판정: β=1.0 은 성공하던 episode 까지 파괴** (해악 52 vs 구제 1). 읽히는 방향
+  (진단 0.84)이라도 이 dose 로 밀면 행동이 무너진다 — read≠write 의 정량 실증.
+- gated 가 permanent 보다 완만(−8/27 vs −51/160 비율) — phase-off 구간의 보호 효과 시사
+  (부분 표본, 단정 불가).
+- 남은 카드: **β 0.1~0.3 재시도**(fit·NPZ·러너 그대로, serve 플래그만) — 사용자 결정 대기.
+- 떨림: dev collector 의 `action_kinematics` 로깅을 home 에 이식(gated 후반부터 기록).
+  결정론(머신-로컬) 덕에 같은 grid 재실행으로 사후 보강 가능 (미실행).
+
+## 3. mixer scene-matched 수집 + 진단 (Phase 2)
+
+- 수집: feasible 20 scene(BLOCKED 100010 제외) × seed 8 = **160/160**, capture ON(full-token),
+  **SR 0.69 (succ 110 / fail 50)**. 구 SR 0.33 은 n=6 스모크였고 16-실행 0.75 와 정합.
+  env 판정(head>0.99)은 결과가 이봉분포라 경계 애매성 없음(문서 27) — 재판정 불요.
+  영상: **상단 여백 배너**(instruction+phase+step) 주석본 160개 병행 생성 (하단 가림 캡션 대체,
+  2026-07-27 표준). 데이터: 승준 `exp5_3_mixer_sm`(160 pkl) + **home 원본 보존**(삭제 금지 지시).
+- 진단 (drawer 파이프 동일, 창 [0,17), 혼재 scene 15/20 상당 — n_eval 120):
+
+| 검정 (최적층) | drawer L12 | **mixer L8** | beer L12 |
+|---|---|---|---|
+| within-scene, scene 홀드아웃 | 0.847 | **0.728** (z 3.2) | 0.623 |
+| + seed 홀드아웃 | 0.837 | **0.613** (z 1.7, p .04) | 0.622 |
+| t=0 | 0.712 | 0.610 | 0.542(우연) |
+| 전역(cross-scene) 방향 | 0.627 | 0.526 | 0.669 |
+
+- **within-scene 방향의 우월이 2번째 cell 에서 재현** (0.526 vs 0.728).
+- mixer 는 **중간 강도**: seed 홀드아웃에서 0.73→0.61 — 신호의 상당 부분이 노이즈 draw
+  주효과("그 draw 가 원래 나쁨"). drawer(초기조건형·seed-robust 0.84 유지)와 다른 체제.
+- 국소: **disengage phase AUROC 0.900** (n=31, dwell 0.430 — 체류 착시 아님) — "부분 개방 후
+  놓침" 실패 유형이 활성에서 뚜렷. phase-gated 개입 후보 지점이나 소표본.
+- mixer steer 는 보류(사용자: 수집 먼저). 우선순위 drawer β 재조정 > mixer.
+
+## 4. Confound audit
+
+| # | 게이트 | 판정 | 근거 |
+|---|---|---|---|
+| 1 | 길이 | 통과 | 진단 = 공통 창(cap=min len); steer 판정 = SR(길이 무관) |
+| 2 | task | 통과 | cell 내 분석 |
+| 3 | instruction | 통과 | drawer=right 검증 seed·mixer=1종 |
+| 4 | in-sample | 통과 | LOO-by-seed fit 실물(fold별 NPZ sha 상이·fit_report 기록) |
+| 5 | pooling | 부분 | 진단 창 평균 병용 — fixed-t 곡선으로 보강(문서 30절 아님, drawer 선행 분석) |
+| 6 | phase/dwell | 통과(국소) | mixer disengage dwell 0.43; contact-head 는 dwell 0.72 로 **교란 잔존** |
+| 7 | 관측≠인과 | **실증** | 진단 0.84 인 방향이 β=1.0 개입에선 −51판 — read≠write |
+| 8 | scene 국소 | 해당 | permanent 해악은 13/20 scene 전부 음(−) — scene-일관 해악 |
+
+주장 강도: drawer steer = **intervention effect (해악 방향, β=1.0 한정)**. mixer 진단 =
+diagnostic evidence.
