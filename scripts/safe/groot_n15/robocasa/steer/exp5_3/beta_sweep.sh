@@ -29,15 +29,15 @@ serve_env() {
 
 serve_kill() { pkill -f "lerobot.py.*--port 86[0]" 2>/dev/null; sleep 6; }
 
-serve_up() {  # $1=beta("A0"=무개입) $2=fold
-  local beta=$1 fold=${2:-}
+serve_up() {  # $1=beta("A0"=무개입) $2=fold $3=registry서브디렉토리(기본 permanent)
+  local beta=$1 fold=${2:-} sub=${3:-permanent}
   serve_kill; serve_env
   local PY="$HOME/miniconda3/envs/lerobot_050_groot/bin/python"
   local extra=()
   if [ "$beta" != "A0" ]; then
     local pph
-    pph=$(ls "$DEPLOY/permanent/loo_seed${fold}" | paste -sd, -)
-    extra=(--steering-phase-npz-base "$DEPLOY/permanent/loo_seed${fold}" \
+    pph=$(ls "$DEPLOY/$sub/loo_seed${fold}" | paste -sd, -)
+    extra=(--steering-phase-npz-base "$DEPLOY/$sub/loo_seed${fold}" \
            --steering-phases "$pph" --steering-layers $LAYER --steering-beta "$beta" \
            --steering-token-select all)
   fi
@@ -94,8 +94,13 @@ latin_rows_for_seed() {  # $1=k → "scene inf epidx" 줄들
 trap 'serve_kill' EXIT
 echo "=== β sweep 시작 $(date -u +%FT%T) ===" | tee -a "$LOG"
 
-for spec in "setM_within_permanent_b05 0.5" "setM_within_permanent_b02 0.2" "A0_anchor_kin A0"; do
-  set -- $spec; arm=$1; beta=$2
+# spec = "arm beta [registry서브디렉토리]" — ARMS_SPEC env 로 override 가능
+#   기본 = β sweep (exp5-1 요청). future-only 라운드는:
+#   ARMS_SPEC="setM_within_fut_b10 1.0 permanent_fut;setM_within_fut_b05 0.5 permanent_fut"
+DEFAULT_SPEC="setM_within_permanent_b05 0.5;setM_within_permanent_b02 0.2;A0_anchor_kin A0"
+IFS=';' read -ra SPECS <<< "${ARMS_SPEC:-$DEFAULT_SPEC}"
+for spec in "${SPECS[@]}"; do
+  set -- $spec; arm=$1; beta=$2; sub=${3:-permanent}
   echo "--- arm $arm (beta=$beta) $(date -u +%FT%T) ---" | tee -a "$LOG"
   if [ "$beta" = "A0" ]; then
     ROWS=()
@@ -116,7 +121,7 @@ for spec in "setM_within_permanent_b05 0.5" "setM_within_permanent_b02 0.2" "A0_
         ls "$OUT_BASE/$arm/raw_rollouts/OpenDrawer/pq3_drawer_right/task7--ep$3--succ"*.json >/dev/null 2>&1 || { done_all=0; break; }
       done
       [ $done_all = 1 ] && continue
-      serve_up "$beta" "$k"
+      serve_up "$beta" "$k" "$sub"
       WPIDS=()
       for ((w=0; w<${#PORTS[@]}; w++)); do
         ( for ((i=w; i<${#ROWS[@]}; i+=${#PORTS[@]})); do run_one "$arm" "$beta" ${ROWS[$i]} "${PORTS[$w]}"; done ) &
@@ -129,4 +134,4 @@ for spec in "setM_within_permanent_b05 0.5" "setM_within_permanent_b02 0.2" "A0_
   echo "--- $arm 완료: json $(find "$OUT_BASE/$arm" -name '*.json' | wc -l) ---" | tee -a "$LOG"
 done
 echo "=== β sweep 전체 완료 $(date -u +%FT%T) ===" | tee -a "$LOG"
-touch "$HOME/exp53_bsweep.DONE"
+touch "${DONE_FILE:-$HOME/exp53_bsweep.DONE}"
