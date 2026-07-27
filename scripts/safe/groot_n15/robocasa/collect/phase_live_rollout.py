@@ -74,7 +74,10 @@ def main():
     ap.add_argument("--inference-seed", type=int, default=0)
     ap.add_argument("--max-steps", type=int, default=720)
     ap.add_argument("--vla-server", default="http://127.0.0.1:8400")
-    ap.add_argument("--proximity", action="store_true", help="GT 라벨러 proximity(6-phase) 모드")
+    ap.add_argument("--n-action-steps", type=int, default=5,
+                    help="get_action 당 실행할 env-step 수 (execute-n). 학습/평가 정합=5.")
+    ap.add_argument("--no-proximity", action="store_true",
+                    help="GT 라벨러 proximity sub-phase(grasp/place) 끄기. 기본은 pq3 와 동일하게 켬.")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -101,7 +104,7 @@ def main():
 
     env_gt = None
     try:
-        env_gt = EnvStepGT(env, a.env_id, a.proximity)
+        env_gt = EnvStepGT(env, a.env_id, not a.no_proximity)
         env.set_gt(env_gt)
         env_gt.start()   # s_0
     except Exception as e:
@@ -109,34 +112,42 @@ def main():
 
     frames, phases, latencies = [], [], []
     success = False
-    step = 0
+    step = 0          # env-step 수 (프레임 수)
+    n_inf = 0         # get_action 호출 수 (execute-n 이므로 step != n_inf)
+    done = False
     try:
-        while step < a.max_steps:
+        while step < a.max_steps and not done:
             processed = obs_pipeline({TransitionKey.OBSERVATION: obs})[TransitionKey.OBSERVATION]
             images, states, instr = split_obs(processed)
             instr = instr or a.instruction
+            # get_action 1회 = 16-step action chunk. 학습/평가와 동일하게 execute-n(기본 5) 실행.
             actions, features, latency = client.predict_with_features(
                 images, states or None, instr,
-                inference_seed=a.inference_seed + step,
+                inference_seed=a.inference_seed + n_inf,
             )
+            n_inf += 1
             latencies.append(latency)
-            phase = (features or {}).get("phase")   # serve --phase-readout 산출 (라이브)
-            groot_action = action_pipeline({TransitionKey.ACTION: actions})[TransitionKey.ACTION]
-            obs, _r, terminated, truncated, info = env.step(groot_action)
+            phase = (features or {}).get("phase")   # serve --phase-readout 산출 (라이브, 이 chunk 기준)
 
-            gt_phase = env_gt.phases[-1] if (env_gt is not None and env_gt.phases) else None
-            fr = frame_of(obs)
-            if fr is not None:
-                frames.append(fr)
-                phases.append({"live": phase, "gt": gt_phase})
-            if info.get("success", False):
-                success = True
-            step += 1
-            if step % 20 == 0:
+            chunk_len = len(np.asarray(next(iter(actions.values()))))
+            for j in range(min(a.n_action_steps, chunk_len)):
+                aj = {k: np.asarray(v)[j:j+1] for k, v in actions.items()}   # j번째 스텝만 [1,dim]
+                ea = action_pipeline({TransitionKey.ACTION: aj})[TransitionKey.ACTION]
+                obs, _r, terminated, truncated, info = env.step(ea)
+                if info.get("success", False):
+                    success = True
+                gt_phase = env_gt.phases[-1] if (env_gt is not None and env_gt.phases) else None
+                fr = frame_of(obs)
+                if fr is not None:
+                    frames.append(fr)
+                    phases.append({"live": phase, "gt": gt_phase})   # phase 는 chunk 단위(5프레임 공유)
+                step += 1
+                if terminated or truncated or success or step >= a.max_steps:
+                    done = True
+                    break
+            if n_inf % 10 == 0:
                 p = phase.get("ae", {}) if isinstance(phase, dict) else {}
-                print(f"[{step}] ae={p.get('phase')} succ={success} lat={latency:.0f}ms", flush=True)
-            if terminated or truncated or success:
-                break
+                print(f"[inf{n_inf} step{step}] ae={p.get('phase')} succ={success} lat={latency:.0f}ms", flush=True)
     finally:
         env.close()
 
