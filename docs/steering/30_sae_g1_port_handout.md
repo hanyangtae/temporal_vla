@@ -15,13 +15,22 @@
 overcomplete SAE 를 학습하고, **G1 게이트 = "SAE feature 가 scene 을 실제로 인코딩하는가"를
 scene 라벨(layout/style/scenario_seed) probe 로 실측**한다. G1 통과 시에만 G2(잔차화 read)로.
 
+**용어**:
+- **G = Gate(게이트)**. 25a 사다리의 관문 번호: G1=SAE+scene feature 식별 실측 / G2=scene 잔차화
+  후 succ/fail **read** 잔존 / G3=잔여 방향 **write**(steering). 앞 게이트 통과 시에만 다음 착수.
+- **overcomplete SAE** = 사전 크기 m > 입력차원 D. superposition(D보다 많은 개념이 겹쳐 저장)을
+  희소 활성(top-k)으로 풀어 개념별 feature 를 분리하는 전제 — "scene feature 만 골라 제거"가
+  가능하려면 필요. 동료 세팅(PCA64→m=128)은 원본 1536 기준 사실상 undercomplete → 재설계 사유.
+
 ## 1. 배경 (3 문단 요약 — 상세는 25a)
 
 선형 latent 연산자 가족(conceptor=분산, setM=평균)은 exp2/exp3/exp4-1 세 라운드에 걸쳐
 cross-scene·same-scene·perturbed fit, layer/phase/token/multi 변형 전부 **위약 동급 또는
 noise_resample 미만**으로 종결됐다. exp4-3 3-모델 atlas 실측이 이유를 설명한다: 분산축은 모델
-불변으로 퇴화(|z|<2), 평균분리는 강하지만(z 5~15) 위치가 모델·task 의존 + write 전부 null =
-**scene·진행도가 지배하는 결과-상관 구조**(비인과).
+불변으로 퇴화(|z|<2), 평균분리는 강하지만(z 5~15) **분리 신호가 최대가 되는 layer 깊이(atlas
+mean_z peak)가 모델마다 이동**(같은 bread 인데 N1.5 L8-12 → N1.6 L31 → Cosmos L24)하고 **판별이
+가장 강한 phase 는 task 마다 다름**(Cosmos: drawer=grasp-handle, bread=reach-to-object 조기층)
++ write 전부 null = **scene·진행도가 지배하는 결과-상관 구조**(비인과).
 
 따라서 질문을 재정식화한다: **succ/fail 분리신호에서 scene(암기) 성분을 명시적으로 제거하면
 outcome 신호가 남는가.** 남으면 그 잔여 방향이 steering 후보(G3), 안 남으면 그 자체가 "latent
@@ -60,6 +69,10 @@ https://github.com/robots-oh/task_classification). dev 브랜치에선 서브모
 3. 평가 라벨이 phase(oracle)지 scene 아님 — scene probe·잔차화·순열 null·write 코드 전무 → 신규.
 4. 동료 `cell` = task×object 이지 scenario_seed 아님 → **scene 라벨(layout_id/style_id/
    scenario_seed) 을 우리 rollout 메타에서 부착**하는 라벨러 신규.
+   (주의: cell 과 scenario_seed 는 같은 게 아니라 **계층**이다 — cell 은 instruction 으로 고정되는
+   굵은 단위(PPCC×bread, 대상 object 범주는 seed 가 바뀌어도 불변), scenario_seed 는 그 cell 안에서
+   episode 마다 바뀌는 주방 인스턴스(layout·style·fixture 배치·distractor). cell 1 : seed N.
+   우리가 분리할 "scene 암기"는 seed/layout/style 수준이라 cell 라벨로는 해상도 부족.)
 
 ### 2.3 우리 레포 기존 코드와의 관계
 
