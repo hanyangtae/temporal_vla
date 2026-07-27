@@ -66,6 +66,7 @@ from lerobot_http_eval import (  # noqa: E402
 )
 from robocasa_event_labeler import make_robocasa_event_labeler  # noqa: E402
 from env_step_phase import EnvStepGT, StepPhaseProbeWrapper, find_probe_wrapper  # noqa: E402
+from perturbation import Perturber, PerturbSpec  # noqa: E402
 from src.policies.groot.robocasa.io import convert_http_actions_to_groot_chunk  # noqa: E402
 from src.policies.groot.robocasa.scenario_replay import (  # noqa: E402
     ep_meta_manifest_path,
@@ -105,9 +106,14 @@ class N15LerobotHttpFeatureClient(VLAClient):
         no_features: bool = False,
         expect_chunk_len: int | None = None,
         attn_only: bool = False,
+        instruction_override: str | None = None,
     ):
         super().__init__(url, timeout=timeout)
         self.inference_seed = inference_seed
+        # exp4-2 B1: 모델에 보내는 instruction 만 교체 (env 는 원 과제로 정상 실행).
+        # kitchen 은 lang 을 ep_meta 에서 읽지 않고 task 로직에서 재생성하므로 ep_meta
+        # lang 편집은 무효 — 클라이언트 오버라이드가 유일한 타 instruction 주입 경로.
+        self.instruction_override = instruction_override
         # exp3(구 pq3) eval 캡처-OFF 모드: skip_features 로 chunk 추론 경로만 사용, records 를
         # 만들지 않는다 (eval activation 미저장 규약). 추론 횟수는 n_calls 로 계수.
         self.no_features = no_features
@@ -231,6 +237,8 @@ class N15LerobotHttpFeatureClient(VLAClient):
     ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         del options
         images, states, instruction = official_obs_to_lerobot_inputs(observation)
+        if self.instruction_override is not None:
+            instruction = self.instruction_override
         if self.task_description is None:
             self.task_description = instruction
         # 캡처 모드는 구 배선(len(records)) 그대로, no-features 는 n_calls 로 동일 산법.
@@ -555,6 +563,24 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--instruction-override",
+        default=None,
+        help=(
+            "모델에 보내는 instruction 을 이 텍스트로 교체 (env 는 원 과제 그대로 — "
+            "exp4-2 B1 타 instruction VL donor 수집용). --canonical-instruction 도 "
+            "같은 값으로 지정할 것 (사이드카 ep_meta.lang 에 env 원 지시가 남음)."
+        ),
+    )
+    parser.add_argument(
+        "--perturb-spec",
+        default=None,
+        help=(
+            "exp4-2 Track P 섭동 spec — inline json('{'로 시작) 또는 json 파일 경로 "
+            "(perturbation.PerturbSpec 스키마). resolved spec/창/실측치는 "
+            "사이드카·pkl 의 perturb_* 키로 기록된다."
+        ),
+    )
+    parser.add_argument(
         "--steer-from-record",
         type=int,
         default=None,
@@ -683,6 +709,7 @@ def run() -> dict[str, Any]:
             else None
         ),
         attn_only=getattr(args, "attn_only_records", False),
+        instruction_override=getattr(args, "instruction_override", None),
     )
     if getattr(args, "attn_only_records", False) and getattr(args, "no_features", False):
         raise ValueError("--attn-only-records 와 --no-features 는 동시 사용 불가")
@@ -773,6 +800,16 @@ def run() -> dict[str, Any]:
                     env_gt = EnvStepGT(env, env_name, getattr(args, "proximity_phases", False))
                     _probe.set_gt(env_gt)
                     env_gt.start()
+            perturber = None
+            if getattr(args, "perturb_spec", None):
+                # env_gt.start() 이후에 실행해 G1 scripted env-step 도 GT 타임라인에 계수
+                # (record↔env-step 정렬은 perturb_env_step_offset 으로 보정).
+                perturber = Perturber(
+                    env,
+                    PerturbSpec.from_json(args.perturb_spec),
+                    n_action_steps=args.n_action_steps,
+                )
+                obs = perturber.on_episode_start(obs)
             feature_phases: list[str] = []
             phase_gated_flags: list[bool] = []
             success = False
@@ -811,6 +848,8 @@ def run() -> dict[str, Any]:
                         want = getattr(args, "steer_phase_name", None) or "steer"
                     gated_now = _post_steering_phase(args.vla_server, want)
                 official_action, _ = policy.get_action(obs)
+                if perturber is not None:
+                    official_action = perturber.maybe_apply(progress_before, official_action)
                 progress_after = policy.n_calls if no_features else len(policy.records)
                 if progress_after > progress_before:
                     feature_phases.append(phase)
@@ -881,6 +920,8 @@ def run() -> dict[str, Any]:
                 _kenv = _kenv.env
             _ever = getattr(_kenv, "_pq2_succ_ever", None)
             extra_metadata["succ_ever_th"] = dict(_ever) if _ever is not None else None
+            if perturber is not None:
+                extra_metadata.update(perturber.export())
             if cell_id is not None:
                 extra_metadata.update(
                     {

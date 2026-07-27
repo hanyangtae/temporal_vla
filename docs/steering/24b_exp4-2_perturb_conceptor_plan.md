@@ -14,7 +14,20 @@
 
 ## 1. Track P — 물리 섭동 (신규 모듈)
 
-### 1.1 섭동 메뉴 (5모드 — 선행연구 조사 반영, 2개→5개 확장)
+### 1.1 섭동 메뉴
+
+> **개정 (2026-07-22, 사용자 결정 — 아래 5모드 표를 대체)**: WAM_Steer(WA-LQR, arXiv:2607.14943)의
+> perturbation 메뉴를 따라 **C1 카메라 pose 변경**(MuJoCo cam_pos/cam_quat/cam_fovy, agentview
+> 좌+우, δpos σ=0.10m·δrot σ=8°·δfov σ=5°, reset 시 1회·에피소드 내내 지속) + **G1 그리퍼 초기
+> 위치 이동**(reset 직후 scripted OSC delta 액션으로 EE를 δxyz(σ=10cm) 실이동 후 policy 시작)을
+> 채택. 기존 표에서 **P1 pre-grasp displace·P2 in-hand force는 유지**, **P3 forced gripper-open·
+> P4 swap·이미지 노이즈는 제외**. 최종 메뉴 = **C1·G1·P1·P2**. 이 개정으로 §1.1의 "시각·센서
+> perturbation 비채택" 결정은 C1에 한해 뒤집힘 — 유도축↔자연축 정렬은 bridge 게이트가 실측
+> 판정하고, C1은 지속형이라 primary 대조(perturbed-fail vs perturbed-succ, 동일 config)가 섭동
+> 서명을 양 클래스에서 통제한다. P5(drawer 저항)는 drawer 확장 시 재고. 나머지 절의 P3/P4/P5
+> 언급은 이 개정 기준으로 읽을 것 (P0 우선순위 = C1 → G1 → P1 → P2).
+
+(아래는 개정 전 원문 표 — P1/P2 행과 주의 문구는 유효)
 
 mid-rollout 실패 주입 선행(RePO-VLA 4종, FailGen 7종) 기준 2모드는 적음. 자연 실패 3대장(grasp miss / drop / wrong object) + drawer timeout을 커버하는 5모드:
 
