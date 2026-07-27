@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import cv2
@@ -32,6 +34,13 @@ PHASE_COLORS = {
     "insert-settle": (0, 255, 0),
 }
 
+# env-step GT 이벤트 → (라벨, BGR). 구 사이드카는 키 부재 → 빈 리스트로 no-op.
+EVENT_STYLES = {
+    "env_step_grasp_steps": ("GRASP", (0, 255, 0)),
+    "env_step_drop_steps": ("DROP", (0, 0, 255)),
+    "env_step_wrong_grasp_steps": ("WRONG", (0, 165, 255)),
+}
+
 
 def annotate(sidecar: Path, steps_per_render: int, overwrite: bool = False) -> Path | None:
     d = json.loads(sidecar.read_text())
@@ -42,6 +51,12 @@ def annotate(sidecar: Path, steps_per_render: int, overwrite: bool = False) -> P
         timeline = d.get("phase_timeline") or []
         step_div = int(d.get("n_action_steps") or 5)  # frame→record 매핑
     instr = d.get("canonical_instruction") or d.get("task_description") or ""
+    # 이벤트 마커 (env-step 축) — t0 주석 시 grasp/drop/wrong 통과 지점 시각화
+    events = sorted(
+        (int(e), label, color)
+        for key, (label, color) in EVENT_STYLES.items()
+        for e in (d.get(key) or [])
+    )
     if not timeline:
         print(f"[skip] phase 라벨 없음: {sidecar.name}")
         return None
@@ -61,13 +76,18 @@ def annotate(sidecar: Path, steps_per_render: int, overwrite: bool = False) -> P
     font = cv2.FONT_HERSHEY_SIMPLEX
     pad = 6
     line_h = 26
-    banner_h = 2 * line_h + 3 * pad
+    bar_h = 6  # 하단 이벤트 틱 진행바
+    banner_h = 2 * line_h + 3 * pad + bar_h
     if (banner_h + H) % 2 == 1:  # h264/yuv420p 짝수 높이
         banner_h += 1
     writer = cv2.VideoWriter(str(out), cv2.VideoWriter_fourcc(*"mp4v"), fps, (W, H + banner_h))
 
     i = 0
     succ = d.get("episode_success")
+    # 진행바 x 좌표용 총 env-step 수 (record 해상도 fallback 시 근사)
+    n_total = max(1, (len(timeline) if step_div == 1 else len(timeline) * step_div) - 1)
+    flash: list | None = None  # [text, color, frames_left]
+    flash_frames = max(6, int(round((cap.get(cv2.CAP_PROP_FPS) or 20.0) * 0.5)))
     while True:
         ok, frame = cap.read()
         if not ok:
@@ -80,12 +100,50 @@ def annotate(sidecar: Path, steps_per_render: int, overwrite: bool = False) -> P
                     font, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
         cv2.putText(banner, f"step {step:>3}  phase: {ph}", (pad, 2 * pad + 2 * line_h - 10),
                     font, 0.65, PHASE_COLORS.get(ph, (255, 255, 255)), 2, cv2.LINE_AA)
+        # 렌더는 steps_per_render 간격 서브샘플 — [env_step, env_step+spr) 윈도우 매칭
+        hits = [ev for ev in events if env_step <= ev[0] < env_step + steps_per_render]
+        if hits:
+            text = "  ".join(f"{label}@{e}" for e, label, _ in hits)
+            flash = [text, hits[-1][2], flash_frames]
+        if flash and flash[2] > 0:
+            tw = cv2.getTextSize(flash[0], font, 0.6, 2)[0][0]
+            cv2.putText(banner, flash[0], (max(pad, W - tw - pad), pad + line_h - 8),
+                        font, 0.6, flash[1], 2, cv2.LINE_AA)
+            flash[2] -= 1
+        # 하단 진행바: 전체 타임라인 위 이벤트 고정 틱 + 현재 위치(흰색)
+        y0 = banner_h - bar_h
+        cv2.rectangle(banner, (0, y0), (W - 1, banner_h - 1), (60, 60, 60), -1)
+        for e, _, color in events:
+            x = int(min(e, n_total) / n_total * (W - 1))
+            cv2.line(banner, (x, y0), (x, banner_h - 1), color, 2)
+        x_now = int(min(env_step, n_total) / n_total * (W - 1))
+        cv2.line(banner, (x_now, y0 - 1), (x_now, banner_h - 1), (255, 255, 255), 1)
         writer.write(np.concatenate([banner, frame], axis=0))
         i += 1
     cap.release()
     writer.release()
+    _reencode_h264(out)
     print(f"[wrote] {out.name} frames={i} timeline={len(timeline)}")
     return out
+
+
+def _reencode_h264(path: Path) -> None:
+    """cv2 VideoWriter 는 이 env 에서 mp4v(MPEG-4 Part 2)만 지원 — VSCode/브라우저
+    (Chromium)가 재생 못 함. ffmpeg(libx264 확인됨)로 H.264/yuv420p 재인코딩해 교체.
+    ffmpeg 부재 시 mp4v 유지 + 경고 (VLC 등에서는 재생 가능)."""
+    if shutil.which("ffmpeg") is None:
+        print(f"[warn] ffmpeg 없음 — {path.name} 은 mp4v (VSCode 재생 불가)")
+        return
+    tmp = path.with_suffix(".h264.mp4")
+    r = subprocess.run(
+        ["ffmpeg", "-y", "-v", "error", "-i", str(path), "-c:v", "libx264",
+         "-pix_fmt", "yuv420p", "-crf", "23", "-preset", "veryfast", str(tmp)],
+        capture_output=True, text=True)
+    if r.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
+        tmp.replace(path)
+    else:
+        tmp.unlink(missing_ok=True)
+        print(f"[warn] H.264 재인코딩 실패({path.name}): {r.stderr.strip()[:120]}")
 
 
 def main() -> None:

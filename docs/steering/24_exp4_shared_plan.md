@@ -8,7 +8,7 @@
 - 이번 라운드 = **exp4**: **exp4-1**(oracle-timing 실패 구제), **exp4-2**(perturbation 유도 실패 → conceptor). 서로 다른 세션에서 병행 실행.
 - **확정 스코프 (2026-07-22 사용자 결정)**:
   - 연산자는 **setpoint형 mean-diff(Ms) + 기존 conceptor(A)**만. 제거형(ablation-to-zero)은 제외.
-  - **WA-LQR(W)**: 타당성 게이트(24a §5) 통과 시 추가 시도.
+  - **WA-LQR(W)**: 타당성 게이트(24a §5) 통과 시 추가 시도. (한 성공데이터에 대해 그와 쌍을 이루는 perturb 데이터가 필요.)
   - 축은 **within-instruction + cross-scene**만. **cross-instruction 유예** (steering fit/eval 축 기준. exp4-2 B1의 "타 instruction donor 주입"은 실패 *생성* 메커니즘이라 별개 유지).
   - **Task 4종: OpenStandMixerHead, OpenDrawer, PPCC-bread, PPCC-beer** (07-22 재결정: CloseFridge 탈락 — 실행5/예측16에서 SR 0/14 chunk-길이 함정, mixer는 실행5에서도 생존. 근거 docs/steering/26·27 라벨러 문서. mixer는 신규 cell — 준비 절차 24a §1).
 
@@ -63,7 +63,7 @@ exp4의 공략:
 
 - **GPU 규칙(2026-07-21 개정)**: 고정 할당(구 "4 5 6") 폐기. **비어 있는 GPU를 쓴다** — 세션 시작 시 nvidia-smi 확인 후 선점 선언(MACHINE.txt/큐 방식). 고정 규칙은 **GPU 1개당 serve 2개**(로컬 16GB; A100 srv50(구 worker2/w2)은 serve 6)뿐.
 - 두 세션이 같은 GPU·포트를 잡지 않도록 시작 시 상호 확인. 포트 공유 금지(pkill 포트 패턴 사고 이력).
-- 공통 표준: EVAL_SEED=100000, fresh process per episode(gym.make 연속 생성 금지), setsid detach, CPU ≤40%(OMP/OPENBLAS ≤16), 수집 캡처는 exp4-2만 ON(eval은 OFF 정책 유지).
+- 공통 표준: EVAL_SEED=100000, fresh process per episode(gym.make 연속 생성 금지), setsid detach, CPU ≤90%(OMP/OPENBLAS ≤16), 수집 캡처는 exp4-2만 ON(eval은 OFF 정책 유지).
 - 결정론은 **머신 단위** — episode 재현·eval은 그 episode를 수집한 머신에서. cross-machine 비교는 각주 규칙(memory `a100-srv50-parallel-eval`).
 - **Scene 실현가능성 필터 (필수 선행 — `docs/steering/NOTICE_scene_feasibility_for_exp4.txt`)**: fixture task의 일부 seed는 **기하적으로 성공 불가능**(실측: mixer seed 100010, 머리가 선반에 막혀 q_max 0.575 < 임계 0.99 — 12개 중 1개). 이런 판은 latent 실패가 아니라 scene 기하이고, **어떤 steering으로도 구제 불가라 rescue 분모(ITT)를 조용히 오염**시키며, fail 클래스에 섞이면 conceptor가 scene 기하를 학습한다. 규칙: ① 정책 무관 관절 스윕(`analyze/mixer_scene_feasibility.py`, CPU·seed당 수초·fresh process)으로 **episode set 확정 전** 스캔 ② 제외는 fit·eval **양쪽 동일** 적용(한쪽만 걸면 새 confound) ③ 제외 seed·q_max를 manifest/NPZ meta에 기록 ④ 스크립트는 StandMixer 전용 — drawer/ppcc 이식은 4개 파라미터(fixture·관절·body·임계) 교체, **drawer/ppcc의 오염 여부는 미확인이라 스캔 후 사용**.
 - 브랜치: exp4-1 `exp/exp4-1-oracle-rescue`, exp4-2 `exp/exp4-2-induced-failures` (dev 분기). patchceil worktree(`.claude/worktrees/patching-ceiling`)는 **포팅 원본으로만, 무접촉**.

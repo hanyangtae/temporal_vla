@@ -1,4 +1,4 @@
-"""StandMixer scene 실현가능성 사전 판정 (정책 무관, reset 시점 기하 스윕).
+"""StandMixer/Drawer scene 실현가능성 사전 판정 (정책 무관, reset 시점 기하 스윕).
 
 배경: OpenStandMixerHead 실패판 중 일부는 **머리를 들 공간이 없어서** 못 여는 scene 이다
 (위 선반/캐비닛에 막힘). 이건 latent 실패가 아니라 scene 불가능이므로 succ/fail 대조
@@ -15,6 +15,13 @@ succ/fail 어느 쪽으로도 편향을 만들지 않는다.
 
 사용 (robocasa 컨테이너):
   python mixer_scene_feasibility.py --seeds 100000-100011 [--task OpenStandMixerHead]
+  python mixer_scene_feasibility.py --task OpenDrawer --fixture drawer --seeds <...>
+
+Drawer 이식 (exp4-1 B3, Gate2 P2): 관절 = `{name}_slidejoint` (sign −1, size[1]·0.55 로
+정규화 — get_door_state 와 동일 규약), 성공역 open ≥0.95 → 임계 0.95. 함정: 서랍 **안**의
+자유 물체는 상시 접촉이라 blocker 가 아님 → blocker 는 **자유관절(free joint) body 가 아닌
+외부 geom** 만 인정 (정적 가구·벽·타 fixture). 물체는 서랍과 함께 밀려 나오는 동역학이라
+기하 불가 판정 대상이 아니다.
 """
 
 from __future__ import annotations
@@ -38,7 +45,7 @@ def parse_seeds(spec: str) -> list[int]:
     return out
 
 
-def probe_one(env_name: str, seed: int, steps: int) -> dict:
+def probe_one(env_name: str, seed: int, steps: int, fixture: str = "stand_mixer") -> dict:
     import numpy as np
     import gymnasium as gym
     import robocasa  # noqa: F401
@@ -49,21 +56,52 @@ def probe_one(env_name: str, seed: int, steps: int) -> dict:
     env = gym.make(env_name, enable_render=False, seed=seed)
     env.reset(seed=seed)
     k = find_robocasa_env(env)
-    fx = k.stand_mixer
     sim = k.sim
-    pref = fx.naming_prefix
-    jn = fx._joint_names["head"]
 
-    head_bid = sim.model.body_name2id(pref + "head")
+    if fixture == "stand_mixer":
+        fx = k.stand_mixer
+        pref = fx.naming_prefix
+        jn = fx._joint_names["head"]
+        threshold = 0.99
+        moving_bids = {sim.model.body_name2id(pref + "head")}
+
+        def _set_q(v: float) -> None:
+            fx.set_joint_state(env=k, min=v, max=v, joint_names=[jn])
+
+        def _movable_ok(_gid: int) -> bool:
+            return True  # 믹서 머리 경로에 자유 물체 없음 (env.objects 비어 있음)
+    elif fixture == "drawer":
+        fx = k.drawer
+        pref = fx.naming_prefix
+        jname = f"{fx.name}_slidejoint"
+        threshold = 0.95  # 라벨러/성공역: open ≥0.95
+        q_phys_max = float(fx.size[1]) * 0.55  # get_door_state 정규화 규약과 동일
+        jid = sim.model.joint_name2id(jname)
+        slide_bid = int(sim.model.jnt_bodyid[jid])
+        # 슬라이드 body 의 하위 트리 전부 (서랍 상자 + 손잡이)
+        moving_bids = {b for b in range(sim.model.nbody)
+                       if _in_subtree(sim, b, slide_bid)}
+
+        def _set_q(v: float) -> None:
+            sim.data.set_joint_qpos(jname, -v * q_phys_max)  # sign −1 (get_door_state)
+
+        def _movable_ok(gid: int) -> bool:
+            """자유관절 body(=움직이는 물체)는 blocker 로 안 침 — 서랍 안 물체 오탐 방지."""
+            return not _has_free_root(sim, int(sim.model.geom_bodyid[gid]))
+    else:
+        raise ValueError(f"unknown fixture: {fixture}")
+
     head_geoms = {g for g in range(sim.model.ngeom)
-                  if int(sim.model.geom_bodyid[g]) == head_bid}
+                  if int(sim.model.geom_bodyid[g]) in moving_bids}
 
     def _is_external(gid: int) -> bool:
-        """믹서 자신도 로봇도 아닌 geom (= 주변 가구/벽/선반)."""
+        """fixture 자신도 로봇도 아닌 geom (= 주변 가구/벽/선반). drawer 는 자유물체도 제외."""
         name = sim.model.geom_id2name(gid) or ""
         if name.startswith(pref):
             return False
-        return not any(name.startswith(p) for p in _ROBOT_PREFIXES)
+        if any(name.startswith(p) for p in _ROBOT_PREFIXES):
+            return False
+        return _movable_ok(gid)
 
     # 원래 상태 보존 (프로브가 episode 를 오염시키지 않게 — 별도 프로세스지만 방어적으로)
     qpos0 = np.array(sim.data.qpos)
@@ -72,8 +110,8 @@ def probe_one(env_name: str, seed: int, steps: int) -> dict:
     blocker = None
     blocked_at = None
     for i in range(steps + 1):
-        v = i / steps          # set_joint_state 는 정규화값 [0,1] 만 허용
-        fx.set_joint_state(env=k, min=v, max=v, joint_names=[jn])
+        v = i / steps          # 정규화값 [0,1]
+        _set_q(v)
         sim.forward()
         hit = None
         for c in range(sim.data.ncon):
@@ -97,17 +135,43 @@ def probe_one(env_name: str, seed: int, steps: int) -> dict:
 
     return {
         "seed": seed,
+        "fixture": fixture,
         "q_max_feasible": round(min(q_max, 1.0), 4),
-        "feasible": bool(q_max >= 0.99),
+        "feasible": bool(q_max >= threshold),
+        "threshold": threshold,
         "blocked_at": blocked_at,
         "blocker_geom": blocker,
         "fixture_prefix": pref,
     }
 
 
+def _in_subtree(sim, body_id: int, root_id: int) -> bool:
+    b = body_id
+    while b != 0:
+        if b == root_id:
+            return True
+        b = int(sim.model.body_parentid[b])
+    return body_id == root_id
+
+
+def _has_free_root(sim, body_id: int) -> bool:
+    """body 조상 체인에 free joint 가 있으면 자유 물체 (mjJNT_FREE=0)."""
+    b = body_id
+    while b != 0:
+        adr = int(sim.model.body_jntadr[b])
+        num = int(sim.model.body_jntnum[b])
+        for j in range(adr, adr + num):
+            if j >= 0 and int(sim.model.jnt_type[j]) == 0:
+                return True
+        b = int(sim.model.body_parentid[b])
+    return False
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--task", default="OpenStandMixerHead")
+    ap.add_argument("--fixture", default="stand_mixer", choices=("stand_mixer", "drawer"),
+                    help="스윕 대상 fixture (drawer=OpenDrawer 이식, Gate2 P2)")
     ap.add_argument("--seeds", default="100000-100011")
     ap.add_argument("--steps", type=int, default=40, help="스윕 분할 수 (0→1.0)")
     ap.add_argument("--out", default=None, help="결과 JSON 경로")
@@ -116,7 +180,7 @@ def main() -> None:
 
     env_name = f"robocasa_panda_omron/{args.task}_PandaOmron_Env"
     if args.seed is not None:  # 워커: seed 하나만 처리하고 JSON 한 줄 출력
-        print("RESULT " + json.dumps(probe_one(env_name, args.seed, args.steps)))
+        print("RESULT " + json.dumps(probe_one(env_name, args.seed, args.steps, args.fixture)))
         return
 
     # 드라이버: seed 당 fresh 프로세스 (한 프로세스 연속 gym.make 시 scene 오염 — docs/steering/18 §2)
@@ -125,8 +189,8 @@ def main() -> None:
     rows = []
     for s in parse_seeds(args.seeds):
         r = subprocess.run(
-            [sys.executable, __file__, "--task", args.task, "--seed", str(s),
-             "--steps", str(args.steps)],
+            [sys.executable, __file__, "--task", args.task, "--fixture", args.fixture,
+             "--seed", str(s), "--steps", str(args.steps)],
             capture_output=True, text=True, timeout=600,
         )
         line = next((ln for ln in r.stdout.splitlines() if ln.startswith("RESULT ")), None)

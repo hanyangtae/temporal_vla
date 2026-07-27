@@ -33,7 +33,9 @@ from src.conceptor import build_steering_matrix  # noqa: E402
 __all__ = [
     "load_steering_matrix",
     "load_steering_matrices_per_step",
+    "load_steering_setpoint",
     "ConceptorSteering",
+    "SetpointSteering",
     "Pi05ConceptorSteering",
 ]
 
@@ -160,8 +162,83 @@ def load_steering_matrices_per_step(
     return mats
 
 
+def load_steering_setpoint(
+    npz_path: str | Path,
+    *,
+    alpha: float | None = None,
+) -> tuple[np.ndarray, float]:
+    """setpoint형 mean-diff(setM) NPZ 에서 (r̂, s) 를 반환 (exp4-1, docs/steering/24a §4.1).
+
+    NPZ 키 계약 (fit_mean_diff.py 산출): ``alpha{a}_v_steer`` [D] 단위벡터 +
+    ``alpha{a}_s`` 스칼라(성공 평균의 r̂ 좌표 = setpoint). α 선택 규칙은
+    ``load_steering_matrix`` 와 동일 (explicit > metadata selected_alpha > 첫 키).
+    β 는 hook(``SetpointSteering``) 쪽 인자 — M 에 굽는 conceptor 경로와 달리
+    적용식 h' = h − β[(h·r̂)−s]r̂ 에서 실행 시 곱한다.
+    """
+    z = np.load(npz_path)
+    v_keys = [k for k in z.files if k.endswith("_v_steer")]
+    if not v_keys:
+        raise KeyError(f"{npz_path} 에 *_v_steer 없음 (keys={z.files})")
+    alpha_src = "explicit"
+    if alpha is None:
+        meta_path = Path(npz_path).with_name("metadata.json")
+        if meta_path.exists():
+            alpha = json.loads(meta_path.read_text()).get("selected_alpha")
+            alpha_src = "meta"
+    if alpha is not None:
+        chosen = f"alpha{alpha:g}_v_steer"
+        if chosen not in v_keys:
+            raise KeyError(f"{chosen} 없음 (있는 키={v_keys}, alpha_src={alpha_src})")
+    else:
+        chosen = v_keys[0]
+        alpha_src = "first-key"
+    s_key = chosen.replace("_v_steer", "_s")
+    if s_key not in z.files:
+        raise KeyError(f"{npz_path} 에 {s_key} 없음 (setpoint 스칼라 누락)")
+    v = z[chosen].astype(np.float64).reshape(-1)
+    nrm = float(np.linalg.norm(v))
+    if not (0.99 < nrm < 1.01):
+        raise ValueError(f"v_steer 는 단위벡터여야 함: ‖v‖={nrm:.4f} ({npz_path})")
+    s = float(np.asarray(z[s_key]).reshape(()))
+    sha = hashlib.sha256(Path(npz_path).read_bytes()).hexdigest()[:12]
+    print(f"[steer-preflight] npz={npz_path} key={chosen} alpha_src={alpha_src} "
+          f"op=setpoint s={s:.4f} dim={v.shape[0]} sha={sha}", flush=True)
+    return v, s
+
+
+def load_steering_segment(npz_path: str | Path):
+    """세그먼트 setpoint NPZ → (v_seg [S,D], s_tok [T], seg_bounds [S,2], seg_mask [S]).
+
+    exp4-1 v2 규약 (2026-07-23, fit_mean_diff.save_segment_npz 산출):
+    방향은 토큰 **종류(state/future/action)별**, setpoint 는 토큰 **위치별**.
+    구 pooled 규약(단일 r̂ + 스칼라 s)은 fit 공간(49토큰 평균)과 적용 공간(action 16토큰)이
+    달라 β=1 이 최대 4σ 오프매니폴드 이동을 일으켰다 — 그 회귀의 교정본.
+    """
+    z = np.load(npz_path)
+    need = ("alpha0_v_seg", "alpha0_s_tok", "alpha0_seg_bounds", "alpha0_seg_mask")
+    missing = [k for k in need if k not in z.files]
+    if missing:
+        raise KeyError(f"{npz_path}: 세그먼트 키 누락 {missing} (keys={z.files})")
+    v_seg = z["alpha0_v_seg"].astype(np.float64)
+    s_tok = z["alpha0_s_tok"].astype(np.float64).reshape(-1)
+    bounds = z["alpha0_seg_bounds"].astype(int)
+    mask = z["alpha0_seg_mask"].astype(np.float64).reshape(-1)
+    nrms = np.linalg.norm(v_seg, axis=1)
+    if not np.all((nrms > 0.99) & (nrms < 1.01)):
+        raise ValueError(f"v_seg 각 행은 단위벡터여야 함: ‖v‖={nrms} ({npz_path})")
+    if int(bounds[-1, 1]) != s_tok.shape[0]:
+        raise ValueError(f"seg_bounds 끝 {bounds[-1, 1]} != T {s_tok.shape[0]}")
+    sha = hashlib.sha256(Path(npz_path).read_bytes()).hexdigest()[:12]
+    print(f"[steer-preflight] npz={npz_path} op=setpoint_seg S={v_seg.shape[0]} "
+          f"T={s_tok.shape[0]} dim={v_seg.shape[1]} mask={mask.tolist()} "
+          f"s_tok[min,max]=[{s_tok.min():.2f},{s_tok.max():.2f}] sha={sha}", flush=True)
+    return v_seg, s_tok, bounds, mask
+
+
 PATHWAYS: tuple[str, ...] = ("dit", "vl")
-TOKEN_SELECTS: tuple[str, ...] = ("last_horizon", "all")
+# "future": setM future_only 정렬 — future 세그먼트 토큰([1 : T-horizon]) 만 steer
+# (state[0:1]·action[마지막 horizon] 제외). conceptor_*_future_only arm 용.
+TOKEN_SELECTS: tuple[str, ...] = ("last_horizon", "all", "future")
 
 
 class ConceptorSteering:
@@ -294,6 +371,13 @@ class ConceptorSteering:
         # h' = h @ Mᵀ (마지막 D 축). token_select 로 적용 토큰 결정.
         if self.token_select == "last_horizon":
             steered[..., -self.horizon :, :] = steered[..., -self.horizon :, :] @ Mt.T
+        elif self.token_select == "future":
+            # future 세그먼트만 ([1 : T-horizon]) — state[0:1]·action[마지막 horizon] 제외.
+            # setM future_only(seg_mask[0,1,0]) 와 정렬한 conceptor future_only.
+            _t = steered.shape[-2]
+            steered[..., 1 : _t - self.horizon, :] = (
+                steered[..., 1 : _t - self.horizon, :] @ Mt.T
+            )
         else:  # "all" — 전체 토큰 (COAST 49토큰 정렬 / VL goal pathway)
             steered = steered @ Mt.T
         if is_tuple:
@@ -312,6 +396,170 @@ class ConceptorSteering:
             self._handle = None
 
     def __enter__(self) -> "ConceptorSteering":
+        return self.register()
+
+    def __exit__(self, *_exc: Any) -> bool:
+        self.unregister()
+        return False
+
+
+class SetpointSteering:
+    """setpoint형 mean-diff(setM) affine hook (exp4-1, docs/steering/24a §4.1).
+
+    적용식: ``h' = h − β[(h·r̂) − s]·r̂`` — 오차 비례 개입, (h·r̂)=s 도달 시 개입량 0
+    (자기 소멸), β≤1 이면 목표 초과 불가. 선행: ACE(2411.09003)·LEACE·WA-LQR setpoint.
+    conceptor 경로(h'=hMᵀ, β를 M 에 굽기)와 달리 bias 항이 있는 affine 이라 별도 hook.
+
+    주입 지점·발화 규약은 ``ConceptorSteering`` 의 dit 경로와 동일
+    (``transformer_blocks[layer]`` 출력 residual stream D=1536, denoise call 마다 발화,
+    ``last_horizon`` 이면 마지막 action token 만). per-step vec 시퀀스는 미지원.
+
+    phase-gated 스위칭 API: ``set_vector(v, s)`` 활성 / ``set_vector(None)`` 비활성.
+    비활성이면 hook 은 **출력 텐서를 그대로 반환** (clone 없음) — no-hook 과 구성상
+    동일해 off≡identity smoke(24a §8-2·4)가 구조적으로 성립한다.
+    ``reset_step_counter`` 는 registry 폴리모픽 순회 호환용 no-op.
+    """
+
+    def __init__(
+        self,
+        groot_model: Any,
+        vec_s: tuple[np.ndarray, float] | None,
+        beta: float,
+        *,
+        pathway: str = "dit",
+        layer: int | None = None,
+        horizon: int | None = None,
+        token_select: str | None = None,
+    ):
+        if pathway != "dit":
+            raise ValueError("SetpointSteering 은 pathway='dit' 전용 (exp4-1 스코프).")
+        head = groot_model.action_head
+        self.pathway = pathway
+        self.layer = layer
+        self.beta = float(beta)
+        self.module = head.model if layer is None else head.model.transformer_blocks[layer]
+        self.token_select = token_select or "last_horizon"
+        if self.token_select not in TOKEN_SELECTS:
+            raise ValueError(
+                f"Unsupported token_select: {self.token_select} (expected {TOKEN_SELECTS})"
+            )
+        self.horizon = int(horizon if horizon is not None else head.action_horizon)
+        self._handle = None
+        self._seg = None
+        self._seg_cache = None
+        self.set_vector(*(vec_s if vec_s is not None else (None,)))
+
+    @property
+    def per_step(self) -> bool:
+        return False
+
+    def set_segment(self, spec) -> None:
+        """세그먼트 연산자 활성화: spec=(v_seg [S,D], s_tok [T], bounds [S,2], mask [S]) 또는 None.
+
+        토큰 위치 t 마다 그 세그먼트의 방향으로 h'_t = h_t − β·mask·[(h_t·r̂_seg)−s_t]r̂_seg.
+        ★ mask 는 0/1 플래그가 아니라 **세그먼트별 게인 승수**(_apply_segment 참조):
+          처치=1.0, future_only=0(스킵), 위약=dose-match 스케일(예 1.95). 0/1 로 강제하면
+          위약 dose 매칭이 깨진다. set_vector(구 pooled)와 상호배타.
+        """
+        if spec is None:
+            self._seg = None
+        else:
+            v_seg, s_tok, bounds, mask = spec
+            self._seg = (np.asarray(v_seg, dtype=np.float64),
+                         np.asarray(s_tok, dtype=np.float64),
+                         np.asarray(bounds, dtype=int),
+                         np.asarray(mask, dtype=np.float64))
+        self._v = None
+        self._s = 0.0
+        self._seg_cache = None
+        self._vt_cache = None
+
+    def set_vector(self, v: np.ndarray | None, s: float | None = None) -> None:
+        """(r̂, s) 활성화 또는 None 비활성화. 텐서 캐시 리셋."""
+        self._seg = None
+        self._seg_cache = None
+        if v is None:
+            self._v = None
+            self._s = 0.0
+        else:
+            if isinstance(v, (list, tuple)):
+                raise ValueError("per-step vec 시퀀스는 미지원 (exp4-1 은 denoise global).")
+            arr = np.asarray(v, dtype=np.float64).reshape(-1)
+            if s is None:
+                raise ValueError("set_vector(v, s): 활성화에는 setpoint s 필요.")
+            self._v = arr
+            self._s = float(s)
+        self._vt_cache: torch.Tensor | None = None
+
+    def reset_step_counter(self) -> None:
+        """요청 시작 훅 호환용 no-op (setpoint 는 denoise step 무관 동일 적용)."""
+
+    def _hook(self, _module: Any, _args: tuple, output: Any) -> Any:
+        if self._v is None and self._seg is None:  # off — 원본 그대로 (no-hook 과 동일)
+            return output
+        is_tuple = isinstance(output, tuple)
+        out = output[0] if is_tuple else output
+        if self._seg is not None:
+            steered = self._apply_segment(out)
+            return (steered, *output[1:]) if is_tuple else steered
+        vt = self._vt_cache
+        if vt is None or vt.device != out.device or vt.dtype != out.dtype:
+            vt = torch.as_tensor(self._v, device=out.device, dtype=out.dtype)
+            self._vt_cache = vt
+        steered = out.clone()
+        if self.token_select == "last_horizon":
+            hs = steered[..., -self.horizon :, :]
+            proj = hs @ vt  # [..., horizon]
+            steered[..., -self.horizon :, :] = hs - self.beta * (proj - self._s).unsqueeze(-1) * vt
+        else:  # "all"
+            proj = steered @ vt
+            steered = steered - self.beta * (proj - self._s).unsqueeze(-1) * vt
+        if is_tuple:
+            return (steered, *output[1:])
+        return steered
+
+    def _apply_segment(self, out):
+        """토큰 위치별 세그먼트 연산자 적용 — h'_t = h_t − β[(h_t·r̂_seg)−s_t]r̂_seg.
+
+        토큰 축은 마지막에서 두 번째(out [..., T, D]). NPZ 의 T 와 실제 T 가 다르면
+        무음 오적용이 되므로 RuntimeError (fail loud).
+        """
+        v_seg, s_tok, bounds, mask = self._seg
+        T = out.shape[-2]
+        if T != s_tok.shape[0]:
+            raise RuntimeError(
+                f"setpoint_seg: NPZ T={s_tok.shape[0]} != 실제 토큰 수 {T} — "
+                "fit 캡처 토큰 규약(all_token_full)과 serve 주입 지점 불일치")
+        cache = self._seg_cache
+        if (cache is None or cache[0].device != out.device or cache[0].dtype != out.dtype):
+            vt = torch.as_tensor(v_seg, device=out.device, dtype=out.dtype)      # [S,D]
+            st = torch.as_tensor(s_tok, device=out.device, dtype=out.dtype)      # [T]
+            # 토큰→세그먼트 인덱스, mask 를 토큰 단위로 펼침
+            idx = torch.zeros(T, dtype=torch.long, device=out.device)
+            mk = torch.zeros(T, device=out.device, dtype=out.dtype)
+            for si, (lo, hi) in enumerate(bounds):
+                idx[int(lo):int(hi)] = si
+                # mask 는 세그먼트별 **게인 승수**(0=스킵·1=처치·위약=dose-match 스케일).
+                # 아래 delta 에 그대로 곱해진다 — bool 로 강등하면 위약 dose 매칭이 깨짐.
+                mk[int(lo):int(hi)] = float(mask[si])
+            v_tok = vt[idx]                                                       # [T,D]
+            self._seg_cache = cache = (v_tok, st, mk)
+        v_tok, st, mk = cache
+        proj = (out * v_tok).sum(dim=-1)                    # [..., T]
+        delta = (self.beta * mk * (proj - st)).unsqueeze(-1) * v_tok
+        return out - delta
+
+    def register(self) -> "SetpointSteering":
+        if self._handle is None:
+            self._handle = self.module.register_forward_hook(self._hook)
+        return self
+
+    def unregister(self) -> None:
+        if self._handle is not None:
+            self._handle.remove()
+            self._handle = None
+
+    def __enter__(self) -> "SetpointSteering":
         return self.register()
 
     def __exit__(self, *_exc: Any) -> bool:
