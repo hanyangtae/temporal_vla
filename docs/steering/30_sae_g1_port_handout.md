@@ -1,9 +1,16 @@
 # 30. SAE scene-feature 분리 — G1 이식·구현 핸드아웃
 
-작성 2026-07-27 (exp4-1 세션 → 새 SAE 세션 인계). 선행 문서:
-- **왜 SAE 인가** = `docs/steering/25a_exp4-3_to_exp4-1_recommendation.md` (exp4-3 권고, 사용자 확정)
-- **무엇을 이식하나** = `docs/steering/29_sae_port_review.md` (동료 레포 전수 검토, 파일:라인 근거)
-- 선행 SAE 3논문 노트 = `docs/references/reading_notes/` (Dr.VLA / Event-Grounded / Observing&Controlling)
+작성 2026-07-27 (exp4-1 세션 → 새 SAE 세션 인계). **선행 문서 — 새 세션이 읽을 순서**:
+1. **이 문서(30)** 먼저 — 실행판. 나머지는 근거·참조.
+2. **왜 SAE 인가** = `docs/steering/25a_exp4-3_to_exp4-1_recommendation.md` (exp4-3 권고, 사용자 확정,
+   85줄). ★2026-07-27 exp4-3 worktree 에서 이 브랜치로 복사함 — 새 세션이 바로 읽을 수 있다.
+3. **무엇을 이식하나** = `docs/steering/29_sae_port_review.md` (동료 레포 전수 검토, 파일:라인 근거, 228줄).
+4. **SAE 설계 지침** = `docs/references/reading_notes/SAE_synthesis_and_design.md` (우리가 쓴 종합).
+   3논문 개별 노트 = 같은 폴더 `dr_vla_sae.md`·`event_grounded_sae.md`·`observing_controlling.md`
+   (셋 다 outcome-vs-scene 분리를 직접 안 풂 = 니치 확인, DiT 단일-feature steer 붕괴 → 다차원 잔차화 정당).
+5. **layer peak 실물** = `docs/steering/sae_g1_refs/n15_atlas_all.tsv` (exp4-3 atlas 복사본).
+6. **코드 참조** = `scripts/safe/groot_n15/robocasa/steer/exp4_1/fit_mean_diff.py`
+   (`load_cell_rolls` = pkl 로더, truncation/순열 관례) — 전부 tracked, import 가능.
 
 이 문서는 **실행판**이다: 새 세션이 이 문서만 읽고 G1 을 끝까지 갈 수 있게 쓴다.
 
@@ -92,8 +99,10 @@ https://github.com/robots-oh/task_classification). dev 브랜치에선 서브모
 **G1 은 N1.5 fit30 만으로 시작한다** (N1.6/Cosmos 는 G1 통과 후 교차검증 카드 — 경로 확인은
 그때 exp4-3 세션/사용자에게).
 
-- **layer 선택**: atlas peak = N1.5 **L8-12** (시작은 사용 가능 capture layer 와 교집합에서 1개).
-  fit30 pkl 의 `capture_layers` 를 읽고 결정 — 하드코딩 금지.
+- **layer 선택**: atlas 실물(`docs/steering/sae_g1_refs/n15_atlas_all.tsv`, __global__ phase)에서
+  N1.5 mean_z peak = **L10** 확정 (drawer_left mean_z 5.60·auroc 0.72 / bread 5.08·0.73, 둘 다 L10 최고;
+  L8·L12 도 근접). **시작 layer = L10**, 단 fit30 pkl 의 `capture_layers` 에 L10 이 있는지 먼저 확인
+  (없으면 교집합 최근접). 하드코딩 말고 tsv+capture_layers 로 재확인.
 - **pkl 로딩 참조 구현**: `scripts/safe/groot_n15/robocasa/steer/exp4_1/fit_mean_diff.py` 의
   `load_cell_rolls`(manifest tsv → rollout dict: `tok [n,L,T,D]`·`success`·`phases`·`length`·
   `scenario_seed`·`inference_seed`) — 그대로 import 해서 쓰면 됨.

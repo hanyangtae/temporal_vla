@@ -1,0 +1,92 @@
+[
+  {
+    "model": "n15",
+    "cell": "exp41_mixer",
+    "D": 1536,
+    "capture_layers": [
+      0,
+      2,
+      4,
+      8,
+      10,
+      12,
+      15
+    ],
+    "n_rollouts": 30,
+    "n_succ": 19,
+    "global_cap": 62,
+    "feature_kind": "groot_n15_dit_block_residual_full_tokens_denoise"
+  },
+  {
+    "model": "n15",
+    "cell": "pq3_drawer_left",
+    "D": 1536,
+    "capture_layers": [
+      0,
+      2,
+      4,
+      8,
+      10,
+      12,
+      15
+    ],
+    "n_rollouts": 30,
+    "n_succ": 17,
+    "global_cap": 51,
+    "feature_kind": "groot_n15_dit_block_residual_full_tokens_denoise"
+  },
+  {
+    "model": "n15",
+    "cell": "pq3_drawer_right",
+    "D": 1536,
+    "capture_layers": [
+      0,
+      2,
+      4,
+      8,
+      10,
+      12,
+      15
+    ],
+    "n_rollouts": 30,
+    "n_succ": 16,
+    "global_cap": 76,
+    "feature_kind": "groot_n15_dit_block_residual_full_tokens_denoise"
+  },
+  {
+    "model": "n15",
+    "cell": "pq3_ppcc_beer",
+    "D": 1536,
+    "capture_layers": [
+      0,
+      2,
+      4,
+      8,
+      10,
+      12,
+      15
+    ],
+    "n_rollouts": 27,
+    "n_succ": 19,
+    "global_cap": 77,
+    "feature_kind": "groot_n15_dit_block_residual_full_tokens_denoise"
+  },
+  {
+    "model": "n15",
+    "cell": "pq3_ppcc_bread",
+    "D": 1536,
+    "capture_layers": [
+      0,
+      2,
+      4,
+      8,
+      10,
+      12,
+      15
+    ],
+    "n_rollouts": 30,
+    "n_succ": 23,
+    "global_cap": 50,
+    "feature_kind": "groot_n15_dit_block_residual_full_tokens_denoise"
+  }
+]
