@@ -227,6 +227,36 @@ clean baseline **60판을 capture ON 재수집**(→ `baseline_cap/`, 48 succ). 
 4. caveat: AUROC 는 clean-succ vs perturbed(전 라벨)라 "섭동 서명"과 "실패 상태(dwell)"가
    혼합 — paired Δonset(같은 ep·같은 창, dwell 무관)이 그 통제를 보완하는 상보 지표.
 
+## 11. 추록 (07-27) — layer별 공간 변경 기하 (`layer_geometry_probe.py`)
+
+목적 재정렬(사용자): 자연실패 정렬은 부차 — **SR 을 깎는 섭동을 steering 으로 되돌릴 수
+있는가**(WAM 식 교란-하 회복)가 본선. 그 설계 판정용 기하 4지표 (clean=baseline_cap 48,
+dwell 서브샘플 k=20, perturbed 시간분리 절단):
+
+| 지표 (L0→L15, VL) | c1_s200 | g1_x015 | p1_d003 | p2_f040d2 |
+|---|---|---|---|---|
+| 평균이동 d′ | .28→.75 (L12 1.09), VL **1.80** | .15→.38, VL .62 | .26→.48 (L10 .64), VL .96 | .47→.98, VL **1.49** |
+| 부분공간 초과누출 | ≈0→L15 .113, VL .225 | .007→.044, VL .076 | ≈0→.074, VL .124 | ≤0→.144, VL .197 |
+| Δh top1 EVR (저rank성) | .60→.45 (L8 .33) | — (정렬불가) | **.77–.91** | **.69–.84** |
+| 유효차원 비 | L12-15 1.5–1.7 | 1.1–1.2 | 1.4–1.5 | 1.4–1.7 |
+
+**판정 (steering 설계 함의)**:
+1. **얕은–중간 층에서는 "같은 공간 안의 이동"** — 초과누출이 L8 까지 ≈0–3% (P2 는 L0–4
+   에서 음수 = clean 공간에 더 밀착). **L12–15·VL 은 공간 이탈 시작**(7–22%) + 유효차원
+   1.4–1.7배 확장. → 되돌리기(steer-back)의 기하학적 적지는 **L8–L12** (분리는 이미 형성
+   §10, 공간은 아직 공유).
+2. **P1/P2 의 섭동 효과는 거의 단일 방향** (top1 EVR 0.7–0.9) → **rank-1 setM 으로 조준
+   가능**. C1 은 확산형(top1 0.33–0.60) + VL d′ 1.8 → **VL 다차원(conceptor/top-k) 개입**이
+   정합 — "C1 은 VL steer" 방향의 기하학적 근거.
+3. **G1 은 전 지표 최약** (d′≤0.62, 저rank 정의불가) — 초기조건 섭동은 지속 서명이 없어
+   "되돌릴 대상"이 불분명. rescue 축보다 초기조건 강건성 축으로 해석.
+4. C1 세기: s200 의 d′ 여유(1.1–1.8)로 보아 **scale 축소(s100) 가능** — 단 s100 캡처는
+   미보유, 다음 라운드 수집 항목.
+
+**다음 (인과 검증)**: WAM 식 **교란-하 ΔSR** — 섭동 ON 고정 + steering ON/OFF. 연산자
+후보 ① perturbed-fail vs perturbed-succ fit(보유) ② **clean−perturbed 방향**(baseline_cap
+확보로 계산 가능 — WAM 원형). exp4-1 의 setM affine hook 배선 재사용.
+
 ## 부록 — 재현 경로
 
 - runbook: `scripts/safe/groot_n15/robocasa/steer/induced/README.md`
