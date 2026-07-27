@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # exp5-2 — 섭동(C1/P1/P2) 하 steering ΔSR eval 러너.
 #
-# arm = off(개입 없음) | setm(setpoint mean-diff) | setm_pl(라벨순열 위약).
+# arm = off(개입 없음) | setm(setpoint mean-diff, DiT) | setm_pl(DiT 라벨순열 위약)
+#     | setm_vl(VL vlln 토큰평균 setpoint) | setm_vl_pl(VL 위약).
 # 같은 (scene seed, inference seed, spec_seed) 로 arm 간 paired — 행 원천은 exp4-2 P0 의
 # grid.tsv (config × ep × inference_seed × spec json). spec json 이 spec_seed 를 품고 있어
 # arm 을 바꿔도 섭동 실현이 bitwise 동일하다.
@@ -16,14 +17,17 @@
 #   CFG=c1_s200 ARM=off        GPUS_L="0" PORTS_L="8490" bash run_perturb_steer_eval.sh
 #   CFG=p1_d003 ARM=setm    NPZ=<...>/setM    GPUS_L="0 0" PORTS_L="8490 8491" bash ...
 #   CFG=p1_d003 ARM=setm_pl NPZ=<...>/setM_pl GPUS_L="0 0" PORTS_L="8490 8491" bash ...
+#   CFG=c1_s200 ARM=setm_vl NPZ=<...>/c1_s200/VLsetM/setM   GPUS_L="0" PORTS_L="8490" bash ...
+#     (VL arm 은 phase 게이팅·latch 없이 서버 수명 내내 상시 적용 — C1 은 전 구간 섭동)
 #   DRY_RUN=1 ... bash run_perturb_steer_eval.sh   # serve/collector 명령만 echo
 # detached 권장: setsid nohup bash ... > <OUT>/logs/orch.log 2>&1 < /dev/null &
 set -uo pipefail
 
 # ---- 입력 -----------------------------------------------------------------------------
 CFG="${CFG:?섭동 config 명 (c1_s200|p1_d003|p2_f040d2 ...)}"
-ARM="${ARM:?off|setm|setm_pl}"
-case "$ARM" in off|setm|setm_pl) ;; *) echo "ABORT: unknown ARM=$ARM"; exit 2 ;; esac
+ARM="${ARM:?off|setm|setm_pl|setm_vl|setm_vl_pl}"
+case "$ARM" in off|setm|setm_pl|setm_vl|setm_vl_pl) ;; *) echo "ABORT: unknown ARM=$ARM"; exit 2 ;; esac
+case "$ARM" in setm_vl|setm_vl_pl) IS_VL=1 ;; *) IS_VL=0 ;; esac
 
 # cell 파라미터 (기본 ppcc_bread — exp4-2 P0 와 동일 cell)
 CELL_ID="${CELL_ID:-ppcc_bread}"
@@ -95,15 +99,36 @@ serve_steer_flags() {  # $1=NPZ base (scan_npz_base 선행 필수)
        "--steering-op setpoint_seg --steering-beta $BETA --steering-token-select all"
 }
 
+# VL arm(exp5-2): pooled setpoint 단일 NPZ + pathway=vl. phase 디렉토리·layer·latch 없음.
+# fit 산출 계약: <fits>/<cfg>/VLsetM/{setM,setM_pl}/conceptors.npz
+serve_steer_flags_vl() {  # $1 = conceptors.npz (host 경로)
+  local npz="$1" serve_npz="$1"
+  [ "$SERVE_MODE" = host ] || serve_npz="$(to_cont "$npz")"
+  echo "--steering-npz $serve_npz --steering-op setpoint_vl --steering-pathway vl" \
+       "--steering-beta $BETA"
+}
+
 STEER_FLAGS=""
 if [ "$ARM" != "off" ]; then
   if [ -z "$NPZ" ]; then
     [ -n "$NPZ_ROOT" ] || { echo "ABORT: ARM=$ARM 는 NPZ 또는 NPZ_ROOT 필요"; exit 2; }
-    case "$ARM" in setm) NPZ="$NPZ_ROOT/$CELL_ID/setM" ;; setm_pl) NPZ="$NPZ_ROOT/$CELL_ID/setM_pl" ;; esac
+    case "$ARM" in
+      setm)       NPZ="$NPZ_ROOT/$CELL_ID/setM" ;;
+      setm_pl)    NPZ="$NPZ_ROOT/$CELL_ID/setM_pl" ;;
+      setm_vl)    NPZ="$NPZ_ROOT/$CFG/VLsetM/setM" ;;
+      setm_vl_pl) NPZ="$NPZ_ROOT/$CFG/VLsetM/setM_pl" ;;
+    esac
   fi
   case "$NPZ" in /*) ;; *) NPZ="${MAIN_HOST}/${NPZ}" ;; esac
-  scan_npz_base "$NPZ" || exit 12
-  STEER_FLAGS="$(serve_steer_flags "$NPZ")" || exit 12
+  if [ "$IS_VL" = 1 ]; then
+    [ -d "$NPZ" ] && NPZ="${NPZ%/}/conceptors.npz"
+    [ -f "$NPZ" ] || { echo "ABORT: VL NPZ 없음: $NPZ"; exit 12; }
+    LAYER="VL"
+    STEER_FLAGS="$(serve_steer_flags_vl "$NPZ")" || exit 12
+  else
+    scan_npz_base "$NPZ" || exit 12
+    STEER_FLAGS="$(serve_steer_flags "$NPZ")" || exit 12
+  fi
 else
   LAYER="${LAYER:-NA}"
 fi
@@ -193,7 +218,8 @@ done_mark() { ls "${OUT_HOST}/raw_rollouts/${TASK}/${CELL_ID}/task${CELL_INDEX}-
 
 run_row() {  # port ep inf spec tag
   local port=$1 ep=$2 inf=$3 spec=$4 tag=$5 latch=() rc trig
-  if [ "$ARM" != "off" ]; then
+  # VL arm 은 gated 등록이 아니라 상시 hook — latch(/steering_phase POST) 없음.
+  if [ "$ARM" != "off" ] && [ "$IS_VL" != 1 ]; then
     case "$CFG" in
       c1_*)  latch=(--steer-from-record 0) ;;   # C1 = 전 구간 ON (섭동이 episode 내내 지속)
       p1_*|p2_*)

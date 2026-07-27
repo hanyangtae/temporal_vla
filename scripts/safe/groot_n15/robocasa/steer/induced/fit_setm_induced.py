@@ -28,9 +28,21 @@ clean 레코드는 (h·r̂) ≈ s 라 개입량이 자기소멸한다.
   디렉토리 계약은 exp4-1 permanent 와 동일: <out>/<cfg>/L<lyr>/setM/steer/dit_L<lyr>/.
   serve 는 ``--steering-op setpoint_seg --steering-token-select all`` 필수.
 
+★ ``--pathway vl`` (exp5-2 VL 확장, 07-27)
+  feature = 캡처 ``vl_hidden_states`` (= action_head.vlln 출력의 **토큰 평균**,
+  vl_feature_kind=groot_n15_vlln_seq_meanpool, D=2048). layer 개념이 없어 출력은
+  ``<out>/<cfg>/VLsetM/{setM,setM_pl}/conceptors.npz`` (pooled 계약:
+  ``alpha0_v_steer`` [D] 단위벡터 + ``alpha0_s`` 스칼라) + sibling metadata.json.
+  serve 는 ``--steering-npz <...>/conceptors.npz --steering-op setpoint_vl
+  --steering-pathway vl`` (SetpointSteering pathway="vl" — 토큰 평균을 setpoint 로
+  이동, 토큰 내 분산 보존). 세그먼트/토큰위치 setpoint 는 쓰지 않는다 (fit 공간이
+  이미 토큰 평균이라 pooled 가 정확히 일치하는 공간).
+
 위약(setM_pl): clean/perturbed **episode 라벨 순열**로 같은 파이프라인 fit. 실제 클래스 갭이
 없어 raw 이동량이 작으므로, held-out dose 중앙값 비로 seg_mask 게인을 맞춘다 (exp4-1
-select_placebo_seg 와 같은 규약).
+select_placebo_seg 와 같은 규약). VL(pooled)은 게인 필드가 없으므로 **setpoint 를 평행이동**해
+dose 를 맞춘다: s' = median(proj_pert) + dose_real → median|proj−s'| = dose_real 이고
+개입 부호(+r̂ 방향 밀기)도 real 과 같다.
 
   docker exec -i lerobot python fit_setm_induced.py \
       --clean-dir <baseline_cap/raw_rollouts/<task>/<cell>> \
@@ -146,6 +158,25 @@ def build_seg(r: np.ndarray, s: float, seg_mode: str, gain: float = 1.0):
     return v_seg, s_tok, bounds, mask
 
 
+def save_arm_vl(base: Path, r: np.ndarray, s: float, meta: dict) -> Path:
+    """VL pooled setpoint NPZ — <base>/conceptors.npz + metadata.json.
+
+    serve 계약: load_steering_setpoint (``alpha{a}_v_steer`` 단위벡터 + ``alpha{a}_s``),
+    metadata.json 의 ``selected_alpha=0`` 으로 α 를 명시(첫-키 폴백 회피).
+    """
+    base.mkdir(parents=True, exist_ok=True)
+    npz = base / "conceptors.npz"
+    np.savez_compressed(
+        npz,
+        alpha0_v_steer=r.astype(np.float32),
+        alpha0_s=np.asarray(s, dtype=np.float32),
+    )
+    (base / "metadata.json").write_text(json.dumps(
+        {**meta, "selected_alpha": 0, "op": "setpoint_vl", "pathway": "vl",
+         "token_pool": "vlln_seq_meanpool"}, indent=2, ensure_ascii=False))
+    return npz
+
+
 def save_arm(base: Path, layer: int, seg, meta: dict) -> Path:
     """<base>/steer/dit_L<layer>/{conceptors.npz, metadata.json} (exp4-1 permanent 계약)."""
     v_seg, s_tok, bounds, mask = seg
@@ -197,6 +228,8 @@ def main() -> int:
     ap.add_argument("--record-start", required=True, help="perturbed 시간분리 절단 tsv")
     ap.add_argument("--configs", default="", help="콤마 리스트 (기본 = capture-root 전부)")
     ap.add_argument("--layers", default="8,10,12", help="DiT block layer 콤마 리스트")
+    ap.add_argument("--pathway", choices=("dit", "vl"), default="dit",
+                    help="dit=DiT block residual(layer별) | vl=vlln 토큰평균(layer 없음)")
     ap.add_argument("--split", choices=("even", "odd", "all"), default="even",
                     help="fit 에 쓸 episode 패리티 (held-out = 반대)")
     ap.add_argument("--k-sub", type=int, default=20, help="episode 당 균등 서브샘플 수")
@@ -206,7 +239,9 @@ def main() -> int:
     args = ap.parse_args()
 
     rs = read_record_start(args.record_start)
-    layers = [int(x) for x in args.layers.split(",") if x.strip()]
+    is_vl = args.pathway == "vl"
+    # VL 은 layer 축이 없다 (vlln 단일 지점) — 루프를 "VL" 하나로 축약.
+    layers = ["VL"] if is_vl else [int(x) for x in args.layers.split(",") if x.strip()]
     cfgs = [c.strip() for c in args.configs.split(",") if c.strip()]
     cap_root = Path(args.capture_root)
     if not cfgs:
@@ -217,8 +252,9 @@ def main() -> int:
     if not clean_paths:
         raise SystemExit(f"clean pkl 0개: {args.clean_dir}")
     out_root = Path(args.out_root)
-    print(f"clean-succ {len(clean_paths)} pkl · cfgs={cfgs} · layers={layers} "
-          f"· fit split={args.split} held={held} · seg_mode={args.seg_mode}")
+    print(f"clean-succ {len(clean_paths)} pkl · cfgs={cfgs} · pathway={args.pathway} "
+          f"· layers={layers} · fit split={args.split} held={held} "
+          f"· seg_mode={'n/a(pooled)' if is_vl else args.seg_mode}")
 
     rng_global = np.random.default_rng(args.placebo_seed)
     summary = []
@@ -237,22 +273,28 @@ def main() -> int:
                 continue
 
             r, s, dprime = _mean_diff(Xc, Xp)
-            cell = out_root / cfg / f"L{lyr}"
+            cell = out_root / cfg / ("VLsetM" if is_vl else f"L{lyr}")
             cell.mkdir(parents=True, exist_ok=True)
             meta = {
                 "exp": "exp5-2", "contrast": "clean_vs_perturbed",
-                "cfg": cfg, "layer": lyr, "split_fit": args.split, "split_held": held,
-                "k_sub": args.k_sub, "seg_mode": args.seg_mode,
+                "cfg": cfg, "pathway": args.pathway, "layer": lyr,
+                "split_fit": args.split, "split_held": held,
+                "k_sub": args.k_sub,
+                "seg_mode": (None if is_vl else args.seg_mode),
                 "n_ep_clean": len(epc), "n_ep_perturbed": len(epp),
                 "n_rec_clean_fit": int(Xc.shape[0]), "n_rec_pert_fit": int(Xp.shape[0]),
                 "n_rec_clean_raw": nrc, "n_rec_pert_raw": nrp,
                 "dim": int(r.shape[0]), "r_norm_raw": float(np.linalg.norm(Xc.mean(0) - Xp.mean(0))),
                 "setpoint_s": s, "dprime_fit": dprime,
-                "token_layout": {"T": T_TOKENS, "segments": [list(x) for x in SEGMENTS]},
+                "token_layout": (None if is_vl
+                                 else {"T": T_TOKENS, "segments": [list(x) for x in SEGMENTS]}),
                 "clean_dir": str(args.clean_dir), "capture_root": str(args.capture_root),
                 "record_start": str(args.record_start),
             }
-            npz_real = save_arm(cell / "setM", lyr, build_seg(r, s, args.seg_mode), meta)
+            if is_vl:
+                npz_real = save_arm_vl(cell / "setM", r, s, meta)
+            else:
+                npz_real = save_arm(cell / "setM", lyr, build_seg(r, s, args.seg_mode), meta)
             shutil.copyfile(npz_real, cell / "setM.npz")
 
             # ---- held-out 검증: 부호 방향 + dose -----------------------------------
@@ -263,6 +305,9 @@ def main() -> int:
                     "clean": _dose(Hc, r, s), "perturbed": _dose(Hp, r, s),
                     "proj_mean_clean": float(pc.mean()), "proj_mean_perturbed": float(pp.mean()),
                     "sign_ok": bool(pc.mean() > pp.mean()),
+                    "dprime_heldout": float(
+                        (pc.mean() - pp.mean())
+                        / max(float(np.sqrt(0.5 * (pc.var() + pp.var()))), 1e-12)),
                     # 양성 클래스 = clean (r̂ 는 clean 쪽이 큼) → 1.0 이 완전 분리
                     "auroc_heldout_record": _auroc(pp, pc),
                     "auroc_heldout_episode": _auroc(
@@ -281,7 +326,8 @@ def main() -> int:
             (cell / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False))
             (cell / "dose_check.json").write_text(json.dumps(dose, indent=2, ensure_ascii=False))
             hd = dose.get("real")
-            print(f"[{cfg}/L{lyr}] ‖Δμ‖={meta['r_norm_raw']:.3f} s={s:.3f} d'fit={dprime:.2f} "
+            tag = f"{cfg}/{'VL' if is_vl else f'L{lyr}'}"
+            print(f"[{tag}] ‖Δμ‖={meta['r_norm_raw']:.3f} s={s:.3f} d'fit={dprime:.2f} "
                   f"held AUROC rec={hd['auroc_heldout_record']:.3f} "
                   f"ep={hd['auroc_heldout_episode']:.3f} sign_ok={hd['sign_ok']} "
                   f"dose_med clean={hd['clean']['median']:.3f} pert={hd['perturbed']['median']:.3f}"
@@ -294,9 +340,11 @@ def main() -> int:
                 "placebo_gain": (pl_info or {}).get("gain")})
 
     out_root.mkdir(parents=True, exist_ok=True)
-    (out_root / "fit_summary.json").write_text(json.dumps(
+    # pathway 별로 분리 — 같은 out-root 에 dit/vl fit 을 얹어도 서로 덮어쓰지 않는다.
+    sm_path = out_root / ("fit_summary_vl.json" if is_vl else "fit_summary.json")
+    sm_path.write_text(json.dumps(
         {"argv": vars(args), "rows": summary}, indent=2, ensure_ascii=False))
-    print(f"wrote {out_root/'fit_summary.json'} ({len(summary)} rows)")
+    print(f"wrote {sm_path} ({len(summary)} rows)")
     return 0
 
 
@@ -333,19 +381,37 @@ def fit_placebo(clean_paths, pert_paths, rs, lyr, args, held, r_real, s_real,
         if c <= PL_COS_MAX:
             break
     cos_pl, rp, sp, dp, perm = best
+    is_vl = getattr(args, "pathway", "dit") == "vl"
     dose_real_p = float(np.median(np.abs(Hp @ r_real - s_real))) if Hp is not None else float("nan")
     dose_pl_p = float(np.median(np.abs(Hp @ rp - sp))) if Hp is not None else float("nan")
     gain = float(dose_real_p / max(dose_pl_p, 1e-12)) if Hp is not None else 1.0
+    sp_raw = sp
+    if is_vl and Hp is not None:
+        # VL pooled 는 게인 필드가 없다 → setpoint 평행이동으로 dose 매칭.
+        # s' = median(proj_pert) + dose_real ⇒ median|proj−s'| = dose_real, 부호도 real 과 동일
+        # (perturbed 가 s' 아래 → h 가 +r̂_pl 로 밀림).
+        sp = float(np.median(Hp @ rp) + dose_real_p)
+        gain = 1.0
     meta_pl = {**meta, "arm": "setM_pl", "placebo_seed": args.placebo_seed,
                "placebo_cos_with_real": cos_pl, "placebo_dprime_fit": dp,
-               "placebo_setpoint_s": sp, "placebo_gain": gain,
+               "placebo_setpoint_s": sp, "placebo_setpoint_s_raw": sp_raw,
+               "placebo_gain": gain, "placebo_dose_match": ("setpoint_shift" if is_vl
+                                                            else "seg_mask_gain"),
                "placebo_perm_head": perm[:12]}
     meta_pl.pop("heldout", None)
-    npz_pl = save_arm(cell / "setM_pl", lyr, build_seg(rp, sp, args.seg_mode, gain), meta_pl)
+    if is_vl:
+        npz_pl = save_arm_vl(cell / "setM_pl", rp, sp, meta_pl)
+    else:
+        npz_pl = save_arm(cell / "setM_pl", lyr, build_seg(rp, sp, args.seg_mode, gain), meta_pl)
     shutil.copyfile(npz_pl, cell / "setM_pl.npz")
     return {
-        "cos_with_real": cos_pl, "dprime_fit": dp, "setpoint_s": sp, "gain": gain,
-        "dose_perturbed_median": dose_pl_p, "dose_real_perturbed_median": dose_real_p,
+        "cos_with_real": cos_pl, "dprime_fit": dp, "setpoint_s": sp,
+        "setpoint_s_raw": sp_raw, "gain": gain,
+        "dose_match": ("setpoint_shift" if is_vl else "seg_mask_gain"),
+        "dose_perturbed_median": (float(np.median(np.abs(Hp @ rp - sp)))
+                                  if Hp is not None else float("nan")),
+        "dose_perturbed_median_raw": dose_pl_p,
+        "dose_real_perturbed_median": dose_real_p,
         "dose_perturbed": (_dose(Hp, rp, sp) if Hp is not None else None),
         "dose_clean": (_dose(Hc, rp, sp) if Hc is not None else None),
         "auroc_heldout_record": (_auroc(Hp @ rp, Hc @ rp)
