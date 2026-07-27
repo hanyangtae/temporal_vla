@@ -104,7 +104,7 @@ def main():
                   f"{mixed_hits:4d}/{mixed_n:<4d} {st['sr_worst1']:7.3f}{tag}")
 
             cell_out["per_layer"][str(L)] = dict(
-                observed=dict(**st, hits=h_obs, expected_hits=float(p_i.sum()),
+                observed=dict(**st, expected_hits=float(p_i.sum()),
                               mixed_hits=mixed_hits, mixed_n=mixed_n,
                               chosen_seed_idx=res["chosen"].tolist(),
                               per_scene_top1=res["top1"].tolist(),
