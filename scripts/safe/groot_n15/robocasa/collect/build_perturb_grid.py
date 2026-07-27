@@ -126,6 +126,14 @@ def main() -> int:
                     help="'FxDUR' 쉼표 목록 예 '5x2,15x2,40x5' (미지정 시 cell 기본값)")
     ap.add_argument("--sham-eps", type=int, default=1,
                     help="모드당 sham 행 ep 수 (P0 중 배선 드리프트 감시)")
+    ap.add_argument("--seed-stride", type=int, default=1000,
+                    help="신선 ep 확장 시 inference_seed = ep_idx * stride "
+                         "(collect_perturb_grid.sh STRIDE=1000 / baseline worker 와 동일 공식)")
+    ap.add_argument("--fresh-ep-start", type=int, default=None,
+                    help="C1/G1 신선 ep 확장 시작 인덱스 (미지정 시 baseline 사이드카 최대 ep+1)")
+    ap.add_argument("--fresh-ep-block", type=int, default=100,
+                    help="config 당 신선 ep 예약 블록 크기 — 톱업(--eps-per-config 증가) 시 "
+                         "기존 행이 그대로 유지되도록 config 별 고정 구간을 준다")
     args = ap.parse_args()
 
     cell = CELL_DEFAULTS[args.cell]
@@ -148,6 +156,11 @@ def main() -> int:
         ep_idx = int(m.group(1))
         anchor = (d.get("event_steps") or {}).get(anchor_event)
         eps.append((ep_idx, int(d.get("inference_seed") or 0), anchor))
+    # baseline 이 실제로 소비한 ep 인덱스 범위 (성공/실패 사이드카 전부) — 신선 ep 확장의 시작점.
+    base_eps = [int(m.group(1)) for p in base.glob("task*--ep*--succ*.json")
+                if (m := re.search(r"--ep(\d+)--", p.name))]
+    fresh_start = (args.fresh_ep_start if args.fresh_ep_start is not None
+                   else (max(base_eps) + 1 if base_eps else 0))
     if len(eps) < args.n_cal:
         print(f"ABORT: 성공 baseline {len(eps)}개 < --n-cal {args.n_cal} — Phase A 부족",
               file=sys.stderr)
@@ -181,30 +194,64 @@ def main() -> int:
     target_kw = {} if target == "obj" else {"target": target}
     direction_kw = {} if p1_direction is None else {"direction": list(p1_direction)}
 
-    def pick(config_i: int):
-        """config 별 ep 배분 — 라운드로빈 오프셋으로 config 간 ep 다양화."""
+    fresh_next = [fresh_start]
+
+    def pick(config_i: int, config: str, anchored: bool):
+        """config 별 ep 배분 — 라운드로빈 오프셋으로 config 간 ep 다양화.
+
+        --eps-per-config 가 캘리브 성공 풀(len(eps))보다 크면 예전 코드는 같은
+        (ep_idx, inference_seed) 를 반복 생성했고, 러너의 done_mark 가 config 디렉토리 안에서
+        ep_idx 로만 판정하므로 2회차 이후가 통째로 skip 됐다 (mixer: 48 요청 → 10판 수집).
+        모드별 처리:
+          - anchored=False (C1/G1): trigger 앵커가 필요 없으므로 **신선 ep_idx 로 확장**.
+            scenario_seed 는 cell 고정 seed(mixer 100000 / drawer 100001) 이고 collector 가
+            n-episodes=1 로 돌아 `scenario_seed = --seed + 0` → ep_idx 를 늘려도 fixture scene
+            은 동일, 바뀌는 것은 정책 rng(inference_seed) 와 출력 스템뿐이다.
+            inference_seed 는 baseline 워커와 같은 공식 ep_idx * STRIDE(1000)
+            (collect_perturb_grid.sh:52, 기존 grid 행 ep10→10000 과 일치).
+          - anchored=True (P1/P2): 성공 ep 사이드카의 event record 에 종속이라 확장 불가 →
+            풀 크기로 clamp + WARN.
+        """
         n = len(eps)
-        return [eps[(config_i + j) % n] for j in range(args.eps_per_config)]
+        want = args.eps_per_config
+        if want <= n:  # 기존 경로 (ppcc: 풀 55 ≥ 48) — 동작·산출 바이트 불변
+            return [eps[(config_i + j) % n] for j in range(want)]
+        picked = [eps[(config_i + j) % n] for j in range(n)]
+        if anchored:
+            print(f"WARN: {config} rows capped at {n} (anchored pool) — 요청 {want}")
+            return picked
+        # config 별 고정 블록 (fresh_start + ci*block + j) — 톱업으로 --eps-per-config 를 키워도
+        # 이미 수집된 앞쪽 행의 (ep_idx, inference_seed) 가 그대로 유지된다.
+        if want - n > args.fresh_ep_block:
+            print(f"ABORT: {config} 신선 ep {want - n}개 > --fresh-ep-block "
+                  f"{args.fresh_ep_block} (블록 충돌)", file=sys.stderr)
+            raise SystemExit(4)
+        base_ep = fresh_start + config_i * args.fresh_ep_block
+        for j in range(want - n):
+            ep_new = base_ep + j
+            picked.append((ep_new, ep_new * args.seed_stride, None))
+        fresh_next[0] = max(fresh_next[0], base_ep + (want - n))
+        return picked
 
     ci = 0
     for mode in modes:
         if mode == "C1":
             for s in C1_SCALES:
                 config = f"c1_s{int(s * 100):03d}"
-                for ep_idx, inf, _ in pick(ci):
+                for ep_idx, inf, _ in pick(ci, config, anchored=False):
                     add("C1_camera", config, ep_idx, inf, {"mode": "C1_camera", "scale": s})
                 ci += 1
         elif mode == "G1":
             for s in G1_SIGMAS:
                 config = f"g1_x{int(s * 100):03d}"
-                for ep_idx, inf, _ in pick(ci):
+                for ep_idx, inf, _ in pick(ci, config, anchored=False):
                     add("G1_gripper_init", config, ep_idx, inf,
                         {"mode": "G1_gripper_init", "sigma_xyz_m": s})
                 ci += 1
         elif mode == "P1":
             for mag in p1_mags:
                 config = f"p1_d{int(round(mag * 100)):03d}"
-                for ep_idx, inf, anchor in pick(ci):
+                for ep_idx, inf, anchor in pick(ci, config, anchored=True):
                     if anchor is None:
                         continue
                     add("P1_displace", config, ep_idx, inf,
@@ -215,7 +262,7 @@ def main() -> int:
         elif mode == "P2":
             for mag, dur in p2_grid:
                 config = f"p2_f{int(mag):03d}d{dur}"
-                for ep_idx, inf, anchor in pick(ci):
+                for ep_idx, inf, anchor in pick(ci, config, anchored=True):
                     if anchor is None:
                         continue
                     add("P2_force", config, ep_idx, inf,
@@ -267,7 +314,8 @@ def main() -> int:
     n_cfg = len({r[1] for r in rows})
     print(f"wrote {grid}: {len(rows)} rows, {n_cfg} configs, cell={args.cell}, "
           f"modes={modes}, anchor={anchor_event}, target={target}, "
-          f"cal_eps={[e[0] for e in eps]}")
+          f"cal_eps={[e[0] for e in eps]}, fresh_eps={fresh_start}..{fresh_next[0] - 1}"
+          if fresh_next[0] > fresh_start else f"cal_eps={[e[0] for e in eps]}")
     return 0
 
 
