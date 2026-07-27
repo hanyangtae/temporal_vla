@@ -5,8 +5,11 @@
 
 **한 줄 결론: G1 PASS.** L8·L10·L12 × k64 세 조합이 사전 등록 기준 3개를 전부 충족.
 최고 = **L12 k64** (z-probe acc 0.766, 원본 회복률 0.92, 순열 null 대비 z=6.5, selective 0.8%).
-scene 인코딩은 **중간~후반층(L8-L12)에 있고 L0 sparse feature 에는 없다** (L0 는 원본 probe 0.771인데
-SAE feature probe 는 null 동급 — G1 의 부산 발견물).
+scene 인코딩은 **L8-L12 에서 강하고 L0 에서 약하다** — 단 L0 수치는 §5 정정 참조(probe 미수렴).
+
+> **⚠ 2026-07-27 정정 (대시보드 재검증, §5)**: 본문 §3-2 의 "L0 = null 동급"과 §3-4 의
+> succ/fail 층화 해석은 과장/근거부족으로 철회·유보한다. **G1 PASS 결론 자체는 유지**
+> (test 에피소드는 train 에 없으므로 layout 수준 일반화가 실제로 일어난 것).
 
 ## 1. 설정
 
@@ -59,15 +62,18 @@ PASS 조합 세부 (k64):
 1. **G1 통과 — SAE feature 는 scene 을 실제로 인코딩한다.** null_z 5~6.5 로 우연이 아니고,
    k64 면 원본 선형정보의 84~92%를 회복하며, 그걸 나르는 feature 는 live 의 1% 미만(34~47개)로
    비자명하게 국소화돼 있다. "scene feature 만 골라 제거"(G2 잔차화)의 전제가 성립.
-2. **깊이 구조**: L0 은 원본 activation 엔 scene 정보가 있는데(0.771) top-k SAE feature 로는
-   null 동급(0.27~0.31) — 초기층 scene 정보는 sparse 코드로 안 잡히는 분산 표현. L2 는 중간(z 유의,
-   회복 43%), L8-L12 에서 회복이 완성. **G2 잔차화 대상 layer 는 L8-L12 대역**이 자연 선택.
+2. ~~**깊이 구조**: L0 은 null 동급 — 분산 표현~~ → **[정정 §5-1]** L0 낮은 수치의 상당분은
+   **probe 미수렴**(표준화 없음 + max_iter=100, sklearn 수렴 경고 다수)이었다. 표준화+iter1000
+   재실행 시 L0 test 0.311→0.435 (회복률 ≈0.23). **"L0 이 L8-L12 보다 훨씬 약하다"는 방향성은
+   유지**되나(0.23 vs 0.84~0.92), "null 동급/정보 부재"는 철회. L0 SAE 재구성 R²=0.993 으로
+   정보는 코드에 남아 있다. **G2 잔차화 대상 layer 는 L8-L12 대역**이라는 결론은 유지.
 3. **k 의존성**: 회복률이 k 에 단조 증가(k16 ~0.55 → k64 ~0.85+). scene 정보가 소수 방향에
    압축되지 않고 수십 feature 에 걸쳐 있다는 뜻 — G2 에서 제거할 성분도 "feature 몇 개"가 아니라
-   selective 집합(34~47개) 단위로 다뤄야 한다.
-4. **주의(층화)**: fail episode 에서 probe 정확도가 일관되게 낮다(0.57~0.64 vs succ 0.84~0.89).
-   실패 rollout 의 표현이 scene 구분을 흐린다는 신호로, seen18 "공유 실패 zone"(실패는 task 무관
-   수렴) 관측과 정합. G2 판정 시 succ/fail 층화 보고 유지 필요.
+   selective 집합(34~47개) 단위로 다뤄야 한다. ⚠ 단 k↑는 회복률을 거의 자동으로 올리므로
+   (k=m 이면 조밀 AE) k sweep 판정은 "회복률 포화점에서 selective 비율 유지"로 볼 것 [§5-3].
+4. ~~**주의(층화)**: fail episode 에서 probe 정확도가 일관되게 낮다 — 공유 실패 zone 정합~~ →
+   **[정정 §5-2, 강한 유보]** test 층화의 독립 표본은 succ 3 ep vs fail 3 ep 뿐(행 3,675개는
+   같은 3 ep 를 쪼갠 것). 0.89 vs 0.64 는 판 몇 개의 운으로 뒤집히는 크기 — 해석 보류.
 5. **한계**: scene 라벨 해상도가 layout 5클래스(=style 공선) — scenario_seed 수준 "scene 암기"
    제거를 검증하려면 라벨 해상도가 부족하다. fit30 로는 이게 상한. test ep 6개라 acc 분산도 큼.
 
@@ -77,6 +83,21 @@ PASS 조합 세부 (k64):
   succ/fail read 잔존 검증 — 길이통제(dwell cap)·episode 순열 null·held-out (핸드아웃 Phase E).
 - 확장 카드: ① drawer_right 재현(같은 파이프라인 그대로), ② m=8×D·k 격자 확대(선택),
   ③ scene 라벨 해상도 한계 대응 — 실패 대량수집 시 scene 당 다중 rollout 확보(25a §4 병행 검토).
+
+## 5. 정정 이력 (2026-07-27, exp5-1 대시보드 재검증 — 스팟체크로 메인이 확인)
+
+1. **L0 "null 동급" 철회**: probe 가 6144-d 희소 코드를 표준화 없이 LogisticRegression
+   (C=1, max_iter=100)에 넣어 **미수렴**(로그에 ConvergenceWarning 수백 건 — 메인 확인).
+   표준화+iter1000 재실행: L0 test 0.311→0.435, L12 0.737→0.725(안정). L0 회복률 ≈0.23.
+   깊이 방향성(L0≪L8-L12)은 유지, "정보 부재"만 철회. L0 dead_feature_ratio 0.449 (L12 0.122,
+   메인 확인) — aux-k loss 부재와의 연관 의심, 코드 개선 항목.
+2. **succ/fail 층화 해석 유보**: test 독립 표본 succ 3 ep vs fail 3 ep — 검정력 부족.
+3. **k sweep 판정 기준 변경**: 회복률 단독이 아니라 포화점 selective 비율로.
+4. G1 PASS 는 유지 — held-out 에피소드는 train 에 없으므로 layout 수준 일반화가 실재.
+   남는 약점: (a) test 6판의 큰 오차막대, (b) **layout×성공률 얽힘**(layout4 = 2/7 succ,
+   layout7 = 6/7 succ) → G2 에서 "scene 성분 제거"에 outcome 성분이 섞일 위험. 이 위험은
+   scene-matched drawer_right(20 scene × 8 denoise seed, 승준 실물 160판 — 메인 개수 확인)로
+   G1 재판정 + scenario_seed 라벨 + scene-held-out split 으로 해소 예정 (→ 32 문서).
 
 ## 재현 정보
 
