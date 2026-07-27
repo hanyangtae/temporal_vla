@@ -45,7 +45,10 @@ S1_P2_MAG="${S1_P2_MAG:-15.0}"
 
 _SMOKE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 WT_HOST="$(cd -- "${_SMOKE_DIR}/../../../../../../.." && pwd)"          # worktree root
-MAIN_HOST="$(cd -- "${WT_HOST}/../../.." && pwd)"                       # main repo root
+case "$WT_HOST" in
+  */.claude/worktrees/*) MAIN_HOST="$(cd -- "${WT_HOST}/../../.." && pwd)" ;;  # worktree → main
+  *)                     MAIN_HOST="$WT_HOST" ;;                              # 레포 직접 checkout(원격)
+esac
 # 컨테이너 경로는 호스트 worktree 에서 유도 (worktree 이름 하드코딩 시 남의 트리 코드를 도는 사고)
 WT_CONT="${WT_HOST/#${MAIN_HOST}//temporal_vla}"
 PYPATH="/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite:/temporal_vla"

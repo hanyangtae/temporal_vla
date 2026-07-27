@@ -55,7 +55,10 @@ CAP="0,2,4,8,10,12,15"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 WT_HOST="$(cd -- "${SCRIPT_DIR}/../../../../.." && pwd)"
-MAIN_HOST="$(cd -- "${WT_HOST}/../../.." && pwd)"
+case "$WT_HOST" in
+  */.claude/worktrees/*) MAIN_HOST="$(cd -- "${WT_HOST}/../../.." && pwd)" ;;  # worktree → main
+  *)                     MAIN_HOST="$WT_HOST" ;;                              # 레포 직접 checkout(원격)
+esac
 # 컨테이너 경로는 호스트 worktree 경로에서 유도 (worktree 이름 하드코딩 금지 — exp5-2 는
 # .claude/worktrees/exp5-2-perturb-steering).
 WT_CONT="${WT_HOST/#${MAIN_HOST}//temporal_vla}"
