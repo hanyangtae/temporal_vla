@@ -120,6 +120,8 @@ def main() -> int:
                     help="P1/P2 대상 (미지정 시 cell 기본값). 평문=자유물체, "
                          "'fixture:<attr>:<joint_key>'=fixture 관절")
     ap.add_argument("--p1-mags", default=None, help="쉼표 구분 P1 δ 목록 (미지정 시 cell 기본값)")
+    ap.add_argument("--c1-scales", default=None,
+                    help="쉼표 구분 C1 scale 목록 (미지정 시 모듈 기본 C1_SCALES)")
     ap.add_argument("--p2-grid", default=None,
                     help="'FxDUR' 쉼표 목록 예 '5x2,15x2,40x5' (미지정 시 cell 기본값)")
     ap.add_argument("--sham-eps", type=int, default=1,
@@ -130,6 +132,9 @@ def main() -> int:
     anchor_event = args.anchor_event or cell["anchor_event"]
     target = args.target or cell["target"]
     p1_mags = _parse_floats(args.p1_mags) if args.p1_mags else list(cell["p1_mags"])
+    global C1_SCALES
+    if args.c1_scales:
+        C1_SCALES = _parse_floats(args.c1_scales)
     p2_grid = _parse_p2_grid(args.p2_grid) if args.p2_grid else list(cell["p2_grid"])
     p1_direction = cell["p1_direction"]
 
