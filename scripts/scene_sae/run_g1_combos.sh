@@ -32,6 +32,7 @@ for C in "${COMBO_ARR[@]}"; do
     --ckpt-dir "$CKPT" \
     --x "$IN/X_L${L}.npz" --stats "$IN/stats_L${L}.npz" --meta "$IN/meta.npz" \
     --out "$OUT/probe_${TAG}.json" --label layout_id --n-perm "$NPERM" \
-    --null-max-iter 60 --seed 0 --device cuda
+    --seed 0 --device cuda ${WINDOW:+--window $WINDOW}
+    # (구 --null-max-iter 60 제거 — 순열 null 은 본 probe 와 동일 max_iter 를 쓴다. 리뷰 #7)
 done
 echo "=== combos [$COMBOS_STR] 완료 $(date +%H:%M:%S) ==="

@@ -96,6 +96,17 @@ class EncoderTopK(nn.Module):
         self.m, self.k = m, k
         self.d = m                      # Encoder와 같은 이름으로 잠재 폭을 노출
 
+    def pre_activation(self, x):
+        """ReLU·top-k **이전**의 사전활성 [..., m] (음수 포함).
+
+        (우리 추가 — aux-k loss 용. forward 는 top-k 마스킹된 값만 주므로 dead feature 를
+        고를 수 없다. 원 구현(OpenAI TopK-SAE)도 aux **후보 선택**을 pre-ReLU 값으로 한다
+        — 그래야 지금 안 켜진 feature 들 사이에서 "가장 켜질 뻔한" 것을 고를 수 있다.
+        단 선택 후 **값에는 ReLU 를 적용**한다: 음수 계수로 잔차를 맞추면 사전 열의 반대
+        방향을 학습하게 된다. 2026-07-27 코드리뷰 #8 에서 공식 구현과 정합화.)
+        """
+        return self.net(x)
+
     def forward(self, x):
         """[구현 메모] topk의 k번째 값을 임계값으로 삼아 where로 마스킹한다 —
         gather/scatter보다 짧고, 동점이 있으면 k개보다 많이 살아남을 수 있지만
@@ -139,6 +150,16 @@ class DecoderLinearDict(nn.Module):
         wn = w / w.norm(dim=0, keepdim=True).clamp_min(1e-8)
         return F.linear(h, wn, self.lin.bias), self.logvar.clamp(-8, 4)
 
+    def decode_nobias(self, h):
+        """편향 없는 사전 재구성 Σ_j h_j · d_j (우리 추가 — aux-k loss 용).
+
+        aux-k 가 재구성하는 대상은 잔차 e = x − x̂ 이고, 편향은 이미 x̂ 에 들어가 있다.
+        여기서 다시 더하면 이중 계산이 되므로 선형부만 쓴다.
+        """
+        w = self.lin.weight
+        wn = w / w.norm(dim=0, keepdim=True).clamp_min(1e-8)
+        return F.linear(h, wn)
+
     @torch.no_grad()
     def dictionary(self):
         """단위노름으로 정규화된 사전 [out_dim, m] — forward가 실제로 쓰는 행렬.
@@ -166,20 +187,52 @@ class BaseAE(nn.Module):
         loss() 본문이 분기 없이 그대로 절대오차(MSE와 argmin 동일)가 된다.
     """
 
-    def __init__(self, encoder, decoder, loss: LossName = "log_likelihood"):
+    def __init__(self, encoder, decoder, loss: LossName = "log_likelihood",
+                 aux_k: int = 0, aux_alpha: float = 1.0 / 32, dead_window: int = 50):
         """인코더/디코더를 받아 조립한다.
 
         loss='mse'면 주입받은 디코더의 logvar를 0에 동결한다(아래 참고).
+
+        [aux-k loss — 우리 추가, 원본에 없음] OpenAI TopK-SAE(Gao et al. 2024 §A.2
+        "AuxK") 의 dead-feature 소생 보조손실. drawer_left L0 에서 dead 비율 0.449 가
+        관측돼(docs/steering/31 §5-1) 도입한다.
+
+            aux_k        보조손실이 되살릴 dead feature 개수 (0 = **완전 비활성**).
+                         권장 512 (= m 6144 의 8%; 원논문 k_aux ≈ d_model/2 과 같은 대역).
+                         m 보다 크면 m 으로, 그 스텝의 dead 개수보다 크면 dead 수로 clamp.
+                         ⚠ 합성 실측: m 의 25% 를 넘게 잡으면 드물게 켜지는 feature 까지
+                         잔차 재구성으로 끌려가 dead 가 **늘었다**(0.23→0.28). 비율이 중요.
+            aux_alpha    L_total = L_recon + aux_alpha · L_aux (원논문 1/32).
+            dead_window  최근 몇 번의 **학습** 호출 동안 한 번도 켜지지 않으면 dead 로 볼지.
+
+        aux_k=0 이면 버퍼도 등록하지 않고 loss() 본문도 기존과 동일한 연산이므로,
+        기존 체크포인트의 state_dict 와 기존 결과의 재현성이 그대로 유지된다.
         """
         # 인자 검증 — 부작용(logvar 동결) 이전에 걸러 반쯤 만들어진 객체를 남기지 않는다
         if loss not in LOSSES:
             raise ValueError(f"loss는 {LOSSES} 중 하나여야 합니다: {loss!r}")
+        if int(aux_k) < 0:
+            raise ValueError(f"aux_k 는 0 이상이어야 합니다: {aux_k!r}")
 
         # 객체 생성
         super().__init__()
         self.enc = encoder
         self.dec = decoder
         self.loss_name = loss           # 메서드 loss()와 이름이 겹치지 않도록 _name
+        self.aux_k = int(aux_k)
+        self.aux_alpha = float(aux_alpha)
+        self.dead_window = int(dead_window)
+        if self.aux_k > 0:
+            # aux-k 는 top-k 인코더(사전활성 개념)와 선형 사전 디코더(편향 없는 재구성)를
+            # 전제한다. 조밀 AE 조합에서 조용히 무시되지 않도록 여기서 막는다.
+            if not hasattr(self.enc, "pre_activation") or not hasattr(self.dec, "decode_nobias"):
+                raise ValueError("aux_k > 0 은 EncoderTopK + DecoderLinearDict 조합에서만 "
+                                 "지원됩니다 (pre_activation/decode_nobias 필요)")
+            m = getattr(self.enc, "m", None) or self.enc.d
+            self.aux_k = min(self.aux_k, int(m))
+            # 최근 몇 스텝 동안 안 켜졌는지 (학습 스텝에서만 갱신). state_dict 에 들어가지만
+            # aux_k=0 이면 아예 등록하지 않으므로 구 체크포인트 로드에 영향 없다.
+            self.register_buffer("steps_since_active", torch.zeros(int(m), dtype=torch.long))
         if self.loss_name == "mse":
             # σ=1 고정 → dec.forward가 logvar.clamp(-8,4)=0 을 반환하므로
             # loss()가 그대로 0.5·Σ(x-x̂)² + const 가 된다 (본문 분기 불필요).
@@ -211,7 +264,54 @@ class BaseAE(nn.Module):
 
         se = (x - x_hat) ** 2
         nll = 0.5 * (se * torch.exp(-logvar) + logvar + LOG2PI)
-        return nll.sum(-1).mean()
+        total = nll.sum(-1).mean()
+        # aux_k=0 이면 아래 분기가 통째로 건너뛰어져 위 식이 그대로 반환된다 (기존 경로 동일).
+        if self.aux_k > 0:
+            total = total + self.aux_alpha * self._aux_loss(x, x_hat, c)
+        return total
+
+    def _aux_loss(self, x, x_hat, c):
+        """AuxK — dead feature 로만 재구성 잔차를 맞춰 보게 해서 사전을 되살린다.
+
+        [절차] ① 이번 배치에서 켜진 feature 의 미활성 카운터를 0 으로, 나머지는 +1
+        (학습 중일 때만 — val 패스가 카운터를 오염시키면 안 된다).
+        ② dead = 카운터 > dead_window. dead 가 없으면 0.
+        ③ dead 중 **사전활성**(ReLU·top-k 이전, 음수 포함) 상위 k_aux 를 고르고, 그 값에
+           **ReLU 를 적용한** 코드 h_aux 로 잔차 e = (x − x̂).detach() 를 편향 없이 재구성
+           → 0.5·Σ(e − ê)². (선택=pre-act, 값=post-ReLU. OpenAI TopK-SAE 의 aux 경로가
+           마스킹된 pre-act 에 TopK 활성화를 씌우는 것과 동일 — 리뷰 #8.)
+           e 를 detach 하는 것은 원 구현과 같다 — aux 항이 주 재구성 경로의 gradient 를
+           바꾸지 않고 죽은 사전 열에만 학습신호를 주도록.
+        스케일은 주 손실(mse: 0.5·Σ(x−x̂)²)과 같은 단위라 aux_alpha=1/32 가 원논문과 같은 의미.
+        """
+        h_pre = self.enc.pre_activation(x)                          # [..., m]
+        flat = h_pre.reshape(-1, h_pre.shape[-1])
+        if self.training:
+            with torch.no_grad():
+                active = (c.reshape(-1, c.shape[-1]) > 0).any(0)
+                self.steps_since_active += 1
+                self.steps_since_active[active] = 0
+        dead = self.steps_since_active > self.dead_window           # [m] bool
+        n_dead = int(dead.sum())
+        if n_dead == 0:
+            return x.new_zeros(())
+        kk = min(self.aux_k, n_dead)
+        masked = torch.where(dead, flat, torch.full_like(flat, float("-inf")))
+        vals, idx = torch.topk(masked, kk, dim=-1)
+        # kk ≤ n_dead 라 -inf 자리는 절대 뽑히지 않는다.
+        # **선택은 pre-activation 으로, 값은 ReLU 후로** — OpenAI 공식 구현
+        # (openai/sparse_autoencoder, Gao et al. 2024 §A.2 AuxK)의 aux 경로는 dead 로
+        # 마스킹한 pre-act 에 TopK **활성화**(= topk + postact ReLU)를 적용한다.
+        # 음의 사전활성을 그대로 쓰면 그 feature 가 잔차에 **음의 계수**로 기여해
+        # (사전 열의 반대 방향으로 재구성) aux 항이 소생이 아닌 부호 반전 학습을 시킨다.
+        # ReLU 후 0 인 항목은 그 스텝에서 gradient 가 없을 뿐, 다른 배치·다른 행에서
+        # 양의 사전활성을 갖는 순간 소생 신호를 받는다.
+        vals = F.relu(vals)
+        h_aux = torch.zeros_like(flat)
+        h_aux.scatter_(-1, idx, vals)
+        e = (x - x_hat).detach().reshape(-1, x.shape[-1])
+        e_hat = self.dec.decode_nobias(h_aux)
+        return 0.5 * ((e - e_hat) ** 2).sum(-1).mean()
 
     @torch.no_grad()
     def latent(self, x):
@@ -310,19 +410,27 @@ def build_model(cfg, input_dim=None):
     kind = cfg.get("kind", "ae")
     if kind not in MODELS:
         raise ValueError(f"model.kind는 {tuple(MODELS)} 중 하나여야 합니다: {kind!r}")
-    # loss는 모델 클래스가 기본값과 검증을 갖고 있으므로 있을 때만 넘긴다
-    kwargs = {k: cfg[k] for k in ("loss",) if k in cfg}
+    # loss/aux 설정은 모델 클래스가 기본값과 검증을 갖고 있으므로 있을 때만 넘긴다
+    # (구 config.json 에는 aux_* 키가 없다 → 기본값 aux_k=0 = 기존 동작 그대로).
+    kwargs = {k: cfg[k] for k in ("loss", "aux_k", "aux_alpha", "dead_window") if k in cfg}
     return MODELS[kind](enc, dec, **kwargs)
 
 
-def sae_config(input_dim, expansion=4, k=32, loss="mse"):
+def sae_config(input_dim, expansion=4, k=32, loss="mse",
+               aux_k=0, aux_alpha=1.0 / 32, dead_window=50):
     """G1 표준 top-k SAE 설정 dict 생성 헬퍼 (overcomplete: m = expansion × D).
 
     동료 하이퍼(input=PCA64·m=128·k=16)는 원본 1536-d 기준으로 과완비가 아니라
     그대로 쓰지 않는다 — docs/steering/30_sae_g1_port_handout.md §2.1, §4 Phase C.
+
+    aux_k=0 이 기본 = aux-k loss 비활성 (기존 15 run 재현성 유지). 켜려면 512 권장.
     """
-    return {"kind": "ae", "input_dim": int(input_dim),
-            "latent_dim": int(round(expansion * input_dim)),
-            "encoder": {"type": "topk", "k": int(k)},
-            "decoder": {"type": "linear_dict"},
-            "loss": loss}
+    cfg = {"kind": "ae", "input_dim": int(input_dim),
+           "latent_dim": int(round(expansion * input_dim)),
+           "encoder": {"type": "topk", "k": int(k)},
+           "decoder": {"type": "linear_dict"},
+           "loss": loss}
+    if int(aux_k) > 0:          # 0 이면 키 자체를 넣지 않는다 (구 config 와 동일한 dict)
+        cfg.update({"aux_k": int(aux_k), "aux_alpha": float(aux_alpha),
+                    "dead_window": int(dead_window)})
+    return cfg

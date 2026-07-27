@@ -32,10 +32,12 @@ G1 판정 (§4-D3, 사전 등록):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
 import time
+import warnings
 from pathlib import Path
 
 os.environ.setdefault("OMP_NUM_THREADS", "16")
@@ -43,7 +45,29 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "16")
 
 import numpy as np
 import torch
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GroupKFold
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
+# probe v2 (2026-07-27) — G1 1차 probe 결함 3건 수정 (docs/steering/31 §5):
+#   ① 표준화 없음 + max_iter=100 → 6144-d 희소 z 에서 미수렴(ConvergenceWarning 다수).
+#      → train-split StandardScaler + max_iter 기본 1000 + episode-group CV 로 C 선택.
+#   ② state(1)/future(32)/action(16) 토큰을 한 행집합에 섞음 (노름 6배 차) → 세그먼트별 probe 병행.
+#   ③ 행 정확도만 보고 → episode 다수결 정확도 병기 (독립 표본 = episode).
+#
+# probe v3 (2026-07-27 코드리뷰) — 절차 누수·불일치 5건 수정:
+#   ④ 표준화를 train+CV fold 밖에서 한 번에 하던 것 → sklearn Pipeline(StandardScaler+LR)
+#      로 감싸 **fold train 에서만** scaler 를 fit (리뷰 #6).
+#   ⑤ 순열 null 이 train/test 라벨을 함께 섞고 별도 max_iter 를 쓰던 것 → **train 라벨만**
+#      episode 단위로 섞어 같은 Pipeline·같은 C·같은 max_iter 로 재fit 후 **진짜 test
+#      라벨**로 평가 (리뷰 #7).
+#   ⑥ 표준화 통계를 빌더 stats(다른 split 축)에서 읽던 것 → ckpt 의 stats.npz 우선 (리뷰 #1).
+#   ⑦ ckpt 의 split_col/train 지문과 대조 (리뷰 #2), 라벨↔split 호환 가드 (리뷰 #4),
+#      --window 로 record_idx 상한 통제 (리뷰 #5).
+C_GRID_DEFAULT = (0.01, 0.1, 1.0, 10.0)
+SEG_NAMES = {0: "state", 1: "future", 2: "action"}
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
@@ -95,14 +119,39 @@ def compute_z(model, X: np.ndarray, rows: np.ndarray, mu, sd, device: str, batch
 
 
 # ---------------------------------------------------------------------- probes
+def make_probe_pipeline(seed: int, max_iter: int, C: float, solver: str = "lbfgs") -> Pipeline:
+    """StandardScaler + 다항 로지스틱 (probe v3 ④ — 리뷰 #6).
+
+    z 는 top-k 후라 대부분 0 이고 살아있는 열끼리도 스케일이 크게 다르다. 표준화 없이
+    lbfgs 에 넣으면 조건수가 나빠 max_iter 안에 수렴하지 못한다 (31 §5-1 실측).
+    분산 0(dead) 열은 sklearn 이 scale=1 로 두므로 상수 0 열로 남는다.
+
+    **Pipeline 인 이유**: 표준화를 미리 전 train 행에 한 번 하면 CV fold 의 held-out 부분
+    통계가 fold train 에 새어 든다. Pipeline 으로 감싸면 `fit` 이 호출되는 행 집합에서만
+    scaler 가 fit 된다 — CV·본 fit·순열 null 이 전부 같은 절차가 된다.
+
+    기본 solver=lbfgs — 실측 3072-d/2000행에서 saga 10.3s vs lbfgs 1.1s (동일 정확도).
+    """
+    return Pipeline([
+        ("scaler", StandardScaler()),
+        ("clf", LogisticRegression(max_iter=max_iter, C=C, solver=solver,
+                                   n_jobs=(-1 if solver in ("saga", "lbfgs") else None),
+                                   random_state=seed, tol=1e-3)),
+    ])
+
+
 def fit_probe(Ztr, ytr, Zte, yte, seed: int, max_iter: int, C: float, solver: str = "lbfgs"):
-    """다항 로지스틱 probe. 기본 solver=lbfgs — 실측 3072-d/2000행에서 saga 10.3s vs
-    lbfgs 1.1s (동일 정확도). saga 는 희소·L1 이 필요할 때만."""
-    clf = LogisticRegression(max_iter=max_iter, C=C, solver=solver,
-                             n_jobs=(-1 if solver in ("saga", "lbfgs") else None),
-                             random_state=seed, tol=1e-3)
-    clf.fit(Ztr, ytr)
-    return float((clf.predict(Zte) == yte).mean()), clf
+    """probe 1회 fit (**원시 행렬 입력** — 표준화는 Pipeline 안에서 train 행만으로).
+
+    [반환] (test acc, pipeline, ConvergenceWarning 개수) — 미수렴이 결과를 만든 적이 있어
+    (31 §5-1) 경고 개수를 세서 결과 json 에 남긴다.
+    """
+    clf = make_probe_pipeline(seed, max_iter, C, solver)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ConvergenceWarning)
+        clf.fit(Ztr, ytr)
+    n_warn = sum(1 for w in caught if issubclass(w.category, ConvergenceWarning))
+    return float((clf.predict(Zte) == yte).mean()), clf, n_warn
 
 
 def chance_level(y) -> float:
@@ -110,31 +159,147 @@ def chance_level(y) -> float:
     return float(cnt.max() / cnt.sum())
 
 
-def permutation_null(Ztr, Zte, ep_tr, ep_te, ep2lab, n_perm, seed, max_iter, C,
-                     solver="lbfgs", verbose=True):
-    """**episode 단위** 라벨 순열: episode→layout 사상을 섞고 행 라벨을 다시 만든다.
+def episode_majority_acc(pred, y, ep):
+    """episode 다수결 정확도 (probe v2 ③).
 
-    행 단위 순열은 같은 episode 안의 자기상관을 깨서 null 을 과소평가한다(핸드아웃 §6-2 동형).
-    비용이 전체 런타임을 지배한다 (probe fit × n_perm) — --n-perm / --null-max-iter 로 조절.
+    행은 같은 episode 안에서 강하게 자기상관이라 행 정확도는 유효표본 수를 과대표현한다.
+    episode 별 예측 최빈값 vs 그 episode 의 라벨로 '독립 표본 단위' 정확도를 함께 보고한다.
+    """
+    eps = np.unique(ep)
+    ok = 0
+    for e in eps:
+        m = ep == e
+        vals, cnt = np.unique(pred[m], return_counts=True)
+        ok += int(vals[int(np.argmax(cnt))] == y[m][0])
+    return (float(ok / len(eps)) if len(eps) else None), int(len(eps))
+
+
+def usable_cv_folds(splits, ytr):
+    """전 클래스가 fold train 에 다 있는 fold 만 남긴다 (probe v3 — 리뷰 #6).
+
+    클래스가 빠진 fold 에서 fit 하면 그 클래스는 예측 자체가 불가능해 held-out 정확도가
+    구조적으로 깎인다 → C 비교가 fold 구성 우연에 좌우된다. 그런 fold 는 아예 뺀다.
+    [반환] (사용 가능한 fold 목록, 스킵 사유 리스트)
+    """
+    classes = set(int(v) for v in np.unique(ytr))
+    keep, skipped = [], []
+    for i, (tr, va) in enumerate(splits):
+        have = set(int(v) for v in np.unique(ytr[tr]))
+        missing = sorted(classes - have)
+        if len(have) < 2 or missing:
+            skipped.append({"fold": i, "missing_classes": missing, "n_train_classes": len(have)})
+            continue
+        keep.append((tr, va))
+    return keep, skipped
+
+
+def select_C(Ztr, ytr, ep_tr, C_grid, seed, max_iter, solver, folds=3, verbose=True):
+    """train 내부 **episode-group** K-fold CV 로 C 선택 (probe v2 ①, v3 ④).
+
+    record/행 단위 fold 는 같은 episode 가 train·val 양쪽에 들어가 누수된다 → GroupKFold.
+    각 fold 는 Pipeline 으로 fit 되므로 표준화도 fold train 안에서만 일어난다.
+    클래스가 빠진 fold 는 스킵하고, 전부 스킵되면 C=1 로 fallback + 경고.
+    동점이면 더 강한 정규화(작은 C)를 고른다(grid 오름차순 + argmax 가 첫 최대를 잡음).
+    [반환] (best_C, detail dict, 경고 수)
+    """
+    grid = [float(c) for c in C_grid]
+    n_groups = int(len(np.unique(ep_tr)))
+    k = int(min(folds, n_groups))
+    if len(grid) == 1 or k < 2:
+        return grid[0], {"folds": k, "grid": grid, "mean_acc": None,
+                         "note": "CV 생략 (C 후보 1개 또는 group 부족)"}, 0
+    gkf = GroupKFold(n_splits=k)
+    splits = list(gkf.split(Ztr, ytr, groups=ep_tr))
+    splits, skipped = usable_cv_folds(splits, ytr)
+    if not splits:
+        msg = (f"CV fold 전부 스킵 (클래스 누락) → C=1.0 fallback. 스킵 {len(skipped)}개")
+        print(f"  [cv] ⚠ {msg}", flush=True)
+        return 1.0, {"folds": k, "grid": grid, "mean_acc": None, "skipped_folds": skipped,
+                     "fallback_C": 1.0, "note": msg}, 0
+    if skipped and verbose:
+        print(f"  [cv] fold {len(skipped)}개 스킵 (클래스 누락): "
+              f"{[s['missing_classes'] for s in skipped][:3]}", flush=True)
+    warn = 0
+    means = []
+    for C in grid:
+        accs = []
+        for tr, va in splits:
+            acc, _clf, w = fit_probe(Ztr[tr], ytr[tr], Ztr[va], ytr[va],
+                                     seed, max_iter, C, solver)
+            accs.append(acc)
+            warn += w
+        means.append(float(np.mean(accs)) if accs else float("nan"))
+    best = int(np.nanargmax(means))
+    if verbose:
+        print("  [cv] " + "  ".join(f"C={c:g}:{m:.3f}" for c, m in zip(grid, means))
+              + f"  → C={grid[best]:g}", flush=True)
+    return grid[best], {"folds": k, "grid": grid, "mean_acc": means,
+                        "n_folds_used": len(splits), "skipped_folds": skipped}, warn
+
+
+def run_probe(A_tr, ytr, ep_tr, A_te, yte, ep_te, args, C=None, verbose=True):
+    """표준화된 행렬 하나에 대한 probe 1회 (C 선택 → fit → 행/episode 정확도).
+
+    [반환] (결과 dict, clf, test 예측)
+    """
+    warn = 0
+    cv = None
+    if C is None:
+        C, cv, w = select_C(A_tr, ytr, ep_tr, args.C_grid, args.seed,
+                            args.max_iter, args.solver, args.cv_folds, verbose)
+        warn += w
+    acc, clf, w = fit_probe(A_tr, ytr, A_te, yte, args.seed, args.max_iter, C, args.solver)
+    warn += w
+    pred_te, pred_tr = clf.predict(A_te), clf.predict(A_tr)
+    ep_acc, n_ep = episode_majority_acc(pred_te, yte, ep_te)
+    ep_acc_tr, n_ep_tr = episode_majority_acc(pred_tr, ytr, ep_tr)
+    res = {
+        "test_acc": acc, "train_acc": float((pred_tr == ytr).mean()),
+        "episode_test_acc": ep_acc, "n_test_episodes": n_ep,
+        "episode_train_acc": ep_acc_tr, "n_train_episodes": n_ep_tr,
+        "chance_test": chance_level(yte),
+        "n_train_rows": int(len(ytr)), "n_test_rows": int(len(yte)),
+        "C": float(C), "cv": cv, "max_iter": int(args.max_iter),
+        "n_convergence_warnings": int(warn),
+    }
+    return res, clf, pred_te
+
+
+def permutation_null(Ztr, Zte, ep_tr, ep_te, ytr_true, yte_true, n_perm, seed, max_iter, C,
+                     solver="lbfgs", verbose=True):
+    """**train episode 라벨만** 순열 → 같은 Pipeline 으로 재fit → **진짜 test 라벨**로 평가.
+
+    (probe v3 ⑤ — 리뷰 #7. 구 버전은 train·test 라벨을 같은 사상으로 함께 섞고 별도
+    --null-max-iter 를 썼다. test 라벨까지 섞으면 "라벨 사상 자체를 바꾼 세계"의 정확도가
+    되어 본 probe 와 다른 양을 재게 되고, max_iter 가 다르면 수렴도까지 달라진다.
+    올바른 귀무가설 = "train 에서 배운 것이 진짜 라벨과 무관" → train 라벨만 섞는다.)
+
+    행 단위가 아니라 **episode 단위** 순열인 이유: 행 순열은 같은 episode 안의 자기상관을
+    깨서 null 을 과소평가한다 (핸드아웃 §6-2 동형).
+    val 은 본 probe 와 동일하게 아예 등장하지 않는다 (train/test 만 사용).
+    C·max_iter 는 본 probe 가 쓴 값 그대로 (순열마다 CV 재실행은 비용이 n_perm 배).
+    [반환] (acc 배열, ConvergenceWarning 총 개수)
     """
     rng = np.random.default_rng(seed)
-    eps = np.asarray(sorted(ep2lab))
-    labs = np.asarray([ep2lab[int(e)] for e in eps])
+    eps = np.asarray(sorted({int(e) for e in ep_tr}))
+    lab_of = {int(e): int(ytr_true[np.argmax(ep_tr == e)]) for e in eps}
+    labs = np.asarray([lab_of[int(e)] for e in eps])
     accs = []
+    warn = 0
     t0 = time.time()
     for i in range(n_perm):
         perm = rng.permutation(len(labs))
         m = {int(e): int(labs[p]) for e, p in zip(eps, perm)}
         ytr = np.asarray([m[int(e)] for e in ep_tr])
-        yte = np.asarray([m[int(e)] for e in ep_te])
         if len(np.unique(ytr)) < 2:
             continue
-        acc, _ = fit_probe(Ztr, ytr, Zte, yte, 0, max_iter, C, solver)
+        acc, _clf, w = fit_probe(Ztr, ytr, Zte, yte_true, 0, max_iter, C, solver)
         accs.append(acc)
+        warn += w
         if verbose and (i + 1) % 10 == 0:
             print(f"  [null] {i+1}/{n_perm} mean={np.mean(accs):.3f} "
                   f"({time.time()-t0:.0f}s)", flush=True)
-    return np.asarray(accs)
+    return np.asarray(accs), warn
 
 
 def feature_selectivity(Z, y, min_rate: float, ratio: float, top: int):
@@ -188,10 +353,19 @@ def print_table(res: dict) -> None:
     print("\n===== G1 scene probe (라벨 = layout_id) =====")
     print(f"  클래스 {res['classes']}  chance(test) = {res['chance_test']:.3f}")
     print(f"  행: train {res['n_train_rows']}  test {res['n_test_rows']}  "
-          f"(episode 당 record {res['records_per_ep']} 균등 subsample)")
-    print(f"  {'probe':22s} {'test acc':>9s} {'train acc':>10s}")
-    print(f"  {'① SAE z':22s} {p['test_acc']:9.3f} {p['train_acc']:10.3f}")
-    print(f"  {'② 원본 X (상한)':22s} {x['test_acc']:9.3f} {x['train_acc']:10.3f}")
+          f"(episode 당 record {res['records_per_ep']} 균등 subsample"
+          + (f", window record_idx<{res['window']}" if res.get("window") else "") + ")")
+    dc = res.get("data_check") or {}
+    if dc:
+        print(f"  split_col={dc.get('split_col')} scene_heldout={dc.get('scene_heldout')} "
+              f"stats={Path(str(dc.get('stats_source'))).name if dc.get('stats_source') else '-'}")
+        for w in dc.get("warnings") or []:
+            print(f"  ⚠ {w}")
+    print(f"  {'probe':22s} {'test acc':>9s} {'train acc':>10s} {'ep다수결':>9s} {'C':>6s}")
+    print(f"  {'① SAE z':22s} {p['test_acc']:9.3f} {p['train_acc']:10.3f} "
+          f"{p['episode_test_acc']:9.3f} {p['C']:6g}  (test ep {p['n_test_episodes']})")
+    print(f"  {'② 원본 X (상한)':22s} {x['test_acc']:9.3f} {x['train_acc']:10.3f} "
+          f"{x['episode_test_acc']:9.3f} {x['C']:6g}")
     if p["null_mean"] is not None:
         print(f"  {'③ 순열 null(z)':22s} {p['null_mean']:9.3f} ± {p['null_std']:.3f}"
               f"  → z = {p['null_z']:.2f} (n={p['n_perm']})")
@@ -201,6 +375,19 @@ def print_table(res: dict) -> None:
     s = res["selectivity"]
     print(f"  ④ selective feature {s['n_selective']}/{s['n_features']} "
           f"({s['selective_frac_of_all']:.3f}, live 중 {s['selective_frac_of_live']:.3f})")
+    if res.get("per_segment"):
+        print(f"  ⑤ 세그먼트별 (scene 이 어느 토큰에 사는가)")
+        print(f"     {'seg':8s} {'토큰수':>6s} {'행(tr/te)':>15s} {'z acc':>7s} {'X acc':>7s} "
+              f"{'회복률':>7s} {'z ep':>6s}")
+        for name, b in res["per_segment"].items():
+            zp, xp = b["z_probe"], b["x_probe"]
+            rec = "None" if b["recovery_chance_corrected"] is None \
+                else f"{b['recovery_chance_corrected']:.3f}"
+            print(f"     {name:8s} {b['n_tokens']:6d} "
+                  f"{zp['n_train_rows']:7d}/{zp['n_test_rows']:<7d} {zp['test_acc']:7.3f} "
+                  f"{xp['test_acc']:7.3f} {rec:>7s} {zp['episode_test_acc']:6.3f}")
+    print(f"  수렴 경고 총 {res['n_convergence_warnings']} 건 "
+          f"(max_iter={res['max_iter']})")
     j = res["judgment"]
     print(f"  판정: {'PASS' if j['pass'] else 'FAIL'}  {j['criteria']}")
 
@@ -256,25 +443,48 @@ def main() -> None:
     ap.add_argument("--stats", type=Path)
     ap.add_argument("--meta", type=Path)
     ap.add_argument("--out", type=Path, default=None, help="결과 json 경로")
-    ap.add_argument("--label", default="layout_id", choices=["layout_id", "style_id"])
+    ap.add_argument("--label", default="layout_id",
+                    choices=["layout_id", "style_id", "scenario_seed"],
+                    help="scenario_seed(scene-matched 20클래스)는 --split-col split_episode "
+                         "와 함께 써야 한다 — scene held-out 축에서는 test 클래스가 train 에 없다")
     ap.add_argument("--records-per-ep", type=int, default=0,
                     help="episode 당 record 수 (0=auto: 최소값). 0 미만이면 균등화 끔")
+    ap.add_argument("--window", type=int, default=0,
+                    help="record_idx < N 행만 사용 (0=끔·기존 동작). 실패는 timeout 이라 "
+                         "후반 record 가 실패에만 존재 → 상태 confound 통제용. "
+                         "drawer_right 예정값 38 (리뷰 #5)")
     ap.add_argument("--n-perm", type=int, default=100)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--batch", type=int, default=8192)
-    ap.add_argument("--max-iter", type=int, default=200)
-    ap.add_argument("--null-max-iter", type=int, default=100,
-                    help="순열 null 의 probe max_iter (null 이 런타임을 지배)")
+    ap.add_argument("--max-iter", type=int, default=1000,
+                    help="probe v2: 기본 1000 (구 200 은 6144-d 에서 미수렴 — 31 §5-1)")
+    # (구 --null-max-iter 제거 — 순열 null 은 본 probe 와 **동일 절차**여야 한다. 리뷰 #7)
     ap.add_argument("--solver", default="lbfgs", choices=["lbfgs", "saga", "liblinear"])
-    ap.add_argument("--C", type=float, default=1.0)
+    ap.add_argument("--C", type=float, default=None,
+                    help="주면 CV 를 건너뛰고 이 C 로 고정 (기본 = episode-group CV 선택)")
+    ap.add_argument("--C-grid", default=",".join(f"{c:g}" for c in C_GRID_DEFAULT),
+                    help="CV 후보 C 목록 (쉼표 구분)")
+    ap.add_argument("--cv-folds", type=int, default=3, help="train 내부 GroupKFold fold 수")
+    ap.add_argument("--no-segments", action="store_true",
+                    help="세그먼트별 probe 생략 (probe v2 기본은 실행)")
     ap.add_argument("--sel-min-rate", type=float, default=0.10)
     ap.add_argument("--sel-ratio", type=float, default=3.0)
     ap.add_argument("--sel-top", type=int, default=30)
     ap.add_argument("--smoke", action="store_true", help="합성 데이터 dry-run (ckpt 불필요)")
+    ap.add_argument("--split-col", default="split",
+                    help="meta.npz 의 split 컬럼. scene-matched 빌드는 split_episode/split_scene "
+                         "동봉. ⚠ --label scenario_seed 는 split_episode 축에서만 평가 가능 "
+                         "(scene held-out 이면 test 클래스가 train 에 없음)")
+    ap.add_argument("--allow-split-mismatch", action="store_true",
+                    help="ckpt config.json 의 split_col/train 지문과 달라도 진행 (리뷰 #2). "
+                         "SAE 가 이 probe 의 test 행을 학습에 봤을 수 있다 = in-sample 위험")
     args = ap.parse_args()
+    args.C_grid = ([float(args.C)] if args.C is not None
+                   else [float(c) for c in str(args.C_grid).split(",") if c.strip()])
 
     t0 = time.time()
+    data_check: dict = {"split_col": args.split_col, "window": int(args.window)}
     if args.smoke:
         X, meta, W, k = synth(args.seed)
         mu = X[meta["split"] == 0].mean(0)
@@ -282,20 +492,52 @@ def main() -> None:
         sd = np.where(sd < 1e-6, 1.0, sd)
         cfg, src = {"m": W.shape[1], "k": k, "layer": -1, "cell": "SMOKE"}, "smoke"
     else:
-        for need in ("ckpt_dir", "x", "stats", "meta"):
+        for need in ("ckpt_dir", "x", "meta"):
             if getattr(args, need) is None:
                 raise SystemExit(f"--{need.replace('_','-')} 필요 (또는 --smoke)")
         meta_npz = np.load(args.meta, allow_pickle=False)
+        if args.split_col not in meta_npz.files:
+            raise SystemExit(f"meta 에 '{args.split_col}' 없음. 사용 가능: "
+                             f"{[k for k in meta_npz.files if k.startswith('split')]}")
         meta = {kk: meta_npz[kk] for kk in meta_npz.files
                 if meta_npz[kk].ndim == 1 and meta_npz[kk].shape[0] == len(meta_npz["split"])}
-        X = np.load(args.x)["X"]
-        st = np.load(args.stats)
-        mu, sd = st["mean"], st["std"]
+        if args.split_col != "split":                 # 선택한 축을 기본 split 자리에 올린다
+            meta["split"] = meta[args.split_col]
+        Xz = np.load(args.x)
+        X = Xz["X"]
+        # 행 지문 대조 (리뷰 #10)
+        fp_x = str(Xz["row_fingerprint"]) if "row_fingerprint" in Xz.files else None
+        fp_m = str(meta_npz["row_fingerprint"]) if "row_fingerprint" in meta_npz.files else None
+        if fp_x is not None and fp_m is not None and fp_x != fp_m:
+            raise SystemExit(f"row_fingerprint 불일치 — X={fp_x} vs meta={fp_m} "
+                             f"(다른 빌드 산출물이 섞였다)")
+        data_check["row_fingerprint"] = fp_m
+        if fp_x is None or fp_m is None:
+            print("[warn] row_fingerprint 없음 (구 빌드 산출물) — 행 정합 대조 생략", flush=True)
+        # 표준화 통계: ckpt 옆 stats.npz 우선 (학습이 실제로 쓴 통계 — 리뷰 #1)
+        ck_stats = Path(args.ckpt_dir) / "stats.npz"
+        if ck_stats.exists():
+            st = np.load(ck_stats)
+            mu, sd = st["mean"], st["std"]
+            data_check["stats_source"] = str(ck_stats)
+        elif args.stats is not None:
+            st = np.load(args.stats)
+            mu, sd = st["mean"], st["std"]
+            data_check["stats_source"] = str(args.stats)
+            print(f"[warn] ckpt 에 stats.npz 없음 (구 학습 산출물) — 빌더 stats 사용: "
+                  f"{args.stats}", flush=True)
+        else:
+            raise SystemExit(f"표준화 통계 없음: {ck_stats} 도 --stats 도 없다")
 
     if args.records_per_ep >= 0:
         sub, rpe = balanced_record_mask(meta, args.records_per_ep, args.seed)
     else:
         sub, rpe = np.ones(len(meta["split"]), bool), -1
+    # --window: record_idx < N 행만 (timeout 상태 confound 통제 — 리뷰 #5)
+    if args.window and args.window > 0:
+        sub = sub & (meta["record_idx"] < int(args.window))
+        if sub.sum() == 0:
+            raise SystemExit(f"--window {args.window} 적용 후 행 0")
 
     y_all = meta[args.label]
     ep_all = meta["episode_idx"]
@@ -310,6 +552,54 @@ def main() -> None:
     rows_te = sub & (split == 2)
     if rows_te.sum() == 0:
         raise SystemExit("test split 행 0 — split 배정 확인")
+
+    # ---- 리뷰 #4: 라벨 ↔ split 축 호환 가드 (scene held-out 여부는 실측으로 판정)
+    has_scene = "scenario_seed" in meta
+    sc_tr = {int(v) for v in meta["scenario_seed"][split == 0]} if has_scene else set()
+    sc_te = {int(v) for v in meta["scenario_seed"][split == 2]} if has_scene else set()
+    scene_heldout = bool(sc_te) and not (sc_tr & sc_te)
+    data_check["scene_heldout"] = scene_heldout
+    data_check["n_scenes_train"], data_check["n_scenes_test"] = len(sc_tr), len(sc_te)
+    warns: list[str] = []
+    if args.label == "scenario_seed" and scene_heldout:
+        raise SystemExit(
+            "라벨 scenario_seed × scene held-out split 조합 불가 — test scene 클래스가 "
+            f"train 에 하나도 없다 (train {len(sc_tr)}개 ∩ test {len(sc_te)}개 = 0). "
+            "--split-col split_episode 로 바꾸거나 --label layout_id 를 쓸 것.")
+    if args.label == "layout_id" and has_scene and not scene_heldout:
+        w = ("layout_id 라벨 × scene 공유 split — 같은 scene 이 train/test 양쪽에 있어 "
+             "layout 정확도가 'scene 암기'로 과대평가될 수 있다 (--split-col split_scene 권장)")
+        warns.append(w)
+        print(f"[warn] {w}", flush=True)
+
+    # ---- 리뷰 #2: ckpt 의 split 축·train 집합과 대조
+    tr_eps_probe = sorted({int(v) for v in ep_all[split == 0]})
+    fp_tr_probe = hashlib.sha256(
+        ",".join(str(e) for e in tr_eps_probe).encode("utf-8")).hexdigest()[:12]
+    data_check["train_episode_fingerprint_probe"] = fp_tr_probe
+    if not args.smoke:
+        ck_cfg = json.loads((Path(args.ckpt_dir) / "config.json").read_text())
+        ck_split = ck_cfg.get("split_col")
+        ck_fp = ck_cfg.get("train_episode_fingerprint")
+        data_check["ckpt_split_col"] = ck_split
+        data_check["ckpt_train_episode_fingerprint"] = ck_fp
+        bad = []
+        if ck_split is not None and ck_split != args.split_col:
+            bad.append(f"split_col: ckpt={ck_split} vs probe={args.split_col}")
+        if ck_fp is not None and ck_fp != fp_tr_probe:
+            bad.append(f"train 지문: ckpt={ck_fp} vs probe={fp_tr_probe}")
+        if ck_split is None and ck_fp is None:
+            warns.append("구 ckpt (split_col/train 지문 없음) — 대조 생략")
+            print("[warn] ckpt config.json 에 split_col/train 지문 없음 — 대조 생략", flush=True)
+        if bad:
+            msg = ("ckpt 와 probe 의 split 이 다르다 — " + " | ".join(bad) +
+                   ". SAE 가 이 probe 의 test 행을 학습에 봤을 수 있다(in-sample).")
+            if not args.allow_split_mismatch:
+                raise SystemExit(msg + " 강행하려면 --allow-split-mismatch.")
+            warns.append("ALLOWED MISMATCH: " + msg)
+            print(f"[warn] {msg} (--allow-split-mismatch 로 강행)", flush=True)
+        data_check["split_mismatch_allowed"] = bool(args.allow_split_mismatch and bad)
+    data_check["warnings"] = warns
 
     if args.smoke:
         Xs = ((X - mu) / sd).astype(np.float32)
@@ -326,20 +616,54 @@ def main() -> None:
 
     ytr, yte = y_all[rows_tr], y_all[rows_te]
     ep_tr, ep_te = ep_all[rows_tr], ep_all[rows_te]
+    seg_tr, seg_te = meta["token_seg"][rows_tr], meta["token_seg"][rows_te]
     print(f"[probe] rows train={len(ytr)} test={len(yte)} m={Z_tr.shape[1]} "
           f"classes={sorted(set(int(v) for v in y_all))}", flush=True)
 
-    acc_z, clf_z = fit_probe(Z_tr, ytr, Z_te, yte, args.seed, args.max_iter, args.C, args.solver)
-    acc_z_tr = float((clf_z.predict(Z_tr) == ytr).mean())
-    acc_x, clf_x = fit_probe(X_tr, ytr, X_te, yte, args.seed, args.max_iter, args.C, args.solver)
-    acc_x_tr = float((clf_x.predict(X_tr) == ytr).mean())
-    chance = chance_level(yte)
+    # --- probe v3 ④: 표준화는 Pipeline 안(fit 되는 행 집합)에서만 — 원시 행렬을 그대로 넘긴다
+    sel = feature_selectivity(Z_tr, ytr, args.sel_min_rate, args.sel_ratio, args.sel_top)
 
-    ep2lab = {int(e): int(y_all[ep_all == e][0]) for e in np.unique(ep_all)}
-    nulls = permutation_null(Z_tr, Z_te, ep_tr, ep_te, ep2lab, args.n_perm,
-                             args.seed, args.null_max_iter, args.C,
-                             args.solver) if args.n_perm > 0 \
-        else np.asarray([])
+    print("[probe] ① SAE z (전체 토큰)", flush=True)
+    zres, clf_z, pred_te = run_probe(Z_tr, ytr, ep_tr, Z_te, yte, ep_te, args)
+    print("[probe] ② 원본 X (상한)", flush=True)
+    xres, _clf_x, _ = run_probe(X_tr, ytr, ep_tr, X_te, yte, ep_te, args)
+    acc_z, acc_x = zres["test_acc"], xres["test_acc"]
+    chance = chance_level(yte)
+    n_warn = zres["n_convergence_warnings"] + xres["n_convergence_warnings"]
+
+    if args.n_perm > 0:
+        # 리뷰 #7: train 라벨만 순열 → 같은 C·같은 max_iter·같은 Pipeline → 진짜 test 라벨 평가
+        nulls, w = permutation_null(Z_tr, Z_te, ep_tr, ep_te, ytr, yte, args.n_perm,
+                                    args.seed, args.max_iter, zres["C"], args.solver)
+        n_warn += w
+    else:
+        nulls = np.asarray([])
+
+    # --- probe v2 ②: 세그먼트별 (state 1 / future 32 / action 16 토큰, 노름 6배 차)
+    per_segment = {}
+    if not args.no_segments:
+        for s in sorted(set(int(v) for v in np.unique(seg_tr)) & set(int(v) for v in np.unique(seg_te))):
+            name = SEG_NAMES.get(s, f"seg{s}")
+            mtr, mte = seg_tr == s, seg_te == s
+            if mte.sum() == 0 or len(np.unique(ytr[mtr])) < 2:
+                continue
+            print(f"[probe] ⑤ 세그먼트 {name} (tr {int(mtr.sum())} / te {int(mte.sum())})",
+                  flush=True)
+            zr, _c, _p = run_probe(Z_tr[mtr], ytr[mtr], ep_tr[mtr], Z_te[mte],
+                                   yte[mte], ep_te[mte], args)
+            xr, _c, _p = run_probe(X_tr[mtr], ytr[mtr], ep_tr[mtr], X_te[mte],
+                                   yte[mte], ep_te[mte], args)
+            ch = chance_level(yte[mte])
+            den = xr["test_acc"] - ch
+            per_segment[name] = {
+                "seg_id": s,
+                "n_tokens": int(np.unique(meta["token_idx"][rows_tr][mtr]).size),
+                "chance_test": ch,
+                "z_probe": zr, "x_probe": xr,
+                "recovery_chance_corrected": (float((zr["test_acc"] - ch) / den)
+                                              if den > 1e-6 else None),
+            }
+            n_warn += zr["n_convergence_warnings"] + xr["n_convergence_warnings"]
     if len(nulls):
         nm, ns = float(nulls.mean()), float(nulls.std(ddof=1))
         nz = (acc_z - nm) / ns if ns > 1e-9 else None
@@ -350,14 +674,11 @@ def main() -> None:
     recovery = float((acc_z - chance) / denom) if denom > 1e-6 else None
 
     # success 층화 (scene × success 얽힘 경고 대응)
-    pred_te = clf_z.predict(Z_te)
     succ_te = meta["success"][rows_te]
     strat = {}
     for name, m_ in (("succ_acc", succ_te == 1), ("fail_acc", succ_te != 1)):
         strat[name] = float((pred_te[m_] == yte[m_]).mean()) if m_.sum() else None
         strat[name.replace("acc", "n")] = int(m_.sum())
-
-    sel = feature_selectivity(Z_tr, ytr, args.sel_min_rate, args.sel_ratio, args.sel_top)
 
     res = {
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -368,14 +689,27 @@ def main() -> None:
                        + ("완전 공선 → 동일 분할." if collinear else "부분 공선.")),
         "scenario_seed_per_episode": seeds_per_ep,
         "layout_style_collinear": bool(collinear),
-        "records_per_ep": rpe, "n_train_rows": int(len(ytr)), "n_test_rows": int(len(yte)),
+        "records_per_ep": rpe, "window": int(args.window),
+        "data_check": data_check,
+        "n_train_rows": int(len(ytr)), "n_test_rows": int(len(yte)),
         "classes": sorted(set(int(v) for v in y_all)), "chance_test": chance,
-        "z_probe": {"test_acc": acc_z, "train_acc": acc_z_tr, "null_mean": nm,
-                    "null_std": ns, "null_z": nz, "n_perm": int(len(nulls))},
-        "x_probe": {"test_acc": acc_x, "train_acc": acc_x_tr},
+        "probe_version": 3,
+        "probe_v2_note": ("표준화(train 통계 StandardScaler) + max_iter 기본 1000 + "
+                          "episode-group CV 로 C 선택 + 세그먼트별 probe + episode 다수결 "
+                          "정확도. 구 probe(표준화 없음·max_iter 200·C=1 고정)와 수치 비교 시 "
+                          "주의 — docs/steering/31 §5-1."),
+        "probe_v3_note": ("표준화를 Pipeline 안으로(CV fold train 에서만 fit) + 순열 null 은 "
+                          "train 라벨만 섞어 동일 절차로 재fit 후 진짜 test 라벨 평가 + "
+                          "ckpt stats/split 대조 + --window. null_z 는 v2 와 직접 비교 불가."),
+        "z_probe": {**zres, "null_mean": nm, "null_std": ns, "null_z": nz,
+                    "n_perm": int(len(nulls))},
+        "x_probe": xres,
         "recovery_chance_corrected": recovery,
+        "per_segment": per_segment,
         "stratified": strat,
         "selectivity": sel,
+        "n_convergence_warnings": int(n_warn),
+        "max_iter": int(args.max_iter),
         "elapsed_sec": round(time.time() - t0, 1),
     }
     res["judgment"] = judge(res, args)

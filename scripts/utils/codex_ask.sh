@@ -74,10 +74,11 @@ case "$mode" in
     inst="${1:-}"
     if [[ -n "$inst" ]]; then
       [[ -f "$inst" ]] || die "instructions 파일 없음: $inst"
-      # codex 0.144.x 실증(2026-07-15): PROMPT 는 stdin '-' 미지원 위치 인자이며
-      # --base/--commit 과는 동시 사용 불가(clap conflict) — uncommitted 에서만 허용.
-      [[ "$target" == uncommitted ]] || die \
-        "codex 0.144.x 제약: --base/--commit 리뷰는 instructions 동시 사용 불가 — 생략하라"
+      # codex 0.145.0 실증(2026-07-27): --uncommitted/--base/--commit 전부 PROMPT 와
+      # clap conflict — scope 플래그 있는 리뷰엔 instructions 를 줄 수 없다.
+      # (0.144.x 에선 uncommitted+PROMPT 허용이었음 — 업그레이드 재검증에서 재발 확인.)
+      # instructions 가 필요하면 ask 레인에 focus+diff 를 인라인으로 넣어라.
+      die "codex 0.145.0 제약: scope 리뷰는 instructions 동시 사용 불가 — 생략하거나 ask 레인 사용"
       [[ "$(head -c1 "$inst")" != "-" ]] || die "instructions 파일은 '-' 로 시작 금지"
       argv+=("$(cat "$inst")")
     fi

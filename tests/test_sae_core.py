@@ -174,7 +174,154 @@ def test_synthetic_sparse_dictionary_recovery():
     assert dead_fraction(z) < 1.0
 
 
-# ---------------------------------------------------------------- (v) scipy 금지
+# ---------------------------------------------------------------- (v) aux-k loss
+def _dead_prone_data(n=6000, D=32, m0=256, k0=4, seed=11):
+    """참 사전의 **모든** 열이 쓰이는 희소 데이터.
+
+    이렇게 해야 dead feature 가 '최적해라서 안 쓰이는 열'이 아니라 순수한 최적화 실패가
+    된다 — aux-k 가 고치라고 만들어진 그 병리. (참 원자보다 사전이 크면 dead 가 정상이라
+    aux-k 를 켜면 오히려 재구성이 나빠지는 게 맞다.)
+    """
+    rng = np.random.default_rng(seed)
+    A = rng.normal(size=(D, m0))
+    A /= np.linalg.norm(A, axis=0, keepdims=True)
+    S = np.zeros((n, m0), np.float32)
+    for i in range(n):
+        S[i, rng.choice(m0, k0, replace=False)] = rng.uniform(1.0, 2.0, k0)
+    return (S @ A.T).astype(np.float32)
+
+
+def test_aux_k_zero_is_bit_identical_to_legacy_path():
+    """aux_k=0 이면 손실 값이 기존 경로와 **완전히 동일**하고 버퍼도 안 생긴다.
+
+    (기존 15 run 의 재현성이 aux-k 도입으로 깨지지 않는다는 회귀 고정.)
+    """
+    set_seed(0)
+    D, m, k = 12, 48, 4
+    legacy = BaseAE(EncoderTopK(D, m, k), DecoderLinearDict(m, D), loss="mse")
+    set_seed(0)
+    withzero = BaseAE(EncoderTopK(D, m, k), DecoderLinearDict(m, D), loss="mse", aux_k=0)
+
+    x = torch.randn(64, D)
+    assert torch.equal(legacy.loss(x), withzero.loss(x))
+    # 버퍼 미등록 → state_dict 키가 기존과 같다 (구 체크포인트 strict 로드 유지)
+    assert "steps_since_active" not in dict(withzero.named_buffers())
+    assert set(legacy.state_dict()) == set(withzero.state_dict())
+    # sae_config 도 aux_k=0 이면 키를 넣지 않는다
+    assert "aux_k" not in sae_config(D, expansion=2, k=k)
+    assert sae_config(D, expansion=2, k=k, aux_k=8)["aux_k"] == 8
+
+
+@pytest.mark.parametrize("seed", [0, 1])
+def test_aux_k_reduces_dead_features(seed):
+    """aux-k 를 켜면 같은 seed·같은 데이터에서 dead feature 비율이 줄어든다.
+
+    실측(seed 0/1/2): dead 0.16~0.26 → 0.055, held-out R² 도 조금 올라간다.
+    aux_k 는 사전 크기 대비 비율이 중요하다 — m=256 에 16 (≈6%) 은 실험용 512/6144(8%)와
+    같은 대역. m 의 25% 를 넘게 잡으면 rarely-firing feature 까지 잔차 재구성으로 끌려가
+    오히려 dead 가 늘었다(실측 aux_k=64/m=256: 0.23→0.28).
+    """
+    D, m0, k = 32, 256, 4
+    X = _dead_prone_data(D=D, m0=m0, k0=k)
+    m, n_tr = m0, 4800
+
+    def run(aux_k):
+        set_seed(seed)
+        cfg = sae_config(D, expansion=m / D, k=k, aux_k=aux_k, aux_alpha=1 / 32,
+                         dead_window=25)
+        model = build_model(cfg)
+        train_sae(model, X[:n_tr], X[n_tr:], epochs=30, patience=30, min_epochs=30,
+                  batch_size=256, lr=3e-3, device="cpu", seed=seed, verbose=False)
+        return model, dead_fraction(encode_all(model, X[:n_tr], batch_size=1024))
+
+    m_off, dead_off = run(0)
+    m_on, dead_on = run(16)
+    assert dead_off > 0.1, f"기준 조건이 dead 를 충분히 만들지 못했다: {dead_off:.3f}"
+    assert dead_on < dead_off, f"aux-k 가 dead 를 못 줄였다: {dead_off:.3f} → {dead_on:.3f}"
+    # aux-k 를 켜도 재구성이 망가지면 안 된다 (보조손실이 주 목적을 잡아먹지 않았는지)
+    with torch.no_grad():
+        xt = torch.as_tensor(X[n_tr:])
+        r2 = [1.0 - float(((xt - mm.reconstruct(xt)) ** 2).sum()
+                          / ((xt - xt.mean(0)) ** 2).sum()) for mm in (m_off, m_on)]
+    assert r2[1] >= r2[0] - 0.02, f"재구성 R²: off={r2[0]:.3f} on={r2[1]:.3f}"
+
+
+def test_aux_k_keeps_dictionary_unit_norm():
+    """aux-k 학습 후에도 유효 사전 열 노름이 1 (decode_nobias 경로도 정규화를 통과)."""
+    D, m, k = 32, 128, 4
+    X = _dead_prone_data(D=D, m0=m, k0=k, n=1500)
+    set_seed(0)
+    model = build_model(sae_config(D, expansion=m / D, k=k, aux_k=8, dead_window=5))
+    train_sae(model, X[:1200], X[1200:], epochs=25, patience=25, min_epochs=25,
+              batch_size=128, lr=3e-3, device="cpu", seed=0, verbose=False)
+    norms = model.dec.dictionary().norm(dim=0)
+    assert torch.allclose(norms, torch.ones(m), atol=1e-5)
+    # 편향 없는 aux 재구성도 같은 단위노름 사전을 쓴다
+    h = torch.zeros(4, m)
+    h[:, 0] = 1.0
+    assert torch.allclose(model.dec.decode_nobias(h)[0],
+                          model.dec.dictionary()[:, 0], atol=1e-6)
+
+
+def _force_dead(model, dead_idx, m):
+    """steps_since_active 를 직접 세팅해 특정 feature 만 dead 로 만든다 (테스트 통제용)."""
+    model.steps_since_active.zero_()
+    model.steps_since_active[list(dead_idx)] = model.dead_window + 1
+
+
+def test_aux_k_selected_values_pass_through_relu():
+    """리뷰 #8 — aux 후보는 **사전활성**으로 고르되 **값에는 ReLU**를 적용한다.
+
+    (OpenAI TopK-SAE 공식 구현 정합: dead 마스킹된 pre-act 에 TopK 활성화(topk+ReLU).)
+    음의 사전활성을 그대로 계수로 쓰면 그 dead feature 가 사전 열의 **반대 방향**으로
+    잔차를 맞추게 된다 — 소생이 아니라 부호 반전 학습.
+
+    통제: dead feature 4개의 사전활성을 전부 음수로 고정 → h_aux 가 통째로 0 →
+    aux 손실 = 0.5·Σe² (잔차를 하나도 설명하지 못함). pre-ReLU 구현이었다면 음수 계수로
+    e 를 부분 설명해 이 값보다 **작아진다**.
+    """
+    set_seed(0)
+    D, m, k = 4, 8, 2
+    model = BaseAE(EncoderTopK(D, m, k), DecoderLinearDict(m, D), loss="mse",
+                   aux_k=4, aux_alpha=1 / 32, dead_window=5)
+    with torch.no_grad():                        # dead 4개는 항상 음의 사전활성
+        model.enc.net.weight[4:].zero_()
+        model.enc.net.bias[4:] = -10.0
+    model.eval()                                 # 카운터 갱신 없이 아래 세팅을 유지
+    _force_dead(model, range(4, m), m)
+
+    x = torch.randn(16, D)
+    c = model.enc(x)
+    x_hat, _lv = model.dec(c)
+    e = (x - x_hat).detach()
+    aux = model._aux_loss(x, x_hat, c)
+
+    expected_zero_code = 0.5 * (e ** 2).sum(-1).mean()
+    assert torch.allclose(aux, expected_zero_code, atol=1e-6), (
+        f"음의 사전활성이 aux 재구성에 계수로 들어갔다: aux={float(aux):.6f} "
+        f"vs ReLU 기대값={float(expected_zero_code):.6f}")
+
+    # 대조군: dead feature 하나가 **양의** 사전활성이면 그 값이 그대로 계수로 쓰인다
+    with torch.no_grad():
+        model.enc.net.bias[4] = 3.0
+    c = model.enc(x)
+    x_hat, _lv = model.dec(c)
+    e = (x - x_hat).detach()
+    h_aux = torch.zeros(len(x), m)
+    h_aux[:, 4] = 3.0                            # ReLU(3.0)=3.0, 나머지 dead 는 ReLU(-10)=0
+    e_hat = model.dec.decode_nobias(h_aux)
+    assert torch.allclose(model._aux_loss(x, x_hat, c),
+                          0.5 * ((e - e_hat) ** 2).sum(-1).mean(), atol=1e-6)
+
+
+def test_aux_k_requires_topk_components():
+    """조밀 AE 조합에서 aux_k>0 을 주면 조용히 무시하지 않고 막는다."""
+    from src.sae.models import Decoder, Encoder      # noqa: PLC0415
+    with pytest.raises(ValueError):
+        BaseAE(Encoder(8, 4), Decoder(4, 8), loss="mse", aux_k=16)
+
+
+# ---------------------------------------------------------------- (vi) scipy 금지
 def test_no_scipy_import_in_src_sae():
     """src/sae 어디에도 scipy import 가 없어야 한다.
 
