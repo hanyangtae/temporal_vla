@@ -224,6 +224,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--clean-dir", required=True, help="clean baseline 캡처 pkl 디렉토리")
+    ap.add_argument("--clean-glob", default="task*--ep*--succ1.pkl",
+                    help="clean 측 pkl glob. 기본 = 성공만(ppcc 선례). clean-succ 표본이 빈약한 "
+                         "cell 은 'task*--ep*--succ*.pkl' 로 전 라벨 참고 fit 을 따로 산출해 "
+                         "clean 실패 rollout 이 clean 분포를 오염하는지 비교한다 (exp5-2 mixer).")
     ap.add_argument("--capture-root", required=True, help="섭동 캡처 루트 (<cfg>/raw_rollouts/...)")
     ap.add_argument("--record-start", required=True, help="perturbed 시간분리 절단 tsv")
     ap.add_argument("--configs", default="", help="콤마 리스트 (기본 = capture-root 전부)")
@@ -248,11 +252,11 @@ def main() -> int:
         cfgs = sorted(d.name for d in cap_root.iterdir() if d.is_dir())
     held = {"even": "odd", "odd": "even", "all": "all"}[args.split]
 
-    clean_paths = sorted(Path(args.clean_dir).glob("task*--ep*--succ1.pkl"))
+    clean_paths = sorted(Path(args.clean_dir).glob(args.clean_glob))
     if not clean_paths:
-        raise SystemExit(f"clean pkl 0개: {args.clean_dir}")
+        raise SystemExit(f"clean pkl 0개: {args.clean_dir}/{args.clean_glob}")
     out_root = Path(args.out_root)
-    print(f"clean-succ {len(clean_paths)} pkl · cfgs={cfgs} · pathway={args.pathway} "
+    print(f"clean {len(clean_paths)} pkl (glob={args.clean_glob}) · cfgs={cfgs} · pathway={args.pathway} "
           f"· layers={layers} · fit split={args.split} held={held} "
           f"· seg_mode={'n/a(pooled)' if is_vl else args.seg_mode}")
 
@@ -288,7 +292,9 @@ def main() -> int:
                 "setpoint_s": s, "dprime_fit": dprime,
                 "token_layout": (None if is_vl
                                  else {"T": T_TOKENS, "segments": [list(x) for x in SEGMENTS]}),
-                "clean_dir": str(args.clean_dir), "capture_root": str(args.capture_root),
+                "clean_dir": str(args.clean_dir), "clean_glob": args.clean_glob,
+                "n_pkl_clean_total": len(clean_paths),
+                "capture_root": str(args.capture_root),
                 "record_start": str(args.record_start),
             }
             if is_vl:
