@@ -198,6 +198,35 @@ clean baseline **60판을 capture ON 재수집**(→ `baseline_cap/`, 48 succ). 
 **불록 해제**: clean-succ 로컬 축(exp4-1 rescue 의 올바른 기준선), state-matched Δh 방향
 분석, "perturbed-succ vs clean-succ" 오염 감시(24b §6). 다음 분석에서 활용.
 
+## 10. 추록 (07-27) — clean vs perturbed: perturbation별·layer별 차이/분리
+
+`clean_vs_perturbed_probe.py`, clean = baseline_cap succ 48 / perturbed = config별 48 (전 라벨).
+지표 2종: **paired Δonset** = 같은 episode record-정렬, 섭동 직후 6 record 의 ‖h_p−h_c‖/‖h_c‖
+중앙값 (P1/P2 는 trigger 이전 bitwise 동일 검증 → 이 값 전체가 인과적 섭동 효과; G1 은 EE
+이동으로 state 정렬 불가 → 해당 없음) / **분리 AUROC** = episode-level, 방향 짝수 ep fit →
+홀수 ep 평가(held-out), perturbed 는 시간분리 절단 적용.
+
+| config | 지표 | L0 | L2 | L4 | L8 | L10 | L12 | L15 | VL |
+|---|---|---|---|---|---|---|---|---|---|
+| c1_s200 | AUROC | .70 | .73 | .78 | **.96** | **.99** | **1.00** | .97 | **.99** |
+| | Δonset | .023 | .025 | .029 | .043 | .049 | .057 | .071 | .056 |
+| g1_x015 | AUROC | .70 | .70 | .73 | .79 | .80 | .79 | .82 | .75 |
+| p1_d003 | AUROC | .88 | .87 | .91 | **.98** | **.98** | **.98** | .97 | .91 |
+| | Δonset | .011 | .012 | .014 | .018 | .020 | .025 | .032 | .028 |
+| p2_f040d2 | AUROC | .83 | .84 | .86 | **.96** | **.97** | **.99** | .98 | **.98** |
+| | Δonset | .022 | .022 | .023 | .033 | .040 | .051 | .060 | .048 |
+
+판정 (diagnostic evidence):
+1. **모든 perturbation 이 activation 을 실제로 바꿈** — 즉발 Δ가 layer 깊이에 **단조 증폭**
+   (L0 1–2% → L15 3–7%). 크기 서열 C1 > P2 > P1.
+2. **base 와의 분리는 L8 이상 깊은 층에서 형성** — C1/P1/P2 는 L8–L15 에서 AUROC 0.96–1.00,
+   얕은 층(L0–L4)은 0.70–0.91. VL 은 C1(0.99)·P2(0.98)에서 특히 강함 (C1 은 관측 섭동이
+   VL 에 직접 닿는 구조와 정합). exp4-1 전달 layer(8·12) 선택과 정합.
+3. **G1 만 전 층 0.70–0.82 로 약함** — 초기 EE 위치만 다르고 이후 closed-loop 이 정상 복귀
+   + perturbed 의 62%가 성공이라 clean-succ 와 상태가 겹침 (섭동 서명이 지속형이 아님).
+4. caveat: AUROC 는 clean-succ vs perturbed(전 라벨)라 "섭동 서명"과 "실패 상태(dwell)"가
+   혼합 — paired Δonset(같은 ep·같은 창, dwell 무관)이 그 통제를 보완하는 상보 지표.
+
 ## 부록 — 재현 경로
 
 - runbook: `scripts/safe/groot_n15/robocasa/steer/induced/README.md`
