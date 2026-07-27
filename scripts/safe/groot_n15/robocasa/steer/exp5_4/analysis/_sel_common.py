@@ -125,7 +125,8 @@ def score_select(scores, Y, eval_seeds=None, ascending=True):
     chosen = np.argmin(vv, axis=1)
     worst = np.argmax(np.where(ok, v, -np.inf), axis=1)
     rows = np.arange(S)
-    valid = ok.any(1)
+    # 후보 중 하나라도 점수가 결측이면 그 scene 은 비교 불가 → 제외 (부분 후보 비교 금지)
+    valid = np.isfinite(v[:, es]).all(1)
     return dict(top1=Y[rows, chosen], worst1=Y[rows, worst], valid=valid,
                 base=Y[:, es].mean(1), chosen=chosen)
 

@@ -146,11 +146,13 @@ def main():
                     arr.append(dict(fold=fname, **st, p_exact_pb=p_pb, p_seedperm=p_sp))
                 d = float(np.mean([x["delta"] for x in arr]))
                 tag = "낮은쪽선택" if asc else "높은쪽선택"
+                cov_ok = all(x["n_scene"] == S for x in arr)
                 cell_out["baselines"][f"{bname}|{tag}"] = dict(
-                    delta_pooled=d, folds=arr,
+                    delta_pooled=d, folds=arr, coverage_ok=cov_ok,
                     deployable=bool(bname.startswith("act_norm") or bname in DEPLOYABLE),
                     negative_control=bool(bname == "seed_only"))
-                print(f"  [baseline] {bname:22} {tag}  Δ̂(fold평균) {d:+.3f}  "
+                print(f"  [baseline] {bname:22} {tag}  Δ̂(fold평균) {d:+.3f}"
+                      f"{'' if cov_ok else ' [커버리지부족 판정제외]'}  "
                       + " ".join(f"{x['fold']}:{x['delta']:+.3f}"
                                  f"(p_ex{x['p_exact_pb']:.3f}/p_sp{x['p_seedperm']:.3f})"
                                  for x in arr))
@@ -160,7 +162,7 @@ def main():
         learned = [cell_out["folds"][f"L{Lp}_{f}"]["delta"] for f, _ in folds]
         learned_pooled = float(np.mean(learned))
         dep = {k: v["delta_pooled"] for k, v in cell_out["baselines"].items()
-               if v["deployable"]}
+               if v["deployable"] and v["coverage_ok"]}
         best_b, best_v = (max(dep.items(), key=lambda kv: kv[1]) if dep else (None, float("nan")))
         verdict = ("중단권고: prospective Δ̂ ≤ 0" if learned_pooled <= 0 else
                    f"중단권고: 배포가능 baseline({best_b}) 이하" if dep and learned_pooled <= best_v

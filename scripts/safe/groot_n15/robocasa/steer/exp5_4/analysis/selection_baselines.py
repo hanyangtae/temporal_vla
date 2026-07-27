@@ -58,7 +58,7 @@ def eval_scores(name, sc, Y, folds, ascending, perms):
         rows.append(dict(fold=fname, **st, p_exact_pb=float(p), p_seedperm=psp))
         deltas.append(st["delta"])
     return dict(name=name, ascending=ascending, delta_pooled=float(np.mean(deltas)),
-                folds=rows)
+                folds=rows, n_scene_min=int(min(r["n_scene"] for r in rows)))
 
 
 def main():
@@ -167,7 +167,8 @@ def main():
 
             best_l = max((e for e in rows if e.get("kind") == "learned"),
                          key=lambda e: e["delta_pooled"], default=None)
-            best_d = max((e for e in rows if e.get("kind") == "deployable"),
+            best_d = max((e for e in rows if e.get("kind") == "deployable"
+                          and e.get("n_scene_min", S) == S),
                          key=lambda e: e["delta_pooled"], default=None)
             if best_l and best_d:
                 win = best_l["delta_pooled"] > best_d["delta_pooled"]
