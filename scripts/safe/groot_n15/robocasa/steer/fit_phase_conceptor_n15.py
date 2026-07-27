@@ -106,13 +106,45 @@ def carve_5phase(pkl_path, phases: list[str], w: int) -> list[str]:
     return out
 
 
+# 길이통제 cap (모듈 전역 — --length-control 로 채워지고, 미사용 시 빈 dict = 구 동작)
+# setM(fit_mean_diff.phase_dwell_caps)과 **동일 규약**: phase 별 성공 dwell 의 ceil(μ+1σ),
+# global 은 성공 episode record 수의 ceil(μ+1σ). 2026-07-23 사용자 지시로 정합.
+LENGTH_CAPS: dict = {}
+
+
+def compute_length_caps(rolls, groups) -> dict:
+    """성공 rollout 기준 길이통제 cap. phase 는 dwell, global 은 episode record 수.
+
+    실패는 phase 안에서 오래 머무는 경향이라(=timeout 계열) 무제한 pooling 은 실패
+    공분산을 긴 dwell 이 지배한다 — succ/fail 대비에 길이가 섞이는 걸 막는 통제.
+    """
+    caps = {}
+    for g in groups:
+        if g == "global":
+            lens = [len(r["phases"]) for r in rolls if r["success"] == 1]
+        else:
+            lens = [sum(1 for p in r["phases"] if p == g) for r in rolls if r["success"] == 1]
+        lens = [x for x in lens if x > 0]
+        if lens:
+            caps[g] = int(np.ceil(np.mean(lens) + np.std(lens)))
+    return caps
+
+
 def _roll_records(r, phase, layer_key):
-    """rollout 1개의 (phase, layer) record 벡터 목록. phase='global'이면 전 record."""
+    """rollout 1개의 (phase, layer) record 벡터 목록. phase='global'이면 전 record.
+
+    LENGTH_CAPS 가 설정돼 있으면 해당 group 의 cap 개까지만 (앞에서부터) 자른다 —
+    setM 의 phase 별 dwell-cap 과 같은 규약.
+    """
     if phase == "global":
         if layer_key == "VL":
-            return list(r["vl"]) if r["vl"] is not None else []
-        return list(r["dit"][:, layer_key, :])
-    return list(phase_records(r, phase, layer_key))
+            recs = list(r["vl"]) if r["vl"] is not None else []
+        else:
+            recs = list(r["dit"][:, layer_key, :])
+    else:
+        recs = list(phase_records(r, phase, layer_key))
+    cap = LENGTH_CAPS.get(phase)
+    return recs[:cap] if cap else recs
 
 
 def gather_class_records(rolls, phase, layer_key, success):
@@ -375,6 +407,10 @@ def main():
                     help="fit 표본 manifest tsv (pkl_path\\tlabel[\\tscene], # 주석 허용). 지정 시 "
                          "--cell glob 대신 이 목록만 사용하고 label 이 pkl 내장 episode_success 를 "
                          "override (corrected/위약 라벨 주입 경로). 경로는 절대 또는 repo-root 상대.")
+    ap.add_argument("--length-control", action="store_true",
+                    help="group 별 길이통제: 성공 rollout 의 (phase dwell | global record 수) "
+                         "ceil(μ+1σ) 로 record 절단. setM(fit_mean_diff.phase_dwell_caps) 과 "
+                         "동일 규약 — 실패의 긴 dwell 이 공분산을 지배하는 confound 차단.")
     ap.add_argument("--carve-window", type=int, default=0,
                     help=">0 이면 5-phase carving: event 직전 W record 를 pre-grasp/pre-place 로 재라벨")
     ap.add_argument("--record-start-manifest", default=None,
@@ -562,6 +598,10 @@ def main():
     else:
         alphas = [float(x) for x in args.alphas.split(",")] if args.alphas else DEFAULT_ALPHAS
     groups = args.groups.split(",")
+    if args.length_control:
+        LENGTH_CAPS.update(compute_length_caps(rolls, groups))
+        print(f"[length-control] cap(성공 ceil(μ+1σ)) = {LENGTH_CAPS} "
+              "(setM phase_dwell_caps 와 동일 규약)", flush=True)
     cell_id = args.cell.split("/")[-1]
     out_root = Path(args.out_dir) if args.out_dir else run_dir.parent / "analysis" / "conceptor_steering_n15" / cell_id
     n_s = sum(r["success"] for r in rolls); n_f = len(rolls) - n_s
@@ -776,6 +816,8 @@ def main():
     # 사용 표본 기록 (검증 가능성: split 교집합 게이트가 content 서명으로 대조)
     inputs = {"cell": cell_id, "manifest": args.manifest, "min_per_class_eps": args.min_per_class,
               "record_start_manifest": args.record_start_manifest,
+              "length_control": bool(args.length_control),
+              "length_caps": dict(LENGTH_CAPS) or None,
               "episodes": [{"pkl": str(p), "label": int(r["success"]),
                             "scene": r.get("scene", ""), "sig": _content_sig(p),
                             "fit_start_record": int(r.get("fit_start_record", 0) or 0),

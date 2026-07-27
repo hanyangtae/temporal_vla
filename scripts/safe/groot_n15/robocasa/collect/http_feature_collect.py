@@ -242,12 +242,15 @@ class N15LerobotHttpFeatureClient(VLAClient):
         if self.task_description is None:
             self.task_description = instruction
         # 캡처 모드는 구 배선(len(records)) 그대로, no-features 는 n_calls 로 동일 산법.
-        call_inference_seed = (
-            None
-            if self.inference_seed is None
-            else self.inference_seed
-            + (self.n_calls if self.no_features else len(self.records))
-        )
+        calls_done = self.n_calls if self.no_features else len(self.records)
+        seed_base = self.inference_seed
+        # noise_resample arm (exp4-1): K번째 record 부터 offset 가산 → denoise noise 재샘플
+        # (steering 없음 — 방향 없는 개입 대조. offset 고정이라 결정적.)
+        if (seed_base is not None
+                and getattr(self, "reseed_from_call", None) is not None
+                and calls_done >= self.reseed_from_call):
+            seed_base += self.reseed_offset
+        call_inference_seed = None if seed_base is None else seed_base + calls_done
         if self.no_features:
             # /act 는 groot 16-큐 팝(16콜당 1추론)이라 캡처 경로와 실행 단위가 어긋남
             # (Gate 2 치명#1) — skip_features 로 /act_with_features 의 chunk 추론 경로를
@@ -341,6 +344,27 @@ def _post_steering_phase(server: str, phase: str) -> bool:
     return bool(body.get("gated", False))
 
 
+def _get_serve_identity(server: str) -> dict:
+    """serve /health 에서 GPU·boot 지문을 1회 조회 (exp4-1 arm×GPU confound 사후 감사용).
+
+    실패해도 수집은 계속한다 (지문 없음으로 기록) — steering 무결성과 달리 감사 메타라
+    fail-loud 대상이 아님.
+    """
+    import json as _json
+    import urllib.request as _rq
+
+    try:
+        with _rq.urlopen(f"{server.rstrip('/')}/health", timeout=5) as resp:
+            body = _json.loads(resp.read().decode() or "{}")
+        return {
+            "serve_gpu": body.get("serve_gpu"),
+            "serve_boot_id": body.get("boot_id"),
+            "serve_steering": body.get("steering"),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"serve_gpu": None, "serve_boot_id": None, "serve_health_error": str(exc)}
+
+
 def _find_latest_video(video_dir: Path) -> Path | None:
     videos = sorted(video_dir.glob("*.mp4"), key=lambda path: path.stat().st_mtime)
     return videos[-1] if videos else None
@@ -355,6 +379,56 @@ def _append_summary(summary_path: Path, task_id: int, task: str, episode_idx: in
             f"{task_id}\t{task}\t{episode_idx}\t"
             f"{'' if seed is None else seed}\t0\t{pkl_path}\n"
         )
+
+
+def _action_tremor_summary(
+    traj: list, steer_on: list, t0_record: "int | None"
+) -> "dict[str, Any] | None":
+    """개입(steering)이 액션 궤적에 주는 떨림(jitter) 진단 — record 해상도.
+
+    traj = record 별 groot action 벡터(`_extract_groot_action_vector`, 첫 실행 스텝) → [R, D].
+    replan(get_action) 단위로 명령이 얼마나 튀는지를 잰다:
+      speed_r = ‖a_r − a_{r-1}‖   (record 간 명령 변화율)
+      jerk_r  = ‖Δ³a_r‖           (3차 차분 = 고주파 떨림 대리지표)
+    base(무개입/개입 전)와 개입 이후를 나눠 저장 → offline 에서 같은 episode 의 base arm
+    (noise_resample/A0) 대비 개입 후 떨림 증가량(Δjerk)을 비교한다. steer_on 은 record 별
+    개입 활성 flag (steer_from_record, 없으면 reseed_from_record 기준). 판정에는 무영향,
+    사이드카에 진단 필드만 추가한다.
+    """
+    if not traj or len(traj) < 4:
+        return None
+    A = np.asarray(traj, dtype=np.float64)                                   # [R, D]
+    R, D = A.shape[0], (A.shape[1] if A.ndim == 2 else 1)
+    if A.ndim == 1:
+        A = A.reshape(R, 1)
+    speed = np.concatenate([[0.0], np.linalg.norm(np.diff(A, axis=0), axis=1)])          # [R]
+    jerk = np.concatenate([[0.0, 0.0, 0.0], np.linalg.norm(np.diff(A, n=3, axis=0), axis=1)])
+    steer = np.asarray(steer_on, dtype=bool)[:R]
+
+    def _agg(mask: "np.ndarray") -> "dict[str, Any] | None":
+        m = np.asarray(mask, dtype=bool)
+        if int(m.sum()) < 2:
+            return None
+        return {
+            "n": int(m.sum()),
+            "speed_mean": float(speed[m].mean()),
+            "speed_p95": float(np.percentile(speed[m], 95)),
+            "jerk_mean": float(jerk[m].mean()),
+            "jerk_p95": float(np.percentile(jerk[m], 95)),
+            "jerk_max": float(jerk[m].max()),
+        }
+
+    return {
+        "dim": int(D),
+        "n_records": int(R),
+        "t0_record": (int(t0_record) if t0_record is not None else None),
+        # record 해상도 배열 — 개입 전후 정렬·base arm 대조를 offline 에서 하기 위한 원자료
+        "speed": [round(float(x), 6) for x in speed],
+        "jerk": [round(float(x), 6) for x in jerk],
+        # 개입 활성 여부로 split (base arm 은 pre 만; steered arm 은 post 가 개입 구간)
+        "pre_intervention": _agg(~steer),
+        "post_intervention": _agg(steer),
+    }
 
 
 def _resolve_task_dir(root_or_task_dir: Path, task: str) -> Path:
@@ -507,6 +581,53 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--steer-from-record",
+        type=int,
+        default=None,
+        metavar="K",
+        help=(
+            "exp4-1 oracle latch: inference 직전 record 수(progress_before)>=K 이면 "
+            "steering ON POST, 아니면 'off' — K번째 record 부터 episode 끝까지. "
+            "POST 값은 --steer-phase-mode 참조. --gated-steering 과 상호배타."
+        ),
+    )
+    parser.add_argument(
+        "--steer-phase-name",
+        default=None,
+        metavar="NAME",
+        help=(
+            "latch ON 시 POST 할 phase 이름 (기본 'steer'). LOO arm 은 ep{E} 를 넘겨 "
+            "serve 의 phase registry 에 등록된 per-episode 연산자를 스위칭 — serve 재기동 0회."
+        ),
+    )
+    parser.add_argument(
+        "--steer-phase-mode",
+        choices=("global", "current"),
+        default="global",
+        help=(
+            "latch ON 시 POST 할 phase: global='steer' 고정(permanent arm — serve 는 "
+            "phase 디렉토리 steer 하나) | current=라벨러의 현재 phase 명(gated arm — "
+            "serve 는 phase 별 NPZ 등록, 미등록 phase 는 identity)."
+        ),
+    )
+    parser.add_argument(
+        "--reseed-from-record",
+        type=int,
+        default=None,
+        metavar="K",
+        help=(
+            "noise_resample arm: K번째 record 부터 inference_seed 에 --reseed-offset 을 "
+            "더해 denoise noise 를 재샘플 (steering 없음 — 방향 없는 개입 대조). "
+            "결정적(offset 고정)."
+        ),
+    )
+    parser.add_argument(
+        "--reseed-offset",
+        type=int,
+        default=500000,
+        help="--reseed-from-record 의 seed offset (사전등록 고정값)",
+    )
+    parser.add_argument(
         "--n_action_steps",
         "--n-action-steps",
         dest="n_action_steps",
@@ -592,8 +713,20 @@ def run() -> dict[str, Any]:
     )
     if getattr(args, "attn_only_records", False) and getattr(args, "no_features", False):
         raise ValueError("--attn-only-records 와 --no-features 는 동시 사용 불가")
+    steer_from_record = getattr(args, "steer_from_record", None)
+    if steer_from_record is not None and getattr(args, "gated_steering", False):
+        raise ValueError("--steer-from-record 와 --gated-steering 은 상호배타 (latch vs phase-gated)")
+    if steer_from_record is not None and steer_from_record < 0:
+        raise ValueError(f"--steer-from-record 는 음수 불가: {steer_from_record}")
+    reseed_from_record = getattr(args, "reseed_from_record", None)
+    if reseed_from_record is not None and steer_from_record is not None:
+        raise ValueError("--reseed-from-record 는 steering latch 와 상호배타 (noise_resample 단독 arm)")
+    if reseed_from_record is not None:
+        policy.reseed_from_call = int(reseed_from_record)
+        policy.reseed_offset = int(getattr(args, "reseed_offset", 500000))
     if args.wait_ready:
         policy.wait_until_ready(max_wait=args.timeout)
+    serve_identity = _get_serve_identity(args.vla_server)
 
     max_steps = args.max_episode_steps
     results: list[dict[str, Any]] = []
@@ -683,6 +816,14 @@ def run() -> dict[str, Any]:
             first_success_step = None
             step_i = 0
             no_features = getattr(args, "no_features", False)
+            # 떨림(jitter) 진단: record(=replan) 별 action 벡터·개입 활성 flag 누적.
+            # 개입점 = steer_from_record(steered arm) 없으면 reseed_from_record(noise base) —
+            # base·steered 를 같은 t0 로 split 해 개입 후 떨림 증가량을 대조한다.
+            action_traj: list = []
+            action_steer_on: list = []
+            _interv_record = (
+                steer_from_record if steer_from_record is not None else reseed_from_record
+            )
             while step_i < max_steps:
                 # no-features(캡처 OFF) 모드는 records 가 없으므로 추론 호출 수(n_calls)로
                 # phase 정합을 잡는다 (skip_features 는 매 콜 chunk 추론 — 두 계수 동치).
@@ -695,6 +836,17 @@ def run() -> dict[str, Any]:
                 gated_now = False
                 if getattr(args, "gated_steering", False):
                     gated_now = _post_steering_phase(args.vla_server, phase)
+                elif steer_from_record is not None:
+                    # exp4-1 latch: K번째 record 부터 끝까지 ON (record r ⇔ env-step
+                    # [nas·r, nas·r+nas)). global='steer' 고정 / current=라벨러 현재 phase
+                    # (gated arm — 미등록 phase 는 serve identity 폴백).
+                    if progress_before < steer_from_record:
+                        want = "off"
+                    elif getattr(args, "steer_phase_mode", "global") == "current":
+                        want = phase
+                    else:
+                        want = getattr(args, "steer_phase_name", None) or "steer"
+                    gated_now = _post_steering_phase(args.vla_server, want)
                 official_action, _ = policy.get_action(obs)
                 if perturber is not None:
                     official_action = perturber.maybe_apply(progress_before, official_action)
@@ -702,6 +854,11 @@ def run() -> dict[str, Any]:
                 if progress_after > progress_before:
                     feature_phases.append(phase)
                     phase_gated_flags.append(gated_now)
+                    # 떨림 진단: 이 record 의 명령 action 벡터(첫 실행 스텝)와 개입 활성 여부.
+                    action_traj.append(_extract_groot_action_vector(official_action))
+                    action_steer_on.append(
+                        _interv_record is not None and progress_before >= _interv_record
+                    )
                 obs, reward, terminated, truncated, info = env.step(official_action)
                 step_i += 1
                 success_now = step_success(reward, info, env=env)
@@ -751,6 +908,10 @@ def run() -> dict[str, Any]:
                 "wrong_grasp_steps": list(getattr(labeler, "wrong_grasp_steps", []) or []),
                 "wrong_grasp_timeline": list(getattr(labeler, "wrong_grasp_timeline", []) or []),
             }
+            # 떨림(jitter) 진단 — 개입이 액션 궤적에 준 speed/jerk (record 해상도, 판정 무영향).
+            extra_metadata["action_kinematics"] = _action_tremor_summary(
+                action_traj, action_steer_on, _interv_record
+            )
             # exp2(구 pq2) 이중 채점 (docs/steering/18): apple corrected env fork 가 노출하는
             # (_pq2_* attr 명은 robocasa fork 계약 — rename 금지)
             # per-episode ever 플래그 {"0.07": bool, "0.1": bool}. 미지원 task 는 None.
@@ -796,6 +957,14 @@ def run() -> dict[str, Any]:
                     "expect_chunk_len": policy.expect_chunk_len,
                     # gated dose 감사: 추론별 phase 가 실제 matrix 를 탔는지 (False=identity)
                     "phase_gated_flags": phase_gated_flags,
+                    # exp4-1 latch 감사: sum(flags)==n_inferences-K && first_true==K 대조용
+                    "steer_from_record": steer_from_record,
+                    "steer_phase_mode": getattr(args, "steer_phase_mode", "global"),
+                    "steer_phase_name": getattr(args, "steer_phase_name", None),
+                    "reseed_from_record": reseed_from_record,
+                    "reseed_offset": (int(getattr(args, "reseed_offset", 500000))
+                                      if reseed_from_record is not None else None),
+                    **serve_identity,
                     "ep_meta": captured_ep_meta,
                     **extra_metadata,
                 }
