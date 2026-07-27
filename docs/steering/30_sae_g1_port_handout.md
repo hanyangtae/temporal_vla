@@ -99,10 +99,15 @@ https://github.com/robots-oh/task_classification). dev 브랜치에선 서브모
 **G1 은 N1.5 fit30 만으로 시작한다** (N1.6/Cosmos 는 G1 통과 후 교차검증 카드 — 경로 확인은
 그때 exp4-3 세션/사용자에게).
 
-- **layer 선택**: atlas 실물(`docs/steering/sae_g1_refs/n15_atlas_all.tsv`, __global__ phase)에서
-  N1.5 mean_z peak = **L10** 확정 (drawer_left mean_z 5.60·auroc 0.72 / bread 5.08·0.73, 둘 다 L10 최고;
-  L8·L12 도 근접). **시작 layer = L10**, 단 fit30 pkl 의 `capture_layers` 에 L10 이 있는지 먼저 확인
-  (없으면 교집합 최근접). 하드코딩 말고 tsv+capture_layers 로 재확인.
+- **layer 선택 — 단일 확정 금지, sweep 대상**: 평균분리 자체는 강하나 **어느 depth 가 scene 을
+  인코딩하는지는 G1 에서 밝힐 대상**이지 미리 못 박지 말 것. atlas 실물
+  (`docs/steering/sae_g1_refs/n15_atlas_all.tsv`, __global__ phase)에서 N1.5 분리는 **여러 layer 에
+  걸쳐 유의**: drawer_left L10(mean_z 5.60)·L12(5.54)·L8(5.41)·L2(5.39)·L0(4.52) 전부 z>3,
+  bread L10(5.08)·L12(3.07). peak 는 L10 이나 **L10 하나로 고정하지 말 것.**
+  → 방침: **후보 대역(L0·L2·L8·L10·L12)에서 layer 별로 SAE 를 돌려 비교**, 그리고 **multi-layer
+  SAE(여러 layer concat 또는 layer 별 SAE 앙상블)도 열어둔다** — scene feature 가 한 depth 에만
+  있으리란 보장 없음. capture_layers 와 교집합만 사용(pkl 에서 확인, 하드코딩 금지). "어느 layer(들)이
+  scene 을 인코딩하나"는 G1 의 부산 발견물로 기록.
 - **pkl 로딩 참조 구현**: `scripts/safe/groot_n15/robocasa/steer/exp4_1/fit_mean_diff.py` 의
   `load_cell_rolls`(manifest tsv → rollout dict: `tok [n,L,T,D]`·`success`·`phases`·`length`·
   `scenario_seed`·`inference_seed`) — 그대로 import 해서 쓰면 됨.
@@ -123,9 +128,10 @@ https://github.com/robots-oh/task_classification). dev 브랜치에선 서브모
       (알려진 sparse 사전) 복원 sanity.
 
 ### Phase B — 데이터 빌더 (`scripts/scene_sae/build_sae_inputs.py`)
-- [ ] B1. `load_cell_rolls` 재사용, **1셀(권장 pq3_drawer_left — 판수 최다)** × **1 layer**
-      (atlas peak ∩ capture_layers) 슬라이스 → `X [N_records × T, D=1536]` (**토큰 평균 금지**,
-      토큰=행으로 편다. K(denoise) 축은 마지막 K 사용 — fit_mean_diff 관례와 동일한지 pkl 에서 확인).
+- [ ] B1. `load_cell_rolls` 재사용, **1셀(권장 pq3_drawer_left — 판수 최다)** × **후보 layer 여러 개**
+      (L0·L2·L8·L10·L12 ∩ capture_layers) 슬라이스 → layer 별 `X_L [N_records × T, D=1536]`
+      (**토큰 평균 금지**, 토큰=행으로 편다. K(denoise) 축은 마지막 K 사용 — fit_mean_diff 관례와
+      동일한지 pkl 에서 확인). layer 는 단일 확정 아님(§3 참조) — 빌더가 layer 인자를 받아 여러 개 산출.
 - [ ] B2. 행 단위 메타 병행 저장: `episode_idx, record_idx, token_idx, token_seg(state/future/action),
       phase, success, scenario_seed, layout_id, style_id` — G2 잔차화·길이통제가 전부 이 메타에 의존.
 - [ ] B3. split: **episode 단위** train/val/test (record/token 단위 split 금지 — 누수).
@@ -156,6 +162,35 @@ https://github.com/robots-oh/task_classification). dev 브랜치에선 서브모
 ### Phase E — (G1 통과 후, 이 핸드아웃 범위 밖 — 예고만)
 G2 = scene-selective feature 성분 제거(잔차화) 후 succ/fail read: **길이통제(성공 dwell cap)
 유지·순열 null·held-out**. 참조 구현 = `fit_mean_diff.py` 의 truncation/순열 관례.
+
+## 4.5 브랜치 규정 (exp5 = 이 SAE 세션 — 반드시 준수, 틀리기 쉬움)
+
+**호칭**: 이 SAE 세션 = **exp5**. exp4 라인(exp4-1/4-2/4-3)의 후속이 아니라 **새 실험 라인**.
+
+**base = dev.**
+- exp4-1(oracle rescue·tremor·conceptor future_only·SAE 이식 문서)은 **dev 로 머지**된다
+  (2026-07-27 결정, 진행 상태는 §끝 각주 확인). SAE 문서·atlas·fit 코드가 전부 dev 에 있어야
+  exp5 가 읽는다.
+- **exp5 작업 브랜치 = `feat/scene-sae`, dev 에서 분기**:
+  ```
+  git checkout dev && git pull origin dev
+  git checkout -b feat/scene-sae
+  ```
+
+**하지 말 것 (실수 방지)**:
+- ❌ **worktree 만들지 말 것.** exp4-1 은 메인 체크아웃에서 끝나 dev 로 갔다. exp5 도 **메인
+  체크아웃**에서 feat/scene-sae 로 작업. (`.claude/worktrees/` 는 exp4-2·exp4-3 전용 — 그쪽은
+  각자 세션이 독립 진행 중이고 dev 머지도 그쪽 몫. **건드리지 말 것.**)
+- ❌ **`exp/exp4-1-oracle-rescue` 브랜치에 커밋 금지** — 종료된 브랜치. 세션 시작 시
+  `git branch --show-current` 로 확인, exp4-1 위에 있으면 위 명령으로 dev→feat/scene-sae 재분기.
+- ❌ exp4-2/exp4-3 worktree 의 코드·산출물 수정 금지 (참조는 읽기만).
+
+**문서·PR 규약**:
+- 새 문서 번호는 **31 부터** (30=핸드아웃, 29=이식검토, 25a=권고, 24* 계열=exp4). ⚠ 번호 충돌 주의:
+  exp4-3 worktree 가 별도로 `29_related_works_map.md` 를 쓰고 있다(우리 29 와 번호 겹침) — dev 머지 시
+  재확인. G1 결과는 `31_sae_g1_results.md`.
+- PR 은 **dev 로**, 로컬 `gh pr create` (이 PC gh 설치·로그인됨). 머지 전에 열 것.
+- 커밋 한글, `feat:`/`script:`/`docs:` 접두사.
 
 ## 5. 자원·운영 규칙 (요약 — memory 가 단일 출처)
 
