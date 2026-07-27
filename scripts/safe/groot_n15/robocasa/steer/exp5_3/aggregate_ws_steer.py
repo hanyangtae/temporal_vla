@@ -65,7 +65,7 @@ def main() -> int:
         if not arm_dir.is_dir():
             continue
         arm = arm_dir.name
-        grid = stems_to_grid([p.name for p in arm_dir.rglob("task7--ep*--succ*.csv")])
+        grid = stems_to_grid([p.name for p in arm_dir.rglob("task7--ep*--succ*.json")])
         if not grid:
             continue
         common = sorted(set(grid) & set(base))

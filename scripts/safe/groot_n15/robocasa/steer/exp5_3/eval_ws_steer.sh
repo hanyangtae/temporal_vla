@@ -91,7 +91,7 @@ serve_up() {  # $1=arm $2=fold(steered 전용)
 run_one() {  # $1=arm $2=scene $3=inf $4=epidx $5=port
   local arm=$1 S=$2 inf=$3 epidx=$4 port=$5
   local d="$OUT_BASE/$arm/raw_rollouts/OpenDrawer/pq3_drawer_right"
-  if ls "$d/task7--ep${epidx}--succ"*.csv >/dev/null 2>&1; then return 0; fi
+  if ls "$d/task7--ep${epidx}--succ"*.json >/dev/null 2>&1; then return 0; fi
   local extra=()
   case "$arm" in
     A0_anchor) ;;
@@ -150,7 +150,7 @@ for arm in "${ARMS[@]}"; do
       # fold 전체가 이미 완료면 재기동 생략
       local_done=1
       for i in "${!SCENES[@]}"; do
-        ls "$OUT_BASE/$arm/raw_rollouts/OpenDrawer/pq3_drawer_right/task7--ep$((i * 8 + k))--succ"*.csv \
+        ls "$OUT_BASE/$arm/raw_rollouts/OpenDrawer/pq3_drawer_right/task7--ep$((i * 8 + k))--succ"*.json \
           >/dev/null 2>&1 || { local_done=0; break; }
       done
       [ $local_done = 1 ] && continue
@@ -158,7 +158,7 @@ for arm in "${ARMS[@]}"; do
       run_grid "$arm"
     done
   fi
-  n_csv=$(find "$OUT_BASE/$arm" -name "*.csv" 2>/dev/null | wc -l)
+  n_csv=$(find "$OUT_BASE/$arm" -name "*.json" 2>/dev/null | wc -l)
   echo "--- arm $arm 완료: csv $n_csv ---" | tee -a "$LOG"
 done
 serve_kill
