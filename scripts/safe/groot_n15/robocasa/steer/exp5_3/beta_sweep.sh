@@ -64,7 +64,11 @@ run_one() {  # $1=arm $2=beta $3=scene $4=inf $5=epidx $6=port
   local d="$OUT_BASE/$arm/raw_rollouts/OpenDrawer/pq3_drawer_right"
   if ls "$d/task7--ep${epidx}--succ"*.json >/dev/null 2>&1; then return 0; fi
   local extra=()
-  [ "$beta" != "A0" ] && extra=(--steer-from-record 0 --steer-phase-name "scene${S}")
+  case "$arm" in
+    A0*) ;;
+    *gated*) extra=(--steer-from-record 0 --steer-phase-mode current) ;;  # phase registry 스위칭
+    *) extra=(--steer-from-record 0 --steer-phase-name "scene${S}") ;;    # per-scene setpoint
+  esac
   docker exec -e MUJOCO_GL=egl \
     -e OMP_NUM_THREADS=2 -e OPENBLAS_NUM_THREADS=2 -e MKL_NUM_THREADS=2 \
     -e PYTHONPATH="$PYP" robocasa \
