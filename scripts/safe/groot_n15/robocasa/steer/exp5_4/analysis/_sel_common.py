@@ -39,10 +39,11 @@ def load(npz_dir: Path, cell: str):
     return eps, layers
 
 
-def to_matrix(eps, li: int, W: int = 1):
+def to_matrix(eps, li: int, W: int = 1, rec: int | None = None):
     """[S,J,D] 활성 행렬 + [S,J] 라벨 + scene/seed 목록 + [S,J] episode index.
 
-    V = X[:W, li, :].mean(0)  (기본 W=1 → record 0 = t=0 활성)
+    rec=None : V = X[:W, li, :].mean(0)  (기본 W=1 → record 0 = t=0 활성, 누적창)
+    rec=r    : V = X[r, li, :]           (단일 record — r×5 env-step 실행 후 inference)
     """
     scenes = sorted({e["scene"] for e in eps})
     seeds = sorted({e["inf"] for e in eps})
@@ -54,7 +55,14 @@ def to_matrix(eps, li: int, W: int = 1):
     E = np.full((len(scenes), len(seeds)), -1, dtype=int)
     for e in eps:
         i, j = si[e["scene"]], ji[e["inf"]]
-        A[i, j] = e["X"][:W, li, :].mean(axis=0)
+        if rec is None:
+            A[i, j] = e["X"][:W, li, :].mean(axis=0)
+        else:
+            if e["X"].shape[0] <= rec:
+                raise ValueError(
+                    f"ep {e['ep']} (scene {e['scene']}, inf {e['inf']}): "
+                    f"n_rec={e['X'].shape[0]} ≤ rec={rec} — record 결측")
+            A[i, j] = e["X"][rec, li, :]
         Y[i, j] = e["label"]
         E[i, j] = e["ep"]
     if np.isnan(A).any() or (Y < 0).any():
