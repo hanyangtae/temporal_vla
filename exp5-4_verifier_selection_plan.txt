@@ -273,3 +273,14 @@ Phase E — **문헌 대조** (검토 반영, 수집 前 반나절)
     근거 없음". handle 기하는 privileged oracle 로 분리(배포 불가 정보).
 
 문의: exp5-3 dashboard 세션 → 실행: exp5-4 세션 (worktree exp5-4-noise-select).
+
+═══════════════════════════════════════════════════════════════════
+10. 결과 (2026-07-28 — §9.1 선행 반증 게이트 발동, Phase A 중단)
+═══════════════════════════════════════════════════════════════════
+
+§0 헤드라인(0.344→0.650, 13/13)은 **seed 주효과 암기**로 판정: 8-seed column 공통
+순열(전수) p=0.602, seed_only 음성대조가 학습축과 동률 +0.306. prospective
+(double scene/seed-out K=4) 학습축 +0.106 = chunk_tv baseline 동률·비유의 —
+3 cell 전부 사전 등록 중단 조건 해당. probe 인프라(후보당 forward 3.5초,
+bit-identity smoke 전 PASS)는 완비·유산으로 남김.
+상세 = docs/steering/33_exp5-4_noise_selection.md.
