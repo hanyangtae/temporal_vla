@@ -37,7 +37,7 @@ CONTEXT.md
 *.safetensors
 *.ckpt
 *.pkl
-
+*.pptx
 # 3D Assets
 *.obj
 *.DAE
