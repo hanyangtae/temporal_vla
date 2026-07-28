@@ -239,4 +239,48 @@ Phase E — **문헌 대조** (검토 반영, 수집 前 반나절)
   ④ Phase E 문헌 대조 신설 (V-GPS 류 value-guided selection 과 niche 확인)
   ⑤ Phase A→B 게이트 명시 + capture 디스크·승준 pull 계획 선행
 
-문의: exp5-3 dashboard 세션.
+═══════════════════════════════════════════════════════════════════
+9. Gate1 개정 (2026-07-28, exp5-4 세션 — Codex 반론 반영, **rollout 결과 확인 전 사전 등록**)
+═══════════════════════════════════════════════════════════════════
+
+원장: docs/collab/2026-07-28-exp5-4-gate1.md. §4 Phase A·§5 판정기준을 아래로 대체한다.
+
+9.1 설계 개정 (Phase A)
+  · **seed 계획**: 공유 8종(8e6~15e6) 폐기 → **scene별 고유 base seed 8개, 총 160개**
+    (RNG 424101, 옛 seed·상호 간 [base, base+200) 구간 비겹침, seed_manifest.tsv + sha).
+    이유: 공유 시 seed 일반화 실질 표본이 8개로 축소 + seed×운영 confound.
+  · **prospective 봉인**: probe(후보당 forward 1회) 전건 선행 → 방향(옛 0~7e6 LOSO)·score식·
+    L0·tie-break 동결 → 선택 manifest(scene, seed, score, rank, top1/worst1/random,
+    direction_sha, code_sha) hash 봉인 → **그 후에만** rollout. 이 순서가 아니면 결과 명칭은
+    "new-seed post-hoc ranking"으로 강등.
+  · probe 규약: 후보마다 /reset + 명시 seed 단일 호출, action chunk·obs hash 동반 저장.
+  · smoke 4단계: capture-ON A-B-A / capture vs skip_features action 동일성 / cross-server /
+    end-to-end success 재현. bit-identity가 깨져도 top1 순위 안정성(top1–top2 margin)으로 판정.
+  · **선행 반증 게이트** (Phase A 착수 조건, 기존 데이터·CPU): 옛 8 seed 4+4 분할
+    double scene/seed-out K=4 prospective Δ̂ — ≤0 이거나 최강 simple baseline 이하이면
+    Phase A 중단. + 기존 m_i 로 exact power simulation.
+
+9.2 판정 개정 (§5 대체)
+  · **primary**: all-20-scene ITT Δ̂ = mean_i(y_top1 − scene 8판 평균). 검정 = 관측 성공수
+    m_i 조건부 exact randomization (고유 seed 설계라 Poisson-binomial DP exact).
+    사전 고정: record0 × L0 (winner's curse 가능성 명시 — 사후 layer 변경 금지,
+    L0/L12 seed-out 값을 같은 split 로 병기).
+  · secondary/diagnostic: 혼재 scene top-1 적중, worst1<base, layer 프로파일, k-곡선
+    (nested prefix 사전 고정, point별 pass/fail 금지). McNemar 폐기.
+  · claim 범위: "기존 선택된 drawer_right 의 **고정 20 scene**에서 unseen noise draw 를
+    실행 전에 고를 수 있다" — 새 scene/task 일반화는 Phase B 의 몫.
+  · baseline 판정 문구: 자명 baseline 을 못 이기면 "기여 0"이 아니라 "activation 고유 기여
+    근거 없음". handle 기하는 privileged oracle 로 분리(배포 불가 정보).
+
+문의: exp5-3 dashboard 세션 → 실행: exp5-4 세션 (worktree exp5-4-noise-select).
+
+═══════════════════════════════════════════════════════════════════
+10. 결과 (2026-07-28 — §9.1 선행 반증 게이트 발동, Phase A 중단)
+═══════════════════════════════════════════════════════════════════
+
+§0 헤드라인(0.344→0.650, 13/13)은 **seed 주효과 암기**로 판정: 8-seed column 공통
+순열(전수) p=0.602, seed_only 음성대조가 학습축과 동률 +0.306. prospective
+(double scene/seed-out K=4) 학습축 +0.106 = chunk_tv baseline 동률·비유의 —
+3 cell 전부 사전 등록 중단 조건 해당. probe 인프라(후보당 forward 3.5초,
+bit-identity smoke 전 PASS)는 완비·유산으로 남김.
+상세 = docs/steering/33_exp5-4_noise_selection.md.
