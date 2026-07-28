@@ -86,6 +86,8 @@ def pkl_pass(cell, E, scenes, root=None, cache=None, geom=None, verbose=True):
                 out[n] = z[n]
             if "oracle_handle_cos" in z:
                 oracle = z["oracle_handle_cos"]
+                if np.isfinite(oracle).any():
+                    diag["mean_oracle_cos"] = float(-np.nanmean(oracle))
             diag.update(dict(n_ok=int(np.isfinite(out[names[0]]).sum()),
                              n_miss=int((~np.isfinite(out[names[0]])).sum()),
                              cached=str(cpath)))

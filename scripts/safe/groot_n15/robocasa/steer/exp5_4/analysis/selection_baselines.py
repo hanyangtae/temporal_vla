@@ -120,8 +120,9 @@ def main():
 
         if geom is not None and np.isfinite(oracle).any():
             scores["oracle_handle_cos"] = oracle
-            print(f"  oracle(privileged): 평균 cos(chunk 첫 step, 손잡이방향) "
-                  f"{diag['mean_oracle_cos']:.3f}")
+            mc = diag.get("mean_oracle_cos")
+            print("  oracle(privileged): 평균 cos(chunk 첫 step, 손잡이방향) "
+                  + (f"{mc:.3f}" if mc is not None else "n/a"))
 
         for label, folds in (("infold", infold), ("prospective", prosp)):
             rows = []
