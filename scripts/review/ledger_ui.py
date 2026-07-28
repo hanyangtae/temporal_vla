@@ -7,8 +7,12 @@
 출력: docs/review/LEDGER.tsv    (판정 원장, 클릭 즉시 기록)
 
 사용:
-    python3 scripts/review/ledger_ui.py            # http://127.0.0.1:8777
+    python3 scripts/review/ledger_ui.py            # 0.0.0.0:8777, 토큰 자동 생성
     python3 scripts/review/ledger_ui.py --port 9000
+    python3 scripts/review/ledger_ui.py --host 127.0.0.1 --no-token   # 로컬 전용
+
+외부 IP 접근을 전제로 하므로 기본 바인드는 0.0.0.0 이고, 쓰기 API 보호를 위해
+토큰을 자동 생성한다. 기동 시 출력되는 URL(`?t=...`)로 접속해야 한다.
 
 소스 코드 뷰어는 없다. 소스는 별도 에디터에서 보는 것을 전제로 한다.
 """
@@ -17,8 +21,11 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import secrets
+import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 REPO = Path(__file__).resolve().parents[2]
 REVIEW = REPO / "docs" / "review"
@@ -135,8 +142,14 @@ kbd{font:11px ui-monospace,monospace;border:1px solid var(--line);border-radius:
 <script>
 let S={items:[],verdicts:[]}, cur=0, filt='all';
 const $=s=>document.querySelector(s);
+const TOK=new URLSearchParams(location.search).get('t')||'';
+const H=TOK?{'X-Review-Token':TOK}:{};
 
-async function load(){ S=await (await fetch('/api/data')).json(); render(); }
+async function load(){
+  const r=await fetch('/api/data',{headers:H});
+  if(!r.ok){document.body.innerHTML='<p style="padding:20px">접근 거부 — 기동 시 출력된 URL(?t=...)로 접속할 것.</p>';return;}
+  S=await r.json(); render();
+}
 
 function shown(){
   return S.items.filter(it=>{
@@ -188,7 +201,7 @@ function render(){
 }
 
 async function judge(it,v,reason){
-  await fetch('/api/judge',{method:'POST',headers:{'Content-Type':'application/json'},
+  await fetch('/api/judge',{method:'POST',headers:{'Content-Type':'application/json',...H},
     body:JSON.stringify({파일:it['파일'],판정:v,사유:reason||''})});
   it['판정']=v; it['사유']=reason||'';
   render();
@@ -211,6 +224,15 @@ load();
 
 
 class Handler(BaseHTTPRequestHandler):
+    token: str = ""  # main() 에서 주입. 빈 문자열이면 검사하지 않는다.
+
+    def _authorized(self) -> bool:
+        if not self.token:
+            return True
+        q = parse_qs(urlparse(self.path).query)
+        given = self.headers.get("X-Review-Token") or (q.get("t") or [""])[0]
+        return secrets.compare_digest(given, self.token)
+
     def _send(self, code, body, ctype):
         raw = body.encode("utf-8")
         self.send_response(code)
@@ -220,16 +242,22 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
     def do_GET(self):
-        if self.path.startswith("/api/data"):
+        path = urlparse(self.path).path
+        if not self._authorized():
+            return self._send(403, "토큰이 필요하다. 기동 시 출력된 URL(?t=...)로 접속할 것.",
+                              "text/plain; charset=utf-8")
+        if path == "/api/data":
             self._send(200, json.dumps(build_state(), ensure_ascii=False), "application/json; charset=utf-8")
-        elif self.path in ("/", "/index.html"):
+        elif path in ("/", "/index.html"):
             self._send(200, PAGE, "text/html; charset=utf-8")
         else:
             self._send(404, "not found", "text/plain; charset=utf-8")
 
     def do_POST(self):
-        if not self.path.startswith("/api/judge"):
+        if urlparse(self.path).path != "/api/judge":
             return self._send(404, "not found", "text/plain; charset=utf-8")
+        if not self._authorized():
+            return self._send(403, json.dumps({"error": "forbidden"}), "application/json; charset=utf-8")
         n = int(self.headers.get("Content-Length", 0))
         d = json.loads(self.rfile.read(n) or b"{}")
         verdict = d.get("판정", "")
@@ -242,18 +270,56 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+def local_ips() -> list[str]:
+    """외부에서 접속할 때 쓸 만한 IPv4 목록 (loopback 제외)."""
+    ips = set()
+    try:  # 기본 경로로 나가는 인터페이스 주소
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ips.add(s.getsockname()[0])
+        s.close()
+    except OSError:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = str(info[4][0])
+            if not ip.startswith("127."):
+                ips.add(ip)
+    except OSError:
+        pass
+    return sorted(ips)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8777)
+    ap.add_argument("--host", default="0.0.0.0", help="바인드 주소 (기본 0.0.0.0 = 외부 접근 허용)")
+    ap.add_argument("--token", default=None, help="접근 토큰. 미지정 시 자동 생성")
+    ap.add_argument("--no-token", action="store_true", help="토큰 검사 비활성 (로컬 전용일 때만)")
     args = ap.parse_args()
+
+    Handler.token = "" if args.no_token else (args.token or secrets.token_urlsafe(12))
+
     cards = sorted(REVIEW.glob("S*_files.tsv"))
     if not cards:
         print(f"경고: {REVIEW}/S*_files.tsv 가 없다. 스테이지 카드를 먼저 만들어야 한다.")
     else:
         print(f"카드 {len(cards)}개: {', '.join(p.name for p in cards)}")
     print(f"원장: {LEDGER}")
-    print(f"열기: http://127.0.0.1:{args.port}   (Ctrl-C 종료)")
-    HTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+
+    q = f"?t={Handler.token}" if Handler.token else ""
+    print("\n접속 URL:")
+    hosts = ["127.0.0.1"] if args.host == "127.0.0.1" else ["127.0.0.1", *local_ips()]
+    for h in hosts:
+        print(f"  http://{h}:{args.port}/{q}")
+    if not Handler.token:
+        print("\n⚠ 토큰 없이 기동됨 — 같은 네트워크의 누구나 판정을 쓸 수 있다.")
+    elif args.host != "127.0.0.1":
+        print("\n외부에서 안 열리면 방화벽을 확인할 것:")
+        print(f"  sudo ufw allow {args.port}/tcp        # 필요 시")
+        print(f"  ss -ltn | grep {args.port}")
+    print("\n(Ctrl-C 종료)", flush=True)  # 로그 리다이렉트 시에도 URL 이 바로 보이게
+    HTTPServer((args.host, args.port), Handler).serve_forever()
 
 
 if __name__ == "__main__":
