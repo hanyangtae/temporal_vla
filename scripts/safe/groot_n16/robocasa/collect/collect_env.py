@@ -107,7 +107,12 @@ def run_single_rollout(
     wrapper_configs: WrapperConfigs,
     scenario_seed: int | None,
     replay_ep_meta: dict[str, Any] | None,
-) -> tuple[str, list[bool], dict[str, list[Any]], Path | None, dict[str, Any]]:
+    label_phases: bool = False,
+    proximity_phases: bool = False,
+) -> tuple[str, list[bool], dict[str, list[Any]], Path | None, dict[str, Any], list[str]]:
+    """label_phases=True 면 get_action 마다 event 라벨러 step() 을 호출해 per-record phase
+    를 수집한다 (N1.5 http_feature_collect 와 동일: 1 record = 1 get_action, env.step 전
+    현재 state 기준). 반환 튜플 끝에 feature_phases(list[str], len == n get_action) 추가."""
     env = NoAutoResetSyncVectorEnv(
         [
             lambda: create_safe_eval_env(
@@ -134,8 +139,21 @@ def run_single_rollout(
         ep_meta = json_safe(replay_ep_meta) if replay_ep_meta is not None else captured_ep_meta
         policy.reset()
 
+        # Event-anchored phase labeler (opt-in): 1 labeler.step() per get_action = 1 SAFE
+        # record, called BEFORE env.step so phase = state the policy acted on (N1.5 규약 동일).
+        labeler = None
+        if label_phases:
+            from robocasa_event_labeler import make_robocasa_event_labeler
+            labeler = make_robocasa_event_labeler(
+                env.envs[0], env_name, proximity_phases=proximity_phases
+            )
+            labeler.reset()
+        feature_phases: list[str] = []
+
         pbar = tqdm(total=1, desc="Episodes")
         while True:
+            if labeler is not None:
+                feature_phases.append(labeler.step())
             actions, _ = policy.get_action(observations)
             next_obs, _rewards, terminations, truncations, env_infos = env.step(actions)
             current_length += 1
@@ -174,4 +192,9 @@ def run_single_rollout(
 
     if ep_meta is None:
         raise RuntimeError("RoboCasa ep_meta was not captured during rollout reset")
-    return env_name, [current_success], dict(episode_infos), upstream_video_path, ep_meta
+    if labeler is not None and len(feature_phases) != len(policy.records):
+        raise RuntimeError(
+            f"feature_phases/record 불일치: {len(feature_phases)} != {len(policy.records)}"
+        )
+    return (env_name, [current_success], dict(episode_infos), upstream_video_path,
+            ep_meta, feature_phases)

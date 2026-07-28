@@ -104,6 +104,11 @@ def parse_args() -> argparse.Namespace:
         help="RoboCasa environment source: robocasa_v02 or robocasa365.",
     )
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--label-phases", action="store_true",
+                        help="get_action 마다 event 라벨러 step() → per-record feature_phases "
+                             "수집 (exp4-3 분리도 지도용; N1.5 http_feature_collect 규약).")
+    parser.add_argument("--proximity-phases", action="store_true",
+                        help="라벨러 proximity sub-phase 모드 (기본 4-phase). --label-phases 필요.")
     parser.add_argument("--task-id", type=int, default=0)
     parser.add_argument("--task-description", default=None)
     parser.add_argument("--episode-start-idx", type=int, default=0)
@@ -220,7 +225,10 @@ def main() -> None:
             wrapper_configs=wrapper_configs,
             scenario_seed=scenario_seed,
             replay_ep_meta=replay_ep_meta,
+            label_phases=args.label_phases,
+            proximity_phases=args.proximity_phases,
         )
+        feature_phases = results[5] if len(results) > 5 else []
         if ep_meta_manifest_path is not None and replay_ep_meta is None:
             _write_ep_meta_manifest(
                 ep_meta_manifest_path,
@@ -253,6 +261,7 @@ def main() -> None:
             model_family="groot_n16",
             policy_transport=args.policy_transport,
             task_suite_name="groot_n16_robocasa",
+            extra_metadata=({"feature_phases": feature_phases} if feature_phases else None),
         )
         shutil.rmtree(upstream_video_dir, ignore_errors=True)
         print(
