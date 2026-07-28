@@ -28,3 +28,7 @@
 	path = task_classification
 	url = https://github.com/robots-oh/task_classification.git
 	branch = main
+[submodule "Event-SAE"]
+	path = Event-SAE
+	url = https://github.com/do-dong-park/Event-SAE.git
+	branch = feat/groot-robocasa-sae
