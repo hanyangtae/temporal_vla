@@ -75,21 +75,32 @@ def _read_rs(path: str | None) -> dict[str, int]:
     return out
 
 
-def _load_records(rows, rs_map, capture_layer: int, group: str):
-    """manifest → episode 별 [n_i, D] record 행렬 리스트 (+라벨)."""
+def _load_records(rows, rs_map, capture_layer, group: str, ep_subsample_k: int = 0):
+    """manifest → episode 별 [n_i, D] record 행렬 리스트 (+라벨).
+
+    capture_layer="VL" 이면 vlln pathway feature([n, 2048]) 를 사용한다 (exp5-2 C1).
+    ep_subsample_k>0 이면 fit(--ep-subsample-k)과 동일한 균등 서브샘플을 적용.
+    """
     eps = []
+    is_vl = str(capture_layer).upper() == "VL"
     for p, label in rows:
         r = load_roll_any(p)
-        cap = r["capture_layers"]
-        if capture_layer not in cap:
-            raise SystemExit(f"{p.name}: capture layer {capture_layer} 없음 (cap={cap})")
-        li = cap.index(capture_layer)
         start = rs_map.get(str(p.resolve()), 0)
-        X = r["dit"][start:, li, :]  # [n, D]
+        if is_vl:
+            if r.get("vl") is None:
+                raise SystemExit(f"{p.name}: vl_hidden_states 없음")
+            X = np.asarray(r["vl"], dtype=np.float32)[start:]
+        else:
+            cap = r["capture_layers"]
+            if int(capture_layer) not in cap:
+                raise SystemExit(f"{p.name}: capture layer {capture_layer} 없음 (cap={cap})")
+            X = r["dit"][start:, cap.index(int(capture_layer)), :]  # [n, D]
         phases = r["phases"][start:]
         if group != "global":
             idx = [i for i, ph in enumerate(phases) if ph == group]
             X = X[idx]
+        if ep_subsample_k > 0 and X.shape[0] > ep_subsample_k:
+            X = X[np.linspace(0, X.shape[0] - 1, ep_subsample_k).round().astype(int)]
         if X.shape[0]:
             eps.append((X.astype(np.float32), int(label)))
     return eps
@@ -111,7 +122,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--npz", required=True)
     ap.add_argument("--key", default=None, help="NPZ 키 접두 (기본: 첫 키의 α = 선택 α)")
-    ap.add_argument("--capture-layer", type=int, required=True)
+    ap.add_argument("--capture-layer", required=True,
+                    help="DiT capture layer 번호 또는 'VL' (vlln pathway)")
+    ap.add_argument("--ep-subsample-k", type=int, default=0,
+                    help="fit 과 동일한 episode 당 균등 서브샘플 (0=미적용)")
     ap.add_argument("--group", default="global")
     ap.add_argument("--beta", type=float, default=0.3)
     ap.add_argument("--fit-manifest", required=True, help="fit 에 쓴 episode (perm 재fit 원천)")
@@ -153,8 +167,10 @@ def main() -> int:
 
     # held-out 로드
     rs_map = _read_rs(args.record_start_manifest)
-    held = _load_records(_read_manifest(args.held_manifest), rs_map, args.capture_layer, args.group)
-    fit_eps = _load_records(_read_manifest(args.fit_manifest), rs_map, args.capture_layer, args.group)
+    held = _load_records(_read_manifest(args.held_manifest), rs_map, args.capture_layer,
+                         args.group, args.ep_subsample_k)
+    fit_eps = _load_records(_read_manifest(args.fit_manifest), rs_map, args.capture_layer,
+                            args.group, args.ep_subsample_k)
     H = np.concatenate([X for X, _ in held], axis=0)
     Hs = np.concatenate([X for X, l in held if l == 1], axis=0) if any(l == 1 for _, l in held) else H
     # 2b. held-out succ 의 R
@@ -187,8 +203,12 @@ def main() -> int:
         null.append(_refit_gain(fit_eps, perm, alpha, R_held))
     null = np.asarray([v for v in null if np.isfinite(v)])
     p_val = float((np.sum(null >= gain_held) + 1) / (len(null) + 1)) if len(null) else float("nan")
+    p_low = float((np.sum(null <= gain_held) + 1) / (len(null) + 1)) if len(null) else float("nan")
     perm_null = {
         "n_perm": int(len(null)),
+        "null_gain_min": float(null.min()) if len(null) else None,
+        "null_gain_max": float(null.max()) if len(null) else None,
+        "p_lower": p_low,
         "null_gain_q50": float(np.percentile(null, 50)) if len(null) else None,
         "null_gain_q95": float(np.percentile(null, 95)) if len(null) else None,
         "null_gain_q99": float(np.percentile(null, 99)) if len(null) else None,
@@ -201,6 +221,7 @@ def main() -> int:
         "npz": str(args.npz),
         "key_prefix": prefix,
         "capture_layer": args.capture_layer,
+        "ep_subsample_k": args.ep_subsample_k,
         "group": args.group,
         "beta": args.beta,
         "spectrum": spectrum,

@@ -414,6 +414,17 @@ class SetpointSteering:
     (``transformer_blocks[layer]`` 출력 residual stream D=1536, denoise call 마다 발화,
     ``last_horizon`` 이면 마지막 action token 만). per-step vec 시퀀스는 미지원.
 
+    ★ ``pathway="vl"`` (exp5-2 setM VL 확장): 주입 지점은 ``action_head.vlln`` 출력
+    (D=2048, get_action 당 1회 발화 — ConceptorSteering vl 경로와 동일 지점).
+    fit 이 record 당 **VL 토큰-평균**(캡처 ``vl_hidden_states`` = vlln seq-mean-pool)
+    공간에서 이뤄지므로 적용도 **토큰-평균 이동**으로 한다::
+
+        m = mean_t h_t,   δ = β[(m·r̂) − s],   h'_t = h_t − δ·r̂  (모든 토큰 공통)
+
+    → 토큰 평균이 정확히 setpoint 쪽으로 이동하고 토큰 내 분산은 보존된다.
+    per-token 개별 setpoint 적용(h'_t = h_t − β[(h_t·r̂)−s]r̂)은 fit 공간(토큰 평균)과
+    적용 공간(개별 토큰)이 달라 **금지** — exp4-1 v1 pooled 회귀와 동종.
+
     phase-gated 스위칭 API: ``set_vector(v, s)`` 활성 / ``set_vector(None)`` 비활성.
     비활성이면 hook 은 **출력 텐서를 그대로 반환** (clone 없음) — no-hook 과 구성상
     동일해 off≡identity smoke(24a §8-2·4)가 구조적으로 성립한다.
@@ -431,14 +442,31 @@ class SetpointSteering:
         horizon: int | None = None,
         token_select: str | None = None,
     ):
-        if pathway != "dit":
-            raise ValueError("SetpointSteering 은 pathway='dit' 전용 (exp4-1 스코프).")
+        if pathway not in PATHWAYS:
+            raise ValueError(
+                f"SetpointSteering pathway 는 {PATHWAYS} (got {pathway})"
+            )
         head = groot_model.action_head
         self.pathway = pathway
         self.layer = layer
         self.beta = float(beta)
-        self.module = head.model if layer is None else head.model.transformer_blocks[layer]
-        self.token_select = token_select or "last_horizon"
+        self.expected_dim: int | None = None
+        if pathway == "vl":
+            # exp5-2: vlln 출력(토큰-평균 공간에서 fit) — layer 없음, 전 토큰 공통 이동.
+            if layer is not None:
+                raise ValueError("pathway='vl' 는 layer 를 받지 않는다 (vlln 단일 지점).")
+            if token_select not in (None, "all"):
+                raise ValueError(
+                    "pathway='vl' setpoint 은 token_select='all' 전용 (토큰-평균 이동)."
+                )
+            self.module = head.vlln
+            self.token_select = "all"
+            _ns = getattr(head.vlln, "normalized_shape", None)
+            if _ns:
+                self.expected_dim = int(_ns[-1])
+        else:
+            self.module = head.model if layer is None else head.model.transformer_blocks[layer]
+            self.token_select = token_select or "last_horizon"
         if self.token_select not in TOKEN_SELECTS:
             raise ValueError(
                 f"Unsupported token_select: {self.token_select} (expected {TOKEN_SELECTS})"
@@ -461,6 +489,8 @@ class SetpointSteering:
           처치=1.0, future_only=0(스킵), 위약=dose-match 스케일(예 1.95). 0/1 로 강제하면
           위약 dose 매칭이 깨진다. set_vector(구 pooled)와 상호배타.
         """
+        if spec is not None and self.pathway == "vl":
+            raise ValueError("세그먼트 연산자는 pathway='dit' 전용 (vl 은 pooled setpoint).")
         if spec is None:
             self._seg = None
         else:
@@ -487,6 +517,11 @@ class SetpointSteering:
             arr = np.asarray(v, dtype=np.float64).reshape(-1)
             if s is None:
                 raise ValueError("set_vector(v, s): 활성화에는 setpoint s 필요.")
+            if self.expected_dim is not None and arr.shape[0] != self.expected_dim:
+                raise ValueError(
+                    f"setpoint 벡터 차원 {arr.shape[0]} != 주입 지점 hidden dim "
+                    f"{self.expected_dim} (pathway={self.pathway}) — NPZ/pathway 불일치"
+                )
             self._v = arr
             self._s = float(s)
         self._vt_cache: torch.Tensor | None = None
@@ -506,6 +541,21 @@ class SetpointSteering:
         if vt is None or vt.device != out.device or vt.dtype != out.dtype:
             vt = torch.as_tensor(self._v, device=out.device, dtype=out.dtype)
             self._vt_cache = vt
+        if self.pathway == "vl":
+            # 토큰-평균 이동 (fit 공간 = vlln seq-mean). δ 는 토큰 공통 스칼라라
+            # 평균만 setpoint 로 옮기고 토큰 내 분산은 그대로 보존된다.
+            if self.expected_dim is not None and out.shape[-1] != self.expected_dim:
+                raise RuntimeError(
+                    f"setpoint_vl: hook 텐서 dim {out.shape[-1]} != 기대 "
+                    f"{self.expected_dim} — 주입 지점 불일치"
+                )
+            m = out.mean(dim=-2)                       # [..., D]
+            proj = (m * vt).sum(dim=-1)                # [...]
+            delta = self.beta * (proj - self._s)       # [...]
+            steered = out - delta[..., None, None] * vt
+            if is_tuple:
+                return (steered, *output[1:])
+            return steered
         steered = out.clone()
         if self.token_select == "last_horizon":
             hs = steered[..., -self.horizon :, :]

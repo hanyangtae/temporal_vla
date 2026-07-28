@@ -1160,9 +1160,67 @@ def _register_steering_if_requested(loaded_policy, args):
                           flush=True)
         return _steering
 
+    # --- VL setpoint (exp5-2 setM VL): 단일 NPZ + pathway=vl, 토큰-평균 이동 -------------
+    # dit setpoint 는 phase 디렉토리(gated) 계약이지만 VL 은 phase 게이팅 없이
+    # 서버 수명 내내 상시 적용(C1 = 전 구간 섭동)이라 단일 NPZ 경로를 쓴다.
+    if steering_npz and _policy_type == "groot" and not steering_npz_dir:
+        import numpy as _np_vl
+
+        _keys = _np_vl.load(steering_npz).files
+        _pathway_arg = getattr(args, "steering_pathway", "dit")
+        if any(k.endswith("_v_seg") for k in _keys):
+            _detected = "setpoint_seg"
+        elif any(k.endswith("_v_steer") for k in _keys):
+            _detected = "setpoint_vl" if _pathway_arg == "vl" else "setpoint"
+        else:
+            _detected = "conceptor"
+        _want_op = getattr(args, "steering_op", "auto") or "auto"
+        if _want_op != "auto" and _want_op != _detected:
+            raise ValueError(
+                f"--steering-op {_want_op} != NPZ 감지 {_detected} ({steering_npz}, "
+                f"pathway={_pathway_arg})"
+            )
+        if _detected == "setpoint_vl":
+            if per_step:
+                raise ValueError("setpoint_vl 은 --steering-denoise global 전용")
+            groot_model = getattr(loaded_policy, "_groot_model", None)
+            if groot_model is None:
+                raise ValueError("GR00T LeRobot policy is missing _groot_model for steering")
+            import hashlib as _hashlib_vl
+
+            loaded_npz_shas.append(
+                _hashlib_vl.sha256(Path(steering_npz).read_bytes()).hexdigest()[:12]
+            )
+            v_vl, s_vl = load_steering_setpoint(str(steering_npz), alpha=alpha)
+            _steering.append(
+                SetpointSteering(
+                    groot_model, (v_vl, s_vl), beta, pathway="vl",
+                    token_select=token_select,
+                ).register()
+            )
+            logger.info(
+                "VL setpoint steering registered: npz=%s beta=%s alpha=%s dim=%s s=%.4f",
+                steering_npz, beta, alpha, v_vl.shape[0], s_vl,
+            )
+            _set_steering_spec("single", [], op="setpoint_vl")
+            print(
+                f"[steer-registered] path=single op=setpoint_vl pathway=vl "
+                f"beta={beta:g} dim={v_vl.shape[0]} s={s_vl:.4f} token_select=all "
+                f"denoise={denoise}",
+                flush=True,
+            )
+            # setpoint 는 실 dose 가 상태 의존(β|(m·r̂)−s|)이라 β·s 만 기록.
+            print(f"[steer-norms] op=setpoint_vl beta={beta:g} s={s_vl:.4f} "
+                  f"‖r̂‖={float(_np_vl.linalg.norm(v_vl)):.6f}", flush=True)
+            return _steering
+
     # setpoint(setM) 은 gated 경로 전용 — 이하 경로에서 지정 시 fail loud
     if (getattr(args, "steering_op", "auto") or "auto") in ("setpoint", "setpoint_seg"):
         raise ValueError("--steering-op setpoint 는 --steering-phase-npz-base(gated) 전용")
+    if (getattr(args, "steering_op", "auto") or "auto") == "setpoint_vl":
+        raise ValueError(
+            "--steering-op setpoint_vl 은 --steering-npz(단일) + --steering-pathway vl 전용"
+        )
 
     # --- Multi-layer DiT steering (net-new): layer 마다 hook 하나씩 ---
     if steering_npz_dir and steering_layers:
@@ -1700,12 +1758,14 @@ def main():
     )
     parser.add_argument(
         "--steering-op",
-        choices=("auto", "conceptor", "setpoint", "setpoint_seg"),
+        choices=("auto", "conceptor", "setpoint", "setpoint_seg", "setpoint_vl"),
         default="auto",
         help=(
             "steering 연산자 (exp4-1). auto=NPZ 키로 감지(*_v_steer=setpoint). "
             "명시 시 감지 결과와 불일치하면 기동 abort — 러너가 arm 마다 명시해 "
-            "NPZ 오배치를 잡는다. setpoint(setM)는 gated 경로 전용, h'=h−β[(h·r̂)−s]r̂."
+            "NPZ 오배치를 잡는다. setpoint(setM)는 gated 경로 전용, h'=h−β[(h·r̂)−s]r̂. "
+            "setpoint_vl(exp5-2)은 --steering-npz 단일 NPZ + --steering-pathway vl 전용 — "
+            "vlln 출력의 **토큰-평균**을 setpoint 로 이동."
         ),
     )
     parser.add_argument(

@@ -61,6 +61,37 @@ docker exec lerobot python .../induced/bridge_axis_check.py --induced-manifest .
   (cross-scene) cos 0.43~0.59, cross-AUROC(ep) 0.81~1.0 — 유도축 정렬의 자연 상한.
 - exp4-1 전달: fit 산출 `global/dit_L{L}` → `<base_B>/steer/dit_L{L}` 복사 (s5 스크립트 참조).
 
+## 1b. exp5-2 신규 cell (drawer_left / mixer) — 파이프라인 파라미터화 (07-27)
+
+`CELL` 환경변수로 3 cell 지원 (기본 `ppcc_bread` = exp4-2 동작 무변경).
+
+```bash
+# feasibility + instruction variant 스캔 (정책 무관, GPU 불필요 — robocasa 컨테이너)
+docker exec robocasa python .../analyze/mixer_scene_feasibility.py \
+  --task OpenDrawer --fixture drawer --seeds 100000-100019 --out <P0>/feas_drawer.json
+#   → 결과 JSON 의 ep_lang 으로 seed 별 "Open the left/right drawer." 확인
+docker exec robocasa python .../analyze/mixer_scene_feasibility.py \
+  --task OpenStandMixerHead --seeds 100000-100019 --out <P0>/feas_mixer.json
+
+# baseline(캡처 ON) → grid 생성 → grid 실행
+CELL=drawer_left PHASE=baseline CAPTURE=1 GPUS_L="0 0" PORTS_L="8480 8481" bash collect_perturb_grid.sh
+python3 build_perturb_grid.py --cell drawer_left \
+  --baseline-dir <P0>/baseline_cap/raw_rollouts/OpenDrawer/drawer_left --out-dir <P0>
+CELL=drawer_left PHASE=grid GPUS_L="0 0" PORTS_L="8480 8481" bash collect_perturb_grid.sh
+# mixer 는 seed/cell_index 를 명시: CELL=mixer MIXER_SEED=<feas OK seed> MIXER_CELL_INDEX=<n> ...
+```
+
+- 섭동 메뉴: ppcc=C1,G1,P1,P2 / **drawer_left=C1,P1 만**(P2 대상 부재 — 사용자 결정) /
+  mixer=C1,P1,P2.
+- P1/P2 trigger 앵커 event (라벨러 `event_steps` 키): ppcc `grasp:obj` / drawer `near:handle`
+  / mixer `near:head`.
+- P1/P2 대상: drawer·mixer 는 자유물체가 아니라 **fixture 관절** —
+  `fixture:drawer:slidejoint`, `fixture:stand_mixer:head` (perturbation.py target 문법).
+- **P1/P2 magnitude 는 초기 추정치** (drawer m / mixer rad). grid 실패율 40–70% 게이트로
+  cell 마다 재캘리브레이션 필수.
+- S1 smoke 도 `CELL=` 로 돌린다 (`CELL=drawer_left GPU=<i> PORT=8470 bash s1_perturb.sh`) —
+  fixture 관절 P1/P2 는 아직 **GPU 미검증**이므로 본수집 전 S1 필수.
+
 ## 함정 (실측)
 
 - worktree submodule 은 심링크로 해결 (`lerobot -> ../../../lerobot` 등, patchceil 선례).
@@ -76,3 +107,10 @@ docker exec lerobot python .../induced/bridge_axis_check.py --induced-manifest .
   변수명은 FIT_GROUPS 처럼 비예약어로. (UID/EUID/HOSTNAME/RANDOM/SECONDS 등도 동일 주의)
 - **kitchen lang 은 ep_meta 소비가 아니라 task 재생성** — 타 instruction 주입은 collector
   `--instruction-override` 로 (B1 실사고 07-23).
+- **OpenDrawer 는 seed 가 좌/우 variant 를 결정**한다 (`_place_robot` 의 rng → `drawer_side`
+  → lang "Open the {side} drawer."). `drawer_left` cell 의 seed 100001 이 정말 left 인지는
+  reset 1회(feasibility 스캔의 `ep_lang`)로 **먼저 확인**할 것. 틀리면 collector 의
+  `--canonical-instruction` 검증이 ABORT 시킨다.
+- **worktree 경로 하드코딩 금지**: `WT_CONT` 는 호스트 worktree 경로에서 유도한다
+  (구 코드가 `exp4-2-induced-failures` 를 박아둬 다른 worktree 에서 남의 트리 코드를 돌 뻔함,
+  07-27 수정).
