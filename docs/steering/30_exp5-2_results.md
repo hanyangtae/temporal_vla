@@ -72,6 +72,16 @@ outcome-matched(clean 전라벨 60판) 대조에서 잔존:
 | drawer | g1_x005 | .837 | chance 붕괴 | 아티팩트 |
 | drawer | p1_d012 | .74 (n=12) | **.29 역전** | 무정보 |
 
+**drawer 개선판 (07-28, baseline 180판·c1_s050 캡처 후 재fit `fits_v2/`)**:
+- clean 180판 실측 SR **.383**(69 succ) — 구 60판 기준 .317은 과소표집. 이 기준으로
+  **c1_s025는 유도 실패 +.03뿐**(clean 실패 .617 vs 섭동 .646) → 회복 창 없음, eval 배제.
+  구 라운드 s025 분리수치(.914)도 clean 표본 부족의 부풀림(180판 재fit 시 .905→비게이트).
+- **c1_s050**: 유도 실패 +.175(캡처 SR .208), 게이트 통과 — 주 fit VL **.957**(d′1.06),
+  outcome-matched **.784 잔존**(전 표 최고). DiT도 .95 통과했으나 ppcc C1-DiT 해악 전례로 보류.
+- **c1_s050 VL 3-arm eval (β1.0, locked 홀수 24판)**: OFF 4/24(.17) / setm_vl **3/24(.125)** /
+  위약 4/24(.17) — paired ON:위약 1:2, ON:OFF 1:2. **완전 null.** 게이트를 통과한 분리
+  (.957)조차 개입 효과로 이어지지 않음 — read≠write 사례. drawer cell 종결.
+
 **mixer ΔSR eval (c1_s100, VL β1.0, locked 24판)**: OFF 1/24 · setm_vl 0/24 · 위약 1/24 —
 **base SR floor로 판정 불가**. mixer clean SR .167, 섭동 하 .06 → 회복 창 +0.10뿐인데
 자연 실패가 83%. **mixer는 분리 근거로만 사용** (사용자 확정 07-28). grid의 c1_s100 50%
@@ -95,12 +105,18 @@ drawer는 게이트 전 config 탈락(DiT) / VL 경계선(.914). 개선안(§6) 
 7. bash: `${x:+VAR=v}` prefix-대입 오파싱(rc=127) → `env` 인자로; ssh setsid 발사는
    `< /dev/null`; `GROUPS`/`pgrep -f` 자기매칭.
 
-## 6. 다음 (미결)
+## 6. 종합 판정과 다음
 
-- **drawer 개선 패키지** (사용자 결정 대기): clean baseline 60→180판(+2.5h) + C1 세기
-  s050 캡처 48판(+1.5h) → 재fit·게이트 → 통과 시 3-arm eval(+2.5h). 회복 창 ≈ +0.18.
-- ppcc p1 양성의 confirmatory 재실험(새 scene/seed, 사전등록) — 본 라운드는 탐색적.
-- ppcc c1 setm_vl은 β/개입 창 스윕 여지(3:0, 약양성).
+**회복이 선 곳은 ppcc P1 하나** (setM DiT L10, 위약 대비 +.25, 6:0). C1 계열은 세 cell
+모두 분리는 강하되(VL .91–1.0) 개입은 null/약양성 — **카메라 섭동의 VL 표상 이동은
+"관측"이지 행동 병목이 아닐 가능성**(read≠write, drawer .957 분리→null이 직접 증거).
+P1(물체 displace)은 분리가 낮아도(ep .96, d′ .6) 회복이 섰다 — steer 가능성은 분리도
+크기가 아니라 **섭동이 action 경로에 얹히는 방식**에 달린 것으로 읽힌다.
+
+다음 후보:
+- ppcc p1 confirmatory 재실험(새 scene/seed, 사전등록) — 본 라운드는 탐색적.
+- ppcc c1 setm_vl β/개입 창 스윕(3:0 약양성의 확대 여지).
+- C1 회복을 노린다면 VL이 아니라 DiT의 다차원 개입(확산형 Δ에 맞는 저rank>1 연산자) 검토.
 
 ## 7. 데이터 위치
 
