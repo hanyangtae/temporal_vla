@@ -83,7 +83,7 @@ def run_one(A, Y, seeds_kept, orig_idx, n_perm_label, n_perm_seed, rng, verbose_
         n_scene=S, n_seed=J, seeds_kept=[int(s) for s in seeds_kept],
         orig_seed_idx=[int(i) for i in orig_idx],
         sr_all=float(Y.mean()), m_i=m.tolist(), n_mixed=int(mixed.sum()),
-        observed=dict(**st, expected_hits=exp_hits, hits=h_obs,
+        observed=dict(**st, expected_hits=exp_hits,  # st['hits'] == h_obs
                       mixed_hits=mixed_hits, mixed_n=mixed_n,
                       chosen_orig_seed_idx=chosen_orig,
                       chosen_counts_by_orig_idx=counts,
