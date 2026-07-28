@@ -17,7 +17,7 @@
 	url = https://github.com/CladernyJorn/UP-VLA
 [submodule "src/policies/Isaac-GR00T"]
 	path = src/policies/Isaac-GR00T
-	url = https://github.com/NVIDIA/Isaac-GR00T.git
+	url = https://github.com/do-dong-park/Isaac-GR00T.git
 [submodule "src/policies/openvla-oft"]
 	path = src/policies/openvla-oft
 	url = https://github.com/moojink/openvla-oft.git
