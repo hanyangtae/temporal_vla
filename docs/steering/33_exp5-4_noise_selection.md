@@ -51,8 +51,50 @@ exp5-1의 헤드라인(drawer 0.344→0.650, 혼재 13/13)은 **seed(=노이즈 
 - `sm_npz/exp41_mixer` == `sm_npz_mixer/exp53_mixer_sm` (활성까지 bit 동일) — 같은 데이터의 중복 사본. mixer는 1 cell로 셀 것.
 - 분석 산출물: `outputs/analysis/exp5_4/` (gate/placebo/power/baselines JSON + `direction_L0_loso.npz` sha 2744…, `direction_L12_loso.npz` sha 214a…). smoke 산출물: 승준 `~/datasets/temporal_vla_outputs/eval/robocasa/groot_n15/exp5_4_smoke/` (MACHINE.txt 포함). srv50은 정리·원상 복원 완료.
 
-## 5. 후속 옵션 (미착수)
+## 5. 후속 ablation (판정 후 사용자 Q&A로 추가 실행 — 전부 기존 데이터·CPU)
 
-1. **chunk_tv 선택자 확인 실험**: 활성 불요·초경량. 단 위 검정력 계산상 S=40(320판) 필요 — 효과 크기 대비 비용 판단은 사용자 몫.
-2. exp5 본류(SAE scene 분리)로 복귀 — 이 라운드로 "selection 우회로"는 닫혔고, read 신호의 용처는 다시 열린 문제.
-3. Phase A를 그래도 돌리려면 인프라는 완비 상태 (probe→봉인→rollout, srv50 세팅 문서화됨). 단 사전 등록상 이는 탐색 재개정 후에만.
+**5.1 선택자가 실제로 한 일** (`selection_placebo.json` chosen_seed_idx): 학습축은 **20/20 scene에서
+전부 seed 0을 선택**. 13/13 적중 = seed 0이 성공하는 scene 목록과 일치 (나머지 7 = 전패 scene).
+
+**5.2 seed-column 제거** (`selection_drop_seed.py`): column SR은 완만히 분포
+(.650/.550/.450/.350/.250/.200/.150/.150 — seed 0만 성공하는 것 아님). 그러나
+- col0 제거(7 draw): 선택이 **col7(잔여 최고)로 20/20 재붕괴**, Δ̂ +0.250, column 순열 p=0.605
+- col0+7 제거(6 draw): Δ̂ −0.008, p=0.99 — 신호 소멸
+→ 어느 단계에서도 scene별 판별 없음. 축의 정보 = "draw 신원 확인 + 전역 승률 조회" 한 줄.
+메커니즘: t=0은 scene 내 관측이 동일해 활성 차이가 100% noise 지문이고, scene 내 순위 비교가
+관측 성분을 소거 → LOSO mean-diff는 공유 8개 지문에 전역 실패율을 매긴 조회 테이블로 수렴.
+
+**5.3 record 1·2 재평가** (`selection_by_record.py`, r=inference 회차=5 env-step 간격):
+- in-fold: r=0/1/2 전부 col0 20/20·column 순열 p 0.55~0.69 — 실행 후에도 신원 인식 그대로.
+- prospective pooled: r=0 +0.106 → r=1 +0.181 → r=2(L0) +0.231로 단조 증가 힌트. 단 fold 이질
+  (fold1 +0.10~0.15 vs fold2 +0.26~0.31), r=2에서 L12 +0.056으로 비재현, 유의 셀은 12셀 중
+  1개(r2·L0·fold2 p_colperm .021) → 중단 판정 불변. 또 r≥1 선택은 후보당 부분 실행이 필요해
+  "실행 전 게이팅"의 비용 이점(3.5초/후보)이 사라짐.
+
+**5.4 "t=0 신호 0.712"와의 정합**: seed-out read AUROC 0.712는 부정되지 않음. AUROC 0.71을
+8-후보 top-1로 환금하면 기대 이득이 +0.1 안팎인데 prospective가 정확히 그 크기(+0.106,
+top-1 0.45)로 나옴 — 즉 신호는 실재하되 ①약하고 ②그 정보가 활성 고유가 아니라 action 통계
+(chunk_tv)에도 동일하게 존재. exp5-3 "read 전용"에서 exp5-4 "read를 selection으로 환금해도
+자명 방법 이상을 못 범"까지 좁혀짐.
+
+## 6. 후속 옵션 (미착수)
+
+1. **good-seed 전이 검증** (공짜, 승준 CPU): scene 10개로 best seed를 고르고 나머지 10 scene에서
+   그 seed SR 측정 — "활성 verifier"는 죽었어도 "좋은 draw의 cross-scene 전이"(Golden Ticket류,
+   머신-로컬) 명제는 별도로 살아있음. winner's curse·n=10 검정력 한계 명시 필요.
+2. **chunk_tv 초경량 선택자 확인 실험**: 활성 불요. 단 검정력상 S=40(320판) 필요.
+3. **시간축 추적**: r↑ 단조 증가 힌트(5.3)를 fold·layer 재현 조건으로 재검 — 상호작용이 자란
+   지점에서의 선택은 이론적으론 유망하나 부분 실행 비용 문제를 함께 풀어야 함.
+4. **2605.28527 본문 정독**: 그들의 probe-selector 성과도 scene 통제 부재라 우리와 같은
+   신원-암기 confound 의심 — 재검 관점 자체가 기여가 될 수 있음.
+5. exp5 본류(SAE scene 분리) 복귀 — 이 라운드로 "selection 우회로"는 닫힘.
+6. Phase A 재개 시 인프라는 완비 (probe→봉인→rollout, srv50 세팅 문서화). 단 사전 등록상
+   탐색 재개정 후에만.
+
+## 7. 세션 요약 (2026-07-28, exp5-4 세션)
+
+계획(Gate1 Codex 반론 반영·§9 사전등록) → 병렬 실행(승준 CPU 반증게이트+위약+baseline /
+probe 인프라 구현+Gate2 / srv50 smoke / 문헌조사) → **게이트 발동으로 Phase A rollout 0판에
+종결** → 후속 ablation 3종(§5)으로 귀인 확정. GPU는 smoke에만 사용(srv50 GPU3, 종료 후
+원상복원). 커밋 이력: probe 모드(a0bdbd1) → seed manifest 동결(7dba20d) → Gate2 수정(eead170)
+→ 분석 스크립트·방향 NPZ(승준 에이전트) → 종결 문서(cec6401) → ablation(3a9647a·65a7282·5d7b471).
