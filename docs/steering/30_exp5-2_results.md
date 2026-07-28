@@ -113,10 +113,14 @@ drawer는 게이트 전 config 탈락(DiT) / VL 경계선(.914). 개선안(§6) 
 P1(물체 displace)은 분리가 낮아도(ep .96, d′ .6) 회복이 섰다 — steer 가능성은 분리도
 크기가 아니라 **섭동이 action 경로에 얹히는 방식**에 달린 것으로 읽힌다.
 
-다음 후보:
-- ppcc p1 confirmatory 재실험(새 scene/seed, 사전등록) — 본 라운드는 탐색적.
-- ppcc c1 setm_vl β/개입 창 스윕(3:0 약양성의 확대 여지).
-- C1 회복을 노린다면 VL이 아니라 DiT의 다차원 개입(확산형 Δ에 맞는 저rank>1 연산자) 검토.
+다음 후보 (우선순위순):
+1. **ppcc p1 confirmatory 재실험**(새 scene/seed, 사전등록) — 본 라운드는 탐색적, 유일하게
+   선 신호를 굳히는 것이 최우선.
+2. ppcc c1 setm_vl β/개입 창 스윕(3:0 약양성의 확대 여지).
+3. C1의 DiT 다차원 개입(rank>1 setpoint 또는 clean-vs-perturbed conceptor) — ⚠️**미검증
+   가설**: "rank-1 setM 해악은 확산형 Δ(top1 EVR .33–.60)에 1방향 연산자를 쓴 탓"이라는
+   사후 해석에 기댐. 반례 후보(DiT 개입 자체가 C1 부적합, 전 구간 개입 부작용) 미배제이고,
+   다차원 연산자의 전과(VL conceptor 퇴화, exp3 conceptor 위약 종결)도 나쁨 — 1·2 이후에만.
 
 ## 7. 데이터 위치
 
