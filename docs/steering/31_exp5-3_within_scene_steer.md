@@ -76,7 +76,53 @@ A0 앵커 40판(home)으로 머신 이동 확인: 0.350 vs srv50 동일칸 0.375
   놓침" 실패 유형이 활성에서 뚜렷. phase-gated 개입 후보 지점이나 소표본.
 - mixer steer 는 보류(사용자: 수집 먼저). 우선순위 drawer β 재조정 > mixer.
 
-## 4. Confound audit
+## 4. 종합 정리 (2026-07-28 라운드 종결 — 시도 / 결과 / 미시도 / 데이터)
+
+### 4.1 시도한 것과 결과
+
+| # | 시도 | 결과 |
+|---|---|---|
+| 1 | **scene-matched 수집** — 같은 scenario_seed 에 inference_seed 8종 변주 | drawer 320판(srv50)·mixer 160판(home)·beer 320판 내 포함. scene 안 succ/fail 혼재 성립 (drawer 13/20·mixer 15/20 혼재) |
+| 2 | **within-scene 분리 진단** (scene·길이·dwell·seed 통제) | **분리 실재**: drawer 0.84(z4.4, t=0에 0.71=초기조건형)·mixer 0.73/seed-out 0.61(중간)·beer 0.62(보류). cross-scene 방향(0.53~0.67)은 열세 = **기존 cross-scene fit 은 scene 구조 학습** |
+| 3 | **setM steering, β=1.0 full** (LOO-by-seed fit·per-scene setpoint) | **파괴적**: SR 0.344→0.025 (−51/160), 해악 52/구제 1. read≠write 정량 실증 |
+| 4 | **β sweep** (0.2/0.5, exp5-1 요청) | 해악 β-단조(100%→43%→21%) = **용량 문제**. 구제는 전 용량 ~0 |
+| 5 | **future-only mask [0,1,0]** (β 1.0/0.5) | β=1.0 에서 **무해**(SR 0.350=A0)·jerk 0.94× → **떨림·파괴 주범 = action 토큰 개입** 확정. 구제 3/26 최고지만 순Δ 0 |
+| 6 | **위약** (scene내 라벨순열 전파이프·준직교·dose-match) | 해악 3/14 처치와 동일, 구제 1/26 — **방향 이득은 위약 미초과**. exp2 패턴 반복 |
+| 7 | **gated×future** (reach/grasp phase 한정) | SR 0.325, 구제 2/26 — 위약과 구별 불가 |
+| 8 | 부수 검증 | **머신 결정론 40/40**(A0 재실행 성패 완전일치)·jerk 로깅 상시화·상단배너 annot 표준화·seed→instruction registry(drawer 좌우/beer 1%) |
+
+**한 줄 결론: within-scene succ/fail 축은 잘 읽히지만(0.84), 어떤 밀기(β×세그먼트×phase)로도
+위약을 못 이긴다 — "read 전용" 확정.** conceptor(exp2/3)에 이어 setM 까지, raw 활성 대조
+기반 밀기 연산자 두 계열이 모두 닫힘.
+
+### 4.2 안 해본 것 (닫은 이유 포함)
+
+- **성분 제거(projection-out, LEACE류)** · **SAE feature clamp**: G3 메뉴의 잔여 2 연산자.
+  raw 대조 방향 재사용인 한 같은 벽(방향에 이득 정보 없음) 예상 — 시도하려면 위약 내장 +
+  scene 잔차화(SAE) 선행 조건부로만.
+- **WA-LQR 게인(W)**: exp4 조건부 항목, 게이트 미통과 상태로 미시도.
+- **fut β≥1.5 증량**: 위약 미초과 확인 후 기대값 하락으로 미실행.
+- **beer·mixer steering**: 진단 약(0.62)/중간(0.61) — drawer 결론이 음성이라 착수 안 함.
+- **selection(고르기)**: exp5-4 로 이관 — 별도 세션에서 Phase A 게이트 발동, **13/13 은
+  seed 주효과(암기) 판정으로 중단**([[exp5-4-noise-selection-verdict]]). 본 세션의
+  seed-공유 부풀림 경고가 실증된 셈.
+- 떨림 보강 재실행(구 permanent 160 전량 kin) — β sweep 의 A0_kin 40판으로 대체, 전량은 미실행.
+
+### 4.3 데이터·인프라 자산 (위치)
+
+| 자산 | 위치 | 규모 |
+|---|---|---|
+| drawer/beer scene-matched 원본 pkl | 승준 HDD `datasets/.../scene_matched_exp41/` | 320판 143GB |
+| mixer scene-matched 원본 pkl | 승준 `exp5_3_mixer_sm/` + **home 원본 보존** | 160판 97GB |
+| 축약 NPZ (진단용, record별 [L,D]) | 승준 `~/sm_npz/`·`~/sm_npz_mixer/` | ~2.8GB |
+| fit cache (토큰 해상도) | 승준 `~/exp53_npz/fit_cache_L12.npz` | 재fit 수초 |
+| steering NPZ registry (LOO 8fold) | 승준 `~/exp53_npz/`·home `~/exp53_npz/deploy/` — permanent(per-scene setpoint)/gated/permanent_fut/gated_fut/placebo_fut | 189+18+… 개 |
+| eval 산출 (9 arm, 487판, json+mp4) | home `outputs/eval/robocasa/groot_n15/exp5_3/` | jerk 는 β sweep 이후 arm 만 |
+| 셀 단위 paired 원자료 | repo 루트 `exp5-3_bsweep_paired.tsv` | 40행 |
+| 진단/게이트 JSON | 승준 `~/sm_*.json`·`~/exp53_npz/fit_report.json`·`placebo_report.json` | — |
+| 스크립트 | `scripts/safe/groot_n15/robocasa/steer/exp5_3/` (fit/eval/sweep/위약/mixer수집/집계) | 커밋됨 |
+
+## 5. Confound audit
 
 | # | 게이트 | 판정 | 근거 |
 |---|---|---|---|

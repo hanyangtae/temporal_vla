@@ -117,14 +117,19 @@ run_one() {  # $1=arm $2=scene $3=inf $4=epidx $5=port
 
 run_grid() {  # $1=arm, ROWS 배열 사용 (scene inf epidx)
   local arm=$1 n=${#ROWS[@]}
+  # ★ bare `wait` 금지: serve_up 이 & 로 띄운 serve 도 이 셸의 자식이라 bare wait 은
+  # 죽지 않는 serve 를 영원히 기다린다(2026-07-27 실측: A0 40판 후 44분 정지).
+  # 워커 PID 만 명시적으로 기다린다.
+  local wpids=()
   for ((w=0; w<${#PORTS[@]}; w++)); do
     (
       for ((i=w; i<n; i+=${#PORTS[@]})); do
         run_one "$arm" ${ROWS[$i]} "${PORTS[$w]}"
       done
     ) &
+    wpids+=($!)
   done
-  wait
+  wait "${wpids[@]}"
 }
 
 trap 'serve_kill' EXIT
