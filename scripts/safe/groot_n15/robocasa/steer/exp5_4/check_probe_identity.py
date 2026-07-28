@@ -17,6 +17,7 @@ pkl 은 torch 텐서를 담고 있어 unpickle 에 torch 가 필요하다 (원�
 from __future__ import annotations
 
 import argparse
+import json
 import pickle
 from pathlib import Path
 
@@ -75,12 +76,43 @@ def main() -> None:
     diff = np.abs(probe_h.astype(np.float64) - rec0.astype(np.float64))
     print(f"hidden : bit_equal={bit_equal} maxabs={diff.max():.3e} mean={diff.mean():.3e}")
 
-    # action chunk 대조 (probe 가 저장한 첫 chunk vs pkl 의 첫 record action)
-    if "action_chunk" in npz.files and payload.get("action_vectors") is not None:
-        pa = np.asarray(npz["action_chunk"][idx], dtype=np.float32)
-        av = np.asarray(payload["action_vectors"], dtype=np.float32)
-        print(f"action : probe_chunk{pa.shape} pkl_action_vectors{av.shape} "
-              f"(키 순서 다름 — 참고용, 판정은 hidden bit_equal)")
+    # action chunk 대조 — pkl 의 actions[0] = **첫 inference 의 전체 chunk**(sub-key dict)
+    # 를 probe 가 쓴 키 순서로 재구성해 값까지 비교한다 (action_vectors 는 replan 별
+    # 첫 스텝 벡터라 대조 대상이 아님 — Gate2 P2 지적 반영).
+    action_ok: bool | None = None
+    if "action_chunk" in npz.files:
+        probe_chunk = np.asarray(npz["action_chunk"][idx], dtype=np.float32)
+        keys = json.loads(str(npz["action_chunk_keys"])) if "action_chunk_keys" in npz.files else []
+        actions0 = (payload.get("actions") or [None])[0]
+        if not keys or not isinstance(actions0, dict):
+            print("action : pkl actions[0] 또는 probe 키 목록 없음 — 비교 생략")
+        else:
+            missing = [k for k in keys if k not in actions0]
+            if missing:
+                print(f"action : pkl actions[0] 에 키 없음 {missing} (키셋={sorted(actions0)})")
+                action_ok = False
+            else:
+                pieces = []
+                for k in keys:
+                    arr = np.asarray(actions0[k], dtype=np.float32)
+                    if arr.ndim == 3 and arr.shape[0] == 1:
+                        arr = arr[0]
+                    if arr.ndim == 1:
+                        arr = arr[:, None]
+                    pieces.append(arr)
+                pkl_chunk = np.concatenate(pieces, axis=1)
+                if pkl_chunk.shape != probe_chunk.shape:
+                    print(f"action : shape 불일치 {probe_chunk.shape} != {pkl_chunk.shape}")
+                    action_ok = False
+                else:
+                    action_ok = bool(np.array_equal(probe_chunk, pkl_chunk))
+                    adiff = np.abs(
+                        probe_chunk.astype(np.float64) - pkl_chunk.astype(np.float64)
+                    ).max()
+                    print(
+                        f"action : bit_equal={action_ok} maxabs={adiff:.3e} "
+                        f"shape={probe_chunk.shape} keys={keys}"
+                    )
 
     # 층별 최대 오차 (어느 layer 부터 갈리는지 — 비결정 커널 위치 힌트)
     if probe_h.ndim >= 1 and not bit_equal:
@@ -89,7 +121,10 @@ def main() -> None:
         for i, m in enumerate(per_layer):
             name = layers[i] if i < len(layers) else i
             print(f"  L{name}: maxabs={m:.3e}")
-    print("VERDICT:", "PASS(bit-identical)" if bit_equal else "FAIL(not bit-identical)")
+    ok = bit_equal and (action_ok is not False)
+    print("VERDICT:", "PASS(bit-identical)" if ok else "FAIL(not bit-identical)")
+    if not ok:
+        raise SystemExit(1)   # ★비트 불일치는 자동 파이프라인이 반드시 멈춰야 하는 사건
 
 
 if __name__ == "__main__":
