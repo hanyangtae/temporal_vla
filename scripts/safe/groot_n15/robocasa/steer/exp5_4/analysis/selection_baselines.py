@@ -10,7 +10,11 @@
   privileged oracle   : oracle_handle_cos (손잡이 좌표 + 초기 eef — 배포 불가)
 
 설계 2종: in-fold K=8 (전체 후보) / prospective K=4 (gate 와 동일한 seed-out fold).
-검정: 관측 m_i 조건부 exact randomization (Poisson-binomial DP).
+검정 (★2026-07-28 정정 — Codex Gate2 리뷰)
+  · baseline 은 라벨과 무관한 **고정 선택자** → Poisson-binomial DP exact 유효(pb_valid=true).
+  · **학습 축(LOSO)** 은 방향이 다른 scene 의 라벨에 의존해 scene 별 적중이 독립이 아니므로
+    PB 는 부적합 → 라벨셔플 재fit / seed column 공통순열 순열검정을 primary 로 쓴다.
+  · chunk 통계량은 csv(=replan 별 첫 action 1행) 가 아니라 **pkl actions[0] (16-step chunk)** 에서 계산.
 
 주의: 초기 Gaussian noise 재구성 baseline 은 **불가** — 근거는 --help 및 출력 note 참조.
 """
@@ -27,8 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _sel_common import (load, to_matrix, loso_select, score_select,  # noqa: E402
                          delta_stat, pb_pvalue, seed_permutations)
 from _sel_baselines import (activation_norm_scores, seed_only_scores,  # noqa: E402
-                            action_scores, handle_oracle_scores, load_handle_tsv,
-                            DEPLOYABLE)
+                            pkl_pass, load_handle_tsv, DEPLOYABLE)
 
 NOISE_NOTE = (
     "초기 Gaussian noise 재구성 baseline 미구현(불가). 근거: scripts/serve/lerobot.py "
@@ -67,10 +70,11 @@ def main():
     ap.add_argument("--cells", default="pq3_drawer_right,pq3_ppcc_beer,exp41_mixer")
     ap.add_argument("--layers", default="0", help="학습축·act_norm 을 볼 layer")
     ap.add_argument("--window", type=int, default=1)
-    ap.add_argument("--chunk", type=int, default=5)
     ap.add_argument("--with-oracle", action="store_true",
                     help="손잡이 기하 oracle (drawer 전용, scene 당 pkl 1개 로드)")
     ap.add_argument("--handle-tsv", default="/home/kimseungjun/exp53_analysis/handle_all.tsv")
+    ap.add_argument("--n-perm-label", type=int, default=2000)
+    ap.add_argument("--pkl-cache-dir", default="/home/kimseungjun/exp54_results/pkl_cache")
     ap.add_argument("--n-perm-seed", type=int, default=40320,
                     help="seed column 공통 순열 (8!=40320 이면 전수)")
     ap.add_argument("--seed", type=int, default=424101)
@@ -99,9 +103,13 @@ def main():
                         infold={}, prospective={})
 
         scores, meta = {}, {}
-        act, note = action_scores(cell, E, chunk=a.chunk)
-        print(f"  csv: {note}")
-        cell_out["csv_note"] = note
+        geom = (load_handle_tsv(a.handle_tsv)
+                if (a.with_oracle and Path(a.handle_tsv).expanduser().exists()) else None)
+        act, oracle, diag = pkl_pass(cell, E, scenes, geom=geom,
+                                     cache=f"{a.pkl_cache_dir}/{cell}_chunk.npz")
+        print(f"  pkl chunk: {diag['n_ok']}/{diag['n_total']}판 (결측 {diag['n_miss']})"
+              f" · 출처 {diag['source']}")
+        cell_out["pkl_note"] = {k: v for k, v in diag.items() if k != "cached"}
         scores.update(act)
         scores["seed_only"] = seed_only_scores(seeds, S)
         for L in want_layers:
@@ -110,17 +118,10 @@ def main():
             scores[f"act_norm_L{L}"] = activation_norm_scores(A)
             meta[f"learned_L{L}"] = A
 
-        if a.with_oracle and Path(a.handle_tsv).expanduser().exists():
-            geom = load_handle_tsv(a.handle_tsv)
-            if any(s in geom for s in scenes):
-                osc, odiag = handle_oracle_scores(cell, E, scenes, geom, chunk=a.chunk)
-                if np.isfinite(osc).any():
-                    scores["oracle_handle_cos"] = osc
-                    cell_out["oracle_diag"] = odiag
-                    print(f"  oracle: scene {odiag['n_scene_geom']}개 기하 확보, "
-                          f"평균 cos(첫 action, 손잡이방향) {odiag['mean_cos']}")
-            else:
-                print("  oracle: 이 cell 의 scene 은 handle tsv 에 없음 → 스킵")
+        if geom is not None and np.isfinite(oracle).any():
+            scores["oracle_handle_cos"] = oracle
+            print(f"  oracle(privileged): 평균 cos(chunk 첫 step, 손잡이방향) "
+                  f"{diag['mean_oracle_cos']:.3f}")
 
         for label, folds in (("infold", infold), ("prospective", prosp)):
             rows = []
@@ -134,11 +135,15 @@ def main():
                     st = delta_stat(r)
                     v = r["valid"]
                     p, _ = pb_pvalue(r["base"][v].astype(float), int(r["top1"][v].sum()))
-                    psp, _n = seedperm_p(
-                        lambda Yp: loso_select(A, Yp, fit_seeds=fit_mask,
-                                               eval_seeds=test_mask),
-                        Y, perms, st["delta"])
-                    fr.append(dict(fold=fname, **st, p_exact_pb=float(p), p_seedperm=psp))
+                    sel = (lambda Yp, fm=fit_mask, te=test_mask:
+                           loso_select(A, Yp, fit_seeds=fm, eval_seeds=te))
+                    psp, _n = seedperm_p(sel, Y, perms, st["delta"])
+                    nullL = np.array([delta_stat(sel(np.stack([rng.permutation(r0)
+                                                               for r0 in Y])))["delta"]
+                                      for _ in range(a.n_perm_label)])
+                    plab = float((np.sum(nullL >= st["delta"]) + 1) / (a.n_perm_label + 1))
+                    fr.append(dict(fold=fname, **st, p_labelshuffle=plab, p_seedperm=psp,
+                                   p_exact_pb_reference_only=float(p), pb_valid=False))
                     dd.append(st["delta"])
                 rows.append(dict(name=f"학습축(mean-diff) L{L}", ascending=True,
                                  delta_pooled=float(np.mean(dd)), folds=fr,
@@ -162,8 +167,8 @@ def main():
                       f"{e.get('kind','learned'):16} {e['delta_pooled']:+8.3f} "
                       f"{np.mean([x['sr_top1'] for x in d]):7.3f} "
                       f"{np.mean([x['sr_base'] for x in d]):7.3f} "
-                      + " ".join(f"ex{x['p_exact_pb']:.3f}/sp{x['p_seedperm']:.3f}"
-                                 for x in d))
+                      + " ".join(f"{('lab%.3f' % x['p_labelshuffle']) if 'p_labelshuffle' in x else ('PB%.3f' % x['p_exact_pb'])}"
+                                 f"/sp{x['p_seedperm']:.3f}" for x in d))
 
             best_l = max((e for e in rows if e.get("kind") == "learned"),
                          key=lambda e: e["delta_pooled"], default=None)

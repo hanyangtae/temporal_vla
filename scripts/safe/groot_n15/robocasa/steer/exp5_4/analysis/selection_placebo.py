@@ -5,12 +5,15 @@
 
 primary 통계량 Δ̂ = mean_i (y_top1,i − m_i/8), 전 20 scene ITT (전패/전승 포함).
 
-  · 검정 A (exact randomization) : 관측 m_i 조건부. 무작위 선택이면 scene i 적중확률
-        p_i = m_i/8 → 총 적중수 H 의 Poisson-binomial DP 정확 p. 셔플 불필요.
+  · 검정 C (라벨셔플 재fit) = **primary**. scene 내 라벨 셔플 후 방향 fit 부터 재실행.
+        ★2026-07-28 정정(Codex Gate2): LOSO 선택자는 방향이 다른 scene 의 라벨에 의존하므로
+        scene 별 적중이 독립이 아니고, Poisson-binomial "exact" 는 성립하지 않는다.
+        PB 값은 참고로만 남기고(pb_valid=false) 고정 선택자(외부 동결 방향) 전용으로 둔다.
   · 검정 B (seed column 공통 순열) : 이 데이터는 20 scene 이 **같은 8 seed 를 공유**하므로
         scene 별 독립 순열은 seed 주효과를 지워버린다. 모든 scene 에 같은 순열을 가하는
         8!=40320 전수 순열이 정직한 null. A 와 B 가 갈리면 seed 주효과 증거.
-  · 검정 C (라벨셔플 재fit, secondary) : scene 내 라벨 셔플 후 **방향 fit 부터 재실행**.
+  · 검정 A (Poisson-binomial DP) : **고정 선택자 전용** 참고값 (Phase A 처럼 방향이 옛
+        데이터로 동결된 경우에만 유효). 이 스크립트의 학습 선택자에는 부적합.
 
 diagnostic: 혼재 scene top-1 적중수, worst-1 SR(음성 대조).
 primary = layer L0, 나머지 6 layer 는 부표.
@@ -44,7 +47,7 @@ def main():
     ap.add_argument("--primary-layer", type=int, default=0)
     ap.add_argument("--n-perm-seed", type=int, default=40320, help="primary layer 전수")
     ap.add_argument("--n-perm-seed-secondary", type=int, default=2000)
-    ap.add_argument("--n-perm-label", type=int, default=500)
+    ap.add_argument("--n-perm-label", type=int, default=2000)
     ap.add_argument("--window", type=int, default=1)
     ap.add_argument("--seed", type=int, default=424101)
     ap.add_argument("--out", default="/home/kimseungjun/exp54_results/selection_placebo.json")
@@ -66,7 +69,7 @@ def main():
         cell_out = dict(n_scene=S, n_seed=J, sr_all=float(Y.mean()), m_i=m.tolist(),
                         layers=layers, per_layer={})
         print(f"{'layer':>6} {'base':>7} {'top1':>7} {'Δ̂':>8} {'적중/기대':>12} "
-              f"{'p_exact':>8} {'p_seedperm':>11} {'p_라벨셔플':>11} "
+              f"{'p_라벨셔플★':>12} {'p_seedperm':>11} {'PB(참고)':>9} "
               f"{'혼재적중':>9} {'worst1':>7}")
 
         for li, L in enumerate(layers):
@@ -100,7 +103,7 @@ def main():
 
             tag = " ★primary" if L == a.primary_layer else ""
             print(f"  L{L:<4} {st['sr_base']:7.3f} {st['sr_top1']:7.3f} {st['delta']:+8.3f} "
-                  f"{h_obs:4d}/{p_i.sum():6.1f} {p_exact:8.4f} {pB:11.4f} {pC:11.4f} "
+                  f"{h_obs:4d}/{p_i.sum():6.1f} {pC:12.4f} {pB:11.4f} {p_exact:9.4f} "
                   f"{mixed_hits:4d}/{mixed_n:<4d} {st['sr_worst1']:7.3f}{tag}")
 
             cell_out["per_layer"][str(L)] = dict(
@@ -109,12 +112,14 @@ def main():
                               chosen_seed_idx=res["chosen"].tolist(),
                               per_scene_top1=res["top1"].tolist(),
                               per_scene_m=m.tolist()),
-                testA_exact=dict(p=float(p_exact), method="Poisson-binomial DP, p_i=m_i/8"),
+                testA_exact_reference_only=dict(
+                    p=float(p_exact), pb_valid=False,
+                    method="Poisson-binomial DP, p_i=m_i/8 — 고정 선택자 전용(학습 선택자엔 부적합)"),
                 testB_seedperm=dict(p=pB, n_perm=len(perms), exhaustive=exhaustive,
                                     null_mean=float(nullB.mean()), null_sd=float(nullB.std()),
                                     null_q=[float(q) for q in np.percentile(nullB, [5, 50, 95])],
                                     sec=round(secB, 1)),
-                testC_labelshuffle=dict(p=pC, n_perm=a.n_perm_label,
+                testC_labelshuffle_PRIMARY=dict(p=pC, n_perm=a.n_perm_label,
                                         null_mean=float(nullC.mean()),
                                         null_sd=float(nullC.std()),
                                         null_q=[float(q) for q in

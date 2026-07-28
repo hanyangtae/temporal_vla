@@ -10,10 +10,14 @@
   · 그 scene 의 held-out 4 후보 중 top-1 선택 → prospective K=4.
 
 통계량 Δ̂ = mean_i (y_top1,i − 후보평균 SR_i), 전 20 scene ITT (전패/전승 포함).
-검정 1: 관측 m_i 조건부 exact randomization (p_i = m_i^test/4 Poisson-binomial DP).
-검정 2: 8 seed column 공통 순열 전수(8!=40320) — scene 별 독립 순열이 아니라
-        모든 scene 에 같은 순열을 적용(이 데이터는 8 seed 를 공유하므로 정직한 null).
-        두 검정이 갈리면 seed 주효과(특정 noise seed 가 원래 잘함) 증거.
+
+검정 (★2026-07-28 정정 — Codex Gate2 리뷰)
+  · **학습 선택자(LOSO)** 는 방향이 다른 scene 의 라벨에 의존 → scene 별 적중이 독립이
+    아니므로 Poisson-binomial "exact" 는 성립하지 않는다. 학습 경로의 primary 검정은
+    (i) scene 내 라벨셔플 + **전체 재fit** null, (ii) 8 seed column 공통 순열(전수 8!)
+    + 재fit null 두 가지 순열검정이다. PB 값은 참고로만 찍고 `pb_valid=false` 로 표시.
+  · **고정 선택자(baseline 점수)** 는 라벨과 무관하게 순위가 정해지므로 PB exact 가 유효
+    (`pb_valid=true`). baseline 에도 seed column 순열 p 를 병기한다.
 
 판정: pooled Δ̂ ≤ 0 이거나 최강 배포가능 baseline 이하 → **Phase A 중단 권고**.
 """
@@ -31,20 +35,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _sel_common import (load, to_matrix, loso_select, score_select,  # noqa: E402
                          delta_stat, pb_pvalue, seed_permutations)
 from _sel_baselines import (activation_norm_scores, seed_only_scores,  # noqa: E402
-                            action_scores, DEPLOYABLE)
+                            pkl_pass, load_handle_tsv, DEPLOYABLE)
 
 
 def seedperm_null(select_fn, Y, perms, obs_delta):
-    """seed column 공통 순열 null: 라벨 행렬의 열을 π 로 재배치해 통계량 재계산."""
-    null = np.empty(len(perms))
-    for k, pi in enumerate(perms):
-        null[k] = delta_stat(select_fn(Y[:, list(pi)]))["delta"]
-    p = float((np.sum(null >= obs_delta) + 1) / (len(perms) + 1))
-    return p, null
+    """seed column 공통 순열 null (fit 포함 재실행)."""
+    null = np.array([delta_stat(select_fn(Y[:, list(pi)]))["delta"] for pi in perms])
+    return float((np.sum(null >= obs_delta) + 1) / (len(perms) + 1)), null
+
+
+def labelshuffle_null(select_fn, Y, n_perm, rng, obs_delta):
+    """scene 내 라벨셔플 + 재fit null (학습 선택자 primary)."""
+    null = np.empty(n_perm)
+    for k in range(n_perm):
+        Yp = np.stack([rng.permutation(row) for row in Y])
+        null[k] = delta_stat(select_fn(Yp))["delta"]
+    return float((np.sum(null >= obs_delta) + 1) / (n_perm + 1)), null
 
 
 def pb_p(res):
-    """관측 m_i 조건부 exact p (P(H ≥ h_obs))."""
+    """Poisson-binomial exact p — 고정 선택자에서만 유효."""
     v = res["valid"]
     p_i = res["base"][v].astype(float)
     h = int(res["top1"][v].sum())
@@ -59,9 +69,13 @@ def main():
     ap.add_argument("--layers", default="0", help="쉼표 구분, 기본 primary L0")
     ap.add_argument("--window", type=int, default=1)
     ap.add_argument("--n-perm-seed", type=int, default=40320, help="8!=40320 이면 전수")
+    ap.add_argument("--n-perm-label", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=424101)
-    ap.add_argument("--chunk", type=int, default=5, help="첫 chunk 로 볼 csv 행 수")
     ap.add_argument("--no-baselines", action="store_true")
+    ap.add_argument("--pkl-cache-dir", default="/home/kimseungjun/exp54_results/pkl_cache")
+    ap.add_argument("--with-oracle", action="store_true",
+                    help="손잡이 기하 privileged oracle 포함 (handle tsv 에 있는 scene 만)")
+    ap.add_argument("--handle-tsv", default="/home/kimseungjun/exp53_analysis/handle_all.tsv")
     ap.add_argument("--out", default="/home/kimseungjun/exp54_results/selection_gate.json")
     a = ap.parse_args()
 
@@ -74,45 +88,51 @@ def main():
         if not eps:
             print(f"[skip] {cell}: npz 없음")
             continue
-        A0, Y, scenes, seeds, E = to_matrix(eps, 0, W=a.window)
+        _A0, Y, scenes, seeds, E = to_matrix(eps, 0, W=a.window)
         S, J = Y.shape
-        print(f"\n{'='*90}\n{cell}: {S} scene × {J} seed = {S*J}판 · 전체 SR {Y.mean():.3f}"
+        print(f"\n{'='*94}\n{cell}: {S} scene × {J} seed = {S*J}판 · 전체 SR {Y.mean():.3f}"
               f" · m_i {Y.sum(1).tolist()}")
         cell_out = dict(n_scene=S, n_seed=J, sr_all=float(Y.mean()),
                         m_i=Y.sum(1).tolist(), seeds=seeds, folds={}, baselines={})
 
         folds = [("fold1", np.arange(J) < J // 2), ("fold2", np.arange(J) >= J // 2)]
-        # fold 이름 = train 쪽 표기. test 는 여집합.
         perms, exhaustive = seed_permutations(J, a.n_perm_seed, rng)
-        print(f"  seed column 순열: {len(perms)}개 ({'전수' if exhaustive else '부분표본'})")
+        print(f"  seed column 순열 {len(perms)}개({'전수' if exhaustive else '부분표본'})"
+              f" · 라벨셔플 재fit {a.n_perm_label}회")
 
-        # ── baseline 점수 준비 (fold 무관, split 은 동일하게 적용)
         scores = {}
         if not a.no_baselines:
-            act_scores, note = action_scores(cell, E, chunk=a.chunk)
-            print(f"  csv baseline: {note}")
-            cell_out["csv_note"] = note
-            scores.update(act_scores)
+            geom = (load_handle_tsv(a.handle_tsv)
+                    if (a.with_oracle and Path(a.handle_tsv).expanduser().exists()) else None)
+            ch, oracle, diag = pkl_pass(cell, E, scenes, geom=geom,
+                                        cache=f"{a.pkl_cache_dir}/{cell}_chunk.npz")
+            print(f"  pkl chunk baseline: {diag['n_ok']}/{diag['n_total']}판"
+                  f" (결측 {diag['n_miss']}) · 출처 {diag['source']}"
+                  + (f" · 평균 oracle cos {diag['mean_oracle_cos']:.3f}"
+                     if diag.get("mean_oracle_cos") is not None else ""))
+            cell_out["pkl_note"] = {k: v for k, v in diag.items() if k != "cached"}
+            scores.update(ch)
             scores["seed_only"] = seed_only_scores(seeds, S)
+            if geom is not None and np.isfinite(oracle).any():
+                scores["oracle_handle_cos"] = oracle
 
         for L in want_layers:
             li = layers.index(L)
-            A, _Y2, _s, _sd, _E = to_matrix(eps, li, W=a.window)
+            A, *_ = to_matrix(eps, li, W=a.window)
             if not a.no_baselines:
                 scores[f"act_norm_L{L}"] = activation_norm_scores(A)
 
             for fname, train_mask in folds:
                 test_mask = ~train_mask
-                res = loso_select(A, Y, fit_seeds=train_mask, eval_seeds=test_mask)
+                sel = (lambda Yp, tr=train_mask, te=test_mask, AA=A:
+                       loso_select(AA, Yp, fit_seeds=tr, eval_seeds=te))
+                res = sel(Y)
                 st = delta_stat(res)
                 p_pb, h_obs, exp_h = pb_p(res)
 
-                # seed column 공통 순열 null (fit 까지 재실행)
                 t0 = time.time()
-                p_seed, null = seedperm_null(
-                    lambda Yp: loso_select(A, Yp, fit_seeds=train_mask,
-                                           eval_seeds=test_mask),
-                    Y, perms, st["delta"])
+                p_seed, nullS = seedperm_null(sel, Y, perms, st["delta"])
+                p_lab, nullL = labelshuffle_null(sel, Y, a.n_perm_label, rng, st["delta"])
                 sec = time.time() - t0
 
                 key = f"L{L}_{fname}"
@@ -120,44 +140,50 @@ def main():
                     layer=L, fold=fname,
                     train_seeds=[seeds[i] for i in np.where(train_mask)[0]],
                     test_seeds=[seeds[i] for i in np.where(test_mask)[0]],
-                    **st, p_exact_pb=p_pb, expected_hits=exp_h,
-                    p_seedperm=p_seed, n_perm=len(perms), perm_exhaustive=exhaustive,
-                    null_seedperm_mean=float(null.mean()), null_seedperm_sd=float(null.std()),
-                    null_seedperm_q=[float(q) for q in np.percentile(null, [5, 50, 95])],
+                    **st, expected_hits=exp_h,
+                    p_labelshuffle=p_lab, p_seedperm=p_seed,
+                    p_exact_pb_reference_only=p_pb, pb_valid=False,
+                    n_perm_seed=len(perms), perm_exhaustive=exhaustive,
+                    n_perm_label=a.n_perm_label,
+                    null_seedperm=[float(nullS.mean()), float(nullS.std())],
+                    null_labelshuffle=[float(nullL.mean()), float(nullL.std())],
                     sec=round(sec, 1))
-                print(f"  [{key}] 학습축  Δ̂ {st['delta']:+.3f}  top1 {st['sr_top1']:.3f} "
-                      f"(base {st['sr_base']:.3f}, 적중 {st['hits']}/{st['n_scene']}, "
-                      f"기대 {exp_h:.1f})  worst1 {st['sr_worst1']:.3f}  "
-                      f"p_exact {p_pb:.4f}  p_seedperm {p_seed:.4f}  [{sec:.0f}s]")
+                print(f"  [{key}] 학습축 Δ̂ {st['delta']:+.3f} top1 {st['sr_top1']:.3f}"
+                      f" (base {st['sr_base']:.3f}, 적중 {st['hits']}/{st['n_scene']},"
+                      f" 기대 {exp_h:.1f}) worst1 {st['sr_worst1']:.3f}"
+                      f"  p_라벨셔플 {p_lab:.4f}  p_seedperm {p_seed:.4f}"
+                      f"  (PB {p_pb:.4f} — 학습선택자엔 부적합) [{sec:.0f}s]")
 
-        # ── baseline: 동일 split
+        # ── baseline: 동일 split (고정 선택자 → PB 유효)
         for bname, sc in sorted(scores.items()):
             for asc in (True, False):
                 arr = []
                 for fname, train_mask in folds:
                     test_mask = ~train_mask
-                    r = score_select(sc, Y, eval_seeds=test_mask, ascending=asc)
+                    fn = (lambda Yp, te=test_mask, s=sc, aa=asc:
+                          score_select(s, Yp, eval_seeds=te, ascending=aa))
+                    r = fn(Y)
                     st = delta_stat(r)
                     p_pb, h_obs, exp_h = pb_p(r)
-                    p_sp, _n = seedperm_null(
-                        lambda Yp: score_select(sc, Yp, eval_seeds=test_mask,
-                                                ascending=asc),
-                        Y, perms, st["delta"])
-                    arr.append(dict(fold=fname, **st, p_exact_pb=p_pb, p_seedperm=p_sp))
+                    p_sp, _n = seedperm_null(fn, Y, perms, st["delta"])
+                    arr.append(dict(fold=fname, **st, p_exact_pb=p_pb, pb_valid=True,
+                                    p_seedperm=p_sp))
                 d = float(np.mean([x["delta"] for x in arr]))
                 tag = "낮은쪽선택" if asc else "높은쪽선택"
                 cov_ok = all(x["n_scene"] == S for x in arr)
+                kind = ("negative_control" if bname == "seed_only" else
+                        "oracle" if bname.startswith("oracle") else
+                        "deployable" if (bname in DEPLOYABLE or bname.startswith("act_norm"))
+                        else "other")
                 cell_out["baselines"][f"{bname}|{tag}"] = dict(
-                    delta_pooled=d, folds=arr, coverage_ok=cov_ok,
-                    deployable=bool(bname.startswith("act_norm") or bname in DEPLOYABLE),
-                    negative_control=bool(bname == "seed_only"))
-                print(f"  [baseline] {bname:22} {tag}  Δ̂(fold평균) {d:+.3f}"
+                    delta_pooled=d, folds=arr, coverage_ok=cov_ok, kind=kind,
+                    deployable=bool(kind == "deployable"))
+                print(f"  [baseline] {bname:20} {tag} {kind:16} Δ̂ {d:+.3f}"
                       f"{'' if cov_ok else ' [커버리지부족 판정제외]'}  "
                       + " ".join(f"{x['fold']}:{x['delta']:+.3f}"
-                                 f"(p_ex{x['p_exact_pb']:.3f}/p_sp{x['p_seedperm']:.3f})"
+                                 f"(PB{x['p_exact_pb']:.3f}/sp{x['p_seedperm']:.3f})"
                                  for x in arr))
 
-        # ── pooled 판정
         Lp = want_layers[0]
         learned = [cell_out["folds"][f"L{Lp}_{f}"]["delta"] for f, _ in folds]
         learned_pooled = float(np.mean(learned))
@@ -171,9 +197,9 @@ def main():
                                    best_deployable_baseline=best_b,
                                    best_deployable_delta=None if best_b is None else best_v,
                                    text=verdict)
-        print(f"  ★판정 (L{Lp}): 학습축 Δ̂ {learned_pooled:+.3f} vs 최강 배포가능 "
-              f"baseline {best_b} {best_v:+.3f} → {verdict}")
-        print("   (baseline 미달이어도 '기여 0' 이 아니라 'activation 고유 기여 근거 없음' 으로 읽는다)")
+        print(f"  ★판정 (L{Lp}): 학습축 Δ̂ {learned_pooled:+.3f} vs 최강 배포가능 baseline "
+              f"{best_b} {best_v:+.3f} → {verdict}")
+        print("   (baseline 미달 = '기여 0' 이 아니라 'activation 고유 기여 근거 없음')")
         out["cells"][cell] = cell_out
 
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
