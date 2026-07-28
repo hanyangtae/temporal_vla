@@ -87,20 +87,21 @@ S0은 실행 코드가 없다. 대신 문서가 주장하는 진입점이 실제
 
 ## 5. 판정이 필요한 것
 
-| # | 항목 | 선택지 | 판정 |
-|---|---|---|---|
-| 1 | `docs/steering/README.md` "현재 결론" | 지금 갱신 / D 트랙에서 연대기 인덱스 만들 때 함께 / 폐기 후 재작성 | |
-| 2 | `docs/HANDOFF_current.md` | 지금 갱신 / D 트랙 후 갱신 / 폐기(연대기 인덱스로 대체) | |
-| 3 | `docs/steering/README.md` Reading Order 35개 누락 | D 트랙에서 일괄 / 지금 | |
-| 4 | `AGENTS.md` 8줄 stub | 유지 / 내용 보강 / 삭제 | |
-| 5 | `docs/README.md` 미인덱싱 4개 디렉토리 | 인덱싱 추가 / 의도적 제외로 명시 | |
-| 6 | `docs/README.md`의 `11_phase4` 참조 | 제거 / 종결 표기 후 유지 | |
-| 7 | `README.md`(280줄, 06-23) | 미확인 — 사용자 정독 필요 | |
-| 8 | `CLAUDE.md`(192줄, 07-10) | 미확인 — 사용자 정독 필요 | |
-| 9 | `.agents/agent_spec.md`(255줄, 06-09) | 미확인 — 사용자 정독 필요 | |
+판정은 UI(`python3 scripts/review/ledger_ui.py`)에서 하고 `LEDGER.tsv`에 기록된다.
+판정 5종의 뜻은 UI 상단 범례 참조. **사용자는 파일을 직접 고치지 않는다** — 판정과
+사유만 남기면 스테이지 끝에서 에이전트가 적용한다. 사유칸이 작업 지시서다.
 
-7~9는 제가 현행성을 기계적으로 판정할 수 없어 사용자 정독이 필요합니다. 특히 `CLAUDE.md`의
-"연구 방향" 절은 exp2~5 결과와 대조해야 합니다.
+| 파일 | 예상 판정 | 사유칸에 들어갈 내용 |
+|---|---|---|
+| `docs/steering/README.md` | `수정` | "현재 결론을 exp2~5 판정으로 교체 + Reading Order에 16~37 추가" — **D 트랙 후 실행** |
+| `docs/HANDOFF_current.md` | `수정` 또는 `archive` | 연대기 인덱스를 새로 만들면 이 문서의 역할이 없어질 수 있음 — 실제 판단 필요 |
+| `docs/README.md` | `수정` | "미인덱싱 4개(collab/insight/onboarding/superpowers) 추가 + 종결된 11_phase4 참조 정리" |
+| `AGENTS.md` | `keep` 또는 `archive` | 의도된 stub인지 |
+| `README.md` | 정독 후 `keep`/`수정` | 기계 판정 불가 |
+| `CLAUDE.md` | 정독 후 `keep`/`수정` | 기계 판정 불가. **"연구 방향" 절을 exp2~5 결과와 대조** |
+| `.agents/agent_spec.md` | 정독 후 `keep`/`수정` | 기계 판정 불가 |
+
+뒤 세 개는 현행성을 기계적으로 판정할 수 없어 사용자 정독이 필요하다.
 
 ## 6. 권고 순서 (판정 대기)
 

@@ -33,7 +33,16 @@ LEDGER = REVIEW / "LEDGER.tsv"
 
 LEDGER_COLS = ["파일", "스테이지", "판정", "사유", "적용여부", "삭제커밋"]
 FILES_COLS = ["파일", "스테이지", "LOC", "최종수정", "역할", "플래그", "비고"]
-VERDICTS = ["keep", "merge", "archive", "미정"]
+VERDICTS = ["keep", "수정", "merge", "archive", "미정"]
+
+# 사유칸에 무엇을 적어야 하는지 — UI 범례로 그대로 노출된다.
+VERDICT_HELP = {
+    "keep": "이대로 둔다. 사유 비워도 됨",
+    "수정": "파일은 남기고 내용을 고친다. 사유칸에 <b>무엇을 고칠지</b>",
+    "merge": "다른 파일로 흡수시키고 이 파일은 없앤다. 사유칸에 <b>대상 파일 경로</b>",
+    "archive": "필요 없다. git rm (이력에는 남음). 사유칸에 <b>왜 불필요한지</b>",
+    "미정": "지금은 판단 불가. 사유칸에 <b>무엇을 알아야 정할 수 있는지</b>",
+}
 
 
 def read_tsv(path: Path) -> list[dict]:
@@ -84,7 +93,7 @@ def build_state() -> dict:
         j = ledger.get(f["파일"], {})
         items.append({**f, "판정": j.get("판정", ""), "사유": j.get("사유", ""),
                       "적용여부": j.get("적용여부", "")})
-    return {"items": items, "verdicts": VERDICTS}
+    return {"items": items, "verdicts": VERDICTS, "help": VERDICT_HELP}
 
 
 def save_judgement(path: str, verdict: str, reason: str) -> None:
@@ -115,6 +124,9 @@ h1{font-size:15px;margin:0 0 6px}
 #filters{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
 #filters button{font-size:12px;padding:3px 9px;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:12px;cursor:pointer}
 #filters button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+#legend{margin-top:8px;font-size:11px;color:var(--mut);display:flex;gap:14px;flex-wrap:wrap}
+#legend b{color:var(--fg);font-weight:600}
+#legend em{font-style:normal;font-weight:700;color:var(--fg)}
 main{padding:12px 16px;max-width:1100px}
 .row{border:1px solid var(--line);border-radius:8px;margin-bottom:8px;background:var(--card);padding:10px 12px}
 .row.sel{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 25%,transparent)}
@@ -134,13 +146,14 @@ kbd{font:11px ui-monospace,monospace;border:1px solid var(--line);border-radius:
   <div id="bar"><i></i></div>
   <div id="meta"></div>
   <div id="filters"></div>
+  <div id="legend"></div>
   <div id="meta2" style="color:var(--mut);font-size:11px;margin-top:6px">
-    <kbd>j</kbd>/<kbd>k</kbd> 이동 · <kbd>1</kbd> keep <kbd>2</kbd> merge <kbd>3</kbd> archive <kbd>4</kbd> 미정 · 판정 즉시 LEDGER.tsv 기록
+    <kbd>j</kbd>/<kbd>k</kbd> 이동 · <kbd>1</kbd>~<kbd>5</kbd> 판정 · 클릭 즉시 LEDGER.tsv 기록 (저장 버튼 없음)
   </div>
 </header>
 <main><div class="tblwrap" id="list"></div></main>
 <script>
-let S={items:[],verdicts:[]}, cur=0, filt='all';
+let S={items:[],verdicts:[],help:{}}, cur=0, filt='all';
 const $=s=>document.querySelector(s);
 const TOK=new URLSearchParams(location.search).get('t')||'';
 const H=TOK?{'X-Review-Token':TOK}:{};
@@ -165,6 +178,9 @@ function render(){
   const done=S.items.filter(i=>i['판정']).length, tot=S.items.length;
   $('#bar>i').style.width=(tot?done/tot*100:0)+'%';
   $('#meta').textContent=`판정 ${done} / ${tot}  ·  남은 ${tot-done}건  ·  화면 ${items.length}건`;
+
+  $('#legend').innerHTML=S.verdicts.map((v,i)=>
+    `<span><em>${i+1} ${v}</em> — ${S.help[v]||''}</span>`).join('');
 
   const stages=[...new Set(S.items.map(i=>i['스테이지']))].filter(Boolean);
   $('#filters').innerHTML=['all','todo','done',...stages].map(f=>
@@ -212,7 +228,7 @@ document.addEventListener('keydown',e=>{
   const items=shown(); if(!items.length) return;
   if(e.key==='j'){cur=Math.min(cur+1,items.length-1);render();}
   else if(e.key==='k'){cur=Math.max(cur-1,0);render();}
-  else if('1234'.includes(e.key)){
+  else if('12345'.includes(e.key) && +e.key<=S.verdicts.length){
     const v=S.verdicts[+e.key-1];
     const inp=document.querySelectorAll('.row')[cur]?.querySelector('input');
     judge(items[cur], v, inp?inp.value:'');
