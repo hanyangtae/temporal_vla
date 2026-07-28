@@ -1,0 +1,2 @@
+- [No PR creation on this machine](feedback_no_pr_creation.md) — no gh CLI here; commitor's job ends at push, PR is always done separately by the user/remote agent
+- [git push auth failure](feedback_push_auth_failure.md) — HTTPS push can fail "could not read Username"; no retry, report verbatim, push is user's job

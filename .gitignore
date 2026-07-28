@@ -51,3 +51,4 @@ image.png
 nohup.out
 # activation steering 기초 논문 PDF는 arXiv 재다운로드 (master_index 참고)
 docs/Activation_steering_basic/*.pdf
+tmp_ksw_stepgt/**
