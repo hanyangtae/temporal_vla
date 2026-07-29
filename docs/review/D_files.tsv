@@ -1,4 +1,22 @@
 파일	스테이지	LOC	최종수정	역할	플래그	비고
+docs/steering/33_exp5_round_summary.md	D	81	07-28	★ exp5 라운드 종합 — 시도·결과·다음 카드	읽기01,결과,메타	현재 "다음에 뭘 할지"의 최신 출처
+docs/steering/23_exp2_scene_fixed_steering_results.md	D	150	07-22	exp2 scene 고정 steering 유의성 최종 결과	읽기02,결과	raw 대조 conceptor 종결 확증
+docs/steering/17_steering_experiment_redesign.md	D	119	07-22	exp2 무효화 원인 3종 + 재설계 v2	읽기03,결과,메타	α 오배선·apple 채점오류·fit 표본부족. exp3 설계 근거
+docs/steering/21_exp3_results.md	D	72	07-22	exp3 최종 결과 — COAST 축 정렬 900판	읽기04,결과	6-Holm 전부 null
+docs/steering/22_exp3_fit30_results.md	D	51	07-22	exp3 fit30 라운드 1800판 결과	읽기05,결과,번호충돌	22_wrong_grasp와 번호 충돌. 21과 병합 후보
+docs/steering/25a_exp4-3_to_exp4-1_recommendation.md	D	85	07-27	선형 latent 연산자 중단 → SAE scene 분리 전환 권고	읽기06,결과,번호충돌	exp5(SAE) 방향 전환의 근거 문서
+docs/steering/31_sae_g1_results.md	D	108	07-27	SAE G1 결과 — drawer_left scene probe	읽기07,결과	G1 PASS
+docs/steering/32_g2_scene_residual_results.md	D	267	07-28	G2 결과 — scene 잔차화 후 succ/fail read	읽기08,결과	scene 제거해도 read 유지
+docs/steering/35_exp5-2_results.md	D	129	07-28	exp5-2 결과 — 유도 실패 steering 회복 ΔSR	읽기09,결과	ppcc P1만 회복
+docs/steering/36_exp5-3_within_scene_steer.md	D	139	07-28	exp5-3 within-scene setM steering (drawer) + mixer 확장	읽기10,결과,제목오류	제목이 "31."로 시작(중복 번호)
+docs/steering/37_exp5-4_noise_selection.md	D	100	07-28	exp5-4 노이즈 1-step 선별 판정	읽기11,결과,제목오류	제목이 "33."으로 시작(중복 번호). seed 암기로 종결
+docs/steering/24d_exp4-3_variance_aware_direction_input.md	D	156	07-28	exp4-3 whitened mean-diff 설계 근거·처방·함정	읽기12,계획,살아있음	README "다음 후보"의 평균+분산 연산자 근거
+docs/steering/11_phase4_n15_instruction_fixed_plan.md	D	1421	06-23	Phase 4 N1.5 instruction-fixed 검증 계획 + 실행 로그	★고민,계획,번호충돌,최대문서	★ 단일 최대(전체의 20%). 라운드 종결됨. 11_instruction_confound와 번호 충돌
+docs/steering/13_lab_meeting_ppt_notes.md	D	371	06-23	랩미팅 PPT 작업 노트 (Part A 현재 덱 + Part B 원본 아웃라인)	★고민,발표물,종결	06-23 발표 완료. Part A/B 중복 구조
+docs/steering/NOTICE_exp2_fit_loss_for_exp3.txt	D	57	07-22	exp2 fit 원료 pkl 소실 경위 통지	★고민,NOTICE,소비완료	exp3 착수 시 전달용. 이미 소비
+docs/steering/NOTICE_scene_feasibility_for_exp4.txt	D	75	07-22	fixture seed 물리적 불가 scene 경고	★고민,NOTICE,소비완료	exp4 착수 시 전달용. 이미 소비. 단 지식 자체는 유효
+docs/steering/26_closefridge_phase_labeler.md	D	211	07-22	CloseFridge instruction·성공판정·phase 라벨러 명세	★고민,명세참조,코드옆으로	S2(라벨링)로 이동 후보. task는 exp4에서 탈락(실행5 SR 0)
+docs/steering/27_standmixer_phase_labeler.md	D	152	07-22	OpenStandMixerHead instruction·성공판정·phase 라벨러 명세	★고민,명세참조,코드옆으로	S2로 이동 후보. exp4 채택 task
 docs/steering/14_pathway_phase_online_steering.md	D	70	06-23	★ 문제 설정 단일 출처 — 방향·가설·open problem·ablation 사다리	메타	VL early 근거는 07-29 반증 표기 완료. 나머지 현행성 확인 필요
 docs/steering/15_research_structure.md	D	122	06-22	RQ1~4 / 가설 C1~C4 / 검증 설계	메타	C3·C4 판정 07-29 갱신. exp2~5 결과와 가설 대조 필요
 docs/steering/01_seen18_latent_analysis.md	D	166	06-23	seen18 N1.6 잠재공간 분석 (길이 confound·cross-task 실패 구조)	초기분석	현재 방향과 단절됐으나 길이 confound 근거의 원출처
@@ -7,40 +25,22 @@ docs/steering/11_instruction_confound.md	D	71	06-23	Phase A — instruction conf
 docs/steering/07_steering_methods_survey.md	D	84	06-05	steering 방법론 후보 survey (CAA/SAE-guided/NOTALL/learned)	명세참조	연산자 후보 논의의 출처. README "다음 후보"와 대조 필요
 docs/steering/mean_diff_equ.md	D	48	07-28	conceptor vs 평균차이 연산자 수식 비교	명세참조,무번호	번호 없음. 07번(방법론 survey)과 역할 중복 가능
 docs/steering/24c_walqr_reference.md	D	66	07-22	WA-LQR 논문의 perturbation·steering·코드 맵	명세참조	README "다음 후보"의 WA-LQR 근거
-docs/steering/26_closefridge_phase_labeler.md	D	211	07-22	CloseFridge instruction·성공판정·phase 라벨러 명세	명세참조,코드옆으로	S2(라벨링)로 이동 후보. task는 exp4에서 탈락(실행5 SR 0)
-docs/steering/27_standmixer_phase_labeler.md	D	152	07-22	OpenStandMixerHead instruction·성공판정·phase 라벨러 명세	명세참조,코드옆으로	S2로 이동 후보. exp4 채택 task
 docs/steering/05_safe_lerobot_collection.md	D	262	06-10	SAFE 수집 lerobot 멀티벤치 확장 (plan+status+handoff)	계획,별도트랙	plan/status/handoff 3종이 한 파일에 섞임
-docs/steering/11_phase4_n15_instruction_fixed_plan.md	D	1421	06-23	Phase 4 N1.5 instruction-fixed 검증 계획 + 실행 로그	계획,번호충돌,최대문서	★ 단일 최대(전체의 20%). 라운드 종결됨. 11_instruction_confound와 번호 충돌
 docs/steering/16_mechinterp_reproduction.md	D	53	06-29	Häon CoRL2025 steering 재현(Phase A) 기록	결과	저자코드 재현 완료(fast/slow +22.6%). Phase B 미시작
-docs/steering/17_steering_experiment_redesign.md	D	119	07-22	exp2 무효화 원인 3종 + 재설계 v2	결과,메타	α 오배선·apple 채점오류·fit 표본부족. exp3 설계 근거
 docs/steering/18_apple_success_rejudge.md	D	85	07-22	apple 성공 판정 재채점 기준·도구·결과	결과	채점 오류 교정 기록. rejudge_success.py 단일 출처
 docs/steering/19_exp3_execution_handoff.md	D	72	07-22	exp3 실행 핸드오프	핸드오프,종결	exp3 완주(21·22). 소모품
 docs/steering/20_exp3_phase_c_handoff.md	D	111	07-22	exp3 Phase C 핸드오프 (A·B 결과·동결 상수)	핸드오프,종결	설계 단일출처가 ~/.claude/plans/ 밖에 있음(레포 밖 참조)
-docs/steering/21_exp3_results.md	D	72	07-22	exp3 최종 결과 — COAST 축 정렬 900판	결과	6-Holm 전부 null
-docs/steering/22_exp3_fit30_results.md	D	51	07-22	exp3 fit30 라운드 1800판 결과	결과,번호충돌	22_wrong_grasp와 번호 충돌. 21과 병합 후보
 docs/steering/22_wrong_grasp_vl_separation.md	D	129	07-22	wrong-grasp VL activation 분석	결과,번호충돌	22_exp3_fit30과 번호 충돌. 별개 주제
-docs/steering/23_exp2_scene_fixed_steering_results.md	D	150	07-22	exp2 scene 고정 steering 유의성 최종 결과	결과	raw 대조 conceptor 종결 확증
 docs/steering/24_exp4_shared_plan.md	D	81	07-22	exp4 공유 계획 (배경·정의·계약·자원 규칙)	계획,종결	exp4-1/4-2 공통 전제
 docs/steering/24a_exp4-1_oracle_rescue_plan.md	D	147	07-22	exp4-1 oracle-timing 구제 실행 계획	계획,종결	
 docs/steering/24b_exp4-2_perturb_conceptor_plan.md	D	154	07-22	exp4-2 perturbation 유도 실패 conceptor 계획	계획,종결	
-docs/steering/24d_exp4-3_variance_aware_direction_input.md	D	156	07-28	exp4-3 whitened mean-diff 설계 근거·처방·함정	계획,살아있음	README "다음 후보"의 평균+분산 연산자 근거
 docs/steering/25_exp4-3_separation_atlas_handoff.md	D	224	07-24	exp4-3 분리도 지도 cross-model 핸드오프	핸드오프,번호충돌	25a 두 개와 번호군 충돌
-docs/steering/25a_exp4-3_to_exp4-1_recommendation.md	D	85	07-27	선형 latent 연산자 중단 → SAE scene 분리 전환 권고	결과,번호충돌	exp5(SAE) 방향 전환의 근거 문서
 docs/steering/25a_patchceil_transplant_handoff.md	D	157	07-22	activation patching 인과 상한 실험 핸드오프	핸드오프,번호충돌	위 25a와 같은 번호·다른 실험
 docs/steering/25b_patchceil_transplant_result.md	D	80	07-22	patchceil 결과 — donor transplant는 실패를 못 뒤집음 (null)	결과	
 docs/steering/28_exp4-1_handout_0723.md	D	346	07-23	exp4-1 현황 핸드아웃 (07-23 실측)	핸드오프,번호충돌	28_exp4-2_p0와 번호 충돌. 시점 스냅샷
 docs/steering/28_exp4-2_p0_report.md	D	267	07-27	exp4-2 P0 결과 — 유도 실패 파일럿·비퇴화·bridge 게이트	결과,번호충돌	exp5-2로 이어짐
 docs/steering/29_sae_port_review.md	D	228	07-27	동료 SAE 레포 전수 검토 + 이식 준비	결과	task_classification/ 이식 근거
 docs/steering/30_sae_g1_port_handout.md	D	239	07-27	SAE G1 이식·구현 핸드아웃	핸드오프,종결	G1 완료(31)
-docs/steering/31_sae_g1_results.md	D	108	07-27	SAE G1 결과 — drawer_left scene probe	결과	G1 PASS
-docs/steering/32_g2_scene_residual_results.md	D	267	07-28	G2 결과 — scene 잔차화 후 succ/fail read	결과	scene 제거해도 read 유지
-docs/steering/33_exp5_round_summary.md	D	81	07-28	★ exp5 라운드 종합 — 시도·결과·다음 카드	결과,메타	현재 "다음에 뭘 할지"의 최신 출처
 docs/steering/34_exp5-2_handoff.md	D	136	07-28	exp5-2 섭동-유도 실패 steering 회복 핸드오프	핸드오프,종결	결과는 35
-docs/steering/35_exp5-2_results.md	D	129	07-28	exp5-2 결과 — 유도 실패 steering 회복 ΔSR	결과	ppcc P1만 회복
-docs/steering/36_exp5-3_within_scene_steer.md	D	139	07-28	exp5-3 within-scene setM steering (drawer) + mixer 확장	결과,제목오류	제목이 "31."로 시작(중복 번호)
-docs/steering/37_exp5-4_noise_selection.md	D	100	07-28	exp5-4 노이즈 1-step 선별 판정	결과,제목오류	제목이 "33."으로 시작(중복 번호). seed 암기로 종결
-docs/steering/13_lab_meeting_ppt_notes.md	D	371	06-23	랩미팅 PPT 작업 노트 (Part A 현재 덱 + Part B 원본 아웃라인)	발표물,종결	06-23 발표 완료. Part A/B 중복 구조
-docs/steering/NOTICE_exp2_fit_loss_for_exp3.txt	D	57	07-22	exp2 fit 원료 pkl 소실 경위 통지	NOTICE,소비완료	exp3 착수 시 전달용. 이미 소비
-docs/steering/NOTICE_scene_feasibility_for_exp4.txt	D	75	07-22	fixture seed 물리적 불가 scene 경고	NOTICE,소비완료	exp4 착수 시 전달용. 이미 소비. 단 지식 자체는 유효
 docs/steering/motivation_activation_steering.txt	D	69	07-28	activation steering 동기 메모	무번호,txt	형식·위치 불명확
 docs/steering/etc/23_wrist_cam_attention.md	D	60	07-22	wrist cam attention 곁가지 관측	곁가지,도달불가	etc/ 하위. 23번과 번호 충돌

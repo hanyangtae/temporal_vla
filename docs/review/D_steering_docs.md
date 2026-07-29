@@ -61,23 +61,39 @@ D는 코드 스테이지가 아니다. 목표는 두 가지다.
 레포에 없는 파일이라 **이 문서만으로는 exp3 설계를 복원할 수 없다**. `25_`도 `~/.claude/plans/exp-4-3-luminous-truffle.md`
 참조. 보존 판정 시 계획서 본문을 레포로 들여올지 결정해야 한다.
 
-## 3. 읽기 순서 제안
+## 3. 읽기 순서
 
-전부 정독할 필요는 없다. **결과 문서 17개 중 아래 9개**가 "무엇이 종결됐나"를 결정한다.
-나머지는 이 9개를 읽은 뒤 판정만 하면 된다.
+전부 정독할 필요는 없다. **`D_files.tsv`의 행 순서 자체가 읽기 순서**이고, UI도 그 순서로
+띄운다 — 찾아다닐 필요 없이 위에서부터 내려가면 된다. 플래그로 구분된다.
 
-| 순서 | 문서 | 왜 |
-|---|---|---|
-| 1 | `33_exp5_round_summary` | 가장 최신 종합. "다음 카드" 목록의 현재 출처 |
-| 2 | `23_exp2_scene_fixed_steering_results` | raw 대조 conceptor 종결 |
-| 3 | `17_steering_experiment_redesign` | exp2를 무효화한 3원인 — 이후 모든 설계의 전제 |
-| 4 | `21_exp3_results` + `22_exp3_fit30_results` | COAST 축 정렬 null (900판 + 1800판) |
-| 5 | `25a_exp4-3_to_exp4-1_recommendation` | 선형 연산자 중단 → SAE 전환의 분기점 |
-| 6 | `31_sae_g1_results` + `32_g2_scene_residual_results` | SAE 라인이 어디까지 갔나 |
-| 7 | `35_exp5-2_results` · `36_exp5-3` · `37_exp5-4` | exp5 세 갈래 종결 상태 |
+### `읽기01`~`읽기12` — 먼저 읽을 것 (앞 12행)
 
-`24d_exp4-3_variance_aware_direction_input`은 결과가 아니라 계획이지만, README "다음 후보"에
-적은 **평균+분산 연산자의 근거**라 살아있을 가능성이 높다 — 함께 보는 것을 권한다.
+"무엇이 종결됐고 무엇이 살아있나"를 결정하는 문서들. 이걸 읽고 나면 나머지 27개는
+유형만 보고 판정된다.
+
+| # | 문서 | 줄 | 왜 이 순서인가 |
+|---|---|---|---|
+| 1 | `33_exp5_round_summary` | 81 | 가장 최신 종합. "다음 카드" 목록의 현재 출처 — 여기서 시작해야 전체 지형이 보인다 |
+| 2 | `23_exp2_scene_fixed_steering_results` | 150 | raw 대조 conceptor 종결. 위약 대조까지 붙인 판정 |
+| 3 | `17_steering_experiment_redesign` | 119 | exp2를 무효화한 3원인(α 오배선·apple 채점오류·fit 표본부족) — 이후 모든 설계의 전제 |
+| 4 | `21_exp3_results` | 72 | COAST 축 정렬 900판, 6-Holm 전부 null |
+| 5 | `22_exp3_fit30_results` | 51 | 같은 축 1800판 재확인. 4와 붙여 읽을 것 |
+| 6 | `25a_exp4-3_to_exp4-1_recommendation` | 85 | **분기점** — 선형 latent 연산자 중단 → SAE scene 분리로 전환 |
+| 7 | `31_sae_g1_results` | 108 | SAE G1 PASS (scene을 실제로 인코딩하는가) |
+| 8 | `32_g2_scene_residual_results` | 267 | G2 — scene 제거해도 read 유지. SAE 라인의 현재 최전선 |
+| 9 | `35_exp5-2_results` | 129 | exp5 갈래 ① 유도 실패 steering 회복 |
+| 10 | `36_exp5-3_within_scene_steer` | 139 | exp5 갈래 ② within-scene setM |
+| 11 | `37_exp5-4_noise_selection` | 100 | exp5 갈래 ③ noise 선별 — seed 암기로 종결 |
+| 12 | `24d_exp4-3_variance_aware_direction_input` | 156 | 결과가 아니라 계획이지만, README "다음 후보"의 **평균+분산 연산자 근거**라 살아있을 확률이 높다 |
+
+### `★고민` — 판정이 갈리는 것 (13~18행)
+
+§4 참조. 유형만으로 기계적으로 갈리지 않아 실제 판단이 필요하다.
+
+### 나머지 27개
+
+메타(`14`·`15`) → 초기분석(`01`·`08`·`11`) → 명세참조 → 계획·핸드오프 순.
+대부분 유형에 따라 판정이 정해진다.
 
 ## 4. 판정 시 갈리는 지점
 
