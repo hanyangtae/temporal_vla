@@ -73,16 +73,21 @@ def write_tsv(path: Path, cols: list[str], rows: list[dict]) -> None:
 
 
 def load_files() -> list[dict]:
-    """모든 스테이지의 S*_files.tsv 를 스테이지 번호순으로 합친다."""
+    """모든 스테이지의 *_files.tsv 를 순회 순서(S0 → D → S1..S9)대로 합친다."""
     out = []
-    for p in sorted(REVIEW.glob("S*_files.tsv"), key=_stage_key):
+    for p in sorted(REVIEW.glob("*_files.tsv"), key=_stage_key):
         out.extend(read_tsv(p))
     return out
 
 
 def _stage_key(p: Path):
+    """순회 순서: S0 → D(문서 트랙) → S1 … S9."""
     m = re.match(r"S(\d+)", p.name)
-    return (int(m.group(1)) if m else 999, p.name)
+    if m:
+        return (float(m.group(1)), p.name)
+    if p.name.startswith("D"):
+        return (0.5, p.name)
+    return (999.0, p.name)
 
 
 def build_state() -> dict:
