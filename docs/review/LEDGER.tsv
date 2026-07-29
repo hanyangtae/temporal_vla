@@ -1,1 +1,8 @@
 파일	스테이지	판정	사유	적용여부	삭제커밋
+docs/HANDOFF_current.md	S0	archive	연대기 인덱스로 대체 예정	D 트랙 이후	
+README.md	S0	수정	1차 최신화 완료: 현재 결론(exp5까지)·Project Structure·Documentation 링크. 정리 후 2차 최신화 예정	적용(1차)	
+CLAUDE.md	S0	수정	docker 5→8, serve 목록 보강(lerobot/groot/openvla_oft), ZMQ 경로 명시, t≤8/t≥12 반증 표기, 주요 경로에 safe/scene_sae/review 추가	적용	
+AGENTS.md	S0	keep			
+.agents/agent_spec.md	S0	keep			
+docs/README.md	S0	수정	archive→수정으로 변경: docs/00_docs_map.md 로 rename, 경로 참조 전용으로 축소(프로젝트 목표·연구 서사는 루트 README로)	적용	
+docs/steering/README.md	S0	merge	최신화(exp5까지) 후 루트 README.md 로 merge	D 트랙 이후	

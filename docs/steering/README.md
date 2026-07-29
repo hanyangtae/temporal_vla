@@ -64,7 +64,7 @@ progress predictor 방향은 현재 메인이 아니며 [`../ttt/`](../ttt/READM
 3. [07 Steering Methods Survey](07_steering_methods_survey.md) — conceptor steering(현 방식,
    COAST 계열) + 이후 적용 후보(CAA, SAE-guided, NOTALL pathway, learned steering)와 권장 순서.
 4. [08 Pathway Separation Analysis](08_pathway_separation_analysis.md) — Phase 3 통합: DiT 32-layer
-   pre-failure 분리력 + VL(goal) vs DiT(motor) 비교(VL 이른 t≤8 / DiT 늦은 t≥12, goal-vs-motor
+   pre-failure 분리력 + VL(goal) vs DiT(motor) 비교( goal-vs-motor
    task 분열) + Phase 4 steering target 선택 근거.
 5. [11 Instruction Confound](11_instruction_confound.md) — Phase A 판정: 헤드라인 VL AUROC 가
    instruction(in/out) 쏠림 아티팩트일 수 있음. VL/DiT LDA 사분면 분석 방법·근거.

@@ -61,24 +61,28 @@ operating-point 4축 아티팩트**였음. n=30으로 확정 중.
 **진술**: 실패는 VL-OOD냐 DiT-only-OOD냐로 종류가 갈린다.
 **근거(우리 측정, `pathway_step_attribution.py` 10task)**: VL-only-OOD ~30% 흔함,
 **DiT-only ~2%로 거의 0** (OpenDrawer-right만 존재).
-**경고(비단정)**: 이 비대칭은 **DiT를 이른 창(t≤8)에서 과소측정**한 결과일 수 있음(DiT
-신호는 늦음, block31 t≥11). 기존 score는 t≤8 풀링. → 창 보정 전엔 "DiT-only 없음"으로
-결론 금지.
+**판정(2026-07-29 확정)**: 이 비대칭은 **DiT를 이른 창(t≤8)에서 과소측정**한 아티팩트다.
+기존 score는 t≤8 풀링이라 두 pathway를 같은 창에서 재지 않았다. → "DiT-only 없음"으로
+결론 금지. 같은 이유로 `08_` §2.1의 "VL early / DiT late" 결론도 폐기했다(해당 문서 상단 참조).
 **구조적 confound**: 직렬 Eagle→VL-SA→DiT. VL-OOD는 거의 항상 DiT도 OOD로 만듦 → 진짜
 질문은 "VL로 설명되는 것 *이상*의 DiT-OOD가 있나".
 
 ### C4 — 라우팅 (인과) · *미검증, 핵심 기여*
 **진술**: 유형별로 조종 대상을 맞춰야(VL실패→VL steer, DiT실패→DiT steer) 효과가 난다.
-**근거(예비)**: causal online 검출 cross-task 일반화 — DiT block31 t_d=11 **AUROC 0.92**,
-VL 이른 t_d=5 약신호. length-fair.
+**근거(예비)**: causal online 검출 cross-task 일반화 — DiT block31 t_d=11 **AUROC 0.92**. length-fair.
 **caveat**: both==dit(스케일) 미분리, unseen holdout 2개 쉬움, LOO 필요.
+**⚠ VL 쪽은 근거 아님**: 여기서 "VL 이른 t_d=5 약신호"로 적었던 것은 per-instruction 재평가에서
+**VL 상시 발화 아티팩트**로 판정됐다(FPR 1.0 — 사실상 무작위). 실검출기는 DiT뿐이며,
+"VL이 먼저 잡는다"는 서술은 이 근거로도, `08_` §2.1로도 성립하지 않는다.
 
 ---
 
 ## 4. 검증 설계
 
 **RQ3 (오프라인, 지금 가능 — remote-compute)**
-- pathway별 신호 창에 맞춰 측정: VL=t≤8, DiT=block31 t≥11 (같은 t에서 둘 다 재지 말 것).
+- **같은 창에서 둘 다 측정한다.** 예전 지침(VL=t≤8 / DiT=t≥11로 창을 나눠 재기)은
+  pathway별 창을 다르게 잡아 비대칭을 만들어냈다 — C3 판정·`08_` 반증의 원인. 창을
+  나눠야 할 근거가 따로 있으면 그 근거를 먼저 제시할 것.
 - 2×2 contingency {VL-OOD?}×{DiT-OOD?} — VL-only와 **DiT-only 둘 다에 mass**가 있어야
   유형론 성립. 전부 `both`로 쏠리면 종류가 아니라 심각도.
 - downstream 통제: 성공 분포에서 DiT-OOD를 VL-OOD로 회귀 → **잔차**가 큰 게 genuine

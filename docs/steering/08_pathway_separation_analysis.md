@@ -1,8 +1,16 @@
 # Phase 3: Pathway 분리력 분석 (DiT 32-layer + VL vs DiT)
 
+> **⚠ 반증됨 (2026-07-29) — §2.1의 "VL이 먼저 실패를 감지한다" 결론은 폐기한다.**
+> 근거 두 가지. ① 효과 크기가 없다: t=8에서 VL−DiT AUROC 차이가 **+0.013**(0.713 vs 0.701),
+> t=12에서 −0.007로 사실상 동등하다. ② 창이 불일치한다: 이 비교는 VL을 t≤8 풀링으로,
+> DiT를 다른 창에서 재고 있어 **DiT를 이른 창에서 과소측정**한다
+> ([`15_research_structure.md`](15_research_structure.md) C3 경고 참조).
+> 이 문서는 "그때 이렇게 측정했다"는 **기록으로만 보존**한다. 수치·방법은 유효하나
+> §2.1 결론과 그로부터 파생된 "VL early / DiT late" 서술은 인용하지 말 것.
+
 > Phase 3 결과 통합 문서. §1 = DiT 32-layer pre-failure 분리력(구 `08_phase3_dit32_separation`),
-> §2 = VL(goal) vs DiT(motor) 정렬 비교(구 `09_phase3_vl_dit_comparison`), §3 = 종합(VL 이른
-> t≤8 / DiT 늦은 t≥12, goal-vs-motor task 분열), §4 = caveat. 방향 단일 출처는
+> §2 = VL(goal) vs DiT(motor) 정렬 비교(구 `09_phase3_vl_dit_comparison`), §3 = 종합
+> (goal-vs-motor task 분열), §4 = caveat. 방향 단일 출처는
 > [`14_pathway_phase_online_steering.md`](14_pathway_phase_online_steering.md).
 >
 > ⚠ instruction confound caveat → [`11_instruction_confound.md`](11_instruction_confound.md)
@@ -77,8 +85,11 @@
 | t=16 | 0.724 | **0.754** | -0.030 (DiT 우위) |
 | t=20 | 0.741 | 0.743 | -0.002 (동등) |
 
-**결론**: VL은 t≤8(step 8까지)에서 DiT보다 먼저 실패를 감지. DiT는 t≥12에서 따라잡음.
-→ **온라인 early steering에서 VL pathway가 개입 여지 더 큼** (motor commitment 이전 신호).
+**~~결론~~ (반증됨 — 문서 상단 참조)**: ~~VL은 t≤8에서 DiT보다 먼저 실패를 감지. DiT는
+t≥12에서 따라잡음. → 온라인 early steering에서 VL pathway가 개입 여지 더 큼.~~
+
+**현재 판정**: 차이 +0.013은 효과라 부를 수 없고, 두 pathway를 서로 다른 창에서 잰
+비교라 방향성 자체가 성립하지 않는다. **VL/DiT 사이에 감지 시점 차이가 있다고 말할 근거 없음.**
 
 ### 2.2 DiT 내 layer 패턴 (7 captured layers, t=12 avg)
 

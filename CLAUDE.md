@@ -35,7 +35,8 @@ multi-dim contrastive 연산자). 여기에 두 축을 더한다. 단일 출처:
 [`docs/steering/14_pathway_phase_online_steering.md`](docs/steering/14_pathway_phase_online_steering.md).
 
 - **(1) Pathway 분리 steering**: VL(goal "what")과 DiT(motor "how") pathway를 **각각 따로** steer.
-  근거 = NOTALL 기능 분리 + 우리 데이터(VL 이른 신호 t≤8, DiT 늦은 신호 t≥12). 주의:
+  근거 = NOTALL 기능 분리. (구 근거 "VL 이른 t≤8 / DiT 늦은 t≥12"는 **반증됨** — 차이
+  +0.013에 측정 창 불일치. `docs/steering/08_` 상단 참조. pathway 간 감지 시점 차이 주장 금지.) 주의:
   Eagle→VL-SA→DiT 직렬이라 "따로"가 진짜 독립이 아님(downstream 결합 고려).
 - **(2) Phase-matched DiT steering**: DiT는 **rollout phase(시간)에 조건부로** steer. COAST는 전
   timestep을 한 공간(클래스별 R=E[hhᵀ])에 pool해 길이/phase confound를 섞음 — 우리는 phase별
@@ -63,20 +64,24 @@ condition pair 끼리 ΔSR 비교 가능).
   - `env.reset(seed=[EVAL_SEED, EVAL_SEED+1, ...])` 로 첫 reset 결정적.
   - 같은 (env, EVAL_SEED) → 같은 episode 시리즈 (layout/style/object/instruction).
   - 동료 collection (seed 100000..100099) 의 episode 와 매칭 → eval/collection 일관성 유지.
-- **GPU 양보 default**: `GPUS="4 5 6 4 5 6"` (GPU 0-3 동료용). 3 GPU × 2 server = 6 worker.
+- **GPU 양보 default**: 할당시 비어있는것중 최대 3 GPU 까지 사용. 모델 serving시에 한 gpu에 여러 모델을 올릴 수 있으면 시도 (e.g. gr00t 모델은 한 GPU에 두개 serving 가능)
 - **per-episode logging**: `groot_robocasa_zmq_eval.py` 가 video-dir/per_episode.tsv 출력
   (`episode_idx`, `success`, `language` — instruction variant 별 SR 분석용).
 - **N_ENVS=2, N_EP=20 per condition** — wall-time 과 binomial noise 의 균형점.
 
 ## 핵심 아키텍처
 
-- **모델 서버** (`scripts/serve/*.py`): FastAPI + uvicorn. 통일 API (`/act`, `/reset`, `/health`).
+- **모델 서버** (`scripts/serve/*.py`): FastAPI + uvicorn 위의 **HTTP**. 통일 API (`/act`, `/reset`, `/health`).
+  - ⚠ 전송 방식이 하나가 아니다. N1.6 SAFE 수집·eval 주 경로인
+    `scripts/safe/groot_n16/robocasa/serve/feature_server.py`는 GR00T upstream `PolicyServer`
+    (**ZMQ** `zmq.REP` + msgpack)를 쓴다 — 통일 HTTP API 를 타지 않는다.
 - **벤치마크 평가** (`scripts/eval/*.py`): 모델 무관. `VLAClient`로 통신.
 - **Processor Pipeline** (`src/processor/`): **추론(eval)용**. generic 벤치마크 env↔통일API obs/action 변환.
 - **GR00T RoboCasa IO adapter** (`src/policies/groot/robocasa/io.py`): `GrootRoboCasaEnv` native key↔HTTP GR00T 변환. GR00T upstream parity / SAFE wiring 경로는 `src/processor/`를 우회.
 - **Dataset + Adapter** (`src/datasets/`): **학습(train)용**. 벤치마크별 generic dataset + 모델별 adapter.
 - **통일 클라이언트** (`scripts/utils/vla_client.py`): `VLAClient` 클래스 1개.
-- **Docker**: `docker-compose.yml`에 5개 서비스. 모두 `network_mode: host`.
+- **Docker**: `docker-compose.yml`에 8개 서비스 (robocasa, calvin, xvla, upvla, openvla_oft,
+  lerobot, groot, groot_n15). 모두 `network_mode: host`.
 
 ## 통일 API 규격
 
@@ -90,10 +95,17 @@ condition pair 끼리 ΔSR 비교 가능).
 
 ## 주요 파일 경로
 
-- 모델 서버: `scripts/serve/upvla.py` (:8300), `scripts/serve/xvla.py` (:8100)
+- 모델 서버 (HTTP): `scripts/serve/lerobot.py` (pi0/pi0.5·N1.5, steering 배선), `scripts/serve/groot.py`,
+  `scripts/serve/openvla_oft.py` (:8400), `scripts/serve/upvla.py` (:8300), `scripts/serve/xvla.py` (:8100)
+- 모델 서버 (ZMQ): `scripts/safe/groot_n16/robocasa/serve/feature_server.py` (N1.6 SAFE 수집·eval)
+- steering hook: `scripts/serve/steering_hooks.py` (+ `safe_hooks.py`, `patching_hooks.py`, `attn_hooks.py`)
 - 벤치마크 평가: `scripts/eval/robocasa_eval.py`, `scripts/eval/calvin.py`
 - 학습: `scripts/train/phase1_groot_robocasa.py` (GR00T) + `.sh`
+- 실험 파이프라인: `scripts/safe/groot_n15/robocasa/` (exp2~5 본류 — `collect/`, `split/`,
+  `steer/`(라운드별 + `queue/` 러너), `analyze/`), `scripts/safe/groot_n16/robocasa/`
+- SAE: `scripts/scene_sae/`, `src/sae/`
 - 분석: `scripts/analysis/` — CLIP 캐시, dataset 디버그 등
+- 레포 검토·정리: `docs/review/` (스테이지 카드 + `LEDGER.tsv`), `scripts/review/ledger_ui.py`
 - Processor (추론용): `src/processor/` — `base.py`, `types.py`, `factory.py`, `obs/`, `action/`
 - Dataset (학습용): `src/datasets/` (generic LeRobot dataset + adapter)
 - 경로 설정: `scripts/path_setup.py`

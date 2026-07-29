@@ -11,7 +11,9 @@
 ## 가설
 
 1. **Pathway 분리 steering**: VL(goal "what")과 DiT(motor "how")를 **각각 따로** steer.
-   - 근거: NOTALL의 기능 분리(인과개입), 우리 Phase 3(VL 이른 신호 t≤8 / DiT 늦은 신호 t≥12, `08_`).
+   - 근거: NOTALL의 기능 분리(인과개입).
+   - ⚠ 예전 근거였던 "VL 이른 t≤8 / DiT 늦은 t≥12"(`08_` §2.1)는 **반증됐다** —
+     차이 +0.013에 창 불일치. pathway 사이의 감지 시점 차이는 근거 없음.
    - 주의: Eagle→VL-SA→DiT 는 **직렬** → "따로"가 진짜 독립이 아님. "VL만 / DiT만 / 둘 다"를 ablation으로 가른다.
 2. **Phase-matched DiT steering**: DiT는 **rollout phase(시간)에 조건부로** steer.
    - 근거: 길이 confound(`01_`) — COAST는 전 timestep을 한 공간에 pool해 phase를 섞음. 두 실패 regime(초기조건형 / 실행표류형). NOTALL temporal ablation: DiT는 approach phase 지나면 expendable.

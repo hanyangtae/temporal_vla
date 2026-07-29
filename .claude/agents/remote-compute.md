@@ -13,7 +13,12 @@ helper subcommands.
 
 ## Remote node (defaults; override via env)
 
-- `kimseungjun@166.104.146.37`, port `11112`, repo `~/workspace/temporal_vla`.
+- `kimseungjun@166.104.146.37`, port `11112`.
+- **Code repo** (`REMOTE_REPO`, what `sync-code` checks out into): `~/workspace/temporal_vla`.
+  Must stay a git checkout — pointing it elsewhere breaks `sync-code`/`run`.
+- **Data archive** (large rollouts/eval outputs, HDD; NOT a git repo):
+  `~/datasets/temporal_vla_outputs/` — `eval/`, `logs/`, `rollouts/`.
+  Reference it by absolute path inside `run` commands; never as `REMOTE_REPO`.
 - Helper subcommands: `sync-code [branch]`, `push-data <relpath...>`, `pull-results <relpath...>`,
   `run <cmd...>`, `run-bg <logname> <cmd...>`, `tail <logname>`, `shell`.
 
