@@ -16,12 +16,11 @@ DiT는 rollout phase에 조건부로 개입합니다. 백본 재학습은 없습
 
 - **COAST(대조 conceptor) 재현 실패.** 논문의 평균 ΔSR +0.16이 우리 환경에서 재현되지 않았고,
   여러 라운드에 걸쳐 위약 대조까지 붙인 뒤에도 scene 일관된 개선이 나오지 않았습니다.
-- **읽을 수는 있으나 쓰지는 못합니다(read ≠ write).** scene·길이·dwell·seed를 통제하면 성공/실패
+- **읽을 수는 있으나 쓰지는 못합니다(read ≠ write).** scene·길이·dwell·seed를 통제이후에도 성공/실패
   분리는 실재합니다(일부 cell AUROC 0.84~0.91). 그런데 같은 방향으로 개입하면 SR이 안 움직입니다.
 - **겉보기 분리의 상당수는 confound**였습니다 — 길이(실패는 항상 timeout), task 정체성, scene 암기.
-- **핵심 난제는 그대로**: 추론 중(online)에 어느 pathway·어느 phase에서 실패하는지 식별 가능한가.
-- **다음 후보**: 연산자를 바꿔보는 축(WA-LQR 계열 diff-of-means + LQR 재현 검토), scene 성분을
-  SAE로 분리한 뒤 conceptor, phase 앵커 재정의. 아직 어느 것도 확정된 방법이 아닙니다.
+- **핵심 난제는 그대로**: 추론 중(online)에 어느 pathway·어느 phase에서 실패하는지 식별 가능한가. 개입 시점을 잡을 수 있는가. steering을 하면 실제로 SR이 올라가는가. 어떤 연산자를 사용해야하는가. 모델,task마다 분리되는 layer, 분리양상이 달라지는건가. 그렇다면 어떻게 steering 할 것인가. 
+- **다음 후보**: 연산자를 바꿔보는 축(WA-LQR 계열 diff-of-means + LQR 재현 검토, 평균 연산자, 평균+분산 연산자 등), scene 성분을  SAE로 분리한 뒤 steering, phase 앵커 재정의. 아직 어느 것도 확정된 방법이 아닙니다.
 
 배경: 이 방향은 이전 "실패 루프 탈출(loop) / 메모리 부재" 및 "TTA progress predictor" 프레이밍을 대체합니다 — 실패 데이터를 직접 분석한 결과 loop는 실패의 표면 현상일 뿐이었고, 문제를 latent steering 관점으로 재정의했습니다. 라운드별 상세는 [`docs/steering/`](docs/steering/README.md), 문제 설정 단일 출처는 [`14_pathway_phase_online_steering.md`](docs/steering/14_pathway_phase_online_steering.md).
 
