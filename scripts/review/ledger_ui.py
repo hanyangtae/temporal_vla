@@ -97,7 +97,12 @@ def build_state() -> dict:
 
 
 def save_judgement(path: str, verdict: str, reason: str) -> None:
+    """판정 기록. verdict 가 빈 문자열이면 해당 행을 원장에서 제거한다(판정 취소)."""
     rows = read_tsv(LEDGER)
+    if not verdict:
+        rows = [r for r in rows if r["파일"] != path]
+        write_tsv(LEDGER, LEDGER_COLS, rows)
+        return
     by_path = {r["파일"]: r for r in rows}
     files = {f["파일"]: f for f in load_files()}
     stage = files.get(path, {}).get("스테이지", "")
@@ -148,12 +153,13 @@ kbd{font:11px ui-monospace,monospace;border:1px solid var(--line);border-radius:
   <div id="filters"></div>
   <div id="legend"></div>
   <div id="meta2" style="color:var(--mut);font-size:11px;margin-top:6px">
-    <kbd>j</kbd>/<kbd>k</kbd> 이동 · <kbd>1</kbd>~<kbd>5</kbd> 판정 · 클릭 즉시 LEDGER.tsv 기록 (저장 버튼 없음)
+    <kbd>j</kbd>/<kbd>k</kbd> 이동 · <kbd>1</kbd>~<kbd>5</kbd> 판정 · <kbd>Enter</kbd> 사유칸 · <b>같은 판정 재클릭 = 취소</b> ·
+    사유는 타이핑 중 자동 저장 · 저장 버튼 없음
   </div>
 </header>
 <main><div class="tblwrap" id="list"></div></main>
 <script>
-let S={items:[],verdicts:[],help:{}}, cur=0, filt='all';
+let S={items:[],verdicts:[],help:{}}, cur=0, filt='all', VIEW=[], T=null;
 const $=s=>document.querySelector(s);
 const TOK=new URLSearchParams(location.search).get('t')||'';
 const H=TOK?{'X-Review-Token':TOK}:{};
@@ -188,6 +194,7 @@ function render(){
   $('#filters').onclick=e=>{const b=e.target.closest('button'); if(!b)return; filt=b.dataset.f; cur=0; render();};
 
   if(cur>=items.length) cur=Math.max(0,items.length-1);
+  VIEW=items;
   $('#list').innerHTML=items.map((it,i)=>{
     const flags=(it['플래그']||'').split(/[,;]/).filter(Boolean)
       .map(f=>`<span class="flag">${esc(f.trim())}</span>`).join('');
@@ -203,35 +210,79 @@ function render(){
 
   $('#list').onclick=e=>{
     const row=e.target.closest('.row'); if(!row) return;
-    cur=+row.dataset.i;
+    const i=+row.dataset.i;
     const b=e.target.closest('button');
-    if(b) judge(shown()[cur], b.dataset.v, row.querySelector('input').value);
-    else render();
+    if(b){
+      const it=VIEW[i];
+      // 같은 판정을 다시 누르면 취소
+      const v = (it['판정']===b.dataset.v) ? '' : b.dataset.v;
+      judge(i, v, row.querySelector('input').value);
+    } else { setCur(i); }
   };
-  $('#list').onchange=e=>{
-    const row=e.target.closest('.row'); if(!row||e.target.tagName!=='INPUT') return;
-    const it=shown()[+row.dataset.i];
-    if(it['판정']) judge(it, it['판정'], e.target.value);
+  // 사유는 타이핑 중 디바운스 저장 + 포커스 이탈 시 확정 저장.
+  // addEventListener 대신 프로퍼티 대입 — render() 마다 리스너가 쌓이는 것을 막는다.
+  $('#list').oninput=e=>{
+    if(e.target.tagName!=='INPUT') return;
+    const i=+e.target.closest('.row').dataset.i, v=e.target.value;
+    clearTimeout(T); T=setTimeout(()=>saveReason(i, v), 500);
+  };
+  $('#list').onfocusout=e=>{
+    if(e.target.tagName!=='INPUT') return;
+    clearTimeout(T);
+    saveReason(+e.target.closest('.row').dataset.i, e.target.value);
   };
   const sel=$('.row.sel'); if(sel) sel.scrollIntoView({block:'nearest'});
 }
 
-async function judge(it,v,reason){
+// 목록을 다시 그리지 않고 해당 행만 갱신한다 — innerHTML 재작성은 입력칸 포커스와
+// 타이핑 중인 값을 날려버린다(사유 입력 불가 버그의 원인).
+function paint(i){
+  const it=VIEW[i], row=document.querySelectorAll('.row')[i]; if(!row) return;
+  row.classList.toggle('done', !!it['판정']);
+  row.querySelectorAll('.acts button').forEach(b=>b.classList.toggle('on', b.dataset.v===it['판정']));
+  const done=S.items.filter(x=>x['판정']).length, tot=S.items.length;
+  $('#bar>i').style.width=(tot?done/tot*100:0)+'%';
+  $('#meta').textContent=`판정 ${done} / ${tot}  ·  남은 ${tot-done}건  ·  화면 ${VIEW.length}건`;
+}
+
+function setCur(i){
+  document.querySelectorAll('.row').forEach((r,n)=>r.classList.toggle('sel', n===i));
+  cur=i;
+  document.querySelectorAll('.row')[i]?.scrollIntoView({block:'nearest'});
+}
+
+async function post(it,v,reason){
   await fetch('/api/judge',{method:'POST',headers:{'Content-Type':'application/json',...H},
     body:JSON.stringify({파일:it['파일'],판정:v,사유:reason||''})});
+}
+
+async function judge(i,v,reason){
+  const it=VIEW[i];
   it['판정']=v; it['사유']=reason||'';
-  render();
+  setCur(i); paint(i);
+  await post(it,v,reason);
+}
+
+// 판정이 없는 상태의 사유는 원장에 쓰지 않는다(판정 원장이므로). 판정 시점에 함께 실린다.
+async function saveReason(i,val){
+  const it=VIEW[i]; if(!it || it['사유']===val) return;
+  it['사유']=val;
+  if(it['판정']) await post(it, it['판정'], val);
 }
 
 document.addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT') return;
-  const items=shown(); if(!items.length) return;
-  if(e.key==='j'){cur=Math.min(cur+1,items.length-1);render();}
-  else if(e.key==='k'){cur=Math.max(cur-1,0);render();}
+  if(!VIEW.length) return;
+  if(e.key==='j'){setCur(Math.min(cur+1,VIEW.length-1));}
+  else if(e.key==='k'){setCur(Math.max(cur-1,0));}
+  else if(e.key==='Enter'){  // 선택된 행의 사유칸으로 바로 진입
+    e.preventDefault();
+    document.querySelectorAll('.row')[cur]?.querySelector('input')?.focus();
+  }
   else if('12345'.includes(e.key) && +e.key<=S.verdicts.length){
-    const v=S.verdicts[+e.key-1];
+    const pick=S.verdicts[+e.key-1];
     const inp=document.querySelectorAll('.row')[cur]?.querySelector('input');
-    judge(items[cur], v, inp?inp.value:'');
+    judge(cur, VIEW[cur]['판정']===pick ? '' : pick, inp?inp.value:'');
   }
 });
 function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -277,7 +328,7 @@ class Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length", 0))
         d = json.loads(self.rfile.read(n) or b"{}")
         verdict = d.get("판정", "")
-        if verdict not in VERDICTS:
+        if verdict and verdict not in VERDICTS:  # "" = 판정 취소
             return self._send(400, json.dumps({"error": "bad verdict"}), "application/json; charset=utf-8")
         save_judgement(d.get("파일", ""), verdict, d.get("사유", ""))
         self._send(200, json.dumps({"ok": True}, ensure_ascii=False), "application/json; charset=utf-8")
