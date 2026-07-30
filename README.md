@@ -22,7 +22,7 @@ DiT는 rollout phase에 조건부로 개입합니다. 백본 재학습은 없습
 - **핵심 난제는 그대로**: 추론 중(online)에 어느 pathway·어느 phase에서 실패하는지 식별 가능한가. 개입 시점을 잡을 수 있는가. steering을 하면 실제로 SR이 올라가는가. 어떤 연산자를 사용해야하는가. 모델,task마다 분리되는 layer, 분리양상이 달라지는건가. 그렇다면 어떻게 steering 할 것인가. 
 - **다음 후보**: 연산자를 바꿔보는 축(WA-LQR 계열 diff-of-means + LQR 재현 검토, 평균 연산자, 평균+분산 연산자 등), scene 성분을  SAE로 분리한 뒤 steering, phase 앵커 재정의. 아직 어느 것도 확정된 방법이 아닙니다.
 
-배경: 이 방향은 이전 "실패 루프 탈출(loop) / 메모리 부재" 및 "TTA progress predictor" 프레이밍을 대체합니다 — 실패 데이터를 직접 분석한 결과 loop는 실패의 표면 현상일 뿐이었고, 문제를 latent steering 관점으로 재정의했습니다. 라운드별 상세는 [`docs/steering/`](docs/steering/README.md), 문제 설정 단일 출처는 [`14_pathway_phase_online_steering.md`](docs/steering/14_pathway_phase_online_steering.md).
+배경: 이 방향은 이전 "실패 루프 탈출(loop) / 메모리 부재" 및 "TTA progress predictor" 프레이밍을 대체합니다 — 실패 데이터를 직접 분석한 결과 loop는 실패의 표면 현상일 뿐이었고, 문제를 latent steering 관점으로 재정의했습니다. 라운드별 상세는 [`docs/steering/`](docs/steering/README.md), 방향 단일 출처는 [`RESEARCH_DIRECTION.md`](docs/steering/RESEARCH_DIRECTION.md), 실측 결과 원장은 [`RESULTS.md`](docs/steering/RESULTS.md).
 
 ### Baseline
 - VLA 모델: pi0.5, groot
@@ -284,4 +284,4 @@ Multi-GPU 서버에서는 각 컨테이너에 서로 다른 GPU를 할당할 수
 - [통일 API 규격](docs/01_serving_interface.md) — 엔드포인트·sub-key·호환 매트릭스 단일 출처
 - [Docker 사용 가이드](docs/02_docker_guide.md) — Docker에 익숙하지 않은 팀원을 위한 상세 가이드
 - [새 체크포인트 추가](docs/03_adding_checkpoint.md) — profile/serve/eval 배선 체크리스트
-- [연구 문서](docs/steering/README.md) — steering 라운드별 계획·결과
+- [연구 방향](docs/steering/RESEARCH_DIRECTION.md) · [결과 원장](docs/steering/RESULTS.md) — steering 메인 라인

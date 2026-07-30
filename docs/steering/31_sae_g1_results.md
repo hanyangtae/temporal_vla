@@ -1,4 +1,4 @@
-# 31. SAE G1 결과 — drawer_left scene probe (exp5 1차)
+# SAE G1 결과 — drawer_left scene probe (exp5 1차)
 
 작성 2026-07-27, exp5 세션. 계획·기준 = 구 `30_sae_g1_port_handout` §4-D3(아카이브 — git 이력) (사전 등록).
 질문: **top-k SAE feature 가 scene(layout/style)을 실제로 인코딩하는가** — 통과 시에만 G2(잔차화 read).

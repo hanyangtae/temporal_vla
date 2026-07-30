@@ -32,7 +32,7 @@ VLA 잠재공간에서 **실패 latent와 성공 latent를 구분**하고, 추�
 succ/fail 활성화 분포에서 contrastive conceptor `C_steer = C_success ∧ ¬C_failure` 를 fit하고
 추론 시 `h' = h·Mᵀ` 로 성공 부분공간 쪽으로 steer (COAST 계열, 단일벡터 additive 아니라
 multi-dim contrastive 연산자). 여기에 두 축을 더한다. 단일 출처:
-[`docs/steering/14_pathway_phase_online_steering.md`](docs/steering/14_pathway_phase_online_steering.md).
+[`docs/steering/RESEARCH_DIRECTION.md`](docs/steering/RESEARCH_DIRECTION.md).
 
 - **(1) Pathway 분리 steering**: VL(goal "what")과 DiT(motor "how") pathway를 **각각 따로** steer.
   근거 = NOTALL 기능 분리. (구 근거 "VL 이른 t≤8 / DiT 늦은 t≥12"는 **반증됨** — 차이

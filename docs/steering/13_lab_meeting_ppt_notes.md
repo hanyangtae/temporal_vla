@@ -8,7 +8,7 @@
 >
 > 두 파트는 같은 발표의 다른 시점 스냅샷이다. **현재 PPT는 Part A의 23-slide 구조**가 기준이고
 > (atomic-action 축 포함), Part B는 figure 경로·수치 출처를 역추적할 때 쓰는 참조 매핑이다.
-> 방향 thesis 단일 출처는 [`14_pathway_phase_online_steering.md`](14_pathway_phase_online_steering.md).
+> 방향 thesis 단일 출처는 [`RESEARCH_DIRECTION.md`](RESEARCH_DIRECTION.md).
 >
 > ※ 파일명 주의: 구 핸드오프는 `랩미팅0618.pptx`를 가리켰으나 현재 활성 파일은 `랩미팅0623.pptx`다.
 
@@ -89,7 +89,7 @@ S23 Appendix C — Number Sources
 3. **S11 ↔ instruction confound 연결** — "VLM detector 잘 안 됨"을 instruction confound와 묶어 설명
    (구 `11_instruction_confound`: 헤드라인 VL AUROC 0.93은 instruction in/out 쏠림 아티팩트). VL 신호가
    약해 보이는 게 confound 때문일 수 있다는 caveat를 S11/S13에 한 줄.
-4. **S16/S17 보강** — atomic-action phase 검출 후보를 `14_pathway_phase_online_steering.md`의
+4. **S16/S17 보강** — atomic-action phase 검출 후보를 `RESEARCH_DIRECTION.md`의
    "phase를 online에 어떻게 아나"(절대 t-bin / progress-normalized=online 불가 / subtask 검출기)와
    정합시키고, "VITA식 progress predictor가 보조 phase 신호로 부활 가능"을 옵션으로.
 5. **전체 일관성 점검** — 수치/그림이 부록 C(S23) 출처와 맞는지, 갱신된 수치가 있으면 동기화. 부록 C의
@@ -98,9 +98,9 @@ S23 Appendix C — Number Sources
 ## A.4 읽을 자료 (repo 루트 기준)
 
 ### 방향·thesis 단일 출처
-- `docs/steering/14_pathway_phase_online_steering.md` — pathway(VL/DiT) 분리 + phase-matched,
+- `docs/steering/RESEARCH_DIRECTION.md` — pathway(VL/DiT) 분리 + phase-matched,
   "online에 phase/type 읽을 수 있나"가 중심 미해결 문제. S15~S17의 논거.
-- `docs/steering/15_research_structure.md` — RQ1~4 / 가설 C1~C4 / crossover 검증 설계.
+- `docs/steering/RESEARCH_DIRECTION.md` — RQ1~4 / 가설 C1~C4 / crossover 검증 설계.
 - 이 문서 **Part B** — 슬라이드↔그림 경로↔수치 출처 매핑(원본 아웃라인). 현 PPT와 대조용. 단 Part B는
   atomic-action 축이 약하니 덱(Part A)이 더 최신임에 유의.
 

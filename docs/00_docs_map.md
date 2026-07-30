@@ -23,10 +23,10 @@
 
 [`steering/`](steering/README.md) 아래. 라운드별 계획·결과가 번호 prefix로 쌓여 있다.
 
+- **★ 방향 단일 출처**: [`RESEARCH_DIRECTION.md`](steering/RESEARCH_DIRECTION.md)
+  — RQ1~4 · 가설 C1~C4 · open problem · 검증 설계
 - **★ 결과 원장**: [`RESULTS.md`](steering/RESULTS.md) + [`results.tsv`](steering/results.tsv)
   — exp2~exp5 SR 개입 실험 결과의 단일 출처
-- **문제 설정 단일 출처**: [14 Pathway+Phase Online Steering](steering/14_pathway_phase_online_steering.md)
-- **연구 구조**: [15 Research Structure](steering/15_research_structure.md) — RQ1~4 / 가설 C1~C4
 - **표현 분석**: [01 seen18 Latent Analysis](steering/01_seen18_latent_analysis.md) (길이 confound 통제 전제),
   [08 Pathway Separation](steering/08_pathway_separation_analysis.md) ⚠ 분리 시점 주장 반증됨,
   [22 wrong-grasp VL](steering/22_wrong_grasp_vl_separation.md)
@@ -37,11 +37,9 @@
 
 상시 규약 (라운드 무관):
 
+- [`PITFALLS.md`](steering/PITFALLS.md) — 배선·실행 함정 (α 배선, fit↔eval 분리, 위약, 코드 앵커)
 - [`DATA_HANDLING.md`](steering/DATA_HANDLING.md) — 수집·아카이브·삭제 시 보존 검증 (이름 세기 금지)
 - [`SCENE_FEASIBILITY.md`](steering/SCENE_FEASIBILITY.md) — fixture task의 기하 불가 seed 필터
-
-> ⚠ `steering/README.md`의 "현재 결론"과 Reading Order는 06-23에 멈춰 있어 exp2~exp5가
-> 반영되지 않았다. 루트 README로 merge 예정(S0 판정).
 
 한 화면 요약: [GR00T Latent Steering Explorer](groot/00_groot_steering_explorer.html) — runtime flow,
 conceptor/hidden-state steering 수식, code artifact map을 함께 보는 self-contained HTML.

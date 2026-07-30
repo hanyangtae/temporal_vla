@@ -1,47 +1,47 @@
 파일	스테이지	판정	사유	적용여부	삭제커밋
-docs/HANDOFF_current.md	S0	archive	연대기 인덱스로 대체 예정	D 트랙 이후	
+docs/HANDOFF_current.md	S0	archive	RESEARCH_DIRECTION + RESULTS 로 역할 대체	적용(archive)	84b7e38
 README.md	S0	수정	1차 최신화 완료: 현재 결론(exp5까지)·Project Structure·Documentation 링크. 정리 후 2차 최신화 예정	적용(1차)	
 CLAUDE.md	S0	수정	docker 5→8, serve 목록 보강(lerobot/groot/openvla_oft), ZMQ 경로 명시, t≤8/t≥12 반증 표기, 주요 경로에 safe/scene_sae/review 추가	적용	
-AGENTS.md	S0	keep			
-.agents/agent_spec.md	S0	keep			
+AGENTS.md	S0	keep		해당없음(keep)	
+.agents/agent_spec.md	S0	keep		해당없음(keep)	
 docs/README.md	S0	수정	archive→수정으로 변경: docs/00_docs_map.md 로 rename, 경로 참조 전용으로 축소(프로젝트 목표·연구 서사는 루트 README로)	적용	
-docs/steering/README.md	S0	merge	최신화(exp5까지) 후 루트 README.md 로 merge	D 트랙 이후	
-docs/steering/33_exp5_round_summary.md	D	수정	잔차화규명, scene 암기여부, SAE필요 여부등은 여러 task를 보면서 더 깊게 파볼 것임. 		
+docs/steering/README.md	S0	merge	"현재 결론"은 RESEARCH_DIRECTION/RESULTS로, README는 문서 지도로 축소	적용(→루트 README + 문서지도)	84b7e38
+docs/steering/33_exp5_round_summary.md	D	수정	잔차화규명, scene 암기여부, SAE필요 여부등은 여러 task를 보면서 더 깊게 파볼 것임. 	적용	
 docs/steering/23_exp2_scene_fixed_steering_results.md	D	merge	exp5의 결과로 합쳐질 만 하지 않나?	적용(→RESULTS.md)	0670e51
 docs/steering/21_exp3_results.md	D	merge	이것도, 그니까 exp2,3,4,5는 결국 다 한번 정리해서 하나의 결과로 합쳐서 보고, 어떤 데이터가 얼마나 있는지도 관리하는게 좋을듯	적용(→RESULTS.md)	0670e51
-docs/steering/17_steering_experiment_redesign.md	D	수정	여기 fit layer 베타 확정 이런 내요잉 있어서 검토 안하고 그냥 다른 case에도 적용해버리는거 같아. 이 확정은 특정 task, 모델에만 적용되어야하는거거든. 그냥 확정은 날려. 과학축 VS nuisance도 상황마다 다르게 볼 수 있거든 그부분도 날리자. 나머지는 다른 문서에 있는 내용같은데 처리해버려. 		
+docs/steering/17_steering_experiment_redesign.md	D	수정	확정 절(fit/layer/β)·과학축vs nuisance 삭제, α 감사·배선 체크리스트만 PITFALLS로	적용(→PITFALLS.md)	84b7e38
 docs/steering/22_exp3_fit30_results.md	D	merge	이것도 결과 한곳에서 관리하자. 결과 관리하는 파일 만들어서 exp2,3,4,5 별로 관리하고 각 결과가 어떤데이터로 뭘 어떻게 실험해서 나왔는지 관리하고, 	적용(→RESULTS.md)	0670e51
 docs/steering/25a_exp4-3_to_exp4-1_recommendation.md	D	archive		적용(archive)	0670e51
-docs/steering/31_sae_g1_results.md	D	수정	제목이나 위치만 수정하면 될 듯  이것 SR 결과나 이런게 아니라서 다른데 mearge 안하고 그냥 sae자체의 결과로서 남겨두는게 좋다고 봄		
-docs/steering/32_g2_scene_residual_results.md	D	keep	수정: "발견 A 모델은 scene을 외운다"는 과잉 주장 — rank≤19 상한 때문에 산술적으로 강제되는 결과. outcome≠scene 은 유효	미적용	
-docs/steering/35_exp5-2_results.md	D	keep	섭동으로 인한 결과는 다른것들과 따로 관리하자. 		
+docs/steering/31_sae_g1_results.md	D	수정	제목 번호 제거. SAE 자체 결과로 RESULTS 미흡수 유지	적용	84b7e38
+docs/steering/32_g2_scene_residual_results.md	D	keep	"발견 A 모델은 scene을 외운다" 하향 — rank≤19 상한 때문에 산술적으로 강제되는 결과. outcome≠scene 은 유효	적용	84b7e38
+docs/steering/35_exp5-2_results.md	D	keep	섭동으로 인한 결과는 다른것들과 따로 관리하자. 	해당없음(keep)	
 docs/steering/36_exp5-3_within_scene_steer.md	D	merge	이것도 결과 문서로 합쳐지면 될 듯, 연산자나 data가 다름을 주의하고	적용(→RESULTS.md)	0670e51
-docs/steering/37_exp5-4_noise_selection.md	D	미정	수정: verifier는 종결이나 seed 주효과 명제는 미착수 후속으로 살아있음을 명시 필요	미적용	
-docs/steering/24d_exp4-3_variance_aware_direction_input.md	D	keep			
+docs/steering/37_exp5-4_noise_selection.md	D	미정	종결 범위 명확화: verifier만 종결, seed 주효과(§6-1 good-seed 전이)는 미착수로 살아있음	적용	84b7e38
+docs/steering/24d_exp4-3_variance_aware_direction_input.md	D	keep		해당없음(keep)	
 docs/steering/11_phase4_n15_instruction_fixed_plan.md	D	archive	outdated	적용(archive)	0670e51
-docs/steering/13_lab_meeting_ppt_notes.md	D	keep	이건 이때 당시 흐름을 잘 요약한 문서로 판단됨		
+docs/steering/13_lab_meeting_ppt_notes.md	D	keep	이건 이때 당시 흐름을 잘 요약한 문서로 판단됨	해당없음(keep)	
 docs/steering/NOTICE_exp2_fit_loss_for_exp3.txt	D	수정	이건 데이터가 유실되는 일반적인 상황을 얘기하고 있어서 exp3에게 전달하는 내요이라기보다는 데이터를 모으고 승준으로 보내는 이 상황에서 계속 주의하고 알고 있어야하는 내용임. 메모리든, 관리 agent든, 앞으로 데이터를 보낼때 늘 조심해야하는 부분이니까 적절하게 내용이 활용되어야하는 문서임	적용(→DATA_HANDLING.md)	0670e51
 docs/steering/NOTICE_scene_feasibility_for_exp4.txt	D	수정	이건 task 별로도 어떤 scene은 물리적으로 애초에 불가능한 상황이 생길 수 있으므로 exp4용이라는 내용을 제거하고 관리할 것. 또한 다른 task로 확장할떄도 이런 상황이 발생할 수 있는지 한번쯤은 확인해야한다. 	적용(→SCENE_FEASIBILITY.md)	0670e51
 docs/steering/26_closefridge_phase_labeler.md	D	archive	필요하면 다시 만ㄷ들자. 이 task는 앞으로 할지를 모르겠다	적용(archive)	0670e51
-docs/steering/27_standmixer_phase_labeler.md	D	수정	이건 쓰는 labeler니까 관리는 해야하는데 labeler들은 어떻게 관리해야할지 모르겠네		
-docs/steering/14_pathway_phase_online_steering.md	D	merge	이건 근본적인 실험 방향에대한 내용인데 readme나 뭐 이런 중심이 되는 문서에 들어가야함. 		
-docs/steering/15_research_structure.md	D	merge	이 내용도 14와 마찬가지로 근본이 되는 문서에 최신화해서 들어가야함		
-docs/steering/01_seen18_latent_analysis.md	D	미정	수정: 길이 confound 근거 + 도구/파일 지도만 남기고 축약	미적용	
+docs/steering/27_standmixer_phase_labeler.md	D	수정	labeler 관리 위치 미정 명시 + TASK_EVENTS 등록 필수 경고. 통합은 S2에서	적용	84b7e38
+docs/steering/14_pathway_phase_online_steering.md	D	merge	이건 근본적인 실험 방향에대한 내용인데 readme나 뭐 이런 중심이 되는 문서에 들어가야함. 	적용(→RESEARCH_DIRECTION.md)	84b7e38
+docs/steering/15_research_structure.md	D	merge	이 내용도 14와 마찬가지로 근본이 되는 문서에 최신화해서 들어가야함	적용(→RESEARCH_DIRECTION.md)	84b7e38
+docs/steering/01_seen18_latent_analysis.md	D	미정	길이 confound + 도구·데이터 지도만 유효로 상단 고정, 나머지 관찰은 대조 후 인용	적용	84b7e38
 docs/steering/08_pathway_separation_analysis.md	D	수정	분리 시점 주장 전부 반증 표기(§2.1·§3.1·§3.2). VL/DiT 분리 근거를 타이밍→실패 원인(카메라 섭동·wrong-grasp)으로 교체	적용	
 docs/steering/11_instruction_confound.md	D	archive		적용(archive)	0670e51
-docs/steering/07_steering_methods_survey.md	D	keep	대조는 필요하긴하지 		
+docs/steering/07_steering_methods_survey.md	D	keep	대조는 필요하긴하지 	해당없음(keep)	
 docs/steering/mean_diff_equ.md	D	merge	이건 7번에 넣어	적용(→07 부록)	0670e51
 docs/steering/24c_walqr_reference.md	D	미정	merge 확정: reading_notes/steering_robustness_wam_lqr.md 가 상위본	적용(→references/reading_notes)	0670e51
-docs/steering/05_safe_lerobot_collection.md	D	수정	데이터 한점의 의미, 최신화 필요. 운영제약도 pi0.5*libero는 저렇다는거지 저걸 한다는 의미는 아님. 나머지는 관리하는 정보니까 유의미하긴한데 steering 용이라고 봐야하나 모르겠네		
-docs/steering/16_mechinterp_reproduction.md	D	keep			
+docs/steering/05_safe_lerobot_collection.md	D	수정	steering 전용 아님(수집 인프라) 명시 + 데이터 한점 의미·운영제약 최신화 필요 표기	적용	84b7e38
+docs/steering/16_mechinterp_reproduction.md	D	keep		해당없음(keep)	
 docs/steering/18_apple_success_rejudge.md	D	archive	별거 아니라고 생각함	적용(archive)	0670e51
-docs/steering/19_exp3_execution_handoff.md	D	merge	여기 내용들은 다른데 다 있는지 확인후 삭제		
-docs/steering/20_exp3_phase_c_handoff.md	D	merge	여기 내용들은 다른데 다 있는지 확인후 삭제		
-docs/steering/22_wrong_grasp_vl_separation.md	D	keep	번호만 잘 정리하셈		
-docs/steering/24_exp4_shared_plan.md	D	merge	다른 문서에 들어갈 수 있으면 넣어		
-docs/steering/24a_exp4-1_oracle_rescue_plan.md	D	keep			
-docs/steering/24b_exp4-2_perturb_conceptor_plan.md	D	keep			
-docs/steering/25_exp4-3_separation_atlas_handoff.md	D	keep			
+docs/steering/19_exp3_execution_handoff.md	D	merge	여기 내용들은 다른데 다 있는지 확인후 삭제	적용(코드앵커→PITFALLS §8)	84b7e38
+docs/steering/20_exp3_phase_c_handoff.md	D	merge	exp3 결과는 RESULTS.md, 동결 상수는 라운드 전용	적용(삭제)	84b7e38
+docs/steering/22_wrong_grasp_vl_separation.md	D	keep	번호만 잘 정리하셈	해당없음(keep)	
+docs/steering/24_exp4_shared_plan.md	D	merge	24a/24b(keep)가 공유문서로 참조 중 — 제거하면 그쪽이 깨짐	보류(keep)	
+docs/steering/24a_exp4-1_oracle_rescue_plan.md	D	keep		해당없음(keep)	
+docs/steering/24b_exp4-2_perturb_conceptor_plan.md	D	keep		해당없음(keep)	
+docs/steering/25_exp4-3_separation_atlas_handoff.md	D	keep		해당없음(keep)	
 docs/steering/25a_patchceil_transplant_handoff.md	D	미정	종결 핸드오프 — 결과는 25b(현 RESULTS.md)	적용(archive)	0670e51
 docs/steering/25b_patchceil_transplant_result.md	D	merge	결과 관리하는데에 넣자	적용(→RESULTS.md)	0670e51
 docs/steering/28_exp4-1_handout_0723.md	D	archive		적용(archive)	0670e51

@@ -20,8 +20,8 @@ conceptor steering** 으로 추론 시 활성화를 성공 부분공간으로 �
 - ★ 중심 미해결 문제: 추론 중(**online**) 어느 pathway가 어느 phase에서 실패했는지
   식별할 수 있는가. 안 되면 steering을 라우팅할 수 없다.
 
-단일 출처(SSOT): [`docs/steering/14_pathway_phase_online_steering.md`](../steering/14_pathway_phase_online_steering.md),
-RQ/가설은 [`docs/steering/15_research_structure.md`](../steering/15_research_structure.md).
+단일 출처(SSOT): [`docs/steering/RESEARCH_DIRECTION.md`](../steering/RESEARCH_DIRECTION.md),
+RQ/가설은 [`docs/steering/RESEARCH_DIRECTION.md`](../steering/RESEARCH_DIRECTION.md).
 
 ## 이 문서 쓰는 법
 
@@ -142,7 +142,7 @@ TIER 4  ★중심 미해결 문제  (무게중심 ③ = stretch)
 - **(A)** succ/fail 분리 + AUROC, **길이 confound** — 실패=항상 45-step timeout / 성공=조기종료
   → 길이만으로 AUROC 0.998 (time-pooled feature 분리는 아티팩트). fixed-t truncation으로 통제.
 - **(B)** `docs/steering/01_seen18_latent_analysis.md`(정독 — 길이 confound가 모든 해석의 전제),
-  `docs/steering/README.md`, `docs/steering/15_research_structure.md`의 C1 섹션,
+  `docs/steering/README.md`, `docs/steering/RESEARCH_DIRECTION.md`의 C1 섹션,
   `docs/seen18_safe_detector_verification.md`. 외부: **SAFE**(`docs/references/SAFE.pdf`,
   요약 `docs/references/SAFE.txt`).
 - **(C)** `scripts/safe/groot_n16/robocasa/vis/seen18.py` 재현(길이 confound·AUROC·실패방향 figure).
@@ -222,7 +222,7 @@ TIER 4  ★중심 미해결 문제  (무게중심 ③ = stretch)
 - **(A)** 사다리식 ablation(global → pathway-split → +phase-bin), 각 단계 ΔSR.
   eval operating-point 아티팩트 경고(초기 음수 ΔSR이 method 실패가 아니라 eval 설정 아티팩트였던
   사례).
-- **(B)** `docs/steering/14_pathway_phase_online_steering.md`(메인 thesis 정독 — 사다리 ablation·
+- **(B)** `docs/steering/RESEARCH_DIRECTION.md`(메인 thesis 정독 — 사다리 ablation·
   open problem), `docs/steering/15_*` C2(조종, mean ΔSR +0.114) 섹션,
   `docs/groot/n16_07_safe_detector_report.md`.
 - **(C)**
@@ -292,7 +292,7 @@ TIER 4  ★중심 미해결 문제  (무게중심 ③ = stretch)
 ### Repo 핵심 문서 (읽기 순서)
 1. `docs/README.md` → `CLAUDE.md` → `docs/00_repo_orientation.md` → `docs/01_serving_interface.md` (인프라)
 2. `docs/groot/00_groot_flow_map.md` + `docs/groot/00_groot_steering_explorer.html` (GR00T 흐름)
-3. `docs/steering/14_pathway_phase_online_steering.md`(메인 thesis, SSOT) → `docs/steering/15_research_structure.md`
+3. `docs/steering/RESEARCH_DIRECTION.md`(메인 thesis, SSOT) → `docs/steering/RESEARCH_DIRECTION.md`
 4. `docs/steering/01_seen18_latent_analysis.md`(길이 confound 전제) → `08_pathway_separation_analysis.md`
    → `07_steering_methods_survey.md` → `11_instruction_confound.md`
 5. `src/conceptor/README.md` (conceptor 수학 ↔ COAST 매핑)

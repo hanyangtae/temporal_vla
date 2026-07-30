@@ -4,14 +4,14 @@
 > 근거 두 가지. ① 효과 크기가 없다: t=8에서 VL−DiT AUROC 차이가 **+0.013**(0.713 vs 0.701),
 > t=12에서 −0.007로 사실상 동등하다. ② 창이 불일치한다: 이 비교는 VL을 t≤8 풀링으로,
 > DiT를 다른 창에서 재고 있어 **DiT를 이른 창에서 과소측정**한다
-> ([`15_research_structure.md`](15_research_structure.md) C3 경고 참조).
+> ([`RESEARCH_DIRECTION.md`](RESEARCH_DIRECTION.md) C3 경고 참조).
 > 이 문서는 "그때 이렇게 측정했다"는 **기록으로만 보존**한다. 수치·방법은 유효하나
 > §2.1 결론과 그로부터 파생된 "VL early / DiT late" 서술은 인용하지 말 것.
 
 > Phase 3 결과 통합 문서. §1 = DiT 32-layer pre-failure 분리력(구 `08_phase3_dit32_separation`),
 > §2 = VL(goal) vs DiT(motor) 정렬 비교(구 `09_phase3_vl_dit_comparison`), §3 = 종합
 > (goal-vs-motor task 분열), §4 = caveat. 방향 단일 출처는
-> [`14_pathway_phase_online_steering.md`](14_pathway_phase_online_steering.md).
+> [`RESEARCH_DIRECTION.md`](RESEARCH_DIRECTION.md).
 >
 > ⚠ instruction confound caveat → 구 `11_instruction_confound`(아카이브)
 > (헤드라인 VL AUROC가 instruction 쏠림 아티팩트일 수 있음 — §4 참조).
