@@ -167,7 +167,7 @@ TIER 4  ★중심 미해결 문제  (무게중심 ③ = stretch)
   VL AUROC 부풀림; instruction-balanced task만 신뢰). **LDA in-sample 과적합 함정**
   (train/test split·CV 없으면 분리가 가짜).
 - **(B)** `docs/steering/11_instruction_confound.md`(정독 — VL/DiT LDA 사분면 방법),
-  `docs/steering/11_phase4_n15_instruction_fixed_plan.md`(instruction-fixed 재수집 동기).
+  구 `docs/steering/11_phase4_...`(아카이브 — git 이력; instruction-fixed 재수집 동기).
   외부: **NOTALL**(`docs/references/NOT ALL FEATURES ARE CREATED EQUAL_ICLR2026.pdf`,
   요약 `docs/references/NOTALL.txt`).
 - **(C)** `scripts/safe/groot_n16/robocasa/analyze/vl_dit_lda_analysis.py` 재현하되

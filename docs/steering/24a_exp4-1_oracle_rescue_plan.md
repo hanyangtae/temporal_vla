@@ -8,7 +8,7 @@
 - **WA-LQR(W): 타당성 게이트 통과 시 추가 시도** (§5). 불가 판정이면 근거 기록 후 생략.
 - **축: within-instruction + cross-scene만. cross-instruction은 유예.**
 - **Task 4종: OpenStandMixerHead, OpenDrawer, PickPlaceCounterToCabinet(bread), PickPlaceCounterToCabinet(beer).** (07-22 재결정: CloseFridge 탈락 — 실행5/예측16 SR 0/14 chunk-길이 함정. mixer 근거·라벨러 = docs/steering/27, fridge 기록 = 26.)
-- **Scene 실현가능성 필터 필수 선행** (공유문서 §5, NOTICE_scene_feasibility_for_exp4.txt): 기하적으로 성공 불가능한 seed는 fit·eval 양쪽에서 동일 제외. rescue 실험에서 특히 치명 — 불가 scene은 어떤 steering으로도 구제 불가라 ITT 분모를 오염시킴.
+- **Scene 실현가능성 필터 필수 선행** (공유문서 §5, SCENE_FEASIBILITY.md): 기하적으로 성공 불가능한 seed는 fit·eval 양쪽에서 동일 제외. rescue 실험에서 특히 치명 — 불가 scene은 어떤 steering으로도 구제 불가라 ITT 분모를 오염시킴.
 
 ## 목표
 
@@ -79,7 +79,7 @@ cell	episode_idx	scenario_seed	inference_seed	t0_env_step	t0_record	note
 
 ## 5. W — WA-LQR (조건부 arm, 타당성 게이트)
 
-참고 문서: [`24c_walqr_reference.md`](24c_walqr_reference.md) + reading note. 우리 구조는 저들의 DiT4DiT(별도 action DiT)와 가장 유사 — 단 **world 슬롯 제외 설계는 이식 불가**(GR00T action head엔 world 슬롯이 없음) → action 경로 직접 steer.
+참고 문서: [WA-LQR 노트](../references/reading_notes/steering_robustness_wam_lqr.md) + reading note. 우리 구조는 저들의 DiT4DiT(별도 action DiT)와 가장 유사 — 단 **world 슬롯 제외 설계는 이식 불가**(GR00T action head엔 world 슬롯이 없음) → action 경로 직접 steer.
 
 - **F1 타당성 게이트 (eval 0판, 순서대로 통과 못 하면 중단·기록)**:
   1. 방향/부분공간 fit: succ/fail 대조로 (layer-partition × denoise-t) SVD k≤64 + c_means — CPU, 기존 수집 데이터로 가능한가.
@@ -138,7 +138,7 @@ exp4-1(oracle-timing 실패 구제)을 실행한다.
 브랜치: dev에서 exp/exp4-1-oracle-rescue 분기.
 순서: ① annotate_phase_video.py 이벤트 마커 확장 → ppcc_bread 77판 주석 팩 생성 후 경로 보고
 (내가 annotation_t0.tsv를 채운다) ∥ beer·drawer 사이드카 재실행, mixer feasibility 스캔(100000-100099,
-NOTICE_scene_feasibility_for_exp4.txt)+feasible seed C0 스캔, 기존 실패 풀(ppcc·drawer)도 feasibility 사후 스캔
+SCENE_FEASIBILITY.md)+feasible seed C0 스캔, 기존 실패 풀(ppcc·drawer)도 feasibility 사후 스캔
 ② setpoint affine hook(~120 LOC) + fit_mean_diff.py + Pr(라벨 순열) + client latch + 러너 구현,
 구현 완료 시 Codex Gate2 리뷰 ③ WA-LQR F1 타당성 게이트(eval 0판) — 결과 보고 후 W arm 여부 결정
 ④ 내 주석 도착 후 smoke 5종 → A0 sentinel → 본 eval(A/Ms/Pr[/W]).

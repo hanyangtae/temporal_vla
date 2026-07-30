@@ -143,7 +143,7 @@ seed 집합이 적용된다. 단 **fit·eval 양쪽에 동일 적용**해야 하
 fridge/drawer 이식은 fixture 참조·관절·body·임계 4개만 바꾸면 된다 — **drawer/fridge 에
 같은 오염이 있는지는 미확인**(exp2·exp3 결과 사후 스캔 가치 있음).
 
-다른 세션용 요약: `docs/steering/NOTICE_scene_feasibility_for_exp4.txt`.
+다른 세션용 요약: [`SCENE_FEASIBILITY.md`](SCENE_FEASIBILITY.md).
 
 ## 5. 한계
 

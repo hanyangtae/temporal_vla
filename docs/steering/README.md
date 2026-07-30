@@ -66,9 +66,9 @@ progress predictor 방향은 현재 메인이 아니며 [`../ttt/`](../ttt/READM
 4. [08 Pathway Separation Analysis](08_pathway_separation_analysis.md) — Phase 3 통합: DiT 32-layer
    pre-failure 분리력 + VL(goal) vs DiT(motor) 비교( goal-vs-motor
    task 분열) + Phase 4 steering target 선택 근거.
-5. [11 Instruction Confound](11_instruction_confound.md) — Phase A 판정: 헤드라인 VL AUROC 가
+5. 구 `11_instruction_confound`(아카이브) — Phase A 판정: 헤드라인 VL AUROC 가
    instruction(in/out) 쏠림 아티팩트일 수 있음. VL/DiT LDA 사분면 분석 방법·근거.
-6. [11 Phase 4 N1.5 Instruction-Fixed Plan](11_phase4_n15_instruction_fixed_plan.md) —
+6. 구 `11_phase4_n15_instruction_fixed_plan`(아카이브) —
    N1.5 instruction-fixed seed selection, paired rollout collection, pathway cache, conceptor fit,
    steering eval 계획과 실행 log.
 7. [13 Lab-Meeting PPT Notes](13_lab_meeting_ppt_notes.md) — 랩미팅 발표 덱 작업 노트:
@@ -83,7 +83,7 @@ progress predictor 방향은 현재 메인이 아니며 [`../ttt/`](../ttt/READM
 | 연구 질문/가설(RQ1~4, C1~C4)·검증 설계는? | `15_research_structure.md` |
 | succ/fail latent가 실제로 분리되는가? | `01_seen18_latent_analysis.md` |
 | pathway 분리력·최신 steering target은 무엇인가? | `08_pathway_separation_analysis.md` |
-| VL AUROC가 instruction 아티팩트인가? | `11_instruction_confound.md` |
-| N1.5 instruction-fixed 수집/steering은 어디까지 왔나? | `11_phase4_n15_instruction_fixed_plan.md` |
+| VL AUROC가 instruction 아티팩트인가? | 구 `11_instruction_confound`(아카이브) |
+| N1.5 instruction-fixed 수집/steering은 어디까지 왔나? | 구 `11_phase4`(아카이브) |
 | LeRobot/멀티벤치 SAFE 수집은 어디까지 왔나? | `05_safe_lerobot_collection.md` |
 | 랩미팅 발표 덱은 어떻게 구성/갱신하나? | `13_lab_meeting_ppt_notes.md` |

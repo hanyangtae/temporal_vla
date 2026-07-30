@@ -23,7 +23,7 @@ exp3(구 pq3) 900판은 전면 null(6-Holm, 위약 대조 포함). 사후 산술
 
 exp4의 공략:
 
-1. **exp4-1**: 실패가 (env_name, scenario_seed, inference_seed, 머신)으로 **결정적 재현**됨(patchceil 77/77 bitwise 검증, docs/steering/25b_patchceil_transplant_result.md)을 이용. 사용자가 실패 영상을 보고 지정한 개입 시점 t0부터 steering을 켜 구제율 측정 — 온라인 검출기 없는 oracle 타이밍, "검출만 되면 구제가 되는가"의 상한 탐색. 연산자 3종 비교: 기존 conceptor / **mean-diff(평균차) 연산자** / exp4-2 산출 conceptor.
+1. **exp4-1**: 실패가 (env_name, scenario_seed, inference_seed, 머신)으로 **결정적 재현**됨(patchceil 77/77 bitwise 검증, docs/steering/RESULTS.md §1)을 이용. 사용자가 실패 영상을 보고 지정한 개입 시점 t0부터 steering을 켜 구제율 측정 — 온라인 검출기 없는 oracle 타이밍, "검출만 되면 구제가 되는가"의 상한 탐색. 연산자 3종 비교: 기존 conceptor / **mean-diff(평균차) 연산자** / exp4-2 산출 conceptor.
 2. **exp4-2**: 자연 실패 대신 (Track P) 물리 섭동, (Track I) activation 주입으로 실패를 **만들어** succ/fail 분포를 벌린다. 가설: 분포가 진짜 벌어지면 AND-NOT이 비퇴화 conceptor를 산출한다. 부가 가치: 주입이 pathway별이라 유도 실패에 **TYPE ground-truth 라벨**(goal vs motor)이 설계상 부여됨 — online type 식별의 없던 정답지. 직접 선행: WA-LQR(arXiv:2607.14943, clean-vs-perturbed 대조로 DiT residual diff-of-means steering, 교란 하 SR +11~40pp — 단 위약·유의성 검정 없음; 노트 docs/references/reading_notes/steering_robustness_wam_lqr.md).
 
 ## 2. 연산자·arm 용어 (두 세션 공통)
@@ -65,7 +65,7 @@ exp4의 공략:
 - 두 세션이 같은 GPU·포트를 잡지 않도록 시작 시 상호 확인. 포트 공유 금지(pkill 포트 패턴 사고 이력).
 - 공통 표준: EVAL_SEED=100000, fresh process per episode(gym.make 연속 생성 금지), setsid detach, CPU ≤90%(OMP/OPENBLAS ≤16), 수집 캡처는 exp4-2만 ON(eval은 OFF 정책 유지).
 - 결정론은 **머신 단위** — episode 재현·eval은 그 episode를 수집한 머신에서. cross-machine 비교는 각주 규칙(memory `a100-srv50-parallel-eval`).
-- **Scene 실현가능성 필터 (필수 선행 — `docs/steering/NOTICE_scene_feasibility_for_exp4.txt`)**: fixture task의 일부 seed는 **기하적으로 성공 불가능**(실측: mixer seed 100010, 머리가 선반에 막혀 q_max 0.575 < 임계 0.99 — 12개 중 1개). 이런 판은 latent 실패가 아니라 scene 기하이고, **어떤 steering으로도 구제 불가라 rescue 분모(ITT)를 조용히 오염**시키며, fail 클래스에 섞이면 conceptor가 scene 기하를 학습한다. 규칙: ① 정책 무관 관절 스윕(`analyze/mixer_scene_feasibility.py`, CPU·seed당 수초·fresh process)으로 **episode set 확정 전** 스캔 ② 제외는 fit·eval **양쪽 동일** 적용(한쪽만 걸면 새 confound) ③ 제외 seed·q_max를 manifest/NPZ meta에 기록 ④ 스크립트는 StandMixer 전용 — drawer/ppcc 이식은 4개 파라미터(fixture·관절·body·임계) 교체, **drawer/ppcc의 오염 여부는 미확인이라 스캔 후 사용**.
+- **Scene 실현가능성 필터 (필수 선행 — [`SCENE_FEASIBILITY.md`](SCENE_FEASIBILITY.md))**: fixture task의 일부 seed는 **기하적으로 성공 불가능**(실측: mixer seed 100010, 머리가 선반에 막혀 q_max 0.575 < 임계 0.99 — 12개 중 1개). 이런 판은 latent 실패가 아니라 scene 기하이고, **어떤 steering으로도 구제 불가라 rescue 분모(ITT)를 조용히 오염**시키며, fail 클래스에 섞이면 conceptor가 scene 기하를 학습한다. 규칙: ① 정책 무관 관절 스윕(`analyze/mixer_scene_feasibility.py`, CPU·seed당 수초·fresh process)으로 **episode set 확정 전** 스캔 ② 제외는 fit·eval **양쪽 동일** 적용(한쪽만 걸면 새 confound) ③ 제외 seed·q_max를 manifest/NPZ meta에 기록 ④ 스크립트는 StandMixer 전용 — drawer/ppcc 이식은 4개 파라미터(fixture·관절·body·임계) 교체, **drawer/ppcc의 오염 여부는 미확인이라 스캔 후 사용**.
 - 브랜치: exp4-1 `exp/exp4-1-oracle-rescue`, exp4-2 `exp/exp4-2-induced-failures` (dev 분기). patchceil worktree(`.claude/worktrees/patching-ceiling`)는 **포팅 원본으로만, 무접촉**.
 - **동시 실행 규칙 (같은 머신에서 두 세션 병행 시)**: git 폴더 하나에는 브랜치 하나만 체크아웃되므로 두 세션이 본 트리를 공유할 수 없다 → **exp4-1은 본 트리, exp4-2는 전용 worktree**(`.claude/worktrees/` 밑, 자기 브랜치)에서 작업한다. worktree는 repo 안이라 robocasa 컨테이너 mount에 그대로 보이며, worktree 내 serve·수집은 patchceil에서 기검증(exp3와 병행 실적).
 - 보고는 confound-audit skill 경유, 판정은 pre-registered primary contrast만. 결과 문서 번호는 작성 시점의 dev 문서 목록을 보고 지정한다 (25번대는 patchceil 결과·CloseFridge 라벨러가 이미 사용 — 이 계획 작성 후 dev에서 번호 재편 있었음).

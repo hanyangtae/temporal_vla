@@ -13,7 +13,7 @@
 > (goal-vs-motor task 분열), §4 = caveat. 방향 단일 출처는
 > [`14_pathway_phase_online_steering.md`](14_pathway_phase_online_steering.md).
 >
-> ⚠ instruction confound caveat → [`11_instruction_confound.md`](11_instruction_confound.md)
+> ⚠ instruction confound caveat → 구 `11_instruction_confound`(아카이브)
 > (헤드라인 VL AUROC가 instruction 쏠림 아티팩트일 수 있음 — §4 참조).
 
 ---
@@ -135,25 +135,36 @@ NOTALL: "VLM pathways encode goal semantics('what'), expert pathways encode moto
 
 ### 3.1 한 줄 종합
 
-- **타이밍**: VL(goal)은 **이른 t≤8**에서 먼저 실패를 감지(motor commitment 이전), DiT(motor)는
-  **늦은 t≥12**에서 따라잡고 후반층(block 24,31)이 best.
+- **~~타이밍~~ (반증됨)**: ~~VL(goal)은 이른 t≤8에서 먼저 감지, DiT는 늦은 t≥12에서 따라잡음.~~
+  → 문서 상단 참조. **pathway 간 감지 시점 차이는 근거 없음.** 유효하게 남는 것은 DiT 내부에서
+  신호가 후반층(block 24, 31)에 집중된다는 층 방향 관찰뿐이다.
 - **goal-vs-motor task 분열**: 실패 메커니즘이 task에 따라 갈린다. goal-type(방향/목표 오인) task는
   VL 우위, motor-type(정밀 조작) task는 DiT 우위, 일부 task(navigate/일부 PnP/sink)는 두 pathway
-  모두 latent에서 선형으로 분리 안 됨.
-- NOTALL의 pathway 기능 분리(VL=goal, DiT=motor)가 RoboCasa rollout에서도 재현됨.
+  모두 latent에서 선형으로 분리 안 됨. **VL/DiT를 따로 봐야 하는 근거는 타이밍이 아니라 이것** —
+  실패 원인·case에 따라 어느 pathway를 써야 하는지가 달라진다.
+- **VL을 써야 하는 대표 case** (원인 기반, 타이밍 기반 아님):
+  - **카메라 섭동** — exp5-2에서 C1(카메라)은 DiT setM이 해악이고 VL 평균이동(`setpoint_vl`)이
+    정합했다 (ppcc 약양성 3:0). 지각 입력이 흔들린 실패는 VL 쪽에서 잡아야 한다.
+  - **wrong-grasp** — 다른 물체를 잡은 뒤 재탐색 구간에서 VL activation이 확연히 갈린다
+    ([`22_wrong_grasp_vl_separation.md`](22_wrong_grasp_vl_separation.md)).
+- NOTALL의 pathway 기능 분리(VL=goal, DiT=motor)는 RoboCasa rollout에서도 task 분열 형태로 재현됨.
 
 ### 3.2 Phase 4 steering 타깃 선택 (권장 전략)
 
-1. **Primary: VL pathway (`action_head.vlln`), early intervention (t≤8)**
-   - 이유: earliest signal, upstream of motor commitment, 1 forward에서 K=4 denoising 전파
-   - 대상 task: CloseToasterOvenDoor, SlideDishwasherRack (VL dominant)
+> ⚠ 아래 권장안은 "VL이 t≤8에서 먼저 감지한다"는 **반증된 전제** 위에 작성됐다.
+> 타이밍 근거(t≤8 / t≥12) 부분은 무효다. 실제 이후 라운드가 무엇을 했고 어떻게 됐는지는
+> [`RESULTS.md`](RESULTS.md)를 본다. 아래는 당시 계획 기록으로만 남긴다.
 
-2. **Secondary: DiT block 24 or 31, t=12 이후**
+1. **~~Primary: VL pathway (`action_head.vlln`), early intervention (t≤8)~~**
+   - ~~이유: earliest signal, upstream of motor commitment~~ → **타이밍 근거 무효**
+   - 대상 task: CloseToasterOvenDoor, SlideDishwasherRack (VL dominant) — task 분열 근거는 유효
+
+2. **Secondary: DiT block 24 or 31, ~~t=12 이후~~**
    - 대상 task: OpenCabinet, OpenDrawer, PnP tasks (DiT dominant)
 
 3. **Type-matched vs always-on 비교**:
    - always-on(VL, β small): 전체 평균 ΔSR 측정
-   - online(t≤8에서 VL anomaly 감지 후 steer 시작): 개입 정밀도 ↑
+   - ~~online(t≤8에서 VL anomaly 감지 후 steer 시작)~~ → 개입 시점은 phase/원인 기준으로 잡아야 한다
    - task별: VL-dominant task에서 VL steer, DiT-dominant task에서 DiT steer
 
 4. **제외 고려 (steering 효과 기대 낮음)**: NavigateKitchen, PickPlaceDrawerToCounter, TurnOnSinkFaucet
@@ -167,8 +178,8 @@ NOTALL: "VLM pathways encode goal semantics('what'), expert pathways encode moto
   failure 전조가 아니라 VL goal 토큰이 instruction(slide in/out)을 인코딩하고 그 instruction이
   성공/실패와 거의 1:1로 상관된 **아티팩트**일 가능성이 크다. 신뢰 가능한 신호는 instruction-balanced
   task(OpenDrawer left/right ~45% 균형, DiT 0.888)와 단일 instruction task(CloseToasterOvenDoor
-  VL 0.800)에 한정. 상세 판정 → [`11_instruction_confound.md`](11_instruction_confound.md).
-  fixed-instruction 재수집으로 재검증하는 계획 → [`11_phase4_n15_instruction_fixed_plan.md`](11_phase4_n15_instruction_fixed_plan.md).
+  VL 0.800)에 한정. 상세 판정 → 구 `11_instruction_confound`(아카이브).
+  fixed-instruction 재수집으로 재검증하는 계획 → 구 `11_phase4`(아카이브).
 - **길이 confound**: 모든 분리력은 고정-t 길이통제에서만 유효(실패=항상 timeout이라 time-pooled
   분리는 길이 아티팩트). 근거 → [`01_seen18_latent_analysis.md`](01_seen18_latent_analysis.md).
 - **직렬 pathway**: Eagle→VL-SA→DiT는 직렬 → VL/DiT "따로"가 진짜 독립이 아님. VL-OOD는 거의 항상
@@ -186,5 +197,5 @@ NOTALL: "VLM pathways encode goal semantics('what'), expert pathways encode moto
 - VL conceptor fit (W=success mean step, truncated) + SR eval
   - `fit_conceptor_steering.py --force-layer pathway=vl` 확장
   - eval matrix: VL β∈{0.1,0.3} × always-on/online × task-7(미유의 3개 제외)
-  - 상세 실행 계획 → [`11_phase4_n15_instruction_fixed_plan.md`](11_phase4_n15_instruction_fixed_plan.md)
+  - 상세 실행 계획 → 구 `11_phase4`(아카이브)
 - 아카이브: 두 raw_rollouts → kimseungjun@166.104.146.37:11112

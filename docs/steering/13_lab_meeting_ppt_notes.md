@@ -87,7 +87,7 @@ S23 Appendix C — Number Sources
    **positive control 실패(n=30)** → control을 **π0.5×LIBERO-10(논문 +0.33로 최대 gain)**로 옮겨 재시도
    중. S14/S18에 이 pivot을 반영할지 사용자에게 확인.
 3. **S11 ↔ instruction confound 연결** — "VLM detector 잘 안 됨"을 instruction confound와 묶어 설명
-   (`11_instruction_confound.md`: 헤드라인 VL AUROC 0.93은 instruction in/out 쏠림 아티팩트). VL 신호가
+   (구 `11_instruction_confound`: 헤드라인 VL AUROC 0.93은 instruction in/out 쏠림 아티팩트). VL 신호가
    약해 보이는 게 confound 때문일 수 있다는 caveat를 S11/S13에 한 줄.
 4. **S16/S17 보강** — atomic-action phase 검출 후보를 `14_pathway_phase_online_steering.md`의
    "phase를 online에 어떻게 아나"(절대 t-bin / progress-normalized=online 불가 / subtask 검출기)와
@@ -108,7 +108,7 @@ S23 Appendix C — Number Sources
 - `docs/steering/01_seen18_latent_analysis.md` — task 분리·길이 confound·실패 onset 두 regime.
 - COAST 재현 ΔSR≤0(N1.6) (S14) — 해당 COAST 재현 doc은 정리됨.
 - COAST positive-control 재시도(π0.5×LIBERO): mean ΔSR≈+0.014 재현 실패 (S14/S18) — 해당 COAST 재현 doc은 정리됨.
-- `docs/steering/11_instruction_confound.md` — VL 신호 instruction 아티팩트 경고 (S11/S13).
+- 구 `11_instruction_confound`(아카이브 — git 이력) — VL 신호 instruction 아티팩트 경고 (S11/S13).
 - `docs/seen18_safe_detector_verification.md` — SAFE-LSTM 수치(seen 0.683 / unseen 0.434) (S11).
 
 ### related works / 방법 메뉴
@@ -294,7 +294,7 @@ S23 Appendix C — Number Sources
   - → online early steering 엔 **VL 의 개입 여지**가 크다(모터 commitment 이전).
   - **반드시 함께 말할 confound 경고**: 헤드라인이던 SlideDishwasherRack VL 0.93 은 instruction(in 93% / out 13%) 쏠림 **아티팩트 의심**. 신뢰 가능한 건 OpenDrawer(45/45 균형) DiT 0.888, CloseToasterOvenDoor(단일 instruction) VL 0.800 둘뿐. → **fixed-instruction 재수집으로 재검증 진행 중**.
 - **그림**: `outputs/eval/robocasa/groot_n16/target_atomic_moderate10_pathway_pertoken_100ep/analysis/vl_dit_stepwise/SlideDishwasherRack/stepwise_trajectory.png`
-- **발표자 노트(출처)**: `outputs/weekly_report/2026-06-w2.md` (결과1·2·instruction confound), `docs/steering/11_instruction_confound.md`.
+- **발표자 노트(출처)**: `outputs/weekly_report/2026-06-w2.md` (결과1·2·instruction confound), 구 `11_instruction_confound`(아카이브 — git 이력).
 - **발표 멘트**: "'무엇을'(VL)이 먼저 흔들리고 '어떻게'(DiT)가 나중에 흔들립니다. 단, 이 수치엔 instruction 쏠림이 섞여 있어서, confound 없는 데이터로 다시 보고 있는 중입니다 — 단정은 하지 않겠습니다."
 
 ## B.E 가설 & 다음
@@ -360,7 +360,7 @@ S23 Appendix C — Number Sources
 | S10 | t0 AUROC 0.624, cos 0.0425, 20D 0.636 | `…/failure_direction/failure_direction.json` |
 | S12 | SAFE-LSTM 0.683 / 0.434 | `docs/seen18_safe_detector_verification.md` |
 | S13 | 두 regime onset | `docs/steering/01_seen18_latent_analysis.md` §3 |
-| S14 | VL/DiT AUROC, instruction confound | `outputs/weekly_report/2026-06-w2.md`, `docs/steering/11_instruction_confound.md` |
+| S14 | VL/DiT AUROC, instruction confound | `outputs/weekly_report/2026-06-w2.md`, 구 `11_instruction_confound`(아카이브 — git 이력) |
 | S15 | quota 0.07~0.12, ΔSR ≤ 0 | `outputs/weekly_report/2026-06-w2.md` (COAST 재현 docs 정리됨) |
 
 ---

@@ -3,7 +3,7 @@
 > 2026-07-10 갱신. **이 문서의 용법**: 새 세션은 ①§1–4로 현재 상태를 파악하고, ②§6 실행 플랜을
 > 검토·보완한 뒤(§7 보완 포인트), ③§8 함정 목록을 숙지하고 실행에 착수한다.
 > 설계 단일출처: [`docs/steering/17_steering_experiment_redesign.md`](steering/17_steering_experiment_redesign.md)(재설계 v2),
-> [`docs/steering/18_apple_success_rejudge.md`](steering/18_apple_success_rejudge.md)(채점 재판정).
+> 구 `docs/steering/18_apple_success_rejudge.md`(아카이브 — git 이력)(채점 재판정).
 > ⚠️ 이 문서의 이전 버전(§1.1 "α=0.3 균일" 등)은 부정확 — git 이력에만 남기고 본 버전이 대체.
 
 ---
