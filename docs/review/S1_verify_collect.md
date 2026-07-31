@@ -173,13 +173,14 @@ activation이 fp16인데 conceptor는 `R = E[hhᵀ]`(제곱)을 쓴다. fp16으�
 
 **9 cell 중 6개가 대조 fit 불가.** 5개는 실패 0판, 1개는 성공 0판.
 
-`PITFALLS.md` §4에 "고SR scene은 fit 창에 실패 2~6판뿐"이라고 적었는데 **실물은 0판**이다.
-문서가 문제를 과소기술하고 있었다. 그리고 이건 코드 버그가 아니라 **scene 선정의 결과**다 —
-seed를 고정하면 그 scene의 난이도가 고정되고, apple은 대부분 SR 1.0 아니면 0.0으로 갈린다.
+`PITFALLS.md` §4는 "고SR scene은 fit 창에 실패 2~6판뿐"이라고 적고 있었는데 **실물은 0판**이다
+(해당 문서는 이 실측으로 수정됨). 이건 코드 버그가 아니라 **scene 선정의 결과**다 — seed를
+고정하면 그 scene의 난이도가 고정되고, apple은 대부분 SR 1.0 아니면 0.0으로 갈린다.
 
-**함의**: 이 트리로 fit한 conceptor는 6/9 cell에서 빈 fit이거나 한쪽 클래스만 본 것이다.
-`PITFALLS.md` §4의 "빈 fit도 `[done]` 통과" 게이트 구멍과 합치면, **조용히 무의미한
-conceptor가 만들어졌을 수 있다.** exp2 결과 재해석 시 확인 대상.
+**함의**: 이 트리로 fit을 돌리면 6/9 cell이 클래스 미달로 `[skip]`된다. 단 "빈 fit이 `[done]`
+통과"는 **현재 봉합돼 있다** — 유효 fit 0개면 `sys.exit(3)`(커밋 `a6311c5`). 남는 위험은
+**부분 실패**로, 일부 group만 살아도 `[done]`이 찍히므로 `[skip` 라인 수를 세어 대조해야 한다
+([`../steering/PITFALLS.md`](../steering/PITFALLS.md) §4).
 
 ### 5.3 그 밖에 도구가 보는 bias 신호
 
