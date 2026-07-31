@@ -287,7 +287,15 @@ class N15LerobotHttpFeatureClient(VLAClient):
 
         official_action = _lerobot_action_to_official_chunk(actions)
         if features is None:
-            return official_action, {}
+            # 여기는 no_features 분기를 지난 캡처-ON 경로라 features 는 반드시 와야 한다.
+            # 구 배선은 조용히 return 해서 record 를 안 만들었고, feature_phases 도 같이
+            # 안 늘어나 run() 의 정합 검사(len(feature_phases)==n_inferences)를 통과했다
+            # → 활성이 하나도 없는 pkl 이 [done] 으로 남는다. OFF 갈래의 역방향 가드
+            # ("skip_features 인데 features 가 왔다")와 대칭이 되도록 fail-loud 로 바꾼다.
+            raise RuntimeError(
+                "캡처 ON 인데 features 가 반환되지 않음 — serve 가 --collect 로 떴는지, "
+                "capture layer 인자가 걸렸는지 확인 (조용한 무캡처 방지)"
+            )
 
         hidden_states = np.asarray(features["hidden_states"])
         if hidden_states.ndim == 4 and hidden_states.shape[0] == 1:
