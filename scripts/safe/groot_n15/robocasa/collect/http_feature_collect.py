@@ -1152,6 +1152,12 @@ def run() -> dict[str, Any]:
             extra_metadata["succ_ever_th"] = dict(_ever) if _ever is not None else None
             if perturber is not None:
                 extra_metadata.update(perturber.export())
+            # serve 지문(serve_gpu/serve_boot_id/serve_steering)은 캡처 ON(pkl) 경로에도 남긴다.
+            # 구 배선은 사이드카(캡처 OFF)에만 있어 fit 재료 pkl 에서 ① 어느 GPU·serve 인스턴스
+            # 에서 나온 활성인지 ② 그 serve 에 steering 이 걸려 있지 않았는지를 사후 확인할 수
+            # 없었다. ②는 fit 재료의 전제(무개입)라 GPU 추적과 달리 대체 경로가 없다.
+            # (2026-07-31 이전 수집분에는 이 필드가 없다 — 소급 불가.)
+            extra_metadata.update(serve_identity)
             if cell_id is not None:
                 extra_metadata.update(
                     {
