@@ -10,34 +10,14 @@ from typing import Any
 
 import numpy as np
 
-from collect_schema import GROOT_ACTION_KEYS, SAFE_ACTION_COLUMNS
+# policy 계약(SafeFeaturePolicy/POLICY_*_ATTRS)은 collect_schema 가 단일 출처다.
+from collect_schema import (
+    GROOT_ACTION_KEYS,
+    POLICY_REQUIRED_ATTRS,
+    SAFE_ACTION_COLUMNS,
+    SafeFeaturePolicy,
+)
 from src.policies.groot.robocasa.scenario_replay import json_safe, write_ep_meta_manifest
-
-# ── policy 계약 ───────────────────────────────────────────────────────────────
-# write_safe_triplet 은 policy 객체에서 속성을 꺼내 쓴다. 시그니처가 policy: Any 라
-# **본문을 읽어야만 무엇이 필요한지 알 수 있었다** — 새 클라이언트를 붙일 때 속성 하나가
-# 빠지면 AttributeError 가 아니라 pkl 에 조용히 null 이 들어가는 경우도 있다.
-# 아래 두 목록이 그 계약이고, 진입부에서 REQUIRED 를 실제로 검사한다.
-#
-# 필수: 없으면 pkl 이 성립하지 않는다 (직접 접근 — AttributeError).
-POLICY_REQUIRED_ATTRS = (
-    "records",
-    "feature_kind",
-    "feature_axes",
-    "feature_slice",
-    "exported_action_token_count",
-    "feature_action_horizon",
-    "valid_action_horizon",
-    "model_action_horizon",
-    "num_inference_timesteps",
-)
-# 선택: 해당 캡처 모드에서만 존재 (getattr 폴백 — 없으면 그 필드를 안 쓴다).
-POLICY_OPTIONAL_ATTRS = (
-    "capture_layers", "layer_indices", "layer_count", "token_count", "capture_token_mode",
-    "cross_attn_axes", "cross_attn_blocks", "cross_attn_qgroups", "cross_attn_kgroups",
-    "view_token_spans",                      # --capture-cross-attn
-    "vl_feature_kind", "vl_feature_axes", "vl_feature_dim",   # --capture-vl
-)
 
 
 def write_collect_ep_meta_manifest(
@@ -71,7 +51,7 @@ def _uses_action_token_horizon(policy: Any) -> bool:
 def write_safe_triplet(
     output_dir: Path,
     stem: str,
-    policy: Any,
+    policy: SafeFeaturePolicy,
     task_id: int,
     task_description: str,
     episode_idx: int,
