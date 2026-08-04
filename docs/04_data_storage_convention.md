@@ -56,14 +56,46 @@ model(백본·체크포인트) × task × cell × env_seed × inference_seed × 
 pkl 내부는 다시 `layer × rollout-step × denoising-step × token 위치` 로 나뉜다.
 **이 내부 축은 파일을 쪼개지 않고 pkl 안에서 관리한다** (현행 유지).
 
-### operator — 연산자 (conceptor / setM 등)
+### operator — 연산자 (conceptor / setM / SAE / direction)
 
 여러 rollout 을 **어떻게 묶어서** **어떤 연산으로** 만들었는지로 결정된다.
 
 ```
 operator = f( 입력 rollout 집합, 연산 파라미터 )
-연산 파라미터 = operator 종류 · phase · layer · alpha · perm_id · length_control · ...
 ```
+
+종류가 넷이고 **식별 파일이 다르다**. 인덱서는 셋 다 인식해야 한다 —
+`conceptors.npz` 만 보면 exp5 산출물을 통째로 놓친다(실제로 놓쳤다).
+
+| 종류 | 식별 파일 | 메타 |
+|---|---|---|
+| conceptor / setM | `conceptors.npz` | `config.json` (구 `metadata.json`) |
+| SAE | `model.pt` | `config.json` + `metrics.json` |
+| G3 direction | `fit_meta.json` | 자체 포함 |
+
+### ★ `config.json` 필수 — 이것이 연산자 저장의 표준이다
+
+**연산자 디렉토리에는 `config.json` 이 반드시 있어야 하고, 그 안에 입력 rollout 이
+기록돼야 한다.** exp5 SAE 가 이 형태를 이미 갖추고 있어 이를 표준으로 삼는다:
+
+```json
+{
+  "cell": "scene_matched_mixer", "layer": 0,
+  "m": 6144, "k": 64, "seed": 0, "aux_k": 0,
+  "split_col": "split_scene", "split_axis_scene_heldout": true,
+  "train_episode_fingerprint": "c86834a1b63e",   ← 입력 집합의 지문
+  "n_train_episodes": 112,
+  "train_episodes": [0, 1, 2, ...]               ← 입력 목록
+}
+```
+
+필수 키: 연산 파라미터 전부 + **입력 rollout 의 `sig` 목록**(신규는 episode index 가
+아니라 sig 로 쓴다) + 그 집합의 지문. conceptor 계열의 `fit_inputs.json` 은 같은 역할을
+하므로 `config.json` 에 흡수한다.
+
+**출처가 기록되지 않은 연산자는 보관하지 않는다.** 재현할 수 없는 연산자는 자산이 아니라
+부채다 — activation 이 살아 있으면 언제든 다시 fit 하면 된다. 2026-08 정리에서 이 기준으로
+504 개(10.44G)를 삭제하고 100 개를 남겼다.
 
 ---
 
@@ -85,11 +117,25 @@ operator = f( 입력 rollout 집합, 연산 파라미터 )
 ### opsig — 연산자 지문
 
 ```
-opsig = sha256( 입력 sig 목록(사전순 정렬, 개행 결합) + "\n--\n" + 정규화 파라미터 JSON )[:16]
-정규화 = json.dumps(params, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+opsig = sha256( 연산자 실체 파일 전체 )[:16]
+        실체 = conceptors.npz | model.pt | (direction 은 fit_meta.json 이 실체)
 ```
 
-같은 입력에 같은 파라미터면 opsig 가 같다 → **중복 fit 을 즉시 알 수 있다.**
+**파라미터 해시가 아니라 내용 해시다.** 처음에는 `sha256(입력 sig 목록 + 파라미터 JSON)`
+으로 정의했으나 2026-08 실측에서 **604 개 중 393 개가 90 개 지문으로 충돌**했다. 원인 둘:
+
+1. **파라미터 목록이 연산자를 결정하지 못함** — `setM_future_only_placebo_loo` 의 LOO
+   제외 판(`ep15` vs `ep6`)이 파라미터에 없어 서로 다른 연산자가 같은 지문을 얻었다.
+   축을 하나 추가해도 다음 축에서 같은 일이 반복된다.
+2. **메타 파일 자체가 없는 경우** — 파라미터가 전부 `None` 이 되어 13 개가 한 지문으로
+   뭉쳤다. 파라미터 확장으로는 원리적으로 해결 불가.
+
+내용 해시는 rollout 의 `sig` 와 규칙이 같고("실체의 내용이 곧 지문"), 메타가 없어도 항상
+작동한다. **"같은 입력·같은 설정 → 중복 fit" 판정은 그대로 유지된다** — fit 이 결정적이면
+같은 입력·설정은 같은 바이트를 내므로 opsig 도 같다.
+
+"왜 다른지"(어느 판을 뺐는지 등)는 지문이 아니라 `operators.tsv` 의 열이 답한다:
+`loo_holdout`(경로의 `ep\d+` 또는 config 의 held-out), `params_json`, `legacy_dir`.
 
 ### 길이를 16자(64bit)로 정한 근거
 
@@ -118,9 +164,8 @@ opsig = sha256( 입력 sig 목록(사전순 정렬, 개행 결합) + "\n--\n" + 
 
 ## 3. 디렉토리 레이아웃
 
-`<store_root>` 는 승준 아카이브 HDD 의 `/home/kimseungjun/datasets/temporal_vla_store` 다.
-기존 `temporal_vla_outputs/` 와 **같은 파일시스템**(`/dev/sda2`)이어야 한다 — hardlink 이관
-(§7)이 성립하는 조건이다.
+`<store_root>` = **`/home/kimseungjun/datasets/temporal_vla_store`** (승준 HDD `/dev/sda2`).
+2026-08-04 이관 완료. 구 `temporal_vla_outputs/` 는 제거됐고 이 트리가 유일본이다.
 
 ```
 <store_root>/
@@ -128,17 +173,33 @@ opsig = sha256( 입력 sig 목록(사전순 정렬, 개행 결합) + "\n--\n" + 
     n15/
       activations/<sig>/          rollout.pkl  traj.csv  video.mp4  meta.json
       evals/<sig>/                traj.csv  video.mp4  meta.json
-      steerer/<opsig>/            conceptors.npz  metadata.json  inputs.json
-      runs/<run_id>/              집계 tsv · 플롯 png · 실행 로그 · manifest (현행 구조 유지)
-      index/
-        rollouts.tsv
-        operators.tsv
-        operator_inputs.tsv
-        legacy_path_map.tsv
-    n16/                          (동일 구조)
-  pi05/ , cosmos/ , xvla/         (동일 구조)
-  views/                          (선택) 사람이 걸어다니는 symlink 트리
+      steerer/<opsig>/            conceptors.npz|model.pt  config.json  …
+      sae_inputs/<cell>/inputs/   X_L*.npz  stats_L*.npz   (SAE 학습 입력 행렬)
+      runs/<run_id>/              집계 tsv · 플롯 png · 실행 로그 · manifest
+      index/                      rollouts.tsv  operators.tsv
+                                  operator_inputs.tsv  legacy_path_map.tsv
+    n16/runs/                     (activation 은 전량 폐기 — §0)
+  pi05/ , cosmos/v1/ , xvla/v1/   (runs 만)
+  checkpoints/<name>/             파인튜닝 산출물 (safetensors · optimizer.pt 등)
+  _hostcopies/runs/<host>/        머신 재실행 대조분 + REPLICATES.tsv
 ```
+
+**실측 재고 (2026-08-04 이관 직후)**
+
+| 경로 | 개수 | 용량 |
+|---|---|---|
+| `groot/n15/activations` | 686 | 291G |
+| `groot/n15/evals` | 30,665 | 23G |
+| `groot/n15/steerer` | 103 | 18G |
+| `groot/n15/sae_inputs` | 5 cell | 35G |
+| `groot/n15/runs` + `n16/runs` 외 | — | 17G |
+| `checkpoints` | 1 | 23G |
+| **합계** | 127,229 파일 | **419G** |
+
+`sae_inputs/` 는 rollout 도 연산자도 아닌 **파생 활성 행렬**이라 자리를 따로 준다.
+층별로 미리 뽑아둔 `[N, D]` 행렬이며 SAE 학습의 직접 입력이다.
+
+`views/` (인덱스에서 생성하는 symlink 트리)는 필요해지면 만든다 — 아직 없다.
 
 `model/version` 을 최상위 물리 분리로 두는 이유: 백본이 다르면 특징 공간이 달라 **섞일 일이
 없고**, "n15 전체 폐기" 같은 조작이 한 번에 된다.
@@ -307,7 +368,31 @@ N1.6 은 51 로 DiT 시퀀스 구성이 다르다. **두 백본의 토큰 자리
 ```
 
 3 단계까지는 **원본과 새 트리가 동시에 존재**하며 용량은 그대로다. 문제가 보이면 새 트리만
-지우면 원상복구다. 5 단계 이후에도 `legacy_path_map` 으로 옛 트리를 hardlink 재구성할 수 있다.
+지우면 원상복구다.
+
+### 실행 기록 (2026-08-04, 완료)
+
+| 단계 | 결과 |
+|---|---|
+| 인덱스 v2 | 40 분. 실패 0. activation 캡처밀도·신원 **100%** |
+| hardlink 이관 | 링크 60,809 + 잔여 66,481. **중복 sig 1,568 자동 병합** |
+| 검증 | 링크수 1인 pkl **0** · 인덱스↔디스크 686/686·103/103 · sig 재계산 표본 5/5 |
+| 옛 트리 제거 | HDD 여유 798G **불변** — 이름 하나를 뗀 것이므로 정상 |
+
+**hardlink 제거 전 필수 관문:** `find <옛트리> -type f -links 1` 이 **0** 이어야 한다.
+링크수 1 = 새 트리에 안 딸려온 파일 = 지우면 유실. 실제로 이 관문이 두 번 작동했다 —
+1 차에 87.85G(SAE 입력 34.8G·체크포인트 22.1G·run 산출물 31G), 2 차에 3 파일을 잡았다.
+이관기가 `task*--ep*--succ*` 패턴만 rollout 으로 봐서 나머지를 통째로 빠뜨렸기 때문이다.
+
+### ★ 이관이 실증한 것 — 입력 기록은 연산자 디렉토리 안에 있어야 한다
+
+conceptor 96 개가 이관 직후 `provenance=unknown` 으로 떨어졌다. `fit_inputs.json` 이
+**arm 루트**에 있어 연산자 디렉토리(`<arm>/<phase>/<layer>/`)를 옮길 때 딸려오지 않았다.
+§1 이 경고한 상황이 그대로 재현된 것이다. 이관 전 인덱스에서 sig 를 복원해 각 연산자
+디렉토리에 `config.json` 을 새로 썼고, 현재 **103/103 이 입력 sig 를 보유**한다.
+
+같은 사고를 막기 위해 `src/utils/operator_config.py` 의
+:func:`write_operator_config` 가 입력 sig 없이 저장하면 ``ValueError`` 를 낸다.
 
 ### 기존 연산자 출처 복원
 

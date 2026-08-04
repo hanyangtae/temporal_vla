@@ -48,6 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # steer/ (fit_phas
 
 from fit_phase_conceptor_n15 import (  # noqa: E402
     FULLTOKEN_MODE,
+    _write_config,
     load_rollout_fulltoken,
 )
 
@@ -420,6 +421,8 @@ def load_cell_rolls(manifest: Path, cell: str):
             [np.asarray(rec, dtype=np.float32).mean(axis=1) for rec in d["hidden_states"]],
             axis=0)  # [n, L, T, D] → denoise mean
         r["success"] = m["label"]  # manifest 라벨 override (fit_phase_conceptor 관례)
+        # docs/04 규약 — 입력 rollout 의 내용 지문. 경로가 아니라 sig 로 출처를 남긴다.
+        r["sig"] = hashlib.sha256(m["pkl"].read_bytes()).hexdigest()[:16]
         r["scene"] = m["scene"]
         r["episode_idx"] = int(d.get("episode_idx", -1))
         r["inference_seed"] = int(d.get("inference_seed", -1))
@@ -475,10 +478,11 @@ def save_segment_npz(out_dir: Path, layer_blk: int, v_seg: np.ndarray, s_tok: np
         alpha0_seg_bounds=np.asarray([[lo, hi] for _n, lo, hi in SEGMENTS], dtype=np.int32),
         alpha0_seg_mask=np.asarray(seg_mask, dtype=np.float32),
     )
-    (d / "metadata.json").write_text(json.dumps(
-        {**meta, "selected_alpha": 0, "op": "setpoint_seg",
-         "token_pool": "all_token_full", "segments": [s[0] for s in SEGMENTS],
-         "seg_mask": [float(x) for x in seg_mask]}, indent=2, ensure_ascii=False))
+    full = {**meta, "selected_alpha": 0, "op": "setpoint_seg",
+            "token_pool": "all_token_full", "segments": [s[0] for s in SEGMENTS],
+            "seg_mask": [float(x) for x in seg_mask]}
+    (d / "metadata.json").write_text(json.dumps(full, indent=2, ensure_ascii=False))
+    _write_config(d, full)
 
 
 def save_setpoint_npz(out_dir: Path, layer_blk: int, v: np.ndarray, s: float, meta: dict,
@@ -489,8 +493,9 @@ def save_setpoint_npz(out_dir: Path, layer_blk: int, v: np.ndarray, s: float, me
     d.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(d / "conceptors.npz",
                         alpha0_v_steer=v.astype(np.float32), alpha0_s=np.float32(s))
-    (d / "metadata.json").write_text(
-        json.dumps({**meta, "selected_alpha": 0}, indent=2, ensure_ascii=False))
+    full = {**meta, "selected_alpha": 0}
+    (d / "metadata.json").write_text(json.dumps(full, indent=2, ensure_ascii=False))
+    _write_config(d, full)
 
 
 # ---------------------------------------------------------------------------- main
@@ -850,6 +855,9 @@ def main() -> None:
     manifest_sha = hashlib.sha256(args.manifest.read_bytes()).hexdigest()[:12]
     targets_sha = hashlib.sha256(args.targets.read_bytes()).hexdigest()[:12]
     base_meta = {
+        # docs/04 규약 — 연산자마다 입력 sig 동반. 없으면 재현 불가라 폐기 대상이 된다
+        # (2026-08: 이 스크립트가 입력을 안 남겨 setM 350 개가 출처 없이 삭제됐다).
+        "input_sigs": [r["sig"] for r in rolls],
         "operator": "setM_permanent", "cell": args.cell, "layer": blk, "cap_records": cap,
         "length_control": not args.no_length_control,
         "cap_mean_alt": cap_mean, "manifest_sha": manifest_sha, "targets_sha": targets_sha,

@@ -228,6 +228,23 @@ def _content_sig(p: Path) -> str:
     return h.hexdigest()[:16]
 
 
+def _write_config(out_dir, meta, op_type="conceptor"):
+    """docs/04 규약 — 연산자 디렉토리 안에 config.json (입력 sig 포함) 을 남긴다.
+
+    입력 목록을 arm 루트의 fit_inputs.json 에만 두면 연산자 디렉토리를 옮기는 순간
+    출처가 끊긴다(2026-08 실측: 연산자 604 개 중 출처 보유 100 개뿐).
+    meta["input_sigs"] 는 호출측이 fit 표본의 _content_sig 목록으로 채운다.
+    """
+    from src.utils.operator_config import write_operator_config
+
+    sigs = meta.get("input_sigs") or []
+    params = {k: v for k, v in meta.items() if k != "input_sigs"}
+    # setM 계열은 operator 이름으로 구분 (fit_mean_diff 가 같은 헬퍼를 쓴다)
+    if op_type == "conceptor" and str(params.get("operator", "")).startswith("setM"):
+        op_type = "setm"
+    write_operator_config(out_dir, op_type=op_type, input_sigs=sigs, params=params)
+
+
 def save_npz(out_dir, fits, meta):
     out_dir.mkdir(parents=True, exist_ok=True)
     arrays = {}
@@ -237,6 +254,7 @@ def save_npz(out_dir, fits, meta):
         arrays[f"alpha{a:g}_C_failure"] = as_float32(g["C_failure"])
     np.savez_compressed(out_dir / "conceptors.npz", **arrays)
     (out_dir / "metadata.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+    _write_config(out_dir, meta)
 
 
 def save_npz_per_step(out_dir, step_fits, meta):
@@ -251,6 +269,7 @@ def save_npz_per_step(out_dir, step_fits, meta):
             arrays[f"step{k}_alpha{a:g}_C_failure"] = as_float32(g["C_failure"])
     np.savez_compressed(out_dir / "conceptors.npz", **arrays)
     (out_dir / "metadata.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+    _write_config(out_dir, meta)
 
 
 def _token_segments(T: int, action_horizon: int, n_future: int = 32):
@@ -736,10 +755,14 @@ def main():
         return
 
     summary = {}
+    # docs/04 규약 — 입력 sig 를 연산자마다 함께 저장한다. arm 루트의 fit_inputs.json
+    # 에만 두면 연산자 디렉토리 이동 시 출처가 끊긴다(2026-08: 604 개 중 100 개만 생존).
+    input_sigs = [_content_sig(p) for p in pkls]
     common_meta = {"token_pool": args.token_pool if any(fulltoken_flags) else None,
                    "capture_token_mode": rolls[0].get("capture_token_mode"),
                    "token_count": rolls[0].get("token_count"),
-                   "quota_floor": float(args.quota_floor)}
+                   "quota_floor": float(args.quota_floor),
+                   "input_sigs": input_sigs}
     for group in groups:
         for lk in layer_keys:
             tag = "vl" if lk == "VL" else f"dit_L{cap[lk]}"
