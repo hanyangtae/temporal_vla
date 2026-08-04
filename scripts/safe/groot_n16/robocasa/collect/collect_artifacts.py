@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 from pathlib import Path
 import pickle
 import shutil
@@ -95,16 +96,14 @@ def write_safe_triplet(
             f"n_action_steps={n_action_steps}"
         )
 
-    # 재수집 정책: **같은 stem 은 덮어쓴다. 다른 stem(succ 반전)은 지우지 않고 경고만 한다.**
+    # 재수집 정책 — docs/04_data_storage_convention.md §2(쓰기 검사)·§8(덮어쓰기 금지) 준수.
     #
-    # 구 배선은 여기서 `task{id}--ep{idx}--succ*.*` 를 전부 unlink 했다. 그런데 이 삭제가
-    # 실제로 발동하는 경우를 따져보면 정당한 자리가 없다:
-    #   - 중간에 죽어 이어받는 경우: write_safe_triplet 은 episode 완주 후에만 불리므로
-    #     애초에 pkl 이 없다 → 삭제가 걸리지 않는다.
-    #   - 조건 동일 재실행: 수집이 결정적이라 succ 도 같다 → stem 이 같아 그냥 덮어쓰기된다.
-    #   - succ 가 뒤집혔다: 조건이 바뀌었다는 신호(라벨러·seed·캡처층·모델·채점 기준).
-    #     이때 옛 판을 지우면 **비교 대상이 사라진다.**
-    # 즉 "지워야 할 때는 안 걸리고, 걸릴 때는 지우면 안 되는" 코드였다.
+    # 구 배선은 여기서 `task{id}--ep{idx}--succ*.*` 를 전부 unlink 했다. 그 삭제는 발동할
+    # 자리가 없거나(중간 사망은 이 함수가 완주 후에만 불려 pkl 자체가 없다) 발동하면 안 되는
+    # 경우(succ 반전 = 라벨러·seed·캡처층·모델·채점 기준 변경 신호 → 비교 대상 소실)뿐이었다.
+    #
+    # succ 반전 파일은 덮어쓰기가 아니므로 지우지도 막지도 않고 경고만 남긴다.
+    # 같은 stem 에 대한 처리는 아래 §2 쓰기 검사(pkl 직렬화 후)가 담당한다.
     other = sorted(
         p for p in output_dir.glob(f"task{task_id}--ep{episode_idx}--succ*.*")
         if not p.name.startswith(stem)
@@ -116,14 +115,6 @@ def write_safe_triplet(
             f"지우지 않고 {stem}.* 로 새로 쓴다. 의도한 재수집이면 옛 파일을 직접 정리할 것.",
             flush=True,
         )
-
-    csv_path = output_dir / f"{stem}.csv"
-    with csv_path.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=SAFE_ACTION_COLUMNS)
-        writer.writeheader()
-        for record in policy.records:
-            values = record["action_vector"]
-            writer.writerow({col: float(values[i]) for i, col in enumerate(SAFE_ACTION_COLUMNS)})
 
     pkl_path = output_dir / f"{stem}.pkl"
     payload = {
@@ -202,8 +193,35 @@ def write_safe_triplet(
     # Robot proprio state per inference (paper state-probe target). 모든 step 에 있을 때만 기록.
     if all("state" in record for record in policy.records):
         payload["states"] = [record["state"] for record in policy.records]
-    with pkl_path.open("wb") as f:
-        pickle.dump(payload, f)
+    # ── §2 쓰기 검사 ──────────────────────────────────────────────────────────
+    # 기존 pkl 없음 → 그대로 쓴다 / 내용 동일 → skip / 내용 상이 → 에러 중단.
+    # sig 레이아웃 이관 후에는 이 블록이 sig 디렉토리 단위 검사로 대체된다(규약 §2·§7).
+    blob = pickle.dumps(payload)
+    new_sig = hashlib.sha256(blob).hexdigest()
+    if pkl_path.exists():
+        old_sig = hashlib.sha256(pkl_path.read_bytes()).hexdigest()
+        if old_sig == new_sig:
+            print(
+                f"[collect] {stem}.pkl 이미 동일 내용으로 존재 (sig {new_sig[:16]}) — skip",
+                flush=True,
+            )
+            return
+        raise RuntimeError(
+            f"{pkl_path} 가 이미 있고 내용이 다르다 "
+            f"(기존 {old_sig[:16]} != 신규 {new_sig[:16]}). "
+            "덮어쓰기 금지(docs/04_data_storage_convention.md §8) — 조건을 바꾼 재수집이면 "
+            "RUN_ID/cell_id 로 출력 트리를 분리하고, 의도한 교체면 옛 파일을 직접 정리할 것."
+        )
+
+    csv_path = output_dir / f"{stem}.csv"
+    with csv_path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=SAFE_ACTION_COLUMNS)
+        writer.writeheader()
+        for record in policy.records:
+            values = record["action_vector"]
+            writer.writerow({col: float(values[i]) for i, col in enumerate(SAFE_ACTION_COLUMNS)})
+
+    pkl_path.write_bytes(blob)
 
     if upstream_video_path is None or not upstream_video_path.exists():
         raise RuntimeError(f"GR00T upstream video was not written: {upstream_video_path}")
