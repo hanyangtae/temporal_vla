@@ -95,8 +95,27 @@ def write_safe_triplet(
             f"n_action_steps={n_action_steps}"
         )
 
-    for old_path in output_dir.glob(f"task{task_id}--ep{episode_idx}--succ*.*"):
-        old_path.unlink()
+    # 재수집 정책: **같은 stem 은 덮어쓴다. 다른 stem(succ 반전)은 지우지 않고 경고만 한다.**
+    #
+    # 구 배선은 여기서 `task{id}--ep{idx}--succ*.*` 를 전부 unlink 했다. 그런데 이 삭제가
+    # 실제로 발동하는 경우를 따져보면 정당한 자리가 없다:
+    #   - 중간에 죽어 이어받는 경우: write_safe_triplet 은 episode 완주 후에만 불리므로
+    #     애초에 pkl 이 없다 → 삭제가 걸리지 않는다.
+    #   - 조건 동일 재실행: 수집이 결정적이라 succ 도 같다 → stem 이 같아 그냥 덮어쓰기된다.
+    #   - succ 가 뒤집혔다: 조건이 바뀌었다는 신호(라벨러·seed·캡처층·모델·채점 기준).
+    #     이때 옛 판을 지우면 **비교 대상이 사라진다.**
+    # 즉 "지워야 할 때는 안 걸리고, 걸릴 때는 지우면 안 되는" 코드였다.
+    other = sorted(
+        p for p in output_dir.glob(f"task{task_id}--ep{episode_idx}--succ*.*")
+        if not p.name.startswith(stem)
+    )
+    if other:
+        print(
+            f"[collect][warn] 같은 episode 의 다른 판정 산출물이 이미 있다 "
+            f"(succ 반전 = 조건 변경 가능성): {[p.name for p in other]} — "
+            f"지우지 않고 {stem}.* 로 새로 쓴다. 의도한 재수집이면 옛 파일을 직접 정리할 것.",
+            flush=True,
+        )
 
     csv_path = output_dir / f"{stem}.csv"
     with csv_path.open("w", newline="") as f:

@@ -39,6 +39,26 @@ find <dir> -type l -exec readlink {} \; | grep -vE "^/temporal_vla|^[^/]"
 
 이미 떠 있는 컨테이너가 있으면 read-only 확인만: `docker exec robocasa test -e <경로>`.
 
+## 2.5 재수집 정책 — 같은 stem 덮어쓰기, succ 반전은 경고
+
+수집 산출물의 stem 은 `task{id}--ep{idx}--succ{0|1}` 이다. **GPU·모델·캡처층 같은 조건은
+stem 에 안 들어가고 pkl 내부 필드**(`serve_gpu`, `feature_kind`, `capture_layers`, …)로만
+남는다. 즉 stem 만으로는 "같은 조건의 재실행"과 "조건이 바뀐 재수집"을 구분할 수 없다.
+
+- **같은 stem** → 그냥 덮어쓴다. 수집이 결정적이라 조건이 같으면 같은 결과가 나온다.
+- **succ 가 뒤집힌 다른 stem 이 있다** → **지우지 않고 경고**만 낸다
+  (`[collect][warn] 같은 episode 의 다른 판정 산출물이 이미 있다`).
+  succ 반전은 라벨러·seed·캡처층·모델·채점 기준 중 뭔가 바뀌었다는 신호이고, 그때 옛 판을
+  지우면 비교 대상이 사라진다. 의도한 재수집이면 **사람이 직접 정리**한다.
+
+> 구 배선은 이 자리에서 `succ*.*` 를 전부 unlink 했다. 실제로 발동하는 경우를 따지면
+> 정당한 자리가 없어(중간 사망은 pkl 자체가 없어 안 걸리고, 조건 동일 재실행은 stem 이
+> 같아 덮어쓰기로 충분) 2026-08-04 에 제거했다.
+
+**조건을 바꿔 재수집할 때는 출력 트리를 분리하는 것이 관행**이다 — `phase_event_strict`,
+`phase_event_6p`, `phase_event_exp3` 처럼 `RUN_ID` 를 바꾸거나 `cell_id` 에 접미사를 단다
+(`ppcc_potato_s2`). 그러면 충돌 자체가 안 난다.
+
 ## 3. 아카이브 배치 규칙
 
 - 승준 아카이브는 **HDD로만** (NVMe 금지). workspace에는 심링크.
