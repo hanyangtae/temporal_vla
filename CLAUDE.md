@@ -114,6 +114,20 @@ condition pair 끼리 ΔSR 비교 가능).
 -출력: `outputs`
 -모델 추론 결과 출력: `outputs/eval/{benchmark}/{model}/{yymmddhhmmss}/`
 
+## ★ Activation·연산자 저장 규약 (데이터 저장 시 필수 참조)
+
+**rollout activation 이나 steering 연산자(conceptor/setM)를 저장·이관·삭제하는 모든 작업은
+[`docs/04_data_storage_convention.md`](docs/04_data_storage_convention.md) 를 먼저 읽고 따른다.**
+
+- 식별자는 경로가 아니라 내용 지문(`sig` = pkl/csv 의 sha256[:16]). 연산자는 `opsig`
+  (입력 sig 집합 + 연산 파라미터의 해시).
+- 산출물 안에 **절대경로 기록 금지** — 다른 파일 참조는 sig 로. (도커 경로·옛 머신명으로
+  기존 출처 기록의 35% 가 이미 끊겼다)
+- rollout `meta.json` 필수 필드와, activation 의 **캡처 밀도 5 열**
+  (`capture_token_mode`·`feature_kind`·`feature_axes`·`record_shape`·`capture_layers`) 은
+  해당 문서 §4·§6 참조. 캡처 밀도 판정은 `ndim` 이 아니라 shape 의 토큰 축 크기로 한다.
+- 수집 rollout(pkl 有)과 평가 rollout(pkl 無)은 저장 위치를 분리한다.
+
 ## 체크포인트·데이터셋 경로 (cache)
 
 체크포인트와 데이터셋은 repo 트리 밖 cache 에 둔다 (git 추적 안 함).

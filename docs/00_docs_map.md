@@ -10,7 +10,11 @@
    모델/벤치/체크포인트 작업의 출발점.
 2. [02 Docker Guide](02_docker_guide.md) — 컨테이너 구성·기동·VNC/X11·troubleshooting.
 3. [03 Adding Checkpoint](03_adding_checkpoint.md) — 새 체크포인트를 profile/serve/eval에 붙이는 체크리스트.
-4. [CONTRIBUTING](CONTRIBUTING.md) — git/PR 워크플로우.
+4. **[04 Data Storage Convention](04_data_storage_convention.md)** — activation·연산자의 식별
+   단위(`sig`/`opsig`)와 저장 레이아웃·인덱스 스키마 단일 출처. **rollout activation 이나
+   steering 연산자를 저장·이관·삭제하는 모든 작업의 출발점.** 캡처 밀도 판정 규칙
+   (`[L,K,T,D]` 축 구성), 절대경로 기록 금지, 수집/평가 rollout 분리.
+5. [CONTRIBUTING](CONTRIBUTING.md) — git/PR 워크플로우.
 
 부가 runbook:
 
