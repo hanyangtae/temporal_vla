@@ -32,3 +32,6 @@
 	path = Event-SAE
 	url = https://github.com/do-dong-park/Event-SAE.git
 	branch = feat/groot-robocasa-sae
+[submodule "RL2-VLA"]
+	path = RL2-VLA
+	url = https://github.com/hanyangtae/RL2-VLA.git
