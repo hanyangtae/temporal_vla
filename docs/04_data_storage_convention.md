@@ -250,6 +250,7 @@ views/by-cell/<model>/<task>/<cell>/env<seed>/ep<N>  ->  ../../../activations/<s
 | `inference_seed` | 사이드카 `inference_seed` |
 | `machine` | serve `/health` 의 `serve_machine` (예 `kanu:gpu3`). 구 수집분은 `MACHINE.txt` |
 | `machine_source` | `MACHINE.txt` \| `runs/MACHINE.txt` \| `unrecorded` — 값의 출처 |
+| `ckpt_source` | `pkl` \| `backfilled_single_profile` — 값의 출처 |
 | `episode_idx` | |
 | `success` | 0/1 |
 | `steps`, `n_inferences`, `n_action_steps`, `chunk_len` | |
@@ -364,12 +365,24 @@ N1.6 은 51 로 DiT 시퀀스 구성이 다르다. **두 백본의 토큰 자리
    베이스와 파인튜닝을 구분할 수 없어 필요하다 — 아카이브에 이미
    `checkpoints/groot_n1_5/260513094637-subset100` 이 있다.
 
-   **구 수집분 소급 복원은 부분적으로만 가능했다** (2026-08-05):
-   eval 413 판 복원, activation 686 판 중 **526 판은 복원 불가**. `scene_matched_exp41`·
-   `phase_event_pq3`·`exp41_mixer` 등이 `MACHINE.txt` 를 남기지 않았고 pkl·사이드카에도
-   흔적이 없다. **추측으로 채우지 않고** `machine_source="unrecorded"` 로 명시했다 —
-   여러 머신에 걸친 수집일 수 있어 하나로 뭉뚱그리면 층화가 틀린 근거를 갖는다.
-   `ckpt` 는 복원 경로 자체가 없다.
+   **구 수집분 소급 복원 (2026-08-05)** — 두 필드의 결과가 갈렸다.
+
+   | 필드 | 결과 | 근거 |
+   |---|---|---|
+   | `machine` | eval 413 판 복원 / **activation 526 판 복원 불가** | `MACHINE.txt` 를 남긴 run 이 `exp5_3_mixer_sm`(rudxo_home 수집, 160 판) 하나뿐 |
+   | `ckpt` | **activation 686 판 전량 채움** | 수집 스크립트가 `--profile lerobot_groot_n15__robocasa365_ckpt120000` 단일 지정 (코드 확인) |
+
+   `machine` 은 **추측으로 채우지 않았다.** `machine_source="unrecorded"` 로 명시한다 —
+   여러 머신에 걸친 수집일 수 있고, 하나로 뭉뚱그리면 층화가 틀린 근거를 갖는다.
+   빈 칸이 잘못된 값보다 낫다.
+
+   `ckpt` 는 채웠다. 정황이 아니라 **코드 근거**가 있기 때문이다 — exp4-1·exp5-3 등
+   수집 스크립트가 이 프로파일만 지정하고, `model_family` 도 686 판 전부 단일값이다.
+   출처는 `ckpt_source="backfilled_single_profile"` 로 구분한다.
+   eval rollout 은 pi05·xvla 등이 섞여 있어 채우지 않았다.
+
+   ※ 아이러니: 랩 밖 원격(rudxo_home)이라 명시할 동기가 있던 run 만 `machine` 을
+   남겼고, 정작 12.7% 반전을 만든 kanu/srv48/srv50 간 차이는 기록되지 않았다.
 4. 연산자를 만들면 `inputs.json` 에 **입력 sig 목록**을 쓴다(경로 아님).
 5. 인덱스 3표에 행을 추가한다.
 
