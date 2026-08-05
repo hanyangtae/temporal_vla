@@ -7,9 +7,11 @@ from typing import Any
 import numpy as np
 import torch
 import zmq
+# vla_client 는 scripts/utils 소속 — 러너가 path_setup 으로 sys.path 를 구성한 뒤에만
+# import 가능하다. src → scripts 역방향 의존이라 장기적으로는 vla_client 의 src 이동 대상.
 from vla_client import VLAClient
 
-from collect_schema import (
+from src.collect.schema import (
     _extract_groot_action_vector,
     _extract_safe_action_vector,
     _to_pickleable_numpy,

@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 _ROBOT_PREFIXES = ("robot", "gripper", "mobilebase", "base")
 
@@ -57,7 +58,10 @@ def probe_one(env_name: str, seed: int, steps: int, fixture: str = "stand_mixer"
     import robocasa  # noqa: F401
     import robocasa.utils.gym_utils.gymnasium_groot  # noqa: F401
     import robosuite  # noqa: F401
-    from robocasa_event_labeler import find_robocasa_env
+    _repo = Path(__file__).resolve().parents[5]
+    if str(_repo) not in sys.path:
+        sys.path.insert(0, str(_repo))
+    from src.collect.robocasa.event_labeler import find_robocasa_env
 
     env = gym.make(env_name, enable_render=False, seed=seed)
     env.reset(seed=seed)

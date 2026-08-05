@@ -204,7 +204,7 @@ opsig = sha256( 연산자 실체 파일 전체 )[:16]
 `sig` 는 없어지지 않는다. **식별은 좌표가, 무결성 검증은 `sig` 가** 한다 —
 `meta.json` 에 기록하고 §2 쓰기 검사가 그대로 적용된다.
 
-`plan_id` 는 `src/utils/collection_plan.py` 의 `CollectionPlan` 전체를 정규화 JSON 으로
+`plan_id` 는 `src/collect/plan.py` 의 `CollectionPlan` 전체를 정규화 JSON 으로
 해싱한 12자다(모델·ckpt·capture_layers·denoise_k·token_mode·instructions·noise_seeds).
 **`machine` 은 계획에 넣지 않는다** — 같은 계획을 여러 머신에 나눠 돌리는 것이 정상 운영이고,
 넣으면 머신마다 다른 계획이 되어 `plan.missing()` 이 깨진다.
@@ -461,7 +461,7 @@ N1.6 은 51 로 DiT 시퀀스 구성이 다르다. **두 백본의 토큰 자리
 
 계획된 수집(instruction × scene n × noise m)은 **수집 시작 전에**
 `collection_plan.json` 을 쓰고, 각 rollout 에 그리드 좌표를 함께 남긴다.
-단일 출처: `src/utils/collection_plan.py`.
+단일 출처: `src/collect/plan.py`.
 
 ```python
 plan = CollectionPlan(

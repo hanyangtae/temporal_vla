@@ -17,16 +17,9 @@ labeler debounce(grasp_hold)가 의도(env-step)와 달리 record 스케일로 �
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import gymnasium as gym
 
-_HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(_HERE))
-sys.path.insert(0, str(_HERE.parents[1] / "eval"))
-
-from robocasa_event_labeler import find_robocasa_env, make_robocasa_event_labeler  # noqa: E402
+from src.collect.robocasa.event_labeler import find_robocasa_env, make_robocasa_event_labeler
 
 
 class StepPhaseProbeWrapper(gym.Wrapper):

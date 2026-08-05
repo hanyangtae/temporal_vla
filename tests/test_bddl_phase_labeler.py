@@ -9,14 +9,9 @@ import sys
 
 import pytest
 
-sys.path.insert(
-    0,
-    os.path.join(
-        os.path.dirname(__file__), "..", "scripts", "safe", "groot_n16", "libero"
-    ),
-)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))  # repo root
 
-from bddl_phase_labeler import (  # noqa: E402
+from src.collect.libero.bddl_phase_labeler import (  # noqa: E402
     BddlPhaseLabeler,
     entered_episode_mask,
     find_domain,

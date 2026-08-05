@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Protocol, Sequence, Set
 
-from bddl_phase_labeler import find_domain  # reuse the env-wrapper-chain walk
+from src.collect.libero.bddl_phase_labeler import find_domain  # reuse the env-wrapper-chain walk
 
 # ── phase (gap) labels — the moving segments between events ───────────────────
 REACH_OBJECT = "reach-to-object"   # start → grasp (empty-hand approach)

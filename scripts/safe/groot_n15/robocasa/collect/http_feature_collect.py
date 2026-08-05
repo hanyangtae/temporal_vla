@@ -22,7 +22,6 @@ import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 N15_EVAL_ROOT = REPO_ROOT / "scripts" / "safe" / "groot_n15" / "robocasa" / "eval"
-N16_COLLECT_ROOT = REPO_ROOT / "scripts" / "safe" / "groot_n16" / "robocasa" / "collect"
 N15_GROOT_ROOT = REPO_ROOT / "src" / "policies" / "Isaac-GR00T-N1.5"
 N16_GROOT_ROOT = REPO_ROOT / "src" / "policies" / "Isaac-GR00T"
 DEFAULT_MAX_EPISODE_STEPS = 720
@@ -41,7 +40,6 @@ for path in reversed(
     (
         N16_GROOT_ROOT,
         N15_GROOT_ROOT,
-        N16_COLLECT_ROOT,
         N15_EVAL_ROOT,
         REPO_ROOT / "scripts" / "utils",
         REPO_ROOT / "src" / "benchmarks" / "robocasa",
@@ -51,11 +49,11 @@ for path in reversed(
 ):
     _prepend_path(path)
 
-from collect_artifacts import (  # noqa: E402
+from src.collect.artifacts import (  # noqa: E402
     write_collect_ep_meta_manifest,
     write_safe_triplet,
 )
-from collect_schema import (  # noqa: E402
+from src.collect.schema import (  # noqa: E402
     _extract_groot_action_vector,
     _extract_safe_action_vector,
     _to_pickleable_numpy,
@@ -64,9 +62,13 @@ from lerobot_http_eval import (  # noqa: E402
     official_obs_to_lerobot_inputs,
     step_success,
 )
-from robocasa_event_labeler import make_robocasa_event_labeler  # noqa: E402
-from env_step_phase import EnvStepGT, StepPhaseProbeWrapper, find_probe_wrapper  # noqa: E402
-from perturbation import Perturber, PerturbSpec  # noqa: E402
+from src.collect.robocasa.event_labeler import make_robocasa_event_labeler  # noqa: E402
+from src.collect.robocasa.step_phase import (  # noqa: E402
+    EnvStepGT,
+    StepPhaseProbeWrapper,
+    find_probe_wrapper,
+)
+from src.collect.robocasa.perturbation import Perturber, PerturbSpec  # noqa: E402
 from src.policies.groot.robocasa.io import convert_http_actions_to_groot_chunk  # noqa: E402
 from src.policies.groot.robocasa.scenario_replay import (  # noqa: E402
     ep_meta_manifest_path,
@@ -521,7 +523,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--task-id", type=int, default=0)
     # docs/04 §3 좌표 레이아웃 — 인자·해석·경로 조립은 collection_plan 이 단일 출처다.
     _prepend_path(REPO_ROOT)
-    from src.utils.collection_plan import add_grid_args  # noqa: PLC0415
+    from src.collect.plan import add_grid_args  # noqa: PLC0415
 
     add_grid_args(parser)
     parser.add_argument("--cell-id", default=None)
@@ -787,7 +789,7 @@ def run() -> dict[str, Any]:
     if args.wait_ready:
         policy.wait_until_ready(max_wait=args.timeout)
     serve_identity = _get_serve_identity(args.vla_server)
-    from src.utils.collection_plan import resolve_grid  # noqa: PLC0415
+    from src.collect.plan import resolve_grid  # noqa: PLC0415
 
     grid_plan, grid_cell = resolve_grid(args)
     if grid_plan is not None:
@@ -996,7 +998,7 @@ def run() -> dict[str, Any]:
             extra_metadata.update(serve_identity)
             grid_dir = None
             if grid_cell is not None:
-                from src.utils.collection_plan import grid_dir_for  # noqa: PLC0415
+                from src.collect.plan import grid_dir_for  # noqa: PLC0415
 
                 grid_dir = grid_dir_for(args, grid_plan, grid_cell,
                                         serve_identity.get("machine"))

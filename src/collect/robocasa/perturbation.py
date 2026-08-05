@@ -231,8 +231,7 @@ class Perturber:
     """에피소드 1개에 spec 1개를 적용하는 상태 기계 (fresh process 규약과 함께 사용)."""
 
     def __init__(self, env: Any, spec: PerturbSpec, *, n_action_steps: int):
-        # http_feature_collect 가 sys.path 를 이미 구성한 뒤 생성됨 — 지연 import.
-        from robocasa_event_labeler import find_robocasa_env
+        from src.collect.robocasa.event_labeler import find_robocasa_env
 
         self.env = env
         self.spec = spec

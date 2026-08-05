@@ -5,18 +5,16 @@ import sys
 
 import pytest
 
-_ROOT = os.path.join(os.path.dirname(__file__), "..", "scripts", "safe", "groot_n16")
-sys.path.insert(0, os.path.join(_ROOT, "libero"))
-sys.path.insert(0, os.path.join(_ROOT, "robocasa", "collect"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))  # repo root
 
-from event_phase_labeler import (  # noqa: E402
+from src.collect.libero.event_phase_labeler import (  # noqa: E402
     INSERT_SETTLE,
     REACH_OBJECT,
     TERMINAL,
     TRANSPORT,
     EventPhaseLabeler,
 )
-from robocasa_event_labeler import (  # noqa: E402
+from src.collect.robocasa.event_labeler import (  # noqa: E402
     GRASP_PHASE,
     PLACE_PHASE,
     TASK_EVENTS,

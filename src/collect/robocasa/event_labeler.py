@@ -57,13 +57,10 @@ the policy acted on = block start), exactly like the LIBERO feature_phases handl
 
 from __future__ import annotations
 
-import os
-import sys
 from typing import Any, Callable, Dict, List, Sequence, Set, Tuple
 
 # reuse the pure, env-agnostic segmentation core from the LIBERO event labeler
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "libero"))
-from event_phase_labeler import (  # noqa: E402
+from src.collect.libero.event_phase_labeler import (
     INSERT_SETTLE,
     REACH_OBJECT,
     TRANSPORT,

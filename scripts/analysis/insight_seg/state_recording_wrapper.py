@@ -3,7 +3,7 @@
 WHY
 ---
 SAFE rollouts store one activation/state record per *policy inference* (= per
-``get_action`` in ``collect_policy_clients.py``). For an N1.6 robocasa episode
+``get_action`` in ``src/collect/policy_clients.py``). For an N1.6 robocasa episode
 that executes a 16-step action chunk per inference, that is e.g. **16 records**
 for a ~256-env-step / 128-video-frame episode. That granularity is right for
 steering/conceptor analysis (one hidden-state per inference), but too coarse for

@@ -44,8 +44,8 @@ def replay_one(cell: str, target_ep: int, donor_ep: int, t0: int, donor_start: i
     import robocasa.utils.gym_utils.gymnasium_groot  # noqa: F401
     import robosuite  # noqa: F401
 
-    sys.path.insert(0, str(REPO / "scripts/safe/groot_n16/robocasa/collect"))
-    from robocasa_event_labeler import find_robocasa_env
+    sys.path.insert(0, str(REPO))  # src.collect.* import 용
+    from src.collect.robocasa.event_labeler import find_robocasa_env
 
     def load_acts(ep: int) -> dict:
         return dict(np.load(GROOT / "patchceil_meta" / cell / f"ep{ep}_actions.npz"))

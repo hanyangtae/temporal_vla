@@ -47,8 +47,8 @@ sys.path.insert(0, "/temporal_vla/src")
 sys.path.insert(0, "/temporal_vla/src/policies/openvla-oft")
 # SAFE 수집 공통 writer (repo-relative: scripts/eval → scripts/safe/lerobot)
 sys.path.insert(0, os.path.join(os.path.dirname(_self_dir), "safe", "lerobot"))
-# LIBERO BDDL sim-state phase 라벨러 (repo-relative: scripts/safe/groot_n16/libero)
-sys.path.insert(0, os.path.join(os.path.dirname(_self_dir), "safe", "groot_n16", "libero"))
+# repo root — src.collect.* (LIBERO BDDL sim-state phase 라벨러) import 용
+sys.path.insert(0, os.path.dirname(os.path.dirname(_self_dir)))
 
 import imageio  # noqa: E402
 import numpy as np  # noqa: E402
@@ -65,7 +65,7 @@ from collect_common import (  # noqa: E402
     write_episode,
     flatten_subkeys,
 )
-from event_phase_labeler import make_event_labeler  # noqa: E402
+from src.collect.libero.event_phase_labeler import make_event_labeler  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)

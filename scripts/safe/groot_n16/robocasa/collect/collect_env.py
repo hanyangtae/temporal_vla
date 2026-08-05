@@ -143,7 +143,7 @@ def run_single_rollout(
         # record, called BEFORE env.step so phase = state the policy acted on (N1.5 규약 동일).
         labeler = None
         if label_phases:
-            from robocasa_event_labeler import make_robocasa_event_labeler
+            from src.collect.robocasa.event_labeler import make_robocasa_event_labeler
             labeler = make_robocasa_event_labeler(
                 env.envs[0], env_name, proximity_phases=proximity_phases
             )

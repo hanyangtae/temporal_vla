@@ -2,19 +2,19 @@
 scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py	S1	1261	07-28	★ N1.5 HTTP 수집 본체 — rollout + activation 캡처를 SAFE triplet 으로 저장	허브,읽기01	exp2~5 전 라운드가 이걸 통해 수집. 단일 최대 파일
 scripts/safe/groot_n16/robocasa/collect/collect_rollout.py	S1	276	07-24	★ N1.6 수집 엔트리 (ZMQ feature_server 경유)	허브,읽기02	n16 계열 진입점
 scripts/safe/groot_n16/robocasa/collect/collect_env.py	S1	200	07-24	RoboCasa env 생성 + 1 episode rollout 실행	읽기03	EVAL_SEED·gym.make(seed=) 규약이 여기
-scripts/safe/groot_n16/robocasa/collect/collect_policy_clients.py	S1	282	06-11	policy client transport (HTTP/ZMQ)	읽기04	
-scripts/safe/groot_n16/robocasa/collect/collect_artifacts.py	S1	179	07-22	rollout artifact 기록 헬퍼 (pkl/mp4/사이드카)	읽기05	
-scripts/safe/groot_n16/robocasa/collect/collect_schema.py	S1	75	06-10	수집 산출물 스키마 정의	읽기06	
+src/collect/policy_clients.py	S1	282	06-11	policy client transport (HTTP/ZMQ)	읽기04	
+src/collect/artifacts.py	S1	179	07-22	rollout artifact 기록 헬퍼 (pkl/mp4/사이드카)	읽기05	
+src/collect/schema.py	S1	75	06-10	수집 산출물 스키마 정의	읽기06	
 scripts/safe/groot_n16/robocasa/collect/verify_rollout_collection.py	S1	528	06-11	수집 산출물 검증 (step count·shape·VL metadata)	읽기07	--require-vl-hidden-states 게이트. DATA_HANDLING §1 과 역할 중복 여부 확인 필요
-scripts/safe/groot_n16/robocasa/collect/robocasa_event_labeler.py	S1	1014	07-22	event-anchored phase 분할 (TASK_EVENTS 등록부)	S2소속,허브	★ 실제로는 S2(라벨링) 대상. 미등록 task 는 수집이 KeyError (PITFALLS §8)
-scripts/safe/groot_n15/robocasa/collect/env_step_phase.py	S1	115	07-22	env-step 해상도 phase/성공 GT 수집	S2소속	record 단위 라벨과 병행. S2 에서 함께 판정
+src/collect/robocasa/event_labeler.py	S1	1014	07-22	event-anchored phase 분할 (TASK_EVENTS 등록부)	S2소속,허브	★ 실제로는 S2(라벨링) 대상. 미등록 task 는 수집이 KeyError (PITFALLS §8)
+src/collect/robocasa/step_phase.py	S1	115	07-22	env-step 해상도 phase/성공 GT 수집	S2소속	record 단위 라벨과 병행. S2 에서 함께 판정
 scripts/safe/groot_n16/robocasa/collect/task_sets.sh	S1	82	05-27	task set 정의 (ROBOCASA_SEED_START_FOR_TASK_SET)	기준값	CLAUDE.md 의 EVAL_SEED=100000 표준 출처
 scripts/safe/groot_n16/robocasa/collect/collect_task_set_in_container.sh	S1	101	05-29	컨테이너 내부 수집 러너	고아,유사쌍	3종 중 하나. 서로 0.65~0.85 유사
 scripts/safe/groot_n16/robocasa/collect/collect_task_set_official_uv_host.sh	S1	108	05-27	호스트 robocasa_uv env 수집 러너	고아,유사쌍	위와 0.85 유사 — 사실상 같은 스크립트의 env 변형
 scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh	S1	138	05-29	docker exec 경유 수집 러너	고아,유사쌍	위 둘과 0.65~0.66 유사
 scripts/safe/groot_n15/robocasa/collect/collect_fit_6phase.sh	S1	68	07-06	6/7-phase fit 데이터 수집 (RUN_ID=phase_event_6p)	유사쌍	collect_strict_cells 와 0.57
 scripts/safe/groot_n15/robocasa/collect/collect_strict_cells.sh	S1	69	07-06	strict(drop-aware) fit 수집 (RUN_ID=phase_event_strict)	고아,유사쌍	위와 0.57. 둘 다 라운드 전용 러너
-scripts/safe/groot_n15/robocasa/collect/perturbation.py	S1	524	07-27	exp4-2/exp5-2 섭동 주입 (C1 카메라/G1 그리퍼/P1 displace/P2 force)	살아있음	exp5-2 유일 양성의 무대. RESULTS.md 참조
+src/collect/robocasa/perturbation.py	S1	524	07-27	exp4-2/exp5-2 섭동 주입 (C1 카메라/G1 그리퍼/P1 displace/P2 force)	살아있음	exp5-2 유일 양성의 무대. RESULTS.md 참조
 scripts/safe/groot_n15/robocasa/collect/build_perturb_grid.py	S1	323	07-27	섭동 grid 생성 (baseline 사이드카 앵커 → spec json + grid.tsv)	살아있음	
 scripts/safe/groot_n15/robocasa/collect/collect_perturb_grid.sh	S1	183	07-27	섭동 러너 3-phase (baseline → grid → 본수집)	살아있음	
 scripts/safe/groot_n15/robocasa/collect/select_instruction_seeds.py	S1	573	06-11	instruction 이 고정 cell 과 맞는 scenario seed 선별	instruction계열	seed↔instruction 변이 대응. 라운드 종결됐으나 도구는 재사용 가능

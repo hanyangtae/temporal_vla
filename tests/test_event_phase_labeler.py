@@ -10,14 +10,9 @@ import sys
 
 import pytest
 
-sys.path.insert(
-    0,
-    os.path.join(
-        os.path.dirname(__file__), "..", "scripts", "safe", "groot_n16", "libero"
-    ),
-)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))  # repo root
 
-from event_phase_labeler import (  # noqa: E402
+from src.collect.libero.event_phase_labeler import (  # noqa: E402
     INSERT_SETTLE,
     REACH_DOOR,
     REACH_OBJECT,

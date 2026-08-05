@@ -52,3 +52,11 @@ docs/steering/motivation_activation_steering.txt	D	archive		적용(archive)	0670
 docs/steering/29_sae_port_review.md	D	archive		적용(archive)	0670e51
 docs/steering/28_exp4-2_p0_report.md	D	merge	결과정리 	적용(→RESULTS.md)	0670e51
 scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py	S1	수정	인자가 너무 많아서 이미 짝을 이루는 애들은 쫌묶어 보자. 대신 .sh랑 많이 엮여있을거라 그것도 같이 고려해야돼		
+scripts/safe/groot_n15/robocasa/collect/collect_bread_strict.sh	S1	archive		적용(archive)	b0877ba
+scripts/safe/groot_n15/robocasa/collect/collect_phase_event_4cell.sh	S1	archive		적용(archive)	b0877ba
+scripts/safe/groot_n15/robocasa/collect/collect_potato_apple_seed2.sh	S1	archive		적용(archive)	b0877ba
+scripts/safe/groot_n15/robocasa/collect/watch_phase_event_cleanup.sh	S1	archive		적용(archive)	b0877ba
+scripts/safe/groot_n15/robocasa/collect/archive_on_done.sh	S1	archive		적용(archive)	b0877ba
+scripts/safe/groot_n15/robocasa/collect/_diag_wrong_grasp.py	S1	archive		적용(archive)	b0877ba
+scripts/safe/groot_n16/robocasa/collect/repro_check.py	S1	archive		적용(archive)	b0877ba
+scripts/safe/groot_n15/robocasa/collect/collect_cam_attn.sh	S1	archive		적용(archive)	b0877ba

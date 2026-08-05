@@ -18,24 +18,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 COLLECT_ROLLOUT_PATH = (
     REPO_ROOT / "scripts" / "safe" / "groot_n16" / "robocasa" / "collect" / "collect_rollout.py"
 )
-COLLECT_POLICY_CLIENTS_PATH = (
-    REPO_ROOT
-    / "scripts"
-    / "safe"
-    / "groot_n16"
-    / "robocasa"
-    / "collect"
-    / "collect_policy_clients.py"
-)
-COLLECT_ARTIFACTS_PATH = (
-    REPO_ROOT
-    / "scripts"
-    / "safe"
-    / "groot_n16"
-    / "robocasa"
-    / "collect"
-    / "collect_artifacts.py"
-)
+COLLECT_POLICY_CLIENTS_PATH = REPO_ROOT / "src" / "collect" / "policy_clients.py"
+COLLECT_ARTIFACTS_PATH = REPO_ROOT / "src" / "collect" / "artifacts.py"
 
 
 def _import_collect_rollout():
@@ -54,8 +38,11 @@ def _import_collect_rollout():
 
 
 def _import_collect_policy_clients_direct():
+    for module_name in ("torch", "zmq"):
+        if importlib.util.find_spec(module_name) is None:
+            raise unittest.SkipTest(f"{module_name} is not installed in this Python env")
     for path in (
-        COLLECT_POLICY_CLIENTS_PATH.parent,
+        REPO_ROOT,
         REPO_ROOT / "scripts" / "utils",
     ):
         if str(path) not in sys.path:
@@ -72,9 +59,8 @@ def _import_collect_policy_clients_direct():
 
 
 def _import_collect_artifacts_direct():
-    collect_dir = COLLECT_ARTIFACTS_PATH.parent
-    if str(collect_dir) not in sys.path:
-        sys.path.insert(0, str(collect_dir))
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
     spec = importlib.util.spec_from_file_location(
         "safe_groot_collect_artifacts_direct_under_test",
         COLLECT_ARTIFACTS_PATH,
@@ -224,7 +210,7 @@ class TestSafeCollectEndpointContract(unittest.TestCase):
                 12.5,
             )
 
-        vla_client_cls = sys.modules["collect_policy_clients"].VLAClient
+        vla_client_cls = sys.modules["src.collect.policy_clients"].VLAClient
         with mock.patch.object(
             vla_client_cls,
             "reset",
@@ -378,8 +364,9 @@ def test_safe_triplet_writer_records_model_family_and_transport_metadata():
             model_family="groot_n16",
             policy_transport="http",
             task_suite_name="groot_n16_robocasa",
+            grid_dir=output_dir / "grid_cell" / "base",
         )
-        with (output_dir / "task0--ep0--succ1.pkl").open("rb") as f:
+        with (output_dir / "grid_cell" / "base" / "rollout.pkl").open("rb") as f:
             payload = pickle.load(f)
 
     assert payload["model_family"] == "groot_n16"
@@ -442,8 +429,9 @@ def test_safe_triplet_writer_allows_block_residual_token_features():
             model_family="lerobot_groot_n15",
             policy_transport="http",
             task_suite_name="lerobot_groot_n15_robocasa",
+            grid_dir=output_dir / "grid_cell" / "base",
         )
-        with (output_dir / "task0--ep0--succ1.pkl").open("rb") as f:
+        with (output_dir / "grid_cell" / "base" / "rollout.pkl").open("rb") as f:
             payload = pickle.load(f)
 
     assert payload["feature_kind"] == "groot_n15_dit_block_residual_tokens"
@@ -495,6 +483,9 @@ def test_collect_main_advances_scenario_seed_per_episode():
             ep_meta_dir=tmp_path / "ep_meta",
             video_fps=20,
             steps_per_render=2,
+            no_overlay=False,
+            label_phases=False,
+            proximity_phases=False,
         )
 
         def _fake_run_single_rollout(
@@ -503,6 +494,7 @@ def test_collect_main_advances_scenario_seed_per_episode():
             wrapper_configs,
             scenario_seed,
             replay_ep_meta,
+            **_kwargs,  # label_phases 등 이후 추가 인자 흡수
         ):
             rollout_calls.append(
                 {

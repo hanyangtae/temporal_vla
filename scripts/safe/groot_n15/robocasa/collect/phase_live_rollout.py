@@ -17,10 +17,9 @@ import argparse, pickle, sys
 from pathlib import Path
 import numpy as np
 
-# GT 라벨러 의존 경로: env_step_phase(n15 collect) 는 robocasa_event_labeler(n16 collect) 를 import.
+# GT 라벨러는 src/collect/robocasa/ (repo root 로 import)
 _REPO = Path(__file__).resolve().parents[5]
-for _p in (_REPO / "scripts/safe/groot_n16/robocasa/collect",
-           _REPO / "scripts/safe/groot_n15/robocasa/collect",
+for _p in (_REPO / "scripts/safe/groot_n15/robocasa/collect",
            _REPO / "scripts/utils", _REPO / "scripts", _REPO):
     if _p.exists() and str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
@@ -86,7 +85,7 @@ def main():
     import robocasa  # noqa: F401  (env 등록)
     from robocasa.utils.gym_utils import GrootRoboCasaEnv  # noqa: F401
     import robosuite  # noqa: F401
-    from env_step_phase import EnvStepGT, StepPhaseProbeWrapper  # env-step GT 라벨러
+    from src.collect.robocasa.step_phase import EnvStepGT, StepPhaseProbeWrapper  # env-step GT 라벨러
 
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     obs_pipeline, action_pipeline = make_groot_robocasa_processors(strict=False, action_mode="step")

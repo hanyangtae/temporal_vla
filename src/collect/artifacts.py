@@ -12,8 +12,8 @@ from typing import Any
 
 import numpy as np
 
-# policy 계약(SafeFeaturePolicy/POLICY_*_ATTRS)은 collect_schema 가 단일 출처다.
-from collect_schema import (
+# policy 계약(SafeFeaturePolicy/POLICY_*_ATTRS)은 schema 가 단일 출처다.
+from src.collect.schema import (
     GROOT_ACTION_KEYS,
     POLICY_REQUIRED_ATTRS,
     SAFE_ACTION_COLUMNS,
@@ -81,7 +81,7 @@ def write_safe_triplet(
     ``grid_dir`` 를 주면 **docs/04 §3 좌표 레이아웃**으로 쓴다 —
     ``<grid_dir>/{rollout.pkl, traj.csv, video.mp4, meta.json}``. ``grid_dir`` 는
     ``<store>/grid/<plan_id>/<machine>/<instruction>/s<i>/n<j>/<arm>`` 이며 경로 조립은
-    ``src/utils/collection_plan.py`` (``GridCell.rel_path`` · ``arm_dirname``)가 단일 출처다.
+    ``src/collect/plan.py`` (``GridCell.rel_path`` · ``arm_dirname``)가 단일 출처다.
 
     **``grid_dir`` 은 필수다.** 없으면 RuntimeError — 규약 §8 이 좌표 없는 수집을 금지한다
     (좌표가 없으면 계획 대비 결손을 알 수 없다). ``output_dir``·``stem`` 은 구 호출부 호환과

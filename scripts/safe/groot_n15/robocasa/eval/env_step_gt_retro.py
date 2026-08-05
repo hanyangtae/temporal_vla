@@ -1,6 +1,6 @@
 """기존 rollout pkl에 env-step 해상도 phase/성공 GT를 소급 생성 (replay 기반, sidecar 저장).
 
-배경: env-step GT 수집 배선(env_step_phase.py)은 배선 이후 수집분에만 적용됨.
+배경: env-step GT 수집 배선(src/collect/robocasa/step_phase.py)은 배선 이후 수집분에만 적용됨.
 이 스크립트는 저장된 actions 를 open-loop replay 하며 매 env-step 에서
 proximity 라벨러(step)와 kitchen _check_success 를 평가해 pkl 옆에
 `<stem>.envstep.json` sidecar 로 저장한다 (pkl 무수정 — 아카이브 무손상).
@@ -27,8 +27,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[5]
-sys.path.insert(0, str(REPO / "scripts/safe/groot_n16/robocasa/collect"))
-sys.path.insert(0, str(REPO / "scripts/safe/groot_n16/libero"))
+sys.path.insert(0, str(REPO))  # src.collect.* import 용
 
 
 def process_one(pkl_path: str) -> None:
@@ -37,7 +36,7 @@ def process_one(pkl_path: str) -> None:
     import robocasa  # noqa: F401
     import robocasa.utils.gym_utils.gymnasium_groot  # noqa: F401
     import robosuite  # noqa: F401
-    from robocasa_event_labeler import find_robocasa_env, make_robocasa_event_labeler
+    from src.collect.robocasa.event_labeler import find_robocasa_env, make_robocasa_event_labeler
 
     p = Path(pkl_path)
     out = p.with_suffix(".envstep.json")
