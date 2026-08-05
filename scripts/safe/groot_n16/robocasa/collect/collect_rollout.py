@@ -104,6 +104,10 @@ def parse_args() -> argparse.Namespace:
         help="RoboCasa environment source: robocasa_v02 or robocasa365.",
     )
     parser.add_argument("--output-dir", required=True)
+    # docs/04 §3 좌표 레이아웃 — n15 HTTP 수집기와 같은 인자·해석을 쓴다.
+    from src.utils.collection_plan import add_grid_args  # noqa: PLC0415
+
+    add_grid_args(parser)
     parser.add_argument("--label-phases", action="store_true",
                         help="get_action 마다 event 라벨러 step() → per-record feature_phases "
                              "수집 (exp4-3 분리도 지도용; N1.5 http_feature_collect 규약).")
@@ -159,6 +163,12 @@ def main() -> None:
         raise ValueError(f"--steps-per-render must be positive: {args.steps_per_render}")
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    from src.utils.collection_plan import resolve_grid  # noqa: PLC0415
+
+    grid_plan, grid_cell = resolve_grid(args)
+    if grid_plan is not None:
+        print(f"[collect] 좌표 레이아웃 — plan_id={grid_plan.plan_id} cell={grid_cell.key}",
+              flush=True)
     max_episode_steps = (
         args.max_episode_steps
         if args.max_episode_steps is not None
@@ -240,7 +250,19 @@ def main() -> None:
         success = bool(results[1][0]) if results[1] else False
         task_description = args.task_description or policy.task_description or args.env_name
         stem = f"task{args.task_id}--ep{episode_idx}--succ{int(success)}"
+        grid_dir = None
+        if grid_cell is not None:
+            from src.utils.collection_plan import grid_dir_for  # noqa: PLC0415
+
+            grid_dir = grid_dir_for(args, grid_plan, grid_cell,
+                                    getattr(policy, "machine", None))
+            extra_meta_grid = {**grid_cell.as_metadata(),
+                               "plan_id": grid_plan.plan_id,
+                               "armsig": grid_dir.name.split("__")[0]}
+        else:
+            extra_meta_grid = {}
         _write_safe_triplet(
+            grid_dir=grid_dir,
             output_dir=output_dir,
             stem=stem,
             policy=policy,
@@ -265,6 +287,7 @@ def main() -> None:
                 # docs/04 규약 — machine·ckpt 는 serve 응답이 정본
                 "machine": getattr(policy, "machine", None),
                 "ckpt": getattr(policy, "ckpt", None),
+                **extra_meta_grid,
                 **({"feature_phases": feature_phases} if feature_phases else {}),
             },
         )

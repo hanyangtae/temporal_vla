@@ -460,30 +460,6 @@ def _resolve_cell_dir(root_or_cell_dir: Path, task: str, cell_id: str) -> Path:
     return root_or_cell_dir / task / cell_id
 
 
-def _grid_context(args) -> "tuple[Any, Any] | tuple[None, None]":
-    """(plan, cell) 또는 (None, None). 좌표 인자가 온전할 때만 좌표 레이아웃을 쓴다.
-
-    경로 조립은 하지 않는다 — ``GridCell.rel_path`` / ``arm_dirname`` 이 단일 출처다(docs/04 §3.1).
-    """
-    need = (getattr(args, "grid_root", None), getattr(args, "plan_json", None),
-            getattr(args, "scene_idx", None), getattr(args, "noise_idx", None))
-    if any(v is None for v in need):
-        return None, None
-    _prepend_path(REPO_ROOT)
-    from src.utils.collection_plan import CollectionPlan  # noqa: PLC0415
-
-    plan = CollectionPlan.load(args.plan_json)
-    instr = getattr(args, "grid_instruction", None) or args.canonical_instruction
-    for cell in plan.cells():
-        if (cell.scene_idx == args.scene_idx and cell.noise_idx == args.noise_idx
-                and (instr is None or cell.instruction == instr)):
-            return plan, cell
-    raise ValueError(
-        f"계획에 없는 좌표: instruction={instr!r} s{args.scene_idx} n{args.noise_idx} "
-        f"— {args.plan_json} 확인 (docs/04 §5.1: 계획에 없는 셀은 수집하지 않는다)"
-    )
-
-
 def _normalize_instruction(value: str) -> str:
     return " ".join(value.strip().split())
 
@@ -543,16 +519,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split", choices=["pretrain", "target"], default="target")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--task-id", type=int, default=0)
-    # docs/04 §3 좌표 레이아웃. 넷을 다 주면 grid/<plan_id>/<machine>/<instruction>/s<i>/n<j>/<arm>
-    # 으로 쓴다. 하나라도 빠지면 구 stem 레이아웃 + 경고(§8 은 좌표 없는 수집을 금지).
-    parser.add_argument("--grid-root", default=None,
-                        help="좌표 저장소 루트. 이 아래에 <plan_id>/<machine>/... 이 생긴다")
-    parser.add_argument("--plan-json", default=None,
-                        help="collection_plan.json 경로. plan_id 와 좌표 역산에 쓴다")
-    parser.add_argument("--scene-idx", type=int, default=None, help="그리드 scene 좌표")
-    parser.add_argument("--noise-idx", type=int, default=None, help="그리드 noise 좌표")
-    parser.add_argument("--arm-dir", default=None,
-                        help="arm 디렉토리명(collection_plan.arm_dirname 산출). 미지정 시 base")
+    # docs/04 §3 좌표 레이아웃 — 인자·해석·경로 조립은 collection_plan 이 단일 출처다.
+    _prepend_path(REPO_ROOT)
+    from src.utils.collection_plan import add_grid_args  # noqa: PLC0415
+
+    add_grid_args(parser)
     parser.add_argument("--cell-id", default=None)
     parser.add_argument("--cell-index", type=int, default=None)
     parser.add_argument("--canonical-instruction", default=None)
@@ -816,7 +787,9 @@ def run() -> dict[str, Any]:
     if args.wait_ready:
         policy.wait_until_ready(max_wait=args.timeout)
     serve_identity = _get_serve_identity(args.vla_server)
-    grid_plan, grid_cell = _grid_context(args)
+    from src.utils.collection_plan import resolve_grid  # noqa: PLC0415
+
+    grid_plan, grid_cell = resolve_grid(args)
     if grid_plan is not None:
         print(f"[collect] 좌표 레이아웃 — plan_id={grid_plan.plan_id} "
               f"cell={grid_cell.key} machine={serve_identity.get('machine')}", flush=True)
@@ -1023,17 +996,14 @@ def run() -> dict[str, Any]:
             extra_metadata.update(serve_identity)
             grid_dir = None
             if grid_cell is not None:
-                from src.utils.collection_plan import BASE_ARM, arm_dirname  # noqa: PLC0415
+                from src.utils.collection_plan import grid_dir_for  # noqa: PLC0415
 
-                arm = getattr(args, "arm_dir", None) or arm_dirname(BASE_ARM)
-                grid_dir = (Path(args.grid_root)
-                            / grid_cell.rel_path(grid_plan.plan_id,
-                                                 serve_identity.get("machine") or "unknown")
-                            / arm)
+                grid_dir = grid_dir_for(args, grid_plan, grid_cell,
+                                        serve_identity.get("machine"))
                 extra_metadata.update({
                     **grid_cell.as_metadata(),
                     "plan_id": grid_plan.plan_id,
-                    "armsig": arm.split("__")[0],
+                    "armsig": grid_dir.name.split("__")[0],
                 })
             if cell_id is not None:
                 extra_metadata.update(

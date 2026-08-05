@@ -68,6 +68,35 @@ class GridCell:
                 / f"s{self.scene_idx}" / f"n{self.noise_idx}")
 
 
+GRID_ARG_NAMES = ("grid_root", "plan_json", "scene_idx", "noise_idx")
+
+
+def resolve_grid(args: Any) -> "tuple[CollectionPlan, GridCell] | tuple[None, None]":
+    """CLI 인자 → (plan, cell). 좌표 인자가 온전할 때만 좌표 레이아웃을 쓴다.
+
+    수집기(n15 HTTP · n16 ZMQ · 이후 cosmos 등)가 공유한다 — 좌표 해석이 수집기마다
+    갈리면 같은 그리드가 다른 자리에 떨어진다. 경로 조립은 :meth:`GridCell.rel_path` 가,
+    해석은 여기가 단일 출처다.
+
+    계획에 없는 좌표는 거부한다(docs/04 §5.1 — 계획에 없는 셀은 수집하지 않는다).
+    """
+    vals = [getattr(args, n, None) for n in GRID_ARG_NAMES]
+    if any(v is None for v in vals):
+        return None, None
+    grid_root, plan_json, scene_idx, noise_idx = vals
+    del grid_root  # 경로 조립은 호출자가 rel_path 로 한다
+    plan = CollectionPlan.load(plan_json)
+    instr = getattr(args, "grid_instruction", None) or getattr(args, "canonical_instruction", None)
+    for cell in plan.cells():
+        if (cell.scene_idx == scene_idx and cell.noise_idx == noise_idx
+                and (instr is None or cell.instruction == instr)):
+            return plan, cell
+    raise ValueError(
+        f"계획에 없는 좌표: instruction={instr!r} s{scene_idx} n{noise_idx} "
+        f"— {plan_json} 확인 (docs/04 §5.1: 계획에 없는 셀은 수집하지 않는다)"
+    )
+
+
 BASE_ARM = "base"
 
 # armsig 에 반드시 들어가야 하는 개입 파라미터 (docs/04 §3.3).
@@ -93,6 +122,26 @@ def arm_signature(params: dict[str, Any]) -> str:
     norm = {k: params[k] for k in ARM_PARAM_KEYS}
     payload = json.dumps(norm, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(payload.encode()).hexdigest()[:8]
+
+
+def add_grid_args(parser: Any) -> None:
+    """수집기 공용 좌표 인자 (docs/04 §3). 넷을 다 주면 좌표 레이아웃, 아니면 구 레이아웃."""
+    parser.add_argument("--grid-root", default=None,
+                        help="좌표 저장소 루트. 아래에 <plan_id>/<machine>/... 이 생긴다")
+    parser.add_argument("--plan-json", default=None,
+                        help="collection_plan.json 경로 (plan_id·좌표 역산)")
+    parser.add_argument("--scene-idx", type=int, default=None, help="그리드 scene 좌표")
+    parser.add_argument("--noise-idx", type=int, default=None, help="그리드 noise 좌표")
+    parser.add_argument("--grid-instruction", default=None,
+                        help="그리드 instruction 키. 미지정 시 --canonical-instruction 사용")
+    parser.add_argument("--arm-dir", default=None,
+                        help="arm 디렉토리명(arm_dirname 산출). 미지정 시 base")
+
+
+def grid_dir_for(args: Any, plan: "CollectionPlan", cell: "GridCell", machine: str | None) -> Path:
+    """좌표 + arm → 최종 쓰기 디렉토리. 수집기 공용."""
+    arm = getattr(args, "arm_dir", None) or BASE_ARM
+    return Path(args.grid_root) / cell.rel_path(plan.plan_id, machine or "unknown") / arm
 
 
 def arm_dirname(armsig: str, hint: str = "") -> str:
