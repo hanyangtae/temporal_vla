@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import json
 from pathlib import Path
 import pickle
 import shutil
@@ -73,7 +74,19 @@ def write_safe_triplet(
     video_source: str = "groot_upstream_video_recording_wrapper",
     extra_metadata: dict[str, Any] | None = None,
     include_hidden_states: bool = True,
+    grid_dir: Path | None = None,
 ) -> None:
+    """SAFE rollout 산출물을 쓴다.
+
+    ``grid_dir`` 를 주면 **docs/04 §3 좌표 레이아웃**으로 쓴다 —
+    ``<grid_dir>/{rollout.pkl, traj.csv, video.mp4, meta.json}``. ``grid_dir`` 는
+    ``<store>/grid/<plan_id>/<machine>/<instruction>/s<i>/n<j>/<arm>`` 이며 경로 조립은
+    ``src/utils/collection_plan.py`` (``GridCell.rel_path`` · ``arm_dirname``)가 단일 출처다.
+
+    주지 않으면 구 stem 레이아웃(``<output_dir>/<stem>.{pkl,csv,mp4}``)으로 쓰고 경고한다.
+    규약 §8 은 좌표 없는 수집을 금지하지만, n16 경로(activation 폐기 예정)가 아직 구 배선이라
+    즉시 실패시키지 않는다.
+    """
     missing = [a for a in POLICY_REQUIRED_ATTRS if not hasattr(policy, a)]
     if missing:
         raise RuntimeError(
@@ -104,19 +117,34 @@ def write_safe_triplet(
     #
     # succ 반전 파일은 덮어쓰기가 아니므로 지우지도 막지도 않고 경고만 남긴다.
     # 같은 stem 에 대한 처리는 아래 §2 쓰기 검사(pkl 직렬화 후)가 담당한다.
-    other = sorted(
-        p for p in output_dir.glob(f"task{task_id}--ep{episode_idx}--succ*.*")
-        if not p.name.startswith(stem)
-    )
-    if other:
+    if grid_dir is not None:
+        # 좌표 레이아웃 — 한 칸 = 한 디렉토리, 파일명은 고정이라 succ 반전 충돌이 없다.
+        dest = Path(grid_dir)
+        dest.mkdir(parents=True, exist_ok=True)
+        pkl_path, csv_path = dest / "rollout.pkl", dest / "traj.csv"
+        mp4_path, meta_path = dest / "video.mp4", dest / "meta.json"
+    else:
         print(
-            f"[collect][warn] 같은 episode 의 다른 판정 산출물이 이미 있다 "
-            f"(succ 반전 = 조건 변경 가능성): {[p.name for p in other]} — "
-            f"지우지 않고 {stem}.* 로 새로 쓴다. 의도한 재수집이면 옛 파일을 직접 정리할 것.",
+            "[collect][warn] grid_dir 없음 — 구 stem 레이아웃으로 쓴다. "
+            "docs/04 §8 은 좌표 없는 수집을 금지한다(결손을 알 수 없다). "
+            "collection_plan 의 GridCell.rel_path 로 경로를 만들어 넘길 것.",
             flush=True,
         )
+        dest = output_dir
+        other = sorted(
+            p for p in output_dir.glob(f"task{task_id}--ep{episode_idx}--succ*.*")
+            if not p.name.startswith(stem)
+        )
+        if other:
+            print(
+                f"[collect][warn] 같은 episode 의 다른 판정 산출물이 이미 있다 "
+                f"(succ 반전 = 조건 변경 가능성): {[p.name for p in other]} — "
+                f"지우지 않고 {stem}.* 로 새로 쓴다. 의도한 재수집이면 옛 파일을 직접 정리할 것.",
+                flush=True,
+            )
+        pkl_path, csv_path = output_dir / f"{stem}.pkl", output_dir / f"{stem}.csv"
+        mp4_path, meta_path = output_dir / f"{stem}.mp4", None
 
-    pkl_path = output_dir / f"{stem}.pkl"
     payload = {
         "task_suite_name": task_suite_name,
         "model_family": model_family,
@@ -201,19 +229,15 @@ def write_safe_triplet(
     if pkl_path.exists():
         old_sig = hashlib.sha256(pkl_path.read_bytes()).hexdigest()
         if old_sig == new_sig:
-            print(
-                f"[collect] {stem}.pkl 이미 동일 내용으로 존재 (sig {new_sig[:16]}) — skip",
-                flush=True,
-            )
+            print(f"[collect] {pkl_path} 이미 동일 내용 (sig {new_sig[:16]}) — skip", flush=True)
             return
         raise RuntimeError(
             f"{pkl_path} 가 이미 있고 내용이 다르다 "
             f"(기존 {old_sig[:16]} != 신규 {new_sig[:16]}). "
             "덮어쓰기 금지(docs/04_data_storage_convention.md §8) — 조건을 바꾼 재수집이면 "
-            "RUN_ID/cell_id 로 출력 트리를 분리하고, 의도한 교체면 옛 파일을 직접 정리할 것."
+            "좌표(plan_id/machine)를 분리하고, 의도한 교체면 옛 파일을 직접 정리할 것."
         )
 
-    csv_path = output_dir / f"{stem}.csv"
     with csv_path.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=SAFE_ACTION_COLUMNS)
         writer.writeheader()
@@ -223,6 +247,31 @@ def write_safe_triplet(
 
     pkl_path.write_bytes(blob)
 
+    if meta_path is not None:
+        # docs/04 §6-3 — rollout 은 meta.json 을 함께 쓴다. sig 는 식별자가 아니라
+        # 무결성 검증 열이므로(§3.1) 여기 기록한다. 캡처 밀도 5 열은 §4 인덱스가 요구.
+        meta = {
+            "sig": new_sig[:16],
+            "pkl_sha256": new_sig,
+            "model": model_family, "policy_transport": policy_transport,
+            "task": payload.get("robocasa_task"), "task_id": task_id,
+            "instruction": task_description,
+            "env_seed": scenario_seed, "inference_seed": inference_seed,
+            "episode_idx": episode_idx, "success": int(episode_success),
+            "n_action_steps": n_action_steps, "env_name": env_name,
+            "capture_token_mode": getattr(policy, "capture_token_mode", None),
+            "feature_kind": policy.feature_kind,
+            "feature_axes": policy.feature_axes,
+            "capture_layers": getattr(policy, "capture_layers", None),
+            "record_shape": (list(np.asarray(policy.records[0]["hidden_state"]).shape)
+                             if include_hidden_states and policy.records else None),
+        }
+        for key in ("machine", "ckpt", "plan_id", "grid_instruction", "scene_idx",
+                    "noise_idx", "armsig", "serve_gpu", "serve_boot_id"):
+            if extra_metadata and key in extra_metadata:
+                meta[key] = extra_metadata[key]
+        meta_path.write_text(json.dumps(json_safe(meta), indent=2, ensure_ascii=False))
+
     if upstream_video_path is None or not upstream_video_path.exists():
         raise RuntimeError(f"GR00T upstream video was not written: {upstream_video_path}")
-    shutil.move(str(upstream_video_path), str(output_dir / f"{stem}.mp4"))
+    shutil.move(str(upstream_video_path), str(mp4_path))

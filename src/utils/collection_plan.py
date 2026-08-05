@@ -58,6 +58,50 @@ class GridCell:
     def key(self) -> str:
         return f"{self.instruction}|s{self.scene_idx}|n{self.noise_idx}"
 
+    def rel_path(self, plan_id: str, machine: str) -> Path:
+        """docs/04 §3 좌표 경로 — ``<plan_id>/<machine>/<instruction>/s<i>/n<j>``.
+
+        instruction 은 ``OpenDrawer/left`` 처럼 ``/`` 를 포함할 수 있어 그대로 하위 경로가
+        된다. 경로 생성은 여기 하나뿐이다 — 수집기가 문자열을 조립하면 규약과 어긋난다.
+        """
+        return (Path(plan_id) / machine / self.instruction
+                / f"s{self.scene_idx}" / f"n{self.noise_idx}")
+
+
+BASE_ARM = "base"
+
+# armsig 에 반드시 들어가야 하는 개입 파라미터 (docs/04 §3.3).
+# 하나라도 빠지면 서로 다른 arm 이 같은 지문을 얻는다 — §2 opsig 충돌(604 중 393)과 같은 사고.
+ARM_PARAM_KEYS = (
+    "op",                 # 연산자 종류 (conceptor | setpoint_seg | setpoint_vl | …)
+    "bindings",           # [(phase, layer, opsig)] — layer 복수·phase 별 다른 NPZ 를 담는다
+    "beta",               # 개입 정도
+    "token_select",       # exp5-3: 같은 β 인데 full 0.025 vs future-only 0.350
+    "denoise",            # global | per_step
+    "steer_from_record",  # 개입 시점 (latch). gated 면 None
+    "gated_phases",       # gated 개입 phase 집합. latch 면 None
+)
+
+
+def arm_signature(params: dict[str, Any]) -> str:
+    """개입 파라미터 → armsig(8자). ``ARM_PARAM_KEYS`` 전량이 있어야 한다."""
+    missing = [k for k in ARM_PARAM_KEYS if k not in params]
+    if missing:
+        raise ValueError(
+            f"armsig 계산에 필요한 키 없음: {missing} — docs/04 §3.3 ARM_PARAM_KEYS 참조"
+        )
+    norm = {k: params[k] for k in ARM_PARAM_KEYS}
+    payload = json.dumps(norm, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(payload.encode()).hexdigest()[:8]
+
+
+def arm_dirname(armsig: str, hint: str = "") -> str:
+    """``<armsig>__<hint>``. hint 는 사람용이고 진실은 config.json 이다(docs/04 §3.3)."""
+    if armsig == BASE_ARM:
+        return BASE_ARM
+    safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in hint)
+    return f"{armsig}__{safe}" if safe else armsig
+
 
 @dataclass
 class CollectionPlan:
