@@ -171,18 +171,119 @@ opsig = sha256( 연산자 실체 파일 전체 )[:16]
 <store_root>/
   groot/
     n15/
-      activations/<sig>/          rollout.pkl  traj.csv  video.mp4  meta.json
-      evals/<sig>/                traj.csv  video.mp4  meta.json
+      grid/<plan_id>/<machine>/<instruction>/s<i>/n<j>/     ← 세팅 = 좌표 (§3.1)
+          base/                   rollout.pkl  traj.csv  video.mp4  meta.json
+          <armsig>__<hint>/       traj.csv  video.mp4  meta.json  config.json
       steerer/<opsig>/            conceptors.npz|model.pt  config.json  …
       sae_inputs/<cell>/inputs/   X_L*.npz  stats_L*.npz   (SAE 학습 입력 행렬)
       runs/<run_id>/              집계 tsv · 플롯 png · 실행 로그 · manifest
-      index/                      rollouts.tsv  operators.tsv
+      index/                      rollouts.tsv  operators.tsv  arm_bindings.tsv
                                   operator_inputs.tsv  legacy_path_map.tsv
     n16/runs/                     (activation 은 전량 폐기 — §0)
   pi05/ , cosmos/v1/ , xvla/v1/   (runs 만)
   checkpoints/<name>/             파인튜닝 산출물 (safetensors · optimizer.pt 등)
-  _hostcopies/runs/<host>/        머신 재실행 대조분 + REPLICATES.tsv
 ```
+
+> **2026-08-05 개정.** 구 레이아웃은 `activations/<sig>/` · `evals/<sig>/` 평면이었다.
+> 아래 §3.1~§3.3 이 그 개정 근거다. 구 activation 은 machine 미기록이라 전량 폐기하므로
+> 이관 부담이 없다. `_hostcopies/` 는 `<machine>` 층이 그 역할을 흡수해 없앤다.
+
+## 3.1 세팅 = 좌표 (`<plan_id>/<machine>/<instruction>/s<i>/n<j>`)
+
+한 rollout 의 세팅은 **실행 전에 정해진다** — 모델·체크포인트·캡처 설정(`plan_id`),
+머신, instruction, scene, noise. 그래서 식별자도 실행 전에 정해질 수 있어야 한다.
+
+**왜 내용 해시(`sig`)가 아니라 좌표인가:**
+
+| | `sig` (내용 해시) | 좌표 |
+|---|---|---|
+| 값이 정해지는 시점 | 수집 **후** | 수집 **전** |
+| 빈 칸의 의미 | 알 수 없음 (없는 건지 안 돈 건지) | **결손** — `plan.missing()` 이 돌려준다 |
+| 사람이 읽었을 때 | `c3700fecf8c5` | `OpenDrawer/left/s3/n17` |
+
+`sig` 는 없어지지 않는다. **식별은 좌표가, 무결성 검증은 `sig` 가** 한다 —
+`meta.json` 에 기록하고 §2 쓰기 검사가 그대로 적용된다.
+
+`plan_id` 는 `src/utils/collection_plan.py` 의 `CollectionPlan` 전체를 정규화 JSON 으로
+해싱한 12자다(모델·ckpt·capture_layers·denoise_k·token_mode·instructions·noise_seeds).
+**`machine` 은 계획에 넣지 않는다** — 같은 계획을 여러 머신에 나눠 돌리는 것이 정상 운영이고,
+넣으면 머신마다 다른 계획이 되어 `plan.missing()` 이 깨진다.
+
+## 3.2 `<machine>` 이 왜 경로 층인가 — 실측
+
+**같은 머신 안에서는 GPU 가 달라도 bitwise 동일하고, 머신이 다르면 갈린다** (2026-08-05 실측,
+GR00T N1.5 · 같은 관측·같은 `inference_seed`, serve 9 개):
+
+| 비교 | bitwise | max\|Δ\| |
+|---|---|---|
+| kanu A4000 GPU 0 vs 1 vs 3 | **일치** | 0 |
+| srv50 A100 GPU 0 내 인스턴스 3 개 | **일치** | 0 |
+| srv50 A100 GPU 0 vs GPU 1 | **일치** | 0 |
+| **kanu A4000 vs srv50 A100** | **불일치** | hidden 1.5 (rel 1.6e-3) · action 9.8e-3 |
+
+머신 간에는 hidden state 18,432 원소 중 **17,063 개(93%)** 가 달랐다. 크기는 상대오차 ~1e-3
+이지만 rollout 내내 누적되어 `_hostcopies/REPLICATES.tsv` 의 **개별 판정 12.7% 반전**으로 나타난다.
+
+**함의 둘:**
+
+1. **base 와 arm 은 반드시 같은 머신이어야 한다.** paired 판정(McNemar)에서 base 가 머신 A,
+   arm 이 머신 B 면 그 짝의 차이에 steering 효과와 머신 효과가 섞인다. 12.7% 는 exp3 fit30 의
+   위약 요동(±5~6판/120판)과 맞먹는 크기다. `<machine>` 층이 이를 구조적으로 막는다.
+2. **GPU 는 좌표에 넣지 않는다.** 같은 머신이면 어느 GPU 든 결과가 같으므로 **한 칸을 여러
+   GPU 에 자유롭게 병렬 배정**할 수 있다. GPU 단위였으면 칸마다 GPU 가 고정되어 병렬화가 막힌다.
+
+`machine` 값은 serve `/health` 의 `serve_machine` 이 정본이다(`_get_serve_identity` 경유로
+`meta.json` 에도 기록된다).
+
+## 3.3 eval = `(좌표, armsig)` — baseline 하위에 arm 별로
+
+eval 은 **baseline 과 같은 세팅에서 연산자를 걸었을 때 결과가 어떻게 바뀌는지**를 보는 것이다.
+세팅이 같으므로 **한 좌표 : 여러 arm** (1:다)이고, 그래서 eval 에 별도 `sig` 가 필요 없다 —
+`(좌표, armsig)` 가 곧 식별자다.
+
+- `base/` 는 arm 하나로 취급한다(개입 없음). base 와 steered 가 대칭이 되고,
+  같은 디렉토리 안에 나란히 있어 **paired 비교의 짝이 경로로 보장**된다.
+- **baseline 은 항상 activation 을 수집한다** (`rollout.pkl` 포함). arm 은 판정만 필요하므로
+  `traj.csv`·`meta.json` 만 쓴다(eval 캡처 OFF 규약).
+
+### `armsig` — 개입 전체의 지문
+
+arm 을 결정하는 것은 연산자 하나가 아니다. 같은 연산자(`opsig`)라도 β·개입 시점·토큰 선택이
+다르면 결과가 다르다(exp5-3 β sweep: 같은 NPZ 로 β 1.0/0.5/0.2 → SR .025/.225/.300).
+그리고 **한 arm 이 여러 연산자를 쓴다** — layer 복수(`--steering-layers`), phase 별 다른 NPZ
+(`--steering-phase-npz-base`).
+
+그래서 `config.json` 은 연산자를 목록이 아니라 **매핑**으로 담는다:
+
+```json
+{
+  "plan_id": "a1b2c3d4e5f6", "machine": "kanu",
+  "grid_instruction": "OpenDrawer/left", "scene_idx": 3, "noise_idx": 17,
+  "op": "setpoint_seg",
+  "bindings": [
+    {"phase": "reach-to-handle", "layer": 10, "opsig": "5fe6f481"},
+    {"phase": "reach-to-handle", "layer": 12, "opsig": "a3c91b02"},
+    {"phase": "grasp-handle",    "layer": 10, "opsig": "77de3f14"}
+  ],
+  "beta": 0.3, "token_select": "all", "denoise": "global",
+  "steer_from_record": null,
+  "armsig": "a91f3c2d"
+}
+```
+
+- `bindings` 가 `(phase, layer) → opsig` 매핑이다. global(비-gated)은 `phase: null` 한 행.
+- `armsig` = `bindings` + 나머지 개입 파라미터를 정규화 JSON 으로 해싱한 8자.
+  **축이 늘어도 이름 길이가 안 변한다** — §2 의 opsig 교훈(파라미터 목록으로 이름 짓지 않기)과 같다.
+- 디렉토리 이름은 `<armsig>__<hint>` (예 `a91f3c2d__setM_L10_b0.3`). **hint 는 사람용**이고
+  진실은 `config.json` 이다.
+
+**개입 파라미터 전량** (`armsig` 에 들어가야 하는 것): 연산자 종류 · bindings(phase×layer×opsig) ·
+개입 시점(`steer_from_record` / gated phase 집합) · denoise 처리 · 개입 denoise step ·
+개입 정도(β) · **토큰 선택**. 마지막이 특히 중요하다 — exp5-3 에서 같은 β=1.0 인데
+`full` 0.025 vs `future-only` 0.350 으로 갈렸다.
+
+`config.json` 은 **의도**를 담고, `meta.json` 은 **실측**(어느 record 에서 실제로 발화했는지 =
+`phase_gated_flags`)을 담는다. gated arm 이 그 phase 에 도달하지 못하면 의도와 실측이 다르다.
 
 **실측 재고 (2026-08-04 이관 직후)**
 
@@ -227,18 +328,24 @@ views/by-cell/<model>/<task>/<cell>/env<seed>/ep<N>  ->  ../../../activations/<s
 
 ---
 
-## 4. 인덱스 (3표)
+## 4. 인덱스 (5표)
 
-역추적이 "연산자 ↔ 입력 rollout" **다대다** 관계이므로 잇는 표가 반드시 따로 필요하다.
+역추적에 다대다 관계가 둘 있어 잇는 표가 각각 필요하다 — "연산자 ↔ 입력 rollout"(`operator_inputs`)과 "arm ↔ 연산자"(`arm_bindings`, §3.3).
 
 ### `rollouts.tsv`
 
-복합키 **(sig, source_run)**. 내용이 같아도 출처가 다르면 별도 행이다
-(머신이 달라도 mp4 가 바이트 동일한 사례가 실재하므로, 저장은 합치되 출처는 남긴다).
+복합키 **(plan_id, machine, grid_instruction, scene_idx, noise_idx, armsig)** = §3 좌표 + arm.
+`armsig="base"` 가 baseline 행이다. `sig` 는 키가 아니라 **무결성 검증 열**이다(§3.1).
+
+> 구 정의는 복합키 (sig, source_run) 이었다. 2026-08-05 좌표 레이아웃 개정으로 대체.
+> 옛 수집분(좌표 없음)은 `legacy_path_map` 으로만 해석한다.
 
 | 열 | 설명 |
 |---|---|
-| `sig` | rollout 지문 |
+| `plan_id` · `machine` | 좌표 상위 — 계획 지문, serve `/health` 의 `serve_machine` |
+| `grid_instruction` · `scene_idx` · `noise_idx` | 그리드 좌표(`GridCell.as_metadata()`) |
+| `armsig` | `base` \| arm 지문(§3.3). arm 행은 `traj.csv`·`meta.json` 만 존재 |
+| `sig` | rollout 지문 — **식별이 아니라 무결성 검증용** |
 | `kind` | `activation` \| `eval` |
 | `source_run` | 원 수집/평가 run 식별자 (`legacy_path_map` 의 run 부분) |
 | `model` | 백본 계열. 사이드카 `model_family` (예 `lerobot_groot_n15`) |
@@ -308,6 +415,21 @@ N1.6 은 51 로 DiT 시퀀스 구성이 다르다. **두 백본의 토큰 자리
 | `sig` | 입력 rollout |
 | `label` | 0=fail / 1=succ |
 | `fit_start_record`, `fit_records` | 길이통제 창 |
+
+### `arm_bindings.tsv`
+
+한 arm 이 여러 연산자를 쓰므로(layer 복수 · phase 별 다른 NPZ) **arm ↔ 연산자도 다대다**다.
+`operator_inputs.tsv` 가 "연산자 ↔ 입력 rollout"을 잇는 것과 같은 이유로 별도 표가 필요하다.
+
+| 열 | 설명 |
+|---|---|
+| `armsig` | arm 지문 |
+| `phase` | gated phase. global 개입은 빈 칸 |
+| `layer` | 개입 층 |
+| `opsig` | 그 (phase, layer) 에 건 연산자 |
+
+`config.json` 의 `bindings` 배열을 그대로 편 것이다. 이 표가 있으면 "opsig X 를 쓴 arm 전부"
+같은 역질의가 된다.
 
 ### `legacy_path_map.tsv` — 영구 보존
 
@@ -565,8 +687,11 @@ exp2 seed-변형 5 cell 의 fit 원료 pkl(각 60판)이 세 호스트 어디에
 - 산출물 안에 **절대경로 기록 금지** (§6-1)
 - 기존 파일 **덮어쓰기 금지** — 충돌 시 에러 중단 (§2)
 - 수집 rollout 과 평가 rollout **혼재 금지** (§1)
-- 정본 arm 디렉토리에 머신 재실행분 **병합 금지** — 일부 분석 코드가 `rglob` 을 쓰므로
-  이중 계수된다 (`_hostcopies/README.txt` 참조)
+- **base 와 arm 을 다른 머신에서 짝짓기 금지** — paired 판정에 머신 효과가 섞인다
+  (실측 12.7% 판정 반전, §3.2). `<machine>` 층이 구조적으로 막지만, 인덱스에서 좌표를
+  무시하고 묶는 집계도 같은 금지 대상이다.
+- 좌표 없는 수집 **금지** — `collection_plan.json` 을 먼저 쓰고 `GridCell.as_metadata()` 를
+  `extra_metadata` 로 실을 것(§5.1). 좌표가 없으면 결손을 알 수 없다.
 - pkl 내부 축(layer/step/token)을 **파일로 쪼개지 않는다** — 파일 수 폭증
 
 ---
