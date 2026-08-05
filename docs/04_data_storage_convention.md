@@ -248,7 +248,8 @@ views/by-cell/<model>/<task>/<cell>/env<seed>/ep<N>  ->  ../../../activations/<s
 | `instruction` | 사이드카 `task_description` |
 | `env_seed` | 사이드카 `scenario_seed` |
 | `inference_seed` | 사이드카 `inference_seed` |
-| `machine` | `MACHINE.txt` 기록 (예 `worker2-a100-gpu2`) |
+| `machine` | serve `/health` 의 `serve_machine` (예 `kanu:gpu3`). 구 수집분은 `MACHINE.txt` |
+| `machine_source` | `MACHINE.txt` \| `runs/MACHINE.txt` \| `unrecorded` — 값의 출처 |
 | `episode_idx` | |
 | `success` | 0/1 |
 | `steps`, `n_inferences`, `n_action_steps`, `chunk_len` | |
@@ -348,6 +349,27 @@ N1.6 은 51 로 DiT 시퀀스 구성이 다르다. **두 백본의 토큰 자리
    `record_shape`·`capture_layers`)도 함께 쓴다. 이 값들은 현재 pkl 안에만 있어
    **사이드카에 없다** — 수집 rollout 은 `raw_rollouts/` 에 json 자체가 없는 경우가 많다.
    그래서 2026-08 정리 때 pkl 132 개를 직접 열어 분류해야 했다.
+
+   **`machine`·`ckpt` 는 serve `/health` 가 정본이다** (2026-08-05 배선). serve 가 도는
+   머신이 수집기와 다를 수 있으므로 클라이언트가 자기 호스트명을 쓰면 틀린다.
+
+   - serve(`scripts/serve/lerobot.py`) 가 `serve_machine`(`<host>:gpu<N>`) 과
+     `serve_ckpt`(프로파일명) 를 `/health` 에 노출
+   - 수집기(`http_feature_collect.py`)의 `_get_serve_identity()` 가 이를 받아
+     `machine`·`ckpt` 로 pkl·사이드카에 기록
+
+   왜 필요한가: `machine` 은 **실험 요인**이다 — 같은 seed·조건이라도 머신이 다르면
+   개별 판정이 12.7% 뒤집히고 arm SR 이 ±7~9pp 흔들린다(449 판 대조,
+   `_hostcopies/REPLICATES.tsv`). `ckpt` 는 `model_family`(계열명, 686 판 전부 동일)로는
+   베이스와 파인튜닝을 구분할 수 없어 필요하다 — 아카이브에 이미
+   `checkpoints/groot_n1_5/260513094637-subset100` 이 있다.
+
+   **구 수집분 소급 복원은 부분적으로만 가능했다** (2026-08-05):
+   eval 413 판 복원, activation 686 판 중 **526 판은 복원 불가**. `scene_matched_exp41`·
+   `phase_event_pq3`·`exp41_mixer` 등이 `MACHINE.txt` 를 남기지 않았고 pkl·사이드카에도
+   흔적이 없다. **추측으로 채우지 않고** `machine_source="unrecorded"` 로 명시했다 —
+   여러 머신에 걸친 수집일 수 있어 하나로 뭉뚱그리면 층화가 틀린 근거를 갖는다.
+   `ckpt` 는 복원 경로 자체가 없다.
 4. 연산자를 만들면 `inputs.json` 에 **입력 sig 목록**을 쓴다(경로 아님).
 5. 인덱스 3표에 행을 추가한다.
 

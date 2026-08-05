@@ -368,9 +368,16 @@ def _get_serve_identity(server: str) -> dict:
             "serve_gpu": body.get("serve_gpu"),
             "serve_boot_id": body.get("boot_id"),
             "serve_steering": body.get("steering"),
+            # docs/04 규약 — rollout 인덱스의 machine·ckpt 열. serve 가 도는 머신이
+            # 수집기와 다를 수 있으므로 /health 응답을 정본으로 쓴다.
+            # machine 이 없으면 머신 간 재현 편차(같은 seed 에서 succ/fail 12.7% 반전)를
+            # 층화할 수 없고, ckpt 가 없으면 베이스와 파인튜닝 rollout 이 섞인다.
+            "machine": body.get("serve_machine"),
+            "ckpt": body.get("serve_ckpt"),
         }
     except Exception as exc:  # noqa: BLE001
-        return {"serve_gpu": None, "serve_boot_id": None, "serve_health_error": str(exc)}
+        return {"serve_gpu": None, "serve_boot_id": None, "machine": None, "ckpt": None,
+                "serve_health_error": str(exc)}
 
 
 def _find_latest_video(video_dir: Path) -> Path | None:

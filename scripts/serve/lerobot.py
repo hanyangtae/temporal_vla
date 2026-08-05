@@ -25,6 +25,7 @@ import argparse
 import logging
 import os
 import random
+import socket
 import sys
 import time
 import uuid
@@ -857,6 +858,13 @@ async def health():
         phase_readout=_phase_spec or None,
         # exp4-1: client 가 사이드카에 GPU 를 기록해 arm×GPU confound 를 사후 감사
         serve_gpu=os.environ.get("CUDA_VISIBLE_DEVICES"),
+        # docs/04 규약 — rollout 인덱스의 machine·ckpt 열 원천.
+        # machine: 같은 seed·조건이라도 머신이 다르면 성공/실패가 12.7% 뒤집힌다
+        #          (449 판 대조, _hostcopies/REPLICATES.tsv) → 층화에 필요한 실험 요인.
+        # ckpt   : model_family("lerobot_groot_n15")는 계열명이라 베이스와 파인튜닝을
+        #          구분하지 못한다. 프로파일명이 실제 체크포인트 식별자다.
+        serve_machine=f"{socket.gethostname()}:gpu{os.environ.get('CUDA_VISIBLE_DEVICES', '?')}",
+        serve_ckpt=getattr(_profile, "name", None),
         **feature_metadata,
     )
 
