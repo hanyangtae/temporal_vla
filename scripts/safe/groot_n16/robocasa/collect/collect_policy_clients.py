@@ -61,6 +61,9 @@ class SafeFeatureRecordMixin:
         self.records: list[dict[str, Any]] = []
         self.task_description: str | None = None
         self.feature_kind: str | None = None
+        # docs/04 규약 — serve 응답이 정본 (serve 머신 != 수집기 머신일 수 있음)
+        self.machine: str | None = None
+        self.ckpt: str | None = None
         self.feature_axes: list[str] | None = None
         self.feature_slice: str | None = None
         self.exported_action_token_count: int | None = None
@@ -81,6 +84,8 @@ class SafeFeatureRecordMixin:
         self.records.clear()
         self.task_description = None
         self.feature_kind = None
+        self.machine = None
+        self.ckpt = None
         self.feature_axes = None
         self.feature_slice = None
         self.exported_action_token_count = None
@@ -103,6 +108,8 @@ class SafeFeatureRecordMixin:
 
     def _update_safe_feature_metadata(self, payload: dict[str, Any]) -> None:
         metadata = normalize_feature_metadata(payload)
+        self.machine = _prefer_present(payload.get("serve_machine"), self.machine)
+        self.ckpt = _prefer_present(payload.get("serve_ckpt"), self.ckpt)
         self.feature_kind = _prefer_present(metadata.feature_kind, self.feature_kind)
         self.feature_axes = _prefer_present(metadata.feature_axes, self.feature_axes)
         self.feature_slice = _prefer_present(metadata.feature_slice, self.feature_slice)

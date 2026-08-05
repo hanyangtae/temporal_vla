@@ -251,6 +251,8 @@ views/by-cell/<model>/<task>/<cell>/env<seed>/ep<N>  ->  ../../../activations/<s
 | `machine` | serve `/health` 의 `serve_machine` (예 `kanu:gpu3`). 구 수집분은 `MACHINE.txt` |
 | `machine_source` | `MACHINE.txt` \| `runs/MACHINE.txt` \| `unrecorded` — 값의 출처 |
 | `ckpt_source` | `pkl` \| `backfilled_single_profile` — 값의 출처 |
+| `grid_instruction` · `scene_idx` · `noise_idx` | 수집 그리드 좌표 (§5.1) |
+| `plan_id` | 이 rollout 이 속한 `collection_plan.json` 의 지문 |
 | `episode_idx` | |
 | `success` | 0/1 |
 | `steps`, `n_inferences`, `n_action_steps`, `chunk_len` | |
@@ -332,6 +334,48 @@ N1.6 은 51 로 DiT 시퀀스 구성이 다르다. **두 백본의 토큰 자리
 
 **결측은 추측으로 채우지 않는다.** 빈 칸으로 두고 `meta_source` 에 출처를 남긴다.
 빈 칸 자체가 "이 판을 분석에 쓸지" 판단하는 근거다.
+
+## 5.1 수집 그리드 — 계획을 먼저 박고, 좌표를 함께 기록한다
+
+계획된 수집(instruction × scene n × noise m)은 **수집 시작 전에**
+`collection_plan.json` 을 쓰고, 각 rollout 에 그리드 좌표를 함께 남긴다.
+단일 출처: `src/utils/collection_plan.py`.
+
+```python
+plan = CollectionPlan(
+    name="n15_grid_v1", model="groot", version="n15", ckpt="lerobot_groot_n15__robocasa365_ckpt120000",
+    capture_layers=[0,2,4,8,10,12,15], denoise_k=4, token_mode="all_token_full",
+    instructions={"OpenDrawer/left": [100010, 100011, ...]},  # instruction -> scene seed (순서=scene_idx)
+    noise_seeds=[1300000, 1300001, ...],                       # 순서=noise_idx
+)
+plan.save(out_dir)
+for cell in plan.cells():
+    ...  # 수집 실행. cell.as_metadata() 를 pkl extra_metadata 로 전달
+```
+
+**왜 좌표가 필요한가.** `env_seed=100010` 만으로는 그리드의 몇 번째 scene 인지 역산할 수
+없다. 1,200 판을 목표했는데 1,187 판만 있을 때 **무엇이 빠졌는지 알 수 없다.**
+`plan.missing(collected)` 가 결손 셀을 그대로 돌려준다.
+
+**왜 계획을 박아두는가.** 계획이 없으면 "이 셀은 수집 실패인가, 애초에 계획에 없었나"를
+구분할 수 없다. `plan_id` 는 그리드의 지문이라 **그리드를 바꾸면 값이 바뀐다** — 중간에
+설계를 바꾼 수집이 한 덩어리로 섞이는 것을 막는다.
+
+### 저장 예산 (2026-08 실측)
+
+record 당 비용이 층 수에 선형이다 — **층 하나당 0.66MB/record**, 판당 94 record 기준:
+
+| 캡처 층 수 | 판당 | 798G 로 가능한 판수 |
+|---|---|---|
+| 4 층 | 248MB | 3,215 |
+| 7 층 (현행) | 432MB | 1,890 |
+| 12 층 | 742MB | 1,101 |
+| 16 층 (전층) | 989MB | 826 |
+
+`plan.estimate_bytes()` 가 이 식으로 계산한다. **층 집합을 먼저 확정하라** — 나중에
+"L6 도 볼걸" 하면 전량 재수집이고, 넉넉히 잡으면 그리드가 좁아진다. 압축은 대안이
+아니다(pkl 은 zstd 로 4% 만 줄고 이미 fp16). 다른 모델·환경으로 같은 그리드를 반복하면
+이 예산을 그만큼 나눠 쓴다 — HDD 전체가 1.8T 다.
 
 ---
 

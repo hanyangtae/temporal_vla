@@ -261,7 +261,12 @@ def main() -> None:
             model_family="groot_n16",
             policy_transport=args.policy_transport,
             task_suite_name="groot_n16_robocasa",
-            extra_metadata=({"feature_phases": feature_phases} if feature_phases else None),
+            extra_metadata={
+                # docs/04 규약 — machine·ckpt 는 serve 응답이 정본
+                "machine": getattr(policy, "machine", None),
+                "ckpt": getattr(policy, "ckpt", None),
+                **({"feature_phases": feature_phases} if feature_phases else {}),
+            },
         )
         shutil.rmtree(upstream_video_dir, ignore_errors=True)
         print(
