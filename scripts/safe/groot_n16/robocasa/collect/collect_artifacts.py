@@ -74,7 +74,7 @@ def write_safe_triplet(
     video_source: str = "groot_upstream_video_recording_wrapper",
     extra_metadata: dict[str, Any] | None = None,
     include_hidden_states: bool = True,
-    grid_dir: Path | None = None,
+    grid_dir: Path | None = None,   # 필수 — None 이면 RuntimeError
 ) -> None:
     """SAFE rollout 산출물을 쓴다.
 
@@ -83,9 +83,9 @@ def write_safe_triplet(
     ``<store>/grid/<plan_id>/<machine>/<instruction>/s<i>/n<j>/<arm>`` 이며 경로 조립은
     ``src/utils/collection_plan.py`` (``GridCell.rel_path`` · ``arm_dirname``)가 단일 출처다.
 
-    주지 않으면 구 stem 레이아웃(``<output_dir>/<stem>.{pkl,csv,mp4}``)으로 쓰고 경고한다.
-    규약 §8 은 좌표 없는 수집을 금지하지만, n16 경로(activation 폐기 예정)가 아직 구 배선이라
-    즉시 실패시키지 않는다.
+    **``grid_dir`` 은 필수다.** 없으면 RuntimeError — 규약 §8 이 좌표 없는 수집을 금지한다
+    (좌표가 없으면 계획 대비 결손을 알 수 없다). ``output_dir``·``stem`` 은 구 호출부 호환과
+    로그용으로만 남는다.
     """
     missing = [a for a in POLICY_REQUIRED_ATTRS if not hasattr(policy, a)]
     if missing:
@@ -115,35 +115,19 @@ def write_safe_triplet(
     # 자리가 없거나(중간 사망은 이 함수가 완주 후에만 불려 pkl 자체가 없다) 발동하면 안 되는
     # 경우(succ 반전 = 라벨러·seed·캡처층·모델·채점 기준 변경 신호 → 비교 대상 소실)뿐이었다.
     #
-    # succ 반전 파일은 덮어쓰기가 아니므로 지우지도 막지도 않고 경고만 남긴다.
-    # 같은 stem 에 대한 처리는 아래 §2 쓰기 검사(pkl 직렬화 후)가 담당한다.
-    if grid_dir is not None:
-        # 좌표 레이아웃 — 한 칸 = 한 디렉토리, 파일명은 고정이라 succ 반전 충돌이 없다.
-        dest = Path(grid_dir)
-        dest.mkdir(parents=True, exist_ok=True)
-        pkl_path, csv_path = dest / "rollout.pkl", dest / "traj.csv"
-        mp4_path, meta_path = dest / "video.mp4", dest / "meta.json"
-    else:
-        print(
-            "[collect][warn] grid_dir 없음 — 구 stem 레이아웃으로 쓴다. "
-            "docs/04 §8 은 좌표 없는 수집을 금지한다(결손을 알 수 없다). "
-            "collection_plan 의 GridCell.rel_path 로 경로를 만들어 넘길 것.",
-            flush=True,
+    # 좌표 레이아웃에서는 파일명이 고정(rollout.pkl 등)이라 succ 반전 충돌 자체가 없다.
+    # 같은 좌표 재실행은 아래 §2 쓰기 검사(pkl 직렬화 후)가 처리한다.
+    if grid_dir is None:
+        raise RuntimeError(
+            "grid_dir 없이 수집할 수 없다 — docs/04 §8 은 좌표 없는 수집을 금지한다"
+            "(좌표가 없으면 계획 대비 결손을 알 수 없다). "
+            "collection_plan 의 add_grid_args/resolve_grid/grid_dir_for 로 좌표를 넘길 것."
         )
-        dest = output_dir
-        other = sorted(
-            p for p in output_dir.glob(f"task{task_id}--ep{episode_idx}--succ*.*")
-            if not p.name.startswith(stem)
-        )
-        if other:
-            print(
-                f"[collect][warn] 같은 episode 의 다른 판정 산출물이 이미 있다 "
-                f"(succ 반전 = 조건 변경 가능성): {[p.name for p in other]} — "
-                f"지우지 않고 {stem}.* 로 새로 쓴다. 의도한 재수집이면 옛 파일을 직접 정리할 것.",
-                flush=True,
-            )
-        pkl_path, csv_path = output_dir / f"{stem}.pkl", output_dir / f"{stem}.csv"
-        mp4_path, meta_path = output_dir / f"{stem}.mp4", None
+    # 좌표 레이아웃 — 한 칸 = 한 디렉토리, 파일명이 고정이라 succ 반전 충돌이 없다.
+    dest = Path(grid_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    pkl_path, csv_path = dest / "rollout.pkl", dest / "traj.csv"
+    mp4_path, meta_path = dest / "video.mp4", dest / "meta.json"
 
     payload = {
         "task_suite_name": task_suite_name,
