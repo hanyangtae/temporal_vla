@@ -42,7 +42,7 @@
 상시 규약 (라운드 무관):
 
 - [`PITFALLS.md`](steering/PITFALLS.md) — 배선·실행 함정 (α 배선, fit↔eval 분리, 위약, 코드 앵커)
-- [`DATA_HANDLING.md`](steering/DATA_HANDLING.md) — 수집·아카이브·삭제 시 보존 검증 (이름 세기 금지)
+- [`04_data_storage_convention.md`](04_data_storage_convention.md) — activation·연산자 저장 규약 (sig 식별·인덱스·전송·삭제)
 - [`SCENE_FEASIBILITY.md`](steering/SCENE_FEASIBILITY.md) — fixture task의 기하 불가 seed 필터
 
 한 화면 요약: [GR00T Latent Steering Explorer](groot/00_groot_steering_explorer.html) — runtime flow,

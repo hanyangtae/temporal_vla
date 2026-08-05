@@ -76,7 +76,7 @@ arm별 경로는 `results.tsv`의 `데이터` 열. 루트는 `outputs/eval/roboc
 | exp5-2 | `exp42_induced/` (전부 로컬) | 로컬 |
 
 > ⚠ 2026-07-14 eval activation pkl/zst 전 호스트 삭제(~172GB). 판정 sidecar·fit·conceptor는 보존.
-> exp3부터 eval 캡처를 끈다. 데이터 소실의 재발 방지 규약은 `docs/steering/DATA_HANDLING.md`.
+> exp3부터 eval 캡처를 끈다. 데이터 소실의 재발 방지 규약은 [`docs/04_data_storage_convention.md`](../04_data_storage_convention.md) §7.5–7.6.
 
 ## 6. 흡수 이력
 

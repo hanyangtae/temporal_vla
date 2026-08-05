@@ -129,7 +129,7 @@ exp5-3에서 "action 토큰 개입이 파괴의 주범(jerk 0.94× vs full 붕�
 
 **실측 60 rollout: 전부 통과.**
 
-보존 검증(아카이브·삭제 전)은 별도다 → [`../steering/DATA_HANDLING.md`](../steering/DATA_HANDLING.md) §1.
+보존 검증(아카이브·삭제 전)은 별도다 → [`../04_data_storage_convention.md`](../04_data_storage_convention.md) §7.5.
 **평균 파일 크기 상식 체크**가 거기 핵심이고, exp2 fit 유실이 그걸 안 해서 났다.
 
 ## ⑤ 파이프라인이 만드는 bias
@@ -225,4 +225,4 @@ phase 도달률 (60 rollout 중)
 1. ~~길이 confound 실측~~ — 완료(§5.3). 결과: 범위 겹침 0, AUROC 1.0
 2. steered arm pkl 하나 골라 실행 → **③의 개입 필드 유무 대조**
 3. exp2가 실제로 어느 cell로 fit했는지 확인 → **6개 불성립 cell이 쓰였는지**
-4. `archive_on_done.sh`가 `DATA_HANDLING` §2 규약(`-L`·상대 심링크)을 지키는지 (32줄, 즉시 가능)
+4. `archive_on_done.sh`가 저장 규약 §7.5(`-L`·상대 심링크)를 지키는지 (32줄, 즉시 가능)

@@ -4,7 +4,7 @@
 [`RESULTS.md`](RESULTS.md), 개별 분석은 번호 문서. 충돌 시 이 문서가 방향을, RESULTS가 사실을 이긴다.
 
 > 구 `14_pathway_phase_online_steering.md`(방향) + `15_research_structure.md`(RQ/가설 구조) 통합.
-> 최종 갱신 2026-07-30 (exp2~exp5 결과 반영).
+> 최종 갱신 2026-08-04 (RL2-VLA 선행연구 반영; 이전 2026-07-30 exp2~exp5 결과 반영).
 
 ## 0. 한 줄
 
@@ -23,13 +23,14 @@ VLA 백본 재학습 없이, **추론 중(online) 어느 pathway(goal=VL / motor
 | RQ3 (유형) | 실패는 VL-OOD / DiT-only-OOD로 *종류*가 갈리는가, 단일 심각도 축인가 | **측정 중** |
 | RQ4 (라우팅) | 유형별로 조종 대상을 맞춰야 효과가 나는가 | **미검증, 핵심 기여** |
 
-## 2. 선행 토대 3편
+## 2. 선행 토대
 
 | 논문 | 보인 것 | 빌리는 것 | 한계(우리가 메우는 곳) |
 |---|---|---|---|
 | **SAFE** | succ/fail이 feature-space에서 분리·검출 가능(per-step LSTM) | 분리 가능성 = 조종 가능성의 전제 | pathway 구분 없음, 유형 구분 안 함 |
 | **COAST** | contrastive conceptor `C_steer=C_succ∧¬C_fail`로 조종 → SR↑ | 조종 연산자(multi-dim write-in) | 전 timestep pool → 길이·phase confound, pathway 미분리 |
 | **NOTALL** | VL(goal "what")·DiT(motor "how") 기능 분리 | pathway 분해 근거 | online 아님, 실패 *유형*·phase-matched 조종 안 함 |
+| **RL2-VLA** (arXiv 2607.26991) | **실패 감지 시에만 개입**(SAFE+CP 게이트)이 상시 개입을 인과적으로 이김(+8.9pp); 성공/실패 상태 분리 scaling law | "언제" 축의 외부 인과 검증 + 시변 CP threshold 부품 | 게이트가 binary — 유형(goal/motor)·phase 해상도 없음; 개입은 activation이 아니라 action-space(velocity 합성+verifier); per-VLA RL 학습·per-task rollout 수집 필요. 상세: [`../references/reading_notes/rl2_vla_adaptive_steering.md`](../references/reading_notes/rl2_vla_adaptive_steering.md) |
 
 ### 왜 빈 자리인가 — 세 'step' 축
 
@@ -43,7 +44,10 @@ VLA 백본 재학습 없이, **추론 중(online) 어느 pathway(goal=VL / motor
 | **NOTALL** | per-episode 인과개입, action-token per-token 유지 | 분석만, 개입 처방 아님 |
 
 미점유 niche = **내부 latent × online × 실패 TYPE(goal/motor) × phase-matched steer**.
-경쟁자: Path-Deviation-Heads(arXiv 2603.13782).
+경쟁자: Path-Deviation-Heads(arXiv 2603.13782). **RL2-VLA**(arXiv 2607.26991)가 이 중
+"online 검출로 게이팅" 축을 선점(2026-07) — 단 binary 게이트·action-space 개입이라
+TYPE·phase·activation write-in 세 칸은 여전히 비어 있음. 우리 기여 주장의 무게는
+유형/phase 해상도 + 무학습·무verifier 단일-forward 개입 쪽에 둘 것.
 
 ## 3. 가설 체계
 
@@ -139,6 +143,22 @@ phase를 online에 아는 방법 (열린 설계):
 | subtask phase(접근/파지/이송/배치) | 최선 | phase 검출기 필요 |
 
 → 접었던 **VITA식 progress predictor가 보조 부품으로 부활 가능**(메인 아님, phase/progress 신호 공급원).
+
+**"언제"를 푼 선행 사례 — RL2-VLA의 처리 방식** (상세: [reading note](../references/reading_notes/rl2_vla_adaptive_steering.md)):
+
+- **검출**: SAFE-LSTM(action-expert latent 조건, per-timestep causal) — 단 task별 online
+  rollout 300판 수집 필요, sim→real 일반화 실패로 실기 재수집.
+- **threshold**: 시변 conformal prediction band를 성공 rollout으로 보정("성공이 확률 1−α로
+  band 아래"), α는 balanced-accuracy 휴리스틱으로 task별 선택. **개입 빈도 자체가 튜닝
+  대상**이라는 것을 보여줌.
+- **인과 근거**: 성공/실패 상태를 분리한 test-time scaling law — 개입(다양성 주입)은 실패
+  상태에서만 이득, 성공 상태에선 해악. adaptive vs always +8.9pp.
+- **우리에게 함의**: (a) "감지 시에만 개입" 게이팅 축은 외부 인과 검증을 얻었다 — 우리
+  online 검출기(DiT block31 AUROC 0.92)에 시변 CP threshold를 얹는 조합은 즉시 이식 가능한
+  설계. (b) 단 RL2의 게이트는 binary "실패냐 아니냐"뿐 — **어느 pathway가·어느 phase에서**는
+  묻지 않으므로 5.1의 문제는 그대로 남아 있다. (c) RL2의 개입은 best-of-N 후보 선별이라
+  verifier가 오답을 걸러주지만, 우리 단일-forward write-in은 그 안전망이 없다 → 게이팅의
+  정밀도(false positive 시 해악)가 우리 쪽에서 더 load-bearing.
 
 ### 5.2 C2를 여는 것 — 어떤 연산자인가
 

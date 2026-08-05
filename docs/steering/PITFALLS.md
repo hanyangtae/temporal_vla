@@ -1,7 +1,7 @@
 # 배선·실행 함정
 
 **steering 실험을 돌릴 때 반복해서 사람을 잡은 것들.** 라운드 무관 상시 규약이다.
-데이터 취급은 [`DATA_HANDLING.md`](DATA_HANDLING.md), scene 필터는 [`SCENE_FEASIBILITY.md`](SCENE_FEASIBILITY.md).
+데이터 취급은 [`../04_data_storage_convention.md`](../04_data_storage_convention.md), scene 필터는 [`SCENE_FEASIBILITY.md`](SCENE_FEASIBILITY.md).
 
 > ⚠ 여기 적힌 것은 **함정과 검증 절차**다. 특정 라운드에서 고른 layer·α·β 값은 그 task·모델·cell
 > 한정이라 옮겨 쓰면 안 된다. 하이퍼파라미터는 매번 그 조건에서 다시 고른다.

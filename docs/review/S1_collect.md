@@ -76,10 +76,10 @@
 
 1. **`http_feature_collect.py`(1261) ↔ `collect_instruction_fixed_http_features.py`(268)**
    — 둘 다 N1.5 HTTP 수집이다. 후자가 전자의 manifest 기반 래퍼인지, 별도 경로인지 확인 필요.
-2. **`verify_rollout_collection.py`(528) ↔ [`DATA_HANDLING.md`](../steering/DATA_HANDLING.md) §1**
+2. **`verify_rollout_collection.py`(528) ↔ [`04_data_storage_convention.md`](../04_data_storage_convention.md) §7.5**
    — 문서에 적은 보존 검증 절차(실물 개수·용량·평균 크기)가 이 스크립트에 이미 있는지,
    아니면 문서와 코드가 서로 다른 검증을 하는지.
-3. **`archive_on_done.sh`(32)** — 원격 HDD rsync 백업을 한다. **DATA_HANDLING §2의 규약
+3. **`archive_on_done.sh`(32)** — 원격 HDD rsync 백업을 한다. **저장 규약 §7.5의
    (`-L`/상대 심링크)을 지키는지 확인해야 한다.** exp2 fit 유실 사고가 정확히 이 지점에서 났다.
 
 ## 5. instruction 계열 6개 — 묶어서 판정

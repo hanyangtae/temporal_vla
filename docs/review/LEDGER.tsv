@@ -51,3 +51,4 @@ docs/steering/etc/23_wrist_cam_attention.md	D	archive		적용(archive)	0670e51
 docs/steering/motivation_activation_steering.txt	D	archive		적용(archive)	0670e51
 docs/steering/29_sae_port_review.md	D	archive		적용(archive)	0670e51
 docs/steering/28_exp4-2_p0_report.md	D	merge	결과정리 	적용(→RESULTS.md)	0670e51
+scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py	S1	수정	인자가 너무 많아서 이미 짝을 이루는 애들은 쫌묶어 보자. 대신 .sh랑 많이 엮여있을거라 그것도 같이 고려해야돼		

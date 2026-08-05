@@ -10,7 +10,7 @@
 | [`RESEARCH_DIRECTION.md`](RESEARCH_DIRECTION.md) | 방향·RQ1~4·가설 C1~C4·open problem·검증 설계 |
 | [`RESULTS.md`](RESULTS.md) + [`results.tsv`](results.tsv) | exp2~exp5 SR 개입 실험 결과 원장 (arm 37행) |
 | [`PITFALLS.md`](PITFALLS.md) | 배선·실행 함정 (α 배선, fit↔eval 분리, 위약, 코드 앵커) |
-| [`DATA_HANDLING.md`](DATA_HANDLING.md) | 수집·아카이브·삭제 시 보존 검증 |
+| [`../04_data_storage_convention.md`](../04_data_storage_convention.md) | activation·연산자 저장 규약 (sig·인덱스·전송·삭제) |
 | [`SCENE_FEASIBILITY.md`](SCENE_FEASIBILITY.md) | fixture task의 기하 불가 seed 필터 |
 
 ## 표현 분석 (read)
