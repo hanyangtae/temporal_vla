@@ -189,8 +189,10 @@ start_serve() {  # gpu port
     if [ "$DRY_RUN" = "1" ]; then
       echo "[dry] host serve gpu=${gpu} port=${port}: ${hcmd[*]}"
     else
-      CUDA_VISIBLE_DEVICES="$gpu" PYTHONPATH="${SERVE_PYTHONPATH}${SERVE_PYTHONPATH:+:}${REPO_ROOT}" \
-        setsid nohup "${hcmd[@]}" > "${LOGDIR}/serve_${port}.log" 2>&1 < /dev/null &
+      # exp2 srv50_collect_cell.sh 의 검증된 블록과 동일: cd REPO_ROOT + env 주입
+      ( cd "$REPO_ROOT" && setsid nohup env CUDA_VISIBLE_DEVICES="$gpu" \
+          PYTHONPATH="${SERVE_PYTHONPATH}${SERVE_PYTHONPATH:+:}${REPO_ROOT}" \
+          "${hcmd[@]}" > "${LOGDIR}/serve_${port}.log" 2>&1 < /dev/null & )
     fi
     return
   fi
