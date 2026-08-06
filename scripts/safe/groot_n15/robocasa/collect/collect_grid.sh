@@ -158,11 +158,21 @@ done
 NWORKERS=${#PORTS[@]}
 log "serve ${NWORKERS} 개 — gpus=${GPUS} serves_per_gpu=${SERVES_PER_GPU} ports=${PORTS[*]}"
 
+# SERVE_MODE=docker(기본): docker `lerobot` 컨테이너에서 serve (kanu·pdk_external).
+# SERVE_MODE=host: 호스트 conda 로 serve (srv48·srv50 — lerobot 컨테이너 없음,
+#   memory a100-srv50-parallel-eval 관례). SERVE_PY=파이썬 경로,
+#   SERVE_PYTHONPATH=lerobot 패키지 경로(예 ${REPO_ROOT}/lerobot/src) 지정.
+SERVE_MODE="${SERVE_MODE:-docker}"
+SERVE_PY="${SERVE_PY:-python}"
+SERVE_PYTHONPATH="${SERVE_PYTHONPATH:-}"
+
 cleanup() {
   log "cleanup: serve 정리"
   for port in "${PORTS[@]}"; do
     if [ "$DRY_RUN" = "1" ]; then
-      echo "[dry] docker exec lerobot pkill -f 'serve/lerobot.py.*--port ${port}'"
+      echo "[dry] pkill serve --port ${port} (${SERVE_MODE})"
+    elif [ "$SERVE_MODE" = "host" ]; then
+      pkill -f "serve/lerobot.py.*--port ${port}" 2>/dev/null || true
     else
       docker exec lerobot bash -lc "pkill -f 'serve/lerobot.py.*--port ${port}' || true" 2>/dev/null || true
     fi
@@ -172,6 +182,18 @@ trap cleanup EXIT INT TERM
 
 start_serve() {  # gpu port
   local gpu="$1" port="$2"
+  if [ "$SERVE_MODE" = "host" ]; then
+    local hcmd=("$SERVE_PY" "${REPO_ROOT}/scripts/serve/lerobot.py" --profile "${REPO_ROOT}/${PROFILE}"
+      --host '*' --port "$port" --device cuda --collect --capture-vl
+      --groot-dit-token-pool "$TOKEN_MODE" --groot-dit-capture-layers "$CAPTURE_LAYERS")
+    if [ "$DRY_RUN" = "1" ]; then
+      echo "[dry] host serve gpu=${gpu} port=${port}: ${hcmd[*]}"
+    else
+      CUDA_VISIBLE_DEVICES="$gpu" PYTHONPATH="${SERVE_PYTHONPATH}${SERVE_PYTHONPATH:+:}${REPO_ROOT}" \
+        setsid nohup "${hcmd[@]}" > "${LOGDIR}/serve_${port}.log" 2>&1 < /dev/null &
+    fi
+    return
+  fi
   local cmd="cd /temporal_vla && setsid nohup python scripts/serve/lerobot.py --profile ${PROFILE} \
     --host '*' --port ${port} --device cuda --collect --capture-vl \
     --groot-dit-token-pool ${TOKEN_MODE} --groot-dit-capture-layers ${CAPTURE_LAYERS} \
@@ -184,12 +206,18 @@ start_serve() {  # gpu port
 }
 for i in "${!PORTS[@]}"; do start_serve "${PORT_GPUS[$i]}" "${PORTS[$i]}"; sleep 2; done
 
+health_curl() {  # port
+  if [ "$SERVE_MODE" = "host" ]; then
+    curl -s -m 3 "http://127.0.0.1:${1}/health" 2>/dev/null
+  else
+    docker exec lerobot bash -lc "curl -s -m 3 http://127.0.0.1:${1}/health 2>/dev/null"
+  fi
+}
 for port in "${PORTS[@]}"; do
   if [ "$DRY_RUN" = "1" ]; then echo "[dry] health poll ${port}"; continue; fi
   ok=0
   for _ in $(seq 1 150); do
-    st=$(docker exec lerobot bash -lc "curl -s -m 3 http://127.0.0.1:${port}/health 2>/dev/null" \
-         | grep -o '"status":"ok"' || true)
+    st=$(health_curl "$port" | grep -o '"status":"ok"' || true)
     [ -n "$st" ] && { ok=1; break; }
     sleep 5
   done
