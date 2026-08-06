@@ -60,3 +60,4 @@ scripts/safe/groot_n15/robocasa/collect/archive_on_done.sh	S1	archive		적용(ar
 scripts/safe/groot_n15/robocasa/collect/_diag_wrong_grasp.py	S1	archive		적용(archive)	b0877ba
 scripts/safe/groot_n16/robocasa/collect/repro_check.py	S1	archive		적용(archive)	b0877ba
 scripts/safe/groot_n15/robocasa/collect/collect_cam_attn.sh	S1	archive		적용(archive)	b0877ba
+src/collect/artifacts.py	S1	keep			

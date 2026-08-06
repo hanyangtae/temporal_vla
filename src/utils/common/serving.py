@@ -48,19 +48,20 @@ def serve_provenance(profile: Any | None = None) -> dict[str, Any]:
     ZMQ(응답 dict) 든 전송 방식과 무관하게 이 헬퍼를 쓴다.
 
     왜 필요한가:
-      - machine: 같은 seed·조건이라도 머신이 다르면 개별 판정이 12.7% 뒤집히고
-        arm SR 이 ±7~9pp 흔들린다(449 판 대조, `_hostcopies/REPLICATES.tsv`).
-        층화에 필요한 **실험 요인**이다.
+      - machine: 머신이 다르면 hidden state 원소 93% 가 갈리고 개별 판정이 12.7%
+        뒤집힌다(docs/04 §3.2 실측). 좌표 경로의 `<machine>` 층이자 층화 요인이다.
       - ckpt: `model_family` 는 계열명이라 베이스와 파인튜닝을 구분하지 못한다.
         프로파일명이 실제 체크포인트 식별자다.
 
+    **GPU 는 넣지 않는다** — 같은 머신이면 GPU 가 달라도 bitwise 동일(§3.2)하므로
+    GPU 를 포함하면 같은 칸이 GPU 별로 갈려 병렬 배정이 막힌다. 머신명만 기록한다.
+
     2026-08 정리에서 이 둘이 없어 activation 526 판의 머신을 영구히 잃었다.
     """
-    import os
     import socket
 
     return {
-        "serve_machine": f"{socket.gethostname()}:gpu{os.environ.get('CUDA_VISIBLE_DEVICES', '?')}",
+        "serve_machine": socket.gethostname(),
         "serve_ckpt": getattr(profile, "name", None),
     }
 

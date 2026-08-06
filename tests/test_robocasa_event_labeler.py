@@ -18,6 +18,7 @@ from src.collect.robocasa.event_labeler import (  # noqa: E402
     GRASP_PHASE,
     PLACE_PHASE,
     TASK_EVENTS,
+    TASK_NEAR_TARGET,
     WRONG_GRASP_PHASE,
     ProximityEventPhaseLabeler,
     RoboCasaEventDetector,
@@ -39,16 +40,27 @@ class ScriptedProbe:
         return set(self.script[min(self.t, len(self.script) - 1)])
 
 
-def test_registry_two_tasks_distinct_place_pred():
+def test_registry_pnp_tasks_distinct_place_pred():
     ev_c, pred_c = lookup_task_events(
         "robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env"
     )
     ev_s, pred_s = lookup_task_events("PickPlaceCounterToStove")
+    ev_m, pred_m = lookup_task_events(
+        "robocasa_panda_omron/CoffeeSetupMug_PandaOmron_Env"
+    )
     assert [e.detect for e in ev_c] == ["grasp", "place", "release"]
     assert [e.gap_before for e in ev_c] == [REACH_OBJECT, TRANSPORT, INSERT_SETTLE]
-    assert callable(pred_c) and callable(pred_s)
-    assert pred_c is not pred_s  # cabinet vs stove use different place predicates
-    assert set(TASK_EVENTS) == {"PickPlaceCounterToCabinet", "PickPlaceCounterToStove"}
+    assert [e.detect for e in ev_m] == ["grasp", "place", "release"]
+    assert callable(pred_c) and callable(pred_s) and callable(pred_m)
+    # 태스크마다 place 술어가 달라야 한다 (cabinet / stove / coffee machine)
+    assert len({id(pred_c), id(pred_s), id(pred_m)}) == 3
+    assert set(TASK_EVENTS) == {
+        "PickPlaceCounterToCabinet",
+        "PickPlaceCounterToStove",
+        "CoffeeSetupMug",
+    }
+    # 근접 서브페이즈 레지스트리도 같은 태스크 집합을 덮어야 한다
+    assert set(TASK_NEAR_TARGET) == set(TASK_EVENTS)
 
 
 def test_unknown_task_raises():

@@ -196,6 +196,7 @@ kill 해 trap cleanup 이 빈 결과 + 가짜 `[done]` 을 남긴다. 완료는 
 | **수집기 좌표 배선** | n15 `http_feature_collect.py`·n16 `collect_rollout.py` 둘 다 `--grid-root/--plan-json/--scene-idx/--noise-idx` 수용 |
 | **`grid_dir` 필수화** | `src/collect/artifacts.py` `write_safe_triplet` — 좌표 없이 부르면 RuntimeError(§8). §2 쓰기 검사(동일 skip / 상이 에러) 포함 |
 | **수집 공용 부품 `src/collect/` 승격** | artifacts·schema·policy_clients·라벨러(robocasa/libero)·step_phase — sys.path 해킹 제거, 테스트 63 passed |
+| **eval 좌표화 (2026-08-06)** | n15 허브 `--no-features` + 좌표 인자 → `write_eval_artifacts` 가 arm 디렉토리에 `meta.json·traj.csv·video.mp4·config.json`. armsig 는 serve `/health` steering 지문 + 클라이언트 latch/gating 인자에서 자동 계산(`_resolve_arm`). base(무개입) eval 은 수집 rollout 이 그 자체(동일 머신·seed → bitwise 동일)라 금지 |
 
 ### 손봐야 하는 것
 
@@ -207,6 +208,8 @@ kill 해 trap cleanup 이 빈 결과 + 가짜 `[done]` 을 남긴다. 완료는 
    `collection_plan.json` 기반으로 새로 쓴다.
 3. **인덱서** — `arm_bindings.tsv` 신설(docs/04 §3.3)과 좌표 기반 `rollouts.tsv` 복합키가
    미반영. 구 인덱서(`~/index_build2` 계열)는 sig 평면 전제라 그대로 못 쓴다.
+3-1. **capture-ON arm 수집의 `config.json`** — eval 경로는 기록하지만, activation 을 켠 채
+   steering 을 거는 arm 수집(`write_safe_triplet` 경로)은 아직 config.json 을 안 쓴다.
 4. **seed 스캔 도구 브랜치 미병합** — `scan_seed_instructions.py` 는
    `feat/seed-scan-probe-tools` 에만 있다(산출물 TSV 는 로컬 `outputs/analysis/seed_scan/` 에
    실존). PPCC 확장 스캔(100300–101000)을 돌리려면 이 브랜치를 먼저 병합/체리픽할 것.

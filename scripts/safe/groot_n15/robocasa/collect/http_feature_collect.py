@@ -51,6 +51,7 @@ for path in reversed(
 
 from src.collect.artifacts import (  # noqa: E402
     write_collect_ep_meta_manifest,
+    write_eval_artifacts,
     write_safe_triplet,
 )
 from src.collect.schema import (  # noqa: E402
@@ -380,6 +381,44 @@ def _get_serve_identity(server: str) -> dict:
     except Exception as exc:  # noqa: BLE001
         return {"serve_gpu": None, "serve_boot_id": None, "machine": None, "ckpt": None,
                 "serve_health_error": str(exc)}
+
+
+def _resolve_arm(args, serve_identity: dict) -> "tuple[str | None, dict | None]":
+    """arm 디렉토리명 결정 (docs/04 §3.3). 반환 (dirname|None, armsig 재료 params|None).
+
+    우선순위: 명시 --arm-dir > serve steering 지문에서 armsig 계산 > None(=base).
+    armsig 7키 중 op/beta/token_select/denoise/bindings 는 serve /health 의 steering
+    지문(정본 — 실제 로드된 NPZ sha 포함)에서, steer_from_record/gated_phases 는
+    클라이언트 인자에서 온다.
+    """
+    explicit = getattr(args, "arm_dir", None)
+    if explicit:
+        return explicit, None
+    spec = serve_identity.get("serve_steering")
+    if not spec:
+        return None, None
+    from src.collect.plan import arm_dirname, arm_signature  # noqa: PLC0415
+
+    params = {
+        "op": spec.get("op"),
+        # (phase, layer, opsig) 삼중을 spec 이 짝지어 주지 않으므로 내용 전체를 담는다 —
+        # 어느 하나라도 다르면 armsig 가 갈리는 성질은 동일하게 성립한다.
+        "bindings": {
+            "layers": spec.get("layers"),
+            "phases": spec.get("phases"),
+            "npz_shas": spec.get("npz_shas"),
+        },
+        "beta": spec.get("beta"),
+        "token_select": spec.get("token_select"),
+        "denoise": spec.get("denoise"),
+        "steer_from_record": getattr(args, "steer_from_record", None),
+        "gated_phases": (
+            sorted(spec.get("phases") or [])
+            if getattr(args, "gated_steering", False)
+            else None
+        ),
+    }
+    return arm_dirname(arm_signature(params), hint=str(spec.get("op") or "")), params
 
 
 def _find_latest_video(video_dir: Path) -> Path | None:
@@ -792,9 +831,21 @@ def run() -> dict[str, Any]:
     from src.collect.plan import resolve_grid  # noqa: PLC0415
 
     grid_plan, grid_cell = resolve_grid(args)
+    # arm 결정 — steering 이 걸린 serve 로 돌면 자동으로 arm 디렉토리(armsig)가 된다.
+    arm_name, arm_params = _resolve_arm(args, serve_identity)
+    if arm_name is not None:
+        args.arm_dir = arm_name
     if grid_plan is not None:
+        if getattr(args, "no_features", False) and arm_name is None:
+            raise RuntimeError(
+                "좌표 eval 인데 arm 을 결정할 수 없다 — serve 에 steering 지문이 없고 "
+                "--arm-dir 도 없다. base(무개입) 판정은 같은 좌표의 수집 rollout 이 이미 "
+                "그 자체다(같은 머신·seed → 동일 궤적). 별도 base eval 이 필요하면 "
+                "--arm-dir 로 명시할 것."
+            )
         print(f"[collect] 좌표 레이아웃 — plan_id={grid_plan.plan_id} "
-              f"cell={grid_cell.key} machine={serve_identity.get('machine')}", flush=True)
+              f"cell={grid_cell.key} arm={arm_name or 'base'} "
+              f"machine={serve_identity.get('machine')}", flush=True)
 
     max_steps = args.max_episode_steps
     results: list[dict[str, Any]] = []
@@ -889,6 +940,7 @@ def run() -> dict[str, Any]:
             # base·steered 를 같은 t0 로 split 해 개입 후 떨림 증가량을 대조한다.
             action_traj: list = []
             action_steer_on: list = []
+            eval_action_rows: list = []  # 좌표 eval 의 traj.csv 재료 (SAFE 7열, 추론당 1행)
             _interv_record = (
                 steer_from_record if steer_from_record is not None else reseed_from_record
             )
@@ -924,6 +976,8 @@ def run() -> dict[str, Any]:
                     phase_gated_flags.append(gated_now)
                     # 떨림 진단: 이 record 의 명령 action 벡터(첫 실행 스텝)와 개입 활성 여부.
                     action_traj.append(_extract_groot_action_vector(official_action))
+                    if no_features:
+                        eval_action_rows.append(_extract_safe_action_vector(official_action))
                     action_steer_on.append(
                         _interv_record is not None and progress_before >= _interv_record
                     )
@@ -1053,12 +1107,30 @@ def run() -> dict[str, Any]:
                     "ep_meta": captured_ep_meta,
                     **extra_metadata,
                 }
-                out_path = output_dir / f"{stem}.json"
-                out_path.write_text(
-                    json.dumps(json_safe(sidecar), indent=2, ensure_ascii=False)
-                )
-                if upstream_video_path is not None and upstream_video_path.exists():
-                    shutil.copy2(upstream_video_path, output_dir / f"{stem}.mp4")
+                if grid_dir is not None:
+                    # docs/04 §3.3 — 평가 rollout 은 arm 디렉토리로. config.json 이 arm 의 진실.
+                    write_eval_artifacts(
+                        grid_dir,
+                        sidecar=sidecar,
+                        upstream_video_path=upstream_video_path,
+                        action_rows=eval_action_rows,
+                        arm_config=(
+                            None if arm_params is None else {
+                                "armsig": grid_dir.name.split("__")[0],
+                                "arm_params": arm_params,
+                                "serve_steering": serve_identity.get("serve_steering"),
+                            }
+                        ),
+                    )
+                    out_path = grid_dir / "meta.json"
+                else:
+                    # 구 stem 레이아웃 (좌표 인자 없는 옛 러너 호환 — S6 재작성 시 제거)
+                    out_path = output_dir / f"{stem}.json"
+                    out_path.write_text(
+                        json.dumps(json_safe(sidecar), indent=2, ensure_ascii=False)
+                    )
+                    if upstream_video_path is not None and upstream_video_path.exists():
+                        shutil.copy2(upstream_video_path, output_dir / f"{stem}.mp4")
                 shutil.rmtree(upstream_video_dir, ignore_errors=True)
             else:
                 write_safe_triplet(
@@ -1086,8 +1158,8 @@ def run() -> dict[str, Any]:
                     include_hidden_states=not getattr(args, "attn_only_records", False),
                     grid_dir=grid_dir,
                 )
-                out_path = (grid_dir / "rollout.pkl") if grid_dir is not None \
-                    else (output_dir / f"{stem}.pkl")
+                # write_safe_triplet 이 grid_dir=None 이면 raise 하므로 여기 도달 = 좌표 확정
+                out_path = grid_dir / "rollout.pkl"
             _append_summary(summary_path, effective_task_id, args.task, episode_idx, scenario_seed, out_path)
             results.append(
                 {

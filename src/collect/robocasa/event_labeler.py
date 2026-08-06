@@ -88,6 +88,11 @@ _RECEPTACLE_SUFFIX = "_container"
 # runtime smoke in the robocasa container should confirm they fire during the approach.
 NEAR_CABINET_TH = 0.20  # margin added to the cabinet interior-region bounds (±th per axis)
 NEAR_STOVE_TH = 0.20    # xy distance obj→container (contact requirement dropped)
+# xy distance obj→coffee machine receptacle site (strict xy th=0.04).
+# 0.20 이 아니라 0.10 인 이유(실측, seed 100000-100011): CoffeeSetupMug 은 mug 를 coffee
+# machine 을 ref 로 잡은 counter 영역에 스폰해서 t=0 거리가 0.16~0.30 m 밖에 안 된다.
+# th=0.20 이면 transport 전 구간이 "place" 로 덮여 서브페이즈가 퇴화한다.
+NEAR_COFFEE_TH = 0.10
 
 
 # ── per-task place predicates (OU lazy-imported; only runs in robocasa container) ──
@@ -101,6 +106,16 @@ def _place_stove(env: Any) -> bool:
     import robocasa.utils.object_utils as OU  # noqa: PLC0415
 
     return bool(OU.check_obj_in_receptacle(env, OBJ, "container", th=0.07))
+
+
+def _place_coffee(env: Any) -> bool:
+    """CoffeeSetupMug(=PickPlaceCoffee behavior="counter_to_machine") place 술어.
+
+    env._check_success 와 동일: ``coffee_machine.check_receptacle_placement_for_pouring``
+    (mug 중심이 receptacle_place_site 에서 xy<0.04 ∧ |dz|<0.10). release 이벤트가 여기에
+    ``OU.gripper_obj_far`` 를 곱해 env 성공 판정과 정확히 일치한다.
+    """
+    return bool(env.coffee_machine.check_receptacle_placement_for_pouring(env, OBJ))
 
 
 # ── per-task NEAR-target predicates (relaxed place; opt-in proximity phases only) ──
@@ -131,10 +146,28 @@ def _near_target_stove(env: Any) -> bool:
     return bool(np.linalg.norm(obj_pos[:2] - recep_pos[:2]) < NEAR_STOVE_TH)
 
 
+def _near_target_coffee(env: Any) -> bool:
+    """xy 거리 obj→coffee machine receptacle site < NEAR_COFFEE_TH (완화된 place).
+
+    strict 판정은 xy<0.04 ∧ |dz|<0.10 인데, xy 0.04 는 머그 반지름 수준이라 접근 구간에서
+    절대 안 켜진다. ``_near_target_stove`` 와 같은 방식으로 **xy 성분만** 남기고 th 를
+    키운다(z 조건은 hover 중 위에서 접근하는 구간을 잘라내므로 제외).
+    site 이름 = ``<naming_prefix>receptacle_place_site`` (fixture 소스 실측).
+    """
+    import numpy as np  # noqa: PLC0415
+
+    cm = env.coffee_machine
+    obj_pos = np.asarray(env.sim.data.body_xpos[env.obj_body_id[OBJ]])
+    site_id = env.sim.model.site_name2id(f"{cm.naming_prefix}receptacle_place_site")
+    site_pos = np.asarray(env.sim.data.site_xpos[site_id])
+    return bool(np.linalg.norm(obj_pos[:2] - site_pos[:2]) < NEAR_COFFEE_TH)
+
+
 # task tag -> relaxed near-target predicate (proximity_phases=True only)
 TASK_NEAR_TARGET: Dict[str, Callable[[Any], bool]] = {
     "PickPlaceCounterToCabinet": _near_target_cabinet,
     "PickPlaceCounterToStove": _near_target_stove,
+    "CoffeeSetupMug": _near_target_coffee,
 }
 
 
@@ -160,6 +193,11 @@ def _pnp_events() -> List[TaskEvent]:
 TASK_EVENTS: Dict[str, Tuple[List[TaskEvent], Callable[[Any], bool]]] = {
     "PickPlaceCounterToCabinet": (_pnp_events(), _place_cabinet),
     "PickPlaceCounterToStove": (_pnp_events(), _place_stove),
+    # CoffeeSetupMug = PickPlaceCoffee(behavior="counter_to_machine") — 순수 PnP.
+    # 태그는 상위 클래스명("PickPlaceCoffee")이 아니라 **env/task 이름에 실제로 들어가는**
+    # "CoffeeSetupMug" 로 등록해야 한다 (역방향 CoffeeServeMug 는 place 타깃이 counter 라
+    # 다른 술어가 필요하므로 여기 매칭되면 안 된다).
+    "CoffeeSetupMug": (_pnp_events(), _place_coffee),
 }
 
 
@@ -622,6 +660,10 @@ class FridgePhaseLabeler:
     CLOSED_TH = 0.005       # Fixture.is_closed 기본 th 와 동일
     OPEN_TH = 0.90          # Fixture.is_open 기본 th 와 동일
     TARGET_MARGIN = 0.03    # m — 다짝 도어 대상 전환 히스테리시스
+    # EV_START 임계 (관절이 "움직이기 시작했다" 판정). 기본값은 q 가 완전 닫힘/완전 열림에서
+    # 출발하는 도어 기준. 시작 q 가 중간값인 fixture(랙 슬라이딩: q0=0.5)는 서브클래스에서 조정.
+    START_TH_OPEN = 0.05    # behavior="open": q > 이 값이면 시작
+    START_TH_CLOSE = 0.95   # behavior="close": q < 이 값이면 시작
     # phase/event 라벨 (StandMixer 등 같은 구조의 fixture 태스크가 이름만 교체해 재사용)
     PH_REACH = "reach-to-door"
     PH_CONTACT = "contact-door"
@@ -866,7 +908,9 @@ class FridgePhaseLabeler:
         if ph == self.PH_DISENGAGE and not self._disengaged_prev:
             self.event_steps.setdefault(self.EV_DISENGAGE, self._t)
         self._disengaged_prev = ph == self.PH_DISENGAGE
-        thresh_start = 0.95 if self._behavior == "close" else 0.05
+        thresh_start = (
+            self.START_TH_CLOSE if self._behavior == "close" else self.START_TH_OPEN
+        )
         started = q < thresh_start if self._behavior == "close" else q > thresh_start
         if started:
             self.event_steps.setdefault(self.EV_START, self._t)
@@ -971,12 +1015,196 @@ class StandMixerPhaseLabeler(FridgePhaseLabeler):
         return found
 
 
+# ── 슬라이딩 랙 계열 (SlideDishwasherRack / SlideOvenRack) ────────────────────────
+# 구조는 StandMixer 와 동일(연속 관절 1개 + 그 관절이 움직이는 body 표면 근접)이라
+# FridgePhaseLabeler 를 상속하고 ① fixture 참조 ② 관절 ③ 대상 geom ④ 라벨만 교체한다.
+# 도어 계열과 다른 점(실측/소스 확인):
+#  - 관절 상태를 ``get_door_state``/``get_joint_state`` 가 아니라 fixture 의 **``get_state``**
+#    로 읽는다 — env._check_success 가 쓰는 바로 그 경로라 판정이 정확히 일치한다.
+#      dishwasher.get_state(env)["rack"]            (env 인자 O)
+#      oven.get_state(rack_level=env.rack_level)    (env 인자 X, "rack*" 키)
+#    두 fixture 모두 값은 kitchen.update_state() → fixture.update_state(env) 로 매 step
+#    갱신되는 정규화 열림도([0,1]) 캐시다.
+#  - **시작 q 가 0.5** 다: should_pull(=out) 이면 _setup_scene 이 slide_rack(value=0.5) 로
+#    랙을 절반 뽑은 상태에서 시작시킨다 → EV_START 임계를 0.05 가 아니라 0.55 로 올린다
+#    (안 그러면 t=0 에 무조건 start 가 찍혀 무의미).
+#  - 손잡이 geom 이름이 따로 없다 → 관절이 구동하는 **body 소속 geom 전체**의 최소 표면거리.
+#  - 성공 임계는 env 와 동일: out ≥0.95, in ≤0.05.
+_RACK_PHASE_RANK_OUT = {
+    "reach-to-rack": 0.0, "wrong-grasp": 0.25, "disengage": 0.5,
+    "push-in": 0.75, "contact-rack": 1.0, "pull-out": 2.0, "out-done": 3.0,
+}
+_RACK_PHASE_RANK_IN = {  # behavior="in": 진행/후퇴 방향이 뒤집힌다
+    "reach-to-rack": 0.0, "wrong-grasp": 0.25, "disengage": 0.5,
+    "pull-out": 0.75, "contact-rack": 1.0, "push-in": 2.0, "in-done": 3.0,
+}
+# fit/분석에서 제외 권장 (=success 종결, 프레임 극소 [[terminal 동치]]).
+RACK_TERMINAL_PHASES = frozenset({"out-done", "in-done"})
+
+
+class SlidingRackPhaseLabeler(FridgePhaseLabeler):
+    """랙 슬라이딩 공통 골격. fixture 별 하위 클래스가 ``_fxtr``/``_rack_entry`` 만 채운다.
+
+    ``behavior`` 는 "out"/"in" (env 의 should_pull 에 대응). 내부적으로는 부모의
+    "open"/"close" 로 번역해 부모 로직을 한 줄도 안 바꾸고 재사용한다.
+    """
+
+    NEAR_DOOR_TH = 0.06
+    OPEN_TH = 0.95          # should_pull=True 성공 임계 (env _check_success 와 동일)
+    CLOSED_TH = 0.05        # should_pull=False 성공 임계
+    START_TH_OPEN = 0.55    # q0=0.5 에서 출발하므로 0.05 가 아니라 0.55
+    PH_REACH = "reach-to-rack"
+    PH_CONTACT = "contact-rack"
+    EV_NEAR = "near:rack"
+    EV_DISENGAGE = "disengage:rack"
+
+    def __init__(self, env: Any, behavior: str = "out", grasp_hold: int = 2):
+        b = {"out": "open", "in": "close"}.get(behavior, behavior)
+        out = b == "open"
+        self.PH_PROGRESS = "pull-out" if out else "push-in"
+        self.PH_REGRESS = "push-in" if out else "pull-out"
+        self.PH_DONE = "out-done" if out else "in-done"
+        self.EV_START = "out-start" if out else "in-start"
+        self.EV_DONE = self.PH_DONE
+        self.PHASE_RANK = _RACK_PHASE_RANK_OUT if out else _RACK_PHASE_RANK_IN
+        super().__init__(env, behavior=b, grasp_hold=grasp_hold)
+
+    # -- fixture 별 훅 ----------------------------------------------------------
+    def _rack_entry(self):
+        """(관절명, 정규화 열림도) — 못 읽으면 (None, None)."""
+        raise NotImplementedError
+
+    # -- 부모 훅 재정의 ---------------------------------------------------------
+    def _door_joints(self) -> List[str]:
+        name, _ = self._rack_entry()
+        return [name] if name else []
+
+    def _door_states(self) -> dict:
+        """fixture.get_state 기반 (도어 계열의 get_joint_state 경로를 대체)."""
+        name, val = self._rack_entry()
+        if name is None or val is None:
+            return {}
+        return {name: float(val)}
+
+    def _door_geoms(self, joint_name: str):
+        """관절이 구동하는 body 소속 geom 전부 (이름 붙은 손잡이 geom 이 없음).
+
+        body 는 이름 추측이 아니라 ``jnt_bodyid`` 로 역참조한다 — robocasa 의
+        ``check_rack_contact`` 가 쓰는 것과 같은 경로라 실제 랙 body 와 일치한다.
+        """
+        if joint_name in self._geom_cache:
+            return self._geom_cache[joint_name]
+        sim = self._env.sim
+        found: list = []
+        try:
+            jid = sim.model.joint_name2id(joint_name)
+            bid = int(sim.model.jnt_bodyid[jid])
+            found = [
+                ("geom", sim.model.geom_id2name(g))
+                for g in range(sim.model.ngeom)
+                if int(sim.model.geom_bodyid[g]) == bid and sim.model.geom_id2name(g)
+            ]
+            if not found:
+                nm = sim.model.body_id2name(bid)
+                if nm:
+                    found = [("body", nm)]
+        except Exception:
+            found = []
+        if not found:  # 최후 fallback: 관절명에서 body 이름 추정
+            base = (
+                joint_name[: -len("_joint")]
+                if joint_name.endswith("_joint")
+                else joint_name
+            )
+            found = [("body", base)]
+        self._geom_cache[joint_name] = found
+        return found
+
+
+class DishwasherRackPhaseLabeler(SlidingRackPhaseLabeler):
+    """SlideDishwasherRack — ``env.dishwasher``, 관절 ``_joint_names["rack"]`` 1개.
+
+    env 판정: ``dishwasher.get_state(env)["rack"]`` (out ≥0.95 / in ≤0.05).
+    should_pull(out) 시작 상태는 ``slide_rack(env, value=0.5)`` → q0 = 0.5.
+    """
+
+    def _fxtr(self):
+        return getattr(self._env, "dishwasher", None)
+
+    def _rack_entry(self):
+        fx = self._fxtr()
+        if fx is None:
+            return None, None
+        jn = (getattr(fx, "_joint_names", {}) or {}).get("rack")
+        if not jn:
+            return None, None
+        try:
+            if jn not in self._env.sim.model.joint_names:
+                return None, None
+            val = fx.get_state(self._env).get("rack")
+        except Exception:
+            return None, None
+        return (jn, val) if val is not None else (None, None)
+
+
+class OvenRackPhaseLabeler(SlidingRackPhaseLabeler):
+    """SlideOvenRack — ``env.oven``, 대상 랙은 에피소드마다 랜덤인 ``env.rack_level``.
+
+    env 판정: ``oven.get_state(rack_level=env.rack_level)`` 의 첫 ``"rack*"`` 키
+    (out ≥0.95 / in ≤0.05). 그 키가 곧 body/관절 base 라 관절명 = ``<prefix><key>_joint``
+    — oven fixture 의 ``slide_rack``/``check_rack_contact`` 와 동일한 규약.
+    ``get_state`` 는 rack0 로 fallback 하므로 랙이 하나뿐인 모델도 그대로 동작한다.
+    """
+
+    def _fxtr(self):
+        return getattr(self._env, "oven", None)
+
+    def _rack_entry(self):
+        fx = self._fxtr()
+        if fx is None:
+            return None, None
+        try:
+            st = fx.get_state(rack_level=int(getattr(self._env, "rack_level", 0)))
+        except Exception:
+            return None, None
+        keys = [k for k in st if k.startswith("rack")]
+        if not keys:
+            return None, None
+        key = keys[0]
+        val = st.get(key)
+        if val is None:
+            return None, None
+        jn = f"{fx.naming_prefix}{key}_joint"
+        try:
+            if jn not in self._env.sim.model.joint_names:
+                return None, None
+        except Exception:
+            pass
+        return jn, val
+
+
 def make_robocasa_event_labeler(
     env: Any,
     task_name: str,
     grasp_hold: int = 2,
     proximity_phases: bool = False,
+    behavior: str = "out",
 ) -> EventPhaseLabeler:
+    """task_name 으로 라벨러를 고른다.
+
+    ``behavior`` 는 **랙 슬라이딩 태스크(SlideDishwasherRack/SlideOvenRack) 전용** 인자다.
+    이 두 태스크의 방향(out/in)은 env 의 ``should_pull`` = 에피소드마다 뽑히는 난수라
+    **task_name 만으로는 구분할 수 없다** (instruction "Fully slide ... {out|in}." 에만
+    드러난다). 따라서 호출측이 명시해야 하며 기본값은 "out" — 이번 수집은 out 만 쓴다.
+    다른 태스크 분기는 이 인자를 무시한다.
+    """
+    # 랙 슬라이딩은 "Drawer" 분기보다 **앞**에 둔다. (현재 이름 SlideDishwasherRack /
+    # SlideOvenRack 은 "Drawer" 를 포함하지 않지만, 서랍 분기가 랙 태스크를 삼키면
+    # 조용히 틀린 라벨이 나오므로 순서로 방어한다.)
+    if "DishwasherRack" in task_name:
+        return DishwasherRackPhaseLabeler(env, behavior=behavior, grasp_hold=grasp_hold)
+    if "OvenRack" in task_name:
+        return OvenRackPhaseLabeler(env, behavior=behavior, grasp_hold=grasp_hold)
     if "StandMixerHead" in task_name:
         return StandMixerPhaseLabeler(
             env,
