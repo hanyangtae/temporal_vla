@@ -19,39 +19,64 @@
 
 ## 결과
 
+우리 (SR %, 괄호 = Rephrase 대비 ΔSR):
+
 | task | Rephrase | Compose-Always | Compose-Adaptive |
 |---|---|---|---|
-| orange_juice_on_plate | 32.0 | 32.0 | 28.0 |
-| spoon_on_towel_google | 46.0 | **60.0** | 46.0 |
-| tape_measure_in_basket | 48.0 | **54.0** | 50.0 |
-| toy_dinosaur_on_towel | 44.0 | **48.0** | 48.0 |
-| **평균** | **42.5** | **48.5** | **43.0** |
+| orange_juice_on_plate | 32.0 | 32.0 (+0.0) | 28.0 (−4.0) |
+| spoon_on_towel_google | 46.0 | **60.0 (+14.0)** | 46.0 (+0.0) |
+| tape_measure_in_basket | 48.0 | 54.0 (+6.0) | 50.0 (+2.0) |
+| toy_dinosaur_on_towel | 44.0 | 48.0 (+4.0) | 48.0 (+4.0) |
+| **평균** | **42.5** | **48.5 (+6.0)** | **43.0 (+0.5)** |
 
-Δ(always−rephrase) = **+6.0pp**, Δ(adaptive−rephrase) = **+0.5pp**, Δ(adaptive−always) = −5.5pp.
-(n=200/arm, 평균 SR의 SE ≈ 3.5pp; per-task n=50, SE ≈ 7pp — +6pp는 ~1.7σ, 유의성 주장 없음.)
+논문 Fig 8 (같은 4 task·같은 세팅, 3 seed; 막대에서 읽은 근사값 —
+본문의 "평균 +8.5pp, spoon_google 최대 +14.6pp"와 정합):
+
+| task | Vanilla | Rephrase | Compose-Always | Compose-Adaptive |
+|---|---|---|---|---|
+| orange_juice_on_plate | 31.3 | 35.3 | 41.3 (+6.0) | 43.3 (+8.0) |
+| spoon_on_towel_google | 46.0 | 44.6 | 54.0 (+9.4) | **59.3 (+14.7)** |
+| tape_measure_in_basket | 18.7 | 52.0 | 44.6 (−7.4) | 59.3 (+7.3) |
+| toy_dinosaur_on_towel | 48.0 | 49.3 | 46.0 (−3.3) | 53.3 (+4.0) |
+| **평균** | **36.0** | **45.3** | **46.5 (+1.2)** | **53.7 (+8.4)** |
+
+(n=200/arm, 평균 SR의 SE ≈ 3.5pp; per-task n=50, SE ≈ 7pp.)
 
 게이트(adaptive): 판정 스텝 5,843 중 발동 654 = **11.2%** (비퇴화). 단 발동이
 **에피소드 후반(t≥116, timeout 근접)에 집중** — 검출 시점이 늦어 개입 여지가 작았음.
 
-## 논문 대조·판정 (계획의 기준 1~3)
+## 논문 대조·판정
 
-| 기준 | 결과 |
-|---|---|
-| ① arm 순서 adaptive ≥ always | **✗ 역전** (43.0 < 48.5). 단 논문 스스로 π0에서는 "non-adaptive가 adaptive와 거의 동률"이라 인정(Sec VI-C1) + 우리는 α **top-1만** 사용 (논문 수치는 α top-3 스윕 후 최선 선택 = 사후 선택 프로토콜) |
-| ② compose 이득의 부호·자릿수 | **✓** always +6.0pp — 논문 Fig 8 평균 +8.5pp와 같은 부호·자릿수. task별 최대 이득도 spoon_google(+14.0pp)로 논문의 최대 이득 task(spoon_google +14.6pp)와 **일치** |
-| ③ 게이트 발동률 합리성 | **✓** 11.2%, 0%/100% 붕괴 아님 |
+> ⚠ 초판(08-05) 기록은 우리 **always**(+6.0)를 논문 **adaptive**(+8.5) 값과 비교하는 오류가 있었다.
+> Fig 8 실물 확인 후 아래로 정정한다 — 논문의 always는 +1.2pp에 불과하다.
 
-**종합: 파이프라인 계약 검증 통과.** velocity 합성+verifier의 이득(+6pp)과 최대 이득 task까지
-재현됐고, 전 부품(pi0·QAM·CoVer·SAFE·CP)이 계약대로 작동함을 실측 확인. adaptive 열세는
-(a) α 사후선택 미수행 (b) 1 seed (c) **게이트 후반 발동**의 합성으로 설명 가능 — 재현 실패라기보다
-"adaptive 이득이 α 튜닝에 민감하다"는 논문 자신의 한계(α 휴리스틱 필요)의 실측 확인에 가깝다.
+arm별 대조 (평균 SR):
+
+| arm | 우리 | 논문 | 차이 |
+|---|---|---|---|
+| Rephrase | 42.5 | 45.3 | −2.8 (노이즈 범위) |
+| Compose-Always | 48.5 | 46.5 | +2.0 (노이즈 범위) |
+| **Compose-Adaptive** | **43.0** | **53.7** | **−10.7 ← 불일치 집중** |
+
+- **arm 순서 역전**: 논문 adaptive ≫ always ≈ rephrase / 우리 always > adaptive ≈ rephrase.
+  → **논문 헤드라인(게이팅이 이득의 원천)은 우리 축소 프로토콜에서 재현되지 않았다.**
+- 3 arm 중 2 arm이 논문값에 붙고 불일치가 adaptive 하나에 집중 → 부품·배선 오류가 아니라
+  **게이팅 설정(α)·검출 타이밍** 쪽 문제로 국소화된다.
+- 공통점: 두 실험 모두 spoon_google이 최대 개선 여지 task (우리 +14.0 always / 논문 +14.7 adaptive).
+- 게이트 발동률 11.2%는 비퇴화(0%/100% 아님) — 게이트 자체는 작동.
+
+**종합: 파이프라인 계약 검증은 통과, 수치 재현은 부분 성공.** 전 경로(latent 추출 → SAFE+CP 게이트
+→ velocity 합성 → verifier 선별)가 실측으로 작동하고 두 arm이 논문값에 정합하므로 이식 기반으로는
+충분하다. 단 adaptive 미달은 미해결이며 원인 후보는 (a) α **top-1만** 실행(논문은 top-3 사후선택)
+(b) 게이트 후반 발동 (c) 1 seed. **α top-3 스윕으로 adaptive만 재평가**하면 공정 비교가 된다(~5.5h).
 
 ## 시사점 (우리 연구 관점)
 
 1. **검출이 늦으면 게이팅 이득이 사라진다** — 발동의 후반 집중이 adaptive≈rephrase의 직접 원인
    후보. 우리 "언제" 축(조기 online 검출·phase-매칭)의 가치를 역설적으로 지지하는 데이터.
-2. **이득의 주성분은 합성(다양성 주입) 쪽** — always가 +6pp를 다 가져감. RL2의 기여 분해
-   (steering vs gating)에서 이 세팅은 steering 성분이 지배적.
+2. **기여 분해가 세팅에 따라 뒤집힌다** — 논문에서는 게이팅이 이득의 원천(always +1.2 / adaptive +8.4),
+   우리 재현에서는 합성이 원천(always +6.0 / adaptive +0.5). 같은 코드·같은 ckpt·같은 task에서
+   이렇게 갈린다는 것 자체가 **이 방법의 이득 귀속이 불안정**함을 시사한다.
 3. α top-3 사후선택은 사실상 약한 oracle — Stage 2 이식 시 α 프로토콜을 명시적 통제 변수로.
 
 ## 재현 인프라
