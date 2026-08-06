@@ -64,6 +64,26 @@ PPCC 3 종은 물체가 96 가지로 흩어져 있어 **seed 범위를 넓혀야
 
 ## 2. 미정 — 수집 시작 전에 정해야 할 것
 
+### 2.0 ★★ 라벨러 커버리지 블로커 (2026-08-06 발견)
+
+**8 종 중 3 종은 phase 라벨러가 지원하지 않는다** — `src/collect/robocasa/event_labeler.py`
+의 `make_robocasa_event_labeler` 는 (StandMixer / Fridge / Drawer / `TASK_EVENTS` 등록 PnP)
+만 처리하고, 그 외는 `lookup_task_events` 가 **KeyError** 를 던진다. n15 허브는 라벨러를
+옵션 없이 무조건 생성하므로(`http_feature_collect.py` 라벨러 생성부) 해당 instruction 은
+**수집 첫 에피소드에서 즉사**한다.
+
+| instruction | 라벨러 |
+|---|---|
+| PPCC bread/apple/candle | ✓ (`PickPlaceCounterToCabinet` 등록) |
+| OpenDrawer left/right | ✓ (Drawer 분기) |
+| CoffeeSetupMug | ✗ 미등록 |
+| SlideDishwasherRack out | ✗ 미등록 |
+| SlideOvenRack out | ✗ 미등록 |
+
+선택지: (a) 3 종 라벨러 구현(이벤트 정의 + `TASK_EVENTS`/분기 등록 + 테스트),
+(b) 라벨러 opt-out 배선 후 3 종은 phase 라벨 없이 수집(사후 라벨링·`env_step_gt_retro`
+계열로 소급 가능하나 라벨러 구현이 선행돼야 하는 건 동일), (c) task 교체.
+
 ### 2.1 ★ SR 파일럿 (최우선)
 
 **`m`(noise 수)은 SR 에서 역산해야 한다.** scene 을 고정하면 succ/fail 을 가르는 건 policy
@@ -165,23 +185,31 @@ kill 해 trap cleanup 이 빈 결과 + 가짜 `[done]` 을 남긴다. 완료는 
 
 ## 4. 코드 상태
 
-### 배선 완료
+### 배선 완료 (2026-08-06 갱신)
 
 | 항목 | 위치 |
 |---|---|
 | `machine`·`ckpt` 를 serve → 수집기로 | `src/utils/common/serving.py` 의 `serve_provenance()`; HTTP(`serve/lerobot.py`)·ZMQ(`groot_n16/.../feature_server.py`) 양쪽 |
 | 연산자 `config.json` 강제 | `src/utils/operator_config.py` — 입력 sig 없이 저장하면 `ValueError` |
 | fit 스크립트 배선 | `fit_phase_conceptor_n15.py`, `exp4_1/fit_mean_diff.py` |
+| **좌표 계획·경로·armsig 단일 출처** | `src/collect/plan.py` (구 `src/utils/collection_plan.py`) — `CollectionPlan`·`GridCell.rel_path`·`resolve_grid`·`grid_dir_for`·`arm_signature` |
+| **수집기 좌표 배선** | n15 `http_feature_collect.py`·n16 `collect_rollout.py` 둘 다 `--grid-root/--plan-json/--scene-idx/--noise-idx` 수용 |
+| **`grid_dir` 필수화** | `src/collect/artifacts.py` `write_safe_triplet` — 좌표 없이 부르면 RuntimeError(§8). §2 쓰기 검사(동일 skip / 상이 에러) 포함 |
+| **수집 공용 부품 `src/collect/` 승격** | artifacts·schema·policy_clients·라벨러(robocasa/libero)·step_phase — sys.path 해킹 제거, 테스트 63 passed |
 
 ### 손봐야 하는 것
 
 1. **`serve_provenance()` 가 GPU 를 포함한다** — `f"{hostname}:gpu{CUDA_VISIBLE_DEVICES}"`.
    docs/04 §3.2 개정으로 GPU 는 좌표가 아니게 됐으므로 **머신명만** 반환해야 한다.
    지금 그대로면 같은 머신인데 GPU 가 다르다는 이유로 다른 칸이 된다.
-2. **`collection_plan.py`** — 다른 세션에서 수정 중(2026-08-05). 좌표 레이아웃·`plan_id`·
-   `machine` 반영 여부를 먼저 확인하고 중복 작업하지 말 것.
+2. **수집 러너 `.sh` 가 좌표 인자를 안 넘긴다** — 지금 구 러너를 그대로 돌리면
+   `grid_dir 없이 수집할 수 없다` 로 **즉시 실패**한다(의도된 동작). 이번 라운드 러너는
+   `collection_plan.json` 기반으로 새로 쓴다.
 3. **인덱서** — `arm_bindings.tsv` 신설(docs/04 §3.3)과 좌표 기반 `rollouts.tsv` 복합키가
    미반영. 구 인덱서(`~/index_build2` 계열)는 sig 평면 전제라 그대로 못 쓴다.
+4. **seed 스캔 도구 브랜치 미병합** — `scan_seed_instructions.py` 는
+   `feat/seed-scan-probe-tools` 에만 있다(산출물 TSV 는 로컬 `outputs/analysis/seed_scan/` 에
+   실존). PPCC 확장 스캔(100300–101000)을 돌리려면 이 브랜치를 먼저 병합/체리픽할 것.
 
 ---
 
@@ -197,13 +225,15 @@ kill 해 trap cleanup 이 빈 결과 + 가짜 `[done]` 을 남긴다. 완료는 
 
 ---
 
-## 6. 착수 순서
+## 6. 착수 순서 (2026-08-06 갱신)
 
-1. `collection_plan.py` 현황 확인 (다른 세션 작업분)
-2. `serve_provenance()` 에서 GPU 제거
-3. **SR 파일럿** (8 instr × 20 판) → `m` 확정
-4. PPCC 3 종 seed 범위 확장 스캔 (100300–101000)
-5. scene seed 선정 + 기하 실현가능성 필터
-6. `collection_plan.json` 작성 → `plan_id` 확정
-7. 머신별 instruction 배정 → 수집 실행
-8. 인덱서 갱신 (좌표 기반 + `arm_bindings.tsv`)
+1. ~~`collection_plan.py` 현황 확인~~ → 완료: `src/collect/plan.py` 로 확정 (§4 배선 완료 표)
+2. **라벨러 커버리지 해소** (§2.0) — 3 종 구현 / opt-out / task 교체 결정
+3. `serve_provenance()` 에서 GPU 제거
+4. 수집 러너 `.sh` 좌표 배선 (§4 손봐야 하는 것 2)
+5. **SR 파일럿** (8 instr × 20 판) → `m` 확정
+6. PPCC 3 종 seed 범위 확장 스캔 (100300–101000; 스캔 도구 브랜치 병합 선행)
+7. scene seed 선정 + 기하 실현가능성 필터
+8. `collection_plan.json` 작성 → `plan_id` 확정
+9. 머신별 instruction 배정 → 수집 실행
+10. 인덱서 갱신 (좌표 기반 + `arm_bindings.tsv`)
