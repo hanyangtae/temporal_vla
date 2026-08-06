@@ -75,6 +75,7 @@ def write_safe_triplet(
     extra_metadata: dict[str, Any] | None = None,
     include_hidden_states: bool = True,
     grid_dir: Path | None = None,   # 필수 — None 이면 RuntimeError
+    arm_config: dict[str, Any] | None = None,   # steered 수집(arm)의 진실 — config.json
 ) -> None:
     """SAFE rollout 산출물을 쓴다.
 
@@ -255,6 +256,13 @@ def write_safe_triplet(
             if extra_metadata and key in extra_metadata:
                 meta[key] = extra_metadata[key]
         meta_path.write_text(json.dumps(json_safe(meta), indent=2, ensure_ascii=False))
+
+    # steered 수집(capture-ON arm): 개입 파라미터의 진실 기록 (docs/04 §3.3 — armsig 는
+    # 해시라 복원 불가, config.json 이 사람이 읽는 정본). base 수집은 넘기지 않는다.
+    if arm_config is not None:
+        (dest / "config.json").write_text(
+            json.dumps(json_safe(arm_config), indent=2, ensure_ascii=False)
+        )
 
     if upstream_video_path is None or not upstream_video_path.exists():
         raise RuntimeError(f"GR00T upstream video was not written: {upstream_video_path}")

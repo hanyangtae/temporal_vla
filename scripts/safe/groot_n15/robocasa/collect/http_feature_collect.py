@@ -1157,6 +1157,14 @@ def run() -> dict[str, Any]:
                     extra_metadata=extra_metadata,
                     include_hidden_states=not getattr(args, "attn_only_records", False),
                     grid_dir=grid_dir,
+                    # steered 수집(arm)일 때만 개입의 진실 기록 — base 는 None
+                    arm_config=(
+                        None if (arm_params is None or grid_dir is None) else {
+                            "armsig": grid_dir.name.split("__")[0],
+                            "arm_params": arm_params,
+                            "serve_steering": serve_identity.get("serve_steering"),
+                        }
+                    ),
                 )
                 # write_safe_triplet 이 grid_dir=None 이면 raise 하므로 여기 도달 = 좌표 확정
                 out_path = grid_dir / "rollout.pkl"
