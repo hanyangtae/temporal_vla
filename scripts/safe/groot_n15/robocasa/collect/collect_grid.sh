@@ -206,8 +206,6 @@ start_serve() {  # gpu port
     docker exec -d -e CUDA_VISIBLE_DEVICES="$gpu" lerobot bash -lc "$cmd"
   fi
 }
-for i in "${!PORTS[@]}"; do start_serve "${PORT_GPUS[$i]}" "${PORTS[$i]}"; sleep 2; done
-
 health_curl() {  # port
   if [ "$SERVE_MODE" = "host" ]; then
     curl -s -m 3 "http://127.0.0.1:${1}/health" 2>/dev/null
@@ -215,16 +213,20 @@ health_curl() {  # port
     docker exec lerobot bash -lc "curl -s -m 3 http://127.0.0.1:${1}/health 2>/dev/null"
   fi
 }
-for port in "${PORTS[@]}"; do
-  if [ "$DRY_RUN" = "1" ]; then echo "[dry] health poll ${port}"; continue; fi
+# ★ 순차 기동: 로드 중 VRAM 피크(~12GB)가 안정 상태(~6GB)의 2배라, 동시에 띄우면
+# 피크가 겹쳐 OOM (kanu A4000 2-serve 실측: 11.96+3.76GB 로 16GB 초과 사망).
+# 한 serve 가 health ok 로 피크를 지난 뒤에 다음을 띄운다.
+for i in "${!PORTS[@]}"; do
+  start_serve "${PORT_GPUS[$i]}" "${PORTS[$i]}"
+  if [ "$DRY_RUN" = "1" ]; then echo "[dry] health poll ${PORTS[$i]}"; continue; fi
   ok=0
   for _ in $(seq 1 150); do
-    st=$(health_curl "$port" | grep -o '"status":"ok"' || true)
+    st=$(health_curl "${PORTS[$i]}" | grep -o '"status":"ok"' || true)
     [ -n "$st" ] && { ok=1; break; }
     sleep 5
   done
-  log "serve ${port} health=$([ $ok = 1 ] && echo ok || echo TIMEOUT)"
-  [ $ok = 1 ] || { log "ABORT: serve ${port} 기동 실패"; exit 13; }
+  log "serve ${PORTS[$i]} health=$([ $ok = 1 ] && echo ok || echo TIMEOUT)"
+  [ $ok = 1 ] || { log "ABORT: serve ${PORTS[$i]} 기동 실패"; exit 13; }
 done
 
 # ── 5. 워커 fan-out (셀 인덱스 mod 워커수) ────────────────────────────────────
