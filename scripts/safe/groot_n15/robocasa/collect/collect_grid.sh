@@ -212,7 +212,9 @@ run_worker() {  # wid port
       python /temporal_vla/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py
       --vla-server "http://127.0.0.1:${port}"
       --task "$task" --env-name "$env"
-      --output-dir "${GRID_ROOT_CONT}/_work"
+      # 워커별 분리 필수: 모든 셀이 task0--ep0 라 공유 _work 면 .groot_video_tmp 가
+      # 겹쳐 한 워커의 cleanup 이 다른 워커의 tmp video 를 지운다 (스모크 실측 실패).
+      --output-dir "${GRID_ROOT_CONT}/_work/w${wid}"
       --grid-root "$GRID_ROOT_CONT" --plan-json "$PLAN_JSON_CONT"
       --scene-idx "$si" --noise-idx "$ni" --grid-instruction "$instr"
       --canonical-instruction "$text"
