@@ -114,12 +114,12 @@ src/sae/pca.py	S4	keep
 src/sae/cluster.py	S4	keep			
 src/sae/metrics.py	S4	keep			
 src/sae/__init__.py	S4	keep			
-scripts/safe/groot_n15/robocasa/steer/compare_conceptor_labelfix.py	S4	archive			
+scripts/safe/groot_n15/robocasa/steer/compare_conceptor_labelfix.py	S4	archive		적용(archive)	663d4db
 scripts/safe/groot_n15/robocasa/steer/exp4_1/diag_token_space.py	S4	keep	이건 앞으로 재사용이 많이 될 거임.		
 scripts/safe/groot_n15/robocasa/steer/exp4_1/diag_st_significance.py	S4	미정	또 쓸라나 모르겠네		
-scripts/safe/groot_n15/robocasa/steer/exp4_1/inspect_npz.py	S4	archive	이건 이제 필요없지 않나? 데이터 모을떄 다 검정 하잖아. 		
+scripts/safe/groot_n15/robocasa/steer/exp4_1/inspect_npz.py	S4	archive	이건 이제 필요없지 않나? 데이터 모을떄 다 검정 하잖아. 	적용(archive)	663d4db
 scripts/safe/groot_n15/robocasa/steer/exp4_1/conceptor_layer_sweep.py	S4	keep	이건 conceptor 연산자 쓰면 계속 쓰는거 아닌가?		
-scripts/safe/groot_n15/robocasa/steer/exp4_1/walqr_f1_subspace.py	S4	archive	이건 나중에 필요하면 다시 만들어서 하자		
+scripts/safe/groot_n15/robocasa/steer/exp4_1/walqr_f1_subspace.py	S4	archive	이건 나중에 필요하면 다시 만들어서 하자	적용(archive)	663d4db
 scripts/safe/groot_n15/robocasa/steer/exp4_1/build_t0_manifest.py	S4	keep	이건 또 해야할 수도 있어		
 scripts/scene_sae/build_sae_inputs.py	S4	keep	현행 일괄 keep (사용자 지시 2026-08-07)	해당없음(keep)	
 scripts/scene_sae/train_scene_sae.py	S4	keep	현행 일괄 keep (사용자 지시 2026-08-07)	해당없음(keep)	
@@ -133,23 +133,23 @@ scripts/safe/groot_n15/robocasa/steer/exp5_3/fit_within_scene_setM.py	S4	keep	�
 scripts/safe/groot_n15/robocasa/steer/exp5_3/fit_placebo.py	S4	keep	현행 일괄 keep (사용자 지시 2026-08-07)	해당없음(keep)	
 scripts/safe/groot_n15/robocasa/steer/exp5_3/make_fut_npz.py	S4	keep	현행 일괄 keep (사용자 지시 2026-08-07)	해당없음(keep)	
 scripts/safe/groot_n15/robocasa/steer/diag_conceptor_nondegen.py	S4	keep	현행 일괄 keep (사용자 지시 2026-08-07)	해당없음(keep)	
-scripts/safe/groot_n15/robocasa/steer/exp4_1/extract_fitpool_sidecars.py	S4	archive			
-scripts/safe/groot_n16/robocasa/steer/fit_conceptor_steering.py	S4	archive			
-scripts/safe/groot_n16/robocasa/steer/layer_select_compare.py	S4	archive			
-scripts/safe/groot_n15/robocasa/steer/fit_instruction_conceptors.py	S4	archive			
-scripts/safe/groot_n15/robocasa/steer/exp2/make_fit_manifests.py	S4	archive			
-scripts/safe/groot_n15/robocasa/steer/exp2/p1_candidates.py	S4	archive			
-scripts/safe/groot_n15/robocasa/steer/exp3/make_exp3_manifests.py	S4	archive			
-scripts/safe/groot_n15/robocasa/steer/exp3/make_null_manifest.py	S4	archive			
-scripts/safe/groot_n15/robocasa/steer/patchceil/build_arm_plan.py	S4	archive			
-scripts/safe/groot_n15/robocasa/steer/patchceil/make_target_manifest.py	S4	archive			
-scripts/safe/groot_n15/robocasa/steer/patchceil/check_passB_determinism.py	S4	archive			
-scripts/safe/groot_n15/robocasa/steer/induced/fit_setm_induced.py	S4	archive			
+scripts/safe/groot_n15/robocasa/steer/exp4_1/extract_fitpool_sidecars.py	S4	archive	build_t0_manifest(keep) 참조는 주석뿐 — 무해	적용(archive)	663d4db
+scripts/safe/groot_n16/robocasa/steer/fit_conceptor_steering.py	S4	archive	n16 fit 필요 시 n15 현행 fit 일반화(kind 게이트·토큰 경계 프로파일화)로 — COAST 절차 부활 안 함. steering_hooks 주석 정리됨	적용(archive)	663d4db
+scripts/safe/groot_n16/robocasa/steer/layer_select_compare.py	S4	archive		적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/fit_instruction_conceptors.py	S4	archive	전용 테스트 동반 삭제	적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/exp2/make_fit_manifests.py	S4	archive	exp2 .sh 러너(S6) 참조 잔존 — S6 판정 때 처리	적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/exp2/p1_candidates.py	S4	archive	exp2 .sh 러너(S6) 참조 잔존 — S6 판정 때 처리	적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/exp3/make_exp3_manifests.py	S4	archive	exp3 게이트·집계(S7)·queue_lib(S6) 참조 잔존 — 해당 스테이지 때 처리	적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/exp3/make_null_manifest.py	S4	archive		적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/patchceil/build_arm_plan.py	S4	archive		적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/patchceil/make_target_manifest.py	S4	archive		적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/patchceil/check_passB_determinism.py	S4	archive		적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/induced/fit_setm_induced.py	S4	archive	perturb 재개 시 fit 은 현행 setM fit 일반화로	적용(archive)	663d4db
 scripts/safe/groot_n15/robocasa/steer/exp5_4/probe_lib.py	S4	keep			
 scripts/safe/groot_n15/robocasa/steer/exp5_4/smoke_probe.py	S4	keep			
 scripts/safe/groot_n15/robocasa/steer/exp5_4/check_probe_identity.py	S4	keep			
-scripts/safe/groot_n15/robocasa/steer/exp5_4/make_seed_manifest.py	S4	archive			
-scripts/safe/groot_n15/robocasa/steer/exp5_4/make_selection_manifest.py	S4	archive			
+scripts/safe/groot_n15/robocasa/steer/exp5_4/make_seed_manifest.py	S4	archive	probe_collect.sh(S6) 참조 잔존	적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/exp5_4/make_selection_manifest.py	S4	archive	probe_collect.sh(S6)·analysis(S8) 참조 잔존	적용(archive)	663d4db
 scripts/safe/groot_n15/robocasa/steer/induced/induced_common.py	S4	keep			
 scripts/safe/groot_n15/robocasa/steer/induced/build_induced_fit_manifest.py	S4	keep	perturb 는 상설 축(사용자 결정 08-07) — exp번호 아닌 기능명 perturb 로 재배치 예정	해당없음(keep)	
 scripts/safe/groot_n15/robocasa/steer/induced/build_c1_vl_manifests.py	S4	keep	perturb 는 상설 축(사용자 결정 08-07) — exp번호 아닌 기능명 perturb 로 재배치 예정	해당없음(keep)	
@@ -160,3 +160,4 @@ scripts/safe/groot_n15/robocasa/steer/induced/clean_vs_perturbed_probe.py	S4	kee
 scripts/safe/groot_n15/robocasa/steer/induced/bridge_axis_check.py	S4	keep	perturb 는 상설 축(사용자 결정 08-07) — exp번호 아닌 기능명 perturb 로 재배치 예정	해당없음(keep)	
 scripts/safe/groot_n15/robocasa/steer/induced/dwell_weight_probe.py	S4	keep	perturb 는 상설 축(사용자 결정 08-07) — exp번호 아닌 기능명 perturb 로 재배치 예정	해당없음(keep)	
 scripts/safe/groot_n15/robocasa/steer/induced/layer_geometry_probe.py	S4	keep	perturb 는 상설 축(사용자 결정 08-07) — exp번호 아닌 기능명 perturb 로 재배치 예정	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/fit_aligned_instruction_conceptors.py	S4	archive	exp2 사슬 최상단(→fit_instruction→n16 COAST판) — 셋 다 동반 archive. 전용 테스트 동반 삭제	적용(archive)	663d4db
