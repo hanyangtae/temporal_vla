@@ -77,7 +77,7 @@ scripts/safe/groot_n16/robocasa/collect/collect_rollout.py	S1	keep
 scripts/safe/groot_n16/robocasa/collect/collect_env.py	S1	keep			
 src/collect/policy_clients.py	S1	keep			
 src/collect/schema.py	S1	keep			
-scripts/safe/groot_n16/robocasa/collect/verify_rollout_collection.py	S1	수정	낡았어. 우리 새 형태에 안맞는거같음. 		
+scripts/safe/groot_n16/robocasa/collect/verify_rollout_collection.py	S1	수정	낡았어. 우리 새 형태에 안맞는거같음.  | 좌표판 scripts/collect/verify_grid.py 로 재작성(결함주입 6종 검증·실데이터 130셀 통과) 후 구본 제거	적용(수정=재작성)	bdd706e
 src/collect/robocasa/event_labeler.py	S1	keep			
 src/collect/robocasa/step_phase.py	S1	keep			
 scripts/safe/groot_n16/robocasa/collect/task_sets.sh	S1	archive	seed는 뭐 그냥 문서들에 숫자로 박아 | seed 100000 은 CLAUDE.md 숫자가 정본으로 변경	적용(archive)	0ca02ad
