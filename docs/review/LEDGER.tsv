@@ -61,3 +61,31 @@ scripts/safe/groot_n15/robocasa/collect/_diag_wrong_grasp.py	S1	archive		적용(
 scripts/safe/groot_n16/robocasa/collect/repro_check.py	S1	archive		적용(archive)	b0877ba
 scripts/safe/groot_n15/robocasa/collect/collect_cam_attn.sh	S1	archive		적용(archive)	b0877ba
 src/collect/artifacts.py	S1	keep			
+scripts/safe/groot_n15/robocasa/collect/collect_fit_6phase.sh	S1	archive			
+scripts/safe/groot_n15/robocasa/collect/collect_strict_cells.sh	S1	archive			
+src/collect/robocasa/perturbation.py	S1	keep			
+scripts/safe/groot_n15/robocasa/collect/launch_instruction_seed_shards.py	S1	archive			
+scripts/safe/groot_n15/robocasa/collect/merge_instruction_seed_shards.py	S1	archive			
+scripts/safe/groot_n15/robocasa/collect/materialize_selected_ep_meta.py	S1	archive			
+scripts/safe/groot_n15/robocasa/collect/backfill_instruction_ep_meta.py	S1	archive			
+scripts/safe/groot_n15/robocasa/collect/classify_instructions.py	S1	archive			
+scripts/safe/groot_n15/robocasa/collect/phase_render_from_real.py	S1	archive			
+scripts/safe/groot_n15/robocasa/collect/phase_live_rollout.py	S1	archive			
+scripts/safe/groot_n15/robocasa/collect/phase_live_render.py	S1	keep	이거는 phase 검출기 만드는 쪽에서 쓰는거네 		
+scripts/safe/groot_n15/robocasa/collect/collect_instruction_fixed_http_features.py	S1	archive	구배선의 오케스트레이터. 호출자가 있으니까 주의. 그 호출자들도 구버전일 가능성 있긴함.		
+scripts/safe/groot_n16/robocasa/collect/collect_rollout.py	S1	keep			
+scripts/safe/groot_n16/robocasa/collect/collect_env.py	S1	keep			
+src/collect/policy_clients.py	S1	keep			
+src/collect/schema.py	S1	keep			
+scripts/safe/groot_n16/robocasa/collect/verify_rollout_collection.py	S1	수정	낡았어. 우리 새 형태에 안맞는거같음. 		
+src/collect/robocasa/event_labeler.py	S1	keep			
+src/collect/robocasa/step_phase.py	S1	keep			
+scripts/safe/groot_n16/robocasa/collect/task_sets.sh	S1	archive	seed는 뭐 그냥 문서들에 숫자로 박아		
+scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh	S1	archive			
+scripts/safe/groot_n16/robocasa/collect/collect_task_set_official_uv_host.sh	S1	archive			
+scripts/safe/groot_n16/robocasa/collect/collect_task_set_in_container.sh	S1	archive			
+scripts/safe/groot_n15/robocasa/collect/build_perturb_grid.py	S1	keep			
+scripts/safe/groot_n15/robocasa/collect/collect_perturb_grid.sh	S1	keep			
+scripts/safe/groot_n16/robocasa/collect/collect_task_set_in_container.sh	S1	archive	고아 3형제·stem 전제·좌표 러너로 대체. docs/groot 참조는 문서 검토 시 갱신	적용(archive)	96116ed
+scripts/safe/groot_n16/robocasa/collect/collect_task_set_official_uv_host.sh	S1	archive	고아 3형제·stem 전제·좌표 러너로 대체. docs/groot 참조는 문서 검토 시 갱신	적용(archive)	96116ed
+scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh	S1	archive	고아 3형제·stem 전제·좌표 러너로 대체. docs/groot 참조는 문서 검토 시 갱신	적용(archive)	96116ed
