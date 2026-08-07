@@ -114,7 +114,9 @@ cycle() {
     if [ -z "$newest" ] || [ "$newest" -gt "$cutoff" ]; then
       n_skip=$((n_skip + 1)); continue
     fi
-    if ship_cell "$dir" "$rel"; then n_sent=$((n_sent + 1)); fi
+    # < /dev/null 필수: ship_cell 의 ssh/rsync 가 stdin 을 먹으면 while-read 의
+    # 셀 목록 파이프가 소진되어 사이클당 1셀만 전송된다 (pdk 61셀 적체 실측).
+    if ship_cell "$dir" "$rel" < /dev/null; then n_sent=$((n_sent + 1)); fi
   done < <(find "$GRID_ROOT" -type f -name meta.json 2>/dev/null | sort)
 
   local used_kb used_gb
