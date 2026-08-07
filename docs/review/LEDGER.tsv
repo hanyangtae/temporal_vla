@@ -87,3 +87,11 @@ scripts/safe/groot_n16/robocasa/collect/collect_task_set_in_container.sh	S1	arch
 scripts/safe/groot_n16/robocasa/collect/collect_task_set_official_uv_host.sh	S1	archive	고아 3형제·stem 전제·좌표 러너로 대체. docs/groot 참조는 문서 검토 시 갱신	적용(archive)	96116ed
 scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh	S1	archive	고아 3형제·stem 전제·좌표 러너로 대체. docs/groot 참조는 문서 검토 시 갱신	적용(archive)	96116ed
 scripts/safe/groot_n15/robocasa/collect/select_instruction_seeds.py	S1	archive	코어는 scan_seed_instructions 로 재구현·ep_meta replay 는 gym.make(seed) 수정으로 무용. exp3 구스크립트 참조는 S6 처리	적용(archive)	0ca02ad
+src/collect/libero/event_phase_labeler.py	S2	archive	코어는 src/collect/event_phase.py 로 존치(robocasa 라벨러 의존)·LIBERO detector/make_event_labeler 절제·scripts/eval/libero.py 라벨 배선 해제	적용(수술)	a1a242a
+src/collect/libero/bddl_phase_labeler.py	S2	archive	전용 테스트 동반 삭제	적용(archive)	a1a242a
+scripts/safe/groot_n16/libero/collect_pi05_libero.sh	S2	archive		적용(archive)	a1a242a
+scripts/safe/groot_n16/libero/HANDOFF_event_phase_segmentation.md	S2	keep			
+scripts/safe/groot_n15/robocasa/collect/HANDOFF_phase_event_collection.md	S2	keep			
+scripts/safe/groot_n15/robocasa/eval/env_step_gt_retro.py	S2	archive	batch(keep) 는 독립 — retro 미참조 확인	적용(archive)	a1a242a
+scripts/safe/groot_n15/robocasa/eval/env_step_gt_batch.py	S2	keep			
+src/phase_online/online_phase.py	S2	미정	이건 SAE action phase labeler 쪽 연구에 필요한 파일인가?  → 답: 맞음 — top-k SAE(task_classification) 추론경로의 self-contained 이식판, serve(lerobot.py)가 실시간 phase readout 으로 소비		

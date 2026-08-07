@@ -11,22 +11,20 @@ reach-to-object, and a fresh grasp returns to transport. This fixes the old runn
 prefix scheme, under which a grasp-then-drop looked identical to "still carrying" (the
 label stayed "transport" until timeout).
 
-Two layers (handoff decision #2 — keep the algorithm unit-testable):
-  * ``PhaseSegmenter`` — PURE: the CURRENT-step active-event set -> phase label (state-based,
-    non-monotone). No env, no torch. Unit-tested with a mock probe.
-  * ``EventDetector`` — env-coupled: reads the live robosuite env each step and reports
-    which task events are currently true. Only this layer needs a real env.
-
-``EventPhaseLabeler`` ties them together with the same consumer API the BDDL labeler had
-(``reset`` / ``step`` / ``phase_timeline``), so ``scripts/eval/libero.py`` swaps cleanly.
+순수 코어만 남긴 파일이다 (2026-08-07 S2 판정): LIBERO env 결합층(EventDetector·
+make_event_labeler·bddl_phase_labeler)은 libero 축 폐기로 절제됨. 남은 것은 env 무관 —
+  * ``PhaseSegmenter`` — PURE: CURRENT-step active-event set -> phase label (비단조).
+  * ``EventPhaseLabeler`` — probe(Protocol) 주입식 소비자 API (reset/step/phase_timeline).
+  * ``TASK_EVENTS`` — forced-order 이벤트 시퀀스 예시 (LIBERO scene 태그, 순수 데이터 —
+    테스트 fixture 겸 신규 task 등록 예제).
+robocasa 라벨러(src/collect/robocasa/event_labeler.py)가 이 코어를 재사용한다.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Protocol, Sequence, Set
+from typing import Dict, List, Protocol, Sequence, Set
 
-from src.collect.libero.bddl_phase_labeler import find_domain  # reuse the env-wrapper-chain walk
 
 # ── phase (gap) labels — the moving segments between events ───────────────────
 REACH_OBJECT = "reach-to-object"   # start → grasp (empty-hand approach)
@@ -167,72 +165,6 @@ class EventProbe(Protocol):
         ...
 
 
-# ── env-coupled detector ──────────────────────────────────────────────────────
-class EventDetector:
-    """Reads the live robosuite/LIBERO env each step → set of currently-true event keys.
-
-    grasp  = ``_check_grasp(gripper, obj_geoms)`` AND ``Up(obj)``, debounced ``grasp_hold``
-             consecutive steps (avoids brush false-positives / contact flicker).
-    in/on  = domain ``_eval_predicate(["in"|"on", obj, region])``.
-    close/turnon = ``_eval_predicate(["close"|"turnon", region])``.
-    release = was grasped (grasp currently False) AND object placed (In/On holds). The
-              caller's accumulation makes "release" only meaningful after grasp fired.
-    """
-
-    def __init__(self, env: Any, events: Sequence[TaskEvent], grasp_hold: int = 2):
-        self.domain = find_domain(env)            # BDDL domain (also a robosuite env)
-        self.events = list(events)
-        self.grasp_hold = int(grasp_hold)
-        self._grasp_streak: Dict[str, int] = {}
-
-    # -- low-level predicate helpers --
-    def _eval(self, state: List[str]) -> bool:
-        try:
-            return bool(self.domain._eval_predicate(state))
-        except Exception:
-            return False
-
-    def _obj_model(self, obj: str) -> Any:
-        # LIBERO domain.objects is a LIST; the name->model lookup is get_object().
-        # robosuite _check_grasp accepts a MujocoModel and uses its .contact_geoms.
-        return self.domain.get_object(obj)
-
-    def _is_grasping(self, obj: str) -> bool:
-        try:
-            gripper = self.domain.robots[0].gripper
-            return bool(self.domain._check_grasp(gripper, self._obj_model(obj)))
-        except Exception:
-            return False
-
-    def _grasp_debounced(self, obj: str) -> bool:
-        raw = self._is_grasping(obj) and self._eval(["up", obj])
-        streak = self._grasp_streak.get(obj, 0)
-        streak = streak + 1 if raw else 0
-        self._grasp_streak[obj] = streak
-        return streak >= self.grasp_hold
-
-    def active_events(self) -> Set[str]:
-        out: Set[str] = set()
-        for e in self.events:
-            if e.detect == "grasp":
-                if self._grasp_debounced(e.obj):
-                    out.add(e.key)
-            elif e.detect == "in":
-                if self._eval(["in", e.obj, e.region]):
-                    out.add(e.key)
-            elif e.detect == "on":
-                if self._eval(["on", e.obj, e.region]):
-                    out.add(e.key)
-            elif e.detect in ("close", "open", "turnon", "turnoff"):
-                if self._eval([e.detect, e.region]):
-                    out.add(e.key)
-            elif e.detect == "release":
-                placed = self._eval(["in", e.obj, e.region]) or self._eval(["on", e.obj, e.region])
-                if placed and not self._is_grasping(e.obj):
-                    out.add(e.key)
-        return out
-
-
 # ── consumer-facing labeler (mirrors BddlPhaseLabeler API) ────────────────────
 @dataclass
 class EventPhaseLabeler:
@@ -323,10 +255,3 @@ class EventPhaseLabeler:
     @property
     def event_order_keys(self) -> List[str]:
         return [e.key for e in self.events]
-
-
-def make_event_labeler(env: Any, task_name: str, grasp_hold: int = 2) -> EventPhaseLabeler:
-    """Build an env-coupled EventPhaseLabeler for a known forced-order task."""
-    events = lookup_task_events(task_name)
-    detector = EventDetector(env, events, grasp_hold=grasp_hold)
-    return EventPhaseLabeler(probe=detector, events=events)
