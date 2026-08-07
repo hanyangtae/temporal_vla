@@ -95,3 +95,13 @@ scripts/safe/groot_n15/robocasa/collect/HANDOFF_phase_event_collection.md	S2	kee
 scripts/safe/groot_n15/robocasa/eval/env_step_gt_retro.py	S2	archive	batch(keep) 는 독립 — retro 미참조 확인	적용(archive)	a1a242a
 scripts/safe/groot_n15/robocasa/eval/env_step_gt_batch.py	S2	keep			
 src/phase_online/online_phase.py	S2	미정	이건 SAE action phase labeler 쪽 연구에 필요한 파일인가?  → 답: 맞음 — top-k SAE(task_classification) 추론경로의 self-contained 이식판, serve(lerobot.py)가 실시간 phase readout 으로 소비		
+scripts/safe/_common/split_lib.py	S3	keep	safe가 개입 시점을 결정해주는 용도로 나중에 부활할 가능성이 다분함. 		
+scripts/safe/groot_n15/robocasa/split/build_safe_splits.py	S3	keep			
+scripts/safe/groot_n15/robocasa/split/merge_seen60_source.py	S3	keep			
+scripts/safe/groot_n15/robocasa/split/prepare_seen5_trainval_cp_test_split.py	S3	keep	safe가 개입 시점을 결정해주는 용도로 나중에 부활할 가능성이 다분함. 		
+scripts/safe/groot_n16/robocasa/split/prepare_seen18_manifest.py	S3	keep			
+scripts/safe/groot_n16/robocasa/split/prepare_seen18_split.py	S3	keep	safe가 개입 시점을 결정해주는 용도로 나중에 부활할 가능성이 다분함. 		
+scripts/safe/groot_n16/robocasa/split/prepare_seen4_unseen2_split.py	S3	keep	safe가 개입 시점을 결정해주는 용도로 나중에 부활할 가능성이 다분함. 		
+scripts/safe/lerobot/split/prepare_split.py	S3	keep	safe가 개입 시점을 결정해주는 용도로 나중에 부활할 가능성이 다분함. 		
+scripts/safe/groot_n15/robocasa/analyze/drawer_scene_feasibility.py	S3	keep			
+scripts/safe/groot_n15/robocasa/analyze/mixer_scene_feasibility.py	S3	keep			
