@@ -26,7 +26,7 @@ MAXS=${MAXS:-720}
 BASE_PORT=${BASE_PORT:-5701}
 PROFILE=${PROFILE:-${REPO}/configs/checkpoints/groot__robocasa365_ckpt120000.yaml}
 RUN_TAG=${RUN_TAG:-steer_eval_compare}
-# Project-wide standard eval seed = collection seed base (do-dong-park 표준, task_sets.sh).
+# Project-wide standard eval seed = collection seed base (do-dong-park 표준).
 # 같은 (env, seed) → 같은 episode 시리즈 → 동료 수집 episode 와 매칭.
 EVAL_SEED=${EVAL_SEED:-100000}
 
