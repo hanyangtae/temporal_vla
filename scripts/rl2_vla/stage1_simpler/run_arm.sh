@@ -28,10 +28,12 @@ export PYTHONPATH="$RL2:$RL2/RL2_CoVer_VLA:${PYTHONPATH:-}"
 
 QAM_CKPT="$RL2/third_party/qam/exp/SAVED/rl2-vla-qam-bridge/rl2_vla_qam_bridge_500k.pkl"
 SAFE_DIR_IID="$RL2/third_party/SAFE/scripts/batch_training/logs/SAVED/rl2_pi0_bridge_safe_ckpt_per_task_cp"
-SAFE_DIR_OOD="$RL2/third_party/SAFE/scripts/batch_training/logs/SAVED/rl2_pi0_bridge_safe_ckpt_combined_cp"
+SAFE_DIR_OOD="${SAFE_DIR_OVERRIDE:-$RL2/third_party/SAFE/scripts/batch_training/logs/SAVED/rl2_pi0_bridge_safe_ckpt_combined_cp}"
+# SAFE_DIR_OVERRIDE: 재학습 SAFE ckpt 디렉토리로 교체할 때 사용 (OOD suite 한정)
 CKPT="juexzz/INTACT-pi0-finetune-bridge"
 LANE="$ARM"
 [ -n "$ALPHA_ARG" ] && LANE="${ARM}_a${ALPHA_ARG}"
+[ -n "${LANE_TAG:-}" ] && LANE="${LANE}_${LANE_TAG}"
 LOG_DIR="$RL2/experiments/stage1b_${SUITE}_seed${SEED}/${LANE}"
 mkdir -p "$LOG_DIR"
 
