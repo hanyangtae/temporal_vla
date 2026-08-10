@@ -323,3 +323,104 @@ scripts/safe/groot_n15/robocasa/steer/induced/smoke/smoke_judge.py	S7	keep	pertu
 scripts/safe/groot_n15/robocasa/eval/internal_parity.py	S7	미정	시각화·일회성 진단 — S8 때 처분	보류	
 scripts/safe/groot_n15/robocasa/eval/annotate_phase_video.py	S7	미정	시각화·일회성 진단 — S8 때 처분	보류	
 src/judge/stats.py	S7	keep	신설 — 판정 통계 증류본 (mcnemar·holm·poisson-binomial·순열·위약)	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/analyze/fridge_smoke_report.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n15/robocasa/analyze/dit_succfail_investigation.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n15/robocasa/analyze/cam_attn_phase.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n15/robocasa/analyze/phase_separation_combined.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n15/robocasa/analyze/tests/test_wrong_grasp_vl_separation.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n15/robocasa/vis/phase_distribution_tsne_lda.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n15/robocasa/vis/cam_attn_timeseries.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/within_task_succ_vs_fail.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/pathway_online_detection.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/within_task_failure_modes.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/diagnose_rollout_mean_feature_separability.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/pathway_detector_video.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/plot_detector_ppt_figs.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/vl_dit_stepwise.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/cross_task_containment_structure.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/failure_stuck_state_test.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/pathway_step_attribution.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/failure_trajectory_modes.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/summarize_lstm_hparam_sweep.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/make_progress_videos.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/compute_and_plot_lstm_hidden_vs_linear.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/plot_safe_conformal_curves.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/progress_evolution.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/compute_and_plot_online_detection.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/plot_task_success_overlay.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/compute_feature_silhouette.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/cluster_static.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/make_videos_1hz_and_gif.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/compute_and_plot_lstm_relabel.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/analyses/taskdist.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/analyses/html3d.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/analyses/faildir.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/analyses/pertask_tsne.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/check_tasks.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/debug_pi05_dataset.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/plot_phase1_progress.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/debug_pi05_libero.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/mech_interp/verify_injection.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/mech_interp/verify_interpretability.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/mech_interp/build_clusters.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/mech_interp/analyze_displacement.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/insight_seg/run_pilot.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/build_clip_cache.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/insight_seg/lerobot_adapter.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/insight_seg/prompts.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/insight_seg/rollout_adapter.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/insight_seg/segmentation.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/insight_seg/state_recording_wrapper.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/insight_seg/vlm_client.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/mech_interp/value_projection.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/mech_interp/visualize.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/probe_handle_xyz.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/scan_seed_instructions.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/analyze/instruction_pathway_features.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/analyze/phase_separation.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/analyze/summarize_instruction_cells.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/analyze/summarize_instruction_seed_samples.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/analyze/summarize_instruction_seed_scan.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/analyze/wrong_grasp_vl_separation.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/vis/annotate_phase_video.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/cross_task_failure_analysis.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/cross_task_failure_perstep.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/cross_task_mode_sharing.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/finalize_lstm_detector.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/pathway_lstm_detector.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/pathway_separation.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/summarize_lstm_aggregation_ablation.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/verify_detector_length_control.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/vl_anomaly_score.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/vl_dit_lda_analysis.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/__init__.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/_common.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/auroc.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/cache.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/conformal.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/embed.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/evolution.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/length.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/online_detection.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/pairwise.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/separation.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/silhouette.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/snapshots.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/temporal.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/windows.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/__init__.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/aggregation.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/distance.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/features.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/geometry.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/io.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/labeling.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/lstm.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/metrics.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/plot3d.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/plotting.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/projection.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/schemes.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/plot_safe_style_feature_space.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/run_feature_visualization.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/seen18.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
