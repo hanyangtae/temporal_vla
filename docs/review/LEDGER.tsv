@@ -278,3 +278,48 @@ scripts/eval/openvla_oft_libero_rollouts.sh	S6	미정	검토 범위 제외(타�
 scripts/eval/xvla_calvin.sh	S6	미정	검토 범위 제외(타모델)	보류(범위제외)	
 scripts/eval/phase1_predictor.py	S6	미정	TTT 계열 — S9 잡파일 때 처분	보류	
 scripts/eval/phase1_batch.sh	S6	미정	TTT 계열 — S9 잡파일 때 처분	보류	
+scripts/safe/groot_n15/robocasa/steer/aggregate_final_scene.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/plan_instruction_steering_eval.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp2/aggregate_v2.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp2/p0_gate.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_decide.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_decide_pool.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp3/aggregate_exp3.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp3/beta_decide.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_decision.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_gated_gate.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp3/p0_gate_exp3.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp3/tests/test_gate_a.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp4_1/aggregate_rescue.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp4_1/analyze_action_tremor.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp4_1/audit_flags.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp4_1/diag_dose_robustness.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/export_loso_directions.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/_sel_baselines.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/_sel_common.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_baselines.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_by_record.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_drop_seed.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_gate.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_placebo.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_power.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/analyze_meta.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/check_anchors.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/check_passA.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/extract_donor_npz.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/extract_ep_meta_remote.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/judge_patchceil.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/make_shuffle_npz.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/replay_arm.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/select_passB.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/eval/run_target15_seedpairs.sh	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/eval/rejudge_success.py	S7	keep	현행 재채점 (fresh-process 규약 원조)	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py	S7	keep	S1 허브 import 부품 — RENAME 후보	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/eval/native_official_zmq_eval.py	S7	keep	N1.6 대비 keep(사용자 08-10)	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/eval/native_zmq_eval.py	S7	keep	N1.6 대비 keep(사용자 08-10)	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/exp5_3/aggregate_ws_steer.py	S7	keep	차기 판정의 직계 조상 — src/judge 소비 예정	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/aggregate_p0.py	S7	keep	perturb 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/smoke_judge.py	S7	keep	perturb 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/eval/internal_parity.py	S7	미정	시각화·일회성 진단 — S8 때 처분	보류	
+scripts/safe/groot_n15/robocasa/eval/annotate_phase_video.py	S7	미정	시각화·일회성 진단 — S8 때 처분	보류	
+src/judge/stats.py	S7	keep	신설 — 판정 통계 증류본 (mcnemar·holm·poisson-binomial·순열·위약)	해당없음(keep)	
