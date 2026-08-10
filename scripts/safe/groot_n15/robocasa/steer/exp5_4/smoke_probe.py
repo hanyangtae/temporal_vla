@@ -31,7 +31,8 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[6]
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "safe" / "groot_n15" / "robocasa" / "collect"))
 
-import http_feature_collect as hfc  # noqa: E402  (sys.path 세팅 후)
+import http_feature_collect as hfc  # noqa: E402  (sys.path 세팅 후 — make_env 등 본류 재사용)
+import probe_lib  # noqa: E402  (같은 디렉토리 — probe 전용 클라이언트/해시/평탄화)
 
 
 def _cmp(a: np.ndarray, b: np.ndarray) -> tuple[bool, float]:
@@ -48,7 +49,7 @@ def _call(client, images, states, instruction, seed, *, skip_features=False):
     actions, features, _lat = client.predict_with_features(
         images, states, instruction, inference_seed=int(seed), extra_payload=extra
     )
-    chunk, _keys = hfc._flatten_action_chunk(actions)
+    chunk, _keys = probe_lib._flatten_action_chunk(actions)
     hidden = None
     if features and features.get("hidden_states") is not None:
         hidden = np.asarray(features["hidden_states"], dtype=np.float32)
@@ -91,10 +92,10 @@ def main() -> None:
     try:
         obs, _info = env.reset(seed=args.seed)
         images, states, instruction = hfc.official_obs_to_lerobot_inputs(obs)
-        obs_hash = hfc._obs_hash(images, states)
+        obs_hash = probe_lib._obs_hash(images, states)
         print(f"scene={args.seed} instr={instruction!r} obs_hash={obs_hash[:16]}")
 
-        clients = [hfc._ProbeClient(url, timeout=args.timeout) for url in servers]
+        clients = [probe_lib._ProbeClient(url, timeout=args.timeout) for url in servers]
         for c in clients:
             c.wait_until_ready(max_wait=args.timeout)
         c0 = clients[0]

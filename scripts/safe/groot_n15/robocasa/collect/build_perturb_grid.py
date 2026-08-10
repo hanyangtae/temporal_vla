@@ -14,7 +14,7 @@ Phase A baseline(`--no-features` 사이드카)에서 성공 episode 와 **앵커
 출력: <out>/specs/<config>/ep{idx}.json, <out>/grid.tsv
 grid.tsv 열: mode  config  ep_idx  inference_seed  spec(컨테이너 경로 아님 — 러너가 변환)  tag
 
-앵커 event 어휘는 phase 라벨러(`scripts/safe/groot_n16/robocasa/collect/robocasa_event_labeler.py`)
+앵커 event 어휘는 phase 라벨러(`src/collect/robocasa/event_labeler.py`)
 가 사이드카 `event_steps` 로 내보내는 키에서 고른다 (cell 표 근거는 CELL_DEFAULTS 주석).
 """
 from __future__ import annotations
@@ -34,7 +34,7 @@ P2_GRID = [(5.0, 2), (15.0, 2), (40.0, 2), (5.0, 5), (15.0, 5), (40.0, 5)]
 
 # ── cell 별 기본값 (exp5-2, docs/steering/29 §0 표) ────────────────────────────────
 # anchor_event: 라벨러 event_steps 키 (P1/P2 trigger 앵커).
-#   ppcc_bread  = "grasp:obj"   (robocasa_event_labeler.py:156 `_pnp_events`)
+#   ppcc_bread  = "grasp:obj"   (src/collect/robocasa/event_labeler.py `_pnp_events`)
 #   drawer_left = "near:handle" (동 파일 :582 DrawerPhaseLabeler, grasp-handle 첫 프레임)
 #   mixer       = "near:head"   (동 파일 :879 EV_NEAR + StandMixerPhaseLabeler.EV_NEAR)
 # target: perturbation.py 의 P1/P2 대상 (평문=자유물체 / "fixture:<attr>:<joint_key>").

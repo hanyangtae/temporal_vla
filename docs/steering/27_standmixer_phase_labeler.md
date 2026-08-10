@@ -1,5 +1,12 @@
 # OpenStandMixerHead — instruction · 성공 판정 · phase 라벨러 · 스모크 결과
 
+> **관리 상태 (2026-07-30)**: 이 라벨러는 **현재 쓰는 것**이라 유지한다. 다만 phase 라벨러
+> 일반을 어디서 관리할지는 **미정**이다 — 명세는 `docs/steering/`, 구현은
+> `scripts/safe/groot_n16/robocasa/collect/robocasa_event_labeler.py`(`TASK_EVENTS` 등록)로
+> 흩어져 있다. 새 task를 추가할 때는 **명세와 `TASK_EVENTS` 등록을 함께** 해야 한다
+> (미등록 시 수집이 KeyError로 죽는다 — [`PITFALLS.md`](PITFALLS.md) §8).
+> 관리 위치 통합은 코드 스테이지(S2)에서 결정한다.
+
 작성 2026-07-22. CloseFridge(docs/steering/26) 대안으로 검토한 exp4 후보 task.
 COAST 논문 GR00T N1.5 RoboCasa 표에서 Δ 상위(+0.20 대조 / +0.33 positive-only)이면서
 exp2·exp3 에서 아직 안 건드린 두 task 중 하나.
@@ -143,7 +150,7 @@ seed 집합이 적용된다. 단 **fit·eval 양쪽에 동일 적용**해야 하
 fridge/drawer 이식은 fixture 참조·관절·body·임계 4개만 바꾸면 된다 — **drawer/fridge 에
 같은 오염이 있는지는 미확인**(exp2·exp3 결과 사후 스캔 가치 있음).
 
-다른 세션용 요약: `docs/steering/NOTICE_scene_feasibility_for_exp4.txt`.
+다른 세션용 요약: [`SCENE_FEASIBILITY.md`](SCENE_FEASIBILITY.md).
 
 ## 5. 한계
 

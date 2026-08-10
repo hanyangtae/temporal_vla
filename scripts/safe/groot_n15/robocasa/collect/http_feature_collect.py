@@ -22,7 +22,6 @@ import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 N15_EVAL_ROOT = REPO_ROOT / "scripts" / "safe" / "groot_n15" / "robocasa" / "eval"
-N16_COLLECT_ROOT = REPO_ROOT / "scripts" / "safe" / "groot_n16" / "robocasa" / "collect"
 N15_GROOT_ROOT = REPO_ROOT / "src" / "policies" / "Isaac-GR00T-N1.5"
 N16_GROOT_ROOT = REPO_ROOT / "src" / "policies" / "Isaac-GR00T"
 DEFAULT_MAX_EPISODE_STEPS = 720
@@ -41,7 +40,6 @@ for path in reversed(
     (
         N16_GROOT_ROOT,
         N15_GROOT_ROOT,
-        N16_COLLECT_ROOT,
         N15_EVAL_ROOT,
         REPO_ROOT / "scripts" / "utils",
         REPO_ROOT / "src" / "benchmarks" / "robocasa",
@@ -51,11 +49,12 @@ for path in reversed(
 ):
     _prepend_path(path)
 
-from collect_artifacts import (  # noqa: E402
+from src.collect.artifacts import (  # noqa: E402
     write_collect_ep_meta_manifest,
+    write_eval_artifacts,
     write_safe_triplet,
 )
-from collect_schema import (  # noqa: E402
+from src.collect.schema import (  # noqa: E402
     _extract_groot_action_vector,
     _extract_safe_action_vector,
     _to_pickleable_numpy,
@@ -64,9 +63,13 @@ from lerobot_http_eval import (  # noqa: E402
     official_obs_to_lerobot_inputs,
     step_success,
 )
-from robocasa_event_labeler import make_robocasa_event_labeler  # noqa: E402
-from env_step_phase import EnvStepGT, StepPhaseProbeWrapper, find_probe_wrapper  # noqa: E402
-from perturbation import Perturber, PerturbSpec  # noqa: E402
+from src.collect.robocasa.event_labeler import make_robocasa_event_labeler  # noqa: E402
+from src.collect.robocasa.step_phase import (  # noqa: E402
+    EnvStepGT,
+    StepPhaseProbeWrapper,
+    find_probe_wrapper,
+)
+from src.collect.robocasa.perturbation import Perturber, PerturbSpec  # noqa: E402
 from src.policies.groot.robocasa.io import convert_http_actions_to_groot_chunk  # noqa: E402
 from src.policies.groot.robocasa.scenario_replay import (  # noqa: E402
     ep_meta_manifest_path,
@@ -287,7 +290,15 @@ class N15LerobotHttpFeatureClient(VLAClient):
 
         official_action = _lerobot_action_to_official_chunk(actions)
         if features is None:
-            return official_action, {}
+            # 여기는 no_features 분기를 지난 캡처-ON 경로라 features 는 반드시 와야 한다.
+            # 구 배선은 조용히 return 해서 record 를 안 만들었고, feature_phases 도 같이
+            # 안 늘어나 run() 의 정합 검사(len(feature_phases)==n_inferences)를 통과했다
+            # → 활성이 하나도 없는 pkl 이 [done] 으로 남는다. OFF 갈래의 역방향 가드
+            # ("skip_features 인데 features 가 왔다")와 대칭이 되도록 fail-loud 로 바꾼다.
+            raise RuntimeError(
+                "캡처 ON 인데 features 가 반환되지 않음 — serve 가 --collect 로 떴는지, "
+                "capture layer 인자가 걸렸는지 확인 (조용한 무캡처 방지)"
+            )
 
         hidden_states = np.asarray(features["hidden_states"])
         if hidden_states.ndim == 4 and hidden_states.shape[0] == 1:
@@ -360,9 +371,54 @@ def _get_serve_identity(server: str) -> dict:
             "serve_gpu": body.get("serve_gpu"),
             "serve_boot_id": body.get("boot_id"),
             "serve_steering": body.get("steering"),
+            # docs/04 규약 — rollout 인덱스의 machine·ckpt 열. serve 가 도는 머신이
+            # 수집기와 다를 수 있으므로 /health 응답을 정본으로 쓴다.
+            # machine 이 없으면 머신 간 재현 편차(같은 seed 에서 succ/fail 12.7% 반전)를
+            # 층화할 수 없고, ckpt 가 없으면 베이스와 파인튜닝 rollout 이 섞인다.
+            "machine": body.get("serve_machine"),
+            "ckpt": body.get("serve_ckpt"),
         }
     except Exception as exc:  # noqa: BLE001
-        return {"serve_gpu": None, "serve_boot_id": None, "serve_health_error": str(exc)}
+        return {"serve_gpu": None, "serve_boot_id": None, "machine": None, "ckpt": None,
+                "serve_health_error": str(exc)}
+
+
+def _resolve_arm(args, serve_identity: dict) -> "tuple[str | None, dict | None]":
+    """arm 디렉토리명 결정 (docs/04 §3.3). 반환 (dirname|None, armsig 재료 params|None).
+
+    우선순위: 명시 --arm-dir > serve steering 지문에서 armsig 계산 > None(=base).
+    armsig 7키 중 op/beta/token_select/denoise/bindings 는 serve /health 의 steering
+    지문(정본 — 실제 로드된 NPZ sha 포함)에서, steer_from_record/gated_phases 는
+    클라이언트 인자에서 온다.
+    """
+    explicit = getattr(args, "arm_dir", None)
+    if explicit:
+        return explicit, None
+    spec = serve_identity.get("serve_steering")
+    if not spec:
+        return None, None
+    from src.collect.plan import arm_dirname, arm_signature  # noqa: PLC0415
+
+    params = {
+        "op": spec.get("op"),
+        # (phase, layer, opsig) 삼중을 spec 이 짝지어 주지 않으므로 내용 전체를 담는다 —
+        # 어느 하나라도 다르면 armsig 가 갈리는 성질은 동일하게 성립한다.
+        "bindings": {
+            "layers": spec.get("layers"),
+            "phases": spec.get("phases"),
+            "npz_shas": spec.get("npz_shas"),
+        },
+        "beta": spec.get("beta"),
+        "token_select": spec.get("token_select"),
+        "denoise": spec.get("denoise"),
+        "steer_from_record": getattr(args, "steer_from_record", None),
+        "gated_phases": (
+            sorted(spec.get("phases") or [])
+            if getattr(args, "gated_steering", False)
+            else None
+        ),
+    }
+    return arm_dirname(arm_signature(params), hint=str(spec.get("op") or "")), params
 
 
 def _find_latest_video(video_dir: Path) -> Path | None:
@@ -504,6 +560,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split", choices=["pretrain", "target"], default="target")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--task-id", type=int, default=0)
+    # docs/04 §3 좌표 레이아웃 — 인자·해석·경로 조립은 collection_plan 이 단일 출처다.
+    _prepend_path(REPO_ROOT)
+    from src.collect.plan import add_grid_args  # noqa: PLC0415
+
+    add_grid_args(parser)
     parser.add_argument("--cell-id", default=None)
     parser.add_argument("--cell-index", type=int, default=None)
     parser.add_argument("--canonical-instruction", default=None)
@@ -675,211 +736,21 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-class _ProbeClient(VLAClient):
-    """probe 전용 최소 클라이언트.
-
-    수집용 ``N15LerobotHttpFeatureClient`` 를 쓰지 않는다 — records/n_calls 계수와
-    get_action 의 ``call_inference_seed = seed_base + calls_done`` 가산 경로를 아예
-    타지 않기 위해서다. ``_post_and_decode`` 만 얇게 감싸 서버의 inference_seed echo
-    를 검증한다.
-    """
-
-    def __init__(self, *a, **kw):
-        super().__init__(*a, **kw)
-        self.last_result: dict[str, Any] | None = None
-
-    def _post_and_decode(self, endpoint, payload):
-        result, latency_ms = super()._post_and_decode(endpoint, payload)
-        self.last_result = result
-        return result, latency_ms
+# probe 경로(_ProbeClient/_obs_hash/_flatten_action_chunk/_run_probe, 205줄)는
+# exp5-4 전용이라 steer/exp5_4/probe_lib.py 로 분리했다(2026-07-31). CLI 계약은
+# 그대로 유지 — run() 이 --probe-seeds 를 받아 아래 run_probe 로 위임하므로
+# probe_collect.sh 는 수정 불필요. 같은 모듈의 _ProbeClient/_obs_hash/
+# _flatten_action_chunk 는 exp5_4/smoke_probe.py(캡처 hook 무해성·서버 오염 검출)와
+# check_probe_identity.py 가 계속 쓴다 — 라운드 종결과 무관한 무결성 도구다.
 
 
-def _obs_hash(images: dict[str, Any], states: dict[str, Any] | None) -> str:
-    """probe 입력(이미지+state)의 sha256 — rollout t=0 입력과 동일성 대조용."""
-    import hashlib
+def _run_probe(args):
+    _prepend_path(REPO_ROOT / "scripts" / "safe" / "groot_n15" / "robocasa" / "steer" / "exp5_4")
+    from probe_lib import run_probe  # noqa: PLC0415  (순환 import 회피 — 지연 로드)
 
-    h = hashlib.sha256()
-    for key in sorted(images):
-        arr = np.ascontiguousarray(np.asarray(images[key]))
-        h.update(key.encode())
-        h.update(str(arr.dtype).encode())
-        h.update(str(arr.shape).encode())
-        h.update(arr.tobytes())
-    for key in sorted(states or {}):
-        arr = np.ascontiguousarray(np.asarray(states[key], dtype=np.float64))
-        h.update(key.encode())
-        h.update(str(arr.shape).encode())
-        h.update(arr.tobytes())
-    return h.hexdigest()
+    return run_probe(args)
 
 
-def _flatten_action_chunk(action: dict[str, Any]) -> tuple[np.ndarray, list[str]]:
-    """sub-keyed action chunk → ([n_steps, dim] float32, 사용 키 순서)."""
-    chunk = _lerobot_action_to_official_chunk(action)
-    keys = sorted(chunk)
-    if not keys:
-        return np.zeros((0, 0), dtype=np.float32), []
-    pieces = []
-    for key in keys:
-        arr = np.asarray(chunk[key], dtype=np.float32)
-        if arr.ndim == 1:
-            arr = arr[:, None]
-        pieces.append(arr)
-    return np.concatenate(pieces, axis=1), keys
-
-
-def _run_probe(args: argparse.Namespace) -> dict[str, Any]:
-    """exp5-4 probe-only: t=0 관측 1개로 seed 별 record 0 활성만 캡처하고 종료.
-
-    rollout 을 돌리지 않는다 — env.step / labeler.step / pkl·json 산출 경로를 전혀 타지
-    않으며, 후보 seed 마다 ``/reset`` 1회 + ``predict_with_features`` 단일 호출만 한다
-    (collector policy wrapper 의 get_action 경유 금지 — calls_done 가산 오염 방지).
-
-    seed s 의 활성 = 같은 scene 을 --inference-seed s 로 수집했을 때의 record 0 과 동일:
-    수집 경로의 call_inference_seed = inference_seed + calls_done 이고 record 0 은
-    calls_done=0 이라 정확히 s 이다.
-    """
-    raw_seeds = [tok.strip() for tok in str(args.probe_seeds).split(",")]
-    probe_seeds = [int(tok) for tok in raw_seeds if tok != ""]
-    if not probe_seeds:
-        raise ValueError("--probe-seeds 가 비어 있음")
-    if len(set(probe_seeds)) != len(probe_seeds):
-        raise ValueError(f"--probe-seeds 에 중복: {probe_seeds}")
-    if args.seed is None:
-        raise ValueError("probe 모드는 --seed (scenario seed) 필수")
-    if args.n_action_steps <= 0:
-        raise ValueError(f"--n_action_steps must be positive: {args.n_action_steps}")
-    out_path = Path(args.probe_out)
-    if out_path.suffix != ".npz":
-        raise ValueError(f"--probe-out 은 .npz 경로여야 함: {out_path}")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
-    client = _ProbeClient(args.vla_server, timeout=args.timeout)
-    if args.wait_ready:
-        client.wait_until_ready(max_wait=args.timeout)
-    serve_identity = _get_serve_identity(args.vla_server)
-
-    env = make_env(
-        args.task,
-        args.split,
-        env_name=args.env_name,
-        scenario_seed=args.seed,
-        video_dir=None,          # 영상 wrapper 미사용 (렌더 비용·산출물 없음)
-        video_fps=args.video_fps,
-        steps_per_render=args.steps_per_render,
-        overlay_text=False,
-        n_action_steps=args.n_action_steps,
-        max_episode_steps=args.max_episode_steps,
-    )
-    try:
-        obs, _info = env.reset(seed=args.seed)
-        ep_meta = get_robocasa_ep_meta(env)
-        images, states, instruction = official_obs_to_lerobot_inputs(obs)
-        canonical = getattr(args, "canonical_instruction", None)
-        if canonical is not None and (
-            _normalize_instruction(instruction) != _normalize_instruction(canonical)
-        ):
-            raise RuntimeError(
-                "probe scene instruction mismatch: "
-                f"{instruction!r} != {canonical!r} (scene seed {args.seed})"
-            )
-        obs_hash = _obs_hash(images, states)
-        hidden: list[np.ndarray] = []
-        chunks: list[np.ndarray] = []
-        chunk_keys: list[str] = []
-        seed_echo: list[int] = []
-        capture_layers = None
-        feature_axes = None
-        capture_token_mode = None
-        for seed in probe_seeds:
-            # 후보마다 서버 히스토리 초기화 후 단일 호출 (get_action 경유 없음).
-            client.reset()
-            actions, features, _latency_ms = client.predict_with_features(
-                images, states, instruction, inference_seed=int(seed)
-            )
-            raw = client.last_result or {}
-            if "inference_seed" in raw:
-                echoed = int(raw["inference_seed"])
-                if echoed != int(seed):
-                    raise RuntimeError(
-                        f"probe: 서버 inference_seed echo 불일치 {echoed} != {seed}"
-                    )
-                seed_echo.append(echoed)
-            else:
-                # echo 미지원 serve — 요청 payload 값을 그대로 기록해 감사 가능하게 둔다.
-                seed_echo.append(-1)
-                print(f"[probe] serve 가 inference_seed 를 echo 하지 않음 — 요청값 {seed} 기록")
-            if not features or features.get("hidden_states") is None:
-                raise RuntimeError(
-                    "probe: /act_with_features 가 features.hidden_states 를 반환하지 않음 "
-                    "(serve 를 --groot-dit-capture-layers 로 띄웠는지 확인)"
-                )
-            arr = np.asarray(features["hidden_states"], dtype=np.float32)
-            if arr.ndim == 5 and arr.shape[0] == 1:
-                arr = arr[0]  # 혹시 batch 축이 있으면 제거 ([1,L,K,T,D] -> [L,K,T,D])
-            if hidden and arr.shape != hidden[0].shape:
-                raise RuntimeError(
-                    f"probe: seed {seed} 활성 shape {arr.shape} != {hidden[0].shape}"
-                )
-            hidden.append(arr)
-            chunk, keys = _flatten_action_chunk(actions)
-            if chunks and chunk.shape != chunks[0].shape:
-                raise RuntimeError(
-                    f"probe: seed {seed} action chunk shape {chunk.shape} != {chunks[0].shape}"
-                )
-            if chunk_keys and keys != chunk_keys:
-                raise RuntimeError("probe: action sub-key 구성이 요청 간 변경됨")
-            chunk_keys = keys
-            chunks.append(chunk)
-            layers = features.get("capture_layers", features.get("layer_indices"))
-            if layers is not None:
-                layers = [int(layer) for layer in layers]
-                if capture_layers is not None and layers != capture_layers:
-                    raise RuntimeError("probe: capture_layers 가 요청 간 변경됨")
-                capture_layers = layers
-            feature_axes = _prefer_present(features.get("axes"), feature_axes)
-            capture_token_mode = _prefer_present(
-                features.get("capture_token_mode"), capture_token_mode
-            )
-        stacked = np.stack(hidden, axis=0)  # [k, L, K, T, D]
-        action_chunk = np.stack(chunks, axis=0)  # [k, n_steps, dim]
-        np.savez(
-            out_path,
-            seeds=np.asarray(probe_seeds, dtype=np.int64),
-            hidden=stacked,
-            action_chunk=action_chunk,
-            action_chunk_keys=np.asarray(json.dumps(chunk_keys)),
-            obs_hash=np.asarray(obs_hash),
-            seed_echo=np.asarray(seed_echo, dtype=np.int64),
-            capture_layers=np.asarray(capture_layers or [], dtype=np.int64),
-            scenario_seed=np.asarray(args.seed, dtype=np.int64),
-            instruction=np.asarray(instruction),
-            # 문자열 목록은 json 으로 — object dtype 은 load 시 allow_pickle 을 강제한다.
-            feature_axes=np.asarray(json.dumps(list(feature_axes or []))),
-            capture_token_mode=np.asarray(capture_token_mode or ""),
-            env_name=np.asarray(args.env_name),
-            n_action_steps=np.asarray(args.n_action_steps, dtype=np.int64),
-            serve_identity=np.asarray(json.dumps(json_safe(serve_identity))),
-            ep_meta=np.asarray(json.dumps(json_safe(ep_meta), ensure_ascii=False)),
-        )
-        print(
-            f"probe wrote {out_path}: scene={args.seed} seeds={probe_seeds} "
-            f"hidden={stacked.shape} action_chunk={action_chunk.shape} "
-            f"obs_hash={obs_hash[:16]} layers={capture_layers} instr={instruction!r}"
-        )
-        return {
-            "probe": {
-                "path": str(out_path),
-                "scenario_seed": args.seed,
-                "seeds": probe_seeds,
-                "obs_hash": obs_hash,
-                "shape": list(stacked.shape),
-                "capture_layers": capture_layers,
-                "instruction": instruction,
-            }
-        }
-    finally:
-        env.close()
 
 
 def run() -> dict[str, Any]:
@@ -957,6 +828,24 @@ def run() -> dict[str, Any]:
     if args.wait_ready:
         policy.wait_until_ready(max_wait=args.timeout)
     serve_identity = _get_serve_identity(args.vla_server)
+    from src.collect.plan import resolve_grid  # noqa: PLC0415
+
+    grid_plan, grid_cell = resolve_grid(args)
+    # arm 결정 — steering 이 걸린 serve 로 돌면 자동으로 arm 디렉토리(armsig)가 된다.
+    arm_name, arm_params = _resolve_arm(args, serve_identity)
+    if arm_name is not None:
+        args.arm_dir = arm_name
+    if grid_plan is not None:
+        if getattr(args, "no_features", False) and arm_name is None:
+            raise RuntimeError(
+                "좌표 eval 인데 arm 을 결정할 수 없다 — serve 에 steering 지문이 없고 "
+                "--arm-dir 도 없다. base(무개입) 판정은 같은 좌표의 수집 rollout 이 이미 "
+                "그 자체다(같은 머신·seed → 동일 궤적). 별도 base eval 이 필요하면 "
+                "--arm-dir 로 명시할 것."
+            )
+        print(f"[collect] 좌표 레이아웃 — plan_id={grid_plan.plan_id} "
+              f"cell={grid_cell.key} arm={arm_name or 'base'} "
+              f"machine={serve_identity.get('machine')}", flush=True)
 
     max_steps = args.max_episode_steps
     results: list[dict[str, Any]] = []
@@ -1051,6 +940,7 @@ def run() -> dict[str, Any]:
             # base·steered 를 같은 t0 로 split 해 개입 후 떨림 증가량을 대조한다.
             action_traj: list = []
             action_steer_on: list = []
+            eval_action_rows: list = []  # 좌표 eval 의 traj.csv 재료 (SAFE 7열, 추론당 1행)
             _interv_record = (
                 steer_from_record if steer_from_record is not None else reseed_from_record
             )
@@ -1086,6 +976,8 @@ def run() -> dict[str, Any]:
                     phase_gated_flags.append(gated_now)
                     # 떨림 진단: 이 record 의 명령 action 벡터(첫 실행 스텝)와 개입 활성 여부.
                     action_traj.append(_extract_groot_action_vector(official_action))
+                    if no_features:
+                        eval_action_rows.append(_extract_safe_action_vector(official_action))
                     action_steer_on.append(
                         _interv_record is not None and progress_before >= _interv_record
                     )
@@ -1152,6 +1044,23 @@ def run() -> dict[str, Any]:
             extra_metadata["succ_ever_th"] = dict(_ever) if _ever is not None else None
             if perturber is not None:
                 extra_metadata.update(perturber.export())
+            # serve 지문(serve_gpu/serve_boot_id/serve_steering)은 캡처 ON(pkl) 경로에도 남긴다.
+            # 구 배선은 사이드카(캡처 OFF)에만 있어 fit 재료 pkl 에서 ① 어느 GPU·serve 인스턴스
+            # 에서 나온 활성인지 ② 그 serve 에 steering 이 걸려 있지 않았는지를 사후 확인할 수
+            # 없었다. ②는 fit 재료의 전제(무개입)라 GPU 추적과 달리 대체 경로가 없다.
+            # (2026-07-31 이전 수집분에는 이 필드가 없다 — 소급 불가.)
+            extra_metadata.update(serve_identity)
+            grid_dir = None
+            if grid_cell is not None:
+                from src.collect.plan import grid_dir_for  # noqa: PLC0415
+
+                grid_dir = grid_dir_for(args, grid_plan, grid_cell,
+                                        serve_identity.get("machine"))
+                extra_metadata.update({
+                    **grid_cell.as_metadata(),
+                    "plan_id": grid_plan.plan_id,
+                    "armsig": grid_dir.name.split("__")[0],
+                })
             if cell_id is not None:
                 extra_metadata.update(
                     {
@@ -1198,12 +1107,30 @@ def run() -> dict[str, Any]:
                     "ep_meta": captured_ep_meta,
                     **extra_metadata,
                 }
-                out_path = output_dir / f"{stem}.json"
-                out_path.write_text(
-                    json.dumps(json_safe(sidecar), indent=2, ensure_ascii=False)
-                )
-                if upstream_video_path is not None and upstream_video_path.exists():
-                    shutil.copy2(upstream_video_path, output_dir / f"{stem}.mp4")
+                if grid_dir is not None:
+                    # docs/04 §3.3 — 평가 rollout 은 arm 디렉토리로. config.json 이 arm 의 진실.
+                    write_eval_artifacts(
+                        grid_dir,
+                        sidecar=sidecar,
+                        upstream_video_path=upstream_video_path,
+                        action_rows=eval_action_rows,
+                        arm_config=(
+                            None if arm_params is None else {
+                                "armsig": grid_dir.name.split("__")[0],
+                                "arm_params": arm_params,
+                                "serve_steering": serve_identity.get("serve_steering"),
+                            }
+                        ),
+                    )
+                    out_path = grid_dir / "meta.json"
+                else:
+                    # 구 stem 레이아웃 (좌표 인자 없는 옛 러너 호환 — S6 재작성 시 제거)
+                    out_path = output_dir / f"{stem}.json"
+                    out_path.write_text(
+                        json.dumps(json_safe(sidecar), indent=2, ensure_ascii=False)
+                    )
+                    if upstream_video_path is not None and upstream_video_path.exists():
+                        shutil.copy2(upstream_video_path, output_dir / f"{stem}.mp4")
                 shutil.rmtree(upstream_video_dir, ignore_errors=True)
             else:
                 write_safe_triplet(
@@ -1229,8 +1156,18 @@ def run() -> dict[str, Any]:
                     task_suite_name="lerobot_groot_n15_robocasa",
                     extra_metadata=extra_metadata,
                     include_hidden_states=not getattr(args, "attn_only_records", False),
+                    grid_dir=grid_dir,
+                    # steered 수집(arm)일 때만 개입의 진실 기록 — base 는 None
+                    arm_config=(
+                        None if (arm_params is None or grid_dir is None) else {
+                            "armsig": grid_dir.name.split("__")[0],
+                            "arm_params": arm_params,
+                            "serve_steering": serve_identity.get("serve_steering"),
+                        }
+                    ),
                 )
-                out_path = output_dir / f"{stem}.pkl"
+                # write_safe_triplet 이 grid_dir=None 이면 raise 하므로 여기 도달 = 좌표 확정
+                out_path = grid_dir / "rollout.pkl"
             _append_summary(summary_path, effective_task_id, args.task, episode_idx, scenario_seed, out_path)
             results.append(
                 {

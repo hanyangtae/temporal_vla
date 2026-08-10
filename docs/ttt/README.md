@@ -1,7 +1,7 @@
 # TTT / Progress Predictor — Legacy (demoted)
 
 예전 연구 방향인 **TTT / VITA progress predictor 기반 실패 루프 탈출**의 보존용 단일 문서.
-현재 메인 라인은 latent steering([`../steering/14_pathway_phase_online_steering.md`](../steering/14_pathway_phase_online_steering.md))이며 TTT는 **비메인(legacy)** 이다.
+현재 메인 라인은 latent steering([`../steering/RESEARCH_DIRECTION.md`](../steering/RESEARCH_DIRECTION.md))이며 TTT는 **비메인(legacy)** 이다.
 
 > 정리(2026-06): 상세 설계 문서(`ttt_pipeline.md`, `progress_predictor.md`)와 상태 스냅샷
 > (`2026_04_01_status.md`, `_legacy/`)은 제거했다. 전체 내용은 git history 참조. 전용 agent
@@ -26,5 +26,5 @@ VLA backbone 재학습 없이 **external progress predictor / TTT token** 으로
 ## 부활 조건
 
 phase-matched steering(메인 method)은 **online phase/progress 신호**를 요구한다. 그 신호 공급원으로
-이 progress predictor 가 보조 부품으로 복귀할 수 있다 ([`../steering/14_pathway_phase_online_steering.md`](../steering/14_pathway_phase_online_steering.md)
+이 progress predictor 가 보조 부품으로 복귀할 수 있다 ([`../steering/RESEARCH_DIRECTION.md`](../steering/RESEARCH_DIRECTION.md)
 "phase를 online에 어떻게 아나" 절). 그 전까지는 손대지 않는다.

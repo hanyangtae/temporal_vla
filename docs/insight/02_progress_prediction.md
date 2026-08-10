@@ -3,7 +3,7 @@
 > 분석/설명 문서 (학습 실험 아님). INSIGHT(arXiv:2606.24884, *InSight: Self-Guided
 > Skill Acquisition via Steerable VLAs*)의 progress channel을 코드 수준에서 정확히
 > 기술하고, 우리 GR00T latent-steering 스택에서 재현 가능한지 판정한다. 메인 method
-> ([`../steering/14_pathway_phase_online_steering.md`](../steering/14_pathway_phase_online_steering.md))가
+> ([`../steering/RESEARCH_DIRECTION.md`](../steering/RESEARCH_DIRECTION.md))가
 > 요구하는 **online phase/progress 신호** 후보로서의 적합성에 초점.
 
 ---

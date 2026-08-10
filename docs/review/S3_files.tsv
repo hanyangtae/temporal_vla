@@ -1,0 +1,11 @@
+파일	스테이지	LOC	최종수정	역할	플래그	비고
+scripts/safe/_common/split_lib.py	S3	119	06-10	split 공용 헬퍼 (결정적 셔플·비율 분할) — split 4파일이 공유	공용	소비자 4개 전부 SAFE-detector 시대 split
+scripts/safe/groot_n15/robocasa/split/build_safe_splits.py	S3	217	06-10	N1.5 rollout pkl → train/CP/test 결정적 분할	SAFE시대	대상 데이터(구 stem rollout) 전량 폐기됨
+scripts/safe/groot_n15/robocasa/split/merge_seen60_source.py	S3	177	06-10	rollout shard 들을 canonical source tree 로 병합	SAFE시대	〃
+scripts/safe/groot_n15/robocasa/split/prepare_seen5_trainval_cp_test_split.py	S3	141	06-10	trainval/CP/test symlink split	SAFE시대	〃
+scripts/safe/groot_n16/robocasa/split/prepare_seen18_manifest.py	S3	113	05-28	seen18 run 의 flat manifest.tsv 생성	SAFE시대,고아	참조 0
+scripts/safe/groot_n16/robocasa/split/prepare_seen18_split.py	S3	295	06-09	seen18 seen/unseen split	SAFE시대	seen18 데이터 자체는 아카이브에 잔존 (판정·sidecar)
+scripts/safe/groot_n16/robocasa/split/prepare_seen4_unseen2_split.py	S3	219	06-10	seen4/unseen2 split	SAFE시대	〃
+scripts/safe/lerobot/split/prepare_split.py	S3	125	06-09	lerobot SAFE 수집물 → manifest.tsv (범용, task-map 무관)	범용	위와 달리 특정 라운드 비종속
+scripts/safe/groot_n15/robocasa/analyze/drawer_scene_feasibility.py	S3	262	08-06	drawer scene 기하 실현가능성 필터 (정책 무관 관절 스윕)	★살아있음	수집 세션이 지금 사용·수정 중 (08-06) — 동결
+scripts/safe/groot_n15/robocasa/analyze/mixer_scene_feasibility.py	S3	238	08-05	mixer scene 실현가능성 필터 (원조 — drawer 판의 모체)	★살아있음	SCENE_FEASIBILITY.md 의 구현. 동결

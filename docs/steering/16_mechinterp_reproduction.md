@@ -1,7 +1,7 @@
 # 16 — Mechanistic Interpretability Steering 재현(Phase A) + 우리 연구와의 관계
 
 > Häon et al. CoRL 2025 *"Mechanistic Interpretability for Steering VLAs"*(arXiv 2509.00328)
-> 재현 기록과 우리 메인 연구(`14_pathway_phase_online_steering.md`)에 대한 의미. (2026-06)
+> 재현 기록과 우리 메인 연구([`RESEARCH_DIRECTION.md`](RESEARCH_DIRECTION.md))에 대한 의미. (2026-06)
 
 ## 무엇을 했나
 - **Phase A**(저자 공개 코드, vanilla OpenVLA-7B + LIBERO-10 sim) 재현 완료.

@@ -2,7 +2,7 @@
 
 - 날짜: 2026-07-08
 - 상태: 설계 승인 대기
-- 관련 연구 문맥: `docs/steering/14_pathway_phase_online_steering.md` — phase-matched steering의
+- 관련 연구 문맥: `docs/steering/RESEARCH_DIRECTION.md` — phase-matched steering의
   전제 조건인 **online phase 식별**을 supervised 분류로 검증하기 위한 데이터셋.
 
 ## 1. 목적

@@ -6,7 +6,7 @@ action head DiT 출력의 action token 을 multiplicative gate 로 steer 한다
 출력 토큰 중 **마지막 action_horizon 개(action token)** 만 steer 한다.
 
 steering matrix M 은 ``src.conceptor.build_steering_matrix`` 로 만든 [D,D] (D=1024).
-conceptor NPZ(fit_conceptor_steering.py 산출)의 ``alpha{a}_C_steer`` 를 읽어 β 와
+conceptor NPZ(구 n16 fit 산출 — 파일은 archive 됨, NPZ 계약은 유지)의 ``alpha{a}_C_steer`` 를 읽어 β 와
 함께 M 으로 변환한다. β=0 이면 M=I → forward 무변경(baseline).
 
 런타임 비용: forward step 마다 [B, horizon, D] @ [D, D] 한 번 (COAST B.2 와 동일, 무시 가능).
@@ -50,7 +50,7 @@ def load_steering_matrix(
     """conceptor NPZ 에서 C_steer 를 골라 steering matrix M=(1-β)I+β·C_steer 반환.
 
     Args:
-        npz_path: fit_conceptor_steering.py 가 저장한 ``conceptors.npz``.
+        npz_path: conceptor fit 이 저장한 ``conceptors.npz``.
         beta: steering 강도 [0,1].
         alpha: 사용할 aperture. None 이면 sibling metadata.json 의 selected_alpha,
             그것도 없으면 NPZ 첫 키 (구 NPZ 는 키 순서가 비결정 — [[alpha-wiring-audit]]

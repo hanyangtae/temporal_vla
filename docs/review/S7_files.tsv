@@ -1,0 +1,45 @@
+파일	스테이지	LOC	최종수정	역할	플래그	비고
+scripts/safe/groot_n15/robocasa/steer/aggregate_final_scene.py	S7	114	07-22	final scene 라운드 집계	구라운드,종결	
+scripts/safe/groot_n15/robocasa/steer/plan_instruction_steering_eval.py	S7	542	06-11	instruction steering eval 계획기 (참조 대상 archive 됨)	exp2,종결(깨짐)	
+scripts/safe/groot_n15/robocasa/steer/exp2/aggregate_v2.py	S7	324	07-22	exp2 집계·게이트·판정	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p0_gate.py	S7	78	07-22	exp2 집계·게이트·판정	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_decide.py	S7	67	07-22	exp2 집계·게이트·판정	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_decide_pool.py	S7	69	07-22	exp2 집계·게이트·판정	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/aggregate_exp3.py	S7	329	07-22	exp3 집계·게이트·판정 (6-Holm·CI 규칙 구현)	exp3,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/beta_decide.py	S7	123	07-22	exp3 집계·게이트·판정 (6-Holm·CI 규칙 구현)	exp3,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_decision.py	S7	174	07-22	exp3 집계·게이트·판정 (6-Holm·CI 규칙 구현)	exp3,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_gated_gate.py	S7	247	07-22	exp3 집계·게이트·판정 (6-Holm·CI 규칙 구현)	exp3,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/p0_gate_exp3.py	S7	82	07-22	exp3 집계·게이트·판정 (6-Holm·CI 규칙 구현)	exp3,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/tests/test_gate_a.py	S7	436	07-22	exp3 집계·게이트·판정 (6-Holm·CI 규칙 구현)	exp3,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/aggregate_rescue.py	S7	184	07-23	rescue 집계·tremor·dose 감사	exp4-1,완료	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/analyze_action_tremor.py	S7	178	07-24	rescue 집계·tremor·dose 감사	exp4-1,완료	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/audit_flags.py	S7	126	07-23	rescue 집계·tremor·dose 감사	exp4-1,완료	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/diag_dose_robustness.py	S7	138	07-23	rescue 집계·tremor·dose 감사	exp4-1,완료	
+scripts/safe/groot_n15/robocasa/steer/exp5_3/aggregate_ws_steer.py	S7	110	07-27	within-scene steer 집계 — 차기 판정의 직계 조상	exp5-3,현행연계	
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/export_loso_directions.py	S7	75	07-28	noise 선별 통계 (순열·위약·검정력 — 종결 판정의 산실)	exp5-4,종결(seed암기)	
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/_sel_baselines.py	S7	173	07-28	noise 선별 통계 (순열·위약·검정력 — 종결 판정의 산실)	exp5-4,종결(seed암기)	
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/_sel_common.py	S7	210	07-28	noise 선별 통계 (순열·위약·검정력 — 종결 판정의 산실)	exp5-4,종결(seed암기)	
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_baselines.py	S7	197	07-28	noise 선별 통계 (순열·위약·검정력 — 종결 판정의 산실)	exp5-4,종결(seed암기)	
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_by_record.py	S7	280	07-28	noise 선별 통계 (순열·위약·검정력 — 종결 판정의 산실)	exp5-4,종결(seed암기)	
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_drop_seed.py	S7	205	07-28	noise 선별 통계 (순열·위약·검정력 — 종결 판정의 산실)	exp5-4,종결(seed암기)	
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_gate.py	S7	211	07-28	noise 선별 통계 (순열·위약·검정력 — 종결 판정의 산실)	exp5-4,종결(seed암기)	
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_placebo.py	S7	137	07-28	noise 선별 통계 (순열·위약·검정력 — 종결 판정의 산실)	exp5-4,종결(seed암기)	
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_power.py	S7	108	07-27	noise 선별 통계 (순열·위약·검정력 — 종결 판정의 산실)	exp5-4,종결(seed암기)	
+scripts/safe/groot_n15/robocasa/steer/induced/aggregate_p0.py	S7	97	07-23	perturb P0 집계·smoke 판정	perturb,keep축	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/smoke_judge.py	S7	299	07-22	perturb P0 집계·smoke 판정	perturb,keep축	
+scripts/safe/groot_n15/robocasa/steer/patchceil/analyze_meta.py	S7	72	07-22	donor 이식 판정·검사 일습	patchceil,보조종결	
+scripts/safe/groot_n15/robocasa/steer/patchceil/check_anchors.py	S7	85	07-22	donor 이식 판정·검사 일습	patchceil,보조종결	
+scripts/safe/groot_n15/robocasa/steer/patchceil/check_passA.py	S7	63	07-22	donor 이식 판정·검사 일습	patchceil,보조종결	
+scripts/safe/groot_n15/robocasa/steer/patchceil/extract_donor_npz.py	S7	100	07-22	donor 이식 판정·검사 일습	patchceil,보조종결	
+scripts/safe/groot_n15/robocasa/steer/patchceil/extract_ep_meta_remote.py	S7	80	07-22	donor 이식 판정·검사 일습	patchceil,보조종결	
+scripts/safe/groot_n15/robocasa/steer/patchceil/judge_patchceil.py	S7	124	07-22	donor 이식 판정·검사 일습	patchceil,보조종결	
+scripts/safe/groot_n15/robocasa/steer/patchceil/make_shuffle_npz.py	S7	34	07-22	donor 이식 판정·검사 일습	patchceil,보조종결	
+scripts/safe/groot_n15/robocasa/steer/patchceil/replay_arm.py	S7	134	08-05	donor 이식 판정·검사 일습	patchceil,보조종결	
+scripts/safe/groot_n15/robocasa/steer/patchceil/select_passB.py	S7	76	07-22	donor 이식 판정·검사 일습	patchceil,보조종결	
+scripts/safe/groot_n15/robocasa/eval/rejudge_success.py	S7	187	07-10	저장 rollout 재채점 (fresh-process 규약의 원조)	재채점,★현행	
+scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py	S7	290	06-10	허브가 import 하는 obs 변환·성공판정 (지도 1 부품)	eval부품,★현행	
+scripts/safe/groot_n15/robocasa/eval/internal_parity.py	S7	345	06-10	내부 parity 검사	진단,일회성?	
+scripts/safe/groot_n15/robocasa/eval/native_official_zmq_eval.py	S7	174	06-10	N1.5 native ZMQ eval (COAST 시대)	n15native,종결?	
+scripts/safe/groot_n15/robocasa/eval/native_zmq_eval.py	S7	220	06-10	〃 변형	n15native,종결?	
+scripts/safe/groot_n15/robocasa/eval/run_target15_seedpairs.sh	S7	306	06-10	target15 seed쌍 러너	구라운드,종결	
+scripts/safe/groot_n15/robocasa/eval/annotate_phase_video.py	S7	171	07-23	phase 배너 주석 영상 (수집 세션 사용 중?)	시각화,현행연계	

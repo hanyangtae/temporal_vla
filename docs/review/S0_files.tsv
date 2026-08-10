@@ -1,0 +1,8 @@
+파일	스테이지	LOC	최종수정	역할	플래그	비고
+README.md	S0	280	06-23	레포 최상위 소개·구조·빠른 시작	현행성미확인	exp2~5 언급 0회. 사용자 정독 필요
+CLAUDE.md	S0	192	07-10	Claude Code 세션 지침(연구방향·평가표준·경로규칙)	현행성미확인	"연구 방향" 절을 exp2~5 결과와 대조 필요
+AGENTS.md	S0	8	05-26	Codex 계열 entrypoint (stub)	stub	8줄, agent_spec.md 로 포워딩만
+.agents/agent_spec.md	S0	255	06-09	agent 운영 규칙 단일 출처	현행성미확인	사용자 정독 필요
+docs/README.md	S0	163	07-06	docs 전체 인덱스·읽기 순서	인덱스누락	미인덱싱 4개 디렉토리(collab/insight/onboarding/superpowers). 종결된 11_phase4 를 현행 계획으로 참조
+docs/HANDOFF_current.md	S0	161	07-22	새 세션 진입점	내용정체	파일 07-22 / 내용 07-10. exp4·exp5 두 라운드 누락
+docs/steering/README.md	S0	89	06-23	메인 연구 라인 인덱스	내용정체,인덱스누락	"현재 결론" 06-23 정지(이후 null 판정 전무). Reading Order 8/43개만

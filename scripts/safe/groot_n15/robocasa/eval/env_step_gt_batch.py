@@ -30,8 +30,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[5]
-sys.path.insert(0, str(REPO / "scripts/safe/groot_n16/robocasa/collect"))
-sys.path.insert(0, str(REPO / "scripts/safe/groot_n16/libero"))
+sys.path.insert(0, str(REPO))  # src.collect.* import 용
 
 _SEED_SUFFIX = re.compile(r"_s\d+$")
 
@@ -55,7 +54,7 @@ def process_one(pkl_path: str, in_root: str, out_root: str) -> None:
     import robocasa  # noqa: F401
     import robocasa.utils.gym_utils.gymnasium_groot  # noqa: F401
     import robosuite  # noqa: F401
-    from robocasa_event_labeler import find_robocasa_env, make_robocasa_event_labeler
+    from src.collect.robocasa.event_labeler import find_robocasa_env, make_robocasa_event_labeler
 
     p = Path(pkl_path)
     d = pickle.load(open(p, "rb"))

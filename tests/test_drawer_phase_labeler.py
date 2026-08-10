@@ -5,11 +5,9 @@ import sys
 
 import numpy as np
 
-_ROOT = os.path.join(os.path.dirname(__file__), "..", "scripts", "safe", "groot_n16")
-sys.path.insert(0, os.path.join(_ROOT, "libero"))
-sys.path.insert(0, os.path.join(_ROOT, "robocasa", "collect"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))  # repo root
 
-from robocasa_event_labeler import (  # noqa: E402
+from src.collect.robocasa.event_labeler import (  # noqa: E402
     DrawerPhaseLabeler,
     make_robocasa_event_labeler,
 )
