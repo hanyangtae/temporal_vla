@@ -165,4 +165,4 @@ scripts/serve/groot.py	S5	미정	검토 범위 제외(사용자 08-10) — 타�
 scripts/serve/openvla_oft.py	S5	미정	검토 범위 제외(사용자 08-10) — 타모델 벤치 재개 시 재검토	보류(범위제외)	
 scripts/serve/upvla.py	S5	미정	검토 범위 제외(사용자 08-10) — 타모델 벤치 재개 시 재검토	보류(범위제외)	
 scripts/serve/xvla.py	S5	미정	검토 범위 제외(사용자 08-10) — 타모델 벤치 재개 시 재검토	보류(범위제외)	
-scripts/serve/lerobot.py	S5	수정	라운드 완주 후 절제 목록: cam-attn 분기 제거 · legacy hidden_states_b64 이중 발송 제거(vla_client 통일 blob 우선 확인 후 — 응답 크기 절반) · _register_steering 364줄 정리		
+scripts/serve/lerobot.py	S5	수정	라운드 완주 후 절제 목록: cam-attn 분기 제거 · legacy hidden_states_b64 이중 발송 제거(vla_client 통일 blob 우선 확인 후 — 응답 크기 절반) · _register_steering 364줄 정리 | 배선반 리팩토링 설계(08-10 합의): 4모드(single/multi/gated/VL)를 통일형 'target별 hook + phase→연산자 사전'으로 — gated 구현을 일반형으로 승격, 정적={always:M} 특수형. bindings=(phase,layer,opsig) 규약(docs/04 §3.3)과 동형. CLI --steering-bind 반복형 수렴 후보		
