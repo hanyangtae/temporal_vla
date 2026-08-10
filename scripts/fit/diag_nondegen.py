@@ -1,3 +1,4 @@
+# 유래: steer/diag_conceptor_nondegen.py (2026-08-10 기능명 재배치 — docs/review/RENAME_PLAN.md)
 """conceptor 비퇴화 진단 — 공유계획(24 §3) 하드 게이트. exp4-2 fit 산출물의 1차 가설 검정.
 
 07-20 산술 검사의 스크립트화. 입력 = conceptors.npz + held-out activation manifest.
@@ -30,11 +31,8 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "16")
 
 import numpy as np
 
-_INDUCED = Path(__file__).resolve().parent / "induced"
-if str(_INDUCED) not in sys.path:
-    sys.path.insert(0, str(_INDUCED))
 
-from induced_common import REPO, load_roll_any  # noqa: E402  (sys.path 부수효과 포함)
+from load_lib import REPO, load_roll_any  # noqa: E402  (sys.path 부수효과 포함)
 from src.conceptor import (  # noqa: E402
     and_conceptor,
     compute_conceptor,

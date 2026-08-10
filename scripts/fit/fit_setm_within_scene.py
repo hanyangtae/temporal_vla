@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# 유래: exp5-3 fit_within_scene_setM.py (2026-08-10 기능명 재배치 — docs/review/RENAME_PLAN.md)
 """exp5-3: within-scene mean-diff setM fit — scene-matched drawer 수집(320판)에서
 permanent + phase-gated 방향 NPZ 를 LOO-by-seed 8 fold 로 산출.
 

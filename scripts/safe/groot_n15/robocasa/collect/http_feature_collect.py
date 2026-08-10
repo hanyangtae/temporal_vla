@@ -681,15 +681,15 @@ def parse_args() -> argparse.Namespace:
 
 
 # probe 경로(_ProbeClient/_obs_hash/_flatten_action_chunk/_run_probe, 205줄)는
-# exp5-4 전용이라 steer/exp5_4/probe_lib.py 로 분리했다(2026-07-31). CLI 계약은
+# exp5-4 전용이라 scripts/collect/probe_lib.py 로 분리했다(2026-07-31 분리, 08-10 이동). CLI 계약은
 # 그대로 유지 — run() 이 --probe-seeds 를 받아 아래 run_probe 로 위임하므로
 # probe_collect.sh 는 수정 불필요. 같은 모듈의 _ProbeClient/_obs_hash/
-# _flatten_action_chunk 는 exp5_4/smoke_probe.py(캡처 hook 무해성·서버 오염 검출)와
+# _flatten_action_chunk 는 scripts/collect/smoke_probe.py(캡처 hook 무해성·서버 오염 검출)와
 # check_probe_identity.py 가 계속 쓴다 — 라운드 종결과 무관한 무결성 도구다.
 
 
 def _run_probe(args):
-    _prepend_path(REPO_ROOT / "scripts" / "safe" / "groot_n15" / "robocasa" / "steer" / "exp5_4")
+    _prepend_path(REPO_ROOT / "scripts" / "collect")
     from probe_lib import run_probe  # noqa: PLC0415  (순환 import 회피 — 지연 로드)
 
     return run_probe(args)

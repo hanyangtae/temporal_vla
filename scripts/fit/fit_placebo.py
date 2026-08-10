@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# 유래: exp5-3 (2026-08-10 기능명 재배치 — docs/review/RENAME_PLAN.md)
 """exp5-3 위약 fit — scene-내 라벨 순열로 전체 within-scene 파이프 재실행.
 
 위약 규약 (exp2/exp4-1 관례의 within-scene 판):

@@ -28,10 +28,12 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "16")
 import numpy as np
 
 _HERE = Path(__file__).resolve().parent
-if str(_HERE) not in sys.path:
-    sys.path.insert(0, str(_HERE))
+_FIT = _HERE.parent / "fit"
+for _p in (_HERE, _FIT):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
-from induced_common import load_roll_any, read_record_start  # noqa: E402
+from load_lib import load_roll_any, read_record_start  # noqa: E402
 
 LAYER_KEYS = [0, 2, 4, 8, 10, 12, 15, "VL"]
 

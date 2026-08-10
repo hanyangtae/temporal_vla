@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from src.conceptor import and_conceptor, compute_conceptor, not_conceptor  # noqa: E402
-from fit_mean_diff import episode_records, gather, load_cell_rolls  # noqa: E402
+from fit_setm import episode_records, gather, load_cell_rolls  # noqa: E402
 
 # α 저역 그리드 (공유문서 §3: "α 그리드는 0.3 아래로 확장, C_succ 이득이 1에 붙으면 포화") —
 # 실측 활성 스케일에선 α≥1 에서 C≈I 포화 → AND-NOT ≈0 (합성 재현 확인). layer 마다

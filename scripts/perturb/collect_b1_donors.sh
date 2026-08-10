@@ -63,7 +63,7 @@ for i in 1 2; do
     fi
     pkl=$(ls "$out/raw_rollouts/${TASK}/b1_instr$i/task${CELL_INDEX}--ep${ep}--succ"*.pkl 2>/dev/null | head -1)
     if [ -n "$pkl" ] && [ ! -f "$B1/donor_instr${i}_ep${ep}.npz" ]; then
-      docker exec lerobot python "${WT_CONT}/scripts/safe/groot_n15/robocasa/steer/induced/extract_vl_donor_npz.py" \
+      docker exec lerobot python "${WT_CONT}/scripts/perturb/extract_vl_donor_npz.py" \
         --pkl "$(to_cont "$pkl")" --out "$(to_cont "$B1")/donor_instr${i}_ep${ep}.npz" --allow-fail
     fi
   done

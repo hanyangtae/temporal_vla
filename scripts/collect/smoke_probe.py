@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# 유래: exp5-4 (2026-08-10 기능명 재배치 — docs/review/RENAME_PLAN.md)
 """exp5-4 probe 결정성 smoke (robocasa 컨테이너 안에서 실행).
 
 Codex Gate1 리뷰의 smoke 4건 중 서버측 3건을 담당한다 (④ 동일 rollout 2회는
@@ -28,7 +29,7 @@ import sys
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[6]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "safe" / "groot_n15" / "robocasa" / "collect"))
 
 import http_feature_collect as hfc  # noqa: E402  (sys.path 세팅 후 — make_env 등 본류 재사용)

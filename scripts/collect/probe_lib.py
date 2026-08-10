@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# 유래: exp5-4 (2026-08-10 기능명 재배치 — docs/review/RENAME_PLAN.md)
 """exp5-4 probe 경로 — t=0 관측 1개로 seed 별 record 0 활성만 캡처.
 
 구 `collect/http_feature_collect.py` 에서 분리(2026-07-31). 그 파일은 라운드마다

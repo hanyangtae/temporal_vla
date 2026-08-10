@@ -1,3 +1,4 @@
+# 유래: exp4-2 induced_common.py (2026-08-10 기능명 재배치 — docs/review/RENAME_PLAN.md)
 """exp4-2 분석 공용 로더 — pkl capture 모드 자동 디스패치 (bridge/diag 공유).
 
 action_token_mean pkl → phase_separation.load_rollout, all_token_full pkl →
@@ -11,13 +12,13 @@ import pickle
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[6]
+REPO = Path(__file__).resolve().parents[2]
 for _p in (REPO, REPO / "scripts/safe/groot_n15/robocasa/analyze",
-           REPO / "scripts/safe/groot_n15/robocasa/steer"):
+           REPO / "scripts/fit"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-from fit_phase_conceptor_n15 import FULLTOKEN_MODE, load_rollout_fulltoken  # noqa: E402
+from fit_phase_conceptor import FULLTOKEN_MODE, load_rollout_fulltoken  # noqa: E402
 from phase_separation import load_rollout  # noqa: E402
 
 

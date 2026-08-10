@@ -1,3 +1,4 @@
+# 유래: n15 analyze/ (2026-08-10 기능명 재배치 — docs/review/RENAME_PLAN.md)
 """OpenDrawer scene 실현가능성 사전 판정 (정책 무관, reset 시점 기하 스윕).
 
 `mixer_scene_feasibility.py` 의 drawer 이식판 (docs/steering/SCENE_FEASIBILITY.md §5).
@@ -95,7 +96,7 @@ def probe_one(env_name: str, seed: int, steps: int) -> dict:
     import robocasa  # noqa: F401
     import robocasa.utils.gym_utils.gymnasium_groot  # noqa: F401
     import robosuite  # noqa: F401
-    _repo = Path(__file__).resolve().parents[5]
+    _repo = Path(__file__).resolve().parents[2]
     if str(_repo) not in sys.path:
         sys.path.insert(0, str(_repo))
     from src.collect.robocasa.event_labeler import find_robocasa_env

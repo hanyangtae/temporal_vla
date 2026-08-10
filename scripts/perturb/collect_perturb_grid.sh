@@ -28,7 +28,7 @@ case "$CELL" in
     # ⚠️ OpenDrawer 는 seed 에 따라 좌/우 variant 가 바뀐다 (robot 배치 rng — kitchen_drawer.py
     #    _place_robot → drawer_side, ep_meta lang "Open the {side} drawer."). seed 100001 이
     #    정말 left 인지는 **GPU/컨테이너 세션에서 reset 1회로 확인** 필요:
-    #      analyze/mixer_scene_feasibility.py --task OpenDrawer --fixture drawer --seeds 100001
+    #      scripts/collect/mixer_scene_feasibility.py --task OpenDrawer --fixture drawer --seeds 100001
     #      (결과 JSON 의 ep_lang 필드) — 정책 없이 판정 가능.
     #    불일치 시 collector 의 canonical-instruction 검증이 즉시 ABORT 시킨다(무해한 실패).
     TASK=OpenDrawer
@@ -37,7 +37,7 @@ case "$CELL" in
     INSTR="Open the left drawer."
     ;;
   mixer)
-    # seed/cell_index 는 feasibility 스캔(analyze/mixer_scene_feasibility.py)으로 확정 —
+    # seed/cell_index 는 feasibility 스캔(scripts/collect/mixer_scene_feasibility.py)으로 확정 —
     # 기하 불가 seed 실존(100010 BLOCKED, memory scene-feasibility-filter). instruction 은
     # 1종 고정 (robocasa kitchen_stand_mixer.py OpenStandMixerHead.get_ep_meta).
     TASK=OpenStandMixerHead

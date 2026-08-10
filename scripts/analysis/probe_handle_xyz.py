@@ -5,7 +5,7 @@
 좌표 확보. 전역 setpoint 는 read-out 0.59 로 붕괴하고 scene 별은 0.868 유지했다 →
 성공 위치가 scene 마다 다르다는 뜻이고, 그게 손잡이 기하와 상관되면 "공간 암기" 확정.
 
-fixture 접근 규약은 analyze/mixer_scene_feasibility.py:73-91 (drawer 분기) 와 동일:
+fixture 접근 규약은 scripts/collect/mixer_scene_feasibility.py:73-91 (drawer 분기) 와 동일:
   k.drawer, naming_prefix, {name}_slidejoint, q_phys_max = size[1]*0.55
 출력: TSV (seed, handle_xyz, base_xyz, 상대좌표, 거리, size, prefix)
 """

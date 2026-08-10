@@ -1,3 +1,4 @@
+# 유래: steer/fit_phase_conceptor_n15.py (2026-08-10 기능명 재배치 — docs/review/RENAME_PLAN.md)
 """N1.5 phase-event 대조 conceptor fit (Rung 3 steering target 생성).
 
 방향 1: 관측 분리가 confound(scene/길이)로 약하다는 걸 확인했으니, **관측을 더 파지 않고
@@ -54,7 +55,7 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "8")
 
 import numpy as np
 
-REPO = Path(__file__).resolve().parents[5]
+REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "scripts/safe/groot_n15/robocasa/analyze"))
 

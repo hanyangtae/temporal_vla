@@ -34,8 +34,8 @@ sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fit_mean_diff import SEGMENTS, mean_diff, seg_of_token  # noqa: E402
-from fit_phase_conceptor_n15 import FULLTOKEN_MODE  # noqa: E402
+from fit_setm import SEGMENTS, mean_diff, seg_of_token  # noqa: E402
+from fit_phase_conceptor import FULLTOKEN_MODE  # noqa: E402
 
 N_BOOT = 1000
 RNG_SEED = 424106
