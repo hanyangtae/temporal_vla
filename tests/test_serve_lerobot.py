@@ -753,13 +753,20 @@ class TestGrootAdapterSpecs(unittest.TestCase):
             REPO_ROOT
             / "configs/checkpoints/lerobot_groot_n15__robocasa365_ckpt120000.yaml"
         )
-        metadata_path = (
-            REPO_ROOT
-            / "data/huggingface/hub/models--robocasa--robocasa365_checkpoints"
-            / "snapshots/14895998fe7c8f8f2441cc8957ec2c510302758b"
-            / "gr00t_n1-5/multitask_learning/checkpoint-120000"
-            / "experiment_cfg/metadata.json"
+        # 체크포인트 cache 규약 (구 repo data/ → ~/.cache/temporal_vla, 컨테이너 /cache)
+        _rel = (
+            "datasets/huggingface/hub/models--robocasa--robocasa365_checkpoints"
+            "/snapshots/14895998fe7c8f8f2441cc8957ec2c510302758b"
+            "/gr00t_n1-5/multitask_learning/checkpoint-120000"
+            "/experiment_cfg/metadata.json"
         )
+        candidates = [
+            Path("/cache") / _rel,
+            Path.home() / ".cache/temporal_vla" / _rel,
+        ]
+        metadata_path = next((p for p in candidates if p.is_file()), None)
+        if metadata_path is None:
+            self.skipTest(f"robocasa365 ckpt metadata 없음: {candidates}")
 
         stats = load_groot_dataset_stats_from_metadata(profile, metadata_path)
 
@@ -1114,7 +1121,7 @@ class TestActWithFeaturesEndpoint(unittest.TestCase):
         hidden = np.zeros((2, 5, 3), dtype=np.float16)
         action = torch.zeros((1, 16, 7), dtype=torch.float32)
         meta = {
-            "feature_kind": "groot_n15_dit_block_residual_tokens",
+            "feature_kind": "groot_n15_dit_block_residual_action_tokens_denoise",
             "feature_axes": ["layer", "model_token", "feature_dim"],
             "num_inference_timesteps": 4,
             "capture_layers": [0, 2],
@@ -1140,7 +1147,7 @@ class TestActWithFeaturesEndpoint(unittest.TestCase):
         run_with_features.assert_called_once()
         self.assertEqual(run_with_features.call_args.kwargs["groot_dit_layers"], (0, 2))
         data = r.json()
-        self.assertEqual(data["features.kind"], "groot_n15_dit_block_residual_tokens")
+        self.assertEqual(data["features.kind"], "groot_n15_dit_block_residual_action_tokens_denoise")
         self.assertEqual(data["features.axes"], ["layer", "model_token", "feature_dim"])
         self.assertEqual(data["capture_layers"], [0, 2])
         self.assertEqual(data["layer_count"], 2)
@@ -1270,16 +1277,22 @@ class TestSafeHooks(unittest.TestCase):
             {},
             "groot",
             groot_dit_layers=(0, 2),
+            groot_dit_token_pool="all_token_full",  # 수집 표준 (denoise 축 보존)
         )
 
         self.assertEqual(tuple(action.shape), (1, 2, 7))
-        self.assertEqual(tuple(hidden.shape), (2, 5, 3))
-        self.assertEqual(axes, ["layer", "model_token", "feature_dim"])
-        self.assertEqual(meta["feature_kind"], "groot_n15_dit_block_residual_tokens")
+        # [L, K(denoise), T, D] — 이 fake 는 forward 1회라 K=1
+        self.assertEqual(tuple(hidden.shape), (2, 1, 5, 3))
+        self.assertEqual(axes, ["layer", "denoise_step", "model_token", "feature_dim"])
+        self.assertEqual(
+            meta["feature_kind"], "groot_n15_dit_block_residual_full_tokens_denoise"
+        )
         self.assertEqual(meta["capture_layers"], [0, 2])
-        np.testing.assert_allclose(hidden[0], np.arange(15, dtype=np.float32).reshape(5, 3) + 1.0)
         np.testing.assert_allclose(
-            hidden[1],
+            hidden[0, 0], np.arange(15, dtype=np.float32).reshape(5, 3) + 1.0
+        )
+        np.testing.assert_allclose(
+            hidden[1, 0],
             np.arange(15, dtype=np.float32).reshape(5, 3) + 111.0,
         )
 
@@ -1452,8 +1465,8 @@ class TestHealthEndpoint(unittest.TestCase):
         data = self._health()
 
         self.assertTrue(data["supports_features"])
-        self.assertEqual(data["feature_kind"], "groot_n15_dit_block_residual_tokens")
-        self.assertEqual(data["feature_axes"], ["layer", "model_token", "feature_dim"])
+        self.assertEqual(data["feature_kind"], "groot_n15_dit_block_residual_action_tokens_denoise")
+        self.assertEqual(data["feature_axes"], ["layer", "denoise_step", "feature_dim"])
         self.assertEqual(data["groot_dit_capture_layers"], [0, 2, 31])
         self.assertEqual(data["model_action_horizon"], 16)
         self.assertNotIn("feature_action_horizon", data)

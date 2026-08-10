@@ -467,10 +467,11 @@ class TestRoboCasaActionProcessor(unittest.TestCase):
         result = self.proc.process_action(action)
 
         self.assertEqual(result.shape, (12,))
+        # 현행 GR00T native 12-dim 레이아웃: eef 3+3 · gripper 1 · base 4 · control_mode 1
         np.testing.assert_array_almost_equal(
             result,
             np.array(
-                [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 0.8, 0.01, 0.02, 0.03, 0.04],
+                [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 0.01, 0.02, 0.03, 0.04, 1.0],
                 dtype=np.float32,
             ),
         )
