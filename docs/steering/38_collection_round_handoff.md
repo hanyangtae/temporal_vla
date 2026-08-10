@@ -200,9 +200,8 @@ kill 해 trap cleanup 이 빈 결과 + 가짜 `[done]` 을 남긴다. 완료는 
 
 ### 손봐야 하는 것
 
-1. **`serve_provenance()` 가 GPU 를 포함한다** — `f"{hostname}:gpu{CUDA_VISIBLE_DEVICES}"`.
-   docs/04 §3.2 개정으로 GPU 는 좌표가 아니게 됐으므로 **머신명만** 반환해야 한다.
-   지금 그대로면 같은 머신인데 GPU 가 다르다는 이유로 다른 칸이 된다.
+1. ~~serve_provenance() GPU 포함~~ — **완료 확인(08-10)**: hostname 만 반환, GPU 는
+   serve_gpu 감사 필드로 분리. 규약 주석까지 반영돼 있음.
 2. **수집 러너 `.sh` 가 좌표 인자를 안 넘긴다** — 지금 구 러너를 그대로 돌리면
    `grid_dir 없이 수집할 수 없다` 로 **즉시 실패**한다(의도된 동작). 이번 라운드 러너는
    `collection_plan.json` 기반으로 새로 쓴다.

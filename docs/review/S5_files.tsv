@@ -12,5 +12,5 @@ scripts/serve/openvla_oft.py	S5	546	06-10	OpenVLA-OFT serve (:8400)	타모델,�
 scripts/serve/upvla.py	S5	234	06-10	UP-VLA serve (:8300)	타모델,범위제외	〃
 scripts/serve/xvla.py	S5	366	06-10	xVLA serve (:8100)	타모델,범위제외	〃
 scripts/utils/vla_client.py	S5	320	07-22	통일 HTTP 클라이언트 (수집·eval 전부의 관문)	★현행	src→scripts 역방향 의존 문제의 당사자 (policy_clients 주석)
-src/utils/common/serving.py	S5	111	08-05	serve_provenance — machine·ckpt 정본	★현행	§4-1 GPU 제거 필요 (핸드오프 38)
+src/utils/common/serving.py	S5	111	08-05	serve_provenance — machine·ckpt 정본	★현행	GPU 제거 완료 확인(08-10)
 src/phase_online/online_phase.py	S5	157	07-27	실시간 phase readout (SAE 추론 이식판)	S2이월	S2 미정 — serve 소비자라 여기서 최종 판정

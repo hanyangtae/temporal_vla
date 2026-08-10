@@ -94,7 +94,7 @@ scripts/safe/groot_n16/libero/HANDOFF_event_phase_segmentation.md	S2	keep
 scripts/safe/groot_n15/robocasa/collect/HANDOFF_phase_event_collection.md	S2	keep			
 scripts/safe/groot_n15/robocasa/eval/env_step_gt_retro.py	S2	archive	batch(keep) 는 독립 — retro 미참조 확인	적용(archive)	a1a242a
 scripts/safe/groot_n15/robocasa/eval/env_step_gt_batch.py	S2	keep			
-src/phase_online/online_phase.py	S2	미정	이건 SAE action phase labeler 쪽 연구에 필요한 파일인가?  → 답: 맞음 — top-k SAE(task_classification) 추론경로의 self-contained 이식판, serve(lerobot.py)가 실시간 phase readout 으로 소비		
+src/phase_online/online_phase.py	S5	keep	이건 SAE action phase labeler 쪽 연구에 필요한 파일인가?  → 답: 맞음 — top-k SAE(task_classification) 추론경로의 self-contained 이식판, serve(lerobot.py)가 실시간 phase readout 으로 소비 | SAE 추론 이식판, serve 소비 (S2 미정 해소)	해당없음(keep)	
 scripts/safe/_common/split_lib.py	S3	keep	safe가 개입 시점을 결정해주는 용도로 나중에 부활할 가능성이 다분함. 		
 scripts/safe/groot_n15/robocasa/split/build_safe_splits.py	S3	keep			
 scripts/safe/groot_n15/robocasa/split/merge_seen60_source.py	S3	keep			
@@ -166,3 +166,12 @@ scripts/serve/openvla_oft.py	S5	미정	검토 범위 제외(사용자 08-10) —
 scripts/serve/upvla.py	S5	미정	검토 범위 제외(사용자 08-10) — 타모델 벤치 재개 시 재검토	보류(범위제외)	
 scripts/serve/xvla.py	S5	미정	검토 범위 제외(사용자 08-10) — 타모델 벤치 재개 시 재검토	보류(범위제외)	
 scripts/serve/lerobot.py	S5	수정	라운드 완주 후 절제 목록: cam-attn 분기 제거 · legacy hidden_states_b64 이중 발송 제거(vla_client 통일 blob 우선 확인 후 — 응답 크기 절반) · _register_steering 364줄 정리 | 배선반 리팩토링 설계(08-10 합의): 4모드(single/multi/gated/VL)를 통일형 'target별 hook + phase→연산자 사전'으로 — gated 구현을 일반형으로 승격, 정적={always:M} 특수형. bindings=(phase,layer,opsig) 규약(docs/04 §3.3)과 동형. CLI --steering-bind 반복형 수렴 후보		
+scripts/serve/exp42_serve.py	S5	archive	lerobot.py 와 diff 0 완전 중복(고정 효력 소멸). .sh 참조 5개는 S6 구 라운드 러너 — S6 처리	적용(archive)	d61e27c
+scripts/serve/patchceil_serve.py	S5	archive	〃 (.sh 1개)	적용(archive)	d61e27c
+scripts/serve/attn_hooks.py	S5	archive	cam-attn 방침 확정분. lerobot lazy import 라 동결 중 삭제 무해(플래그 사용 시 fail-loud). lerobot 내 분기 절제는 완주 후	적용(archive)	d61e27c
+scripts/serve/steering_hooks.py	S5	keep	개입 hook 본체 — 정독 완료	해당없음(keep)	
+scripts/serve/safe_hooks.py	S5	keep	캡처 hook 본체 — 정독 완료. cross-attn 곁가지는 완주 후 절제	해당없음(keep)	
+scripts/serve/patching_hooks.py	S5	keep	donor 이식 hook — perturb 축(keep)이 소비	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/serve/feature_server.py	S5	keep	n16 ZMQ serve, 재수집 진입점	해당없음(keep)	
+scripts/utils/vla_client.py	S5	keep	통일 클라이언트. RENAME_PLAN: src 이동 후보(역방향 의존 해소)	해당없음(keep)	
+src/utils/common/serving.py	S5	keep	GPU 제거건은 이미 완료 확인(08-10) — hostname 만 반환·주석 명시	해당없음(keep)	
