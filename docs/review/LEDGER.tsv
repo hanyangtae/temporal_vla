@@ -175,3 +175,106 @@ scripts/serve/patching_hooks.py	S5	keep	donor 이식 hook — perturb 축(keep)�
 scripts/safe/groot_n16/robocasa/serve/feature_server.py	S5	keep	n16 ZMQ serve, 재수집 진입점	해당없음(keep)	
 scripts/utils/vla_client.py	S5	keep	통일 클라이언트. RENAME_PLAN: src 이동 후보(역방향 의존 해소)	해당없음(keep)	
 src/utils/common/serving.py	S5	keep	GPU 제거건은 이미 완료 확인(08-10) — hostname 만 반환·주석 명시	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/ab_sweep_chain.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/ablation_queue_gpu01.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/confirm90_gpu23.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/cross_instruction_chain.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/exp2_cell_runner.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/exp2_cell_runner_srv50.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p1_remote_chain.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p1_screen.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_select_cell.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_select_cell_srv50.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_select_cell_v2.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_select_pool.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_local.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv48.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv48_lite.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv48_lite_b.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv50.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv50g0.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv50g0b.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv50g1.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/prune_completed_p3.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/sj_deprecate_round2.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/srv50_collect_cell.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/beta_sweep.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_c0_scan.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_cell_runner.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_cell_runner_srv50.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_collect_cell.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_collect_cell_srv50.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_lane_local.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_lane_srv50.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_lib.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp4_1/mixer_c0_collect.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_conceptor_fit_remote.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_conceptor_sweep_remote.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_fits_remote.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_gated_fits_remote.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_nolen_fits_remote.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_oracle_rescue.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp4_1/smoke_exp41.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp5_3/beta_sweep.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp5_3/collect_sm_mixer.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp5_3/eval_ws_steer.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp5_3/mixer_sm_collect.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp5_3/mixer_sm_pull.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp5_4/probe_collect.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/heldout_round_cell.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/heldout_round_cell_host.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/heldout_round_gpu01.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/induced/collect_b1_donors.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/collect_b3_donors.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/run_induced_patch.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/run_perturb_steer_eval.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/s1_perturb.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/s2_dit_patch.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/s3_vl_patch.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/s4_fit_truncation.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/s5_npz_serve.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/smoke_common.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/lane_status.sh	S6	keep	현행 벤치 eval/진단	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/master_6p_pipeline.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/master_final_scene.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/master_final_scene2.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/patchceil/collect_passB.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/patchceil/extract_donors.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/patchceil/rerun_episodes.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/patchceil/run_patch_rollouts.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/queue/apple_fits.sh	S6	미정	queue 인프라 — 차기 eval 설계 시 재사용/재작성 결정	보류	
+scripts/safe/groot_n15/robocasa/steer/queue/build_work_queue.sh	S6	미정	queue 인프라 — 차기 eval 설계 시 재사용/재작성 결정	보류	
+scripts/safe/groot_n15/robocasa/steer/queue/fits_waiter.sh	S6	미정	queue 인프라 — 차기 eval 설계 시 재사용/재작성 결정	보류	
+scripts/safe/groot_n15/robocasa/steer/queue/lane_runner_local.sh	S6	미정	queue 인프라 — 차기 eval 설계 시 재사용/재작성 결정	보류	
+scripts/safe/groot_n15/robocasa/steer/queue/lane_runner_local_v2.sh	S6	미정	queue 인프라 — 차기 eval 설계 시 재사용/재작성 결정	보류	
+scripts/safe/groot_n15/robocasa/steer/queue/lane_runner_srv50.sh	S6	미정	queue 인프라 — 차기 eval 설계 시 재사용/재작성 결정	보류	
+scripts/safe/groot_n15/robocasa/steer/queue/lane_runner_srv50_v2.sh	S6	미정	queue 인프라 — 차기 eval 설계 시 재사용/재작성 결정	보류	
+scripts/safe/groot_n15/robocasa/steer/queue/monitor_queue.sh	S6	미정	queue 인프라 — 차기 eval 설계 시 재사용/재작성 결정	보류	
+scripts/safe/groot_n15/robocasa/steer/queue/queue_lib.sh	S6	미정	queue 인프라 — 차기 eval 설계 시 재사용/재작성 결정	보류	
+scripts/safe/groot_n15/robocasa/steer/queue/rename_arms.sh	S6	미정	queue 인프라 — 차기 eval 설계 시 재사용/재작성 결정	보류	
+scripts/safe/groot_n15/robocasa/steer/run_instruction_steering_eval.py	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/run_one_steer_cell.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/steer_eval_30x30.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/steer_eval_multilayer_30.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/steer_eval_transport_30.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/strict_steer_queue_gpu45.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/build_p3_queue.py	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/build_exp3_queue.py	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n16/robocasa/steer/archive_perT_to_remote.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n16/robocasa/steer/collect_multilayer_parallel.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n16/robocasa/steer/collect_pathway_parallel.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n16/robocasa/steer/eval_steer_compare.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n16/robocasa/steer/eval_steer_pathways.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n16/robocasa/steer/eval_steer_vl.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/eval/robocasa_eval.py	S6	keep	현행 벤치 eval/진단	해당없음(keep)	
+scripts/eval/groot_robocasa_zmq_eval.py	S6	keep	현행 벤치 eval/진단	해당없음(keep)	
+scripts/eval/groot_robocasa.sh	S6	keep	현행 벤치 eval/진단	해당없음(keep)	
+scripts/eval/test_robocasa_env_reproducibility.py	S6	keep	현행 벤치 eval/진단	해당없음(keep)	
+scripts/eval/calvin.py	S6	미정	검토 범위 제외(타모델)	보류(범위제외)	
+scripts/eval/libero.py	S6	미정	검토 범위 제외(타모델)	보류(범위제외)	
+scripts/eval/pi05_libero.py	S6	미정	검토 범위 제외(타모델)	보류(범위제외)	
+scripts/eval/openvla_oft_libero.sh	S6	미정	검토 범위 제외(타모델)	보류(범위제외)	
+scripts/eval/openvla_oft_libero_rollouts.sh	S6	미정	검토 범위 제외(타모델)	보류(범위제외)	
+scripts/eval/xvla_calvin.sh	S6	미정	검토 범위 제외(타모델)	보류(범위제외)	
+scripts/eval/phase1_predictor.py	S6	미정	TTT 계열 — S9 잡파일 때 처분	보류	
+scripts/eval/phase1_batch.sh	S6	미정	TTT 계열 — S9 잡파일 때 처분	보류	
