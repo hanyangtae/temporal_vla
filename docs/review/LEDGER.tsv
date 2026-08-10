@@ -424,3 +424,22 @@ scripts/safe/groot_n16/robocasa/vis/core/schemes.py	S8	keep	축소 옵션(b) 일
 scripts/safe/groot_n16/robocasa/vis/plot_safe_style_feature_space.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
 scripts/safe/groot_n16/robocasa/vis/run_feature_visualization.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
 scripts/safe/groot_n16/robocasa/vis/seen18.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/data/merge_robocasa_lerobot_v21.py	S9	archive	구시대 고아(참조 0)/깨짐 — S9 일괄	적용(archive)	25750db
+scripts/extract/prepare_robocasa_dataset.py	S9	archive	구시대 고아(참조 0)/깨짐 — S9 일괄	적용(archive)	25750db
+scripts/extract/verify_eagle_extraction.py	S9	archive	구시대 고아(참조 0)/깨짐 — S9 일괄	적용(archive)	25750db
+scripts/test/test_linear_preLN_equivalence.py	S9	archive	구시대 고아(참조 0)/깨짐 — S9 일괄	적용(archive)	25750db
+scripts/test/smoke_ttt_autocast.py	S9	archive	구시대 고아(참조 0)/깨짐 — S9 일괄	적용(archive)	25750db
+scripts/event_sae/export_pq3_trajectories.py	S9	archive	구시대 고아(참조 0)/깨짐 — S9 일괄	적용(archive)	25750db
+scripts/utils/exp3_dashboard.sh	S9	archive	구시대 고아(참조 0)/깨짐 — S9 일괄	적용(archive)	25750db
+SAFE_GROOT_N16_DATA_BUNDLE_README.md	S9	archive	구 stem 번들 전달문서 — SAFE 재학습은 신규 수집 방침이라 불용(사용자 08-10)	적용(archive)	25750db
+src/ttt/ (10파일)	S9	archive	TTT 축 폐기(사용자 08-10). core/service 의 lazy import 는 predictor_path 미지정 시 무해	적용(archive)	25750db
+scripts/train/{eval_phase1_mlp_linear.sh,groot_ttt_robocasa_finetune.sh,launch_finetune_ttt.py,phase1_groot_robocasa.py,phase1_groot_robocasa.sh,phase1_predictor.py,phase1_predictor.sh}	S9	archive	TTT 축 폐기(사용자 08-10). core/service 의 lazy import 는 predictor_path 미지정 시 무해	적용(archive)	25750db
+scripts/eval/{phase1_predictor.py,phase1_batch.sh}	S9	archive	TTT 축 폐기(사용자 08-10). core/service 의 lazy import 는 predictor_path 미지정 시 무해	적용(archive)	25750db
+src/datasets/{phase1_dataset.py,phase1_v21_dataset.py}	S9	archive	TTT 축 폐기(사용자 08-10). core/service 의 lazy import 는 predictor_path 미지정 시 무해	적용(archive)	25750db
+task_classification/ (47파일)	S9	keep	online_phase(keep) 런타임 참조 — SAE 라벨러 학습·ckpt 원본	해당없음(keep)	
+scripts/event_sae/stage3_media.py	S9	keep	event-SAE 현행 (테스트 동반)	해당없음(keep)	
+scripts/extract/extract_eagle_pre_llm_robocasa.py	S9	keep	cache eagle_pre_llm 데이터셋 생성기	해당없음(keep)	
+scripts/train/{gr00t_n15_finetune_subset.py,groot_robocasa_finetune.sh,groot_robocasa_target_finetune.sh}	S9	keep	baseline finetune	해당없음(keep)	
+scripts/utils 핵심(path_setup·cache_env·remote_compute·checkpoint_profile·codex_ask·notion·smoke_test_serve 등)	S9	keep	공용 인프라	해당없음(keep)	
+docker/ + docker-compose*	S9	keep	컨테이너 정의	해당없음(keep)	
+scripts/train/xvla.sh	S9	미정	타모델 — 범위제외	보류(범위제외)	
