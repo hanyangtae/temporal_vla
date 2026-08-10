@@ -109,7 +109,12 @@ _pi05_expert_capture_layers: tuple[int, ...] | None = None
 _groot_dit_token_pool: str = "action_token_mean"  # exp3(구 pq3): "all_token_full" = full-token 수집
 _groot_vl_capture_point: str = "vlln_mean"  # exp3: "post_vl_sa_full" = cross-attn 입력 full-token
 _steering = []  # list of registered steering hooks (multi-layer 지원)
-_gated_registry: dict = {}  # oracle phase-gated steering: {"hooks":{layer:hook},"matrices":{layer:{phase:M|M_seq}},"identity":{layer:I|[I]*K}}
+_gated_registry: dict = {}
+# 통일 arm 레지스트리 (2026-08-10 배선반 통일 1단계): target(pathway,layer) →
+# {"hook","family","per_step"}. 4모드 전부 여기 등록되고, /steer_arm 이 재기동 없이
+# 같은 family(conceptor↔conceptor, setpoint↔setpoint) 안에서 연산자를 교체한다 —
+# 동적 큐의 슬롯 가동률 전제. family 교체는 hook 클래스가 달라 재기동 필요(명시 에러).
+_arm_registry: dict = {}  # oracle phase-gated steering: {"hooks":{layer:hook},"matrices":{layer:{phase:M|M_seq}},"identity":{layer:I|[I]*K}}
 # 프로세스 지문: 러너가 "포트의 기존 서버"를 새 serve 로 오인하는 사고 방지 (Gate 2 치명#3)
 # — 로그의 [serve-boot] id 와 /health 의 boot_id 가 일치해야 같은 프로세스.
 _BOOT_ID = uuid.uuid4().hex[:12]
@@ -508,6 +513,125 @@ def steering_phase(payload: dict):
             hook.set_matrices(M if M is not None else _gated_registry["identity"][layer])
     _gated_registry["current"] = phase
     return {"ok": True, "phase": phase, "gated": phase in next(iter(_gated_registry["matrices"].values()))}
+
+
+@app.post("/steer_arm")
+def steer_arm(payload: dict):
+    """재기동 없이 연산자 교체 (배선반 통일 1단계, 2026-08-10 — 동적 큐의 슬롯 가동률 전제).
+
+    payload: {"op": "conceptor"|"setpoint"|"setpoint_seg", "beta": float,
+              "alpha"?: float, "key"?: str, "denoise"?: "global"|"per_step",
+              "token_select"?: str,
+              "bindings": [{"pathway":"dit"|"vl", "layer": int|None, "npz": path}, ...]}
+
+    제약 (명시 에러 — 무음 오적용 방지):
+      - target(pathway,layer) 은 **기동 시 설치된 hook 집합 안**이어야 한다
+        (hook 추가·family 교체는 compile 캐시 상호작용 회피를 위해 재기동).
+      - family(conceptor↔setpoint) 는 기존 hook 클래스와 일치해야 한다.
+      - gated(_gated_registry) 상태에서는 사용 불가 — gated arm 은 재기동으로 교체.
+    """
+    import hashlib as _hashlib
+
+    from steering_hooks import (
+        load_steering_matrices_per_step,
+        load_steering_matrix,
+        load_steering_segment,
+        load_steering_setpoint,
+    )
+
+    if _gated_registry:
+        raise HTTPException(status_code=409, detail="gated 등록 상태 — /steer_arm 불가(재기동 필요)")
+    if not _arm_registry:
+        raise HTTPException(status_code=409, detail="기동 시 설치된 steering hook 없음(재기동 필요)")
+
+    op = payload.get("op")
+    beta = float(payload.get("beta", 0.3))
+    alpha = payload.get("alpha")
+    key = payload.get("key", "C_steer")
+    denoise = payload.get("denoise", "global") or "global"
+    token_select = payload.get("token_select")
+    bindings = payload.get("bindings") or []
+    if op not in ("conceptor", "setpoint", "setpoint_seg"):
+        raise HTTPException(status_code=422, detail=f"op 불명: {op!r}")
+    fam = "setpoint" if op.startswith("setpoint") else "conceptor"
+    per_step = denoise == "per_step"
+    if per_step and fam == "setpoint":
+        raise HTTPException(status_code=422, detail="setpoint 는 denoise=global 전용")
+
+    # 검증 먼저 전부 — 일부만 갈아끼운 채 실패하는 부분 적용 방지
+    plans = []
+    for b in bindings:
+        tgt = (b.get("pathway", "dit"), b.get("layer"))
+        ent = _arm_registry.get(tgt)
+        if ent is None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"target {tgt} 은 기동 시 설치 안 됨 — 설치 집합 {sorted(_arm_registry)} (재기동 필요)")
+        if ent["family"] != fam:
+            raise HTTPException(
+                status_code=409,
+                detail=f"target {tgt} family {ent['family']} != 요청 {fam} — hook 클래스가 달라 재기동 필요")
+        npz = b.get("npz")
+        if not npz or not Path(npz).exists():
+            raise HTTPException(status_code=422, detail=f"npz 없음: {npz}")
+        plans.append((tgt, ent, npz))
+
+    expected_steps = None
+    if per_step:
+        _gm = getattr(policy, "_groot_model", None)
+        expected_steps = int(_gm.action_head.num_inference_timesteps)
+
+    shas, layers = [], []
+    for tgt, ent, npz in plans:
+        shas.append(_hashlib.sha256(Path(npz).read_bytes()).hexdigest()[:12])
+        hook = ent["hook"]
+        if fam == "setpoint":
+            if op == "setpoint_seg":
+                hook.set_segment(load_steering_segment(str(npz)))
+            else:
+                v, sp = load_steering_setpoint(str(npz), alpha=alpha)
+                hook.set_vector(v, sp)
+            hook.beta = beta
+        else:
+            if per_step:
+                m = load_steering_matrices_per_step(
+                    str(npz), beta=beta, alpha=alpha, key=key, num_steps=expected_steps)
+            else:
+                m = load_steering_matrix(str(npz), beta=beta, alpha=alpha, key=key)
+            hook.set_matrices(m)
+        if tgt[1] is not None:
+            layers.append(int(tgt[1]))
+        print(f"[steer-rearm] target={tgt} op={op} beta={beta:g} npz={npz}", flush=True)
+
+    _update_steering_spec(mode="rearm", op=op, layers=layers, beta=beta, alpha=alpha,
+                          key=key, token_select=token_select, denoise=denoise, npz_shas=shas)
+    return {"status": "armed", "steering": _steering_spec}
+
+
+@app.post("/steer_disarm")
+def steer_disarm():
+    """전 target 무개입 전환 (identity/None — off≡identity 규약). 재기동 없이."""
+    if _gated_registry:
+        raise HTTPException(status_code=409, detail="gated 등록 상태 — /steering_phase 로 제어")
+    n = 0
+    for (pathway, layer), ent in _arm_registry.items():
+        hook = ent["hook"]
+        if ent["family"] == "setpoint":
+            if hasattr(hook, "set_segment"):
+                try:
+                    hook.set_segment(None)
+                except Exception:  # noqa: BLE001 — segment 미사용 hook
+                    pass
+            hook.set_vector(None)
+        else:
+            first = hook._M_seq[0]
+            eye = np.eye(first.shape[0])
+            hook.set_matrices([eye] * len(hook._M_seq) if hook.per_step else eye)
+        n += 1
+        print(f"[steer-rearm] target=({pathway},{layer}) disarmed", flush=True)
+    _update_steering_spec(mode="disarmed", op="none", layers=[], beta=0.0, alpha=None,
+                          key=None, token_select=None, denoise=None, npz_shas=[])
+    return {"status": "disarmed", "targets": n}
 
 
 @app.post("/patch_arm")
@@ -916,6 +1040,24 @@ def _health_feature_metadata() -> dict[str, Any]:
     return metadata
 
 
+def _update_steering_spec(*, mode, op, layers, beta, alpha, key,
+                          token_select, denoise, npz_shas, phases=None):
+    """/health 스티어링 지문 갱신 — 기동·재무장(/steer_arm) 공용 (armsig 의 원천)."""
+    global _steering_spec
+    _steering_spec = {
+        "mode": mode,
+        "op": op,
+        "layers": [int(x) for x in layers] if layers else [],
+        "beta": float(beta),
+        "alpha": None if alpha is None else float(alpha),
+        "key": key,
+        "token_select": token_select,
+        "denoise": denoise,
+        "npz_shas": sorted(set(npz_shas)),
+        "phases": sorted(phases) if phases else None,
+    }
+
+
 def _register_steering_if_requested(loaded_policy, args):
     global _steering
     steering_npz = getattr(args, "steering_npz", None)
@@ -940,6 +1082,7 @@ def _register_steering_if_requested(loaded_policy, args):
     for _h in _steering:
         _h.unregister()
     _steering = []
+    _arm_registry.clear()
 
     beta = getattr(args, "steering_beta", 0.3)
     alpha = getattr(args, "steering_alpha", None)
@@ -974,20 +1117,9 @@ def _register_steering_if_requested(loaded_policy, args):
         return load_steering_matrix(str(npz_path), beta=beta, alpha=alpha, key=key)
 
     def _set_steering_spec(mode: str, layers, phases=None, op: str = "conceptor"):
-        """/health 노출용 스티어링 지문 (러너가 프로세스·설정 오인 방지에 사용)."""
-        global _steering_spec
-        _steering_spec = {
-            "mode": mode,
-            "op": op,
-            "layers": [int(x) for x in layers] if layers else [],
-            "beta": float(beta),
-            "alpha": None if alpha is None else float(alpha),
-            "key": key,
-            "token_select": token_select,
-            "denoise": denoise,
-            "npz_shas": sorted(set(loaded_npz_shas)),
-            "phases": sorted(phases) if phases else None,
-        }
+        _update_steering_spec(mode=mode, op=op, layers=layers, beta=beta, alpha=alpha,
+                              key=key, token_select=token_select, denoise=denoise,
+                              npz_shas=loaded_npz_shas, phases=phases)
 
     # --- Oracle phase-gated multi-layer steering: /steering_phase 로 M 스위칭 ---
     phase_base = getattr(args, "steering_phase_npz_base", None)
@@ -1086,6 +1218,11 @@ def _register_steering_if_requested(loaded_policy, args):
                 ).register()
             hooks[lyr] = hook
             _steering.append(hook)
+            _arm_registry[("dit", lyr)] = {
+                "hook": hook,
+                "family": "setpoint" if op.startswith("setpoint") else "conceptor",
+                "per_step": per_step,
+            }
         _gated_registry = {"hooks": hooks, "matrices": matrices, "identity": identity, "current": None}
         logger.info(
             "Phase-gated %s steering registered: base=%s layers=%s phases=%s "
@@ -1162,12 +1299,14 @@ def _register_steering_if_requested(loaded_policy, args):
                 _hashlib_vl.sha256(Path(steering_npz).read_bytes()).hexdigest()[:12]
             )
             v_vl, s_vl = load_steering_setpoint(str(steering_npz), alpha=alpha)
-            _steering.append(
-                SetpointSteering(
-                    groot_model, (v_vl, s_vl), beta, pathway="vl",
-                    token_select=token_select,
-                ).register()
-            )
+            _vl_hook = SetpointSteering(
+                groot_model, (v_vl, s_vl), beta, pathway="vl",
+                token_select=token_select,
+            ).register()
+            _steering.append(_vl_hook)
+            _arm_registry[("vl", None)] = {
+                "hook": _vl_hook, "family": "setpoint", "per_step": False,
+            }
             logger.info(
                 "VL setpoint steering registered: npz=%s beta=%s alpha=%s dim=%s s=%.4f",
                 steering_npz, beta, alpha, v_vl.shape[0], s_vl,
@@ -1205,12 +1344,14 @@ def _register_steering_if_requested(loaded_policy, args):
             if not npz_path.exists():
                 raise FileNotFoundError(f"multi-layer steering npz 없음: {npz_path}")
             mat = _load_matrices(npz_path)
-            _steering.append(
-                ConceptorSteering(
-                    groot_model, mat, pathway="dit", layer=lyr,
-                    token_select=token_select,
-                ).register()
-            )
+            _ml_hook = ConceptorSteering(
+                groot_model, mat, pathway="dit", layer=lyr,
+                token_select=token_select,
+            ).register()
+            _steering.append(_ml_hook)
+            _arm_registry[("dit", lyr)] = {
+                "hook": _ml_hook, "family": "conceptor", "per_step": per_step,
+            }
         logger.info(
             "Multi-layer conceptor steering registered: dir=%s layers=%s beta=%s key=%s "
             "token_select=%s denoise=%s",
@@ -1258,12 +1399,14 @@ def _register_steering_if_requested(loaded_policy, args):
     if per_step and pathway != "dit":
         raise ValueError("--steering-denoise per_step 은 pathway='dit' 전용")
     layer = None if pathway == "vl" else getattr(args, "steering_layer", None)
-    _steering.append(
-        ConceptorSteering(
-            groot_model, matrix, pathway=pathway, layer=layer,
-            token_select=token_select,
-        ).register()
-    )
+    _single_hook = ConceptorSteering(
+        groot_model, matrix, pathway=pathway, layer=layer,
+        token_select=token_select,
+    ).register()
+    _steering.append(_single_hook)
+    _arm_registry[(pathway, layer)] = {
+        "hook": _single_hook, "family": "conceptor", "per_step": per_step,
+    }
     logger.info(
         "Conceptor steering registered: npz=%s pathway=%s beta=%s alpha=%s key=%s "
         "layer=%s token_select=%s denoise=%s",

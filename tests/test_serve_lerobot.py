@@ -1461,3 +1461,93 @@ class TestHealthEndpoint(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSteerArmEndpoint(unittest.TestCase):
+    """/steer_arm·/steer_disarm — 재기동 없는 연산자 교체 (배선반 통일 1단계)."""
+
+    def setUp(self):
+        from fastapi.testclient import TestClient
+        self.module = serve_lerobot
+        self.client = TestClient(self.module.app)
+        self._saved = (dict(self.module._arm_registry), dict(self.module._gated_registry))
+        self.module._gated_registry.clear()
+
+    def tearDown(self):
+        self.module._arm_registry.clear()
+        self.module._arm_registry.update(self._saved[0])
+        self.module._gated_registry.clear()
+        self.module._gated_registry.update(self._saved[1])
+
+    def _fake_conceptor_hook(self, dim=4):
+        class _H:
+            def __init__(self):
+                self._M_seq = [np.eye(dim)]
+            @property
+            def per_step(self):
+                return len(self._M_seq) > 1
+            def set_matrices(self, M):
+                self._M_seq = list(M) if isinstance(M, (list, tuple)) else [M]
+        return _H()
+
+    def _npz(self, tmp, dim=4):
+        path = Path(tmp) / "conceptors.npz"
+        C = np.full((dim, dim), 0.5)
+        np.savez(path, **{"alpha10_C_steer": C})
+        return path, C
+
+    def test_rearm_swaps_matrix_and_updates_spec(self):
+        import tempfile
+        hook = self._fake_conceptor_hook()
+        self.module._arm_registry[("dit", 8)] = {"hook": hook, "family": "conceptor", "per_step": False}
+        with tempfile.TemporaryDirectory() as tmp:
+            npz, C = self._npz(tmp)
+            r = self.client.post("/steer_arm", json={
+                "op": "conceptor", "beta": 1.0, "alpha": 10, "key": "C_steer",
+                "bindings": [{"pathway": "dit", "layer": 8, "npz": str(npz)}],
+            })
+        self.assertEqual(r.status_code, 200, r.text)
+        # M = (1-β)I + β·C = C (β=1)
+        np.testing.assert_allclose(hook._M_seq[0], C)
+        spec = r.json()["steering"]
+        self.assertEqual(spec["mode"], "rearm")
+        self.assertEqual(spec["layers"], [8])
+        self.assertEqual(len(spec["npz_shas"]), 1)
+
+    def test_rearm_rejects_uninstalled_target_and_family_mismatch(self):
+        import tempfile
+        hook = self._fake_conceptor_hook()
+        self.module._arm_registry[("dit", 8)] = {"hook": hook, "family": "conceptor", "per_step": False}
+        with tempfile.TemporaryDirectory() as tmp:
+            npz, _ = self._npz(tmp)
+            # 미설치 target
+            r = self.client.post("/steer_arm", json={
+                "op": "conceptor", "beta": 1.0, "alpha": 10,
+                "bindings": [{"pathway": "dit", "layer": 12, "npz": str(npz)}]})
+            self.assertEqual(r.status_code, 409)
+            # family 불일치
+            r2 = self.client.post("/steer_arm", json={
+                "op": "setpoint", "beta": 1.0,
+                "bindings": [{"pathway": "dit", "layer": 8, "npz": str(npz)}]})
+            self.assertEqual(r2.status_code, 409)
+        # 실패 요청 뒤에도 기존 M 무변경 (부분 적용 방지)
+        np.testing.assert_allclose(hook._M_seq[0], np.eye(4))
+
+    def test_disarm_restores_identity(self):
+        import tempfile
+        hook = self._fake_conceptor_hook()
+        self.module._arm_registry[("dit", 8)] = {"hook": hook, "family": "conceptor", "per_step": False}
+        with tempfile.TemporaryDirectory() as tmp:
+            npz, _ = self._npz(tmp)
+            self.client.post("/steer_arm", json={
+                "op": "conceptor", "beta": 1.0, "alpha": 10,
+                "bindings": [{"pathway": "dit", "layer": 8, "npz": str(npz)}]})
+        r = self.client.post("/steer_disarm")
+        self.assertEqual(r.status_code, 200)
+        np.testing.assert_allclose(hook._M_seq[0], np.eye(4))
+        self.assertEqual(self.module._steering_spec["mode"], "disarmed")
+
+    def test_rearm_blocked_when_gated(self):
+        self.module._gated_registry.update({"hooks": {}})
+        r = self.client.post("/steer_arm", json={"op": "conceptor", "beta": 1.0, "bindings": []})
+        self.assertEqual(r.status_code, 409)
