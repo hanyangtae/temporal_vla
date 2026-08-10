@@ -29,6 +29,7 @@
 | `steer/exp5_4/probe_lib.py`·`smoke_probe.py`·`check_probe_identity.py` | `scripts/collect/` | serve 무결성 도구 |
 | `analyze/mixer_scene_feasibility.py`·`drawer_scene_feasibility.py` | `scripts/collect/` | 수집 전 scene 필터 (S3 keep) — 복사-수정 쌍이라 이동 시 공용화 검토 |
 | `n15/collect/build_perturb_grid.py`·`collect_perturb_grid.sh` | `scripts/perturb/` | S1 keep — perturb 축 합류 |
+| `steer/queue/` 10개 + `lane_status.sh` | `scripts/eval_queue/` (가칭) | S6 keep — 동적 큐 인프라. 차기 steering eval 러너의 토대 (arm 공간 10축, 런타임 re-arm 과 세트) |
 
 ## 이동 시점 규칙
 
