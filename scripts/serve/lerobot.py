@@ -53,10 +53,7 @@ from lerobot_adapters import (  # noqa: E402
 )
 from lerobot_adapters.pi import PiPolicyAdapter  # noqa: E402
 from lerobot_adapters.rotation import quat_xyzw_to_axisangle  # noqa: E402
-from src.utils.common.feature_blob import (  # noqa: E402
-    encode_feature_blob,
-    encode_legacy_feature_array,
-)
+from src.utils.common.feature_blob import encode_feature_blob  # noqa: E402
 from src.policies.safe_metadata import (  # noqa: E402
     GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_AXES,
     GROOT_N15_DIT_BLOCK_RESIDUAL_DENOISE_FEATURE_KIND,
@@ -719,7 +716,7 @@ async def predict_action_with_features(payload: dict):
     GR00T N1.5 collect는 N1.6 SAFE collector와 같은 chunk execution을 맞추기 위해
     predict_action_chunk를 hook 아래에서 직접 호출하고 [H,D] action subkeys를 반환한다.
     다른 lerobot 정책은 action queue가 빌 때만 새 추론을 돌리므로 그 step에만
-    has_feature=True, legacy hidden_states_b64, unified features.hidden_states blob이
+    has_feature=True 와 unified features.hidden_states blob 이
     채워진다.
     """
     if policy is None:
@@ -785,9 +782,9 @@ async def predict_action_with_features(payload: dict):
     if hidden is not None:
         result["has_feature"] = True
         hidden_np = np.asarray(hidden)
-        # Keep the legacy keys for existing collectors, and also emit the
-        # unified /act_with_features contract used by VLAClient and GR00T HTTP.
-        result["hidden_states_b64"] = encode_legacy_feature_array(hidden_np)
+        # 통일 /act_with_features 계약(VLAClient·GR00T HTTP)만 발송. legacy
+        # hidden_states_b64 이중 발송은 2026-08-10 제거 — 같은 배열을 두 번 실어
+        # 응답이 2배였다 (VLAClient 는 통일 blob 우선이라 무영향, 폴백은 클라이언트에 잔존).
         result["features.hidden_states"] = encode_feature_blob(hidden_np)
         # inference-time action-phase readout (DiT residual → AE/SAE kmeans phase).
         if _phase_readouts:

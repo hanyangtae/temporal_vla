@@ -1007,7 +1007,7 @@ class TestActWithFeaturesEndpoint(unittest.TestCase):
         self.assertEqual(data["features.model_action_horizon"], 50)
         self.assertEqual(data["features.num_inference_timesteps"], 10)
         self.assertIn("features.hidden_states", data)
-        self.assertIn("hidden_states_b64", data)
+        self.assertNotIn("hidden_states_b64", data)  # legacy 이중 발송 제거 (08-10)
 
     def test_response_maps_autoregressive_token_count_to_feature_horizon(self):
         hidden = np.zeros((1, 12, 4), dtype=np.float16)
