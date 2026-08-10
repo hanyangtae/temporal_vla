@@ -7,10 +7,10 @@ scripts/serve/safe_hooks.py	S5	527	07-22	캡처 hook — DiT residual/VL 추출	
 scripts/serve/patching_hooks.py	S5	443	07-22	activation 이식(patch) hook — patchceil·induced 계열	perturb연계	patchceil 은 archive 됐으나 perturb 축 잔존
 scripts/serve/attn_hooks.py	S5	277	07-22	cross-attn 카메라 mass 캡처 hook	cam-attn	★archive 방침 확정(사용자) — lerobot.py 내 분기와 함께 제거
 scripts/safe/groot_n16/robocasa/serve/feature_server.py	S5	419	08-05	N1.6 ZMQ serve (upstream PolicyServer + 캡처)	★현행	n16 재수집 진입점. serve_provenance 배선됨
-scripts/serve/groot.py	S5	179	06-10	GR00T HTTP serve (구·N1.5 초기)	타모델	lerobot.py 로 대체됐는지 확인 필요
-scripts/serve/openvla_oft.py	S5	546	06-10	OpenVLA-OFT serve (:8400)	타모델	steering 연구 밖 — 벤치 인프라
-scripts/serve/upvla.py	S5	234	06-10	UP-VLA serve (:8300)	타모델	〃
-scripts/serve/xvla.py	S5	366	06-10	xVLA serve (:8100)	타모델	〃
+scripts/serve/groot.py	S5	179	06-10	GR00T HTTP serve (구·N1.5 초기)	타모델,범위제외	lerobot.py 로 대체됐는지 확인 필요
+scripts/serve/openvla_oft.py	S5	546	06-10	OpenVLA-OFT serve (:8400)	타모델,범위제외	steering 연구 밖 — 벤치 인프라
+scripts/serve/upvla.py	S5	234	06-10	UP-VLA serve (:8300)	타모델,범위제외	〃
+scripts/serve/xvla.py	S5	366	06-10	xVLA serve (:8100)	타모델,범위제외	〃
 scripts/utils/vla_client.py	S5	320	07-22	통일 HTTP 클라이언트 (수집·eval 전부의 관문)	★현행	src→scripts 역방향 의존 문제의 당사자 (policy_clients 주석)
 src/utils/common/serving.py	S5	111	08-05	serve_provenance — machine·ckpt 정본	★현행	§4-1 GPU 제거 필요 (핸드오프 38)
 src/phase_online/online_phase.py	S5	157	07-27	실시간 phase readout (SAE 추론 이식판)	S2이월	S2 미정 — serve 소비자라 여기서 최종 판정
