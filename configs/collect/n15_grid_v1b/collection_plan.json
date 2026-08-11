@@ -1,0 +1,107 @@
+{
+  "name": "n15_grid_v1b",
+  "model": "groot",
+  "version": "n15",
+  "ckpt": "lerobot_groot_n15__robocasa365_ckpt120000",
+  "capture_layers": [
+    0,
+    2,
+    4,
+    8,
+    10,
+    12,
+    15
+  ],
+  "denoise_k": 4,
+  "token_mode": "all_token_full",
+  "instructions": {
+    "PPCC/marshmallow": [
+      100007,
+      100179,
+      100222,
+      100424,
+      100553,
+      100571,
+      100607,
+      100645,
+      100659,
+      100665
+    ],
+    "PPCC/jug": [
+      100095,
+      100128,
+      100137,
+      100360,
+      100387,
+      100443,
+      100447,
+      100574,
+      100590,
+      100591
+    ]
+  },
+  "noise_seeds": [
+    1300000,
+    1300001,
+    1300002,
+    1300003,
+    1300004,
+    1300005,
+    1300006,
+    1300007,
+    1300008,
+    1300009,
+    1300010,
+    1300011,
+    1300012,
+    1300013,
+    1300014,
+    1300015,
+    1300016,
+    1300017,
+    1300018,
+    1300019,
+    1300020,
+    1300021,
+    1300022,
+    1300023,
+    1300024,
+    1300025,
+    1300026,
+    1300027,
+    1300028,
+    1300029,
+    1300030,
+    1300031,
+    1300032,
+    1300033,
+    1300034,
+    1300035,
+    1300036,
+    1300037,
+    1300038,
+    1300039
+  ],
+  "note": "v1 보충 — apple(SR 1.00) 교체 후보 marshmallow·jug. SR 미지라 m3 파일럿 겸용. eval inference_seed 는 1400000+ 대역 (v1 과 동일 규약).",
+  "extra": {
+    "env_names": {
+      "PPCC/marshmallow": "robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env",
+      "PPCC/jug": "robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env"
+    },
+    "instruction_text": {
+      "PPCC/marshmallow": "Pick the marshmallow from the counter and place it in the cabinet.",
+      "PPCC/jug": "Pick the jug from the counter and place it in the cabinet."
+    },
+    "machine_assignment": {
+      "srv50": [
+        "PPCC/marshmallow",
+        "PPCC/jug"
+      ]
+    },
+    "supplements": "n15_grid_v1 (b8054b5e7258) — apple 대체 후보",
+    "seed_provenance": "outputs/analysis/seed_scan/PickPlaceCounterToCabinet{,_ext}.tsv"
+  },
+  "plan_id": "979d4833a7db",
+  "n_cells": 800,
+  "estimated_bytes": 364300468224
+}

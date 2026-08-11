@@ -1,0 +1,19 @@
+파일/무리	스테이지	LOC	최종수정	역할	플래그	비고
+scripts/utils/path_setup.py 등 utils 핵심 12종	S9	—	—	경로·cache·remote·notion·codex 헬퍼 (개별 나열 생략)	공용,★현행	
+scripts/utils/exp3_dashboard.sh	S9	—	—	select_instruction_seeds(삭제됨) 참조	exp3,깨짐	
+scripts/train/* (finetune·phase1·ttt 10종)	S9	—	—	baseline finetune + TTT progress predictor 학습	TTT/train,축판단	
+src/ttt/ (10파일 1,859줄)	S9	—	—	ProgressHead — phase-selective 실패 시 online 검출 fallback	TTT,축판단	
+scripts/eval/phase1_predictor.py·phase1_batch.sh	S9	—	—	S6 이월분	TTT,축판단	
+task_classification/ (47파일 6,097줄)	S9	—	—	online_phase(keep)가 런타임에 runs/·pca 경로 참조 — 학습·체크포인트 원본	SAE학습측,★현행	
+scripts/event_sae/ (2파일 1,285줄)	S9	—	—	event-SAE stage3 (07-28 최신, 테스트 동반)	SAE,현행?	
+scripts/data/merge_robocasa_lerobot_v21.py	S9	—	—	05-28, 참조 0	구시대,고아	
+scripts/extract/prepare_robocasa_dataset.py	S9	—	—	참조 0	구시대,고아	
+scripts/extract/verify_eagle_extraction.py	S9	—	—	참조 0	구시대,고아	
+scripts/extract/extract_eagle_pre_llm_robocasa.py	S9	—	—	cache 의 eagle_pre_llm 데이터셋 생성기	dataset,참조4	
+scripts/test/ (2파일)	S9	—	—	05-12 스모크 2종	구시대,고아	
+scripts/event_sae/export_pq3_trajectories.py	S9	—	—	PQ3 이관 일회 도구	구시대,고아	
+scripts/deprecated/	S9	—	—	__pycache__ 만 남음	잔재,빈껍데기	
+docker/ + docker-compose*.yml	S9	—	—	컨테이너 정의	인프라,★현행	
+nohup.out·image.png·MUJOCO_LOG.TXT	S9	—	—	1.2MB 로그 등 — git 밖 쓰레기	루트잔재,비추적	
+SAFE_GROOT_N16_DATA_BUNDLE_README.md	S9	—	—	n16 데이터 번들 문서 (300줄)	루트문서,판단	
+README.md·CLAUDE.md·AGENTS.md·conftest.py	S9	—	—	—	루트,S0판정됨	

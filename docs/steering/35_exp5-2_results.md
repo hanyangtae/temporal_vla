@@ -1,6 +1,6 @@
 # exp5-2 결과 — 섭동-유도 실패의 activation steering 회복 (ΔSR)
 
-작성 2026-07-28. 계획·배경 = [`34_exp5-2_handoff.md`](34_exp5-2_handoff.md). 실행 머신 =
+작성 2026-07-28. 계획·배경 = 구 `34_exp5-2_handoff`(아카이브 — git 이력). 실행 머신 =
 dongkyu 원격(pdk_external, RTX 4070 Ti SUPER 16GB 1장; **bitwise 비결정 — 첫 편차 ≤5e-3
 규약으로 판정**). 브랜치 `exp/exp5-2-perturb-steering` (dev PR#69 이후).
 

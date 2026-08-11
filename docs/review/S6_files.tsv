@@ -1,0 +1,104 @@
+파일	스테이지	LOC	최종수정	역할	플래그	비고
+scripts/safe/groot_n15/robocasa/steer/ab_sweep_chain.sh	S6	26	07-06	α/β sweep 체인	구라운드,개별	
+scripts/safe/groot_n15/robocasa/steer/ablation_queue_gpu01.sh	S6	25	07-06	사다리 ablation 큐	구라운드,개별	
+scripts/safe/groot_n15/robocasa/steer/confirm90_gpu23.sh	S6	74	07-06	확증 90판 러너	구라운드,개별	
+scripts/safe/groot_n15/robocasa/steer/cross_instruction_chain.sh	S6	57	07-06	cross-instruction 체인	구라운드,개별	
+scripts/safe/groot_n15/robocasa/steer/exp2/exp2_cell_runner.sh	S6	112	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/exp2_cell_runner_srv50.sh	S6	100	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p1_remote_chain.sh	S6	55	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p1_screen.sh	S6	59	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_select_cell.sh	S6	36	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_select_cell_srv50.sh	S6	30	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_select_cell_v2.sh	S6	37	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_select_pool.sh	S6	73	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_local.sh	S6	46	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv48.sh	S6	57	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv48_lite.sh	S6	53	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv48_lite_b.sh	S6	53	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv50.sh	S6	52	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv50g0.sh	S6	52	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv50g0b.sh	S6	52	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv50g1.sh	S6	52	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/prune_completed_p3.sh	S6	47	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/sj_deprecate_round2.sh	S6	18	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/srv50_collect_cell.sh	S6	64	07-22	exp2 라운드 실행·큐	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/beta_sweep.sh	S6	41	07-22	exp3 라운드 실행·큐	exp3,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_c0_scan.sh	S6	83	07-22	exp3 라운드 실행·큐	exp3,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_cell_runner.sh	S6	250	07-22	exp3 라운드 실행·큐	exp3,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_cell_runner_srv50.sh	S6	218	07-22	exp3 라운드 실행·큐	exp3,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_collect_cell.sh	S6	167	07-22	exp3 라운드 실행·큐	exp3,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_collect_cell_srv50.sh	S6	144	07-22	exp3 라운드 실행·큐	exp3,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_lane_local.sh	S6	50	07-22	exp3 라운드 실행·큐	exp3,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_lane_srv50.sh	S6	55	07-22	exp3 라운드 실행·큐	exp3,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_lib.sh	S6	94	07-22	exp3 라운드 실행·큐	exp3,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/mixer_c0_collect.sh	S6	127	07-23	exp4-1 rescue 실행·원격 fit 러너	exp4-1,완료	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_conceptor_fit_remote.sh	S6	49	07-23	exp4-1 rescue 실행·원격 fit 러너	exp4-1,완료	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_conceptor_sweep_remote.sh	S6	17	07-23	exp4-1 rescue 실행·원격 fit 러너	exp4-1,완료	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_fits_remote.sh	S6	20	07-22	exp4-1 rescue 실행·원격 fit 러너	exp4-1,완료	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_gated_fits_remote.sh	S6	50	07-23	exp4-1 rescue 실행·원격 fit 러너	exp4-1,완료	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_nolen_fits_remote.sh	S6	78	07-25	exp4-1 rescue 실행·원격 fit 러너	exp4-1,완료	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_oracle_rescue.sh	S6	198	07-24	exp4-1 rescue 실행·원격 fit 러너	exp4-1,완료	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/smoke_exp41.sh	S6	87	07-22	exp4-1 rescue 실행·원격 fit 러너	exp4-1,완료	
+scripts/safe/groot_n15/robocasa/steer/exp5_3/beta_sweep.sh	S6	141	07-27	exp5-3 setM 수집·eval (per-scene setpoint 확립 라운드)	exp5-3,현행연계	
+scripts/safe/groot_n15/robocasa/steer/exp5_3/collect_sm_mixer.sh	S6	111	07-28	exp5-3 setM 수집·eval (per-scene setpoint 확립 라운드)	exp5-3,현행연계	
+scripts/safe/groot_n15/robocasa/steer/exp5_3/eval_ws_steer.sh	S6	171	07-28	exp5-3 setM 수집·eval (per-scene setpoint 확립 라운드)	exp5-3,현행연계	
+scripts/safe/groot_n15/robocasa/steer/exp5_3/mixer_sm_collect.sh	S6	113	07-27	exp5-3 setM 수집·eval (per-scene setpoint 확립 라운드)	exp5-3,현행연계	
+scripts/safe/groot_n15/robocasa/steer/exp5_3/mixer_sm_pull.sh	S6	38	07-27	exp5-3 setM 수집·eval (per-scene setpoint 확립 라운드)	exp5-3,현행연계	
+scripts/safe/groot_n15/robocasa/steer/exp5_4/probe_collect.sh	S6	294	07-28	probe 수집 러너	exp5-4,종결	
+scripts/safe/groot_n15/robocasa/steer/heldout_round_cell.sh	S6	104	07-06	held-out 라운드 cell	구라운드,개별	
+scripts/safe/groot_n15/robocasa/steer/heldout_round_cell_host.sh	S6	106	07-22	〃 host판	구라운드,개별	
+scripts/safe/groot_n15/robocasa/steer/heldout_round_gpu01.sh	S6	101	07-06	〃 gpu01	구라운드,개별	
+scripts/safe/groot_n15/robocasa/steer/induced/collect_b1_donors.sh	S6	73	07-23	perturb(구 induced) 수집·eval 러너	perturb,keep축	
+scripts/safe/groot_n15/robocasa/steer/induced/collect_b3_donors.sh	S6	69	07-23	perturb(구 induced) 수집·eval 러너	perturb,keep축	
+scripts/safe/groot_n15/robocasa/steer/induced/run_induced_patch.sh	S6	96	07-22	perturb(구 induced) 수집·eval 러너	perturb,keep축	
+scripts/safe/groot_n15/robocasa/steer/induced/run_perturb_steer_eval.sh	S6	305	07-27	perturb(구 induced) 수집·eval 러너	perturb,keep축	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/s1_perturb.sh	S6	81	07-27	perturb(구 induced) 수집·eval 러너	perturb,keep축	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/s2_dit_patch.sh	S6	54	07-22	perturb(구 induced) 수집·eval 러너	perturb,keep축	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/s3_vl_patch.sh	S6	78	07-22	perturb(구 induced) 수집·eval 러너	perturb,keep축	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/s4_fit_truncation.sh	S6	43	07-22	perturb(구 induced) 수집·eval 러너	perturb,keep축	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/s5_npz_serve.sh	S6	47	07-22	perturb(구 induced) 수집·eval 러너	perturb,keep축	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/smoke_common.sh	S6	119	07-27	perturb(구 induced) 수집·eval 러너	perturb,keep축	
+scripts/safe/groot_n15/robocasa/steer/lane_status.sh	S6	38	07-06	lane 진행 모니터	인프라,개별	
+scripts/safe/groot_n15/robocasa/steer/master_6p_pipeline.sh	S6	167	07-06	6-phase 파이프라인 마스터 (collect_fit_6phase 참조 — 이미 깨짐)	구라운드,개별	
+scripts/safe/groot_n15/robocasa/steer/master_final_scene.sh	S6	220	07-06	final scene 마스터	구라운드,개별	
+scripts/safe/groot_n15/robocasa/steer/master_final_scene2.sh	S6	195	07-06	〃 v2	구라운드,개별	
+scripts/safe/groot_n15/robocasa/steer/patchceil/collect_passB.sh	S6	89	07-22	donor 이식 실행 러너	patchceil,보조종결	
+scripts/safe/groot_n15/robocasa/steer/patchceil/extract_donors.sh	S6	35	07-22	donor 이식 실행 러너	patchceil,보조종결	
+scripts/safe/groot_n15/robocasa/steer/patchceil/rerun_episodes.sh	S6	87	07-22	donor 이식 실행 러너	patchceil,보조종결	
+scripts/safe/groot_n15/robocasa/steer/patchceil/run_patch_rollouts.sh	S6	118	07-22	donor 이식 실행 러너	patchceil,보조종결	
+scripts/safe/groot_n15/robocasa/steer/queue/apple_fits.sh	S6	75	07-22	병렬 lane 큐 시스템 (srv50 표준)	queue,인프라	
+scripts/safe/groot_n15/robocasa/steer/queue/build_work_queue.sh	S6	60	07-22	병렬 lane 큐 시스템 (srv50 표준)	queue,인프라	
+scripts/safe/groot_n15/robocasa/steer/queue/fits_waiter.sh	S6	16	07-22	병렬 lane 큐 시스템 (srv50 표준)	queue,인프라	
+scripts/safe/groot_n15/robocasa/steer/queue/lane_runner_local.sh	S6	82	07-22	병렬 lane 큐 시스템 (srv50 표준)	queue,인프라	
+scripts/safe/groot_n15/robocasa/steer/queue/lane_runner_local_v2.sh	S6	82	07-22	병렬 lane 큐 시스템 (srv50 표준)	queue,인프라	
+scripts/safe/groot_n15/robocasa/steer/queue/lane_runner_srv50.sh	S6	55	07-22	병렬 lane 큐 시스템 (srv50 표준)	queue,인프라	
+scripts/safe/groot_n15/robocasa/steer/queue/lane_runner_srv50_v2.sh	S6	99	07-22	병렬 lane 큐 시스템 (srv50 표준)	queue,인프라	
+scripts/safe/groot_n15/robocasa/steer/queue/monitor_queue.sh	S6	23	07-22	병렬 lane 큐 시스템 (srv50 표준)	queue,인프라	
+scripts/safe/groot_n15/robocasa/steer/queue/queue_lib.sh	S6	120	07-22	병렬 lane 큐 시스템 (srv50 표준)	queue,인프라	
+scripts/safe/groot_n15/robocasa/steer/queue/rename_arms.sh	S6	101	07-22	병렬 lane 큐 시스템 (srv50 표준)	queue,인프라	
+scripts/safe/groot_n15/robocasa/steer/run_instruction_steering_eval.py	S6	349	06-11	instruction steering eval 러너 (collect_instruction_fixed 참조 — 이미 깨짐)	exp2,개별	
+scripts/safe/groot_n15/robocasa/steer/run_one_steer_cell.sh	S6	92	06-22	〃 cell 단위 (이미 깨짐)	exp2,개별	
+scripts/safe/groot_n15/robocasa/steer/steer_eval_30x30.sh	S6	116	07-06	30×30 eval	구라운드,개별	
+scripts/safe/groot_n15/robocasa/steer/steer_eval_multilayer_30.sh	S6	96	07-06	multilayer 30판 (in-sample 사건 라운드)	구라운드,개별	
+scripts/safe/groot_n15/robocasa/steer/steer_eval_transport_30.sh	S6	89	07-06	transport 30판	구라운드,개별	
+scripts/safe/groot_n15/robocasa/steer/strict_steer_queue_gpu45.sh	S6	27	07-06	strict 큐	구라운드,개별	
+scripts/safe/groot_n15/robocasa/steer/exp2/build_p3_queue.py	S6	121	07-22	p3 큐 생성	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/build_exp3_queue.py	S6	147	07-22	exp3 큐 생성	exp3,종결(null)	
+scripts/safe/groot_n16/robocasa/steer/archive_perT_to_remote.sh	S6	65	06-05	perT 아카이브 전송	n16구,종결	
+scripts/safe/groot_n16/robocasa/steer/collect_multilayer_parallel.sh	S6	144	06-05	multilayer 병렬 수집	n16구,종결	
+scripts/safe/groot_n16/robocasa/steer/collect_pathway_parallel.sh	S6	213	06-11	pathway 병렬 수집	n16구,종결	
+scripts/safe/groot_n16/robocasa/steer/eval_steer_compare.sh	S6	152	08-07	steering 대조 eval (EVAL_SEED 표준 문서화의 원본)	n16구,종결	
+scripts/safe/groot_n16/robocasa/steer/eval_steer_pathways.sh	S6	186	06-05	pathway별 eval (fit_conceptor_steering 참조 — 이미 깨짐)	n16구,종결	
+scripts/safe/groot_n16/robocasa/steer/eval_steer_vl.sh	S6	161	06-05	VL eval (〃 깨짐)	n16구,종결	
+scripts/eval/robocasa_eval.py	S6	751	06-23	generic robocasa 벤치 eval (VLAClient 경유)	벤치eval,★현행	
+scripts/eval/groot_robocasa_zmq_eval.py	S6	153	06-10	GR00T ZMQ eval — per_episode.tsv 표준의 구현	벤치eval,★현행	
+scripts/eval/groot_robocasa.sh	S6	404	06-09	위 러너 .sh	벤치eval,현행	
+scripts/eval/test_robocasa_env_reproducibility.py	S6	130	06-09	env seed 재현성 검사	벤치eval,진단	
+scripts/eval/calvin.py	S6	541	06-23	Calvin 벤치 eval	타모델,범위제외	
+scripts/eval/libero.py	S6	594	08-07	LIBERO 벤치 eval (라벨 배선은 S2에서 해제됨)	타모델,범위제외?	
+scripts/eval/pi05_libero.py	S6	106	04-16	pi05 LIBERO eval	타모델,범위제외	
+scripts/eval/openvla_oft_libero.sh	S6	90	05-06	OFT LIBERO 러너	타모델,범위제외	
+scripts/eval/openvla_oft_libero_rollouts.sh	S6	159	06-09	〃 rollout판	타모델,범위제외	
+scripts/eval/xvla_calvin.sh	S6	38	04-23	xVLA Calvin 러너	타모델,범위제외	
+scripts/eval/phase1_predictor.py	S6	619	05-28	progress predictor eval (TTT 계열)	TTT,S9행?	
+scripts/eval/phase1_batch.sh	S6	57	05-28	〃 배치	TTT,S9행?	

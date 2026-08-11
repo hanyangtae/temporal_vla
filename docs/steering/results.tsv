@@ -1,0 +1,38 @@
+exp	라운드	task_cell	arm(연산자)	layer	dose	n	base_SR	Δ판	위약Δ	p	판정	데이터	출처
+exp2	scene고정 held-out	ppcc_bread_84	gated_per_scene conceptor fit15	L?	β(α혼재)	60	0.78	-2	+2	-	null	steer_eval_exp2/aggregate_v2	23
+exp2	scene고정 held-out	ppcc_bread_s300028	gated_per_scene conceptor fit15	L?	β	60	0.83	+2	0	-	null	steer_eval_exp2/aggregate_v2	23
+exp2	scene고정 held-out	ppcc_bread_s300033	gated_per_scene conceptor fit15	L?	β	60	0.42	+8	+8	-	위약동률	steer_eval_exp2/aggregate_v2	23
+exp2	scene고정 held-out	ppcc_bread_s400020	gated_per_scene conceptor fit15	L?	β	60	0.35	-1	-1	-	null	steer_eval_exp2/aggregate_v2	23
+exp2	scene고정 held-out	ppcs_apple_74	gated_per_scene conceptor fit15	L?	β	60	0.70	-2	+1	-	null	steer_eval_exp2/aggregate_v2	23
+exp2	scene고정 held-out	ppcs_apple_s100353	gated_per_scene conceptor fit15	L?	β	60	0.87	+1	-3	-	null(vs위약+4)	steer_eval_exp2/aggregate_v2	23
+exp2	scene고정 held-out	ppcs_apple_s100395	gated_per_scene conceptor fit15	L?	β	60	0.80	+2	+1	-	null	steer_eval_exp2/aggregate_v2	23
+exp2	scene고정 held-out	ppcs_apple_s100422	gated_per_scene conceptor fit15	L?	β	60	0.97	-2	-3	-	null(천장)	steer_eval_exp2/aggregate_v2	23
+exp2	scene고정 held-out	8cell pooled	gated_per_scene conceptor	-	-	480	-	+6	-	-	δ=+7.5%p 미달	steer_eval_exp2/aggregate_v2	23
+exp2	scene고정	8cell	positive-only (대조 없음)	-	-	-	-	-16~-13	-	-	해악	steer_eval_exp2/aggregate_v2	23
+exp2	scene고정	8cell	cross_scene conceptor	-	-	-	-	0~음수	-	-	null(공유방향 없음)	steer_eval_exp2/aggregate_v2	23
+exp3	fit15 사전등록	drawer	perm conceptor (H1 vs base)	L0	β	60	-	+1	+3	.50/adj 1.0	null	steer_eval_exp3/aggregate_f	21
+exp3	fit15 사전등록	drawer	gated conceptor (H2 vs base)	L0	β	60	-	+4	+3	.24/adj 1.0	null	steer_eval_exp3/aggregate_f	21
+exp3	fit15 사전등록	ppcc	perm conceptor (H1 vs base)	L15	β	90	-	+4	+1	.23/adj 1.0	null	steer_eval_exp3/aggregate_f	21
+exp3	fit15 사전등록	ppcc	gated conceptor (H2 vs base)	L15	β	90	-	-1	+1	.68/adj 1.0	null	steer_eval_exp3/aggregate_f	21
+exp3	fit15 탐색	drawer	gated within-instruction	L0	β	60	-	+6 (7W/1L)	+3	미보정	약신호	steer_eval_exp3/aggregate_f	21
+exp3	fit15 탐색	ppcc	gated within-instruction	L15	β	90	-	+2 (8W/6L)	+1	미보정	비재현	steer_eval_exp3/aggregate_f	21
+exp3	fit30 사전등록	drawer	perm conceptor (H1)	L0	β	120	-	+7	+6	.072/adj .43	null(관문위반)	steer_eval_exp3/aggregate_f30	22
+exp3	fit30 사전등록	drawer	gated conceptor (H2)	L0	β	120	-	+5	+6	.151/adj .75	null	steer_eval_exp3/aggregate_f30	22
+exp3	fit30 사전등록	ppcc	perm conceptor (H1)	L15	β	180	-	-4	-5	.85/adj 1.0	null(관문위반)	steer_eval_exp3/aggregate_f30	22
+exp3	fit30 사전등록	ppcc	gated conceptor (H2)	L15	β	180	-	-7	-5	.91/adj 1.0	null	steer_eval_exp3/aggregate_f30	22
+exp3	fit30 탐색	drawer	perm within-instruction	L0	β	120	-	+11 (16W/5L)	+6	미보정	약신호(2R연속)	steer_eval_exp3/aggregate_f30	22
+exp3	fit30 탐색	drawer	gated within-instruction	L0	β	120	-	+9 (18W/9L)	+6	미보정	약신호(2R연속)	steer_eval_exp3/aggregate_f30	22
+exp3	fit30 탐색	ppcc	perm within-instruction	L15	β	180	-	-6 (13W/19L)	-5	미보정	비재현	steer_eval_exp3/aggregate_f30	22
+patchceil	오라클 상한	ppcc_bread_s300033	donor activation 이식(full-token)	L15	전창	40	0.00(실패한정)	0	0	-	null	patchceil/	25b
+patchceil	오라클 상한	ppcc_bread_s400020	donor activation 이식(full-token)	L15	전창	37	0.00(실패한정)	+2	0	p=0.25	null	patchceil/	25b
+patchceil	오라클 상한	2cell 합산	donor activation 이식	L15	전창	77	0.00	+2 (2.6%)	+1(shuffle)	p_final=0.50	null	patchceil/	25b
+patchceil	대조	2cell 합산	direct action-replay	-	-	77	0.00	+12 (15.6%)	-	-	참고(개입창 존재)	patchceil/	25b
+exp5-3	within-scene	drawer 20scene×8seed	setM_within permanent	L12	β=1.0	160	0.344	-51	-	<1e-4	파괴적 해악	exp5_3/	36
+exp5-3	within-scene	drawer	setM_within gated	L12	β=1.0	27(부분)	0.519	-8	-	0.02	해악	exp5_3/	36
+exp5-3	β sweep(A0 40셀)	drawer	setM full	L12	β=0.5	40	0.350	-5 (SR .225)	-	-	해악	exp5_3/	36
+exp5-3	β sweep	drawer	setM full	L12	β=0.2	40	0.350	-2 (SR .300)	-	-	해악	exp5_3/	36
+exp5-3	β sweep	drawer	setM future-only	L12	β=1.0	40	0.350	0 (SR .350)	위약 SR .300	-	위약 미초과	exp5_3/	36
+exp5-3	β sweep	drawer	setM gated×future	L12	β=1.0	40	0.350	-1 (SR .325)	위약 SR .300	-	위약 미초과	exp5_3/	36
+exp5-2	섭동 유도실패 locked	ppcc_bread_100084 p1_d003	setM (평균차이, DiT)	L10	β=0.3	24	0.33	+4 (SR .50)	위약 .25	McNemar≈.03	★유일 위약분리	exp42_induced/	35
+exp5-2	섭동 유도실패 locked	ppcc_bread_100084 c1_s200	setm_vl (VL 평균이동)	VL	β=1.0	24	0.33	+1 (SR .375)	위약 .25	3:0 미보정	약양성	exp42_induced/	35
+exp5-2	섭동 유도실패	ppcc_bread_100084 c1_s200	setM (DiT)	L10	β0.3~1.0	12	0.25	용량의존 악화	-	-	해악	exp42_induced/	35

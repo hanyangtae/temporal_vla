@@ -1,4 +1,12 @@
-# 33. exp5-4 — "노이즈를 1-step만 돌려보고 성공할 draw 고르기" 판정
+# exp5-4 — "노이즈를 1-step만 돌려보고 성공할 draw 고르기" 판정
+
+> **종결 범위 (2026-07-30 명확화)**: 종결된 것은 **"활성화를 보고 좋은 draw 를 고르는
+> verifier"** 하나다. 13/13 이 seed 주효과로 설명되고(column 순열 p=.60), 활성 없이 action
+> 통계(`chunk_tv`)만으로 동률이라 **활성 고유 정보가 없다**는 뜻이다.
+>
+> **살아있는 명제**: "어떤 seed 가 이 모델·task·scene 에서 좋은가/나쁜가"는 오히려 seed
+> 주효과가 실재한다는 뜻이라 확인된 쪽이다. 실험 설계는 §6-1 `good-seed 전이 검증`에
+> 이미 있다(활성 불요, CPU only) — **미착수**. caveat = winner's curse, n=10 검정력.
 
 2026-07-28, exp5-4 세션 (worktree exp5-4-noise-select). 계획·사전등록 = `exp5-4_verifier_selection_plan.txt` §9 (Gate1 개정), Codex 원장 = `docs/collab/2026-07-28-exp5-4-gate1.md`.
 

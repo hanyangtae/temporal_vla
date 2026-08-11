@@ -1,5 +1,12 @@
 # seen18 GR00T-N1.6 RoboCasa 잠재공간 분석 정리
 
+> **이 문서에서 살아남는 것은 두 가지다** (2026-07-30 정리).
+> ① **길이 confound** — 실패는 항상 timeout이라 time-pooled 분리(AUROC 0.998)는 아티팩트다.
+> 이후 모든 분리 주장의 전제이고, 이 문서가 그 원출처다.
+> ② **도구·데이터 지도** — 어떤 run을 어떤 스크립트로 분석해 어디에 산출했는지.
+> 나머지 개별 관찰(공유 실패 zone, onset regime 등)은 이후 라운드에서 scene·seed 통제가
+> 들어가며 조건이 바뀌었으므로, 인용 전 [`RESULTS.md`](RESULTS.md)·[`RESEARCH_DIRECTION.md`](RESEARCH_DIRECTION.md) C1과 대조할 것.
+
 작성: 2026-05-28 · 대상 데이터: `outputs/eval/robocasa/groot_n16/target_atomic_seen18_ckpt120000_robocasa365_100ep`
 도구: `scripts/safe/groot_n16/robocasa/vis/seen18.py` (단일 CLI) · 산출: `…/analysis/visualizations/`
 

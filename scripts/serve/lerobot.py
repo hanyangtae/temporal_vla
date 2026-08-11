@@ -74,6 +74,7 @@ from src.policies.safe_metadata import (  # noqa: E402
 )
 from src.utils.common.image import decode_b64_image  # noqa: E402
 from src.utils.common.serving import (  # noqa: E402
+    serve_provenance,
     add_server_args,
     health_response,
     reset_policy,
@@ -857,6 +858,8 @@ async def health():
         phase_readout=_phase_spec or None,
         # exp4-1: client 가 사이드카에 GPU 를 기록해 arm×GPU confound 를 사후 감사
         serve_gpu=os.environ.get("CUDA_VISIBLE_DEVICES"),
+        # docs/04 규약 — rollout 인덱스의 machine·ckpt 열 원천 (헬퍼가 단일 출처)
+        **serve_provenance(_profile),
         **feature_metadata,
     )
 

@@ -11,6 +11,22 @@ Runbook connecting the five stages with their settled standards. Method single
 source: docs/steering/14. Per-directory READMEs hold the detailed commands —
 this skill tells you which stage owns what and which standards are load-bearing.
 
+**★ Before writing ANY activation or operator artifact, read
+`docs/04_data_storage_convention.md`.** It is the single source for how rollouts
+and operators are identified and stored. Load-bearing rules:
+
+- Identity is a content fingerprint, not a path: `sig` = sha256[:16] of the pkl
+  (collection rollout) or csv (eval rollout). Operators use `opsig` = hash of
+  (sorted input sigs + normalized params).
+- **Never record absolute paths inside artifacts** — reference other files by
+  sig. Container paths (`/temporal_vla/...`) and old host names already broke
+  35% of existing provenance records.
+- `fit_inputs.json` / `inputs.json` must list input **sigs**, not paths.
+- Collection rollouts (with pkl) and eval rollouts (no pkl) live in separate
+  trees. Capture-density columns (`capture_token_mode`, `feature_kind`,
+  `feature_axes`, `record_shape`, `capture_layers`) are mandatory for
+  activations — classify by the token-axis size in the shape, never by ndim.
+
 ## Stage 1 — Collect activations
 
 - Chunk standard: **16 predicted / 5 executed** → features land at 5-env-step

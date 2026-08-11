@@ -47,6 +47,7 @@ from src.policies.groot.safe.features import (  # noqa: E402
     SafeFeatureExtractor,
     cast_feature_tensor,
 )
+from src.utils.common.serving import serve_provenance  # noqa: E402
 from src.policies.safe_metadata import (  # noqa: E402
     GROOT_N16_VL_FEATURE_KIND,
     GROOT_VL_FEATURE_AXES,
@@ -96,8 +97,11 @@ class SafeN16FeaturePolicy:
         feature_dtype: str = "float16",
         feature_slice: str = "valid",
         feature_action_horizon: int | None = None,
+        profile: Any | None = None,
     ):
         self.sim_policy = sim_policy
+        # docs/04 — 응답에 실을 ckpt 식별자 원천
+        self.profile = profile
         self.policy = sim_policy.policy
         self.extractor = SafeFeatureExtractor(
             sim_policy,
@@ -248,6 +252,9 @@ class SafeN16FeaturePolicy:
             "valid_action_horizon": valid_action_horizon,
             "model_action_horizon": model_action_horizon,
             "num_inference_timesteps": num_inference,
+            # docs/04 규약 — rollout 인덱스의 machine·ckpt 원천. ZMQ 는 /health 가
+            # 없으므로 매 응답에 실어 보낸다 (HTTP serve 와 동일 헬퍼).
+            **serve_provenance(getattr(self, "profile", None)),
         }
         if vl_pooled is not None:
             vl_feats = cast_feature_tensor(vl_pooled, self.extractor.feature_dtype)
@@ -364,6 +371,7 @@ def main() -> None:
         feature_dtype=args.feature_dtype,
         feature_slice=args.feature_slice,
         feature_action_horizon=args.feature_action_horizon,
+        profile=profile,
     )
     if args.capture_layers:
         safe_policy.capture_layers = [int(x) for x in args.capture_layers.split(",")]

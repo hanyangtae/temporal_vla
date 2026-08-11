@@ -5,11 +5,9 @@ import sys
 
 import numpy as np
 
-_ROOT = os.path.join(os.path.dirname(__file__), "..", "scripts", "safe", "groot_n16")
-sys.path.insert(0, os.path.join(_ROOT, "libero"))
-sys.path.insert(0, os.path.join(_ROOT, "robocasa", "collect"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))  # repo root
 
-from robocasa_event_labeler import (  # noqa: E402
+from src.collect.robocasa.event_labeler import (  # noqa: E402
     FridgePhaseLabeler,
     make_robocasa_event_labeler,
 )
@@ -100,7 +98,7 @@ def test_dispatch_returns_fridge_labeler():
 
 def test_fridge_drawer_task_is_not_routed_here():
     """OpenFridgeDrawer 는 서랍 태스크 — Fridge 도어 라벨러가 가로채면 안 된다."""
-    from robocasa_event_labeler import DrawerPhaseLabeler
+    from src.collect.robocasa.event_labeler import DrawerPhaseLabeler
 
     class DrawerEnv(StubEnv):
         class _D:
@@ -322,7 +320,7 @@ class StubMixerEnv(StubEnv):
 
 
 def test_mixer_dispatch_and_thresholds():
-    from robocasa_event_labeler import StandMixerPhaseLabeler
+    from src.collect.robocasa.event_labeler import StandMixerPhaseLabeler
 
     env = StubMixerEnv()
     lab = make_robocasa_event_labeler(
