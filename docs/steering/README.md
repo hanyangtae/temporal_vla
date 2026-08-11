@@ -21,6 +21,7 @@
 | [`08_pathway_separation_analysis.md`](08_pathway_separation_analysis.md) | DiT 32-layer + VL/DiT 비교 ⚠ 분리 시점 주장은 반증됨 |
 | [`22_wrong_grasp_vl_separation.md`](22_wrong_grasp_vl_separation.md) | wrong-grasp 시 VL activation 분리 |
 | [`31_sae_g1_results.md`](31_sae_g1_results.md) · [`32_g2_scene_residual_results.md`](32_g2_scene_residual_results.md) | SAE scene 성분 분리 (G1 PASS → G2) |
+| [`40_action_phase_readout_review.md`](40_action_phase_readout_review.md) | 동료 phase readout 라인 검증 — margin 기준·경계 비정렬은 해상도 차이·재현성 사다리 |
 
 ## 방법론
 
