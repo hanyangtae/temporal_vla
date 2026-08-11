@@ -30,11 +30,11 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(REPO / "scripts/safe/groot_n15/robocasa/steer/exp4_1"))
+sys.path.insert(0, str(REPO / "scripts/safe/groot_n15/robocasa/steer/exp4_1", REPO / "scripts/fit"))
 
 from atlas_loader import load_cell_rolls  # noqa: E402
 from kl_decomp import TOP_K, _shrunk_cov, _subspace  # noqa: E402
-from fit_mean_diff import (  # noqa: E402
+from fit_setm import (  # noqa: E402
     auroc, episode_records,
 )
 

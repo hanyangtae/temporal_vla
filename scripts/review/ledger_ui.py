@@ -23,7 +23,7 @@ import json
 import re
 import secrets
 import socket
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -391,7 +391,7 @@ def main():
         print(f"  sudo ufw allow {args.port}/tcp        # 필요 시")
         print(f"  ss -ltn | grep {args.port}")
     print("\n(Ctrl-C 종료)", flush=True)  # 로그 리다이렉트 시에도 URL 이 바로 보이게
-    HTTPServer((args.host, args.port), Handler).serve_forever()
+    ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()
 
 
 if __name__ == "__main__":

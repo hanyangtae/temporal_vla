@@ -65,7 +65,6 @@ from collect_common import (  # noqa: E402
     write_episode,
     flatten_subkeys,
 )
-from src.collect.libero.event_phase_labeler import make_event_labeler  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -214,14 +213,9 @@ def _rollout(
 
     # 수집 모드일 때만 event-anchored phase 라벨러 부착(일반 eval=collector None→영향 없음).
     # forced-order task 만 event spec 보유 → 미등록 task(교환가능/단일)는 phase 라벨 생략(경고).
+    # libero phase 라벨러는 S2 판정으로 archive 됨 (libero 축 폐기, 2026-08-07).
+    # phase 라벨 없이 수집한다 — feature_phases 는 None 로 남는다.
     labeler = None
-    if collector is not None:
-        try:
-            labeler = make_event_labeler(env, task_name)
-            labeler.reset()
-        except KeyError as e:
-            logger.warning("event-anchored spec 없음 → phase 라벨 생략: %s", e)
-            labeler = None
     feature_phases: List[str] = []  # 추론 발화 step마다 그 step의 phase label(latent와 정렬)
 
     # objects stabilize: dummy action 으로 NUM_STEPS_WAIT step 진행

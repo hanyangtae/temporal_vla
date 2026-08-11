@@ -57,8 +57,8 @@ multi-dim contrastive 연산자). 여기에 두 축을 더한다. 단일 출처:
 이후 모든 robocasa eval 은 아래 표준으로 통일한다 (조건 간 baseline noise 제거 → 같은
 condition pair 끼리 ΔSR 비교 가능).
 
-- **고정 EVAL_SEED = 100000** (= 동료(do-dong-park) collection seed 표준,
-  `scripts/safe/groot_n16/robocasa/collect/task_sets.sh` 의 `ROBOCASA_SEED_START_FOR_TASK_SET`).
+- **고정 EVAL_SEED = 100000** (= 동료(do-dong-park) collection seed 표준. 구 출처
+  task_sets.sh 는 archive 됨 — 이 숫자가 정본).
   `eval_steer_compare.sh` default, `EVAL_SEED` 환경변수로 override.
   - `gym.make(env_name, seed=EVAL_SEED + env_idx)` 로 robocasa kitchen `env.rng` 고정.
   - `env.reset(seed=[EVAL_SEED, EVAL_SEED+1, ...])` 로 첫 reset 결정적.

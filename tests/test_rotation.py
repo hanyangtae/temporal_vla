@@ -24,7 +24,13 @@ try:
 except ImportError:  # scipy 없는 환경에서는 skip
     _HAS_SCIPY = False
 
-from src.datasets.adapters.dreamvla import quat_wxyz_to_euler
+
+def quat_wxyz_to_euler(q):
+    """구 DreamVLA adapter(2869696 에서 백본과 함께 삭제)의 wxyz 컨벤션 참조 구현.
+    이 테스트의 목적이 '두 컨벤션 혼동 검출'이라 로컬 참조로 유지한다."""
+    import numpy as _np
+    return _rotation.quat_xyzw_to_euler(_np.asarray(q)[[1, 2, 3, 0]])
+
 from src.processor.action import _rotation
 
 

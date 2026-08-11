@@ -364,10 +364,13 @@ def test_safe_triplet_writer_records_model_family_and_transport_metadata():
             model_family="groot_n16",
             policy_transport="http",
             task_suite_name="groot_n16_robocasa",
-            grid_dir=output_dir / "grid_cell" / "base",
+            grid_dir=output_dir / "grid_cell" / "ab12__setm",
+            arm_config={"armsig": "ab12", "arm_params": {"op": "setm"}},
         )
-        with (output_dir / "grid_cell" / "base" / "rollout.pkl").open("rb") as f:
+        with (output_dir / "grid_cell" / "ab12__setm" / "rollout.pkl").open("rb") as f:
             payload = pickle.load(f)
+        cfg_path = output_dir / "grid_cell" / "ab12__setm" / "config.json"
+        assert cfg_path.is_file()  # steered 수집 arm 의 진실 기록
 
     assert payload["model_family"] == "groot_n16"
     assert payload["policy_transport"] == "http"

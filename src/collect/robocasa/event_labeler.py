@@ -60,7 +60,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Sequence, Set, Tuple
 
 # reuse the pure, env-agnostic segmentation core from the LIBERO event labeler
-from src.collect.libero.event_phase_labeler import (
+from src.collect.event_phase import (
     INSERT_SETTLE,
     REACH_OBJECT,
     TRANSPORT,

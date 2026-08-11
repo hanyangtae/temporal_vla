@@ -12,6 +12,8 @@ import numpy as np
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 COLLECT_SCRIPT = (
     REPO_ROOT
     / "scripts"
@@ -35,6 +37,26 @@ def _load_module():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _stub_labeler(env, env_name, proximity_phases=False):
+    """run 테스트용 라벨러 스텁 — fake env 에는 robosuite kitchen 이 없다."""
+
+    class _L:
+        def __init__(self):
+            self.phase_timeline = []
+            self.event_steps = {}
+            self.event_order_keys = []
+            self.max_phase_label = "reach-to-object"
+
+        def reset(self):
+            self.phase_timeline = []
+
+        def step(self):
+            self.phase_timeline.append("reach-to-object")
+            return "reach-to-object"
+
+    return _L()
 
 
 def test_path_bootstrap_keeps_n16_groot_before_n15_when_already_present():
@@ -235,7 +257,7 @@ def test_n15_http_feature_client_records_block_residual_metadata():
     assert client.token_count == 5
 
 
-def test_n15_http_feature_client_skips_buffered_steps_without_features():
+def test_n15_http_feature_client_fails_loud_without_features():
     module = _load_module()
 
     def fake_predict_with_features(self, images, states, instruction, inference_seed=None):
@@ -253,9 +275,10 @@ def test_n15_http_feature_client_skips_buffered_steps_without_features():
 
     with mock.patch.object(module.VLAClient, "predict_with_features", fake_predict_with_features):
         client = module.N15LerobotHttpFeatureClient("http://127.0.0.1:8400")
-        action, _ = client.get_action(_raw_observation())
-
-    assert "action.end_effector_position" in action
+        # 캡처 ON 인데 features 미반환 → fail-loud (조용한 무캡처 방지, 57ead4a)
+        import pytest
+        with pytest.raises(RuntimeError, match="캡처 ON"):
+            client.get_action(_raw_observation())
     assert client.records == []
 
 
@@ -270,6 +293,15 @@ def test_n15_http_feature_collect_resolves_task_dir_idempotently(tmp_path: Path)
 
 def test_n15_http_feature_run_passes_replay_meta_and_upstream_video(tmp_path: Path):
     module = _load_module()
+    # 좌표 레이아웃 (grid_dir 필수 규약) — 최소 1-cell 계획
+    from src.collect.plan import CollectionPlan
+    _plan = CollectionPlan(name="t", model="groot", version="n15", ckpt="ck",
+                           capture_layers=[0], denoise_k=4, token_mode="all",
+                           instructions={"X": [100000]}, noise_seeds=[424242])
+    _grid_root = tmp_path / "grid"
+    _plan.save(_grid_root)
+    grid_base = _grid_root / _plan.plan_id / "unknown" / "X" / "s0" / "n0" / "base"
+
     output_root = tmp_path / "rollouts"
     output_dir = output_root / "CloseFridge"
     ep_meta_root = tmp_path / "ep_meta"
@@ -287,16 +319,7 @@ def test_n15_http_feature_run_passes_replay_meta_and_upstream_video(tmp_path: Pa
 
     class FakePolicy:
         def __init__(self, *args, **kwargs):
-            self.records = [
-                {
-                    "hidden_state": np.zeros((4, 16, 2), dtype=np.float32),
-                    "action_vector": np.zeros(7, dtype=np.float32),
-                    "groot_action_vector": np.zeros(12, dtype=np.float32),
-                    "action": {
-                        "action.end_effector_position": np.zeros((1, 3), dtype=np.float32)
-                    },
-                }
-            ]
+            self.records = []
             self.task_description = "close the fridge"
             self.exported_action_token_count = 16
             self.feature_kind = "groot_n15_dit_action_tokens_pre_decode"
@@ -314,6 +337,17 @@ def test_n15_http_feature_run_passes_replay_meta_and_upstream_video(tmp_path: Pa
             return None
 
         def get_action(self, obs):
+            # 추론 1회 = record 1개 (feature_phases 정합 게이트가 이 대응을 검사한다)
+            self.records.append(
+                {
+                    "hidden_state": np.zeros((4, 16, 2), dtype=np.float32),
+                    "action_vector": np.zeros(7, dtype=np.float32),
+                    "groot_action_vector": np.zeros(12, dtype=np.float32),
+                    "action": {
+                        "action.end_effector_position": np.zeros((1, 3), dtype=np.float32)
+                    },
+                }
+            )
             return {"action.end_effector_position": np.zeros((1, 3), dtype=np.float32)}, {}
 
     class FakeEnv:
@@ -348,6 +382,12 @@ def test_n15_http_feature_run_passes_replay_meta_and_upstream_video(tmp_path: Pa
         return FakeEnv(kwargs["video_dir"])
 
     args = argparse.Namespace(
+        no_overlay=False,
+        grid_root=str(tmp_path / "grid"),
+        plan_json=str(tmp_path / "grid"),
+        scene_idx=0,
+        noise_idx=0,
+        grid_instruction="X",
         vla_server="http://127.0.0.1:8400",
         task="CloseFridge",
         env_name=env_name,
@@ -373,11 +413,12 @@ def test_n15_http_feature_run_passes_replay_meta_and_upstream_video(tmp_path: Pa
         mock.patch.object(module, "parse_args", return_value=args),
         mock.patch.object(module, "N15LerobotHttpFeatureClient", FakePolicy),
         mock.patch.object(module, "make_env", fake_make_env),
+        mock.patch.object(module, "make_robocasa_event_labeler", _stub_labeler),
         mock.patch.object(module, "step_success", return_value=True),
     ):
         result = module.run()
 
-    pkl_path = output_dir / "task0--ep0--succ1.pkl"
+    pkl_path = grid_base / "rollout.pkl"
     with pkl_path.open("rb") as f:
         payload = pickle.load(f)
 
@@ -398,13 +439,22 @@ def test_n15_http_feature_run_passes_replay_meta_and_upstream_video(tmp_path: Pa
     assert payload["policy_transport"] == "http"
     assert payload["task_suite_name"] == "lerobot_groot_n15_robocasa"
     assert payload["video_source"] == "groot_upstream_video_recording_wrapper"
-    assert (output_dir / "task0--ep0--succ1.csv").is_file()
-    assert (output_dir / "task0--ep0--succ1.mp4").is_file()
+    assert (grid_base / "traj.csv").is_file()
+    assert (grid_base / "video.mp4").is_file()
     assert (output_root / "collection_summary.tsv").is_file()
 
 
 def test_n15_http_feature_run_writes_instruction_cell_layout_and_metadata(tmp_path: Path):
     module = _load_module()
+    # 좌표 레이아웃 (grid_dir 필수 규약) — 최소 1-cell 계획
+    from src.collect.plan import CollectionPlan
+    _plan = CollectionPlan(name="t", model="groot", version="n15", ckpt="ck",
+                           capture_layers=[0], denoise_k=4, token_mode="all",
+                           instructions={"X": [100001]}, noise_seeds=[500001])
+    _grid_root = tmp_path / "grid"
+    _plan.save(_grid_root)
+    grid_base = _grid_root / _plan.plan_id / "unknown" / "X" / "s0" / "n0" / "base"
+
     output_root = tmp_path / "rollouts"
     output_dir = output_root / "OpenDrawer" / "open_drawer_right"
     ep_meta_root = tmp_path / "ep_meta"
@@ -423,16 +473,7 @@ def test_n15_http_feature_run_writes_instruction_cell_layout_and_metadata(tmp_pa
 
     class FakePolicy:
         def __init__(self, *args, **kwargs):
-            self.records = [
-                {
-                    "hidden_state": np.zeros((4, 16, 2), dtype=np.float32),
-                    "action_vector": np.zeros(7, dtype=np.float32),
-                    "groot_action_vector": np.zeros(12, dtype=np.float32),
-                    "action": {
-                        "action.end_effector_position": np.zeros((1, 3), dtype=np.float32)
-                    },
-                }
-            ]
+            self.records = []
             self.task_description = canonical_instruction
             self.exported_action_token_count = 16
             self.feature_kind = "groot_n15_dit_action_tokens_pre_decode"
@@ -450,6 +491,17 @@ def test_n15_http_feature_run_writes_instruction_cell_layout_and_metadata(tmp_pa
             return None
 
         def get_action(self, obs):
+            # 추론 1회 = record 1개 (feature_phases 정합 게이트가 이 대응을 검사한다)
+            self.records.append(
+                {
+                    "hidden_state": np.zeros((4, 16, 2), dtype=np.float32),
+                    "action_vector": np.zeros(7, dtype=np.float32),
+                    "groot_action_vector": np.zeros(12, dtype=np.float32),
+                    "action": {
+                        "action.end_effector_position": np.zeros((1, 3), dtype=np.float32)
+                    },
+                }
+            )
             return {"action.end_effector_position": np.zeros((1, 3), dtype=np.float32)}, {}
 
     class FakeEnv:
@@ -480,6 +532,12 @@ def test_n15_http_feature_run_writes_instruction_cell_layout_and_metadata(tmp_pa
         return FakeEnv(kwargs["video_dir"])
 
     args = argparse.Namespace(
+        no_overlay=False,
+        grid_root=str(tmp_path / "grid"),
+        plan_json=str(tmp_path / "grid"),
+        scene_idx=0,
+        noise_idx=0,
+        grid_instruction="X",
         vla_server="http://127.0.0.1:8400",
         task="OpenDrawer",
         env_name=env_name,
@@ -508,11 +566,12 @@ def test_n15_http_feature_run_writes_instruction_cell_layout_and_metadata(tmp_pa
         mock.patch.object(module, "parse_args", return_value=args),
         mock.patch.object(module, "N15LerobotHttpFeatureClient", FakePolicy),
         mock.patch.object(module, "make_env", fake_make_env),
+        mock.patch.object(module, "make_robocasa_event_labeler", _stub_labeler),
         mock.patch.object(module, "step_success", return_value=True),
     ):
         module.run()
 
-    pkl_path = output_dir / "task7--ep0--succ1.pkl"
+    pkl_path = grid_base / "rollout.pkl"
     with pkl_path.open("rb") as f:
         payload = pickle.load(f)
 
@@ -524,8 +583,8 @@ def test_n15_http_feature_run_writes_instruction_cell_layout_and_metadata(tmp_pa
     assert payload["task_description"] == canonical_instruction
     assert payload["scenario_seed"] == 100001
     assert payload["ep_meta"] == ep_meta
-    assert (output_dir / "task7--ep0--succ1.csv").is_file()
-    assert (output_dir / "task7--ep0--succ1.mp4").is_file()
+    assert (grid_base / "traj.csv").is_file()
+    assert (grid_base / "video.mp4").is_file()
     assert (output_root / "collection_summary.tsv").is_file()
     assert not (output_root / "OpenDrawer" / "collection_summary.tsv").exists()
 
@@ -534,6 +593,15 @@ def test_n15_http_feature_run_does_not_replay_existing_ep_meta_without_flag(
     tmp_path: Path,
 ):
     module = _load_module()
+    # 좌표 레이아웃 (grid_dir 필수 규약) — 최소 1-cell 계획
+    from src.collect.plan import CollectionPlan
+    _plan = CollectionPlan(name="t", model="groot", version="n15", ckpt="ck",
+                           capture_layers=[0], denoise_k=4, token_mode="all",
+                           instructions={"X": [100001]}, noise_seeds=[500001])
+    _grid_root = tmp_path / "grid"
+    _plan.save(_grid_root)
+    grid_base = _grid_root / _plan.plan_id / "unknown" / "X" / "s0" / "n0" / "base"
+
     output_root = tmp_path / "rollouts"
     output_dir = output_root / "OpenDrawer" / "open_drawer_right"
     ep_meta_root = tmp_path / "ep_meta"
@@ -552,16 +620,7 @@ def test_n15_http_feature_run_does_not_replay_existing_ep_meta_without_flag(
 
     class FakePolicy:
         def __init__(self, *args, **kwargs):
-            self.records = [
-                {
-                    "hidden_state": np.zeros((4, 16, 2), dtype=np.float32),
-                    "action_vector": np.zeros(7, dtype=np.float32),
-                    "groot_action_vector": np.zeros(12, dtype=np.float32),
-                    "action": {
-                        "action.end_effector_position": np.zeros((1, 3), dtype=np.float32)
-                    },
-                }
-            ]
+            self.records = []
             self.task_description = "Open the right drawer."
             self.exported_action_token_count = 16
             self.feature_kind = "groot_n15_dit_action_tokens_pre_decode"
@@ -579,6 +638,17 @@ def test_n15_http_feature_run_does_not_replay_existing_ep_meta_without_flag(
             return None
 
         def get_action(self, obs):
+            # 추론 1회 = record 1개 (feature_phases 정합 게이트가 이 대응을 검사한다)
+            self.records.append(
+                {
+                    "hidden_state": np.zeros((4, 16, 2), dtype=np.float32),
+                    "action_vector": np.zeros(7, dtype=np.float32),
+                    "groot_action_vector": np.zeros(12, dtype=np.float32),
+                    "action": {
+                        "action.end_effector_position": np.zeros((1, 3), dtype=np.float32)
+                    },
+                }
+            )
             return {"action.end_effector_position": np.zeros((1, 3), dtype=np.float32)}, {}
 
     class FakeEnv:
@@ -614,6 +684,12 @@ def test_n15_http_feature_run_does_not_replay_existing_ep_meta_without_flag(
         return env
 
     args = argparse.Namespace(
+        no_overlay=False,
+        grid_root=str(tmp_path / "grid"),
+        plan_json=str(tmp_path / "grid"),
+        scene_idx=0,
+        noise_idx=0,
+        grid_instruction="X",
         vla_server="http://127.0.0.1:8400",
         task="OpenDrawer",
         env_name=env_name,
@@ -642,11 +718,12 @@ def test_n15_http_feature_run_does_not_replay_existing_ep_meta_without_flag(
         mock.patch.object(module, "parse_args", return_value=args),
         mock.patch.object(module, "N15LerobotHttpFeatureClient", FakePolicy),
         mock.patch.object(module, "make_env", fake_make_env),
+        mock.patch.object(module, "make_robocasa_event_labeler", _stub_labeler),
         mock.patch.object(module, "step_success", return_value=True),
     ):
         module.run()
 
-    pkl_path = output_dir / "task7--ep0--succ1.pkl"
+    pkl_path = grid_base / "rollout.pkl"
     with pkl_path.open("rb") as f:
         payload = pickle.load(f)
 
@@ -678,6 +755,7 @@ def test_n15_http_feature_run_fails_when_replay_ep_meta_manifest_is_missing(
         raise AssertionError("make_env should not run when replay manifest is missing")
 
     args = argparse.Namespace(
+        no_overlay=False,
         vla_server="http://127.0.0.1:8400",
         task="OpenDrawer",
         env_name=env_name,
@@ -706,6 +784,7 @@ def test_n15_http_feature_run_fails_when_replay_ep_meta_manifest_is_missing(
         mock.patch.object(module, "parse_args", return_value=args),
         mock.patch.object(module, "N15LerobotHttpFeatureClient", FakePolicy),
         mock.patch.object(module, "make_env", fake_make_env),
+        mock.patch.object(module, "make_robocasa_event_labeler", _stub_labeler),
     ):
         try:
             module.run()
@@ -715,3 +794,60 @@ def test_n15_http_feature_run_fails_when_replay_ep_meta_manifest_is_missing(
             raise AssertionError("run should fail when requested replay manifest is missing")
 
     assert made_env is False
+
+
+def test_resolve_arm_from_serve_steering_spec():
+    """serve steering 지문 → armsig: 결정적이고, 파라미터가 다르면 갈린다."""
+    module = _load_module()
+
+    spec = {
+        "op": "setpoint_seg", "layers": [8, 10], "beta": 1.0,
+        "token_select": "full", "denoise": "per_step",
+        "npz_shas": ["aa", "bb"], "phases": ["reach-to-object"],
+    }
+    args = argparse.Namespace(arm_dir=None, steer_from_record=3, gated_steering=False)
+    name1, params1 = module._resolve_arm(args, {"serve_steering": spec})
+    name2, _ = module._resolve_arm(args, {"serve_steering": dict(spec)})
+    assert name1 == name2                       # 결정적
+    assert name1.endswith("__setpoint_seg")     # hint
+    assert params1["steer_from_record"] == 3
+
+    # beta 만 달라도 다른 arm
+    name3, _ = module._resolve_arm(args, {"serve_steering": {**spec, "beta": 0.5}})
+    assert name3 != name1
+
+    # 명시 --arm-dir 우선
+    args2 = argparse.Namespace(arm_dir="myarm", steer_from_record=None, gated_steering=False)
+    assert module._resolve_arm(args2, {"serve_steering": spec})[0] == "myarm"
+
+    # steering 없음 → base
+    assert module._resolve_arm(args, {"serve_steering": None}) == (None, None)
+
+
+def test_write_eval_artifacts_layout_and_overwrite_guard(tmp_path):
+    """평가 산출물 4파일 + §2 쓰기 검사 (동일 skip / 상이 에러)."""
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from src.collect.artifacts import write_eval_artifacts
+    from src.collect.schema import SAFE_ACTION_COLUMNS
+
+    grid = tmp_path / "plan" / "kanu" / "OpenDrawer" / "left" / "s0" / "n0" / "ab12__setm"
+    video = tmp_path / "v.mp4"; video.write_bytes(b"v")
+    sidecar = {"episode_success": 1, "seed": 100000}
+    rows = [np.arange(len(SAFE_ACTION_COLUMNS), dtype=np.float32)]
+    cfg = {"armsig": "ab12", "arm_params": {"op": "setm"}}
+
+    write_eval_artifacts(grid, sidecar=sidecar, upstream_video_path=video,
+                         action_rows=rows, arm_config=cfg)
+    assert (grid / "meta.json").exists() and (grid / "config.json").exists()
+    assert (grid / "traj.csv").exists() and (grid / "video.mp4").exists()
+
+    # 동일 내용 재실행 → skip (에러 없음)
+    write_eval_artifacts(grid, sidecar=sidecar, upstream_video_path=None,
+                         action_rows=rows, arm_config=cfg)
+
+    # 상이 내용 → 에러
+    import pytest
+    with pytest.raises(RuntimeError, match="덮어쓰기 금지"):
+        write_eval_artifacts(grid, sidecar={"episode_success": 0, "seed": 100000},
+                             upstream_video_path=None, action_rows=None, arm_config=None)

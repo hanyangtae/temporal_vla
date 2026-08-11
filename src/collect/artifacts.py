@@ -75,6 +75,7 @@ def write_safe_triplet(
     extra_metadata: dict[str, Any] | None = None,
     include_hidden_states: bool = True,
     grid_dir: Path | None = None,   # 필수 — None 이면 RuntimeError
+    arm_config: dict[str, Any] | None = None,   # steered 수집(arm)의 진실 — config.json
 ) -> None:
     """SAFE rollout 산출물을 쓴다.
 
@@ -165,9 +166,7 @@ def write_safe_triplet(
     if include_hidden_states:
         payload["hidden_states"] = [record["hidden_state"] for record in policy.records]
     else:
-        # cam-attention 전용 수집(--attn-only-records): activation 텐서 미저장
-        # (eval purge 규약) — cross_attn 요약만 아래에서 기록.
-        payload["hidden_states_omitted"] = True
+        payload["hidden_states_omitted"] = True  # (구 attn-only 흔적 — 현재 호출부는 항상 True)
     if extra_metadata:
         payload.update(json_safe(extra_metadata))
     for key in (
@@ -180,22 +179,6 @@ def write_safe_triplet(
         value = getattr(policy, key, None)
         if value is not None:
             payload[key] = json_safe(value)
-    # DiT cross-attention 카메라 뷰별 mass (--capture-cross-attn). 모든 step 에 있을 때만.
-    if all("cross_attn" in record for record in policy.records):
-        # [n_records, n_cross_blocks, K, qgroup, kgroup] float32 (record 축이 맨 앞).
-        payload["cross_attn"] = np.stack(
-            [record["cross_attn"] for record in policy.records], axis=0
-        )
-        for key in (
-            "cross_attn_axes",
-            "cross_attn_blocks",
-            "cross_attn_qgroups",
-            "cross_attn_kgroups",
-            "view_token_spans",
-        ):
-            value = getattr(policy, key, None)
-            if value is not None:
-                payload[key] = json_safe(value)
     # VL(goal) pathway feature (multilayer --capture-vl). 모든 step 에 있을 때만 기록.
     if include_hidden_states and all("vl_hidden_state" in record for record in policy.records):
         payload["vl_hidden_states"] = [record["vl_hidden_state"] for record in policy.records]
@@ -256,6 +239,63 @@ def write_safe_triplet(
                 meta[key] = extra_metadata[key]
         meta_path.write_text(json.dumps(json_safe(meta), indent=2, ensure_ascii=False))
 
+    # steered 수집(capture-ON arm): 개입 파라미터의 진실 기록 (docs/04 §3.3 — armsig 는
+    # 해시라 복원 불가, config.json 이 사람이 읽는 정본). base 수집은 넘기지 않는다.
+    if arm_config is not None:
+        (dest / "config.json").write_text(
+            json.dumps(json_safe(arm_config), indent=2, ensure_ascii=False)
+        )
+
     if upstream_video_path is None or not upstream_video_path.exists():
         raise RuntimeError(f"GR00T upstream video was not written: {upstream_video_path}")
     shutil.move(str(upstream_video_path), str(mp4_path))
+
+
+def write_eval_artifacts(
+    grid_dir: Path,
+    *,
+    sidecar: dict[str, Any],
+    upstream_video_path: Path | None,
+    action_rows: list[Any] | None,
+    arm_config: dict[str, Any] | None,
+) -> None:
+    """평가 rollout(캡처 OFF, pkl 無)을 좌표 레이아웃 arm 디렉토리에 쓴다 (docs/04 §3.3).
+
+    ``<grid_dir>/{meta.json, traj.csv, video.mp4, config.json}`` — 수집(pkl 有)과 달리
+    activation 이 없으므로 meta.json 이 판정 사이드카를 겸한다. ``config.json`` 은 arm 의
+    진실(armsig 재료 파라미터 + serve steering 지문)이며 base 디렉토리에는 쓰지 않는다.
+
+    §2 쓰기 검사: 같은 좌표에 meta.json 이 이미 있으면 내용 동일 → skip, 상이 → 에러.
+    """
+    dest = Path(grid_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    meta_path, config_path = dest / "meta.json", dest / "config.json"
+    csv_path, mp4_path = dest / "traj.csv", dest / "video.mp4"
+
+    body = json.dumps(json_safe(sidecar), indent=2, ensure_ascii=False)
+    if meta_path.exists():
+        if meta_path.read_text() == body:
+            print(f"[eval] {meta_path} 이미 동일 내용 — skip", flush=True)
+            return
+        raise RuntimeError(
+            f"{meta_path} 가 이미 있고 내용이 다르다 — 덮어쓰기 금지"
+            "(docs/04_data_storage_convention.md §8). 조건이 다르면 armsig(=디렉토리)가 "
+            "달라야 정상이다. 같은 arm 재실행이 결과가 달라졌다면 원인(seed·머신·serve "
+            "지문)을 먼저 확인할 것."
+        )
+    meta_path.write_text(body)
+
+    if arm_config is not None:
+        config_path.write_text(json.dumps(json_safe(arm_config), indent=2, ensure_ascii=False))
+
+    if action_rows:
+        with csv_path.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=SAFE_ACTION_COLUMNS)
+            writer.writeheader()
+            for values in action_rows:
+                writer.writerow(
+                    {col: float(values[i]) for i, col in enumerate(SAFE_ACTION_COLUMNS)}
+                )
+
+    if upstream_video_path is not None and upstream_video_path.exists():
+        shutil.move(str(upstream_video_path), str(mp4_path))

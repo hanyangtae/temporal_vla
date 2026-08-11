@@ -1,0 +1,57 @@
+파일	스테이지	LOC	최종수정	역할	플래그	비고
+src/conceptor/core.py	S4	157	05-27	conceptor 수학 코어 (fit·AND·NOT·aperture, float64)	코어,★현행	
+src/conceptor/analysis.py	S4	62	05-27	conceptor 분석 헬퍼 (유사도·스펙트럼)	코어,현행	
+src/utils/operator_config.py	S4	97	08-04	연산자 config.json 강제 (입력 sig 없으면 ValueError)	코어,★현행	
+src/sae/models.py	S4	436	07-27	AE/top-k SAE 모델	SAE,★현행	
+src/sae/train.py	S4	183	07-27	SAE 학습 루프	SAE,★현행	
+src/sae/pca.py	S4	51	07-27	PCA-64 whiten	SAE,현행	
+src/sae/cluster.py	S4	68	07-27	KMeans/클러스터 배정	SAE,현행	
+src/sae/metrics.py	S4	316	07-27	recon/purity 지표	SAE,현행	
+src/sae/__init__.py	S4	50	07-27	패키지	SAE,현행	
+scripts/scene_sae/build_sae_inputs.py	S4	688	07-27	rollout→SAE 입력 행렬	SAE,★현행	
+scripts/scene_sae/train_scene_sae.py	S4	277	07-27	scene SAE 학습 진입점	SAE,★현행	
+scripts/scene_sae/probe_scene.py	S4	724	07-27	G1 scene probe (분리도)	SAE,현행	
+scripts/scene_sae/g2_residual_read.py	S4	1089	07-27	G2 scene 부분공간 제거 후 read	SAE,현행	
+scripts/scene_sae/g3_precalc.py	S4	574	07-27	G3 사전계산	SAE,현행	
+scripts/scene_sae/fit_g3_direction.py	S4	546	07-27	G3 방향 fit	SAE,현행	
+scripts/safe/groot_n15/robocasa/steer/fit_phase_conceptor_n15.py	S4	857	08-04	phase-bin conceptor fit — docs/38 배선완료 표 언급	본류,★현행	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/fit_mean_diff.py	S4	975	08-04	setM(setpoint mean-diff) fit — 메인 연산자	본류,★현행	
+scripts/safe/groot_n15/robocasa/steer/exp5_3/fit_within_scene_setM.py	S4	396	07-27	scene-matched per-scene setM fit	본류,★현행	
+scripts/safe/groot_n15/robocasa/steer/exp5_3/fit_placebo.py	S4	167	07-27	라벨 순열 위약 fit	본류,현행	
+scripts/safe/groot_n15/robocasa/steer/exp5_3/make_fut_npz.py	S4	22	07-27	future-only token 선택 NPZ	본류,현행	
+scripts/safe/groot_n15/robocasa/steer/diag_conceptor_nondegen.py	S4	247	07-27	연산자 비퇴화 검사 (포화 사고 이후)	진단,현행	
+scripts/safe/groot_n15/robocasa/steer/compare_conceptor_labelfix.py	S4	142	07-13	라벨 수정 전후 conceptor 비교	진단,일회성?	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/diag_token_space.py	S4	210	07-23	토큰 공간 진단	exp4-1,종결	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/diag_st_significance.py	S4	151	07-23	s,t 유의성 진단	exp4-1,종결	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/inspect_npz.py	S4	171	07-23	NPZ 내용 검사	exp4-1,범용성?	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/conceptor_layer_sweep.py	S4	176	07-23	층 sweep fit	exp4-1,종결	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/walqr_f1_subspace.py	S4	93	07-22	WA-LQR F1 부분공간 (선행연구 이식)	exp4-1,종결	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/build_t0_manifest.py	S4	180	07-23	t0(개입시점) manifest	exp4-1,종결	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/extract_fitpool_sidecars.py	S4	100	07-22	fit풀 sidecar 추출	exp4-1,종결	
+scripts/safe/groot_n16/robocasa/steer/fit_conceptor_steering.py	S4	837	06-05	원조 COAST식 conceptor fit (n16)	COAST재현,종결(비재현)	
+scripts/safe/groot_n16/robocasa/steer/layer_select_compare.py	S4	341	06-05	층 선택 비교	COAST재현,종결	
+scripts/safe/groot_n15/robocasa/steer/fit_instruction_conceptors.py	S4	366	06-11	instruction 고정 conceptor fit	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/fit_aligned_instruction_conceptors.py	S4	156	06-11	정렬판 instruction conceptor fit	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/make_fit_manifests.py	S4	302	07-22	exp2 fit manifest	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp2/p1_candidates.py	S4	87	07-22	exp2 후보 선정	exp2,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/make_exp3_manifests.py	S4	346	07-22	exp3 fit manifest	exp3,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/exp3/make_null_manifest.py	S4	60	07-22	exp3 위약 manifest	exp3,종결(null)	
+scripts/safe/groot_n15/robocasa/steer/patchceil/build_arm_plan.py	S4	115	07-22	patchceil arm 계획	patchceil,보조실험	
+scripts/safe/groot_n15/robocasa/steer/patchceil/make_target_manifest.py	S4	111	07-22	patchceil 대상 manifest	patchceil,보조실험	
+scripts/safe/groot_n15/robocasa/steer/patchceil/check_passB_determinism.py	S4	74	07-22	passB 결정성 검사	patchceil,보조실험	
+scripts/safe/groot_n15/robocasa/steer/exp5_4/probe_lib.py	S4	243	07-31	probe 경로 (허브에서 분리 이관)	exp5-4,종결(seed암기)	
+scripts/safe/groot_n15/robocasa/steer/exp5_4/make_seed_manifest.py	S4	131	07-27	seed manifest	exp5-4,종결	
+scripts/safe/groot_n15/robocasa/steer/exp5_4/make_selection_manifest.py	S4	192	07-28	선별 manifest	exp5-4,종결	
+scripts/safe/groot_n15/robocasa/steer/exp5_4/smoke_probe.py	S4	138	07-31	probe smoke	exp5-4,종결	
+scripts/safe/groot_n15/robocasa/steer/exp5_4/check_probe_identity.py	S4	131	07-28	bit-identity 검사	exp5-4,종결	
+scripts/safe/groot_n15/robocasa/steer/induced/fit_setm_induced.py	S4	429	07-27	교란유도 setM fit	exp4-2,유예	
+scripts/safe/groot_n15/robocasa/steer/induced/induced_common.py	S4	64	07-22	induced 공용	exp4-2,유예	
+scripts/safe/groot_n15/robocasa/steer/induced/build_induced_fit_manifest.py	S4	179	07-23	induced fit manifest	exp4-2,유예	
+scripts/safe/groot_n15/robocasa/steer/induced/build_c1_vl_manifests.py	S4	83	07-27	C1 VL manifest	exp4-2,유예	
+scripts/safe/groot_n15/robocasa/steer/induced/build_patch_plan.py	S4	136	07-22	patch 계획	exp4-2,유예	
+scripts/safe/groot_n15/robocasa/steer/induced/extract_vl_donor_npz.py	S4	99	07-22	VL donor NPZ 추출	exp4-2,유예	
+scripts/safe/groot_n15/robocasa/steer/induced/make_noise_npz.py	S4	79	07-22	noise NPZ	exp4-2,유예	
+scripts/safe/groot_n15/robocasa/steer/induced/clean_vs_perturbed_probe.py	S4	139	07-27	clean/perturbed 분리 probe	exp4-2,유예	
+scripts/safe/groot_n15/robocasa/steer/induced/bridge_axis_check.py	S4	247	07-23	bridge 정렬 검사	exp4-2,유예	
+scripts/safe/groot_n15/robocasa/steer/induced/dwell_weight_probe.py	S4	141	07-23	dwell 가중 probe	exp4-2,유예	
+scripts/safe/groot_n15/robocasa/steer/induced/layer_geometry_probe.py	S4	150	07-27	층 기하 probe	exp4-2,유예	

@@ -52,8 +52,6 @@ POLICY_REQUIRED_ATTRS: tuple[str, ...] = tuple(SafeFeaturePolicy.__annotations__
 # 선택 속성: 해당 캡처 모드에서만 존재하고 getattr 폴백으로 읽는다(없으면 그 필드 생략).
 POLICY_OPTIONAL_ATTRS: tuple[str, ...] = (
     "capture_layers", "layer_indices", "layer_count", "token_count", "capture_token_mode",
-    "cross_attn_axes", "cross_attn_blocks", "cross_attn_qgroups", "cross_attn_kgroups",
-    "view_token_spans",                                        # --capture-cross-attn
     "vl_feature_kind", "vl_feature_axes", "vl_feature_dim",     # --capture-vl
 )
 

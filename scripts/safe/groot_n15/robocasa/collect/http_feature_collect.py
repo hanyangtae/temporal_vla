@@ -51,6 +51,7 @@ for path in reversed(
 
 from src.collect.artifacts import (  # noqa: E402
     write_collect_ep_meta_manifest,
+    write_eval_artifacts,
     write_safe_triplet,
 )
 from src.collect.schema import (  # noqa: E402
@@ -107,7 +108,6 @@ class N15LerobotHttpFeatureClient(VLAClient):
         inference_seed: int | None = None,
         no_features: bool = False,
         expect_chunk_len: int | None = None,
-        attn_only: bool = False,
         instruction_override: str | None = None,
     ):
         super().__init__(url, timeout=timeout)
@@ -119,9 +119,6 @@ class N15LerobotHttpFeatureClient(VLAClient):
         # exp3(구 pq3) eval 캡처-OFF 모드: skip_features 로 chunk 추론 경로만 사용, records 를
         # 만들지 않는다 (eval activation 미저장 규약). 추론 횟수는 n_calls 로 계수.
         self.no_features = no_features
-        # cam-attention 전용 수집: record 에서 hidden_state/vl_hidden_state 텐서를
-        # 버리고 cross_attn 요약만 유지 (pkl 수 MB 이하 — eval purge 규약 준수).
-        self.attn_only = attn_only
         self.expect_chunk_len = expect_chunk_len
         self.n_calls = 0
         self.records: list[dict[str, Any]] = []
@@ -141,11 +138,6 @@ class N15LerobotHttpFeatureClient(VLAClient):
         self.vl_feature_kind: str | None = None
         self.vl_feature_axes: list[str] | None = None
         self.vl_feature_dim: int | None = None
-        self.cross_attn_axes: list[str] | None = None
-        self.cross_attn_blocks: list[int] | None = None
-        self.cross_attn_qgroups: list[str] | None = None
-        self.cross_attn_kgroups: list[str] | None = None
-        self.view_token_spans: list[list[int]] | None = None
 
     def reset(self) -> None:
         self.records.clear()
@@ -166,11 +158,6 @@ class N15LerobotHttpFeatureClient(VLAClient):
         self.vl_feature_kind = None
         self.vl_feature_axes = None
         self.vl_feature_dim = None
-        self.cross_attn_axes = None
-        self.cross_attn_blocks = None
-        self.cross_attn_qgroups = None
-        self.cross_attn_kgroups = None
-        self.view_token_spans = None
         super().reset()
 
     def _update_metadata(self, features: dict[str, Any]) -> None:
@@ -212,27 +199,6 @@ class N15LerobotHttpFeatureClient(VLAClient):
         self.vl_feature_dim = _prefer_present(
             features.get("vl_feature_dim"), self.vl_feature_dim
         )
-        self.cross_attn_axes = _prefer_present(
-            features.get("cross_attn_axes"), self.cross_attn_axes
-        )
-        self.cross_attn_blocks = _prefer_present(
-            features.get("cross_attn_blocks"), self.cross_attn_blocks
-        )
-        self.cross_attn_qgroups = _prefer_present(
-            features.get("cross_attn_qgroups"), self.cross_attn_qgroups
-        )
-        self.cross_attn_kgroups = _prefer_present(
-            features.get("cross_attn_kgroups"), self.cross_attn_kgroups
-        )
-        spans = features.get("view_token_spans")
-        if spans is not None:
-            spans = [[int(s), int(e)] for s, e in spans]
-            if self.view_token_spans is not None and spans != self.view_token_spans:
-                # 같은 에피소드 내 instruction/이미지 토큰 배치는 불변이어야 함.
-                raise RuntimeError(
-                    f"view_token_spans changed mid-episode: {self.view_token_spans} -> {spans}"
-                )
-            self.view_token_spans = spans
 
     def get_action(
         self, observation: dict[str, Any], options: dict[str, Any] | None = None
@@ -315,18 +281,6 @@ class N15LerobotHttpFeatureClient(VLAClient):
             record["vl_hidden_state"] = torch.from_numpy(
                 np.ascontiguousarray(np.asarray(vl_hidden_states))
             )
-        cross_attn = features.get("cross_attn")
-        if cross_attn is not None:
-            # [n_cross_blocks, K, qgroup, kgroup] float32 — 요약뿐이라 numpy 로 유지.
-            record["cross_attn"] = np.asarray(cross_attn, dtype=np.float32)
-        if self.attn_only:
-            if cross_attn is None:
-                raise RuntimeError(
-                    "--attn-only-records 인데 features.cross_attn 이 없음 "
-                    "(serve 를 --capture-cross-attn 으로 띄웠는지 확인)"
-                )
-            record.pop("hidden_state", None)
-            record.pop("vl_hidden_state", None)
         self._update_metadata(features)
         self.records.append(record)
         return official_action, {}
@@ -380,6 +334,44 @@ def _get_serve_identity(server: str) -> dict:
     except Exception as exc:  # noqa: BLE001
         return {"serve_gpu": None, "serve_boot_id": None, "machine": None, "ckpt": None,
                 "serve_health_error": str(exc)}
+
+
+def _resolve_arm(args, serve_identity: dict) -> "tuple[str | None, dict | None]":
+    """arm 디렉토리명 결정 (docs/04 §3.3). 반환 (dirname|None, armsig 재료 params|None).
+
+    우선순위: 명시 --arm-dir > serve steering 지문에서 armsig 계산 > None(=base).
+    armsig 7키 중 op/beta/token_select/denoise/bindings 는 serve /health 의 steering
+    지문(정본 — 실제 로드된 NPZ sha 포함)에서, steer_from_record/gated_phases 는
+    클라이언트 인자에서 온다.
+    """
+    explicit = getattr(args, "arm_dir", None)
+    if explicit:
+        return explicit, None
+    spec = serve_identity.get("serve_steering")
+    if not spec:
+        return None, None
+    from src.collect.plan import arm_dirname, arm_signature  # noqa: PLC0415
+
+    params = {
+        "op": spec.get("op"),
+        # (phase, layer, opsig) 삼중을 spec 이 짝지어 주지 않으므로 내용 전체를 담는다 —
+        # 어느 하나라도 다르면 armsig 가 갈리는 성질은 동일하게 성립한다.
+        "bindings": {
+            "layers": spec.get("layers"),
+            "phases": spec.get("phases"),
+            "npz_shas": spec.get("npz_shas"),
+        },
+        "beta": spec.get("beta"),
+        "token_select": spec.get("token_select"),
+        "denoise": spec.get("denoise"),
+        "steer_from_record": getattr(args, "steer_from_record", None),
+        "gated_phases": (
+            sorted(spec.get("phases") or [])
+            if getattr(args, "gated_steering", False)
+            else None
+        ),
+    }
+    return arm_dirname(arm_signature(params), hint=str(spec.get("op") or "")), params
 
 
 def _find_latest_video(video_dir: Path) -> Path | None:
@@ -557,15 +549,6 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--attn-only-records",
-        action="store_true",
-        help=(
-            "cam-attention 전용 수집: record 에서 hidden_state/vl_hidden_state 텐서를 "
-            "버리고 cross_attn 요약(뷰별 mass)만 pkl 에 기록 (serve 는 --capture-cross-attn "
-            "필요, pkl 수 MB 이하)."
-        ),
-    )
-    parser.add_argument(
         "--expect-chunk-len",
         type=int,
         default=16,
@@ -698,15 +681,15 @@ def parse_args() -> argparse.Namespace:
 
 
 # probe 경로(_ProbeClient/_obs_hash/_flatten_action_chunk/_run_probe, 205줄)는
-# exp5-4 전용이라 steer/exp5_4/probe_lib.py 로 분리했다(2026-07-31). CLI 계약은
+# exp5-4 전용이라 scripts/collect/probe_lib.py 로 분리했다(2026-07-31 분리, 08-10 이동). CLI 계약은
 # 그대로 유지 — run() 이 --probe-seeds 를 받아 아래 run_probe 로 위임하므로
 # probe_collect.sh 는 수정 불필요. 같은 모듈의 _ProbeClient/_obs_hash/
-# _flatten_action_chunk 는 exp5_4/smoke_probe.py(캡처 hook 무해성·서버 오염 검출)와
+# _flatten_action_chunk 는 scripts/collect/smoke_probe.py(캡처 hook 무해성·서버 오염 검출)와
 # check_probe_identity.py 가 계속 쓴다 — 라운드 종결과 무관한 무결성 도구다.
 
 
 def _run_probe(args):
-    _prepend_path(REPO_ROOT / "scripts" / "safe" / "groot_n15" / "robocasa" / "steer" / "exp5_4")
+    _prepend_path(REPO_ROOT / "scripts" / "collect")
     from probe_lib import run_probe  # noqa: PLC0415  (순환 import 회피 — 지연 로드)
 
     return run_probe(args)
@@ -770,11 +753,8 @@ def run() -> dict[str, Any]:
             if getattr(args, "no_features", False)
             else None
         ),
-        attn_only=getattr(args, "attn_only_records", False),
         instruction_override=getattr(args, "instruction_override", None),
     )
-    if getattr(args, "attn_only_records", False) and getattr(args, "no_features", False):
-        raise ValueError("--attn-only-records 와 --no-features 는 동시 사용 불가")
     steer_from_record = getattr(args, "steer_from_record", None)
     if steer_from_record is not None and getattr(args, "gated_steering", False):
         raise ValueError("--steer-from-record 와 --gated-steering 은 상호배타 (latch vs phase-gated)")
@@ -792,9 +772,21 @@ def run() -> dict[str, Any]:
     from src.collect.plan import resolve_grid  # noqa: PLC0415
 
     grid_plan, grid_cell = resolve_grid(args)
+    # arm 결정 — steering 이 걸린 serve 로 돌면 자동으로 arm 디렉토리(armsig)가 된다.
+    arm_name, arm_params = _resolve_arm(args, serve_identity)
+    if arm_name is not None:
+        args.arm_dir = arm_name
     if grid_plan is not None:
+        if getattr(args, "no_features", False) and arm_name is None:
+            raise RuntimeError(
+                "좌표 eval 인데 arm 을 결정할 수 없다 — serve 에 steering 지문이 없고 "
+                "--arm-dir 도 없다. base(무개입) 판정은 같은 좌표의 수집 rollout 이 이미 "
+                "그 자체다(같은 머신·seed → 동일 궤적). 별도 base eval 이 필요하면 "
+                "--arm-dir 로 명시할 것."
+            )
         print(f"[collect] 좌표 레이아웃 — plan_id={grid_plan.plan_id} "
-              f"cell={grid_cell.key} machine={serve_identity.get('machine')}", flush=True)
+              f"cell={grid_cell.key} arm={arm_name or 'base'} "
+              f"machine={serve_identity.get('machine')}", flush=True)
 
     max_steps = args.max_episode_steps
     results: list[dict[str, Any]] = []
@@ -889,6 +881,7 @@ def run() -> dict[str, Any]:
             # base·steered 를 같은 t0 로 split 해 개입 후 떨림 증가량을 대조한다.
             action_traj: list = []
             action_steer_on: list = []
+            eval_action_rows: list = []  # 좌표 eval 의 traj.csv 재료 (SAFE 7열, 추론당 1행)
             _interv_record = (
                 steer_from_record if steer_from_record is not None else reseed_from_record
             )
@@ -924,6 +917,8 @@ def run() -> dict[str, Any]:
                     phase_gated_flags.append(gated_now)
                     # 떨림 진단: 이 record 의 명령 action 벡터(첫 실행 스텝)와 개입 활성 여부.
                     action_traj.append(_extract_groot_action_vector(official_action))
+                    if no_features:
+                        eval_action_rows.append(_extract_safe_action_vector(official_action))
                     action_steer_on.append(
                         _interv_record is not None and progress_before >= _interv_record
                     )
@@ -1053,12 +1048,30 @@ def run() -> dict[str, Any]:
                     "ep_meta": captured_ep_meta,
                     **extra_metadata,
                 }
-                out_path = output_dir / f"{stem}.json"
-                out_path.write_text(
-                    json.dumps(json_safe(sidecar), indent=2, ensure_ascii=False)
-                )
-                if upstream_video_path is not None and upstream_video_path.exists():
-                    shutil.copy2(upstream_video_path, output_dir / f"{stem}.mp4")
+                if grid_dir is not None:
+                    # docs/04 §3.3 — 평가 rollout 은 arm 디렉토리로. config.json 이 arm 의 진실.
+                    write_eval_artifacts(
+                        grid_dir,
+                        sidecar=sidecar,
+                        upstream_video_path=upstream_video_path,
+                        action_rows=eval_action_rows,
+                        arm_config=(
+                            None if arm_params is None else {
+                                "armsig": grid_dir.name.split("__")[0],
+                                "arm_params": arm_params,
+                                "serve_steering": serve_identity.get("serve_steering"),
+                            }
+                        ),
+                    )
+                    out_path = grid_dir / "meta.json"
+                else:
+                    # 구 stem 레이아웃 (좌표 인자 없는 옛 러너 호환 — S6 재작성 시 제거)
+                    out_path = output_dir / f"{stem}.json"
+                    out_path.write_text(
+                        json.dumps(json_safe(sidecar), indent=2, ensure_ascii=False)
+                    )
+                    if upstream_video_path is not None and upstream_video_path.exists():
+                        shutil.copy2(upstream_video_path, output_dir / f"{stem}.mp4")
                 shutil.rmtree(upstream_video_dir, ignore_errors=True)
             else:
                 write_safe_triplet(
@@ -1083,11 +1096,18 @@ def run() -> dict[str, Any]:
                     policy_transport="http",
                     task_suite_name="lerobot_groot_n15_robocasa",
                     extra_metadata=extra_metadata,
-                    include_hidden_states=not getattr(args, "attn_only_records", False),
                     grid_dir=grid_dir,
+                    # steered 수집(arm)일 때만 개입의 진실 기록 — base 는 None
+                    arm_config=(
+                        None if (arm_params is None or grid_dir is None) else {
+                            "armsig": grid_dir.name.split("__")[0],
+                            "arm_params": arm_params,
+                            "serve_steering": serve_identity.get("serve_steering"),
+                        }
+                    ),
                 )
-                out_path = (grid_dir / "rollout.pkl") if grid_dir is not None \
-                    else (output_dir / f"{stem}.pkl")
+                # write_safe_triplet 이 grid_dir=None 이면 raise 하므로 여기 도달 = 좌표 확정
+                out_path = grid_dir / "rollout.pkl"
             _append_summary(summary_path, effective_task_id, args.task, episode_idx, scenario_seed, out_path)
             results.append(
                 {

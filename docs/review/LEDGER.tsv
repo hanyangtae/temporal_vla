@@ -51,7 +51,7 @@ docs/steering/etc/23_wrist_cam_attention.md	D	archive		적용(archive)	0670e51
 docs/steering/motivation_activation_steering.txt	D	archive		적용(archive)	0670e51
 docs/steering/29_sae_port_review.md	D	archive		적용(archive)	0670e51
 docs/steering/28_exp4-2_p0_report.md	D	merge	결과정리 	적용(→RESULTS.md)	0670e51
-scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py	S1	수정	인자가 너무 많아서 이미 짝을 이루는 애들은 쫌묶어 보자. 대신 .sh랑 많이 엮여있을거라 그것도 같이 고려해야돼		
+scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py	S1	keep	인자가 너무 많아서 이미 짝을 이루는 애들은 쫌묶어 보자. 대신 .sh랑 많이 엮여있을거라 그것도 같이 고려해야돼 | 인자 묶기는 취소(사용자 08-11) — 38개 유지	종결(수정취소→keep)	
 scripts/safe/groot_n15/robocasa/collect/collect_bread_strict.sh	S1	archive		적용(archive)	b0877ba
 scripts/safe/groot_n15/robocasa/collect/collect_phase_event_4cell.sh	S1	archive		적용(archive)	b0877ba
 scripts/safe/groot_n15/robocasa/collect/collect_potato_apple_seed2.sh	S1	archive		적용(archive)	b0877ba
@@ -60,3 +60,386 @@ scripts/safe/groot_n15/robocasa/collect/archive_on_done.sh	S1	archive		적용(ar
 scripts/safe/groot_n15/robocasa/collect/_diag_wrong_grasp.py	S1	archive		적용(archive)	b0877ba
 scripts/safe/groot_n16/robocasa/collect/repro_check.py	S1	archive		적용(archive)	b0877ba
 scripts/safe/groot_n15/robocasa/collect/collect_cam_attn.sh	S1	archive		적용(archive)	b0877ba
+src/collect/artifacts.py	S1	keep			
+scripts/safe/groot_n15/robocasa/collect/collect_fit_6phase.sh	S1	archive	구 라운드 러너. steer/master_6p_pipeline.sh(S6 구배선)가 참조 — S6 판정 때 처리	적용(archive)	0ca02ad
+scripts/safe/groot_n15/robocasa/collect/collect_strict_cells.sh	S1	archive		적용(archive)	0ca02ad
+src/collect/robocasa/perturbation.py	S1	keep			
+scripts/safe/groot_n15/robocasa/collect/launch_instruction_seed_shards.py	S1	archive	전용 테스트 동반 삭제	적용(archive)	0ca02ad
+scripts/safe/groot_n15/robocasa/collect/merge_instruction_seed_shards.py	S1	archive	전용 테스트 동반 삭제	적용(archive)	0ca02ad
+scripts/safe/groot_n15/robocasa/collect/materialize_selected_ep_meta.py	S1	archive	전용 테스트 동반 삭제	적용(archive)	0ca02ad
+scripts/safe/groot_n15/robocasa/collect/backfill_instruction_ep_meta.py	S1	archive	전용 테스트 동반 삭제	적용(archive)	0ca02ad
+scripts/safe/groot_n15/robocasa/collect/classify_instructions.py	S1	archive		적용(archive)	0ca02ad
+scripts/safe/groot_n15/robocasa/collect/phase_render_from_real.py	S1	archive		적용(archive)	0ca02ad
+scripts/safe/groot_n15/robocasa/collect/phase_live_rollout.py	S1	archive		적용(archive)	0ca02ad
+scripts/safe/groot_n15/robocasa/collect/phase_live_render.py	S1	keep	이거는 phase 검출기 만드는 쪽에서 쓰는거네 		
+scripts/safe/groot_n15/robocasa/collect/collect_instruction_fixed_http_features.py	S1	archive	구배선의 오케스트레이터. 호출자가 있으니까 주의. 그 호출자들도 구버전일 가능성 있긴함. | 호출자 steer/run_one_steer_cell.sh·plan_instruction_steering_eval.py(S6 구배선) 이제 깨짐 — S6 판정 때 처리	적용(archive)	0ca02ad
+scripts/safe/groot_n16/robocasa/collect/collect_rollout.py	S1	keep			
+scripts/safe/groot_n16/robocasa/collect/collect_env.py	S1	keep			
+src/collect/policy_clients.py	S1	keep			
+src/collect/schema.py	S1	keep			
+scripts/safe/groot_n16/robocasa/collect/verify_rollout_collection.py	S1	수정	낡았어. 우리 새 형태에 안맞는거같음.  | 좌표판 scripts/collect/verify_grid.py 로 재작성(결함주입 6종 검증·실데이터 130셀 통과) 후 구본 제거	적용(수정=재작성)	bdd706e
+src/collect/robocasa/event_labeler.py	S1	keep			
+src/collect/robocasa/step_phase.py	S1	keep			
+scripts/safe/groot_n16/robocasa/collect/task_sets.sh	S1	archive	seed는 뭐 그냥 문서들에 숫자로 박아 | seed 100000 은 CLAUDE.md 숫자가 정본으로 변경	적용(archive)	0ca02ad
+scripts/safe/groot_n15/robocasa/collect/build_perturb_grid.py	S1	keep			
+scripts/safe/groot_n15/robocasa/collect/collect_perturb_grid.sh	S1	keep			
+scripts/safe/groot_n16/robocasa/collect/collect_task_set_in_container.sh	S1	archive	고아 3형제·stem 전제·좌표 러너로 대체. docs/groot 참조는 문서 검토 시 갱신	적용(archive)	96116ed
+scripts/safe/groot_n16/robocasa/collect/collect_task_set_official_uv_host.sh	S1	archive	고아 3형제·stem 전제·좌표 러너로 대체. docs/groot 참조는 문서 검토 시 갱신	적용(archive)	96116ed
+scripts/safe/groot_n16/robocasa/collect/collect_task_set_via_docker_exec.sh	S1	archive	고아 3형제·stem 전제·좌표 러너로 대체. docs/groot 참조는 문서 검토 시 갱신	적용(archive)	96116ed
+scripts/safe/groot_n15/robocasa/collect/select_instruction_seeds.py	S1	archive	코어는 scan_seed_instructions 로 재구현·ep_meta replay 는 gym.make(seed) 수정으로 무용. exp3 구스크립트 참조는 S6 처리	적용(archive)	0ca02ad
+src/collect/libero/event_phase_labeler.py	S2	archive	코어는 src/collect/event_phase.py 로 존치(robocasa 라벨러 의존)·LIBERO detector/make_event_labeler 절제·scripts/eval/libero.py 라벨 배선 해제	적용(수술)	a1a242a
+src/collect/libero/bddl_phase_labeler.py	S2	archive	전용 테스트 동반 삭제	적용(archive)	a1a242a
+scripts/safe/groot_n16/libero/collect_pi05_libero.sh	S2	archive		적용(archive)	a1a242a
+scripts/safe/groot_n16/libero/HANDOFF_event_phase_segmentation.md	S2	keep			
+scripts/safe/groot_n15/robocasa/collect/HANDOFF_phase_event_collection.md	S2	keep			
+scripts/safe/groot_n15/robocasa/eval/env_step_gt_retro.py	S2	archive	batch(keep) 는 독립 — retro 미참조 확인	적용(archive)	a1a242a
+scripts/safe/groot_n15/robocasa/eval/env_step_gt_batch.py	S2	keep			
+src/phase_online/online_phase.py	S5	keep	이건 SAE action phase labeler 쪽 연구에 필요한 파일인가?  → 답: 맞음 — top-k SAE(task_classification) 추론경로의 self-contained 이식판, serve(lerobot.py)가 실시간 phase readout 으로 소비 | SAE 추론 이식판, serve 소비 (S2 미정 해소)	해당없음(keep)	
+scripts/safe/_common/split_lib.py	S3	keep	safe가 개입 시점을 결정해주는 용도로 나중에 부활할 가능성이 다분함. 		
+scripts/safe/groot_n15/robocasa/split/build_safe_splits.py	S3	keep			
+scripts/safe/groot_n15/robocasa/split/merge_seen60_source.py	S3	keep			
+scripts/safe/groot_n15/robocasa/split/prepare_seen5_trainval_cp_test_split.py	S3	keep	safe가 개입 시점을 결정해주는 용도로 나중에 부활할 가능성이 다분함. 		
+scripts/safe/groot_n16/robocasa/split/prepare_seen18_manifest.py	S3	keep			
+scripts/safe/groot_n16/robocasa/split/prepare_seen18_split.py	S3	keep	safe가 개입 시점을 결정해주는 용도로 나중에 부활할 가능성이 다분함. 		
+scripts/safe/groot_n16/robocasa/split/prepare_seen4_unseen2_split.py	S3	keep	safe가 개입 시점을 결정해주는 용도로 나중에 부활할 가능성이 다분함. 		
+scripts/safe/lerobot/split/prepare_split.py	S3	keep	safe가 개입 시점을 결정해주는 용도로 나중에 부활할 가능성이 다분함. 		
+scripts/safe/groot_n15/robocasa/analyze/drawer_scene_feasibility.py	S3	keep			
+scripts/safe/groot_n15/robocasa/analyze/mixer_scene_feasibility.py	S3	keep			
+src/conceptor/core.py	S4	keep			
+src/conceptor/analysis.py	S4	keep			
+src/utils/operator_config.py	S4	keep			
+src/sae/models.py	S4	keep			
+src/sae/train.py	S4	keep			
+src/sae/pca.py	S4	keep			
+src/sae/cluster.py	S4	keep			
+src/sae/metrics.py	S4	keep			
+src/sae/__init__.py	S4	keep			
+scripts/safe/groot_n15/robocasa/steer/compare_conceptor_labelfix.py	S4	archive		적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/exp4_1/diag_token_space.py	S4	keep	이건 앞으로 재사용이 많이 될 거임.		
+scripts/safe/groot_n15/robocasa/steer/exp4_1/diag_st_significance.py	S4	미정	또 쓸라나 모르겠네		
+scripts/safe/groot_n15/robocasa/steer/exp4_1/inspect_npz.py	S4	archive	이건 이제 필요없지 않나? 데이터 모을떄 다 검정 하잖아. 	적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/exp4_1/conceptor_layer_sweep.py	S4	keep	이건 conceptor 연산자 쓰면 계속 쓰는거 아닌가?		
+scripts/safe/groot_n15/robocasa/steer/exp4_1/walqr_f1_subspace.py	S4	archive	이건 나중에 필요하면 다시 만들어서 하자	적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/exp4_1/build_t0_manifest.py	S4	keep	이건 또 해야할 수도 있어		
+scripts/scene_sae/build_sae_inputs.py	S4	keep	현행 일괄 keep (사용자 지시 2026-08-07)	해당없음(keep)	
+scripts/scene_sae/train_scene_sae.py	S4	keep	현행 일괄 keep (사용자 지시 2026-08-07)	해당없음(keep)	
+scripts/scene_sae/probe_scene.py	S4	keep	현행 일괄 keep (사용자 지시 2026-08-07)	해당없음(keep)	
+scripts/scene_sae/g2_residual_read.py	S4	keep	현행 일괄 keep (사용자 지시 2026-08-07)	해당없음(keep)	
+scripts/scene_sae/g3_precalc.py	S4	keep	현행 일괄 keep (사용자 지시 2026-08-07)	해당없음(keep)	
+scripts/scene_sae/fit_g3_direction.py	S4	keep	현행 일괄 keep (사용자 지시 2026-08-07)	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/fit_phase_conceptor_n15.py	S4	keep	현행 일괄 keep (사용자 지시 2026-08-07)	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/fit_mean_diff.py	S4	keep	현행 일괄 keep (사용자 지시 2026-08-07)	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/exp5_3/fit_within_scene_setM.py	S4	keep	현행 일괄 keep (사용자 지시 2026-08-07)	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/exp5_3/fit_placebo.py	S4	keep	현행 일괄 keep (사용자 지시 2026-08-07)	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/exp5_3/make_fut_npz.py	S4	keep	현행 일괄 keep (사용자 지시 2026-08-07)	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/diag_conceptor_nondegen.py	S4	keep	현행 일괄 keep (사용자 지시 2026-08-07)	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/exp4_1/extract_fitpool_sidecars.py	S4	archive	build_t0_manifest(keep) 참조는 주석뿐 — 무해	적용(archive)	663d4db
+scripts/safe/groot_n16/robocasa/steer/fit_conceptor_steering.py	S4	archive	n16 fit 필요 시 n15 현행 fit 일반화(kind 게이트·토큰 경계 프로파일화)로 — COAST 절차 부활 안 함. steering_hooks 주석 정리됨	적용(archive)	663d4db
+scripts/safe/groot_n16/robocasa/steer/layer_select_compare.py	S4	archive		적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/fit_instruction_conceptors.py	S4	archive	전용 테스트 동반 삭제	적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/exp2/make_fit_manifests.py	S4	archive	exp2 .sh 러너(S6) 참조 잔존 — S6 판정 때 처리	적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/exp2/p1_candidates.py	S4	archive	exp2 .sh 러너(S6) 참조 잔존 — S6 판정 때 처리	적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/exp3/make_exp3_manifests.py	S4	archive	exp3 게이트·집계(S7)·queue_lib(S6) 참조 잔존 — 해당 스테이지 때 처리	적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/exp3/make_null_manifest.py	S4	archive		적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/patchceil/build_arm_plan.py	S4	archive		적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/patchceil/make_target_manifest.py	S4	archive		적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/patchceil/check_passB_determinism.py	S4	archive		적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/induced/fit_setm_induced.py	S4	archive	perturb 재개 시 fit 은 현행 setM fit 일반화로	적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/exp5_4/probe_lib.py	S4	keep			
+scripts/safe/groot_n15/robocasa/steer/exp5_4/smoke_probe.py	S4	keep			
+scripts/safe/groot_n15/robocasa/steer/exp5_4/check_probe_identity.py	S4	keep			
+scripts/safe/groot_n15/robocasa/steer/exp5_4/make_seed_manifest.py	S4	archive	probe_collect.sh(S6) 참조 잔존	적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/exp5_4/make_selection_manifest.py	S4	archive	probe_collect.sh(S6)·analysis(S8) 참조 잔존	적용(archive)	663d4db
+scripts/safe/groot_n15/robocasa/steer/induced/induced_common.py	S4	keep			
+scripts/safe/groot_n15/robocasa/steer/induced/build_induced_fit_manifest.py	S4	keep	perturb 는 상설 축(사용자 결정 08-07) — exp번호 아닌 기능명 perturb 로 재배치 예정	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/build_c1_vl_manifests.py	S4	keep	perturb 는 상설 축(사용자 결정 08-07) — exp번호 아닌 기능명 perturb 로 재배치 예정	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/build_patch_plan.py	S4	keep	perturb 는 상설 축(사용자 결정 08-07) — exp번호 아닌 기능명 perturb 로 재배치 예정	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/extract_vl_donor_npz.py	S4	keep	perturb 는 상설 축(사용자 결정 08-07) — exp번호 아닌 기능명 perturb 로 재배치 예정	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/make_noise_npz.py	S4	keep	perturb 는 상설 축(사용자 결정 08-07) — exp번호 아닌 기능명 perturb 로 재배치 예정	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/clean_vs_perturbed_probe.py	S4	keep	perturb 는 상설 축(사용자 결정 08-07) — exp번호 아닌 기능명 perturb 로 재배치 예정	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/bridge_axis_check.py	S4	keep	perturb 는 상설 축(사용자 결정 08-07) — exp번호 아닌 기능명 perturb 로 재배치 예정	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/dwell_weight_probe.py	S4	keep	perturb 는 상설 축(사용자 결정 08-07) — exp번호 아닌 기능명 perturb 로 재배치 예정	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/layer_geometry_probe.py	S4	keep	perturb 는 상설 축(사용자 결정 08-07) — exp번호 아닌 기능명 perturb 로 재배치 예정	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/fit_aligned_instruction_conceptors.py	S4	archive	exp2 사슬 최상단(→fit_instruction→n16 COAST판) — 셋 다 동반 archive. 전용 테스트 동반 삭제	적용(archive)	663d4db
+scripts/serve/groot.py	S5	미정	검토 범위 제외(사용자 08-10) — 타모델 벤치 재개 시 재검토	보류(범위제외)	
+scripts/serve/openvla_oft.py	S5	미정	검토 범위 제외(사용자 08-10) — 타모델 벤치 재개 시 재검토	보류(범위제외)	
+scripts/serve/upvla.py	S5	미정	검토 범위 제외(사용자 08-10) — 타모델 벤치 재개 시 재검토	보류(범위제외)	
+scripts/serve/xvla.py	S5	미정	검토 범위 제외(사용자 08-10) — 타모델 벤치 재개 시 재검토	보류(범위제외)	
+scripts/serve/lerobot.py	S5	keep	라운드 완주 후 절제 목록: cam-attn 분기 제거 · legacy hidden_states_b64 이중 발송 제거(vla_client 통일 blob 우선 확인 후 — 응답 크기 절반) · _register_steering 364줄 정리 | 배선반 리팩토링 설계(08-10 합의): 4모드(single/multi/gated/VL)를 통일형 'target별 hook + phase→연산자 사전'으로 — gated 구현을 일반형으로 승격, 정적={always:M} 특수형. bindings=(phase,layer,opsig) 규약(docs/04 §3.3)과 동형. CLI --steering-bind 반복형 수렴 후보 | 통일형 리팩토링에 런타임 re-arm 엔드포인트 요구 추가(08-10): 재부팅 없이 연산자 교체 — 동적 큐의 슬롯 가동률 전제(/patch_arm 선례) | 절제 4건 중 3건 이행(cam-attn·이중발송·통일1단계 dc66a15 브랜치), 인자정리 취소, --steering-bind 2단계는 선택 잔여	종결(이행)	
+scripts/serve/exp42_serve.py	S5	archive	lerobot.py 와 diff 0 완전 중복(고정 효력 소멸). .sh 참조 5개는 S6 구 라운드 러너 — S6 처리	적용(archive)	d61e27c
+scripts/serve/patchceil_serve.py	S5	archive	〃 (.sh 1개)	적용(archive)	d61e27c
+scripts/serve/attn_hooks.py	S5	archive	cam-attn 방침 확정분. lerobot lazy import 라 동결 중 삭제 무해(플래그 사용 시 fail-loud). lerobot 내 분기 절제는 완주 후	적용(archive)	d61e27c
+scripts/serve/steering_hooks.py	S5	keep	개입 hook 본체 — 정독 완료	해당없음(keep)	
+scripts/serve/safe_hooks.py	S5	keep	캡처 hook 본체 — 정독 완료. cross-attn 곁가지는 완주 후 절제	해당없음(keep)	
+scripts/serve/patching_hooks.py	S5	keep	donor 이식 hook — perturb 축(keep)이 소비	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/serve/feature_server.py	S5	keep	n16 ZMQ serve, 재수집 진입점	해당없음(keep)	
+scripts/utils/vla_client.py	S5	keep	통일 클라이언트. RENAME_PLAN: src 이동 후보(역방향 의존 해소)	해당없음(keep)	
+src/utils/common/serving.py	S5	keep	GPU 제거건은 이미 완료 확인(08-10) — hostname 만 반환·주석 명시	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/ab_sweep_chain.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/ablation_queue_gpu01.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/confirm90_gpu23.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/cross_instruction_chain.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/exp2_cell_runner.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/exp2_cell_runner_srv50.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p1_remote_chain.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p1_screen.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_select_cell.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_select_cell_srv50.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_select_cell_v2.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_select_pool.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_local.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv48.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv48_lite.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv48_lite_b.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv50.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv50g0.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv50g0b.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/p3_lane_srv50g1.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/prune_completed_p3.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/sj_deprecate_round2.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/srv50_collect_cell.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/beta_sweep.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_c0_scan.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_cell_runner.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_cell_runner_srv50.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_collect_cell.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_collect_cell_srv50.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_lane_local.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_lane_srv50.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_lib.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp4_1/mixer_c0_collect.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_conceptor_fit_remote.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_conceptor_sweep_remote.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_fits_remote.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_gated_fits_remote.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_nolen_fits_remote.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp4_1/run_oracle_rescue.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp4_1/smoke_exp41.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp5_3/beta_sweep.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp5_3/collect_sm_mixer.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp5_3/eval_ws_steer.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp5_3/mixer_sm_collect.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp5_3/mixer_sm_pull.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp5_4/probe_collect.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/heldout_round_cell.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/heldout_round_cell_host.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/heldout_round_gpu01.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/induced/collect_b1_donors.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/collect_b3_donors.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/run_induced_patch.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/run_perturb_steer_eval.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/s1_perturb.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/s2_dit_patch.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/s3_vl_patch.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/s4_fit_truncation.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/s5_npz_serve.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/smoke_common.sh	S6	keep	perturb 상설 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/lane_status.sh	S6	keep	현행 벤치 eval/진단	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/master_6p_pipeline.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/master_final_scene.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/master_final_scene2.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/patchceil/collect_passB.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/patchceil/extract_donors.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/patchceil/rerun_episodes.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/patchceil/run_patch_rollouts.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/queue/apple_fits.sh	S6	keep	동적 큐 채택(사용자 08-10) — arm 공간 10축·serve 슬롯 가동률 위해 재사용. RENAME_PLAN 재배치 후보	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/queue/build_work_queue.sh	S6	keep	동적 큐 채택(사용자 08-10) — arm 공간 10축·serve 슬롯 가동률 위해 재사용. RENAME_PLAN 재배치 후보	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/queue/fits_waiter.sh	S6	keep	동적 큐 채택(사용자 08-10) — arm 공간 10축·serve 슬롯 가동률 위해 재사용. RENAME_PLAN 재배치 후보	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/queue/lane_runner_local.sh	S6	keep	동적 큐 채택(사용자 08-10) — arm 공간 10축·serve 슬롯 가동률 위해 재사용. RENAME_PLAN 재배치 후보	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/queue/lane_runner_local_v2.sh	S6	keep	동적 큐 채택(사용자 08-10) — arm 공간 10축·serve 슬롯 가동률 위해 재사용. RENAME_PLAN 재배치 후보	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/queue/lane_runner_srv50.sh	S6	keep	동적 큐 채택(사용자 08-10) — arm 공간 10축·serve 슬롯 가동률 위해 재사용. RENAME_PLAN 재배치 후보	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/queue/lane_runner_srv50_v2.sh	S6	keep	동적 큐 채택(사용자 08-10) — arm 공간 10축·serve 슬롯 가동률 위해 재사용. RENAME_PLAN 재배치 후보	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/queue/monitor_queue.sh	S6	keep	동적 큐 채택(사용자 08-10) — arm 공간 10축·serve 슬롯 가동률 위해 재사용. RENAME_PLAN 재배치 후보	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/queue/queue_lib.sh	S6	keep	동적 큐 채택(사용자 08-10) — arm 공간 10축·serve 슬롯 가동률 위해 재사용. RENAME_PLAN 재배치 후보	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/queue/rename_arms.sh	S6	keep	동적 큐 채택(사용자 08-10) — arm 공간 10축·serve 슬롯 가동률 위해 재사용. RENAME_PLAN 재배치 후보	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/run_instruction_steering_eval.py	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/run_one_steer_cell.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/steer_eval_30x30.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/steer_eval_multilayer_30.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/steer_eval_transport_30.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/strict_steer_queue_gpu45.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp2/build_p3_queue.py	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n15/robocasa/steer/exp3/build_exp3_queue.py	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n16/robocasa/steer/archive_perT_to_remote.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n16/robocasa/steer/collect_multilayer_parallel.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n16/robocasa/steer/collect_pathway_parallel.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n16/robocasa/steer/eval_steer_compare.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n16/robocasa/steer/eval_steer_pathways.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/safe/groot_n16/robocasa/steer/eval_steer_vl.sh	S6	archive	종결 라운드 러너 일괄 archive(사용자 08-10). exp5-3 용례는 docs/steering/39 로 증류	적용(archive)	4a959af
+scripts/eval/robocasa_eval.py	S6	keep	현행 벤치 eval/진단	해당없음(keep)	
+scripts/eval/groot_robocasa_zmq_eval.py	S6	keep	현행 벤치 eval/진단	해당없음(keep)	
+scripts/eval/groot_robocasa.sh	S6	keep	현행 벤치 eval/진단	해당없음(keep)	
+scripts/eval/test_robocasa_env_reproducibility.py	S6	keep	현행 벤치 eval/진단	해당없음(keep)	
+scripts/eval/calvin.py	S6	미정	검토 범위 제외(타모델)	보류(범위제외)	
+scripts/eval/libero.py	S6	미정	검토 범위 제외(타모델)	보류(범위제외)	
+scripts/eval/pi05_libero.py	S6	미정	검토 범위 제외(타모델)	보류(범위제외)	
+scripts/eval/openvla_oft_libero.sh	S6	미정	검토 범위 제외(타모델)	보류(범위제외)	
+scripts/eval/openvla_oft_libero_rollouts.sh	S6	미정	검토 범위 제외(타모델)	보류(범위제외)	
+scripts/eval/xvla_calvin.sh	S6	미정	검토 범위 제외(타모델)	보류(범위제외)	
+scripts/eval/phase1_predictor.py	S6	미정	TTT 계열 — S9 잡파일 때 처분	보류	
+scripts/eval/phase1_batch.sh	S6	미정	TTT 계열 — S9 잡파일 때 처분	보류	
+scripts/safe/groot_n15/robocasa/steer/aggregate_final_scene.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/plan_instruction_steering_eval.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp2/aggregate_v2.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp2/p0_gate.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_decide.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp2/p2_decide_pool.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp3/aggregate_exp3.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp3/beta_decide.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_decision.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp3/exp3_gated_gate.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp3/p0_gate_exp3.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp3/tests/test_gate_a.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp4_1/aggregate_rescue.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp4_1/analyze_action_tremor.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp4_1/audit_flags.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp4_1/diag_dose_robustness.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/export_loso_directions.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/_sel_baselines.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/_sel_common.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_baselines.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_by_record.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_drop_seed.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_gate.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_placebo.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/exp5_4/analysis/selection_power.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/analyze_meta.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/check_anchors.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/check_passA.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/extract_donor_npz.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/extract_ep_meta_remote.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/judge_patchceil.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/make_shuffle_npz.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/replay_arm.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/steer/patchceil/select_passB.py	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/eval/run_target15_seedpairs.sh	S7	archive	종결 라운드 집계 — 통계 패턴은 src/judge/stats.py 로 증류(동일성 검증) 후 일괄 archive(사용자 08-10)	적용(archive)	20de2b4
+scripts/safe/groot_n15/robocasa/eval/rejudge_success.py	S7	keep	현행 재채점 (fresh-process 규약 원조)	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/eval/lerobot_http_eval.py	S7	keep	S1 허브 import 부품 — RENAME 후보	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/eval/native_official_zmq_eval.py	S7	keep	N1.6 대비 keep(사용자 08-10)	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/eval/native_zmq_eval.py	S7	keep	N1.6 대비 keep(사용자 08-10)	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/exp5_3/aggregate_ws_steer.py	S7	keep	차기 판정의 직계 조상 — src/judge 소비 예정	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/aggregate_p0.py	S7	keep	perturb 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/steer/induced/smoke/smoke_judge.py	S7	keep	perturb 축	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/eval/internal_parity.py	S7	미정	시각화·일회성 진단 — S8 때 처분	보류	
+scripts/safe/groot_n15/robocasa/eval/annotate_phase_video.py	S7	미정	시각화·일회성 진단 — S8 때 처분	보류	
+src/judge/stats.py	S7	keep	신설 — 판정 통계 증류본 (mcnemar·holm·poisson-binomial·순열·위약)	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/analyze/fridge_smoke_report.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n15/robocasa/analyze/dit_succfail_investigation.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n15/robocasa/analyze/cam_attn_phase.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n15/robocasa/analyze/phase_separation_combined.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n15/robocasa/analyze/tests/test_wrong_grasp_vl_separation.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n15/robocasa/vis/phase_distribution_tsne_lda.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n15/robocasa/vis/cam_attn_timeseries.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/within_task_succ_vs_fail.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/pathway_online_detection.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/within_task_failure_modes.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/diagnose_rollout_mean_feature_separability.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/pathway_detector_video.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/plot_detector_ppt_figs.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/vl_dit_stepwise.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/cross_task_containment_structure.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/failure_stuck_state_test.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/pathway_step_attribution.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/failure_trajectory_modes.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/analyze/summarize_lstm_hparam_sweep.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/make_progress_videos.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/compute_and_plot_lstm_hidden_vs_linear.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/plot_safe_conformal_curves.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/progress_evolution.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/compute_and_plot_online_detection.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/plot_task_success_overlay.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/compute_feature_silhouette.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/cluster_static.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/make_videos_1hz_and_gif.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/compute_and_plot_lstm_relabel.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/analyses/taskdist.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/analyses/html3d.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/analyses/faildir.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/safe/groot_n16/robocasa/vis/analyses/pertask_tsne.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/check_tasks.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/debug_pi05_dataset.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/plot_phase1_progress.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/debug_pi05_libero.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/mech_interp/verify_injection.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/mech_interp/verify_interpretability.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/mech_interp/build_clusters.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/mech_interp/analyze_displacement.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/insight_seg/run_pilot.py	S8	archive	고아 자동검출(코드·문서 참조 0) — S8 축소 옵션(b), 라운드 1회용 플롯/분석	적용(archive)	8466da0
+scripts/analysis/build_clip_cache.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/insight_seg/lerobot_adapter.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/insight_seg/prompts.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/insight_seg/rollout_adapter.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/insight_seg/segmentation.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/insight_seg/state_recording_wrapper.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/insight_seg/vlm_client.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/mech_interp/value_projection.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/mech_interp/visualize.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/probe_handle_xyz.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/analysis/scan_seed_instructions.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/analyze/instruction_pathway_features.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/analyze/phase_separation.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/analyze/summarize_instruction_cells.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/analyze/summarize_instruction_seed_samples.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/analyze/summarize_instruction_seed_scan.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/analyze/wrong_grasp_vl_separation.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n15/robocasa/vis/annotate_phase_video.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/cross_task_failure_analysis.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/cross_task_failure_perstep.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/cross_task_mode_sharing.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/finalize_lstm_detector.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/pathway_lstm_detector.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/pathway_separation.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/summarize_lstm_aggregation_ablation.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/verify_detector_length_control.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/vl_anomaly_score.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/analyze/vl_dit_lda_analysis.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/__init__.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/_common.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/auroc.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/cache.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/conformal.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/embed.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/evolution.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/length.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/online_detection.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/pairwise.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/separation.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/silhouette.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/snapshots.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/temporal.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/analyses/windows.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/__init__.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/aggregation.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/distance.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/features.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/geometry.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/io.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/labeling.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/lstm.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/metrics.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/plot3d.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/plotting.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/projection.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/core/schemes.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/plot_safe_style_feature_space.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/run_feature_visualization.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/safe/groot_n16/robocasa/vis/seen18.py	S8	keep	축소 옵션(b) 일괄 보존 — 참조 있음 또는 최근 사용	해당없음(keep)	
+scripts/data/merge_robocasa_lerobot_v21.py	S9	archive	구시대 고아(참조 0)/깨짐 — S9 일괄	적용(archive)	25750db
+scripts/extract/prepare_robocasa_dataset.py	S9	archive	구시대 고아(참조 0)/깨짐 — S9 일괄	적용(archive)	25750db
+scripts/extract/verify_eagle_extraction.py	S9	archive	구시대 고아(참조 0)/깨짐 — S9 일괄	적용(archive)	25750db
+scripts/test/test_linear_preLN_equivalence.py	S9	archive	구시대 고아(참조 0)/깨짐 — S9 일괄	적용(archive)	25750db
+scripts/test/smoke_ttt_autocast.py	S9	archive	구시대 고아(참조 0)/깨짐 — S9 일괄	적용(archive)	25750db
+scripts/event_sae/export_pq3_trajectories.py	S9	archive	구시대 고아(참조 0)/깨짐 — S9 일괄	적용(archive)	25750db
+scripts/utils/exp3_dashboard.sh	S9	archive	구시대 고아(참조 0)/깨짐 — S9 일괄	적용(archive)	25750db
+SAFE_GROOT_N16_DATA_BUNDLE_README.md	S9	archive	구 stem 번들 전달문서 — SAFE 재학습은 신규 수집 방침이라 불용(사용자 08-10)	적용(archive)	25750db
+src/ttt/ (10파일)	S9	archive	TTT 축 폐기(사용자 08-10). core/service 의 lazy import 는 predictor_path 미지정 시 무해	적용(archive)	25750db
+scripts/train/{eval_phase1_mlp_linear.sh,groot_ttt_robocasa_finetune.sh,launch_finetune_ttt.py,phase1_groot_robocasa.py,phase1_groot_robocasa.sh,phase1_predictor.py,phase1_predictor.sh}	S9	archive	TTT 축 폐기(사용자 08-10). core/service 의 lazy import 는 predictor_path 미지정 시 무해	적용(archive)	25750db
+scripts/eval/{phase1_predictor.py,phase1_batch.sh}	S9	archive	TTT 축 폐기(사용자 08-10). core/service 의 lazy import 는 predictor_path 미지정 시 무해	적용(archive)	25750db
+src/datasets/{phase1_dataset.py,phase1_v21_dataset.py}	S9	archive	TTT 축 폐기(사용자 08-10). core/service 의 lazy import 는 predictor_path 미지정 시 무해	적용(archive)	25750db
+task_classification/ (47파일)	S9	keep	online_phase(keep) 런타임 참조 — SAE 라벨러 학습·ckpt 원본	해당없음(keep)	
+scripts/event_sae/stage3_media.py	S9	keep	event-SAE 현행 (테스트 동반)	해당없음(keep)	
+scripts/extract/extract_eagle_pre_llm_robocasa.py	S9	keep	cache eagle_pre_llm 데이터셋 생성기	해당없음(keep)	
+scripts/train/{gr00t_n15_finetune_subset.py,groot_robocasa_finetune.sh,groot_robocasa_target_finetune.sh}	S9	keep	baseline finetune	해당없음(keep)	
+scripts/utils 핵심(path_setup·cache_env·remote_compute·checkpoint_profile·codex_ask·notion·smoke_test_serve 등)	S9	keep	공용 인프라	해당없음(keep)	
+docker/ + docker-compose*	S9	keep	컨테이너 정의	해당없음(keep)	
+scripts/train/xvla.sh	S9	미정	타모델 — 범위제외	보류(범위제외)	

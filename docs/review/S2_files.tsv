@@ -1,0 +1,12 @@
+파일	스테이지	LOC	최종수정	역할	플래그	비고
+src/collect/robocasa/event_labeler.py	S2	1239	08-06	phase 라벨 본체 — PnP 코어 + Drawer/Fridge/Mixer 상태기계 3벌 + TASK_EVENTS 등록부	허브,판정완료(keep)	S1에서 keep. S2에서는 세부(분기 순서 의존·신규 task 등록 절차)만 확인
+src/collect/robocasa/step_phase.py	S2	108	08-05	env-step 해상도 GT (record 라벨과 병행, 5배 촘촘)	판정완료(keep)	S1에서 keep
+src/collect/libero/event_phase_labeler.py	S2	332	08-05	순수 분할 코어 (PhaseSegmenter/EventPhaseLabeler) + LIBERO detector	코어	robocasa 라벨러가 이 코어를 재사용. 테스트 有
+src/collect/libero/bddl_phase_labeler.py	S2	145	08-05	LIBERO BDDL 술어 라벨러 + find_domain(wrapper 체인 탐색)	libero전용	테스트 有. libero 계열 유지 여부와 연동
+scripts/safe/groot_n16/libero/collect_pi05_libero.sh	S2	111	07-06	pi0.5 LIBERO 수집 러너 (라벨러 소비자)	libero전용	libero 축 지속 여부가 판정 기준
+scripts/safe/groot_n16/libero/HANDOFF_event_phase_segmentation.md	S2	154	07-06	이벤트 분할 설계 핸드오프 (코어 설계 근거)	문서	설계 근거 문서 — docs/ 이동 후보
+scripts/safe/groot_n15/robocasa/collect/HANDOFF_phase_event_collection.md	S2	95	07-06	구 phase-event 수집 라운드 핸드오프	문서,라운드전용	참조하던 러너들(4cell 등) 전부 archive 됨
+scripts/safe/groot_n15/robocasa/eval/env_step_gt_retro.py	S2	133	08-05	기존 pkl 에 env-step GT 소급 생성 (replay, fresh-process 규약)	소급도구	신규 수집은 실시간 GT 기록이라 대상 축소 — 구 데이터 전량 폐기로 용도 재검토
+scripts/safe/groot_n15/robocasa/eval/env_step_gt_batch.py	S2	197	08-05	위 retro 의 배치 병렬 러너	소급도구	retro 와 한 쌍
+src/phase_online/online_phase.py	S2	157	07-27	추론 중 online phase readout (serve 가 소비)	serve연계	phase_live_render 가 이쪽 검출기 시각화. S5 serve 와 걸침
+scripts/safe/groot_n15/robocasa/collect/phase_live_render.py	S2	126	07-27	phase 검출 라이브 시각화 렌더러	판정완료(keep)	S1에서 keep ("검출기 만드는 쪽에서 씀")
