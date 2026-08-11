@@ -60,18 +60,25 @@ docker exec -e MUJOCO_GL=egl \
 
 ## 5. 다른 task로 확장할 때
 
-스크립트는 현재 **StandMixer 전용**(`env.stand_mixer`, `_joint_names["head"]`)이다.
+원본은 **StandMixer 전용**(`env.stand_mixer`, `_joint_names["head"]`)이다.
 이식하려면 네 개만 바꾸면 된다: ① fixture 참조 ② 관절 이름 ③ 움직이는 body 이름 ④ 성공임계.
 
-| task | 관절 | 임계 |
-|---|---|---|
-| CloseFridge | `fxtr._fridge_door_joint_names` (도어별, 다짝 전부) | ≤0.005 |
-| OpenDrawer | `env.drawer` 관절 | ≥0.90 계열 |
+| task | 관절 | 임계 | 이식 |
+|---|---|---|---|
+| CloseFridge | `fxtr._fridge_door_joint_names` (도어별, 다짝 전부) | ≤0.005 | 미착수 |
+| OpenDrawer | `{fx.name}_slidejoint` (sign −1, `size[1]*0.55` 정규화) | ≥0.95 | ✓ `drawer_scene_feasibility.py` |
 
-**미확인 사항 두 개** — 새 task를 쓸 때마다 확인 대상이다:
+**OpenDrawer 실측 (2026-08-06)**: seed 100000–100299 전수 300 건 **BLOCKED 0** (전부
+`q_max=1.000`). 서랍은 캐비닛 안쪽에서 미끄러져 나오는 구조라 위쪽 선반 간섭이 원리적으로
+생기기 어렵다. 이 대역의 drawer scene 은 필터 없이 그대로 쓸 수 있다 — 단 §6 한계(정적·관절만,
+그리퍼 걸림 미검출)는 그대로다. 결과: `outputs/analysis/seed_scan/drawer_feasibility.json`
+(seed 별 `ep_lang`·`side` 포함, 스캔 TSV 와 300/300 일치).
 
-- **drawer / fridge에도 같은 오염이 있는지 아직 확인 안 했다.**
-- **exp2·exp3의 drawer / ppcc 결과에 이 오염이 얼마나 섞였는지 미확인.** 사후 스캔 가치 있음.
+**미확인 사항** — 새 task를 쓸 때마다 확인 대상이다:
+
+- **fridge 는 여전히 미확인** (drawer 는 위 스캔으로 해소).
+- **exp2·exp3의 drawer / ppcc 결과에 이 오염이 얼마나 섞였는지 미확인.** 사후 스캔 가치
+  있음 (drawer 는 위 결과로 오염 없음이 소급 확인됨; ppcc 는 PnP 라 관절 스윕 비적용).
 
 ## 6. 한계
 
