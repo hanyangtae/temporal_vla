@@ -25,7 +25,7 @@ BASE_PKL="$(ep_file "$S3/base" pkl)"
 DONOR="$S3/self_vl.npz"; TRIM="$S3/trim_vl.npz"
 if [ ! -f "$DONOR" ]; then
   docker exec lerobot python \
-    "${WT_CONT}/scripts/safe/groot_n15/robocasa/steer/induced/extract_vl_donor_npz.py" \
+    "${WT_CONT}/scripts/perturb/extract_vl_donor_npz.py" \
     --pkl "$(to_cont "$BASE_PKL")" --out "$(to_cont "$DONOR")" --allow-fail \
     || { echo "ABORT: self-VL-donor 추출 실패"; exit 13; }
 fi

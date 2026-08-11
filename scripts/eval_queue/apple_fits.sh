@@ -6,7 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/queue_lib.sh"
 cd "$REPO"
 # libero_bench env 소실(2026-07-08)로 lerobot 컨테이너 python 사용 (torch·numpy 보장, /temporal_vla=repo)
 PY="docker exec -e OMP_NUM_THREADS=12 -e OPENBLAS_NUM_THREADS=12 -w /temporal_vla lerobot python"
-FITPY=scripts/safe/groot_n15/robocasa/steer/fit_phase_conceptor_n15.py
+FITPY=scripts/fit/fit_phase_conceptor.py
 FIT_GROUPS="global,reach-to-object,grasp,transport,place,insert-settle"
 
 fit_dir() {  # rundir cellpath outdir

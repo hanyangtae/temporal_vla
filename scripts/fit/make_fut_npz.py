@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# 유래: exp5-3 (2026-08-10 기능명 재배치 — docs/review/RENAME_PLAN.md)
 """permanent registry → future-only 사본: alpha0_seg_mask [1,1,1] → [0,1,0].
 방향·setpoint 불변(재fit 불요) — state/action 세그먼트 delta 만 0 게인.
 근거: β=1.0 full-mask 는 육안 떨림 + SR 붕괴; exp4-1 프리뷰에서 future_only 가

@@ -36,8 +36,8 @@ sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fit_mean_diff import auroc, mean_diff  # noqa: E402
-from fit_phase_conceptor_n15 import FULLTOKEN_MODE  # noqa: E402
+from fit_setm import auroc, mean_diff  # noqa: E402
+from fit_phase_conceptor import FULLTOKEN_MODE  # noqa: E402
 
 SEGMENTS = {"state": (0, 1), "future": (1, 33), "action": (33, 49)}
 N_PERM = 20

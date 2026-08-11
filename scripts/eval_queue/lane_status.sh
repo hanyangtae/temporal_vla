@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# GPU 차선 진행률 한눈에 (read-only). 사용: bash scripts/safe/groot_n15/robocasa/steer/lane_status.sh
-# 또는 자동 갱신: watch -n 30 bash scripts/safe/groot_n15/robocasa/steer/lane_status.sh
+# GPU 차선 진행률 한눈에 (read-only). 사용: bash scripts/eval_queue/lane_status.sh
+# 또는 자동 갱신: watch -n 30 bash scripts/eval_queue/lane_status.sh
 R=/home/dongkyu/pkt_ws/temporal_vla
 E=$R/outputs/eval/robocasa/groot_n15/steer_eval/ppcc_bread
 B=raw_rollouts/PickPlaceCounterToCabinet/ppcc_bread

@@ -753,13 +753,20 @@ class TestGrootAdapterSpecs(unittest.TestCase):
             REPO_ROOT
             / "configs/checkpoints/lerobot_groot_n15__robocasa365_ckpt120000.yaml"
         )
-        metadata_path = (
-            REPO_ROOT
-            / "data/huggingface/hub/models--robocasa--robocasa365_checkpoints"
-            / "snapshots/14895998fe7c8f8f2441cc8957ec2c510302758b"
-            / "gr00t_n1-5/multitask_learning/checkpoint-120000"
-            / "experiment_cfg/metadata.json"
+        # 체크포인트 cache 규약 (구 repo data/ → ~/.cache/temporal_vla, 컨테이너 /cache)
+        _rel = (
+            "datasets/huggingface/hub/models--robocasa--robocasa365_checkpoints"
+            "/snapshots/14895998fe7c8f8f2441cc8957ec2c510302758b"
+            "/gr00t_n1-5/multitask_learning/checkpoint-120000"
+            "/experiment_cfg/metadata.json"
         )
+        candidates = [
+            Path("/cache") / _rel,
+            Path.home() / ".cache/temporal_vla" / _rel,
+        ]
+        metadata_path = next((p for p in candidates if p.is_file()), None)
+        if metadata_path is None:
+            self.skipTest(f"robocasa365 ckpt metadata 없음: {candidates}")
 
         stats = load_groot_dataset_stats_from_metadata(profile, metadata_path)
 
@@ -1007,7 +1014,7 @@ class TestActWithFeaturesEndpoint(unittest.TestCase):
         self.assertEqual(data["features.model_action_horizon"], 50)
         self.assertEqual(data["features.num_inference_timesteps"], 10)
         self.assertIn("features.hidden_states", data)
-        self.assertIn("hidden_states_b64", data)
+        self.assertNotIn("hidden_states_b64", data)  # legacy 이중 발송 제거 (08-10)
 
     def test_response_maps_autoregressive_token_count_to_feature_horizon(self):
         hidden = np.zeros((1, 12, 4), dtype=np.float16)
@@ -1114,7 +1121,7 @@ class TestActWithFeaturesEndpoint(unittest.TestCase):
         hidden = np.zeros((2, 5, 3), dtype=np.float16)
         action = torch.zeros((1, 16, 7), dtype=torch.float32)
         meta = {
-            "feature_kind": "groot_n15_dit_block_residual_tokens",
+            "feature_kind": "groot_n15_dit_block_residual_action_tokens_denoise",
             "feature_axes": ["layer", "model_token", "feature_dim"],
             "num_inference_timesteps": 4,
             "capture_layers": [0, 2],
@@ -1140,7 +1147,7 @@ class TestActWithFeaturesEndpoint(unittest.TestCase):
         run_with_features.assert_called_once()
         self.assertEqual(run_with_features.call_args.kwargs["groot_dit_layers"], (0, 2))
         data = r.json()
-        self.assertEqual(data["features.kind"], "groot_n15_dit_block_residual_tokens")
+        self.assertEqual(data["features.kind"], "groot_n15_dit_block_residual_action_tokens_denoise")
         self.assertEqual(data["features.axes"], ["layer", "model_token", "feature_dim"])
         self.assertEqual(data["capture_layers"], [0, 2])
         self.assertEqual(data["layer_count"], 2)
@@ -1270,16 +1277,22 @@ class TestSafeHooks(unittest.TestCase):
             {},
             "groot",
             groot_dit_layers=(0, 2),
+            groot_dit_token_pool="all_token_full",  # 수집 표준 (denoise 축 보존)
         )
 
         self.assertEqual(tuple(action.shape), (1, 2, 7))
-        self.assertEqual(tuple(hidden.shape), (2, 5, 3))
-        self.assertEqual(axes, ["layer", "model_token", "feature_dim"])
-        self.assertEqual(meta["feature_kind"], "groot_n15_dit_block_residual_tokens")
+        # [L, K(denoise), T, D] — 이 fake 는 forward 1회라 K=1
+        self.assertEqual(tuple(hidden.shape), (2, 1, 5, 3))
+        self.assertEqual(axes, ["layer", "denoise_step", "model_token", "feature_dim"])
+        self.assertEqual(
+            meta["feature_kind"], "groot_n15_dit_block_residual_full_tokens_denoise"
+        )
         self.assertEqual(meta["capture_layers"], [0, 2])
-        np.testing.assert_allclose(hidden[0], np.arange(15, dtype=np.float32).reshape(5, 3) + 1.0)
         np.testing.assert_allclose(
-            hidden[1],
+            hidden[0, 0], np.arange(15, dtype=np.float32).reshape(5, 3) + 1.0
+        )
+        np.testing.assert_allclose(
+            hidden[1, 0],
             np.arange(15, dtype=np.float32).reshape(5, 3) + 111.0,
         )
 
@@ -1452,8 +1465,8 @@ class TestHealthEndpoint(unittest.TestCase):
         data = self._health()
 
         self.assertTrue(data["supports_features"])
-        self.assertEqual(data["feature_kind"], "groot_n15_dit_block_residual_tokens")
-        self.assertEqual(data["feature_axes"], ["layer", "model_token", "feature_dim"])
+        self.assertEqual(data["feature_kind"], "groot_n15_dit_block_residual_action_tokens_denoise")
+        self.assertEqual(data["feature_axes"], ["layer", "denoise_step", "feature_dim"])
         self.assertEqual(data["groot_dit_capture_layers"], [0, 2, 31])
         self.assertEqual(data["model_action_horizon"], 16)
         self.assertNotIn("feature_action_horizon", data)
@@ -1461,3 +1474,93 @@ class TestHealthEndpoint(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSteerArmEndpoint(unittest.TestCase):
+    """/steer_arm·/steer_disarm — 재기동 없는 연산자 교체 (배선반 통일 1단계)."""
+
+    def setUp(self):
+        from fastapi.testclient import TestClient
+        self.module = serve_lerobot
+        self.client = TestClient(self.module.app)
+        self._saved = (dict(self.module._arm_registry), dict(self.module._gated_registry))
+        self.module._gated_registry.clear()
+
+    def tearDown(self):
+        self.module._arm_registry.clear()
+        self.module._arm_registry.update(self._saved[0])
+        self.module._gated_registry.clear()
+        self.module._gated_registry.update(self._saved[1])
+
+    def _fake_conceptor_hook(self, dim=4):
+        class _H:
+            def __init__(self):
+                self._M_seq = [np.eye(dim)]
+            @property
+            def per_step(self):
+                return len(self._M_seq) > 1
+            def set_matrices(self, M):
+                self._M_seq = list(M) if isinstance(M, (list, tuple)) else [M]
+        return _H()
+
+    def _npz(self, tmp, dim=4):
+        path = Path(tmp) / "conceptors.npz"
+        C = np.full((dim, dim), 0.5)
+        np.savez(path, **{"alpha10_C_steer": C})
+        return path, C
+
+    def test_rearm_swaps_matrix_and_updates_spec(self):
+        import tempfile
+        hook = self._fake_conceptor_hook()
+        self.module._arm_registry[("dit", 8)] = {"hook": hook, "family": "conceptor", "per_step": False}
+        with tempfile.TemporaryDirectory() as tmp:
+            npz, C = self._npz(tmp)
+            r = self.client.post("/steer_arm", json={
+                "op": "conceptor", "beta": 1.0, "alpha": 10, "key": "C_steer",
+                "bindings": [{"pathway": "dit", "layer": 8, "npz": str(npz)}],
+            })
+        self.assertEqual(r.status_code, 200, r.text)
+        # M = (1-β)I + β·C = C (β=1)
+        np.testing.assert_allclose(hook._M_seq[0], C)
+        spec = r.json()["steering"]
+        self.assertEqual(spec["mode"], "rearm")
+        self.assertEqual(spec["layers"], [8])
+        self.assertEqual(len(spec["npz_shas"]), 1)
+
+    def test_rearm_rejects_uninstalled_target_and_family_mismatch(self):
+        import tempfile
+        hook = self._fake_conceptor_hook()
+        self.module._arm_registry[("dit", 8)] = {"hook": hook, "family": "conceptor", "per_step": False}
+        with tempfile.TemporaryDirectory() as tmp:
+            npz, _ = self._npz(tmp)
+            # 미설치 target
+            r = self.client.post("/steer_arm", json={
+                "op": "conceptor", "beta": 1.0, "alpha": 10,
+                "bindings": [{"pathway": "dit", "layer": 12, "npz": str(npz)}]})
+            self.assertEqual(r.status_code, 409)
+            # family 불일치
+            r2 = self.client.post("/steer_arm", json={
+                "op": "setpoint", "beta": 1.0,
+                "bindings": [{"pathway": "dit", "layer": 8, "npz": str(npz)}]})
+            self.assertEqual(r2.status_code, 409)
+        # 실패 요청 뒤에도 기존 M 무변경 (부분 적용 방지)
+        np.testing.assert_allclose(hook._M_seq[0], np.eye(4))
+
+    def test_disarm_restores_identity(self):
+        import tempfile
+        hook = self._fake_conceptor_hook()
+        self.module._arm_registry[("dit", 8)] = {"hook": hook, "family": "conceptor", "per_step": False}
+        with tempfile.TemporaryDirectory() as tmp:
+            npz, _ = self._npz(tmp)
+            self.client.post("/steer_arm", json={
+                "op": "conceptor", "beta": 1.0, "alpha": 10,
+                "bindings": [{"pathway": "dit", "layer": 8, "npz": str(npz)}]})
+        r = self.client.post("/steer_disarm")
+        self.assertEqual(r.status_code, 200)
+        np.testing.assert_allclose(hook._M_seq[0], np.eye(4))
+        self.assertEqual(self.module._steering_spec["mode"], "disarmed")
+
+    def test_rearm_blocked_when_gated(self):
+        self.module._gated_registry.update({"hooks": {}})
+        r = self.client.post("/steer_arm", json={"op": "conceptor", "beta": 1.0, "bindings": []})
+        self.assertEqual(r.status_code, 409)

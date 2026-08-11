@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# 유래: exp5-4 (2026-08-10 기능명 재배치 — docs/review/RENAME_PLAN.md)
 """exp5-4 sanity: probe npz 활성 ↔ capture-ON rollout pkl 의 record 0 활성 대조.
 
 probe 는 env.reset 직후 t=0 관측으로 inference_seed=s 를 1회 호출한다. 수집 경로의

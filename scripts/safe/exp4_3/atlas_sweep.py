@@ -36,7 +36,7 @@ REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(REPO / "scripts/safe/groot_n15/robocasa/steer"))
-sys.path.insert(0, str(REPO / "scripts/safe/groot_n15/robocasa/steer/exp4_1"))
+sys.path.insert(0, str(REPO / "scripts/safe/groot_n15/robocasa/steer/exp4_1", REPO / "scripts/fit"))
 
 from src.conceptor import and_conceptor, compute_conceptor, not_conceptor  # noqa: E402
 from atlas_loader import load_cell_rolls  # noqa: E402
@@ -51,7 +51,7 @@ from conceptor_layer_sweep import (  # noqa: E402
     split_data,
     split_score,
 )
-from fit_mean_diff import (  # noqa: E402
+from fit_setm import (  # noqa: E402
     GATED_MIN_EPS,
     GATED_MIN_REC,
     TERMINAL_PHASES,

@@ -58,7 +58,7 @@ else
   SMOKE_ROOT="${MAIN_HOST}/outputs/eval/robocasa/groot_n15/exp52_induced/${CELL}/smoke"
 fi
 JUDGE="${_SMOKE_DIR}/smoke_judge.py"
-JUDGE_CONT="${WT_CONT}/scripts/safe/groot_n15/robocasa/steer/induced/smoke/smoke_judge.py"
+JUDGE_CONT="${WT_CONT}/scripts/perturb/smoke/smoke_judge.py"
 
 to_cont() { echo "${1/#${MAIN_HOST}//temporal_vla}"; }
 

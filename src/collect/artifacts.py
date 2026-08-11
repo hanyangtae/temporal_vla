@@ -166,9 +166,7 @@ def write_safe_triplet(
     if include_hidden_states:
         payload["hidden_states"] = [record["hidden_state"] for record in policy.records]
     else:
-        # cam-attention 전용 수집(--attn-only-records): activation 텐서 미저장
-        # (eval purge 규약) — cross_attn 요약만 아래에서 기록.
-        payload["hidden_states_omitted"] = True
+        payload["hidden_states_omitted"] = True  # (구 attn-only 흔적 — 현재 호출부는 항상 True)
     if extra_metadata:
         payload.update(json_safe(extra_metadata))
     for key in (
@@ -181,22 +179,6 @@ def write_safe_triplet(
         value = getattr(policy, key, None)
         if value is not None:
             payload[key] = json_safe(value)
-    # DiT cross-attention 카메라 뷰별 mass (--capture-cross-attn). 모든 step 에 있을 때만.
-    if all("cross_attn" in record for record in policy.records):
-        # [n_records, n_cross_blocks, K, qgroup, kgroup] float32 (record 축이 맨 앞).
-        payload["cross_attn"] = np.stack(
-            [record["cross_attn"] for record in policy.records], axis=0
-        )
-        for key in (
-            "cross_attn_axes",
-            "cross_attn_blocks",
-            "cross_attn_qgroups",
-            "cross_attn_kgroups",
-            "view_token_spans",
-        ):
-            value = getattr(policy, key, None)
-            if value is not None:
-                payload[key] = json_safe(value)
     # VL(goal) pathway feature (multilayer --capture-vl). 모든 step 에 있을 때만 기록.
     if include_hidden_states and all("vl_hidden_state" in record for record in policy.records):
         payload["vl_hidden_states"] = [record["vl_hidden_state"] for record in policy.records]

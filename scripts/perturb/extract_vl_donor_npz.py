@@ -8,7 +8,7 @@
 
 전 record 의 T_vl 동일을 강제한다 (ragged donor 금지 — 불일치 시 ABORT).
 pkl 이 torch 텐서를 담아 **lerobot 컨테이너에서 실행**:
-  docker exec lerobot python /temporal_vla/.claude/worktrees/exp4-2-induced-failures/scripts/safe/groot_n15/robocasa/steer/induced/extract_vl_donor_npz.py \
+  docker exec lerobot python /temporal_vla/.claude/worktrees/exp4-2-induced-failures/scripts/perturb/extract_vl_donor_npz.py \
     --pkl <rollout.pkl> --out <donor_vl.npz> [--allow-fail]
 """
 from __future__ import annotations

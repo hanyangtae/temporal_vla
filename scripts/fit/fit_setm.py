@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# 유래: exp4-1 fit_mean_diff.py (2026-08-10 기능명 재배치 — docs/review/RENAME_PLAN.md)
 """exp4-1: setM(setpoint형 mean-diff) + setM_pl(라벨순열 위약) fit — cell(instruction)별.
 
 수학 (docs/steering/24a §4.1): r̂ = normalize(μ_fail − μ_succ) **비중심화** per-record fit,
@@ -42,11 +43,11 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "8")
 
 import numpy as np
 
-REPO = Path(__file__).resolve().parents[6]
+REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # steer/ (fit_phase_conceptor_n15)
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # scripts/fit (fit_phase_conceptor)
 
-from fit_phase_conceptor_n15 import (  # noqa: E402
+from fit_phase_conceptor import (  # noqa: E402
     FULLTOKEN_MODE,
     _write_config,
     load_rollout_fulltoken,

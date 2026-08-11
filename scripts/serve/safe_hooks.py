@@ -374,7 +374,6 @@ def run_with_features(
     pi05_expert_layers: tuple[int, ...] | list[int] | None = None,
     groot_dit_token_pool: str = "action_token_mean",
     vl_capture_point: str = "vlln_mean",
-    cross_attn_capture: Any = None,
 ) -> tuple[torch.Tensor, np.ndarray | None, list[str] | None, dict[str, Any]]:
     """SAFE hook 을 건 채 ``select_action`` 을 실행.
 
@@ -390,13 +389,7 @@ def run_with_features(
     residual stream을 COAST A.7.1 대로 마지막 ``chunk_size`` action token mean + denoise step
     보존하여 동일한 ``[layer, denoise_step, feature_dim]``으로 캡처한다.
 
-    ``cross_attn_capture``(attn_hooks.CrossAttnCapture, GR00T 전용, boot 시 install 완료
-    상태)가 주어지면 DiT cross-attention 의 카메라 뷰별 mass 를 함께 캡처해 meta 에
-    ``cross_attn`` [n_cross_blocks, K, n_qgroups, n_kgroups] (ndarray — 호출자가 blob
-    인코딩) 와 축/그룹/span 메타를 추가한다.
     """
-    if cross_attn_capture is not None and policy_type != "groot":
-        raise ValueError("cross_attn_capture is supported only for policy_type='groot'")
     cap = SafeFeatureCapture(
         policy,
         policy_type,
@@ -406,39 +399,13 @@ def run_with_features(
         groot_dit_token_pool=groot_dit_token_pool,
         vl_capture_point=vl_capture_point,
     )
-    if cross_attn_capture is not None:
-        cross_attn_capture.begin_from_batch(batch)
-    try:
-        with torch.inference_mode(), cap:
-            if policy_type == "groot" and hasattr(policy, "predict_action_chunk"):
-                action = policy.predict_action_chunk(batch)
-            else:
-                action = policy.select_action(batch)
-    except Exception:
-        # 캡처 활성 상태로 남으면 다음 요청 buffer 에 오염 누적 — 즉시 비활성화.
-        if cross_attn_capture is not None:
-            cross_attn_capture.active = False
-        raise
+    with torch.inference_mode(), cap:
+        if policy_type == "groot" and hasattr(policy, "predict_action_chunk"):
+            action = policy.predict_action_chunk(batch)
+        else:
+            action = policy.select_action(batch)
 
     ca_meta: dict[str, Any] = {}
-    if cross_attn_capture is not None:
-        ca_mass, ca_maps = cross_attn_capture.finish()
-        ca_meta = {
-            "cross_attn": ca_mass,
-            "cross_attn_axes": (
-                ["cross_block", "denoise_step", "head", "qgroup", "kgroup"]
-                if cross_attn_capture.keep_heads
-                else ["cross_block", "denoise_step", "qgroup", "kgroup"]
-            ),
-            "cross_attn_blocks": [int(i) for i in cross_attn_capture.cross_block_indices],
-            "cross_attn_qgroups": list(cross_attn_capture.qgroups),
-            "cross_attn_kgroups": list(cross_attn_capture.kgroups),
-            "view_token_spans": [
-                [int(s), int(e)] for s, e in (cross_attn_capture.view_spans or [])
-            ],
-        }
-        if ca_maps is not None:
-            ca_meta["cross_attn_maps"] = ca_maps
 
     if groot_dit_layers is not None:
         hidden = cap.assemble_blocks()

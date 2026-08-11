@@ -8,7 +8,7 @@ serve = `scripts/serve/exp42_serve.py`(lerobot.py 심링크), GPU 는 실행 시
 ## 0. Smoke (하드 게이트 — 본수집 전 전부 PASS)
 
 ```bash
-cd scripts/safe/groot_n15/robocasa/steer/induced/smoke
+cd scripts/perturb/smoke
 bash s4_fit_truncation.sh                      # CPU (passB 기성 자산)
 GPU=<idx> PORT=8470 bash s1_perturb.sh         # Track P sham/실효/결정론
 GPU=<idx> PORT=8471 bash s2_dit_patch.sh       # DiT self-donor W=3
