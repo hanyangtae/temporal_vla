@@ -113,7 +113,12 @@ class Shard:
         else:
             raise ValueError(f"{self.path}: X.ndim={self.X.ndim} (5=TierA, 4=TierB 만 지원)")
 
-        cl = self.meta.get("capture_layers") or self.meta.get("layers")
+        # Tier B(tokB) 는 부분 layer 만 담아 meta["layers"] 가 실제 layer 축이고,
+        # meta["capture_layers"] 는 원본 수집 규약(7층)이라 축 검증에 쓰면 안 된다.
+        if self.tier == "B":
+            cl = self.meta.get("layers") or self.meta.get("capture_layers")
+        else:
+            cl = self.meta.get("capture_layers") or self.meta.get("layers")
         if cl is None:
             raise ValueError(f"{self.path}: meta 에 capture_layers/layers 가 없다")
         self.capture_layers = [int(v) for v in cl]
