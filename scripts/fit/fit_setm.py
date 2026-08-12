@@ -520,6 +520,8 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
     pairing 은 episode 단위(arm 간 동일 episode)라 phase 마다 순열이 달라도 유지. 위약 fit
     불가 phase 는 처치·위약 양쪽 제외(dose 대칭).
     """
+    # docs/04 규약 — gated 4종 저장도 입력 sig 동반 필수 (_write_config 가 없으면 거부).
+    input_sigs = [r["sig"] for r in rolls]
     meta_perm = json.loads(
         next((out_cell / "setM_permanent" / "steer").glob("dit_L*/metadata.json")).read_text())
     blk = int(meta_perm["layer"])
@@ -649,7 +651,7 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
         entry["cos_seg_vs_permanent"] = [float(v_seg_ph[i] @ v_g_seg[i])
                                          for i in range(len(SEGMENTS))]
         save_segment_npz(out_cell / "setM_gated" / ph, blk, v_seg_ph, s_tok_ph, subdir=None,
-                         meta={"operator": "setM_gated", "cell": args.cell, "phase": ph,
+                         meta={"operator": "setM_gated", "input_sigs": input_sigs, "cell": args.cell, "phase": ph,
                                "layer": blk, "dwell_cap": dcap,
                                **{k: entry[k] for k in entry if k != "phase"}})
         v_seg_pp, s_tok_pp = sel["v_seg"], sel["s_tok"]
@@ -665,17 +667,17 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
                       "scale_clipped": sel["scale_clipped"], "fallback": sel["fallback"]}
         save_segment_npz(out_cell / "setM_gated_placebo" / ph, blk, v_seg_pp, s_tok_pp,
                          subdir=None, seg_mask=pl_scale_ph,
-                         meta={"operator": "setM_gated_placebo", "cell": args.cell,
+                         meta={"operator": "setM_gated_placebo", "input_sigs": input_sigs, "cell": args.cell,
                                "phase": ph, "layer": blk, **pl_meta_ph, "seg_diag": sd_pp})
         fmask = np.asarray([0.0, 1.0, 0.0], dtype=np.float32)
         save_segment_npz(out_cell / "setM_gated_future_only" / ph, blk, v_seg_ph, s_tok_ph,
                          subdir=None, seg_mask=fmask,
-                         meta={"operator": "setM_gated_future_only", "cell": args.cell,
+                         meta={"operator": "setM_gated_future_only", "input_sigs": input_sigs, "cell": args.cell,
                                "phase": ph, "layer": blk, "seg_diag": sd_ph})
         save_segment_npz(out_cell / "setM_gated_future_only_placebo" / ph, blk,
                          v_seg_pp, s_tok_pp, subdir=None,
                          seg_mask=np.asarray([0.0, pl_scale_ph[1], 0.0]),
-                         meta={"operator": "setM_gated_future_only_placebo",
+                         meta={"operator": "setM_gated_future_only_placebo", "input_sigs": input_sigs,
                                "cell": args.cell, "phase": ph, "layer": blk,
                                **pl_meta_ph, "seg_diag": sd_pp})
         diag.append(entry)
