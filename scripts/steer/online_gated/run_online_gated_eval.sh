@@ -41,7 +41,7 @@ set -euo pipefail
 SLUGS="${SLUGS:-OvenRack_out,DishwasherRack_out,OpenDrawer_left}"
 ARMS="${ARMS:-base,online,online_pl,online_fut,oracle_always}"
 GPUS="${GPUS:?GPUS (쉼표구분 빈 GPU 번호) 필요 — kanu 규칙: 최대 3 GPU}"
-SERVES_PER_GPU="${SERVES_PER_GPU:-2}"          # kanu 규칙 상한 2
+SERVES_PER_GPU="${SERVES_PER_GPU:-2}"          # kanu(A4000 16GB)=2 / A100 80GB(srv48·srv50)=6
 PORT_BASE="${PORT_BASE:-8700}"
 ALLOW_BUSY_GPU="${ALLOW_BUSY_GPU:-0}"          # 1 이면 타인 프로세스 있어도 강행(비권장)
 
@@ -124,7 +124,7 @@ log() { echo "[online-gated] $(date '+%F %T') $*"; }
 # ── 자원 규약 게이트 (kanu: 빈 GPU 만, ≤3 GPU, GPU 당 serve ≤2) ───────────────
 IFS=',' read -r -a GPU_ARR <<< "$GPUS"
 [ "${#GPU_ARR[@]}" -le 3 ] || { log "ABORT: GPU ${#GPU_ARR[@]}개 > 상한 3"; exit 2; }
-[ "$SERVES_PER_GPU" -le 2 ] || { log "ABORT: SERVES_PER_GPU=$SERVES_PER_GPU > 상한 2"; exit 2; }
+[ "$SERVES_PER_GPU" -le 6 ] || { log "ABORT: SERVES_PER_GPU=$SERVES_PER_GPU > 상한 6 (A100 규칙)"; exit 2; }
 if [ "$DRY_RUN" != "1" ] && command -v nvidia-smi > /dev/null 2>&1; then
   for g in "${GPU_ARR[@]}"; do
     busy="$(nvidia-smi --id="$g" --query-compute-apps=pid --format=csv,noheader 2>/dev/null || true)"
