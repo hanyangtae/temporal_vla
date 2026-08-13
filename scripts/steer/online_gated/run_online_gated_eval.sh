@@ -150,6 +150,7 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
     base)          printf '' ;;
     online)        printf '%s/%s/%s\n'        "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     online_fut)    printf '%s/%s/%s_fut\n'    "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
+    online_fut_pl) printf '%s/%s/%s_fut_pl\n' "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     online_pl)     printf '%s/%s/%s_pl\n'     "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     oracle_always) printf '%s/%s/%s\n'        "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     oracle_always_pl) printf '%s/%s/%s_pl\n'  "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
@@ -158,7 +159,7 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
 }
 # base 도 detector 를 태운다(steering 미등록 → 전부 identity): eval 대역 failure_scores 를
 # sidecar 에 남겨 α sweep(발화 시점·오발화율)을 GPU 재실행 없이 사후 재계산하기 위함.
-arm_uses_detector() { case "$1" in base|online|online_fut|online_pl) return 0 ;; *) return 1 ;; esac; }
+arm_uses_detector() { case "$1" in base|online|online_fut|online_pl|online_fut_pl) return 0 ;; *) return 1 ;; esac; }
 
 # NPZ base 스캔 → PHASES / LAYER 확정.
 # ★ command substitution 안에서 대입하면 subshell 에 갇혀 태그가 빈다 (exp5-2 실측) —
