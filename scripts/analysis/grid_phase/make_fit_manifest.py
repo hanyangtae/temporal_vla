@@ -65,6 +65,8 @@ def main() -> None:
         if succ not in ("0", "1"):
             raise SystemExit(f"success 값 이상: {succ!r} @ {key}")
         pkl = args.grid_root / p[col["rel_path"]]
+        if pkl.suffix != ".pkl":          # rel_path 는 arm 디렉토리(.../base)까지만
+            pkl = pkl / "rollout.pkl"
         out_lines.append(f"{pkl}\t{succ}\ts{p[col['scene_idx']]}")
         n_succ += succ == "1"
         n_fail += succ == "0"
