@@ -383,7 +383,7 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
   local port="$1" slug="$2" arm="$3" task="$4" envn="$5" instr="$6" ep="$7" inf="$8" seed="$9"
   local out_host="${10}" mode=()
   case "$arm" in
-    online|online_fut|online_pl) mode=(--gated-steering-mode online) ;;
+    online|online_fut|online_pl|online_fut_pl) mode=(--gated-steering-mode online) ;;
     oracle_always|oracle_always_pl) mode=(--gated-steering) ;;
     # base: detector ON + steering 미등록 → online 모드라도 전 스텝 identity.
     # failure_scores/trigger_step 사이드카 기록이 목적 (α 사후 sweep 용).
