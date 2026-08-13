@@ -423,7 +423,7 @@ def gather_phase_tok(rolls, labels, layer_idx, cls, ph, dwell_cap):
             continue
         idx = [i for i, p in enumerate(r["phases"]) if p == ph][:dwell_cap]
         if idx:
-            out.append(r["tok"][idx, layer_idx])
+            out.append(r["tok"][idx, layer_idx].astype(np.float32))  # fp16 저장 대응
             n_eps += 1
     return (np.concatenate(out, axis=0) if out else np.empty((0, 0, 0))), n_eps
 
@@ -478,9 +478,14 @@ def cv_auroc(rolls, labels, layer_idx, cap, rng) -> float:
 
 
 # ---------------------------------------------------------------------------- IO
-def load_cell_rolls(manifest: Path, cell: str, token_pool: str = "mean"):
+def load_cell_rolls(manifest: Path, cell: str, token_pool: str = "mean",
+                    tok_layer_blks: list[int] | None = None):
     """token_pool: fit 에 쓰는 record 벡터의 토큰 세그먼트 (load_rollout_fulltoken 경계와 동일).
-    기본 'mean' = 49토큰 평균 (기존 동작). 세그먼트 연산자용 r["tok"] 는 항상 full-token."""
+    기본 'mean' = 49토큰 평균 (기존 동작). 세그먼트 연산자용 r["tok"] 는 항상 full-token.
+
+    tok_layer_blks: 지정 시 layer 축을 해당 물리 block 만 남기고 슬라이스 + tok fp16 저장
+    (전 layer fp32 tok 은 instruction 100판에서 ~30GB — 32GB 노드 OOM). 슬라이스 시
+    r["capture_layers"]/dit/dit_k/tok 이 함께 좁혀져 하류의 cap_layers.index() 정합 유지."""
     rows = []
     for line in manifest.read_text().splitlines():
         line = line.strip()
@@ -505,10 +510,24 @@ def load_cell_rolls(manifest: Path, cell: str, token_pool: str = "mean"):
         if d.get("capture_token_mode") != FULLTOKEN_MODE:
             raise SystemExit(f"{m['pkl']}: full-token pkl 아님 ({d.get('capture_token_mode')})")
         r = load_rollout_fulltoken(d, m["pkl"], token_pool)
+        keep = None
+        if tok_layer_blks is not None:
+            cap = [int(x) for x in r["capture_layers"]]
+            for b in tok_layer_blks:
+                if b not in cap:
+                    raise SystemExit(f"{m['pkl']}: layer {b} 는 capture {cap} 에 없음")
+            keep = [cap.index(b) for b in tok_layer_blks]
+            r["capture_layers"] = [cap[i] for i in keep]
+            r["dit"] = r["dit"][:, keep, :]
+            if "dit_k" in r:
+                r["dit_k"] = r["dit_k"][:, keep, :, :]
         # 토큰 보존본 [n, T, D] (선정 layer 는 호출부에서 인덱싱) — 세그먼트 fit 용
+        tok_dtype = np.float16 if keep is not None else np.float32
         r["tok"] = np.stack(
-            [np.asarray(rec, dtype=np.float32).mean(axis=1) for rec in d["hidden_states"]],
-            axis=0)  # [n, L, T, D] → denoise mean
+            [np.asarray(rec, dtype=np.float32).mean(axis=1)[keep if keep is not None
+                                                            else slice(None)]
+             .astype(tok_dtype) for rec in d["hidden_states"]],
+            axis=0)  # [n, L(선택), T, D] → denoise mean
         r["success"] = m["label"]  # manifest 라벨 override (fit_phase_conceptor 관례)
         # docs/04 규약 — 입력 rollout 의 내용 지문. 경로가 아니라 sig 로 출처를 남긴다.
         r["sig"] = hashlib.sha256(m["pkl"].read_bytes()).hexdigest()[:16]
@@ -898,8 +917,10 @@ def fit_phase_groups(args, rolls, labels, out_root: Path) -> None:
                     for r in rolls:
                         ph_idx = [i for i, p in enumerate(r["phases"]) if p == ph]
                         idx = ph_idx[:dcap]
-                        ep_tok.append(r["tok"][idx, li] if idx else np.empty((0, 0, 0)))
-                        dose_tok.append(r["tok"][ph_idx, li] if ph_idx else np.empty((0, 0, 0)))
+                        ep_tok.append(r["tok"][idx, li].astype(np.float32)
+                                      if idx else np.empty((0, 0, 0)))
+                        dose_tok.append(r["tok"][ph_idx, li].astype(np.float32)
+                                        if ph_idx else np.empty((0, 0, 0)))
                     sel = select_placebo_seg(
                         ep_tok, labels_arr, v_seg_ph, s_tok_ph,
                         np.random.default_rng(RNG_SEED + 555), tag=f" {ph}|L{blk}",
@@ -1041,7 +1062,10 @@ def main() -> None:
         raise SystemExit("--targets 필수 (t0-window 경로). phase 축 fit 은 --phase-groups")
 
     rng = np.random.default_rng(RNG_SEED)
-    rolls = load_cell_rolls(args.manifest, args.cell, args.token_pool)
+    tok_blks = ([int(x) for x in args.layers.split(",")]
+                if (args.phase_groups and args.layers) else None)
+    rolls = load_cell_rolls(args.manifest, args.cell, args.token_pool,
+                            tok_layer_blks=tok_blks)
     labels = [r["success"] for r in rolls]
     if args.phase_groups:
         fit_phase_groups(args, rolls, labels, args.out_root)
