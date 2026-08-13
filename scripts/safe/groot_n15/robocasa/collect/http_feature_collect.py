@@ -286,25 +286,44 @@ class N15LerobotHttpFeatureClient(VLAClient):
         return official_action, {}
 
 
+_STEERING_NOT_ENABLED = False  # serve 에 gated 등록 자체가 없음 (base arm: detector-only serve)
+
+
 def _post_steering_phase(server: str, phase: str) -> bool:
     """Oracle-gated steering: 현재 phase 를 serve 에 통지 (실패 시 즉시 예외 — 무음 미조향 방지).
 
     Returns: 해당 phase 에 실제 matrix 가 등록돼 있는지 (False = identity fallback —
     dose 로깅·부분 적용 감사용, Gate 2 높음#10).
+
+    예외: serve 가 409("gated steering not enabled")를 주면 steering 자체가 미탑재인
+    base(detector-only) serve — 이후 POST 를 생략하고 항상 False(identity). 등록된
+    serve 의 그 밖 오류는 여전히 즉시 예외 (무음 미조향 방지 원칙 유지).
     """
     import json as _json
+    import urllib.error as _er
     import urllib.request as _rq
 
+    global _STEERING_NOT_ENABLED
+    if _STEERING_NOT_ENABLED:
+        return False
     req = _rq.Request(
         f"{server.rstrip('/')}/steering_phase",
         data=_json.dumps({"phase": phase}).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with _rq.urlopen(req, timeout=5) as resp:
-        if resp.status != 200:
-            raise RuntimeError(f"/steering_phase HTTP {resp.status}")
-        body = _json.loads(resp.read().decode() or "{}")
+    try:
+        with _rq.urlopen(req, timeout=5) as resp:
+            if resp.status != 200:
+                raise RuntimeError(f"/steering_phase HTTP {resp.status}")
+            body = _json.loads(resp.read().decode() or "{}")
+    except _er.HTTPError as e:
+        if e.code == 409:
+            _STEERING_NOT_ENABLED = True
+            print("[gating] serve 에 gated steering 미탑재(409) — 이후 phase POST 생략, "
+                  "전 스텝 identity (base/detector-only arm)", flush=True)
+            return False
+        raise
     return bool(body.get("gated", False))
 
 
