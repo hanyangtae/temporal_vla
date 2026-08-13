@@ -285,8 +285,13 @@ class PhaseCell:
 
 
 def build_phase_cells(sh: Shard, code: np.ndarray, names: dict[int, str],
-                      keep: np.ndarray, min_budget: int) -> tuple[list[PhaseCell], list[dict]]:
-    """(task, phase) 별 동일예산 구조 생성. 반환 = (유효 cell, skip 기록)."""
+                      keep: np.ndarray, min_budget: int,
+                      align: str = "first") -> tuple[list[PhaseCell], list[dict]]:
+    """(task, phase) 별 동일예산 구조 생성. 반환 = (유효 cell, skip 기록).
+
+    align="first" = phase 앞쪽 B개(조기성). align="end" = 마지막 B개 —
+    phase 종료 직전(예: reach 의 grasp 시도 구간) 정렬. end 는 실패 판에서
+    늦은 절대시각을 읽게 되므로 사후 판독 혼입 가능 — length_auroc 와 함께 읽을 것."""
     cells, skips = [], []
     for pc in sorted(int(v) for v in np.unique(code[keep])):
         pname = names.get(pc, str(pc))
@@ -317,8 +322,10 @@ def build_phase_cells(sh: Shard, code: np.ndarray, names: dict[int, str],
                           "n_succ": int((y == 1).sum()), "n_fail": int((y == 0).sum()),
                           "skip_reason": "single-class (succ 또는 fail 이 0)"})
             continue
-        rows = [r[:B] for r in rows]
-        cells.append(PhaseCell(pc, pname, eps, rows, y, sc, counts, B))
+        rows = [r[-B:] for r in rows] if align == "end" else [r[:B] for r in rows]
+        cell = PhaseCell(pc, pname, eps, rows, y, sc, counts, B)
+        cell.align = align
+        cells.append(cell)
     return cells, skips
 
 
@@ -359,6 +366,7 @@ def base_row(sh: Shard, pcell: PhaseCell, phase_def_name: str) -> dict:
         "phase": pcell.phase_name,
         "phase_code": pcell.phase_code,
         "budget_B": pcell.budget,
+        "align": getattr(pcell, "align", "first"),
         "n_succ": int((pcell.y == 1).sum()),
         "n_fail": int((pcell.y == 0).sum()),
         "n_ep": int(len(pcell.y)),
@@ -402,6 +410,8 @@ def main() -> int:
     ap.add_argument("--window", type=int, default=0, help="rec_idx < N 컷 (0=무제한)")
     ap.add_argument("--n-perm", type=int, default=100)
     ap.add_argument("--min-budget", type=int, default=3)
+    ap.add_argument("--align", choices=["first", "end"], default="first",
+                    help="phase 내 equal-budget 정렬: first=앞쪽 B개(조기성), end=마지막 B개(전환 직전)")
     ap.add_argument("--fixed-t", action="store_true")
     ap.add_argument("--tokens", default="all", help="Tier B: all | token index 콤마목록")
     ap.add_argument("--seed", type=int, default=0)
@@ -421,7 +431,8 @@ def main() -> int:
         if not keep.any():
             print(f"[skip] {sh.slug}: window={args.window} 로 남는 record 0", flush=True)
             continue
-        pcells, skips = build_phase_cells(sh, code, names, keep, args.min_budget)
+        pcells, skips = build_phase_cells(sh, code, names, keep, args.min_budget,
+                                          align=args.align)
         for s in skips:
             cells_out.append({"instruction": sh.instruction, "slug": sh.slug, "tier": sh.tier,
                               "phase_def": phase_def_name, "layer": None, "seg": None,
