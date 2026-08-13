@@ -75,6 +75,12 @@ REPLAY_MACHINE="${REPLAY_MACHINE:-}"                # 비우면 index 단일 mac
 EP_IDX_STRIDE="${EP_IDX_STRIDE:-100}"               # episode_idx = scene*STRIDE + noise
 NAS="${NAS:-5}"                                     # GR00T 표준: 16 예측 / 5 실행
 MAXEP="${MAXEP:-720}"
+# PROX=1 이면 --proximity-phases (PPCC grasp/place 하위 phase). grid 수집·s5m5 fit 은
+# 3-phase(off) 였으므로 기본 0 — fit 디렉토리명과 라벨러 어휘 정합. 전용 라벨러
+# (drawer·oven·dishwasher)는 이 플래그와 무관.
+PROX="${PROX:-0}"
+PROX_ARGS=()
+[ "$PROX" = "1" ] && PROX_ARGS=(--proximity-phases)
 EXPECT_CHUNK="${EXPECT_CHUNK:-16}"
 
 PROFILE="${PROFILE:-configs/checkpoints/lerobot_groot_n15__robocasa365_ckpt120000.yaml}"
@@ -390,7 +396,7 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
     --seed "$seed" --inference-seed "$inf"
     --n-action-steps "$NAS" --max-episode-steps "$MAXEP"
     --video-fps 20 --steps-per-render 2 --wait-ready
-    --proximity-phases --no-features --expect-chunk-len "$EXPECT_CHUNK"
+    ${PROX_ARGS[@]+"${PROX_ARGS[@]}"} --no-features --expect-chunk-len "$EXPECT_CHUNK"
     --run-tag "online_gated_${arm}_b${STEER_BETA}"
     "${mode[@]}")
   if [ "$DRY_RUN" = "1" ]; then echo "[dry collect] ${cmd[*]}"; return 0; fi
