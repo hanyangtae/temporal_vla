@@ -6,15 +6,29 @@
 필드(trigger_step / phase_at_trigger / phase_gated_flags / serve_steering)를 뽑아
 한 arm 의 표를 만든다 — 로그 파싱 금지, 판정은 항상 산출물에서.
 
+replay 모드(`--cells-tsv`)에서는 셀 좌표(scene_idx/noise_idx)와 **수집 당시 판정**
+(collection_success)을 함께 붙인다. 같은 (env_seed, inference_seed) 를 재생한 것이라
+  - 구제(rescue) = 수집 실패 셀 중 이번에 성공
+  - 파손(break)  = 수집 성공 셀 중 이번에 실패
+가 되고, fit 셀(FIT_SCENES × FIT_NOISES) 기준 사분면
+(seen/unseen scene × seen/unseen noise) 별로 요약을 찍는다.
+
 열:
   ep  scene_idx  env_seed  inference_seed  success  steps  n_inferences
   trigger_step  phase_at_trigger  n_gated  gated_mode  arm  slug  beta  op  serve_gpu  run_tag
+  noise_idx  seen_scene  seen_noise  quadrant  collection_success
+(새 열은 **뒤에** 붙인다 — 기존 소비자의 열 위치를 깨지 않기 위함.)
 
 사용:
+    # replay
     python scripts/steer/online_gated/collect_results.py \
-        --job-dir outputs/eval/robocasa/groot_n15/online_gated/OvenRack_out/online \
-        --scenes-tsv <logs>/scenes_OvenRack_out.tsv --arm online --slug OvenRack_out \
-        --expect 20
+        --job-dir <out>/OvenRack_out/online --cells-tsv <logs>/cells_OvenRack_out.tsv \
+        --fit-scenes 0,1,2,3,4 --fit-noises 0,1,2,3,4 \
+        --arm online --slug OvenRack_out --expect 40
+    # fresh (구 방식)
+    python scripts/steer/online_gated/collect_results.py \
+        --job-dir <out>/OvenRack_out/online --scenes-tsv <logs>/scenes_OvenRack_out.tsv \
+        --arm online --slug OvenRack_out --expect 20
 `--expect` 를 주면 행 수가 모자랄 때 exit 13 (러너의 미완 판정).
 """
 from __future__ import annotations
@@ -28,7 +42,8 @@ from pathlib import Path
 STEM_RE = re.compile(r"task(?P<tid>\d+)--ep(?P<ep>\d+)--succ(?P<succ>[01])$")
 COLUMNS = ("ep", "scene_idx", "env_seed", "inference_seed", "success", "steps",
            "n_inferences", "trigger_step", "phase_at_trigger", "n_gated", "gated_mode",
-           "arm", "slug", "beta", "op", "serve_gpu", "run_tag")
+           "arm", "slug", "beta", "op", "serve_gpu", "run_tag",
+           "noise_idx", "seen_scene", "seen_noise", "quadrant", "collection_success")
 
 
 def cell(v) -> str:
@@ -40,7 +55,7 @@ def cell(v) -> str:
 
 
 def load_scenes(path: Path | None) -> dict[int, int]:
-    """env_seed → scene_idx."""
+    """env_seed → scene_idx (fresh 모드 scenes tsv)."""
     if path is None:
         return {}
     out = {}
@@ -52,10 +67,68 @@ def load_scenes(path: Path | None) -> dict[int, int]:
     return out
 
 
+def load_cells(path: Path | None) -> dict[tuple[int, int], dict]:
+    """(env_seed, inference_seed) → 셀 좌표 + 수집 판정 (replay_cells.py 출력)."""
+    if path is None:
+        return {}
+    out: dict[tuple[int, int], dict] = {}
+    for ln in path.read_text(encoding="utf-8").splitlines():
+        if not ln.strip():
+            continue
+        p = ln.split("\t")
+        si, ni, es, inf, cs = int(p[0]), int(p[1]), int(p[2]), int(p[3]), p[4]
+        out[(es, inf)] = {
+            "scene_idx": si, "noise_idx": ni,
+            "collection_success": None if cs in ("", "NA") else int(cs),
+        }
+    return out
+
+
+def parse_int_list(spec: str) -> set[int]:
+    out: set[int] = set()
+    for tok in str(spec or "").split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if "-" in tok[1:]:
+            a, b = tok.split("-", 1)
+            out.update(range(int(a), int(b) + 1))
+        else:
+            out.add(int(tok))
+    return out
+
+
+def quadrant_report(rows: list[dict]) -> list[str]:
+    """사분면별 SR + 구제율/파손율. 구제·파손은 수집 판정이 있는 판만 분모."""
+    lines = ["[quadrant] quadrant                 n   SR     rescue(fail→succ)  break(succ→fail)"]
+    order = ["seen_scene×seen_noise", "seen_scene×unseen_noise",
+             "unseen_scene×seen_noise", "unseen_scene×unseen_noise"]
+    groups = {q: [r for r in rows if r["quadrant"] == q] for q in order}
+    groups["__all__"] = list(rows)
+    for q in order + ["__all__"]:
+        g = groups.get(q) or []
+        if not g:
+            continue
+        n = len(g)
+        sr = sum(r["success"] for r in g) / n
+        cf = [r for r in g if r["collection_success"] == 0]
+        cs = [r for r in g if r["collection_success"] == 1]
+        n_res = sum(1 for r in cf if r["success"] == 1)
+        n_brk = sum(1 for r in cs if r["success"] == 0)
+        res = f"{n_res}/{len(cf)}" + (f" ({n_res/len(cf):.2f})" if cf else "")
+        brk = f"{n_brk}/{len(cs)}" + (f" ({n_brk/len(cs):.2f})" if cs else "")
+        lines.append(f"[quadrant] {q:24s} {n:3d} {sr:.3f}  {res:17s}  {brk}")
+    return lines
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--job-dir", type=Path, required=True, help="<out>/<slug>/<arm>")
-    ap.add_argument("--scenes-tsv", type=Path, default=None)
+    ap.add_argument("--scenes-tsv", type=Path, default=None, help="fresh 모드 scene 표")
+    ap.add_argument("--cells-tsv", type=Path, default=None,
+                    help="replay 모드 셀 표 (replay_cells.py 출력)")
+    ap.add_argument("--fit-scenes", default="0,1,2,3,4", help="연산자·detector fit scene")
+    ap.add_argument("--fit-noises", default="0,1,2,3,4", help="연산자·detector fit noise")
     ap.add_argument("--arm", default="NA")
     ap.add_argument("--slug", default="NA")
     ap.add_argument("--expect", type=int, default=0)
@@ -63,6 +136,9 @@ def main() -> int:
     args = ap.parse_args()
 
     seed2scene = load_scenes(args.scenes_tsv)
+    cells = load_cells(args.cells_tsv)
+    fit_scenes = parse_int_list(args.fit_scenes)
+    fit_noises = parse_int_list(args.fit_noises)
     rows = []
     for jp in sorted((args.job_dir / "raw_rollouts").rglob("task*--ep*--succ*.json")):
         m = STEM_RE.match(jp.stem)
@@ -72,11 +148,35 @@ def main() -> int:
         steer = sc.get("serve_steering") or {}
         flags = sc.get("phase_gated_flags") or []
         env_seed = sc.get("scenario_seed", sc.get("seed"))
+        inf_seed = sc.get("inference_seed")
+        # replay: (env_seed, inference_seed) 로 셀을 되찾아 좌표·수집판정을 붙인다.
+        cellrec = None
+        if cells and env_seed is not None and inf_seed is not None:
+            cellrec = cells.get((int(env_seed), int(inf_seed)))
+            if cellrec is None:
+                raise SystemExit(
+                    f"{jp}: (env_seed={env_seed}, inference_seed={inf_seed}) 가 셀 표에 없다 "
+                    "— 재생 좌표가 어긋났다")
+        scene_idx = (cellrec["scene_idx"] if cellrec is not None else
+                     (seed2scene.get(int(env_seed)) if env_seed is not None else None))
+        noise_idx = cellrec["noise_idx"] if cellrec is not None else None
+        seen_scene = None if scene_idx is None else int(scene_idx in fit_scenes)
+        seen_noise = None if noise_idx is None else int(noise_idx in fit_noises)
+        quad = None
+        if seen_scene is not None and seen_noise is not None:
+            quad = (f"{'seen' if seen_scene else 'unseen'}_scene×"
+                    f"{'seen' if seen_noise else 'unseen'}_noise")
         rows.append({
             "ep": int(m.group("ep")),
-            "scene_idx": seed2scene.get(int(env_seed)) if env_seed is not None else None,
+            "scene_idx": scene_idx,
             "env_seed": env_seed,
-            "inference_seed": sc.get("inference_seed"),
+            "inference_seed": inf_seed,
+            "noise_idx": noise_idx,
+            "seen_scene": seen_scene,
+            "seen_noise": seen_noise,
+            "quadrant": quad,
+            "collection_success": (cellrec["collection_success"]
+                                   if cellrec is not None else None),
             # 스템의 succ 와 본문 판정이 어긋나면 사이드카가 손상된 것 → fail-loud
             "success": int(sc.get("episode_success", m.group("succ"))),
             "steps": sc.get("steps"),
@@ -108,6 +208,9 @@ def main() -> int:
     sr = f"{s / n:.3f}" if n else "NA"
     print(f"[results] {args.slug}/{args.arm}: n={n} succ={s} SR={sr} "
           f"fired={len(fired)}/{n} → {out_path}", flush=True)
+    if cells and rows:
+        for ln in quadrant_report(rows):
+            print(ln, flush=True)
     if args.expect and n < args.expect:
         print(f"[results] INCOMPLETE — {n} < expect {args.expect}", file=sys.stderr)
         return 13

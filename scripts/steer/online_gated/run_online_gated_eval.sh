@@ -11,17 +11,28 @@
 #   oracle_always  setM_seg gated 등록 + collector --gated-steering
 #                  (라벨러 phase 를 매 스텝 POST, latch 없이 처음부터 = 개입 상한)
 #
-# scene 은 grid 와 같은 10 개(scene_table.py 가 plan/index 에서 조회), inference_seed 만
-# fit(수집) 대역과 분리된 새 대역(EVAL_INF_SEED_BASE) — scene-matched, fit 침범 없음.
+# EP_MODE (episode 열거 방식)
+#   replay (기본) — grid 수집 셀을 **그대로 재생**. (scene s, noise m) 의 수집 당시
+#     env_seed·inference_seed 를 index 에서 읽어 동일 조건으로 재실행한다
+#     (`replay_cells.py`). 같은 머신이면 base arm 은 수집 결과와 (거의) 동일하게
+#     재현되므로 개입 arm 과의 차이 = 셀 단위 **구제 / 파손**.
+#     연산자·detector fit 은 scene 0–4 × noise 0–4 (s5m5) 이고, eval 셀은 10 scene 전체
+#     × EVAL_NOISES(기본 0,1,5,6) → 사분면(seen/unseen scene × seen/unseen noise)당
+#     10 셀 = 40 판/arm.
+#   fresh — 구 방식. grid 와 같은 scene, inference_seed 만 새 대역(EVAL_INF_SEED_BASE).
 #
 # 발사 (빈 GPU 확인 후, 반드시 setsid — agent 백그라운드 job 은 harness 가 중간에 kill):
 #
-#   GPUS=4,5 DETECTOR_CKPT=outputs/analysis/grid_phase/detector_sim/detector_pertask_lstm_all.pt \
-#   NPZ_ROOT=outputs/steer/online_pipe \
+#   GPUS=4,5 SLUGS=OpenDrawer_left NPZ_ROOT=outputs/steer/online_pipe \
+#   INDEX_TSV=outputs/steer/online_pipe/manifests/index_rollouts.tsv \
 #   setsid nohup bash scripts/steer/online_gated/run_online_gated_eval.sh \
 #     > outputs/eval/robocasa/groot_n15/online_gated/logs/orch.log 2>&1 < /dev/null &
 #
 #   DRY_RUN=1 GPUS=4 bash scripts/steer/online_gated/run_online_gated_eval.sh   # 명령만 echo
+#
+# 머신 분산: 이 러너는 **대상 머신 위에서** 돌린다 (ssh 오케스트레이션 없음).
+#   srv48/srv50 처럼 lerobot 컨테이너가 없는 머신은 SERVE_MODE=host + SERVE_PY 지정.
+#   실제로 어느 머신에서 돌았는지는 결과 옆 MACHINE.txt(hostname) 로 판정한다.
 #
 # 완료 판정은 로그가 아니라 per_episode.tsv 행 수로 한다.
 set -euo pipefail
@@ -34,7 +45,10 @@ SERVES_PER_GPU="${SERVES_PER_GPU:-2}"          # kanu 규칙 상한 2
 PORT_BASE="${PORT_BASE:-8700}"
 ALLOW_BUSY_GPU="${ALLOW_BUSY_GPU:-0}"          # 1 이면 타인 프로세스 있어도 강행(비권장)
 
-NPZ_ROOT="${NPZ_ROOT:-outputs/steer/online_pipe}"   # <NPZ_ROOT>/<slug>/setM_seg[...]
+NPZ_ROOT="${NPZ_ROOT:-outputs/steer/online_pipe}"   # <NPZ_ROOT>/<slug>/<NPZ_VARIANT>[...]
+# 연산자 변형 이름 (fit 산출물 디렉터리). s5m5 = scene 0–4 × noise 0–4 로 fit 한 판.
+# 변형 4종 = <V> / <V>_pl(위약) / <V>_fut(future-only) / <V>_fut_pl.
+NPZ_VARIANT="${NPZ_VARIANT:-setM_s5m5_seg}"
 DETECTOR_CKPT="${DETECTOR_CKPT:-}"                  # 지정 시 전 slug 공통 (단일 slug 용)
 # slug 별 per-task ckpt 템플릿 (%SLUG% 치환). DETECTOR_CKPT 가 비어 있으면 이걸 사용.
 DETECTOR_CKPT_TMPL="${DETECTOR_CKPT_TMPL:-outputs/analysis/grid_phase/detector_sim/detector_pertask_lstm_%SLUG%.pt}"
@@ -45,17 +59,32 @@ STEER_BETA="${STEER_BETA:-1.0}"
 TOKEN_POOL="${TOKEN_POOL:-all_token_full}"          # detector 계약(고정)
 
 PLAN_JSON="${PLAN_JSON:-configs/collect/n15_grid_v1/collection_plan.json}"
-INDEX_TSV="${INDEX_TSV:-}"                          # grid index 회수본 (있으면 정본)
+# replay 모드에서는 index 가 **필수** (수집 당시 env_seed·inference_seed 의 유일한 출처).
+INDEX_TSV="${INDEX_TSV:-outputs/steer/online_pipe/manifests/index_rollouts.tsv}"
 N_SCENES="${N_SCENES:-10}"
-N_EP_PER_SCENE="${N_EP_PER_SCENE:-2}"
-EVAL_INF_SEED_BASE="${EVAL_INF_SEED_BASE:-1400000}" # collection_plan.json 예약 eval 대역 (fit noise 1.3M과 분리)
+N_EP_PER_SCENE="${N_EP_PER_SCENE:-2}"               # fresh 모드 전용
+EVAL_INF_SEED_BASE="${EVAL_INF_SEED_BASE:-1400000}" # fresh 모드 전용 (fit noise 1.3M과 분리)
+
+# ── replay 모드 셀 지정 ───────────────────────────────────────────────────────
+EP_MODE="${EP_MODE:-replay}"                        # replay | fresh
+EVAL_SCENES="${EVAL_SCENES:-0-9}"                   # eval 셀 scene 축 (10 scene 전체)
+EVAL_NOISES="${EVAL_NOISES:-0,1,5,6}"               # eval 셀 noise 축 (seen 2 + unseen 2)
+FIT_SCENES="${FIT_SCENES:-0,1,2,3,4}"               # 연산자·detector fit 셀 (사분면 태깅용)
+FIT_NOISES="${FIT_NOISES:-0,1,2,3,4}"
+REPLAY_MACHINE="${REPLAY_MACHINE:-}"                # 비우면 index 단일 machine / hostname
+EP_IDX_STRIDE="${EP_IDX_STRIDE:-100}"               # episode_idx = scene*STRIDE + noise
 NAS="${NAS:-5}"                                     # GR00T 표준: 16 예측 / 5 실행
 MAXEP="${MAXEP:-720}"
 EXPECT_CHUNK="${EXPECT_CHUNK:-16}"
 
 PROFILE="${PROFILE:-configs/checkpoints/lerobot_groot_n15__robocasa365_ckpt120000.yaml}"
+# SERVE_MODE=docker(기본): lerobot 컨테이너에서 serve (kanu·pdk_external).
+# SERVE_MODE=host: 호스트 conda 로 serve (srv48·srv50 — lerobot 컨테이너 없음).
+#   SERVE_PY=파이썬 경로 (collect_grid.sh 와 같은 이름; HOST_PY 도 호환),
+#   SERVE_PYTHONPATH=lerobot 패키지 경로(예 ${REPO_ROOT}/lerobot/src).
 SERVE_MODE="${SERVE_MODE:-docker}"                  # docker | host
-HOST_PY="${HOST_PY:-$HOME/miniconda3/envs/lerobot_050_groot/bin/python}"
+HOST_PY="${HOST_PY:-${SERVE_PY:-$HOME/miniconda3/envs/lerobot_050_groot/bin/python}}"
+SERVE_PY="${SERVE_PY:-$HOST_PY}"
 SERVE_PYTHONPATH="${SERVE_PYTHONPATH:-}"
 PY_HOST="${PY_HOST:-python3}"                       # scene_table/collect_results (numpy 불필요)
 OUT_ROOT="${OUT_ROOT:-outputs/eval/robocasa/groot_n15/online_gated}"
@@ -113,10 +142,10 @@ NW=${#PORTS[@]}
 npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, base 는 빈 문자열)
   case "$2" in
     base)          printf '' ;;
-    online)        printf '%s/%s/setM_seg\n' "$NPZ_ROOT" "$1" ;;
-    online_fut)    printf '%s/%s/setM_seg_fut\n' "$NPZ_ROOT" "$1" ;;
-    online_pl)     printf '%s/%s/setM_seg_pl\n' "$NPZ_ROOT" "$1" ;;
-    oracle_always) printf '%s/%s/setM_seg\n' "$NPZ_ROOT" "$1" ;;
+    online)        printf '%s/%s/%s\n'        "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
+    online_fut)    printf '%s/%s/%s_fut\n'    "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
+    online_pl)     printf '%s/%s/%s_pl\n'     "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
+    oracle_always) printf '%s/%s/%s\n'        "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
   esac
 }
@@ -189,15 +218,43 @@ for slug in "${SLUG_ARR[@]}"; do
   done
 done
 
-# ── scene 표 (slug 당 1회) ────────────────────────────────────────────────────
-for slug in "${SLUG_ARR[@]}"; do
-  "$PY_HOST" "${REPO_ROOT}/scripts/steer/online_gated/scene_table.py" \
-    --slug "$slug" --plan-json "$PLAN_JSON_ABS" --n-scenes "$N_SCENES" \
-    ${INDEX_TSV:+--index-tsv "$INDEX_TSV"} --out "${LOGDIR}/scenes_${slug}.tsv"
-done
+# ── episode 표 (slug 당 1회) ──────────────────────────────────────────────────
+ep_table_for() { printf '%s/%s_%s.tsv\n' "$LOGDIR" \
+  "$([ "$EP_MODE" = replay ] && echo cells || echo scenes)" "$1"; }
 
-N_EP_TOTAL=$((N_SCENES * N_EP_PER_SCENE))
-log "slugs=${SLUGS} arms=${ARMS} scenes=${N_SCENES}×${N_EP_PER_SCENE}=${N_EP_TOTAL}판/arm"
+case "$EP_MODE" in
+  replay)
+    [ -n "$INDEX_TSV" ] || { log "ABORT: EP_MODE=replay 는 INDEX_TSV 필수"; exit 2; }
+    [ -f "$INDEX_TSV" ] || { log "ABORT: INDEX_TSV 없음: $INDEX_TSV"; exit 2; }
+    for slug in "${SLUG_ARR[@]}"; do
+      "$PY_HOST" "${REPO_ROOT}/scripts/steer/online_gated/replay_cells.py" \
+        --slug "$slug" --index-tsv "$INDEX_TSV" --plan-json "$PLAN_JSON_ABS" \
+        --scenes "$EVAL_SCENES" --noises "$EVAL_NOISES" \
+        ${REPLAY_MACHINE:+--machine "$REPLAY_MACHINE"} --out "$(ep_table_for "$slug")"
+    done
+    # 판 수 = 셀 수 (slug 마다 같아야 한다 — 다르면 fail-loud)
+    N_EP_TOTAL=""
+    for slug in "${SLUG_ARR[@]}"; do
+      n=$(wc -l < "$(ep_table_for "$slug")")
+      if [ -z "$N_EP_TOTAL" ]; then N_EP_TOTAL="$n"
+      elif [ "$n" != "$N_EP_TOTAL" ]; then
+        log "ABORT: slug 마다 셀 수가 다르다 (${slug}=${n} vs ${N_EP_TOTAL})"; exit 2
+      fi
+    done
+    log "slugs=${SLUGS} arms=${ARMS} mode=replay cells=${N_EP_TOTAL}판/arm " \
+        "(scenes=${EVAL_SCENES} × noises=${EVAL_NOISES}; fit s=${FIT_SCENES} m=${FIT_NOISES})"
+    ;;
+  fresh)
+    for slug in "${SLUG_ARR[@]}"; do
+      "$PY_HOST" "${REPO_ROOT}/scripts/steer/online_gated/scene_table.py" \
+        --slug "$slug" --plan-json "$PLAN_JSON_ABS" --n-scenes "$N_SCENES" \
+        ${INDEX_TSV:+--index-tsv "$INDEX_TSV"} --out "$(ep_table_for "$slug")"
+    done
+    N_EP_TOTAL=$((N_SCENES * N_EP_PER_SCENE))
+    log "slugs=${SLUGS} arms=${ARMS} mode=fresh scenes=${N_SCENES}×${N_EP_PER_SCENE}=${N_EP_TOTAL}판/arm"
+    ;;
+  *) log "ABORT: 알 수 없는 EP_MODE=${EP_MODE} (replay|fresh)"; exit 2 ;;
+esac
 log "serve ${NW}개 (gpus=${GPUS} × ${SERVES_PER_GPU}) ports=${PORTS[*]} mode=${SERVE_MODE} beta=${STEER_BETA}"
 
 # 머신 출처 기록 (docs/04 — 결과의 머신 열 원천)
@@ -207,8 +264,14 @@ log "serve ${NW}개 (gpus=${GPUS} × ${SERVES_PER_GPU}) ports=${PORTS[*]} mode=$
   echo "gpus=${GPUS} serves_per_gpu=${SERVES_PER_GPU} serve_mode=${SERVE_MODE}"
   echo "profile=${PROFILE}"
   echo "detector_ckpt=$(basename "${DETECTOR_CKPT:-none}") alpha=${FAILURE_ALPHA} layers=${DETECTOR_LAYERS}"
-  echo "steer_beta=${STEER_BETA} npz_root=${NPZ_ROOT#"$MAIN_HOST"/}"
-  echo "eval_inf_seed_base=${EVAL_INF_SEED_BASE} n_ep_per_scene=${N_EP_PER_SCENE}"
+  echo "steer_beta=${STEER_BETA} npz_root=${NPZ_ROOT#"$MAIN_HOST"/} npz_variant=${NPZ_VARIANT}"
+  echo "ep_mode=${EP_MODE} n_ep_total=${N_EP_TOTAL}"
+  if [ "$EP_MODE" = replay ]; then
+    echo "eval_scenes=${EVAL_SCENES} eval_noises=${EVAL_NOISES}"
+    echo "fit_scenes=${FIT_SCENES} fit_noises=${FIT_NOISES} replay_machine=${REPLAY_MACHINE:-auto}"
+  else
+    echo "eval_inf_seed_base=${EVAL_INF_SEED_BASE} n_ep_per_scene=${N_EP_PER_SCENE}"
+  fi
   echo "git_commit=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo NA)"
 } > "${OUT_ROOT}/MACHINE.txt"
 
@@ -253,7 +316,7 @@ start_serve() {  # gpu port extra_flags...
   local gpu="$1" port="$2"; shift 2
   local extra="$*"
   if [ "$SERVE_MODE" = host ]; then
-    local hcmd="\"$HOST_PY\" \"${REPO_ROOT}/scripts/serve/lerobot.py\" --profile \"${REPO_ROOT}/${PROFILE}\" --host '*' --port ${port} --device cuda ${extra}"
+    local hcmd="\"$SERVE_PY\" \"${REPO_ROOT}/scripts/serve/lerobot.py\" --profile \"${REPO_ROOT}/${PROFILE}\" --host '*' --port ${port} --device cuda ${extra}"
     if [ "$DRY_RUN" = "1" ]; then
       echo "[dry serve host gpu=${gpu}] ${hcmd} > $(serve_log_host "$port")"
       return 0
@@ -363,28 +426,49 @@ run_job() {  # port gpu slug arm
   start_serve "$gpu" "$port" $flags || return 11
   if [ "$DRY_RUN" != "1" ]; then serve_preflight "$port" "$arm" || { kill_serve "$port"; return 11; }; fi
 
-  local rc_any=0 si seed task envn instr ep inf rep
-  while IFS=$'\t' read -r si seed task envn instr; do
-    [ -n "${si:-}" ] || continue
-    for rep in $(seq 0 $((N_EP_PER_SCENE - 1))); do
-      ep=$((si * N_EP_PER_SCENE + rep))
-      # fit(수집) inference_seed 대역(1.3M noise)과 분리된 결정적 규칙.
-      inf=$((EVAL_INF_SEED_BASE + si * 1000 + rep))
+  local rc_any=0 si ni seed task envn instr ep inf rep csucc
+  local tbl; tbl="$(ep_table_for "$slug")"
+  if [ "$EP_MODE" = replay ]; then
+    # 수집 셀 재생: env_seed·inference_seed 는 index 값 그대로 (새로 만들지 않는다).
+    while IFS=$'\t' read -r si ni seed inf csucc task envn instr; do
+      [ -n "${si:-}" ] || continue
+      ep=$((si * EP_IDX_STRIDE + ni))
       if [ "$DRY_RUN" != "1" ] && done_mark "$out_host" "$task" "$slug" "$ep"; then
-        echo "[${slug}/${arm}] skip ep${ep} (s${si} rep${rep})"
+        echo "[${slug}/${arm}] skip ep${ep} (s${si} n${ni})"
         continue
       fi
-      echo "[${slug}/${arm}] $(date '+%F %T') ep${ep} s${si} seed=${seed} inf=${inf}"
+      echo "[${slug}/${arm}] $(date '+%F %T') ep${ep} s${si} n${ni} seed=${seed} inf=${inf} csucc=${csucc}"
       run_episode "$port" "$slug" "$arm" "$task" "$envn" "$instr" "$ep" "$inf" "$seed" "$out_host" \
         || rc_any=1
-    done
-  done < "${LOGDIR}/scenes_${slug}.tsv"
+    done < "$tbl"
+  else
+    while IFS=$'\t' read -r si seed task envn instr; do
+      [ -n "${si:-}" ] || continue
+      for rep in $(seq 0 $((N_EP_PER_SCENE - 1))); do
+        ep=$((si * N_EP_PER_SCENE + rep))
+        # fit(수집) inference_seed 대역(1.3M noise)과 분리된 결정적 규칙.
+        inf=$((EVAL_INF_SEED_BASE + si * 1000 + rep))
+        if [ "$DRY_RUN" != "1" ] && done_mark "$out_host" "$task" "$slug" "$ep"; then
+          echo "[${slug}/${arm}] skip ep${ep} (s${si} rep${rep})"
+          continue
+        fi
+        echo "[${slug}/${arm}] $(date '+%F %T') ep${ep} s${si} seed=${seed} inf=${inf}"
+        run_episode "$port" "$slug" "$arm" "$task" "$envn" "$instr" "$ep" "$inf" "$seed" "$out_host" \
+          || rc_any=1
+      done
+    done < "$tbl"
+  fi
 
   kill_serve "$port"
   if [ "$DRY_RUN" = "1" ]; then return 0; fi
-  "$PY_HOST" "${REPO_ROOT}/scripts/steer/online_gated/collect_results.py" \
-    --job-dir "$out_host" --scenes-tsv "${LOGDIR}/scenes_${slug}.tsv" \
-    --arm "$arm" --slug "$slug" --expect "$N_EP_TOTAL" || rc_any=13
+  local res=("$PY_HOST" "${REPO_ROOT}/scripts/steer/online_gated/collect_results.py"
+    --job-dir "$out_host" --arm "$arm" --slug "$slug" --expect "$N_EP_TOTAL")
+  if [ "$EP_MODE" = replay ]; then
+    res+=(--cells-tsv "$tbl" --fit-scenes "$FIT_SCENES" --fit-noises "$FIT_NOISES")
+  else
+    res+=(--scenes-tsv "$tbl")
+  fi
+  "${res[@]}" || rc_any=13
   cp "${OUT_ROOT}/MACHINE.txt" "${out_host}/MACHINE.txt" 2> /dev/null || true
   return "$rc_any"
 }
@@ -425,9 +509,10 @@ for slug in "${SLUG_ARR[@]}"; do
   for arm in "${ARM_ARR[@]}"; do
     tsv="${OUT_ROOT}/${slug}/${arm}/per_episode.tsv"
     if [ -f "$tsv" ]; then
+      # 열 위치를 헤더에서 찾는다 (열 추가에 안 깨지도록).
       n=$(($(wc -l < "$tsv") - 1))
-      s=$(awk -F'\t' 'NR>1 && $5=="1"' "$tsv" | wc -l)
-      fired=$(awk -F'\t' 'NR>1 && $8!="NA"' "$tsv" | wc -l)
+      s=$(awk -F'\t' 'NR==1{for(i=1;i<=NF;i++)c[$i]=i;next} $c["success"]=="1"' "$tsv" | wc -l)
+      fired=$(awk -F'\t' 'NR==1{for(i=1;i<=NF;i++)c[$i]=i;next} $c["trigger_step"]!="NA"' "$tsv" | wc -l)
       printf '%-22s %-14s n=%-3s succ=%-3s fired=%-3s\n' "$slug" "$arm" "$n" "$s" "$fired"
       [ "$n" -ge "$N_EP_TOTAL" ] || n_incomplete=$((n_incomplete + 1))
     else

@@ -10,9 +10,14 @@
 
 1. shard NPZ(`extract_grid_matrix.py` Tier A) → record 를 `ep_id` 로 묶고 `rec_idx`
    순 정렬 → episode 당 [T, D] 시퀀스. 라벨 y=1 은 **failure**(SAFE 규약).
-2. scene 단위 결정적 분할 (train 6 / calib 2 / test 2). scene 을 섞지 않는다 —
-   같은 scene 의 판이 train/test 에 갈리면 scene 암기가 검출로 보인다
-   ([[scene-matched-succfail-verdict]]).
+2. 분할. 두 방식이 있다.
+   (a) scene 단위 결정적 분할 (기본, train 6 / calib 2 / test 2). scene 을 섞지 않는다 —
+       같은 scene 의 판이 train/test 에 갈리면 scene 암기가 검출로 보인다
+       ([[scene-matched-succfail-verdict]]).
+   (b) **셀 지정 분할** (`--fit-scenes`/`--fit-noises`). eval 프로토콜과 같은 셀을 쓴다:
+       fit 셀(예 scene 0–4 × noise 0–4) 안에서 train = noise 0–2 / calib = noise 3–4,
+       test = **그 밖 전부**(unseen scene 또는 unseen noise). test 는 사분면
+       (seen/unseen scene × seen/unseen noise)으로도 분해해 요약한다.
 3. detector 학습 (SAFE-LSTM / SAFE-MLP). 구현 출처 =
    `scripts/safe/groot_n16/robocasa/analyze/pathway_lstm_detector.py` +
    `scripts/safe/groot_n16/robocasa/vis/core/lstm.py` (아키텍처·손실·정규화 동일).
@@ -52,6 +57,12 @@ layer 는 meta 의 layer 리스트에서 **인덱스 역산**한다 (하드코�
         --shard-dir ~/workspace/.../analysis/grid_phase/segA \
         --out ~/workspace/.../analysis/grid_phase/detector_sim \
         --arm both --models lstm,mlp --threads 8
+
+    # 셀 지정 분할 (eval replay 프로토콜과 같은 s5m5 fit)
+    ~/anaconda3/bin/python scripts/analysis/grid_phase/failure_detector_sim.py \
+        --shard-dir .../segA --out .../detector_sim_s5m5 \
+        --fit-scenes 0,1,2,3,4 --fit-noises 0,1,2,3,4 --calib-noises 3,4 \
+        --arm pertask --models lstm --threads 8
 """
 from __future__ import annotations
 
@@ -268,6 +279,46 @@ def split_scenes(task: str, scenes: list[int], n_train: int, n_calib: int,
         raise ValueError(f"{task}: scene {n}개로 train scene 을 못 만든다")
     return {"test": sorted(order[:te]), "calib": sorted(order[te:te + ca]),
             "train": sorted(order[te + ca:])}
+
+
+def parse_int_list(spec: str) -> list[int]:
+    """"0,1,5,6" / "0-4" / "0-2,8" → 정수 목록. 빈 문자열 → []."""
+    out: set[int] = set()
+    for tok in str(spec or "").split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if "-" in tok[1:]:
+            a, b = tok.split("-", 1)
+            out.update(range(int(a), int(b) + 1))
+        else:
+            out.add(int(tok))
+    return sorted(out)
+
+
+def split_cells(task: str, eps: list[Episode], fit_scenes: set[int],
+                fit_noises: set[int], calib_noises: set[int]) -> dict[str, list[Episode]]:
+    """셀 지정 분할 — eval replay 프로토콜과 같은 (scene, noise) 격자.
+
+    train = fit 셀 중 noise ∉ calib_noises / calib = fit 셀 중 noise ∈ calib_noises /
+    test  = fit 셀 **밖** 전부 (unseen scene 또는 unseen noise).
+    """
+    in_fit = [e for e in eps if e.scene in fit_scenes and e.noise in fit_noises]
+    train = [e for e in in_fit if e.noise not in calib_noises]
+    calib = [e for e in in_fit if e.noise in calib_noises]
+    test = [e for e in eps if not (e.scene in fit_scenes and e.noise in fit_noises)]
+    if not train:
+        raise ValueError(f"{task}: 셀 분할 train 판 0 "
+                         f"(fit_scenes={sorted(fit_scenes)} fit_noises={sorted(fit_noises)} "
+                         f"calib_noises={sorted(calib_noises)})")
+    if not test:
+        raise ValueError(f"{task}: 셀 분할 test 판 0 — fit 셀이 전체를 덮는다")
+    return {"train": train, "calib": calib, "test": test}
+
+
+def quadrant_of(scene: int, noise: int, fit_scenes: set[int], fit_noises: set[int]) -> str:
+    return (f"{'seen' if scene in fit_scenes else 'unseen'}_scene×"
+            f"{'seen' if noise in fit_noises else 'unseen'}_noise")
 
 
 def standardizer(eps: list[Episode]) -> tuple[np.ndarray, np.ndarray]:
@@ -501,11 +552,14 @@ def run_arm(arm: str, kind: str, tasks: dict, splits: dict, args,
                                       tasks[t]["phase_names"].get(int(e.phase[ft]),
                                                                   str(int(e.phase[ft]))),
                         "max_score": round(float(sc.max()), 4),
+                        "quadrant": None if not args.cell_split else
+                                    quadrant_of(e.scene, e.noise, args.fit_scene_set,
+                                                args.fit_noise_set),
                     }
                     recs.append(rec)
                     detail.append(rec)
                 row = {"task": t, "instruction": tasks[t]["instruction"], "arm": arm,
-                       "model": kind, "alpha": a, "band_L": band["L"],
+                       "model": kind, "alpha": a, "subset": "test", "band_L": band["L"],
                        "bw": round(band["bw"], 4),
                        "n_train_ep": len(seqs), "n_band_succ": len(band_scores),
                        "n_calib_succ": len(calib_scores),
@@ -515,6 +569,12 @@ def run_arm(arm: str, kind: str, tasks: dict, splits: dict, args,
                        "skip_reason": ""}
                 row.update(summarize([r for r in recs]))
                 rows.append(row)
+                # test 를 사분면(seen/unseen scene × seen/unseen noise)으로 분해
+                for q in sorted({r["quadrant"] for r in recs if r["quadrant"]}):
+                    qrow = dict(row)
+                    qrow["subset"] = q
+                    qrow.update(summarize([r for r in recs if r["quadrant"] == q]))
+                    rows.append(qrow)
                 band_ck[f"{a:.2f}"] = {"mu": band["mu"].astype(np.float32),
                                        "sd": band["sd"].astype(np.float32),
                                        "bw": band["bw"],
@@ -545,9 +605,14 @@ def run_arm(arm: str, kind: str, tasks: dict, splits: dict, args,
         recs = [r for r in detail if r["alpha"] == a]
         if recs:
             row = {"task": "__pooled__", "instruction": "", "arm": arm, "model": kind,
-                   "alpha": a, "skip_reason": ""}
+                   "alpha": a, "subset": "test", "skip_reason": ""}
             row.update(summarize(recs))
             rows.append(row)
+            for q in sorted({r["quadrant"] for r in recs if r.get("quadrant")}):
+                qrow = dict(row)
+                qrow["subset"] = q
+                qrow.update(summarize([r for r in recs if r.get("quadrant") == q]))
+                rows.append(qrow)
 
     for gname, payload in ckpts.items():
         slug = "all" if gname == "__all__" else gname
@@ -559,7 +624,7 @@ def run_arm(arm: str, kind: str, tasks: dict, splits: dict, args,
 # TSV
 # =============================================================================
 
-TSV_COLS = ["task", "instruction", "arm", "model", "alpha", "n_test_ep", "n_fail",
+TSV_COLS = ["task", "instruction", "arm", "model", "alpha", "subset", "n_test_ep", "n_fail",
             "n_succ", "tpr", "fpr", "median_relpos_fail",
             "median_steps_before_end_fail", "median_relpos_fp", "fire_phase_dist",
             "length_auroc", "band_L", "bw", "n_train_ep", "n_band_succ",
@@ -675,9 +740,15 @@ def run(args) -> int:
     for p in paths:
         eps, spec = load_shard_episodes(p, args.layer, args.denoise, args.seg)
         slug = p.stem
-        sc_split = split_scenes(slug, [e.scene for e in eps], args.train_scenes,
-                                args.calib_scenes, args.test_scenes, args.seed)
-        part = {k: [e for e in eps if e.scene in set(v)] for k, v in sc_split.items()}
+        if args.cell_split:
+            part = split_cells(slug, eps, args.fit_scene_set, args.fit_noise_set,
+                               args.calib_noise_set)
+            # TSV 의 *_scenes 열은 각 파트에 **실제로 들어간** scene 목록으로 채운다.
+            sc_split = {k: sorted({e.scene for e in v}) for k, v in part.items()}
+        else:
+            sc_split = split_scenes(slug, [e.scene for e in eps], args.train_scenes,
+                                    args.calib_scenes, args.test_scenes, args.seed)
+            part = {k: [e for e in eps if e.scene in set(v)] for k, v in sc_split.items()}
         tasks[slug] = {
             "instruction": spec.instruction, "shard": p.name,
             "phase_names": spec.phase_names, "dim": spec.dim,
@@ -720,8 +791,14 @@ def run(args) -> int:
             "hidden": args.hidden, "lambda_reg": args.lambda_reg,
             "grad_clip": args.grad_clip, "batch_size": args.batch_size,
             "band_mu": args.band_mu,
-            "split": {"train": args.train_scenes, "calib": args.calib_scenes,
-                      "test": args.test_scenes, "unit": "scene"},
+            "split": ({"unit": "cell",
+                       "fit_scenes": sorted(args.fit_scene_set),
+                       "fit_noises": sorted(args.fit_noise_set),
+                       "calib_noises": sorted(args.calib_noise_set),
+                       "test": "fit 셀 밖 전부 (unseen scene 또는 unseen noise)"}
+                      if args.cell_split else
+                      {"train": args.train_scenes, "calib": args.calib_scenes,
+                       "test": args.test_scenes, "unit": "scene"}),
             "label": "y=1 은 failure (SAFE 규약)",
         },
         "scene_split": {t: splits[t]["scenes"] for t in splits},
@@ -731,14 +808,15 @@ def run(args) -> int:
                                              encoding="utf-8")
 
     print(f"\n[summary] {time.time()-t0:.0f}s — {len(rows)} 행 → {out_dir.name}/")
-    hdr = f"{'task':22s} {'arm':7s} {'model':5s} {'α':>5s} {'TPR':>5s} {'FPR':>5s} " \
-          f"{'relpos':>6s} {'left':>5s} {'lenA':>5s}"
+    hdr = f"{'task':22s} {'arm':7s} {'model':5s} {'α':>5s} {'subset':24s} " \
+          f"{'TPR':>5s} {'FPR':>5s} {'relpos':>6s} {'left':>5s} {'lenA':>5s}"
     print(hdr)
     for r in rows:
         if r.get("tpr") is None:
             continue
         print(f"{str(r['task'])[:22]:22s} {r['arm']:7s} {r['model']:5s} "
-              f"{r['alpha']:5.2f} {r['tpr']:5.2f} {(r['fpr'] or 0):5.2f} "
+              f"{r['alpha']:5.2f} {str(r.get('subset','test')):24s} "
+              f"{r['tpr']:5.2f} {(r['fpr'] or 0):5.2f} "
               f"{_fmt(r['median_relpos_fail']):>6s} "
               f"{_fmt(r['median_steps_before_end_fail'],1):>5s} "
               f"{_fmt(r['length_auroc']):>5s}")
@@ -766,6 +844,12 @@ def main() -> int:
     ap.add_argument("--train-scenes", type=int, default=6)
     ap.add_argument("--calib-scenes", type=int, default=2)
     ap.add_argument("--test-scenes", type=int, default=2)
+    # 셀 지정 분할 (둘 다 주면 scene 셔플 분할 대신 이쪽을 쓴다 — eval replay 와 같은 격자)
+    ap.add_argument("--fit-scenes", default="",
+                    help='fit 셀 scene (예 "0,1,2,3,4"). --fit-noises 와 함께 지정')
+    ap.add_argument("--fit-noises", default="", help='fit 셀 noise (예 "0,1,2,3,4")')
+    ap.add_argument("--calib-noises", default="3,4",
+                    help="fit 셀 중 calib 으로 뺄 noise (나머지가 train)")
     ap.add_argument("--band-mu", default="train", choices=("train", "calib"),
                     help="δ_t 의 μ/σ 출처 (bw 는 항상 calib 성공 판)")
     ap.add_argument("--epochs", type=int, default=25)
@@ -781,6 +865,15 @@ def main() -> int:
                     help="합성 데이터로 파이프라인 검증 (TPR > FPR)")
     args = ap.parse_args()
     args.alphas = [float(x) for x in str(args.alphas).split(",") if str(x).strip()]
+
+    fs, fn = parse_int_list(args.fit_scenes), parse_int_list(args.fit_noises)
+    if bool(fs) != bool(fn):
+        ap.error("--fit-scenes 와 --fit-noises 는 함께 지정해야 한다")
+    args.cell_split = bool(fs)
+    args.fit_scene_set, args.fit_noise_set = set(fs), set(fn)
+    args.calib_noise_set = set(parse_int_list(args.calib_noises)) & args.fit_noise_set
+    if args.cell_split and not args.calib_noise_set:
+        ap.error("--calib-noises 가 --fit-noises 와 겹치지 않는다 (calib 판 0)")
 
     if args.self_test:
         return self_test(args)
