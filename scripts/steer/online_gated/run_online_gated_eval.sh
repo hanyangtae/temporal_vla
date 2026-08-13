@@ -35,9 +35,11 @@ PORT_BASE="${PORT_BASE:-8700}"
 ALLOW_BUSY_GPU="${ALLOW_BUSY_GPU:-0}"          # 1 이면 타인 프로세스 있어도 강행(비권장)
 
 NPZ_ROOT="${NPZ_ROOT:-outputs/steer/online_pipe}"   # <NPZ_ROOT>/<slug>/setM_seg[...]
-DETECTOR_CKPT="${DETECTOR_CKPT:-}"                  # online* arm 필수
+DETECTOR_CKPT="${DETECTOR_CKPT:-}"                  # 지정 시 전 slug 공통 (단일 slug 용)
+# slug 별 per-task ckpt 템플릿 (%SLUG% 치환). DETECTOR_CKPT 가 비어 있으면 이걸 사용.
+DETECTOR_CKPT_TMPL="${DETECTOR_CKPT_TMPL:-outputs/analysis/grid_phase/detector_sim/detector_pertask_lstm_%SLUG%.pt}"
 DETECTOR_LAYERS="${DETECTOR_LAYERS:-12}"            # serve 캡처 layer (ckpt layer 포함 필수)
-FAILURE_ALPHA="${FAILURE_ALPHA:-0.2}"
+FAILURE_ALPHA="${FAILURE_ALPHA:-0.1}"               # 5-seed 시뮬 균형점 (docs/steering/42)
 FAILURE_TASK="${FAILURE_TASK:-}"                    # 비우면 slug (cp_bands 키 = shard slug)
 STEER_BETA="${STEER_BETA:-1.0}"
 TOKEN_POOL="${TOKEN_POOL:-all_token_full}"          # detector 계약(고정)
@@ -152,7 +154,8 @@ serve_flags_for() {  # slug arm → serve 추가 플래그 (scan_npz_base 선행
     flags="${flags} --steering-beta ${STEER_BETA} --steering-token-select all"
   fi
   if arm_uses_detector "$arm"; then
-    local ckpt="$DETECTOR_CKPT"
+    local ckpt
+    ckpt="$(detector_ckpt_for "$slug")"
     [ "$SERVE_MODE" = host ] || ckpt="$(to_cont "$ckpt")"
     # detector 전제(serve 가 fail-loud 로 재검증): DiT residual 캡처 + all_token_full.
     flags="${flags} --groot-dit-capture-layers ${DETECTOR_LAYERS} --groot-dit-token-pool ${TOKEN_POOL}"
@@ -165,11 +168,17 @@ serve_flags_for() {  # slug arm → serve 추가 플래그 (scan_npz_base 선행
 # ── preflight: arm 재료 존재 확인 (발사 전에 전부) ────────────────────────────
 IFS=',' read -r -a SLUG_ARR <<< "$SLUGS"
 IFS=',' read -r -a ARM_ARR <<< "$ARMS"
+detector_ckpt_for() {  # slug → ckpt 경로 (DETECTOR_CKPT 지정 시 그것, 아니면 템플릿 치환)
+  if [ -n "$DETECTOR_CKPT" ]; then printf '%s\n' "$DETECTOR_CKPT"
+  else printf '%s\n' "$(abspath "${DETECTOR_CKPT_TMPL//%SLUG%/$1}")"; fi
+}
 need_detector=0
 for arm in "${ARM_ARR[@]}"; do arm_uses_detector "$arm" && need_detector=1; done
 if [ "$need_detector" = 1 ]; then
-  [ -n "$DETECTOR_CKPT" ] || { log "ABORT: online* arm 이 있는데 DETECTOR_CKPT 미지정"; exit 2; }
-  [ -f "$DETECTOR_CKPT" ] || { log "ABORT: detector ckpt 없음: $DETECTOR_CKPT"; exit 2; }
+  for slug in "${SLUG_ARR[@]}"; do
+    ck="$(detector_ckpt_for "$slug")"
+    [ -f "$ck" ] || { log "ABORT: detector ckpt 없음 (${slug}): $ck"; exit 2; }
+  done
 fi
 for slug in "${SLUG_ARR[@]}"; do
   for arm in "${ARM_ARR[@]}"; do
