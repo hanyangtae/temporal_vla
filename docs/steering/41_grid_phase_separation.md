@@ -146,3 +146,59 @@ probe:    seed_memo_probe.py --shard <npz> --layer L --seg S --phase P / --all-n
 ```
 중간 산출물(shard NPZ 30GB + tokB 15GB + intrinsic)은 승준
 `<store>/analysis/grid_phase/` 존치, JSON/TSV/PNG 만 로컬 회수.
+
+---
+
+## 8. rung4 추가 검증 (2026-08-12 오후): K sweep · grasp 시점 · 시점 분해
+
+### 8.1 시간 구조가 지배 변수다 (quantile 분해)
+
+time-quantile K등분(4/8/12)의 quantile별 mean z:
+
+- **q0(시작 구간) ≈ 0** (tq4 +0.3, tq8 +0.0, tq12 −0.2) — OvenRack 제외 시작 시점 분리 없음.
+- **q1 이후 전 quantile +3.2~4.1** — 상대위치 어디를 잘라도 강한 분리.
+
+해석: 실패 신호는 대부분 task 에서 **시작 시점엔 없고 episode 전개와 함께 급격히
+형성**된다(실행표류형 지배). 상대위치 매칭은 절대시각 매칭이 아니므로(실패 판의 q1 은
+이미 env-step 90+), q1+ 의 분리는 상당 부분 진행 중인 실패 상태의 판독이다.
+**OvenRack 만 t=0 부터 분리되는 초기조건형** — 이 구분이 steering 트리거 설계의 핵심 축.
+따라서 tqK 는 "칸수 매칭 공정 대조" 역할을 못 한다(q0 외 전부 사후 오염).
+
+### 8.2 intrinsic 검증 — 조기 셀 한정 비교 (relpos 중앙값 < 0.5)
+
+클러스터/phase 별 episode 내 상대시점을 실측해 조기 셀만 비교:
+
+| | GT | intr k6 | intr k8 | intr k12 |
+|---|---|---|---|---|
+| 조기 mean z | +0.99 | +0.80 | +1.06 | +1.08 |
+| 후기 mean z | −0.10 | +0.46 | +1.02 | +0.14 |
+
+- **조기 한정 시 intrinsic k8 과 GT 는 사실상 동급** (+1.06 vs +0.99). §5 의 "intrinsic
+  우위 4/9"는 상당 부분 후기(사후) 클러스터 셀의 기여였다.
+- 예외 = **drawer-left: 조기에서도 intrinsic 우세** (+2.1/max 4.5 vs GT +0.5/max 1.7)
+  — intrinsic gating 의 실질 후보는 drawer-left 로 좁혀 읽는 것이 정직하다.
+- k8 의 후기 mean +1.02 가 유일하게 조기와 같은 수준 = k8 클러스터의 우위분에 후기
+  상태 판독이 섞여 있었다는 방증.
+
+### 8.3 K sweep: k8 근방이 최적
+
+전 셀 mean z: k6 +0.69 / **k8 +1.05** / k12 +0.75 / k16 +0.61 / k24 −0.30 / k32 +0.28.
+k≥16 은 과분할로 클러스터당 record 부족(B<3 skip 급증)·상태 쪼개짐 → 퇴화.
+
+### 8.4 grasp 시점 (--align end)
+
+- PPCC reach 끝(=grasp 시도 구간) 정렬: bread 0.98/z5.6, candle 0.94/z5.2,
+  marshmallow 0.90/z4.3, jug 0.98/z4.2 (first 정렬 대비 z +3 안팎 상승, lenA 0.00, 같은 B).
+  ⚠ 단 PPCC 실패 다수는 grasp 미도달이라 reach 가 timeout 까지 이어짐 → end 정렬은
+  "성공의 grasp 순간 vs 실패의 늦은 표류" 비교가 섞인다(절대시각 불일치). 액면 채택 금지,
+  "신호가 reach 진행에 따라 누적 상승"으로만 읽을 것.
+- drawer grasp-handle 끝: left 0.94/z4.7, right 0.94/z3.5 — **양쪽 다 잡은 판끼리의
+  비교**라 더 의미 있음: 잡은 뒤 당기기 직전 상태가 이미 다르다. (시각 불일치는 잔존)
+
+### 8.5 종합 갱신
+
+- 예측적(조기) 신호로 확립: **OvenRack (t=0부터)** 하나. drawer-left 는 intrinsic 조기
+  셀에서 중간 강도. 나머지는 실행표류형 — 신호는 실재하나 "실패가 전개된 뒤" 강해짐.
+- 실행표류형 task 의 개입 여지는 "일찍 감지"가 아니라 **전개 중 감지→중단/재샘플**
+  (grasp 직전 대역이 가장 읽기 좋은 창).
+- intrinsic gating 후보: drawer-left 한정 (k8, scene 잔차화 선행).
