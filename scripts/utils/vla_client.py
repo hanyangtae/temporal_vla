@@ -71,6 +71,8 @@ class VLAClient:
     def __init__(self, url: str, timeout: float = 60.0):
         self.url = url.rstrip("/")
         self.timeout = timeout
+        # 마지막 /act_with_features 응답의 failure detector 신호 (serve 가 안 보내면 None)
+        self.last_failure: dict | None = None
 
     def health_check(self, timeout: float = 5.0) -> dict | None:
         try:
@@ -103,6 +105,8 @@ class VLAClient:
         """에피소드 시작 시 서버 히스토리 초기화."""
         r = requests.post(f"{self.url}/reset", timeout=self.timeout)
         r.raise_for_status()
+        # serve 의 detector 상태도 /reset 에서 초기화된다 — 클라이언트 캐시도 같이 비운다.
+        self.last_failure = None
 
     def _build_payload(
         self,
@@ -234,6 +238,20 @@ class VLAClient:
             payload.update(extra_payload)
         result, latency_ms = self._post_and_decode("/act_with_features", payload)
         actions = self._parse_action(result)
+
+        # online failure detector (serve --failure-detector): plain JSON 스칼라.
+        # feature blob 유무와 무관하게 오므로(--no-features eval 은 blob 억제 + score 만)
+        # features dict 가 아니라 클라이언트 속성으로 노출한다.
+        self.last_failure = (
+            {
+                "score": result.get("features.failure_score"),
+                "fired": bool(result.get("features.failure_fired")),
+                "delta": result.get("features.failure_delta"),
+                "step": result.get("features.failure_step"),
+            }
+            if "features.failure_score" in result
+            else None
+        )
 
         blob = result.get("features.hidden_states")
         if isinstance(blob, dict):

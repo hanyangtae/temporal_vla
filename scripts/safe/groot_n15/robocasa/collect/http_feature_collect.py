@@ -308,6 +308,58 @@ def _post_steering_phase(server: str, phase: str) -> bool:
     return bool(body.get("gated", False))
 
 
+def _labeler_phase_vocab(labeler, proximity_phases: bool) -> "set[str] | None":
+    """라벨러가 낼 수 있는 phase 이름 집합 (모르면 None).
+
+    전용 라벨러(Drawer/Fridge/Mixer/Rack)는 `PHASE_RANK` 를, event 계열은 segmenter 의
+    `gap_labels` + terminal(+proximity 서브페이즈)을 어휘로 쓴다.
+    """
+    ranks = getattr(labeler, "PHASE_RANK", None)
+    if isinstance(ranks, dict) and ranks:
+        return {str(k) for k in ranks}
+    seg = getattr(labeler, "segmenter", None)
+    if seg is None or not getattr(seg, "gap_labels", None):
+        return None
+    from src.collect.event_phase import TERMINAL  # noqa: PLC0415
+
+    vocab = {str(v) for v in seg.gap_labels} | {TERMINAL}
+    if proximity_phases:
+        from src.collect.robocasa.event_labeler import (  # noqa: PLC0415
+            GRASP_PHASE, PLACE_PHASE, WRONG_GRASP_PHASE,
+        )
+
+        vocab |= {GRASP_PHASE, PLACE_PHASE, WRONG_GRASP_PHASE}
+    return vocab
+
+
+def _warn_phase_vocab_mismatch(labeler, proximity_phases: bool, serve_identity: dict) -> None:
+    """labeler phase 이름 ↔ serve 등록 phase(=fit 디렉토리명) 대조 경고 (강제 불가, 1회).
+
+    문자열이 어긋나면 POST 는 200 이지만 serve 는 identity 로 떨어져 **무음 미조향**이
+    된다. 코드로 강제할 수 없으니 기동 시 양쪽 목록을 찍어 눈으로 잡게 한다.
+    """
+    spec = serve_identity.get("serve_steering") or {}
+    registered = spec.get("phases")
+    vocab = _labeler_phase_vocab(labeler, proximity_phases)
+    if not registered:
+        print("[gating] 경고: serve 에 등록된 phase 목록이 없다 (steering 미탑재?) — "
+              "phase POST 는 전부 identity 로 떨어진다", flush=True)
+        return
+    if vocab is None:
+        print(f"[gating] serve 등록 phase={sorted(registered)} / labeler 어휘 미상 "
+              "(대조 생략)", flush=True)
+        return
+    missing = sorted(set(registered) - vocab)
+    unregistered = sorted(vocab - set(registered))
+    print(f"[gating] serve 등록 phase={sorted(registered)} labeler 어휘={sorted(vocab)}",
+          flush=True)
+    if missing:
+        print(f"[gating] 경고: serve 에만 있는 phase {missing} — 라벨러가 그 이름을 "
+              "절대 내지 않으면 그 연산자는 영영 안 쓰인다 (fit 디렉토리명 확인)", flush=True)
+    if unregistered:
+        print(f"[gating] 참고: 미등록 phase {unregistered} → identity(no-op)", flush=True)
+
+
 def _get_serve_identity(server: str) -> dict:
     """serve /health 에서 GPU·boot 지문을 1회 조회 (exp4-1 arm×GPU confound 사후 감사용).
 
@@ -324,6 +376,8 @@ def _get_serve_identity(server: str) -> dict:
             "serve_gpu": body.get("serve_gpu"),
             "serve_boot_id": body.get("boot_id"),
             "serve_steering": body.get("steering"),
+            # online gating 전제: serve 에 failure detector 가 실렸는지 (없으면 영영 미발화)
+            "serve_failure_detector": body.get("failure_detector"),
             # docs/04 규약 — rollout 인덱스의 machine·ckpt 열. serve 가 도는 머신이
             # 수집기와 다를 수 있으므로 /health 응답을 정본으로 쓴다.
             # machine 이 없으면 머신 간 재현 편차(같은 seed 에서 succ/fail 12.7% 반전)를
@@ -568,6 +622,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--gated-steering-mode",
+        choices=("off", "online"),
+        default="off",
+        help=(
+            "online: serve 의 failure detector 발화(features.failure_fired)로 개입을 "
+            "latch — 발화 전엔 'off' POST(=identity), 최초 발화 이후 매 스텝 라벨러의 "
+            "현재 phase 를 POST(phase-follow). serve 는 --failure-detector + "
+            "--steering-phase-npz-base 필요. --gated-steering/--steer-from-record 와 배타."
+        ),
+    )
+    parser.add_argument(
         "--instruction-override",
         default=None,
         help=(
@@ -756,6 +821,12 @@ def run() -> dict[str, Any]:
         instruction_override=getattr(args, "instruction_override", None),
     )
     steer_from_record = getattr(args, "steer_from_record", None)
+    online_gating = getattr(args, "gated_steering_mode", "off") == "online"
+    if online_gating and (getattr(args, "gated_steering", False)
+                          or steer_from_record is not None):
+        raise ValueError(
+            "--gated-steering-mode online 은 --gated-steering/--steer-from-record 와 배타 "
+            "(개입 시점의 출처가 둘일 수 없다)")
     if steer_from_record is not None and getattr(args, "gated_steering", False):
         raise ValueError("--steer-from-record 와 --gated-steering 은 상호배타 (latch vs phase-gated)")
     if steer_from_record is not None and steer_from_record < 0:
@@ -769,6 +840,12 @@ def run() -> dict[str, Any]:
     if args.wait_ready:
         policy.wait_until_ready(max_wait=args.timeout)
     serve_identity = _get_serve_identity(args.vla_server)
+    if online_gating and not serve_identity.get("serve_failure_detector"):
+        # detector 없는 serve 로 online 모드를 돌리면 영영 미발화 = 전 판 무개입인데
+        # 산출물은 "online arm" 으로 남는다 (무음 위약). 즉시 중단한다.
+        raise RuntimeError(
+            "--gated-steering-mode online 인데 serve /health 에 failure_detector 가 없다 "
+            "— serve 를 --failure-detector <ckpt.pt> 로 기동할 것")
     from src.collect.plan import resolve_grid  # noqa: PLC0415
 
     grid_plan, grid_cell = resolve_grid(args)
@@ -853,6 +930,13 @@ def run() -> dict[str, Any]:
                 env, env_name, proximity_phases=getattr(args, "proximity_phases", False)
             )
             labeler.reset()
+            if online_gating:
+                # /reset(=policy.reset, serve 의 detector 상태 리셋) **이후** 에 off 를
+                # 걸어야 이전 판의 개입이 이 판 첫 추론까지 새지 않는다.
+                _post_steering_phase(args.vla_server, "off")
+                if local_ep_idx == 0:
+                    _warn_phase_vocab_mismatch(
+                        labeler, getattr(args, "proximity_phases", False), serve_identity)
             env_gt = None
             if getattr(args, "env_step_phases", True):
                 _probe = find_probe_wrapper(env)
@@ -872,6 +956,11 @@ def run() -> dict[str, Any]:
                 obs = perturber.on_episode_start(obs)
             feature_phases: list[str] = []
             phase_gated_flags: list[bool] = []
+            # online gating: detector 발화로 latch. failure_scores 는 record 별 score.
+            failure_scores: list = []
+            failure_latched = False
+            trigger_step: int | None = None
+            phase_at_trigger: str | None = None
             success = False
             first_success_step = None
             step_i = 0
@@ -908,13 +997,31 @@ def run() -> dict[str, Any]:
                     else:
                         want = getattr(args, "steer_phase_name", None) or "steer"
                     gated_now = _post_steering_phase(args.vla_server, want)
+                elif online_gating:
+                    # 이 스텝의 POST 는 **직전 응답까지의** 발화 상태로 결정된다(causal):
+                    # record r 에서 발화하면 개입은 r+1 부터. 발화 전엔 off = identity.
+                    want = phase if failure_latched else "off"
+                    gated_now = _post_steering_phase(args.vla_server, want)
                 official_action, _ = policy.get_action(obs)
+                if online_gating:
+                    fail = getattr(policy, "last_failure", None)
+                    if fail is None:
+                        raise RuntimeError(
+                            "online gating 인데 응답에 features.failure_score 가 없다 — "
+                            "serve --failure-detector 배선 확인 (무음 미개입 방지)")
+                    if fail["fired"] and not failure_latched:
+                        failure_latched = True
+                        trigger_step = progress_before
+                        phase_at_trigger = phase
                 if perturber is not None:
                     official_action = perturber.maybe_apply(progress_before, official_action)
                 progress_after = policy.n_calls if no_features else len(policy.records)
                 if progress_after > progress_before:
                     feature_phases.append(phase)
                     phase_gated_flags.append(gated_now)
+                    if online_gating:
+                        # record 축과 1:1 (feature_phases 와 같은 길이)
+                        failure_scores.append(policy.last_failure["score"])
                     # 떨림 진단: 이 record 의 명령 action 벡터(첫 실행 스텝)와 개입 활성 여부.
                     action_traj.append(_extract_groot_action_vector(official_action))
                     if no_features:
@@ -939,6 +1046,26 @@ def run() -> dict[str, Any]:
                     "feature_phases/inference-count misaligned: "
                     f"{len(feature_phases)} != {n_inferences}"
                 )
+            if online_gating and len(failure_scores) != n_inferences:
+                raise RuntimeError(
+                    "failure_scores/inference-count misaligned: "
+                    f"{len(failure_scores)} != {n_inferences}"
+                )
+
+            # online gating 감사 필드 (그 모드일 때만 기록 — 기존 arm 산출물 스키마 불변).
+            # trigger_step=None = 미발화(=전 판 무개입), failure_scores 는 record 축 1:1.
+            online_gate_meta = (
+                {
+                    "gated_steering_mode": "online",
+                    "trigger_step": trigger_step,
+                    "phase_at_trigger": phase_at_trigger,
+                    "failure_scores": failure_scores,
+                    # phase-follow 로 실제 POST 된 phase 열(=feature_phases 의 latch 이후 구간)
+                    "feature_phases": list(feature_phases),
+                }
+                if online_gating
+                else {}
+            )
 
             rendered_video = env.render()
             upstream_video_path = _find_latest_video(upstream_video_dir)
@@ -970,6 +1097,7 @@ def run() -> dict[str, Any]:
                 "grasp_timeline": list(getattr(labeler, "grasp_timeline", []) or []),
                 "wrong_grasp_steps": list(getattr(labeler, "wrong_grasp_steps", []) or []),
                 "wrong_grasp_timeline": list(getattr(labeler, "wrong_grasp_timeline", []) or []),
+                **online_gate_meta,
             }
             # 떨림(jitter) 진단 — 개입이 액션 궤적에 준 speed/jerk (record 해상도, 판정 무영향).
             extra_metadata["action_kinematics"] = _action_tremor_summary(
@@ -1037,6 +1165,7 @@ def run() -> dict[str, Any]:
                     "expect_chunk_len": policy.expect_chunk_len,
                     # gated dose 감사: 추론별 phase 가 실제 matrix 를 탔는지 (False=identity)
                     "phase_gated_flags": phase_gated_flags,
+                    **online_gate_meta,
                     # exp4-1 latch 감사: sum(flags)==n_inferences-K && first_true==K 대조용
                     "steer_from_record": steer_from_record,
                     "steer_phase_mode": getattr(args, "steer_phase_mode", "global"),

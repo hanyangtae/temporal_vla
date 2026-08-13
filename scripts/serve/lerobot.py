@@ -218,6 +218,75 @@ def _load_phase_readouts_if_requested(args) -> None:
     )
 
 
+# ---------------------------------------------------------------- online failure detector
+# SAFE 식 causal failure detector(`scripts/analysis/grid_phase/failure_detector_sim.py` 산출
+# `detector_<arm>_<model>_<slug|all>.pt`)를 추론 경로에 얹어, 매 record 마다 score 와
+# CP 밴드 발화(score > δ_t)를 응답에 실어 보낸다 — 클라이언트의 online gating 신호.
+# phase readout 과 같은 자리(같은 hidden [L,K,T,D])에서 계산하며 좌표는 ckpt 가 정한다.
+_failure_detector = None         # OnlineFailureDetector | None
+_failure_layer_idx: int | None = None
+_failure_spec: dict = {}         # /health 노출용
+
+
+def _failure_from_hidden(hidden_np) -> dict | None:
+    """features.hidden_states [L,K,T,D] → {"score","fired","delta","t"} (1 step 전진).
+
+    detector 는 **episode 안에서 상태를 이어간다** (LSTM (h,c) / MLP 누적평균 / step
+    카운터) — /reset 이 리셋한다. 요청 1개 = record 1개 규약을 전제로 한 step 씩 전진.
+    """
+    if _failure_detector is None:
+        return None
+    feat = _failure_detector.feature_from_hidden(np.asarray(hidden_np), _failure_layer_idx)
+    return _failure_detector.step(feat)
+
+
+def _load_failure_detector_if_requested(args) -> None:
+    """--failure-detector 시 detector 를 로드하고 캡처 설정 정합을 검증한다.
+
+    phase readout 과 같은 fail-loud 기준: groot + all_token_full 캡처 + ckpt 가 지정한
+    물리 layer 가 capture layers 에 있어야 한다 (조용히 틀린 좌표로 점수 내는 것 방지).
+    """
+    global _failure_detector, _failure_layer_idx, _failure_spec
+    path = getattr(args, "failure_detector", None)
+    if not path:
+        return
+    if _policy_type != "groot":
+        raise ValueError("--failure-detector 는 policy_type='groot' 전용")
+    if _groot_dit_capture_layers is None:
+        raise ValueError(
+            "--failure-detector 는 --groot-dit-capture-layers 필요 "
+            "(DiT residual 캡처가 켜져야 detector feature 를 만든다)"
+        )
+    if _groot_dit_token_pool != "all_token_full":
+        raise ValueError(
+            "--failure-detector 는 --groot-dit-token-pool all_token_full 필요 "
+            f"(현재 {_groot_dit_token_pool!r}) — detector 는 토큰 세그먼트 mean 으로 학습됨"
+        )
+    from src.failure_online import OnlineFailureDetector
+
+    ckpt_path = Path(path)
+    if not ckpt_path.is_absolute():
+        ckpt_path = Path(__file__).resolve().parents[2] / ckpt_path
+    _failure_detector = OnlineFailureDetector.from_checkpoint(
+        ckpt_path,
+        alpha=float(args.failure_alpha),
+        task=getattr(args, "failure_task", None) or None,
+        device=str(getattr(args, "failure_device", "cpu")),
+    )
+    _failure_layer_idx = _failure_detector.resolve_layer_index(
+        list(_groot_dit_capture_layers)
+    )  # preflight (capture layers 에 ckpt layer 존재)
+    _failure_detector.reset()
+    _failure_spec = {"enabled": True, **_failure_detector.spec()}
+    logger.info(
+        "online failure detector ON: ckpt=%s model=%s layer=%s denoise=%s seg=%s "
+        "task=%s alpha=%s band_L=%s",
+        _failure_spec["ckpt"], _failure_spec["model"], _failure_spec["layer"],
+        _failure_spec["denoise"], _failure_spec["seg"], _failure_spec["task"],
+        _failure_spec["alpha"], _failure_spec["band_L"],
+    )
+
+
 def _reset_steering_step_counters() -> None:
     """Per-Step steering 의 denoise call 카운터를 요청 시작 시 리셋.
 
@@ -734,6 +803,10 @@ async def reset():
     # (러너의 /patch_arm → collector 기동(내부 /reset) 순서 때문).
     for hook in _patch_hooks.values():
         hook.reset_episode()
+    # online failure detector: episode 경계에서 (h,c)·누적평균·step 카운터 리셋.
+    # 리셋을 빠뜨리면 이전 판의 상태가 이어져 발화 시점이 오염된다.
+    if _failure_detector is not None:
+        _failure_detector.reset()
     return reset_policy(policy)
 
 
@@ -859,7 +932,11 @@ async def predict_action_with_features(payload: dict):
     if preprocessor is not None:
         batch = preprocessor(batch)
 
-    if payload.get("skip_features"):
+    # detector 가 켜져 있으면 skip_features 는 "hook 없이 돌라"가 아니라 **"blob 만 빼라"**
+    # 로 해석한다 — detector 는 hidden 이 있어야 점수를 낸다. 아래 hook 경로가 hidden 을
+    # 만들고 응답에서 blob 만 억제하므로 --no-features eval 의 응답 크기 이점은 유지된다
+    # (chunk 추론 경로도 동일: run_with_features 도 predict_action_chunk 를 부른다).
+    if payload.get("skip_features") and _failure_detector is None:
         if _collect_mode:
             # 수집 serve 에서 hook 없는 첫 compile 이 캐시되면 이후 캡처가 무음 미발화
             # (/act 거부와 같은 이유 — Gate 2 R2 중간#4)
@@ -903,9 +980,24 @@ async def predict_action_with_features(payload: dict):
     action_np = _action_to_emit_array(action)
 
     result = _emit_subkeys(action_np, profile)
+    # blob 억제 모드(detector ON + skip_features): 점수만 싣고 hidden 은 안 보낸다.
+    suppress_blob = bool(payload.get("skip_features")) and _failure_detector is not None
     if hidden is not None:
-        result["has_feature"] = True
         hidden_np = np.asarray(hidden)
+        # online failure detector — blob 억제 여부와 무관하게 매 record 1 step 전진.
+        if _failure_detector is not None:
+            fail = _failure_from_hidden(hidden_np)
+            result["features.failure_score"] = fail["score"]
+            result["features.failure_fired"] = fail["fired"]
+            result["features.failure_delta"] = fail["delta"]
+            result["features.failure_step"] = fail["t"]
+    if suppress_blob and hidden is not None:
+        # 클라이언트(VLAClient)는 blob 이 없고 has_feature=False 면 features=None 을 받는다
+        # → --no-features 수집기의 "skip_features 인데 features 가 왔다" 가드와 양립.
+        result["has_feature"] = False
+        result["skip_features"] = True
+    elif hidden is not None:
+        result["has_feature"] = True
         # 통일 /act_with_features 계약(VLAClient·GR00T HTTP)만 발송. legacy
         # hidden_states_b64 이중 발송은 2026-08-10 제거 — 같은 배열을 두 번 실어
         # 응답이 2배였다 (VLAClient 는 통일 blob 우선이라 무영향, 폴백은 클라이언트에 잔존).
@@ -960,6 +1052,7 @@ async def health():
         steering=_steering_spec or None,
         patch=_patch_spec or None,
         phase_readout=_phase_spec or None,
+        failure_detector=_failure_spec or None,
         # exp4-1: client 가 사이드카에 GPU 를 기록해 arm×GPU confound 를 사후 감사
         serve_gpu=os.environ.get("CUDA_VISIBLE_DEVICES"),
         # docs/04 규약 — rollout 인덱스의 machine·ckpt 열 원천 (헬퍼가 단일 출처)
@@ -1486,6 +1579,7 @@ def _load_model_impl():
     _register_steering_if_requested(policy, args)
     _register_patching_if_requested(policy, args)
     _load_phase_readouts_if_requested(args)
+    _load_failure_detector_if_requested(args)
 
 
     from lerobot.configs.types import FeatureType
@@ -1793,6 +1887,40 @@ def main():
         type=str,
         default="cpu",
         help="phase 분류기 device (cpu 권장 — 연산량 미미, GPU 경합 회피).",
+    )
+    parser.add_argument(
+        "--failure-detector",
+        type=str,
+        default=None,
+        metavar="CKPT.pt",
+        help=(
+            "online failure detector ON: failure_detector_sim.py 가 저장한 "
+            "detector_<arm>_<model>_<slug|all>.pt 를 얹어 /act_with_features 응답에 "
+            "features.failure_score / features.failure_fired 를 노출. "
+            "--groot-dit-capture-layers(ckpt 의 layer 포함) + "
+            "--groot-dit-token-pool all_token_full 필요."
+        ),
+    )
+    parser.add_argument(
+        "--failure-alpha",
+        type=float,
+        default=0.2,
+        help="발화 임계 δ_t 의 CP 유의수준(=FPR 목표). ckpt cp_bands 에 있는 값이어야 함.",
+    )
+    parser.add_argument(
+        "--failure-task",
+        type=str,
+        default=None,
+        help=(
+            "cp_bands 에서 쓸 task slug (mixed arm 은 밴드가 task 별 보정 — 필수). "
+            "밴드가 하나뿐이면 생략 가능."
+        ),
+    )
+    parser.add_argument(
+        "--failure-device",
+        type=str,
+        default="cpu",
+        help="detector device (cpu 권장 — 연산량 미미, GPU 경합 회피).",
     )
     parser.add_argument(
         "--groot-vl-capture-point",

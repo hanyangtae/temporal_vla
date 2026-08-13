@@ -469,6 +469,9 @@ DRAWER_TERMINAL_PHASES = frozenset({"open-done"})
 
 
 class DrawerPhaseLabeler:
+    # 다른 전용 라벨러(Fridge/Mixer/Rack)와 같은 이름으로 노출 — phase 어휘를 밖에서
+    # 읽을 수 있어야 online gating 이 serve 등록 phase 와 대조할 수 있다.
+    PHASE_RANK = _DRAWER_PHASE_RANK
     NEAR_HANDLE_TH = 0.10   # m — gripper site ↔ handle body
     DQ_EPS = 1e-3           # 스텝당 열림비율 변화 (당김/되밀림 판정)
     DD_EPS = 3e-3           # 스텝당 gripper-handle 거리 변화 (재접근/후퇴 판정)
