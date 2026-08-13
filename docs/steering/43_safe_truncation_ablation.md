@@ -1,0 +1,99 @@
+# 43. SAFE detector 학습 길이 절제 ablation (rollout vs phase 단위)
+
+2026-08-13, branch `exp/safe-length-ablation` (feat/online-gated-pipe에서 분기),
+스크립트 `scripts/analysis/grid_phase/failure_detector_sim.py` (`--truncate-train`).
+데이터 = grid 930판 segA shard (승준), 3 seed(scene split 회전) × 3 절제 조건 × LSTM/MLP.
+
+## 질문
+
+failure detector 학습 시퀀스를 길이 절제하면 성능이 어떻게 변하나?
+(full 학습은 "길면 실패"만 배울 위험 — seen18 검증에서 length-only AUROC 0.996 동급 사고)
+
+- `none`: full 시퀀스 학습 (기준)
+- `rollout`: task별 W = 성공 ep 길이 ceil(μ+1σ)로 train·calib 절단
+- `phase-gt`: GT phase별 dwell cap(성공 dwell ceil(μ+1σ), fit 규약과 동일)으로 절단
+- **test는 항상 full** (온라인 현실 모사). 지표: TPR/FPR(functional-CP 발화),
+  `tpr_before_W`(W 이전 발화율 = timer가 원리상 모르는 시점의 조기 검출), 고정 판정시각
+  AUROC(td, 종료판 제외), timer 기준선(t≥W 발화).
+
+## 결과
+
+### 1) 총괄(pooled pertask, α=0.2, 3-seed 평균) — 절제는 검출률을 바꾸지 않는다
+
+| 조건 | TPR | FPR | td10 |
+|---|---|---|---|
+| none | 0.92 | 0.31 | 0.77 |
+| rollout | 0.91 | 0.32 | 0.78 |
+| phase-gt | 0.91 | 0.38 | 0.74 |
+| timer(길이만) | 1.00 | 0.12 | — |
+
+seed0 단독에서 보였던 FPR 개선(0.60→0.42)은 **3-seed에서 비재현** — pooled 검출 성능은
+절제 무관. (pooled 행은 task 혼합이라 참고치.)
+
+### 2) 일관 효과는 조기성(preW) — 절제가 발화 시점을 앞당긴다
+
+3-seed 평균, pertask lstm best-α (TPR/FPR | preW):
+
+| task | none | rollout | phase-gt |
+|---|---|---|---|
+| OpenDrawer/left | 0.93/0.10 · pW **0.17** | 1.00/0.13 · pW **0.83** | 1.00/0.11 · pW **1.00** |
+| PPCC/bread | 0.89/0.35 · pW 0.48 | 0.96/0.31 · pW 0.85 | 0.92/**0.23** · pW **0.92** |
+| PPCC/marshmallow | 1.00/0.22 · pW 0.94 | 1.00/0.23 · pW 1.00 | 1.00/**0.11** · pW 1.00 |
+| PPCC/candle | 1.00/0.14 · pW 0.33 | 1.00/0.12 · pW 0.58 | 1.00/0.17 · pW 0.58 |
+| DishwasherRack/out | 0.67/0.00 · pW 0.33 | 0.67/0.00 · pW 0.48 | 0.55/0.00 · pW 0.48 |
+| OvenRack/out | 0.97/**0.00** · pW 0.62 | 1.00/0.25 · pW 1.00 | 0.94/0.00 · pW **0.24** |
+| OpenDrawer/right | 1.00/0.49 | 0.67/0.47 | 1.00/0.47 — 전 조건 불량 |
+| PPCC/jug | FPR 1.00 (succ 2판) — 판정 불가 |
+
+- **실행표류형 task(drawer-left·PPCC)에서 절제가 preW를 크게 올림** (drawer-left
+  0.17→1.00, bread 0.48→0.92) — TPR/FPR 유지한 채 발화만 이른 시점으로. 기전: full 학습
+  score는 길이에 따라 서서히 오르는 성분을 포함 → CP 밴드도 같이 부풀어 발화가 늦음;
+  절제하면 score 상승이 feature 이벤트에 묶임.
+- **phase-gt ≥ rollout**: preW 동급~우세 + 일부 task FPR 추가 감소(marshmallow 0.11,
+  bread 0.23). phase-dwell 초과 성분까지 지워도 검출이 안 죽음 = 남는 신호는 feature 기반.
+- **초기조건형 OvenRack엔 절제가 해로움** (rollout FPR 0→0.25, phase-gt preW 0.62→0.24)
+  — 41 라운드의 초기조건형/실행표류형 이분과 정합: 초기조건형 신호는 절제로 지워지는
+  구간(초반 궤적 전체)에 있음.
+
+### 3) OvenRack detector는 scene에 따라 방향이 뒤집힌다 — online 후보 제외
+
+조기 td AUROC(lstm): seed0(test scene 7,9) td5–td20 **0.02~0.10(역전)**,
+seed2(test scene 0,5) td5 **1.00(정방향)**. held-out scene에 따라 부호가 뒤집힘 =
+cross-scene 방향 일반화 실패(scene-특이 feature 학습). within-scene 0.86–0.90(41 §)과
+모순 아님 — scene 잔차화 없이는 detector로 못 씀.
+
+### 4) timer가 강한 기준선
+
+실패=timeout이라 "W 넘으면 발화"만으로 TPR 1.00/FPR 0.12. detector의 존재 이유는
+**W보다 60~85 record 이른 발화**뿐이며, timer FPR(0.12)를 이기면서 이른 task는
+dishwasher(0.00)·drawer-left(0.10~0.13)·marshmallow(phase-gt 0.11) 정도.
+
+## Confound 감사
+
+| 게이트 | 판정 | 근거 |
+|---|---|---|
+| 길이 | 통과(설계) | test full-seq, 판정은 fixed-td(종료판 제외)·preW·timer 병기 |
+| task identity | 통과 | pertask 행만 판정, pooled는 참고 |
+| instruction | N/A | slug당 canonical 1종 |
+| in-sample | 통과 | scene 단위 train/calib/test 분리(TSV 기록), 3 seed 회전 |
+| pooling | 통과 | per-record 시퀀스 |
+| phase/dwell | 실험 대상 | phase-gt 조건이 dwell 통제 자체 |
+| 관찰≠인과 | 라벨 | detector performance(시뮬) — 개입 효과 아님 |
+| scene-국소 | 부분 | test 2 scene×3 seed; drawer-left 실패 2~4판/seed 소표본, jug·coffee·apple 판정 불가 |
+
+## 파이프 함의 (exp6)
+
+1. detector 학습은 **절제 기본값 채택** 권고 — phase-gt(fit과 동일 dwell 규약) 우선,
+   rollout이 차선. 이유는 검출률이 아니라 **조기성**(개입 시간 예산).
+2. 단 OvenRack(초기조건형)은 절제 없이 + scene 잔차화 검토, 또는 detector 대신
+   phase-gating 상시 arm으로.
+3. "phase별 감지"는 불필요 확인 — phase는 개입 라우팅에서만. detector는 task당 1개.
+4. eval에서 timer arm(t≥W 개입)을 반드시 대조로 — detector 개입의 부가가치는
+   "이른 개입이 SR을 더 살리는가"로만 증명됨.
+
+## 산출물
+
+- 로컬: `outputs/analysis/grid_phase/detector_trunc{,_s1,_s2}/<mode>/sim_summary.tsv`
+  (+sim_detail.json, ckpt .pt)
+- 승준: `~/workspace/temporal_vla_safeablate/outputs/analysis/grid_phase/` (동일)
+- 판독 스크립트: 세션 tmp (일회성) — 표는 본 문서에 고정
