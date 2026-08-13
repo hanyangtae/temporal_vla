@@ -152,6 +152,7 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
     online_fut)    printf '%s/%s/%s_fut\n'    "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     online_pl)     printf '%s/%s/%s_pl\n'     "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     oracle_always) printf '%s/%s/%s\n'        "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
+    oracle_always_pl) printf '%s/%s/%s_pl\n'  "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
   esac
 }
@@ -382,7 +383,7 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
   local out_host="${10}" mode=()
   case "$arm" in
     online|online_fut|online_pl) mode=(--gated-steering-mode online) ;;
-    oracle_always) mode=(--gated-steering) ;;
+    oracle_always|oracle_always_pl) mode=(--gated-steering) ;;
     # base: detector ON + steering 미등록 → online 모드라도 전 스텝 identity.
     # failure_scores/trigger_step 사이드카 기록이 목적 (α 사후 sweep 용).
     base) mode=(--gated-steering-mode online) ;;
