@@ -118,7 +118,9 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
     *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
   esac
 }
-arm_uses_detector() { case "$1" in online|online_fut|online_pl) return 0 ;; *) return 1 ;; esac; }
+# base 도 detector 를 태운다(steering 미등록 → 전부 identity): eval 대역 failure_scores 를
+# sidecar 에 남겨 α sweep(발화 시점·오발화율)을 GPU 재실행 없이 사후 재계산하기 위함.
+arm_uses_detector() { case "$1" in base|online|online_fut|online_pl) return 0 ;; *) return 1 ;; esac; }
 
 # NPZ base 스캔 → PHASES / LAYER 확정.
 # ★ command substitution 안에서 대입하면 subshell 에 갇혀 태그가 빈다 (exp5-2 실측) —
@@ -303,7 +305,9 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
   case "$arm" in
     online|online_fut|online_pl) mode=(--gated-steering-mode online) ;;
     oracle_always) mode=(--gated-steering) ;;
-    base) mode=() ;;
+    # base: detector ON + steering 미등록 → online 모드라도 전 스텝 identity.
+    # failure_scores/trigger_step 사이드카 기록이 목적 (α 사후 sweep 용).
+    base) mode=(--gated-steering-mode online) ;;
   esac
   local cmd=(docker exec -e MUJOCO_GL=egl -e PYTHONPATH="$PYPATH" robocasa
     python "${REPO_CONT}/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py"
