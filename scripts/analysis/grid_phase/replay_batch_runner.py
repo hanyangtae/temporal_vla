@@ -18,7 +18,8 @@ stem 은 건너뛴다(**resume**).
       --bundle-dir <dir> --out-dir <dir> --gpu 0 --workers 6 \
       >> <log> 2>&1 &
 
-완료 판정: 로그 마지막 줄 `KANU_REPLAY_ALL_DONE`, 또는 results.jsonl 행수 == 번들 수.
+완료 판정: 1패스 끝에 `KANU_REPLAY_PASS_DONE`. 219판 전체 완주 마커(`KANU_REPLAY_ALL_DONE`)는
+이 러너를 반복 호출하는 `replay_orchestrate_kanu.sh` 가 찍는다.
 """
 from __future__ import annotations
 
@@ -87,8 +88,8 @@ def main() -> int:
     ap.add_argument("--timeout", type=int, default=3600)
     args = ap.parse_args()
 
-    bdir = Path(args.bundle_dir)
-    out_dir = Path(args.out_dir)
+    bdir = Path(args.bundle_dir).resolve()      # 컨테이너 경로 변환에 절대경로 필요
+    out_dir = Path(args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     res_path = out_dir / "results.jsonl"
 
@@ -151,7 +152,7 @@ def main() -> int:
           f"error={n_err}", flush=True)
     if errs:
         print("[batch] 미교체 대상(발산/실패): " + ", ".join(sorted(errs)), flush=True)
-    print("KANU_REPLAY_ALL_DONE", flush=True)
+    print("KANU_REPLAY_PASS_DONE", flush=True)   # 전체 완주 마커는 orchestrate 쪽(ALL_DONE)
     return 0
 
 
