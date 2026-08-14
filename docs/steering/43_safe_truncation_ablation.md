@@ -124,6 +124,14 @@ phase-gt 학습 모델은 "phase에 오래 머무는 구간"을 학습에서 본
 4. eval에서 timer arm(t≥W 개입)을 반드시 대조로 — detector 개입의 부가가치는
    "이른 개입이 SR을 더 살리는가"로만 증명됨.
 
+## 후속 후보 (미실행)
+
+- **진행도-사분위 절제**: 연산자-설계 세션 실측(2026-08-14, Notion 3bc63918…)에 따르면 GT
+  phase 내부에도 1차원 진행 경로가 있음(경로/관반경 1.3~3.5배, held-out 슬로프 +1.2,
+  실패=경로 위 정체). phase-gt보다 fine한 절제 입도로 "경로 위 진행도 bin"(`--truncate-train
+  progress-quantile` 류)이 unsupervised cluster보다 순서·단조 제약이 성립하는 후보.
+  41의 intrinsic k8 우위의 실체일 가능성.
+
 ## 산출물
 
 - 로컬: `outputs/analysis/grid_phase/detector_trunc{,_s1,_s2}/<mode>/sim_summary.tsv`
