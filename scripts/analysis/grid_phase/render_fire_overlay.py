@@ -1,9 +1,29 @@
 #!/usr/bin/env python
 """detector 발화 오버레이 영상 렌더 (docs/steering/43 후속 B-2).
 
-`export_fire_scores.py` 의 JSON + 수집 영상(video.mp4) → 발화 시점을 눈으로 볼 수 있는
-mp4. 상단 배너(task/instruction/scene·noise/실제 라벨/절제 mode), 좌측 패널에 실패
-score 곡선 + CP 밴드 δ_t, 발화 이후 프레임 전체 빨간 테두리.
+`export_fire_scores.py` 의 JSON + 수집 영상 → 발화 시점을 눈으로 볼 수 있는 mp4.
+
+## ★ 레이아웃 원칙 (재제작 사유)
+
+**장면 픽셀 위에는 어떤 텍스트·도형도 그리지 않는다.** 이전 판은 수집 영상 일부(kanu
+머신분)가 캡션을 장면 하단에 구워 넣은 상태였고, 오버레이까지 겹쳐 로봇이 가렸다.
+지금은 캔버스를 밖으로 확장한다:
+
+    ┌───────────────────────────────────────┐ ← 여백(MARGIN) 안에만 빨간 테두리
+    │ 배너 (task / instruction / GT / mode) │  ← 장면 밖 (위)
+    ├──────────┬────────────────────────────┤
+    │ score    │                            │
+    │ 패널     │   장면 프레임 (무손상)     │
+    │ (밖, 좌) │                            │
+    └──────────┴────────────────────────────┘
+    발화 이후 빨간 굵은 선은 **바깥 여백 안에서만** 그려진다. 테두리 두께 = 여백 폭이라
+    장면·패널·배너 어느 것도 덮지 않는다.
+
+입력 영상은 두 종류다 (`--source-mode auto` 가 높이로 판별):
+- 높이 > 256: 프레임 **위**에 캡션 스트립이 덧붙은 판본 → 위 (h-256) 행을 잘라내
+  클린 256px 장면만 사용. 장면 무손상.
+- 높이 == 256: 캡션이 장면 하단에 구워진 판본 → crop 불가. `replay_clean_video.py`
+  로 재생성한 클린 영상(`--clean-root/<stem>.mp4`)을 대신 쓴다. 없으면 skip.
 
 ## ★ frame ↔ record 정렬 근거 (코드 실측)
 
@@ -29,6 +49,7 @@ score 곡선 + CP 밴드 δ_t, 발화 이후 프레임 전체 빨간 테두리.
         scripts/analysis/grid_phase/render_fire_overlay.py \
         --json outputs/analysis/grid_phase/fire_videos/fire_scores.json \
         --video-root outputs/analysis/grid_phase/fire_videos/videos \
+        --clean-root outputs/analysis/grid_phase/fire_videos/clean_videos \
         --out-dir outputs/analysis/grid_phase/fire_videos
 """
 from __future__ import annotations
@@ -41,9 +62,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-PANEL_W = 300          # 좌측 score 패널 폭
-BANNER_H = 78          # 상단 배너 높이
-BORDER = 14            # 발화 후 빨간 테두리 두께
+SCENE_H = 256          # 수집 카메라 타일 높이 (768x256 = res256 3-view 가로 concat)
+PANEL_W = 300          # 좌측 score 패널 폭 (장면 밖)
+BANNER_H = 84          # 상단 배너 높이 (장면 밖)
+BORDER = 12            # 발화 후 테두리 두께 (= 바깥 여백 폭, 장면을 덮지 않게)
+MARGIN = BORDER + 2    # 캔버스 사방 여백 — 테두리 전용 영역 (테두리보다 넉넉하게)
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 COL_BG = (24, 24, 24)
 COL_SCORE = (80, 220, 90)      # BGR: score = 초록
@@ -100,8 +123,29 @@ def draw_panel(h: int, scores, band, t_now: int, t_fire, T: int) -> np.ndarray:
     return panel
 
 
-def render_one(rec: dict, mode: str, video_path: Path, out_path: Path, collect: dict,
-               fps: int, check_align: bool, align_tol: int) -> dict:
+def resolve_source(rec: dict, video_root: Path, clean_root: Path | None,
+                   stem: str) -> tuple[Path | None, str, int, str]:
+    """(영상 경로, 처리방식, crop_top, 사유). 장면을 가리는 소스는 절대 쓰지 않는다."""
+    raw = video_root / rec["video"]
+    if not raw.exists():
+        return None, "missing", 0, f"원본 없음: {raw}"
+    cap = cv2.VideoCapture(str(raw))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
+    if h > SCENE_H:
+        # 캡션이 장면 **위** 스트립에 있는 판본 → 스트립만 잘라내면 장면 무손상.
+        return raw, "crop", h - SCENE_H, f"상단 스트립 {h - SCENE_H}px crop"
+    # 높이 == 256: 캡션이 장면 하단에 구워짐 → replay 로 재생성한 클린 영상만 허용.
+    if clean_root is not None:
+        clean = clean_root / f"{stem}.mp4"
+        if clean.exists():
+            return clean, "replay", 0, "burn-in 원본 → replay 클린 영상 사용"
+    return None, "blocked", 0, ("하단 burn-in 캡션 원본인데 클린 replay 영상이 없음 "
+                                f"({clean_root}/{stem}.mp4)")
+
+
+def render_one(rec: dict, mode: str, video_path: Path, crop_top: int, out_path: Path,
+               collect: dict, fps: int, check_align: bool, align_tol: int) -> dict:
     md = rec["modes"][mode]
     scores = [float(v) for v in md["scores"]]
     band = [float(v) for v in md["band"]]
@@ -126,8 +170,10 @@ def render_one(rec: dict, mode: str, video_path: Path, out_path: Path, collect: 
     ok, frame = cap.read()
     if not ok:
         raise SystemExit(f"프레임 0 읽기 실패: {video_path}")
+    frame = frame[crop_top:]
     fh, fw = frame.shape[:2]
-    out_w, out_h = fw + PANEL_W, fh + BANNER_H
+    out_w, out_h = MARGIN * 2 + PANEL_W + fw, MARGIN * 2 + BANNER_H + fh
+    sx, sy = MARGIN + PANEL_W, MARGIN + BANNER_H     # 장면 좌상단
     writer = cv2.VideoWriter(str(out_path), cv2.VideoWriter_fourcc(*"mp4v"), fps,
                              (out_w, out_h))
     if not writer.isOpened():
@@ -139,25 +185,34 @@ def render_one(rec: dict, mode: str, video_path: Path, out_path: Path, collect: 
     while ok:
         t = record_of_frame(f_idx, T, spr, nas)
         canvas = np.full((out_h, out_w, 3), COL_BG, np.uint8)
-        canvas[BANNER_H:, PANEL_W:] = frame
-        canvas[BANNER_H:, :PANEL_W] = draw_panel(fh, scores, band, t, t_fire, T)
+        # 장면은 **그대로** 붙인다 (이후 어떤 그리기도 이 영역 밖에서만 일어난다).
+        canvas[sy:sy + fh, sx:sx + fw] = frame
+        canvas[sy:sy + fh, MARGIN:MARGIN + PANEL_W] = draw_panel(
+            fh, scores, band, t, t_fire, T)
 
         fired = t_fire is not None and t >= t_fire
-        if fired:
-            cv2.rectangle(canvas, (0, 0), (out_w - 1, out_h - 1), COL_FIRE, BORDER)
-
         ph = phase_names.get(str(rec["phase_code"][t]), str(rec["phase_code"][t]))
         line1 = f"{rec['task']}  |  {rec['instruction']}  |  s{rec['scene']}n{rec['noise']}"
         line2 = (f"GT: {lab}   mode={mode}   t_fire="
                  f"{'-' if t_fire is None else t_fire}/{T-1}   t={t}  phase={ph}")
-        cv2.putText(canvas, line1, (14, 28), FONT, 0.62, (245, 245, 245), 1, cv2.LINE_AA)
-        cv2.putText(canvas, line2, (14, 58), FONT, 0.56,
+        cv2.putText(canvas, line1, (MARGIN + 14, MARGIN + 30), FONT, 0.62,
+                    (245, 245, 245), 1, cv2.LINE_AA)
+        cv2.putText(canvas, line2, (MARGIN + 14, MARGIN + 62), FONT, 0.56,
                     COL_FIRE if fired else (200, 200, 200), 1, cv2.LINE_AA)
         if fired:
-            cv2.putText(canvas, "FIRED", (out_w - 110, 30), FONT, 0.8, COL_FIRE, 2,
-                        cv2.LINE_AA)
+            cv2.putText(canvas, "FIRED", (out_w - MARGIN - 118, MARGIN + 34), FONT, 0.8,
+                        COL_FIRE, 2, cv2.LINE_AA)
+            # 테두리는 여백(MARGIN) 안에서만 — 두께 BORDER, 중심선 BORDER/2 → 0..BORDER px.
+            cv2.rectangle(canvas, (BORDER // 2, BORDER // 2),
+                          (out_w - 1 - BORDER // 2, out_h - 1 - BORDER // 2),
+                          COL_FIRE, BORDER)
+        # 불변식: 장면 영역은 원본과 **픽셀 단위로 동일**해야 한다 (텍스트·테두리 침범 0).
+        if not np.array_equal(canvas[sy:sy + fh, sx:sx + fw], frame):
+            raise SystemExit(f"{out_path.name} frame {f_idx}: 장면 영역이 오염됨")
         writer.write(canvas)
         ok, frame = cap.read()
+        if ok:
+            frame = frame[crop_top:]
         f_idx += 1
 
     writer.release()
@@ -172,10 +227,13 @@ def main() -> int:
     ap.add_argument("--json", required=True)
     ap.add_argument("--video-root", required=True,
                     help="JSON 의 video 상대경로 기준 루트 (grid 루트에서 pull 한 사본)")
+    ap.add_argument("--clean-root", default=None,
+                    help="replay_clean_video.py 산출 디렉터리 (<stem>.mp4)")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--modes", default=None, help="기본 = JSON config.modes 전부")
     ap.add_argument("--only", default=None,
                     help="task 필터 (콤마 구분, 부분 일치)")
+    ap.add_argument("--stems", default=None, help="stem 필터 (콤마 구분, 완전 일치)")
     ap.add_argument("--fps", type=int, default=None, help="기본 = 수집 video_fps")
     ap.add_argument("--check-align", action=argparse.BooleanOptionalAction, default=True)
     ap.add_argument("--align-tol", type=int, default=2)
@@ -189,29 +247,40 @@ def main() -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     only = [s.strip() for s in args.only.split(",")] if args.only else None
+    stems = [s.strip() for s in args.stems.split(",")] if args.stems else None
+    clean_root = Path(args.clean_root) if args.clean_root else None
 
-    made = []
+    made, sources = [], []
     for rec in payload["episodes"]:
         if only and not any(o in rec["task"] for o in only):
             continue
-        vpath = Path(args.video_root) / rec["video"]
-        if not vpath.exists():
-            print(f"[skip] 영상 없음: {vpath}")
+        stem = f"{rec['task']}_s{rec['scene']}n{rec['noise']}"
+        if stems and stem not in stems:
             continue
+        vpath, how, crop_top, why = resolve_source(rec, Path(args.video_root), clean_root,
+                                                   stem)
+        sources.append({"stem": stem, "source": how, "crop_top": crop_top, "why": why,
+                        "path": None if vpath is None else vpath.name})
+        if vpath is None:
+            print(f"[skip] {stem}: {why}")
+            continue
+        print(f"[source] {stem}: {how} ({why})")
         for mode in modes:
             tag = "succ" if rec["succ"] else "fail"
-            name = (f"{rec['task']}_s{rec['scene']}n{rec['noise']}_{tag}_{mode}.mp4")
+            name = f"{stem}_{tag}_{mode}.mp4"
             outp = out_dir / name
-            align = render_one(rec, mode, vpath, outp, collect, fps,
+            align = render_one(rec, mode, vpath, crop_top, outp, collect, fps,
                                args.check_align, args.align_tol)
             tf = rec["modes"][mode]["t_fire"]
             print(f"[render] {name}  T={rec['T']} t_fire={tf} "
                   f"frames={align['written']} (기대 {align['expected_frames']}, "
                   f"diff {align['diff']})")
             made.append({"file": name, "task": rec["task"], "mode": mode,
-                         "t_fire": tf, "T": rec["T"], "succ": rec["succ"], **align})
+                         "t_fire": tf, "T": rec["T"], "succ": rec["succ"],
+                         "source": how, "crop_top": crop_top, **align})
     (out_dir / "render_index.json").write_text(
-        json.dumps(made, ensure_ascii=False, indent=1), encoding="utf-8")
+        json.dumps({"videos": made, "sources": sources}, ensure_ascii=False, indent=1),
+        encoding="utf-8")
     print(f"\n[render] {len(made)} 개 → {out_dir}")
     return 0
 
