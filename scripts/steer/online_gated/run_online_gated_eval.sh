@@ -6,7 +6,8 @@
 #   base           개입 없음 (serve steering 없음, detector 없음)
 #   online         setM_seg gated 등록 + serve --failure-detector
 #                  → collector --gated-steering-mode online (발화 전 off, 발화 후 phase-follow)
-#   online_fut     위와 동일하되 future-only 변형 NPZ (setM_seg_fut — make_seg_mask_variant.py)
+#   online_fut     위와 동일하되 future-only. setpoint_seg 는 변형 NPZ(setM_seg_fut —
+#                  make_seg_mask_variant.py), conceptor 계열은 같은 NPZ + token-select future
 #   online_pl      setM_seg_pl (라벨순열·dose-match 위약) + 같은 detector
 #   oracle_always  setM_seg gated 등록 + collector --gated-steering
 #                  (라벨러 phase 를 매 스텝 POST, latch 없이 처음부터 = 개입 상한)
@@ -49,6 +50,28 @@ NPZ_ROOT="${NPZ_ROOT:-outputs/steer/online_pipe}"   # <NPZ_ROOT>/<slug>/<NPZ_VAR
 # 연산자 변형 이름 (fit 산출물 디렉터리). s5m5 = scene 0–4 × noise 0–4 로 fit 한 판.
 # 변형 4종 = <V> / <V>_pl(위약) / <V>_fut(future-only) / <V>_fut_pl.
 NPZ_VARIANT="${NPZ_VARIANT:-setM_s5m5_seg}"
+
+# ── 연산자 계열 ───────────────────────────────────────────────────────────────
+# STEER_OP=setpoint_seg (기본, 기존 동작 불변) — setM 세그먼트 연산자.
+#   NPZ 경로 = <NPZ_ROOT>/<slug>/<NPZ_VARIANT>{,_pl,_fut,_fut_pl} (arm 마다 별도 트리),
+#   token-select 는 all 고정 (fit 이 토큰 위치별 s_t 를 냈다).
+# STEER_OP=conceptor — 수축형 행렬 연산자 (scripts/fit/fit_contraction_ops.py 산출:
+#   sconceptor | conceptor | varc). serve 의 op 이름은 셋 다 `conceptor` 이고, 어느
+#   연산자인지는 **디렉토리 층**으로 구분한다:
+#     <NPZ_ROOT>/<slug>/<NPZ_VARIANT>/<STEER_OP_NAME>{,_pl}/<phase>/dit_L{n}/
+#   α 는 fit 이 NPZ 키 alpha0_C_steer 에 구워 넣었으므로 serve 는 --steering-alpha 0.
+#   ★ online_fut(_pl) arm 은 **별도 NPZ 트리가 아니라 같은 NPZ + token-select future** 다
+#     (행렬 연산자는 세그먼트 마스크 자리가 없어 적용 토큰으로 future-only 를 표현).
+STEER_OP="${STEER_OP:-setpoint_seg}"                # setpoint_seg | conceptor
+STEER_OP_NAME="${STEER_OP_NAME:-}"                  # conceptor 계열 전용: sconceptor|conceptor|varc
+STEER_TOKEN_SELECT="${STEER_TOKEN_SELECT:-all}"     # conceptor 계열 기본 토큰 선택
+case "$STEER_OP" in
+  setpoint_seg) ;;
+  conceptor)
+    [ -n "$STEER_OP_NAME" ] || { echo "[online-gated] ABORT: STEER_OP=conceptor 는 STEER_OP_NAME (sconceptor|conceptor|varc) 필요" >&2; exit 2; } ;;
+  *) echo "[online-gated] ABORT: 알 수 없는 STEER_OP=${STEER_OP} (setpoint_seg|conceptor)" >&2; exit 2 ;;
+esac
+is_conceptor_family() { [ "$STEER_OP" = conceptor ]; }
 DETECTOR_CKPT="${DETECTOR_CKPT:-}"                  # 지정 시 전 slug 공통 (단일 slug 용)
 # slug 별 per-task ckpt 템플릿 (%SLUG% 치환). DETECTOR_CKPT 가 비어 있으면 이걸 사용.
 DETECTOR_CKPT_TMPL="${DETECTOR_CKPT_TMPL:-outputs/analysis/grid_phase/detector_sim/detector_pertask_lstm_%SLUG%.pt}"
@@ -146,6 +169,17 @@ NW=${#PORTS[@]}
 
 # ── arm 별 NPZ base / 모드 ────────────────────────────────────────────────────
 npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, base 는 빈 문자열)
+  if is_conceptor_family; then
+    # 행렬 연산자: 위약만 별도 트리, future arm 은 같은 NPZ (token-select 로 표현)
+    local root="${NPZ_ROOT}/${1}/${NPZ_VARIANT}/${STEER_OP_NAME}"
+    case "$2" in
+      base)                            printf '' ;;
+      online|online_fut|oracle_always) printf '%s\n'    "$root" ;;
+      online_pl|online_fut_pl|oracle_always_pl) printf '%s_pl\n' "$root" ;;
+      *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
+    esac
+    return 0
+  fi
   case "$2" in
     base)          printf '' ;;
     online)        printf '%s/%s/%s\n'        "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
@@ -156,6 +190,19 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
     oracle_always_pl) printf '%s/%s/%s_pl\n'  "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
   esac
+}
+
+# arm 별 적용 토큰. conceptor 계열의 _fut arm 만 future 세그먼트로 좁힌다
+# (setpoint_seg 는 fit 이 토큰 위치별 s_t 를 내므로 항상 all — 기존 동작 불변).
+token_select_for_arm() {  # arm
+  if is_conceptor_family; then
+    case "$1" in
+      online_fut|online_fut_pl) printf 'future\n' ;;
+      *) printf '%s\n' "$STEER_TOKEN_SELECT" ;;
+    esac
+  else
+    printf 'all\n'
+  fi
 }
 # base 도 detector 를 태운다(steering 미등록 → 전부 identity): eval 대역 failure_scores 를
 # sidecar 에 남겨 α sweep(발화 시점·오발화율)을 GPU 재실행 없이 사후 재계산하기 위함.
@@ -186,9 +233,12 @@ serve_flags_for() {  # slug arm → serve 추가 플래그 (scan_npz_base 선행
     [ "$SERVE_MODE" = host ] || serve_base="$(to_cont "$base")"
     # setpoint_seg 는 gated 경로(--steering-phase-npz-base) + token-select all 필수
     # (fit 이 전 토큰 위치별 s_t 를 냈다 — last_horizon 이면 좌표가 어긋난다).
+    # conceptor 계열은 같은 gated 경로 + --steering-alpha 0 (선택 α 가 NPZ 키에 구워짐).
     flags="--steering-phase-npz-base ${serve_base} --steering-phases ${PHASES}"
-    flags="${flags} --steering-layers ${LAYER} --steering-op setpoint_seg"
-    flags="${flags} --steering-beta ${STEER_BETA} --steering-token-select all"
+    flags="${flags} --steering-layers ${LAYER} --steering-op ${STEER_OP}"
+    flags="${flags} --steering-beta ${STEER_BETA}"
+    flags="${flags} --steering-token-select $(token_select_for_arm "$arm")"
+    is_conceptor_family && flags="${flags} --steering-alpha 0"
   fi
   if arm_uses_detector "$arm"; then
     local ckpt
@@ -273,6 +323,7 @@ log "serve ${NW}개 (gpus=${GPUS} × ${SERVES_PER_GPU}) ports=${PORTS[*]} mode=$
   echo "profile=${PROFILE}"
   echo "detector_ckpt=$(basename "${DETECTOR_CKPT:-none}") alpha=${FAILURE_ALPHA} layers=${DETECTOR_LAYERS}"
   echo "steer_beta=${STEER_BETA} npz_root=${NPZ_ROOT#"$MAIN_HOST"/} npz_variant=${NPZ_VARIANT}"
+  echo "steer_op=${STEER_OP} steer_op_name=${STEER_OP_NAME:-NA} token_select=${STEER_TOKEN_SELECT}"
   echo "ep_mode=${EP_MODE} n_ep_total=${N_EP_TOTAL}"
   if [ "$EP_MODE" = replay ]; then
     echo "eval_scenes=${EVAL_SCENES} eval_noises=${EVAL_NOISES}"

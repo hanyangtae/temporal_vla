@@ -1933,11 +1933,13 @@ def main():
     )
     parser.add_argument(
         "--steering-token-select",
-        choices=("last_horizon", "all"),
+        choices=("last_horizon", "all", "future"),
         default=None,
         help=(
             "Steering hook 의 적용 토큰. 미지정(None)=pathway 기본 보존"
-            "(dit=last_horizon, vl=all). exp3 COAST 정렬은 dit 에 all 을 명시 주입."
+            "(dit=last_horizon, vl=all). exp3 COAST 정렬은 dit 에 all 을 명시 주입. "
+            "future=future 세그먼트만([1:T−horizon]) — setM future_only 와 정렬한 "
+            "conceptor 계열 future arm (hook 은 이미 지원, steering_hooks.TOKEN_SELECTS)."
         ),
     )
     parser.add_argument(
