@@ -21,7 +21,7 @@ checklist. Attach the filled audit table to the report.
 | 4 | In-sample rescue | fit episodes/seeds ∩ eval episodes = ∅, verified from artifacts (metadata.json, rollout filenames) | multilayer ΔSR +0.20 → held-out −0.067 |
 | 5 | Rollout pooling | Per-record (per-timestep) features only; episode-mean pooling destroys the load-bearing phase axis | banned repo-wide |
 | 6 | Phase/dwell | Compare within dwell-matched windows; phase composition differs succ vs fail | transport separation collapsed when dwell-matched |
-| 7 | Observation ≠ causation | t-SNE/LDA/AUROC are geometry diagnostics. Performance claims require intervention (steering ΔSR re-measurement) | agent_spec §6 |
+| 7 | Observation ≠ causation | t-SNE/LDA/AUROC are geometry diagnostics. Performance claims require intervention (steering ΔSR re-measurement) | agent_spec §3 |
 | 8 | Scene-local ≠ general | Improvement on one cell/scene is not "steering works"; require scene-consistent replication before generalizing | bread local +, apple significantly harmed |
 
 ## Output contract
@@ -30,7 +30,7 @@ The report (user-facing output in Korean) must contain, in this order:
 
 1. Result numbers with n and evaluation scope.
 2. The audit table with pass / fail / N-A per gate + one-line evidence each.
-3. Claim-strength label (agent_spec §6): diagnostic evidence | detector
+3. Claim-strength label (agent_spec §3): diagnostic evidence | detector
    performance | policy performance | intervention effect.
 4. Results failing a gate are stated as "confounded — 판정 보류", never softened
    into "promising" or "encouraging".

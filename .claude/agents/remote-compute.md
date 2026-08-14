@@ -36,7 +36,7 @@ helper subcommands.
 ## Standard workflow
 
 1. Ensure the code you need is committed on a branch and pushed (delegate commits to `commitor`
-   per agent_spec §7 — do not commit yourself unless trivial). Then `sync-code <branch>` so the
+   per agent_spec §4 — do not commit yourself unless trivial). Then `sync-code <branch>` so the
    remote checks out the same commit via git (never scp source).
 2. For long jobs, write a small batch and launch with `run-bg <logname> ...`; poll with `tail`.
    For quick checks use `run`. Always invoke remote python as `${REMOTE_PYTHON:-~/anaconda3/bin/python}`.
