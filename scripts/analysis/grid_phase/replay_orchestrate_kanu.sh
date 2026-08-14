@@ -41,7 +41,9 @@ echo "[orch] start $(date -Is) work=$WORK gpu=$GPU workers=$WORKERS expect=$EXPE
 for i in $(seq 1 200); do
   pull
   n_b=$(ls "$BDIR"/*.bundle.pkl 2>/dev/null | wc -l)
-  extract_done=$(ssh -p "$PORT" "$T" "grep -c '\[extract\] 총' $RLOG 2>/dev/null || echo 0")
+  # 원격 추출 완료 여부: 완료 행("[extract] 총 …")이 찍혔는지. grep 실패(0건)도 0 으로.
+  extract_done=$(ssh -p "$PORT" "$T" "grep -c '\[extract\] 총' $RLOG 2>/dev/null; true" | head -1)
+  [[ "$extract_done" =~ ^[0-9]+$ ]] || extract_done=0
   echo "[orch] pass=$i bundles=$n_b extract_done=$extract_done $(date -Is)"
   if [[ "$n_b" -gt 0 ]]; then
     pass
