@@ -36,7 +36,9 @@ def load_rows(job_dir: Path) -> dict[int, dict]:
 
 
 def find_video(job_dir: Path, ep: int) -> Path | None:
-    hits = list(job_dir.glob(f"raw_rollouts/*/*/task0--ep{ep}--succ*.mp4"))
+    # annotate_eval_video.py 산출(annotated/)이 있으면 우선 — 상태 스트립 포함판
+    hits = (list(job_dir.glob(f"annotated/task0--ep{ep}--succ*.mp4"))
+            or list(job_dir.glob(f"raw_rollouts/*/*/task0--ep{ep}--succ*.mp4")))
     return hits[0] if hits else None
 
 
