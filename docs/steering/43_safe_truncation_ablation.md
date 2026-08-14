@@ -68,6 +68,23 @@ cross-scene 방향 일반화 실패(scene-특이 feature 학습). within-scene 0
 **W보다 60~85 record 이른 발화**뿐이며, timer FPR(0.12)를 이기면서 이른 task는
 dishwasher(0.00)·drawer-left(0.10~0.13)·marshmallow(phase-gt 0.11) 정도.
 
+### 5) 기전 분해 — 조기 발화는 dwell 초과가 아니라 내용 신호 (3-seed 합산)
+
+phase-gt 학습 모델은 "phase에 오래 머무는 구간"을 학습에서 본 적이 없으므로, 조기 발화가
+실은 "dwell cap 초과 = 학습 지지집합 이탈"이라는 dwell 신호 재활용일 가능성을 분해
+(`fire_phase_decomp.py`: 발화 순간의 현재-phase 누적 dwell vs cap, lstm pertask α=0.2):
+
+- pooled: 발화한 실패판 173개 중 **cap 초과 후 발화는 31%뿐**, median dwell/cap **0.57**
+  (성공 dwell 예산의 절반 시점에 발화) — none과 동일 수준(27%/0.57). → **dwell-OOD 기각,
+  발화의 ~70%는 dwell이 정상 범위일 때 내용으로 우는 것.**
+- 조기성 이득이 컸던 task일수록 내용 기전이 깨끗함: drawer-left over-cap **0%**(none은
+  62%) r0.36, bread 0% r0.55, marshmallow 0% r0.14 — 절제가 발화를 dwell 경계가 아니라
+  **정상-dwell 구간 안쪽으로** 당김.
+- OvenRack은 phase-gt에서 over-cap 44%·r0.93로 dwell 경계에 걸림 — 초기조건형에서
+  절제가 해로운 것과 정합.
+- 한계: dwell은 GT phase 기준 측정이며, 더 미세한 반복-패턴 신호 사용 가능성까지
+  배제하진 않음.
+
 ## Confound 감사
 
 | 게이트 | 판정 | 근거 |
