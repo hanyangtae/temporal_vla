@@ -85,6 +85,22 @@ phase-gt 학습 모델은 "phase에 오래 머무는 구간"을 학습에서 본
 - 한계: dwell은 GT phase 기준 측정이며, 더 미세한 반복-패턴 신호 사용 가능성까지
   배제하진 않음.
 
+### 6) 학습 데이터량·영상 확인 (`trunc_budget.py`, `export_fire_scores.py`+`render_fire_overlay.py`)
+
+- **데이터량**: 절제로 버려진 episode 0 (판 수 불변, 길이만 감소). 학습 record는 none 100%
+  → rollout 68.7% → phase-gt **57.6%** (task별 4~62% 감소, 실패 timeout 비율에 비례).
+  즉 phase-gt는 **가장 적은 데이터로 같은 검출률 + 더 나은 조기성** — 성능 차가 데이터량
+  이득이라는 해석은 성립 안 함 (단 mode 간 미세 차이와 데이터량의 완전 분리는 불가).
+- **오버레이 영상 27개** (9 ep × 3 mode, seed0 test, pertask lstm α=0.2):
+  `outputs/analysis/grid_phase/fire_videos/` — 상단 instruction·좌측 score/밴드·발화 후
+  빨간 테두리. frame↔record 정렬은 수집 규약(5 step/record, 2 step/frame)으로 검증
+  (27개 전부 기대 frame 수 일치).
+  - 관찰: 성공판 오발화가 none은 3/3 발화 vs rollout/phase-gt는 대체로 억제(표본 3판 —
+    집계 FPR은 mode 무관이므로 과일반화 금지). drawer-left s2n0은 mode 간 발화가
+    15↔42로 갈림(판별 변동 큼).
+  - **OvenRack phase-gt는 t_fire=1(첫 step 상시 발화)** — §3의 scene 역전과 함께,
+    OvenRack에서 절제 detector는 밴드가 사실상 붕괴. 제외 판정 재확인.
+
 ## Confound 감사
 
 | 게이트 | 판정 | 근거 |
