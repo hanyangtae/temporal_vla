@@ -72,7 +72,10 @@ def wrap_groot_robocasa_eval_env(
             video_dir=Path(wrapper_configs.video.video_dir),
             steps_per_render=wrapper_configs.video.steps_per_render,
             max_episode_steps=wrapper_configs.video.max_episode_steps,
-            overlay_text=wrapper_configs.video.overlay_text,
+            # choke point 강제 OFF: upstream wrapper 의 overlay 는 프레임 하단 장면
+            # 위에 caption 을 구워 복구 불가(2026-08 kanu 219판 사고). 호출측 설정과
+            # 무관하게 항상 클린 영상 — instruction 은 ep_meta/사이드카에만 남긴다.
+            overlay_text=False,
         )
 
     return MultiStepWrapper(
