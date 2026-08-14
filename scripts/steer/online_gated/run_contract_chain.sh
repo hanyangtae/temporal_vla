@@ -18,7 +18,8 @@ common=(
 )
 OUT=outputs/eval/robocasa/groot_n15/og_contract
 
-env "${common[@]}" GPUS="$GPU" PORT_BASE=8700 STEER_OP_NAME=sconceptor \
+# GPU 는 호출자가 명시 배정 — 잔여/동료 러너와의 busy 게이트 경합을 전부 우회
+env "${common[@]}" GPUS="$GPU" ALLOW_BUSY_GPU=1 PORT_BASE=8700 STEER_OP_NAME=sconceptor \
   OUT_ROOT=$OUT/sconceptor bash "$RUNNER" &
 A=$!
 # 같은 GPU 를 두 러너가 공유 — 두 번째부터는 busy 게이트 우회 (합산 6 serve = A100 규칙)
