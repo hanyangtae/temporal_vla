@@ -401,6 +401,10 @@ def main() -> None:
     ap.add_argument("--cells-tsv", type=Path, default=None,
                     help="정본 fit cell manifest (기본 "
                          "outputs/steer/online_pipe/manifests/<slug>_s5m5.tsv)")
+    ap.add_argument("--cell-scenes", default=None,
+                    help="manifest 대신 명시 셀: scene 범위 (예 0-9). --cell-noises 와 쌍. "
+                         "설계 판정(c): 게이트 검증 체제 = s0-9 × n0-4 (44 문서 개정)")
+    ap.add_argument("--cell-noises", default=None, help="noise 범위 (예 0-4)")
     ap.add_argument("--out-dir", type=Path, default=None,
                     help="기본 outputs/steer/online_pipe/<slug>/condg_s5m5/")
     ap.add_argument("--variants", default=DEFAULT_VARIANTS,
@@ -426,7 +430,18 @@ def main() -> None:
     out_dir = (args.out_dir or
                Path(f"outputs/steer/online_pipe/{args.slug}/condg_s5m5")).expanduser()
 
-    cells, cells_mode = load_fit_cells(cells_tsv)
+    if args.cell_scenes is not None or args.cell_noises is not None:
+        if not (args.cell_scenes and args.cell_noises):
+            raise SystemExit("--cell-scenes 와 --cell-noises 는 쌍으로 지정")
+
+        def _rng(spec: str) -> list[int]:
+            a, b = (spec.split("-") + [spec])[:2]
+            return list(range(int(a), int(b) + 1))
+
+        cells = {(s, n) for s in _rng(args.cell_scenes) for n in _rng(args.cell_noises)}
+        cells_mode = f"explicit_s{args.cell_scenes}_n{args.cell_noises}"
+    else:
+        cells, cells_mode = load_fit_cells(cells_tsv)
     eps = load_episodes(args.slug, grid_root, cells, args.layer, args.denoise_step)
     if not eps:
         raise SystemExit(f"fit cell 에 해당하는 rollout 0개 (slug={args.slug})")
