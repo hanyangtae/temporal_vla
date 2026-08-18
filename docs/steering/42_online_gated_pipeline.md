@@ -187,6 +187,11 @@ GPU와 serve GPU를 분리할 수 있는 다중 GPU 머신에서만. ③ 마시�
 정합본으로 채택(index dedup 1020→931행, s8n5·s8n7·s9행 11셀만 pdk본 잔존). 진단 도구:
 `smoke_probe.py`(bit-identity)·상수액션 env 테스트(A/A 러너 diag_aa).
 
+**후속 조치 (08-18, 사용자 지시)**: pdk 수집 원본 전체 삭제 — 승준 HDD
+`grid/{979d,b805}/dongkyu-MS-7D43/` 68.4GB(마시멜로 100 + OvenRack 100) + pdk 로컬
+staging·diag_aa. index에서 pdk 행 제거(931→820행). 파생 산출물(detector·feature npz·판정
+sidecar)은 유지. OvenRack은 v2에서 15×15 전체 재수집, 마시멜로 결손 11셀은 kanu가 채운다.
+
 ## 5. 재현 좌표
 
 - 러너: `scripts/steer/online_gated/run_online_gated_eval.sh` (EP_MODE=replay 기본,
