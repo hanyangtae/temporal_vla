@@ -16,11 +16,16 @@
   개입(serve)   m > τ 일 때만  d̂ = normalize(φ̃W_f − φ̃W_s),
                 h̃′ = h̃ − β·⟨h̃ − φ̃W_s, d̂⟩·d̂
 
-등록 게이트 (44 §2): held-out 에서 **고정B margin AUROC > 길이단독 AUROC (strict)** 이고
-양 클래스 train episode ≥ 15 일 때만 registered=True. 미달 cell 은 registered=False 로
-기록만 하고 serve 는 무시(identity). B = max(3, train 성공 dwell 25퍼센타일),
-τ = held-out 성공 episode 고정B margin 의 90퍼센타일. 배포 연산자 = train-split W +
-held-out τ (재적합 없음).
+등록 게이트 (44 §2, **개정 — 5-seed split CV**):
+  · 배포 W_s/W_f 와 중심화 stats 는 **전체 fit 셋**으로 fit 한다 (split 무관).
+  · 게이트는 seed 0..K-1 (기본 K=5) 각각 scene-층화 6:4 split 로 임시 W 를 학습해
+    held-out 고정B margin AUROC 와 길이단독 AUROC 를 얻고,
+      등록 = margin AUROC **중앙값 > 길이단독 중앙값** AND **과반(5 중 3) seed 에서 margin>길이**.
+  · 경성 표본 하한 = 전체 fit 셋 클래스당 episode ≥ 8 (미달이면 registered=False).
+    클래스당 < 15 면 등록하되 small_sample=True 딱지를 붙인다.
+  · τ = 전 seed held-out 성공 episode 고정B margin 을 **pool** 한 분포의 90퍼센타일.
+    B = seed 별 B (train 성공 dwell 25퍼센타일, max(3,·)) 의 중앙값(int) — 진단용.
+미달 cell 은 registered=False 로 기록만 하고 serve 는 무시(identity).
 
 변형 (44 §3):
   condg     처치.
@@ -36,6 +41,7 @@ cond_margin.py 대비 차이 (전부 44 문서가 요구한 것):
   3. phase 별 rng 를 (seed, crc32(phase)) 로 고정 — 처치/위약이 **같은 split** 을 쓰게
      하기 위함 (cond_margin 은 phase 순서에 의존하는 단일 rng 스트림).
   4. AUROC 를 3종(고정B margin / 길이단독 / record) 다 산출하고 등록 판정에 쓴다.
+  5. 게이트가 단일 split 이 아니라 5-seed CV 이고, 배포 W 는 전체 셋 fit 이다 (위 참조).
   전처리·릿지·B·margin·auroc 함수는 라인 단위로 동일하다.
 
 사용 (승준 노드, pkl 있는 곳):
@@ -83,8 +89,11 @@ DEFAULT_VARIANTS = "condg,condg_pl,condg_hs"
 FALLBACK_CELLS = {(s, n) for s in range(5) for n in range(5)}   # s5m5
 MIN_PHASE_RECORDS = 4       # cond_margin: episode 당 phase record 4개 미만이면 제외
 MIN_EPS_PER_CLASS = 7       # cond_margin: 클래스당 episode 7 미만이면 phase 자체를 건너뜀
-MIN_TRAIN_EPS = 15          # 44 §2 최소 표본 (등록 게이트)
+MIN_TRAIN_EPS = 15          # 44 §2 권장 표본 — 미달이면 등록하되 small_sample 딱지
+HARD_MIN_EPS = 8            # 44 §2 개정: 전체 fit 셋 클래스당 episode 경성 하한
+GATE_SEEDS = 5              # 게이트 CV split seed 수 (0..GATE_SEEDS-1)
 TRAIN_FRAC = 0.6
+GATE_SCHEME = "cv5_median_majority"
 CELL_RE = re.compile(r"/s(\d+)/n(\d+)/")
 SPEC = "44"
 
@@ -227,10 +236,105 @@ def scene_stratified_permute(eps: list[dict], seed: int) -> list[int]:
     return out
 
 
+# ------------------------------------------------------------------ phase fit 부품
+def _scene_stats(rows: list[tuple], sub: set[int] | None
+                 ) -> dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """scene 별 중심화 파라미터 (mh: 성공-우선, mp/sp: 전체). sub=None 이면 전체 셋 기준."""
+    stats: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+    for sc in sorted({r[0] for r in rows}):
+        if sub is None:
+            g = [r for r in rows if r[0] == sc]
+        else:
+            g = [rows[i] for i in sub if rows[i][0] == sc] or [r for r in rows if r[0] == sc]
+        ref_h = np.concatenate([r[2] for r in g if r[1] == 1]) if any(
+            r[1] == 1 for r in g) else np.concatenate([r[2] for r in g])
+        ref_p = np.concatenate([r[3] for r in g])
+        stats[sc] = (ref_h.mean(0), ref_p.mean(0), ref_p.std(0) + 1e-8)
+    return stats
+
+
+def _global_stats(rows: list[tuple], sub: set[int] | None
+                  ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """unseen scene 용 fallback 중심화 파라미터 (성공 기준 mh). sub=None 이면 전체 셋."""
+    g = list(rows) if sub is None else ([rows[i] for i in sub] or list(rows))
+    ref_h = np.concatenate([r[2] for r in g if r[1] == 1]) if any(
+        r[1] == 1 for r in g) else np.concatenate([r[2] for r in g])
+    ref_p = np.concatenate([r[3] for r in g])
+    return ref_h.mean(0), ref_p.mean(0), ref_p.std(0) + 1e-8
+
+
+def _prep_fn(rows: list[tuple], stats: dict):
+    def prep(i):
+        sc, su, H, P, _ = rows[i]
+        mh, mp, sp = stats[sc]
+        return su, H - mh, (P - mp) / sp
+    return prep
+
+
+def _fit_W(rows: list[tuple], sub: list[int], stats: dict) -> np.ndarray:
+    prep = _prep_fn(rows, stats)
+    pr = [prep(i) for i in sub]
+    return ridge([p[1] for p in pr], [p[2] for p in pr])
+
+
+def _cv_seed(rows: list[tuple], phase: str, seed: int) -> dict | None:
+    """한 CV seed: train split 으로 임시 W → held-out 고정B margin / 길이 AUROC.
+
+    반환 None = 이 seed 는 train 에 한쪽 클래스가 없어 대조 불가."""
+    tr = stratified_train_idx(rows, seed, phase)
+    tr_s = [i for i in tr if rows[i][1] == 1]
+    tr_f = [i for i in tr if rows[i][1] == 0]
+    if not tr_s or not tr_f:
+        return None
+    stats = _scene_stats(rows, tr)
+    prep = _prep_fn(rows, stats)
+    Ws = _fit_W(rows, tr_s, stats)
+    Wf = _fit_W(rows, tr_f, stats)
+
+    # 길이 공정화: 고정 예산 B = train 성공 dwell 의 25퍼센타일 (전 episode 동일 초반 창)
+    succ_dw = sorted(len(rows[i][2]) for i in tr_s)
+    B = max(3, succ_dw[len(succ_dw) // 4])
+
+    ep_m: dict[int, list] = {0: [], 1: []}
+    fixB_m: dict[int, list] = {0: [], 1: []}
+    rec_m: dict[int, list] = {0: [], 1: []}
+    dwell: dict[int, list] = {0: [], 1: []}
+    for i in range(len(rows)):
+        if i in tr:
+            continue
+        su, X, P = prep(i)
+        m = ((X - P @ Ws) ** 2).sum(1) - ((X - P @ Wf) ** 2).sum(1)
+        ep_m[su].append(float(np.mean(m)))
+        if len(m) >= B:
+            fixB_m[su].append(float(np.mean(m[:B])))
+        rec_m[su].append(m)
+        dwell[su].append(len(m))
+    return {
+        "seed": seed, "B": int(B),
+        "auroc_margin_fixB": auroc(np.array(fixB_m[0]), np.array(fixB_m[1])),
+        "auroc_len": auroc(np.array(dwell[0], float), np.array(dwell[1], float)),
+        "auroc_episode": auroc(np.array(ep_m[0]), np.array(ep_m[1])),
+        "auroc_record": auroc(np.concatenate(rec_m[0]) if rec_m[0] else np.array([]),
+                              np.concatenate(rec_m[1]) if rec_m[1] else np.array([])),
+        "fixB_succ": list(fixB_m[1]),
+        "n_train_succ": len(tr_s), "n_train_fail": len(tr_f),
+        "n_heldout_succ": len(ep_m[1]), "n_heldout_fail": len(ep_m[0]),
+    }
+
+
+def _median(v: list[float]) -> float:
+    a = np.array([x for x in v if np.isfinite(x)], dtype=np.float64)
+    return float(np.median(a)) if a.size else float("nan")
+
+
 # ------------------------------------------------------------------ phase fit
 def fit_phase(eps: list[dict], labels: list[int], phase: str, seed: int,
-              min_train_eps: int) -> dict | None:
-    """한 phase 의 W_s/W_f/B/τ/AUROC. 미달이면 registered=False 인 dict, 아예 불가면 None."""
+              min_train_eps: int, gate_seeds: int = GATE_SEEDS) -> dict | None:
+    """한 phase 의 W_s/W_f/B/τ/AUROC.
+
+    배포 W·stats = **전체 fit 셋** fit. 등록 게이트 = gate_seeds 개 split CV 의
+    (margin AUROC 중앙값 > 길이 중앙값) AND (과반 seed 에서 margin>길이) AND 표본 하한.
+    미달이면 registered=False 인 dict, 아예 불가면 None."""
     rows = []
     for k, e in enumerate(eps):
         idx = [i for i, ph in enumerate(e["phases"]) if ph == phase]
@@ -245,91 +349,68 @@ def fit_phase(eps: list[dict], labels: list[int], phase: str, seed: int,
         return {**base, "registered": False,
                 "skip_reason": f"episode 부족 s/f={ns}/{nf} (<{MIN_EPS_PER_CLASS})"}
 
-    tr = stratified_train_idx(rows, seed, phase)
+    # --- 배포 연산자: 전체 fit 셋 (split 무관) ------------------------------------
+    all_s = [i for i, r in enumerate(rows) if r[1] == 1]
+    all_f = [i for i, r in enumerate(rows) if r[1] == 0]
+    if not all_s or not all_f:
+        return {**base, "registered": False,
+                "skip_reason": "한쪽 클래스 없음 — 대조 불가"}
+    stats = _scene_stats(rows, None)
+    Ws = _fit_W(rows, all_s, stats)
+    Wf = _fit_W(rows, all_f, stats)
 
-    # scene-중심화 파라미터는 train 에서만 (성공 기준). cond_margin 과 동일.
-    stats: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
-    for sc in sorted({r[0] for r in rows}):
-        g = [rows[i] for i in tr if rows[i][0] == sc] or [r for r in rows if r[0] == sc]
-        ref_h = np.concatenate([r[2] for r in g if r[1] == 1]) if any(
-            r[1] == 1 for r in g) else np.concatenate([r[2] for r in g])
-        ref_p = np.concatenate([r[3] for r in g])
-        stats[sc] = (ref_h.mean(0), ref_p.mean(0), ref_p.std(0) + 1e-8)
+    # --- 게이트: gate_seeds 개 split CV -------------------------------------------
+    cv = [c for c in (_cv_seed(rows, phase, s) for s in range(gate_seeds)) if c is not None]
+    a_marg = [c["auroc_margin_fixB"] for c in cv]
+    a_lens = [c["auroc_len"] for c in cv]
+    med_marg, med_len = _median(a_marg), _median(a_lens)
+    wins = sum(1 for m, l in zip(a_marg, a_lens)
+               if np.isfinite(m) and np.isfinite(l) and m > l)
+    need_wins = gate_seeds // 2 + 1          # 5 → 3 (44 §2 개정 "≥3/5")
 
-    def prep(i):
-        sc, su, H, P, _ = rows[i]
-        mh, mp, sp = stats[sc]
-        return su, H - mh, (P - mp) / sp
+    # τ = 전 seed held-out 성공 고정B margin pool 의 90퍼센타일, B = seed B 중앙값
+    pooled = [x for c in cv for x in c["fixB_succ"]]
+    tau = float(np.percentile(np.array(pooled), 90)) if pooled else float("nan")
+    B = int(round(_median([c["B"] for c in cv]))) if cv else 0
 
-    tr_s = [i for i in tr if rows[i][1] == 1]
-    tr_f = [i for i in tr if rows[i][1] == 0]
-    n_tr_s, n_tr_f = len(tr_s), len(tr_f)
-    if n_tr_s < 1 or n_tr_f < 1:
-        return {**base, "registered": False, "n_train_succ": n_tr_s, "n_train_fail": n_tr_f,
-                "skip_reason": "train 에 한쪽 클래스 없음 — 대조 불가"}
-    prep_s = [prep(i) for i in tr_s]
-    prep_f = [prep(i) for i in tr_f]
-    Ws = ridge([p[1] for p in prep_s], [p[2] for p in prep_s])
-    Wf = ridge([p[1] for p in prep_f], [p[2] for p in prep_f])
-
-    # 길이 공정화: 고정 예산 B = train 성공 dwell 의 25퍼센타일 (전 episode 동일 초반 창)
-    succ_dw = sorted(len(rows[i][2]) for i in tr_s)
-    B = max(3, succ_dw[len(succ_dw) // 4])
-
-    ep_m = {0: [], 1: []}
-    fixB_m = {0: [], 1: []}
-    rec_m = {0: [], 1: []}
-    dwell = {0: [], 1: []}
-    for i in range(len(rows)):
-        if i in tr:
-            continue
-        su, X, P = prep(i)
-        m = ((X - P @ Ws) ** 2).sum(1) - ((X - P @ Wf) ** 2).sum(1)
-        ep_m[su].append(float(np.mean(m)))
-        if len(m) >= B:
-            fixB_m[su].append(float(np.mean(m[:B])))
-        rec_m[su].append(m)
-        dwell[su].append(len(m))
-
-    a_fixB = auroc(np.array(fixB_m[0]), np.array(fixB_m[1]))
-    a_len = auroc(np.array(dwell[0], float), np.array(dwell[1], float))
-    a_ep = auroc(np.array(ep_m[0]), np.array(ep_m[1]))
-    a_rec = auroc(np.concatenate(rec_m[0]) if rec_m[0] else np.array([]),
-                  np.concatenate(rec_m[1]) if rec_m[1] else np.array([]))
-    # τ = held-out 성공 episode 고정B margin 의 90퍼센타일 (44 §2)
-    tau = float(np.percentile(np.array(fixB_m[1]), 90)) if fixB_m[1] else float("nan")
-
-    # 등록 게이트 (44 §2): 고정B margin AUROC > 길이단독 AUROC (strict) AND 표본 하한.
-    # 부호는 뒤집지 않는다 — 역전 cell(Dish contact 0.28)은 이 게이트가 자동 배제한다.
+    small_sample = min(ns, nf) < min_train_eps
     reasons = []
-    if not (np.isfinite(a_fixB) and np.isfinite(a_len) and a_fixB > a_len):
-        reasons.append(f"고정B AUROC {a_fixB:.3f} ≤ 길이단독 {a_len:.3f}")
-    if min(n_tr_s, n_tr_f) < min_train_eps:
-        reasons.append(f"train episode {n_tr_s}/{n_tr_f} < {min_train_eps}")
+    if not cv:
+        reasons.append(f"CV seed {gate_seeds}개 모두 train 한쪽 클래스 없음")
+    else:
+        if not (np.isfinite(med_marg) and np.isfinite(med_len) and med_marg > med_len):
+            reasons.append(f"margin 중앙값 {med_marg:.3f} ≤ 길이 중앙값 {med_len:.3f}")
+        if wins < need_wins:
+            reasons.append(f"margin>길이 seed {wins}/{len(cv)} < {need_wins}")
+    if min(ns, nf) < HARD_MIN_EPS:
+        reasons.append(f"클래스당 episode {ns}/{nf} < {HARD_MIN_EPS} (경성 하한)")
     if not np.isfinite(tau):
         reasons.append("held-out 성공 고정B 표본 0 — τ 산출 불가")
     return {
         **base, "registered": not reasons,
         "skip_reason": "; ".join(reasons) if reasons else "",
-        "W_s": Ws, "W_f": Wf, "B": int(B), "tau": tau, "sign": 1.0,
-        "auroc_margin_fixB": a_fixB, "auroc_len": a_len, "auroc_record": a_rec,
-        "auroc_episode": a_ep,
-        "n_train": len(tr), "n_train_succ": n_tr_s, "n_train_fail": n_tr_f,
-        "n_heldout_succ": len(ep_m[1]), "n_heldout_fail": len(ep_m[0]),
-        "n_fixB_succ": len(fixB_m[1]), "n_fixB_fail": len(fixB_m[0]),
+        "small_sample": bool(small_sample),
+        "W_s": Ws, "W_f": Wf, "B": B, "tau": tau, "sign": 1.0,
+        # 대표값 = CV 중앙값 (기존 키 이름 유지)
+        "auroc_margin_fixB": med_marg, "auroc_len": med_len,
+        "auroc_record": _median([c["auroc_record"] for c in cv]),
+        "auroc_episode": _median([c["auroc_episode"] for c in cv]),
+        "auroc_margin_seeds": [float(x) for x in a_marg],
+        "auroc_len_seeds": [float(x) for x in a_lens],
+        "gate_seeds": int(gate_seeds), "gate_seeds_ok": int(len(cv)),
+        "gate_wins": int(wins), "gate_need_wins": int(need_wins),
+        "gate_scheme": GATE_SCHEME,
+        "B_seeds": [int(c["B"]) for c in cv],
+        "n_fit_succ": int(ns), "n_fit_fail": int(nf),
+        "n_train_succ": int(_median([c["n_train_succ"] for c in cv])) if cv else 0,
+        "n_train_fail": int(_median([c["n_train_fail"] for c in cv])) if cv else 0,
+        "n_heldout_succ": int(_median([c["n_heldout_succ"] for c in cv])) if cv else 0,
+        "n_heldout_fail": int(_median([c["n_heldout_fail"] for c in cv])) if cv else 0,
+        "n_tau_pool": len(pooled),
         "stats": stats,
-        # global fallback (미지 scene 용): train 전체 record 풀
-        "global": _global_stats(rows, tr),
+        # global fallback (미지 scene 용): 전체 fit 셋 record 풀
+        "global": _global_stats(rows, None),
     }
-
-
-def _global_stats(rows: list[tuple], tr: set[int]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """unseen scene 용 fallback 중심화 파라미터 — train 전체(성공 기준 mh)."""
-    g = [rows[i] for i in tr] or list(rows)
-    ref_h = np.concatenate([r[2] for r in g if r[1] == 1]) if any(
-        r[1] == 1 for r in g) else np.concatenate([r[2] for r in g])
-    ref_p = np.concatenate([r[3] for r in g])
-    return ref_h.mean(0), ref_p.mean(0), ref_p.std(0) + 1e-8
 
 
 # ------------------------------------------------------------------ 저장
@@ -347,6 +428,12 @@ def save_npz(out_dir: Path, variant: str, mode: str, results: dict[str, dict],
         arr[f"{ph}__tau"] = np.array(float(r.get("tau", np.nan)))
         arr[f"{ph}__B"] = np.array(int(r.get("B", 0)))
         arr[f"{ph}__sign"] = np.array(float(r.get("sign", 1.0)))
+        # 게이트 CV 진단 (44 §2 개정)
+        arr[f"{ph}__auroc_margin_seeds"] = np.array(
+            r.get("auroc_margin_seeds", []), dtype=np.float64)
+        arr[f"{ph}__auroc_len_seeds"] = np.array(
+            r.get("auroc_len_seeds", []), dtype=np.float64)
+        arr[f"{ph}__small_sample"] = np.array(bool(r.get("small_sample", False)))
         if "W_s" not in r:
             continue
         arr[f"{ph}__W_s"] = r["W_s"].astype(np.float32)
@@ -374,20 +461,29 @@ def save_npz(out_dir: Path, variant: str, mode: str, results: dict[str, dict],
     return path
 
 
+def _spread(v: list[float]) -> str:
+    """중앙값(min–max) 문자열. 5-seed CV 진단용."""
+    a = np.array([x for x in v if np.isfinite(x)], dtype=np.float64)
+    if not a.size:
+        return "-"
+    return f"{np.median(a):.2f}({a.min():.2f}–{a.max():.2f})"
+
+
 def print_table(variant: str, results: dict[str, dict]) -> None:
-    print(f"\n[{variant}] phase 표 (held-out; fail>succ 방향)", flush=True)
-    print(f"  {'phase':<16}{'고정B':>7}{'길이':>7}{'record':>8}{'ep':>7}"
-          f"{'B':>5}{'tau':>10}  {'reg':<5} 표본(train s/f, heldout s/f)", flush=True)
+    print(f"\n[{variant}] phase 표 — 게이트 {GATE_SCHEME} (held-out; fail>succ 방향)", flush=True)
+    print(f"  {'phase':<14}{'margin 중앙(min–max)':>22}{'길이 중앙(min–max)':>22}"
+          f"{'win':>6}{'B':>5}{'tau':>10}  {'reg':<5} 표본(fit s/f)", flush=True)
     for ph, r in results.items():
         if "W_s" not in r:
-            print(f"  {ph:<16}{'-':>7}{'-':>7}{'-':>8}{'-':>7}{'-':>5}{'-':>10}  "
-                  f"{'no':<5} {r.get('skip_reason', '')}", flush=True)
+            print(f"  {ph:<14}{'-':>22}{'-':>22}{'-':>6}{'-':>5}{'-':>10}  "
+                  f"{'no':<5} ← {r.get('skip_reason', '')}", flush=True)
             continue
-        print(f"  {ph:<16}{r['auroc_margin_fixB']:>7.2f}{r['auroc_len']:>7.2f}"
-              f"{r['auroc_record']:>8.2f}{r['auroc_episode']:>7.2f}{r['B']:>5d}"
+        flag = "  [소표본]" if r.get("small_sample") else ""
+        win = f"{r.get('gate_wins', 0)}/{r.get('gate_seeds_ok', 0)}"
+        print(f"  {ph:<14}{_spread(r.get('auroc_margin_seeds', [])):>22}"
+              f"{_spread(r.get('auroc_len_seeds', [])):>22}{win:>6}{r['B']:>5d}"
               f"{r['tau']:>10.2f}  {'YES' if r['registered'] else 'no':<5} "
-              f"({r['n_train_succ']}/{r['n_train_fail']}, "
-              f"{r['n_heldout_succ']}/{r['n_heldout_fail']})"
+              f"({r.get('n_fit_succ', 0)}/{r.get('n_fit_fail', 0)})" + flag
               + (f"  ← {r['skip_reason']}" if r["skip_reason"] else ""), flush=True)
 
 
@@ -409,7 +505,11 @@ def main() -> None:
                     help="기본 outputs/steer/online_pipe/<slug>/condg_s5m5/")
     ap.add_argument("--variants", default=DEFAULT_VARIANTS,
                     help=f"생성할 변형 (기본 {DEFAULT_VARIANTS})")
-    ap.add_argument("--seed", type=int, default=0, help="split·위약 순열 seed (기본 0)")
+    ap.add_argument("--seed", type=int, default=0,
+                    help="위약 라벨 순열·기타 rng seed (기본 0). 게이트 split seed 는 "
+                         "0..--gate-seeds-1 로 고정")
+    ap.add_argument("--gate-seeds", type=int, default=GATE_SEEDS,
+                    help=f"등록 게이트 CV split seed 수 (기본 {GATE_SEEDS})")
     ap.add_argument("--layer", type=int, default=12, help="DiT 물리 layer (기본 12)")
     ap.add_argument("--denoise-step", type=int, default=3,
                     help="denoise step 인덱스 (기본 3 = 마지막)")
@@ -455,11 +555,18 @@ def main() -> None:
         "phases_requested": phases, "layer": args.layer, "denoise_step": args.denoise_step,
         "feature": "DiT L%d · denoise %d · 49-token mean" % (args.layer, args.denoise_step),
         "state_phi": "[eef_pos_rel(3), eef_quat_rel(4), gripper_qpos(2)] + 차분속도 = 18d",
-        "split": "episode 6:4, scene 층화, rng([seed, crc32(phase)])",
-        "gate": "고정B margin AUROC > 길이단독 AUROC (strict) AND "
-                f"클래스당 train episode ≥ {args.min_train_eps}",
-        "tau": "held-out 성공 episode 고정B margin 90퍼센타일",
-        "B": "max(3, train 성공 dwell 25퍼센타일)",
+        "split": f"게이트 전용 CV: seed 0..{args.gate_seeds - 1}, episode 6:4 scene 층화, "
+                 "rng([seed, crc32(phase)])",
+        "fit_scope": "배포 W_s/W_f·scene stats·global fallback = 전체 fit 셋 (split 무관)",
+        "gate_scheme": GATE_SCHEME,
+        "gate": f"{args.gate_seeds}-seed CV — 고정B margin AUROC 중앙값 > 길이단독 중앙값 "
+                f"AND 과반({args.gate_seeds // 2 + 1}/{args.gate_seeds}) seed 에서 margin>길이 "
+                f"AND 전체 fit 셋 클래스당 episode ≥ {HARD_MIN_EPS}",
+        "gate_seeds": args.gate_seeds,
+        "small_sample_rule": f"클래스당 episode < {args.min_train_eps} 이면 등록하되 "
+                             "small_sample=True 딱지",
+        "tau": f"{args.gate_seeds}-seed held-out 성공 episode 고정B margin pool 의 90퍼센타일",
+        "B": "seed 별 max(3, train 성공 dwell 25퍼센타일) 의 중앙값(int)",
         "sign_note": "margin 부호 고정(m 클수록 실패) — 역전 cell 은 게이트가 배제",
         "fit_cells": [[int(s), int(n)] for s, n in used_cells],
         "fit_cells_source": cells_mode,
@@ -472,7 +579,7 @@ def main() -> None:
     labels_treat = [e["success"] for e in eps]
     res_treat: dict[str, dict] = {}
     for ph in phases:
-        r = fit_phase(eps, labels_treat, ph, args.seed, args.min_train_eps)
+        r = fit_phase(eps, labels_treat, ph, args.seed, args.min_train_eps, args.gate_seeds)
         if r is None:
             print(f"  [{ph}] phase 없음(codebook) — 건너뜀", flush=True)
             continue
@@ -497,7 +604,7 @@ def main() -> None:
         labels_pl = scene_stratified_permute(eps, args.seed)
         res_pl: dict[str, dict] = {}
         for ph in res_treat:
-            r = fit_phase(eps, labels_pl, ph, args.seed, args.min_train_eps)
+            r = fit_phase(eps, labels_pl, ph, args.seed, args.min_train_eps, args.gate_seeds)
             if r is None:
                 continue
             # 44 §3: 위약은 자기 등록 게이트를 **우회**하고, 등록 집합을 처치와 일치시킨다.
