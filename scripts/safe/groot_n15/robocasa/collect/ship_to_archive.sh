@@ -25,8 +25,10 @@ STAGING_CAP_GB="${STAGING_CAP_GB:-50}"
 QUIET_SEC="${QUIET_SEC:-60}"      # 수집 중인 셀 보호: 마지막 수정 후 이 초만큼 조용해야 전송
 DRY_RUN="${DRY_RUN:-0}"
 ONESHOT="${ONESHOT:-0}"           # 1 이면 한 사이클만 돌고 종료 (검증용)
+PARALLEL="${PARALLEL:-8}"         # 동시 전송 스트림 수 (링크가 스트림당 셰이핑됨)
 
 SHIPPED="${GRID_ROOT}/shipped_cells.txt"
+SENT_TALLY="${GRID_ROOT}/.sent_tally"; : > "$SENT_TALLY"
 LOGDIR="${LOGDIR:-${GRID_ROOT}/logs}"
 mkdir -p "$LOGDIR" "$GRID_ROOT"
 touch "$SHIPPED"
@@ -101,6 +103,7 @@ ship_cell() {  # host_cell_dir rel
 
 cycle() {
   local now cutoff n_sent=0 n_skip=0
+  local ready_dirs=() ready_rels=()
   now=$(date +%s); cutoff=$((now - QUIET_SEC))
   # meta.json 이 있는 디렉토리만 = 쓰기가 끝난 셀
   while IFS= read -r meta; do
@@ -116,8 +119,24 @@ cycle() {
     fi
     # < /dev/null 필수: ship_cell 의 ssh/rsync 가 stdin 을 먹으면 while-read 의
     # 셀 목록 파이프가 소진되어 사이클당 1셀만 전송된다 (pdk 61셀 적체 실측).
-    if ship_cell "$dir" "$rel" < /dev/null; then n_sent=$((n_sent + 1)); fi
+    ready_dirs+=("$dir"); ready_rels+=("$rel")
   done < <(find "$GRID_ROOT" -type f -name meta.json 2>/dev/null | sort)
+
+  # PARALLEL 워커로 셀 라운드로빈 분배 (한 셀 = 정확히 한 워커; 링크가 스트림당
+  # ~1MB/s 로 셰이핑돼 병렬이 선형으로 는다 — 2026-08-18 실측 단독1/4병렬4MB/s).
+  local w
+  for ((w = 0; w < PARALLEL; w++)); do
+    (
+      local j
+      for ((j = w; j < ${#ready_dirs[@]}; j += PARALLEL)); do
+        ship_cell "${ready_dirs[$j]}" "${ready_rels[$j]}" < /dev/null \
+          && echo sent >> "$SENT_TALLY"
+      done
+    ) &
+  done
+  wait
+  n_sent=$(wc -l < "$SENT_TALLY" 2>/dev/null || echo 0)
+  : > "$SENT_TALLY"
 
   local used_kb used_gb
   used_kb=$(du -sk "$GRID_ROOT" 2>/dev/null | awk '{print $1}')

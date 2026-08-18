@@ -203,7 +203,7 @@ start_serve() {  # gpu port
   if [ "$DRY_RUN" = "1" ]; then
     echo "[dry] docker exec -d -e CUDA_VISIBLE_DEVICES=${gpu} lerobot bash -lc \"${cmd}\""
   else
-    docker exec -d -e CUDA_VISIBLE_DEVICES="$gpu" lerobot bash -lc "$cmd"
+    docker exec -d -e CUDA_VISIBLE_DEVICES="$gpu" -e OMP_NUM_THREADS="${SERVE_OMP_THREADS:-4}" -e OPENBLAS_NUM_THREADS="${SERVE_OMP_THREADS:-4}" -e MKL_NUM_THREADS="${SERVE_OMP_THREADS:-4}" lerobot bash -lc "$cmd"
   fi
 }
 health_curl() {  # port
@@ -239,6 +239,15 @@ run_worker() {  # wid port
     if compgen -G "${GRID_ROOT}/${PLAN_ID}/*/${instr}/s${si}/n${ni}/*/meta.json" > /dev/null 2>&1; then
       echo "[w${wid}] skip(done) ${key}"; continue
     fi
+    # ★ backpressure: 이관(shipper)이 못 따라가 staging 이 cap 을 넘으면 수집을
+    # 멈추고 기다린다 — 08-18 실측: 이관 병목으로 staging 134GB 폭주 → 디스크
+    # 포화 → 수집 전체 사망. cap 은 STAGING_WAIT_GB(기본 25GB).
+    while :; do
+      local st_kb; st_kb=$(du -sk "$GRID_ROOT" 2>/dev/null | awk '{print $1}')
+      [ "$((st_kb / 1048576))" -lt "${STAGING_WAIT_GB:-25}" ] && break
+      echo "[w${wid}] staging $((st_kb / 1048576))GB ≥ ${STAGING_WAIT_GB:-25}GB — 이관 대기 120s"
+      sleep 120
+    done
     echo "[w${wid}] $(date '+%F %T') ${key} seed=${seed} inf=${inf}"
     local args=(
       python /temporal_vla/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py
