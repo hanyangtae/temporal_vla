@@ -34,6 +34,10 @@
 - `pertask` — task 별 detector 9개 (task 내부 일반화).
 - `mixed`   — 전 task 풀링 detector 1개. 표준화·가중치는 공유하되 **CP 밴드는
   per-task calib 로 보정**(RL²-VLA 방식) — task 별 점수 스케일 차이를 밴드가 흡수.
+- `loto`    — leave-one-task-out. task 하나를 빼고 학습, 그 task 의 **전 episode** 를
+  zero-shot test (밴드도 train task 풀링으로 잡아 held-out 판을 한 개도 안 쓴다).
+  질문 = "학습에 없던 task 에서 작동하나, phase 절제가 전이를 살리나"
+  (SAFE 논문 unseen 전이 주장 재검 — seen18 재현은 unseen 0.434 였다).
 
 ## 입력 계약 (Tier A shard)
 `<shard-dir>/<instr_slug>.npz`
@@ -64,6 +68,12 @@ layer 는 meta 의 layer 리스트에서 **인덱스 역산**한다 (하드코�
         --truncate-train rollout --arm both --models lstm,mlp --threads 8
     ... failure_detector_sim.py --shard-dir <segA> --out <out>/trunc_phasegt \
         --truncate-train phase-gt --arm both --models lstm,mlp --threads 8
+
+    # task 전이 (leave-one-task-out) — 절제 모드 3종을 각각
+    for M in none rollout phase-gt; do \
+      ~/anaconda3/bin/python scripts/analysis/grid_phase/failure_detector_sim.py \
+        --shard-dir <segA> --out <out>/loto_$M --arm loto --truncate-train $M \
+        --models lstm --threads 8 --quiet; done
 """
 from __future__ import annotations
 
@@ -730,6 +740,190 @@ def run_arm(arm: str, kind: str, tasks: dict, splits: dict, args,
     return rows, detail, ckpts
 
 
+def run_loto(kind: str, tasks: dict, splits: dict, args,
+             out_dir: Path) -> tuple[list[dict], list[dict], dict]:
+    """leave-one-task-out (zero-shot task 전이) arm.
+
+    질문: **학습에 없던 task 에서 detector 가 작동하나, phase 단위 길이 절제가 전이를
+    살리나** (SAFE 논문의 unseen 전이 주장 재검 — 우리 seen18 재현은 unseen 0.434).
+
+    fold 규약 (held-out task h 하나당 1 fold):
+      학습   = h 를 뺀 나머지 task 들의 **train scene** episode (기존 scene split 재사용).
+      절제   = train task 별 자기 W/phase cap (mixed arm 과 동일 — cap 은 task-로컬).
+               h 는 **항상 full** (절제도, 학습·보정도 없음).
+      표준화 = train(=나머지 task) 통계.
+      CP밴드 = h 데이터를 쓸 수 없으므로 **train task 들의 성공 판을 전부 풀링**해
+               μ_t/σ_t (band_mu 출처 규약 동일) · bw(calib 성공 풀) 를 잡는다.
+               시간축은 절대 record index, 밴드 길이 초과 시 마지막값 유지(plateau).
+      test   = h 의 **전 episode** (train/calib/test 분할 무시 = 한 판도 안 쓴 zero-shot).
+
+    W(=timer 기준선·tpr_before_W·lead_vs_W) 는 h 자신의 성공 길이 통계라 zero-shot 이
+    아니다 — **oracle 참조용 지표**로만 읽는다 (열 이름은 다른 arm 과 맞추려고 그대로).
+    """
+    alphas = args.alphas
+    rows: list[dict] = []
+    detail: list[dict] = []
+    ckpts: dict[str, dict] = {}
+    td_pool: dict[int, list[tuple[float, int]]] = {t_d: [] for t_d in TD_GRID}
+    timer_all: list[dict] = []
+
+    all_tasks = sorted(tasks)
+    if len(all_tasks) < 2:
+        raise SystemExit("--arm loto 는 task 2개 이상 필요")
+
+    for held in all_tasks:
+        tr_tasks = [t for t in all_tasks if t != held]
+        tr_eps = [e for t in tr_tasks for e in splits[t]["train"]]
+        test_eps = tasks[held].get("all_eps")
+        if test_eps is None:
+            raise SystemExit("loto: held-out 전 episode 사본이 없다 (run() 배선 확인)")
+        base_row = {"task": held, "instruction": tasks[held]["instruction"],
+                    "arm": "loto", "model": kind, "truncate": args.truncate_train}
+        if not tr_eps:
+            rows.append({**base_row, "alpha": None, "skip_reason": "train 판 0"})
+            continue
+        if not test_eps:
+            rows.append({**base_row, "alpha": None, "skip_reason": "test 판 0"})
+            continue
+
+        mu, sd = standardizer(tr_eps)
+        seqs = [(apply_std(e, mu, sd), e.y) for e in tr_eps]
+        input_dim = seqs[0][0].shape[1]
+        n_fail_tr = sum(1 for _, y in seqs if y == 1)
+        print(f"  [train] arm=loto model={kind} heldout={held} "
+              f"n_train={len(seqs)} (fail {n_fail_tr}, {len(tr_tasks)} task) "
+              f"n_test={len(test_eps)} dim={input_dim}", flush=True)
+        if n_fail_tr == 0 or n_fail_tr == len(seqs):
+            print(f"  [skip] loto/{kind}/{held}: train 이 단일 클래스", flush=True)
+            rows.append({**base_row, "alpha": None, "skip_reason": "train single-class"})
+            continue
+
+        model = train_detector(kind, seqs, input_dim, args.epochs, args.lr, args.hidden,
+                               args.lambda_reg, args.grad_clip, args.batch_size,
+                               args.seed, verbose=not args.quiet)
+
+        # CP 밴드 출처 = train task 풀링 (held-out 판은 단 한 개도 안 쓴다).
+        band_src = [e for t in tr_tasks for e in splits[t]["train"] if e.succ == 1] \
+            if args.band_mu == "train" else \
+            [e for t in tr_tasks for e in splits[t]["calib"] if e.succ == 1]
+        calib_src = [e for t in tr_tasks for e in splits[t]["calib"] if e.succ == 1]
+        band_scores = [score_seq(model, apply_std(e, mu, sd)) for e in band_src]
+        calib_scores = [score_seq(model, apply_std(e, mu, sd)) for e in calib_src]
+
+        test_scores = [(e, score_seq(model, apply_std(e, mu, sd))) for e in test_eps]
+        tdm = td_metrics(test_scores)              # α 무관 (밴드 안 씀)
+        for t_d in TD_GRID:
+            td_pool[t_d].extend(td_pairs(test_scores, t_d))
+        W_task = tasks[held].get("W")              # oracle 참조용 (아래 docstring 참조)
+
+        band_ck: dict[str, dict] = {}
+        for a in alphas:
+            band = functional_cp_band(band_scores, calib_scores, a)
+            if band is None:
+                rows.append({**base_row, "alpha": a,
+                             "skip_reason": f"성공 판 부족 (band {len(band_scores)} / "
+                                            f"calib {len(calib_scores)} < {MIN_BAND_EPS})"})
+                continue
+            recs = []
+            for e, sc in test_scores:
+                ft = fire_step(sc, band["delta"])
+                rec = {
+                    "task": held, "arm": "loto", "model": kind, "alpha": a,
+                    "ep_id": e.ep_id, "scene": e.scene, "noise": e.noise,
+                    "succ": e.succ, "y": e.y, "T": e.T,
+                    "W": None if W_task is None else int(W_task),
+                    "fired": ft is not None,
+                    "t_fire": ft,
+                    "relpos": None if ft is None else round(ft / max(e.T - 1, 1), 4),
+                    "steps_before_end": None if ft is None else int(e.T - 1 - ft),
+                    "fire_phase": None if ft is None else
+                                  tasks[held]["phase_names"].get(int(e.phase[ft]),
+                                                                 str(int(e.phase[ft]))),
+                    "max_score": round(float(sc.max()), 4),
+                }
+                recs.append(rec)
+                detail.append(rec)
+            row = {**base_row, "alpha": a, "band_L": band["L"],
+                   "bw": round(band["bw"], 4),
+                   "n_train_ep": len(seqs), "n_band_succ": len(band_scores),
+                   "n_calib_succ": len(calib_scores),
+                   # loto 는 scene 이 아니라 task 로 fold 를 가른다 — 열 이름은 공용
+                   "train_scenes": f"{len(tr_tasks)}tasks",
+                   "calib_scenes": f"{len(tr_tasks)}tasks",
+                   "test_scenes": "all(heldout)",
+                   "n_trunc_dropped": sum(tasks[t].get("n_trunc_dropped", 0)
+                                          for t in tr_tasks),
+                   "skip_reason": ""}
+            row.update(summarize(recs))
+            row.update(tdm)
+            rows.append(row)
+            band_ck[f"{a:.2f}"] = {"mu": band["mu"].astype(np.float32),
+                                   "sd": band["sd"].astype(np.float32),
+                                   "bw": band["bw"],
+                                   "delta": band["delta"].astype(np.float32)}
+
+        # 같은 fold 의 무feature 기준선 (held-out 전 episode 위).
+        trecs = timer_records(test_eps, held, W_task, tasks[held]["phase_names"])
+        for r in trecs:
+            r["arm"] = "loto"
+        if trecs:
+            timer_all += trecs
+            detail += trecs
+            trow = {**base_row, "alpha": None, "model": "timer", "skip_reason": ""}
+            trow.update(summarize(trecs))
+            rows.append(trow)
+
+        ckpts[held] = {
+            "arm": "loto", "model": kind, "group": held,
+            "state_dict": {k: v.cpu() for k, v in model.state_dict().items()},
+            "input_dim": input_dim, "hidden": args.hidden,
+            "std_mean": mu, "std_std": sd,
+            "feature": {"layer": args.layer, "denoise": args.denoise, "seg": args.seg,
+                        "layer_idx": tasks[held]["layer_idx"],
+                        "denoise_idx": tasks[held]["denoise_idx"],
+                        "seg_idx": tasks[held]["seg_idx"],
+                        "dim": input_dim},
+            "cp_bands": {held: band_ck} if band_ck else {},
+            "tasks": tr_tasks,                 # 학습에 쓴 task (held-out 은 제외)
+            "heldout_task": held,
+            "shards": [tasks[t]["shard"] for t in tr_tasks],   # basename 만 (docs/04 §8)
+            "train": {"epochs": args.epochs, "lr": args.lr, "lambda_reg": args.lambda_reg,
+                      "grad_clip": args.grad_clip, "batch_size": args.batch_size,
+                      "seed": args.seed, "band_mu": args.band_mu,
+                      "band_source": "pooled train tasks (zero-shot)"},
+            "truncate": {
+                "mode": args.truncate_train,
+                "rollout_W": {t: tasks[t].get("W") for t in tr_tasks},
+                "phase_caps": {t: tasks[t].get("phase_caps") for t in tr_tasks},
+                "n_dropped": {t: tasks[t].get("n_trunc_dropped", 0) for t in tr_tasks},
+                "heldout": "full (절제 없음)",
+            },
+        }
+
+    # 풀링 행 (전 fold 합산)
+    pooled_td = {}
+    for t_d in TD_GRID:
+        a_, n_ = td_auroc(td_pool[t_d])
+        pooled_td[f"auroc_td{t_d}"], pooled_td[f"n_td{t_d}"] = a_, n_
+    for a in alphas:
+        recs = [r for r in detail if r["alpha"] == a]
+        if recs:
+            row = {"task": "__pooled__", "instruction": "", "arm": "loto", "model": kind,
+                   "alpha": a, "truncate": args.truncate_train, "skip_reason": ""}
+            row.update(summarize(recs))
+            row.update(pooled_td)
+            rows.append(row)
+    if timer_all:
+        row = {"task": "__pooled__", "instruction": "", "arm": "loto", "model": "timer",
+               "alpha": None, "truncate": args.truncate_train, "skip_reason": ""}
+        row.update(summarize(timer_all))
+        rows.append(row)
+
+    for held, payload in ckpts.items():
+        torch.save(payload, out_dir / f"detector_loto_{kind}_{held}.pt")
+    return rows, detail, ckpts
+
+
 # =============================================================================
 # TSV
 # =============================================================================
@@ -758,8 +952,15 @@ def write_tsv(rows: list[dict], path: Path) -> None:
 # =============================================================================
 
 def _write_synth_shard(path: Path, n_scene=10, n_noise=6, dim=32, seed=0,
-                       onset=0.4, signal=1.6):
-    """shard 계약과 동일한 NPZ 를 합성한다. 실패 판은 onset 이후 일부 축이 이동."""
+                       onset=0.4, signal=1.6, sig_off=0, sig_rand_sign=False):
+    """shard 계약과 동일한 NPZ 를 합성한다. 실패 판은 onset 이후 일부 축이 이동.
+
+    `sig_off` = 실패 신호가 실리는 축 offset. task 마다 다르게 주면 **공유 신호 없음**
+    (loto 전이 음성 대조).
+    `sig_rand_sign` = 실패 이동의 부호를 판마다 무작위로. 다른 task 에서 학습한 고정
+    readout 의 투영이 ± 대칭이 되어 held-out AUROC 가 기대값 0.5 로 모인다 (부호가
+    고정이면 우연히 −방향에 걸려 0.5 에서 크게 벗어난다 — 음성 대조가 불안정).
+    """
     rng = np.random.default_rng(seed)
     layers = [0, 2, 4, 8, 10, 12, 15]
     K, S = 4, 4
@@ -774,7 +975,8 @@ def _write_synth_shard(path: Path, n_scene=10, n_noise=6, dim=32, seed=0,
             base += rng.normal(0, 0.5, size=(1, dim)).astype(np.float32)   # scene 효과
             if fail:
                 t0 = int(onset * T)
-                base[t0:, :4] += signal
+                sgn = -1.0 if (sig_rand_sign and rng.random() < 0.5) else 1.0
+                base[t0:, sig_off:sig_off + 4] += sgn * signal
             blk = np.zeros((T, len(layers), K, S, dim), dtype=np.float16)
             # layer 12 × denoise 3 × seg "all" 만 신호를 담고 나머지는 잡음
             blk[:] = rng.normal(0, 1, size=blk.shape).astype(np.float16)
@@ -800,25 +1002,27 @@ def _write_synth_shard(path: Path, n_scene=10, n_noise=6, dim=32, seed=0,
 
 
 def _synth_case(root: Path, tag: str, seed: int, signal: float, onset: float,
-                n_scene: int, n_noise: int) -> Path:
-    """합성 shard 2개(=task 2개)를 담은 디렉터리."""
+                n_scene: int, n_noise: int, sig_offs=(0, 0),
+                sig_rand_sign: bool = False) -> Path:
+    """합성 shard 2개(=task 2개)를 담은 디렉터리. sig_offs 가 다르면 공유 신호 없음."""
     sd = root / f"segA_{tag}"
     sd.mkdir(parents=True, exist_ok=True)
     for i, name in enumerate(("SynthTaskA", "SynthTaskB")):
         _write_synth_shard(sd / f"{name}.npz", n_scene=n_scene, n_noise=n_noise,
-                           seed=seed + i, onset=onset, signal=signal)
+                           seed=seed + i, onset=onset, signal=signal,
+                           sig_off=sig_offs[i], sig_rand_sign=sig_rand_sign)
     return sd
 
 
 def _synth_run(args, shard_dir: Path, out_dir: Path, truncate: str,
-               epochs: int) -> list[dict]:
+               epochs: int, arm: str = "pertask") -> list[dict]:
     """합성 케이스 1회 실행 → sim_rows.json 의 행 목록."""
     a = argparse.Namespace(**vars(args))
     a.shard_dir, a.out = shard_dir, out_dir
     a.truncate_train = truncate
     a.epochs = epochs
     a.self_test = False
-    a.arm = "pertask"
+    a.arm = arm
     a.models = "lstm"
     a.quiet = True
     a.train_scenes, a.calib_scenes, a.test_scenes = 8, 3, 3
@@ -853,13 +1057,13 @@ def self_test(args) -> int:
         len_dir = _synth_case(root, "lenonly", args.seed + 100, signal=0.0, onset=0.4,
                               n_scene=14, n_noise=8)
 
-        print("\n=== [self-test 1/4] 신호 O · truncate=none (기존 게이트) ===")
+        print("\n=== [self-test 1/6] 신호 O · truncate=none (기존 게이트) ===")
         rows_a_none = _synth_run(args, sig_dir, root / "out_a_none", "none", epochs)
-        print("\n=== [self-test 2/4] 신호 O · truncate=rollout ===")
+        print("\n=== [self-test 2/6] 신호 O · truncate=rollout ===")
         rows_a_tr = _synth_run(args, sig_dir, root / "out_a_rollout", "rollout", epochs)
-        print("\n=== [self-test 3/4] 신호 X(길이만) · truncate=none ===")
+        print("\n=== [self-test 3/6] 신호 X(길이만) · truncate=none ===")
         rows_b_none = _synth_run(args, len_dir, root / "out_b_none", "none", epochs)
-        print("\n=== [self-test 4/4] 신호 X(길이만) · truncate=rollout ===")
+        print("\n=== [self-test 4/6] 신호 X(길이만) · truncate=rollout ===")
         rows_b_tr = _synth_run(args, len_dir, root / "out_b_rollout", "rollout", epochs)
 
         def _td(rows) -> float | None:
@@ -929,6 +1133,34 @@ def self_test(args) -> int:
             fails.append(f"(b) 신호 X/none: TPR−FPR {gap_b_none:.3f} ≤ 0.10 — full 학습 "
                          "detector 가 길이 신호조차 못 잡았다 (대조 무의미)")
 
+        # ---- (c) loto (task 전이) 게이트 ----------------------------------
+        # 공유 신호 O(두 합성 task 가 같은 축으로 실패) → held-out AUROC > 0.65,
+        # 공유 신호 X(task 마다 다른 축) → ≈ 0.5. 전자만 되면 전이 배선이 살아있고,
+        # 후자에서 높게 나오면 held-out 판이 학습·보정에 샜다는 뜻.
+        nosh_dir = _synth_case(root, "loto_nosh", args.seed + 200, signal=2.0,
+                               onset=0.25, n_scene=14, n_noise=8, sig_offs=(0, 8),
+                               sig_rand_sign=True)
+        print("\n=== [self-test 5/6] loto · 공유 신호 O ===")
+        rows_c_sh = _synth_run(args, sig_dir, root / "out_c_shared", "none", epochs,
+                               arm="loto")
+        print("\n=== [self-test 6/6] loto · 공유 신호 X (다른 축) ===")
+        rows_c_no = _synth_run(args, nosh_dir, root / "out_c_noshare", "none", epochs,
+                               arm="loto")
+        c_sh, c_no = _td(rows_c_sh), _td(rows_c_no)
+        print(f"\n[self-test] loto 게이트 (t_d={t_early} held-out AUROC, pooled)")
+        print(f"  (c) 공유 신호 O : {_fmt(c_sh)}  (> 0.65 기대)")
+        print(f"  (c) 공유 신호 X : {_fmt(c_no)}  (0.35~0.65 기대)")
+        if c_sh is None:
+            fails.append("(c) loto/공유O: auroc 계산 불가 (표본 부족)")
+        elif c_sh <= 0.65:
+            fails.append(f"(c) loto/공유O: held-out AUROC {c_sh} ≤ 0.65 — 공유 신호가 "
+                         "있는데 전이가 안 된다 (배선 의심)")
+        if c_no is None:
+            fails.append("(c) loto/공유X: auroc 계산 불가")
+        elif not (0.35 <= c_no <= 0.65):
+            fails.append(f"(c) loto/공유X: held-out AUROC {c_no} 이 0.35~0.65 밖 — "
+                         "공유 신호 없는 합성인데 전이가 보인다 (held-out 누수 의심)")
+
         if fails:
             print("\n[self-test] FAIL")
             for f in fails:
@@ -969,6 +1201,10 @@ def run(args) -> int:
             "seg_idx": spec.seg_idx, "layers": spec.layers,
         }
         splits[slug] = {**part, "scenes": sc_split}
+        if args.arm == "loto":
+            # held-out fold 의 test = 전 episode(절제 전 원본). 아래 apply_truncation 은
+            # train/calib 리스트를 절제 사본으로 갈아끼우므로 여기서 원본을 붙들어 둔다.
+            tasks[slug]["all_eps"] = eps
         # W/cap 은 truncate 모드와 무관하게 **항상** 계산한다 — timer 기준선·tpr_before_W
         # 가 모든 run 에서 필요하고, task 별(mixed arm 에서도 task 별)로 잡는다.
         W = rollout_cap(part["train"])
@@ -1003,14 +1239,18 @@ def run(args) -> int:
     detail: list[dict] = []
     for arm in arms:
         for kind in models:
-            r, d, _ = run_arm(arm, kind, tasks, splits, args, out_dir)
+            if arm == "loto":
+                r, d, _ = run_loto(kind, tasks, splits, args, out_dir)
+            else:
+                r, d, _ = run_arm(arm, kind, tasks, splits, args, out_dir)
             rows += r
             detail += d
 
     # timer 기준선 (무feature): "t ≥ W 면 발화". detector 가 이것보다 못하면 학습한 것은
     # 길이뿐이다. arm/α 무관이라 task 당 한 행 + 풀링 한 행.
+    # (loto 는 fold 마다 held-out 전 episode 위 timer 행을 run_loto 안에서 이미 낸다)
     timer_all: list[dict] = []
-    for t in sorted(tasks):
+    for t in (sorted(tasks) if arms != ["loto"] else []):
         recs = timer_records(splits[t]["test"], t, tasks[t].get("W"),
                              tasks[t]["phase_names"])
         if not recs:
@@ -1048,6 +1288,12 @@ def run(args) -> int:
             "td_grid": list(TD_GRID),
             "split": {"train": args.train_scenes, "calib": args.calib_scenes,
                       "test": args.test_scenes, "unit": "scene"},
+            **({"loto": {"folds": {h: [t for t in sorted(tasks) if t != h]
+                                   for h in sorted(tasks)},
+                         "test": "held-out task 전 episode (full, zero-shot)",
+                         "band": "train task 성공 판 풀링",
+                         "W": "held-out 자기 성공 통계 = oracle 참조용"}}
+               if args.arm == "loto" else {}),
             "label": "y=1 은 failure (SAFE 규약)",
         },
         "scene_split": {t: splits[t]["scenes"] for t in splits},
@@ -1090,7 +1336,9 @@ def main() -> int:
                     help="denoise step index (-1 = 마지막 k)")
     ap.add_argument("--seg", default="all",
                     help="token segment 이름 (state|future|action|all)")
-    ap.add_argument("--arm", default="both", choices=("both", "pertask", "mixed"))
+    ap.add_argument("--arm", default="both",
+                    choices=("both", "pertask", "mixed", "loto"),
+                    help="both=pertask+mixed. loto=leave-one-task-out (task 전이) 단독 실행")
     ap.add_argument("--models", default="lstm,mlp", help="lstm,mlp")
     ap.add_argument("--alphas", default="0.05,0.1,0.2,0.3", help="CP 유의수준(FPR 목표)")
     ap.add_argument("--train-scenes", type=int, default=6)
