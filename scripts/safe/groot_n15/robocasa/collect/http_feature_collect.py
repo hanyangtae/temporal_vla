@@ -289,7 +289,7 @@ class N15LerobotHttpFeatureClient(VLAClient):
 _STEERING_NOT_ENABLED = False  # serve 에 gated 등록 자체가 없음 (base arm: detector-only serve)
 
 
-def _post_steering_phase(server: str, phase: str) -> bool:
+def _post_steering_phase(server: str, phase: str, scene: "int | None" = None) -> bool:
     """Oracle-gated steering: 현재 phase 를 serve 에 통지 (실패 시 즉시 예외 — 무음 미조향 방지).
 
     Returns: 해당 phase 에 실제 matrix 가 등록돼 있는지 (False = identity fallback —
@@ -308,7 +308,9 @@ def _post_steering_phase(server: str, phase: str) -> bool:
         return False
     req = _rq.Request(
         f"{server.rstrip('/')}/steering_phase",
-        data=_json.dumps({"phase": phase}).encode(),
+        # scene 은 condg(상태-조건부) serve 의 중심화 파라미터 선택용 — 다른 op 는 무시.
+        data=_json.dumps({"phase": phase} if scene is None
+                         else {"phase": phase, "scene": int(scene)}).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
@@ -574,6 +576,8 @@ def make_env(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vla-server", default="http://127.0.0.1:8400")
+    parser.add_argument("--steering-scene", type=int, default=None,
+                        help="condg serve 중심화 파라미터 선택용 scene index (/steering_phase 에 동봉)")
     parser.add_argument("--task", default="OpenFridge")
     parser.add_argument(
         "--env-name",
@@ -952,7 +956,7 @@ def run() -> dict[str, Any]:
             if online_gating:
                 # /reset(=policy.reset, serve 의 detector 상태 리셋) **이후** 에 off 를
                 # 걸어야 이전 판의 개입이 이 판 첫 추론까지 새지 않는다.
-                _post_steering_phase(args.vla_server, "off")
+                _post_steering_phase(args.vla_server, "off", scene=getattr(args, "steering_scene", None))
                 if local_ep_idx == 0:
                     _warn_phase_vocab_mismatch(
                         labeler, getattr(args, "proximity_phases", False), serve_identity)
@@ -1004,7 +1008,7 @@ def run() -> dict[str, Any]:
                 phase = labeler.step()
                 gated_now = False
                 if getattr(args, "gated_steering", False):
-                    gated_now = _post_steering_phase(args.vla_server, phase)
+                    gated_now = _post_steering_phase(args.vla_server, phase, scene=getattr(args, "steering_scene", None))
                 elif steer_from_record is not None:
                     # exp4-1 latch: K번째 record 부터 끝까지 ON (record r ⇔ env-step
                     # [nas·r, nas·r+nas)). global='steer' 고정 / current=라벨러 현재 phase
@@ -1015,12 +1019,12 @@ def run() -> dict[str, Any]:
                         want = phase
                     else:
                         want = getattr(args, "steer_phase_name", None) or "steer"
-                    gated_now = _post_steering_phase(args.vla_server, want)
+                    gated_now = _post_steering_phase(args.vla_server, want, scene=getattr(args, "steering_scene", None))
                 elif online_gating:
                     # 이 스텝의 POST 는 **직전 응답까지의** 발화 상태로 결정된다(causal):
                     # record r 에서 발화하면 개입은 r+1 부터. 발화 전엔 off = identity.
                     want = phase if failure_latched else "off"
-                    gated_now = _post_steering_phase(args.vla_server, want)
+                    gated_now = _post_steering_phase(args.vla_server, want, scene=getattr(args, "steering_scene", None))
                 official_action, _ = policy.get_action(obs)
                 if online_gating:
                     fail = getattr(policy, "last_failure", None)

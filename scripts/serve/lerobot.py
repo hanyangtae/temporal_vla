@@ -114,6 +114,7 @@ _gated_registry: dict = {}
 # {"hook","family","per_step"}. 4모드 전부 여기 등록되고, /steer_arm 이 재기동 없이
 # 같은 family(conceptor↔conceptor, setpoint↔setpoint) 안에서 연산자를 교체한다 —
 # 동적 큐의 슬롯 가동률 전제. family 교체는 hook 클래스가 달라 재기동 필요(명시 에러).
+_condg_hooks: list = []  # condg(상태-조건부 대조 guidance) hook — /act 마다 상태 주입 필요
 _arm_registry: dict = {}  # oracle phase-gated steering: {"hooks":{layer:hook},"matrices":{layer:{phase:M|M_seq}},"identity":{layer:I|[I]*K}}
 # 프로세스 지문: 러너가 "포트의 기존 서버"를 새 serve 로 오인하는 사고 방지 (Gate 2 치명#3)
 # — 로그의 [serve-boot] id 와 /health 의 boot_id 가 일치해야 같은 프로세스.
@@ -301,6 +302,39 @@ def _reset_steering_step_counters() -> None:
     # (요청 1개 = record 1개 규약, patching_hooks.PatchSteering docstring)
     for hook in _patch_hooks.values():
         hook.reset_step_counter()
+
+
+CONDG_STATE_KEYS = (
+    "observation.state.eef_pos_rel",     # 3
+    "observation.state.eef_quat_rel",    # 4
+    "observation.state.gripper_qpos",    # 2
+)
+
+
+def _inject_condg_state(payload: dict) -> None:
+    """condg hook 에 raw proprio 9차원을 주입 (요청 1개 = record 1개 규약).
+
+    속도는 hook 내부 버퍼의 직전 record 차분이라 **요청마다 정확히 1회** 불러야 한다
+    (docs/steering/44 §1). 키가 없으면 조용히 0 을 넣지 않고 즉시 실패 — 상태가
+    비면 setpoint 가 통째로 틀어진다.
+    """
+    if not _condg_hooks:
+        return
+    parts = []
+    for key in CONDG_STATE_KEYS:
+        raw = payload.get(key)
+        if raw is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"condg steering: payload 에 {key} 없음 "
+                    f"(필요 키 {list(CONDG_STATE_KEYS)}) — GR00T RoboCasa io 경로 필요"
+                ),
+            )
+        parts.append(np.asarray(raw, dtype=np.float64).reshape(-1))
+    p9 = np.concatenate(parts)
+    for hook in _condg_hooks:
+        hook.set_state(p9)
 
 
 def _has_per_step_steering() -> bool:
@@ -560,11 +594,20 @@ def steering_phase(payload: dict):
 
     수집 client 가 매 get_action 전에 POST {"phase": "<reach-to-object|transport|...>"}.
     등록된 phase 가 없으면 identity(=no steer). --steering-phase-npz-base 로 활성화.
+
+    condg(op=condg)는 phase 에 더해 optional ``"scene": int`` 를 받아 scene별 중심화
+    파라미터를 고른다 (미지 scene = global fallback). 기존 호출자는 scene 없이 그대로.
     """
     if not _gated_registry:
         raise HTTPException(status_code=409, detail="gated steering not enabled")
     phase = str(payload.get("phase", ""))
+    scene = payload.get("scene")
+    scene = None if scene is None else int(scene)
     for layer, hook in _gated_registry["hooks"].items():
+        if hasattr(hook, "set_phase"):
+            # condg: hook 이 전 phase 파라미터를 들고 있어 이름·scene 만 스위칭.
+            hook.set_phase(phase or None, scene)
+            continue
         M = _gated_registry["matrices"][layer].get(phase)
         if hasattr(hook, "set_vector"):
             # setpoint hook: 등록 phase → 활성, 미등록 → 비활성(no-op).
@@ -581,7 +624,9 @@ def steering_phase(payload: dict):
             # 카운터도 함께 리셋한다 (구 ``hook.M=...; hook._Mt=None`` 배선 대체).
             hook.set_matrices(M if M is not None else _gated_registry["identity"][layer])
     _gated_registry["current"] = phase
-    return {"ok": True, "phase": phase, "gated": phase in next(iter(_gated_registry["matrices"].values()))}
+    _gated_registry["current_scene"] = scene
+    return {"ok": True, "phase": phase, "scene": scene,
+            "gated": phase in next(iter(_gated_registry["matrices"].values()))}
 
 
 @app.post("/steer_arm")
@@ -807,6 +852,10 @@ async def reset():
     # 리셋을 빠뜨리면 이전 판의 상태가 이어져 발화 시점이 오염된다.
     if _failure_detector is not None:
         _failure_detector.reset()
+    # condg: 속도 차분 버퍼(직전 record 상태) 초기화 — 판 경계를 넘겨 이으면 첫 record
+    # 속도가 이전 판의 잔재가 된다.
+    for hook in _condg_hooks:
+        hook.reset_state()
     return reset_policy(policy)
 
 
@@ -887,6 +936,7 @@ async def predict_action(payload: dict):
         )
     inference_seed = _apply_inference_seed(payload)
     _reset_steering_step_counters()
+    _inject_condg_state(payload)
     batch = parse_payload(payload)
     batch = _apply_input_remap(batch)
 
@@ -926,6 +976,7 @@ async def predict_action_with_features(payload: dict):
     t0 = time.time()
     inference_seed = _apply_inference_seed(payload)
     _reset_steering_step_counters()
+    _inject_condg_state(payload)
     batch = parse_payload(payload)
     batch = _apply_input_remap(batch)
 
@@ -1050,6 +1101,8 @@ async def health():
         # 러너 preflight: 로그의 [serve-boot] id 와 대조해 "포트의 남의 서버" 오인 방지
         boot_id=_BOOT_ID,
         steering=_steering_spec or None,
+        # condg 는 상태 의존이라 정적 지문만으론 부족 — 현재 arm/phase·게이트 통계 노출
+        condg=[h.status() for h in _condg_hooks] or None,
         patch=_patch_spec or None,
         phase_readout=_phase_spec or None,
         failure_detector=_failure_spec or None,
@@ -1134,8 +1187,11 @@ def _health_feature_metadata() -> dict[str, Any]:
 
 
 def _update_steering_spec(*, mode, op, layers, beta, alpha, key,
-                          token_select, denoise, npz_shas, phases=None):
-    """/health 스티어링 지문 갱신 — 기동·재무장(/steer_arm) 공용 (armsig 의 원천)."""
+                          token_select, denoise, npz_shas, phases=None, extra=None):
+    """/health 스티어링 지문 갱신 — 기동·재무장(/steer_arm) 공용 (armsig 의 원천).
+
+    ``extra``: 연산자 고유 필드(예 condg 의 mode/gate)를 그대로 얹는다.
+    """
     global _steering_spec
     _steering_spec = {
         "mode": mode,
@@ -1149,6 +1205,8 @@ def _update_steering_spec(*, mode, op, layers, beta, alpha, key,
         "npz_shas": sorted(set(npz_shas)),
         "phases": sorted(phases) if phases else None,
     }
+    if extra:
+        _steering_spec.update(extra)
 
 
 def _register_steering_if_requested(loaded_policy, args):
@@ -1156,15 +1214,19 @@ def _register_steering_if_requested(loaded_policy, args):
     steering_npz = getattr(args, "steering_npz", None)
     steering_npz_dir = getattr(args, "steering_npz_dir", None)
     steering_layers = getattr(args, "steering_layers", None)
-    if not steering_npz and not steering_npz_dir and not getattr(args, "steering_phase_npz_base", None):
+    condg_npz = getattr(args, "condg_npz", None)
+    if (not steering_npz and not steering_npz_dir and not condg_npz
+            and not getattr(args, "steering_phase_npz_base", None)):
         return None
     if _policy_type not in ("groot", "pi05"):
         raise ValueError("Conceptor steering requires policy_type in {'groot', 'pi05'}")
 
     from steering_hooks import (
+        CondGuidanceSteering,
         ConceptorSteering,
         Pi05ConceptorSteering,
         SetpointSteering,
+        load_cond_guidance,
         load_steering_matrices_per_step,
         load_steering_matrix,
         load_steering_segment,
@@ -1176,6 +1238,7 @@ def _register_steering_if_requested(loaded_policy, args):
         _h.unregister()
     _steering = []
     _arm_registry.clear()
+    _condg_hooks.clear()
 
     beta = getattr(args, "steering_beta", 0.3)
     alpha = getattr(args, "steering_alpha", None)
@@ -1214,10 +1277,92 @@ def _register_steering_if_requested(loaded_policy, args):
                               key=key, token_select=token_select, denoise=denoise,
                               npz_shas=loaded_npz_shas, phases=phases)
 
+    # --- condg: 상태-조건부 대조 guidance (docs/steering/44) -----------------------
+    # 단일 NPZ 안에 phase 전부(W_s/W_f/τ) + scene별 중심화 파라미터가 들어 있어
+    # hook 1개가 /steering_phase 로 phase·scene 만 스위칭한다 (gated 계열과 동거하되
+    # NPZ 디렉토리 계약은 쓰지 않는다).
+    if condg_npz:
+        global _gated_registry
+        _want_op = getattr(args, "steering_op", "auto") or "auto"
+        if _want_op not in ("auto", "condg"):
+            raise ValueError(f"--condg-npz 는 --steering-op condg 전용 (got {_want_op})")
+        if _policy_type != "groot":
+            raise ValueError("--condg-npz 는 groot dit pathway 전용")
+        if steering_npz or steering_npz_dir or getattr(args, "steering_phase_npz_base", None):
+            raise ValueError("--condg-npz 는 다른 --steering-npz*/phase-base 와 상호 배타")
+        if per_step:
+            raise ValueError("condg 는 --steering-denoise global 전용 (마지막 denoise call 한정)")
+        groot_model = getattr(loaded_policy, "_groot_model", None)
+        if groot_model is None:
+            raise ValueError("GR00T LeRobot policy is missing _groot_model for steering")
+        import hashlib as _hashlib_cg
+
+        loaded_npz_shas.append(
+            _hashlib_cg.sha256(Path(condg_npz).read_bytes()).hexdigest()[:12]
+        )
+        params = load_cond_guidance(condg_npz)
+        # scene 목록은 phase별(중심화가 phase 단위) — 진단용으로 합집합만 노출.
+        _cg_scenes = sorted({sc for v in params["phases"].values()
+                             for sc in v["scenes"]})
+        # layer: --steering-layer 우선, 미지정이면 fit 표적 L12
+        _cg_layer = getattr(args, "steering_layer", None)
+        _cg_layer = 12 if _cg_layer is None else int(_cg_layer)
+        _cg_mode = getattr(args, "condg_mode", "condg") or "condg"
+        _cg_gate = bool(getattr(args, "condg_gate", True))
+        _cg_token = token_select or "all"
+        hook = CondGuidanceSteering(
+            groot_model, params, beta, layer=_cg_layer, mode=_cg_mode,
+            token_select=_cg_token, gate=_cg_gate,
+        ).register()
+        _steering.append(hook)
+        _condg_hooks.append(hook)
+        _arm_registry[("dit", _cg_layer)] = {
+            "hook": hook, "family": "condg", "per_step": False,
+        }
+        _registered_phases = sorted(p for p, v in params["phases"].items() if v["registered"])
+        # /steering_phase 가 hooks 를 순회하며 set_phase 로 스위칭한다. matrices 는
+        # 응답의 gated 플래그 계산용(등록 phase 집합)으로만 쓰인다.
+        _gated_registry = {
+            "hooks": {_cg_layer: hook},
+            "matrices": {_cg_layer: {ph: None for ph in _registered_phases}},
+            "identity": {_cg_layer: None},
+            "current": None,
+        }
+        _update_steering_spec(
+            mode="gated", op="condg", layers=[_cg_layer], beta=beta, alpha=alpha,
+            key=None, token_select=_cg_token, denoise="last_call",
+            npz_shas=loaded_npz_shas, phases=_registered_phases,
+            extra={"condg_mode": _cg_mode, "condg_gate": _cg_gate,
+                   "condg_state_dim": hook.state_dim,
+                   "condg_num_denoise": hook.num_denoise,
+                   "condg_scenes": _cg_scenes},
+        )
+        logger.info(
+            "condg steering registered: npz=%s layer=%s mode=%s gate=%s beta=%s "
+            "token_select=%s phases=%s scenes=%s",
+            condg_npz, _cg_layer, _cg_mode, _cg_gate, beta, _cg_token,
+            _registered_phases, _cg_scenes,
+        )
+        print(
+            f"[steer-registered] path=condg op=condg mode={_cg_mode} gate={_cg_gate} "
+            f"layer={_cg_layer} beta={beta:g} token_select={_cg_token} "
+            f"phases={','.join(_registered_phases)} "
+            f"unregistered={','.join(sorted(set(params['phases']) - set(_registered_phases)))} "
+            f"num_denoise={hook.num_denoise} dim={hook.expected_dim}",
+            flush=True,
+        )
+        for ph in sorted(params["phases"]):
+            ent = params["phases"][ph]
+            print(f"[steer-norms] op=condg phase={ph} registered={ent['registered']} "
+                  f"tau={ent['tau']:.6f} B={ent['B']} "
+                  f"‖W_s‖={float(np.linalg.norm(ent['W_s'])):.4f} "
+                  f"‖W_f‖={float(np.linalg.norm(ent['W_f'])):.4f}", flush=True)
+        return _steering
+
     # --- Oracle phase-gated multi-layer steering: /steering_phase 로 M 스위칭 ---
     phase_base = getattr(args, "steering_phase_npz_base", None)
     if phase_base and steering_layers:
-        global _gated_registry
+        # (_gated_registry 는 위 condg 분기에서 이미 global 선언됨)
         if _policy_type != "groot":
             raise ValueError("--steering-phase-npz-base 는 groot dit pathway 전용")
         groot_model = getattr(loaded_policy, "_groot_model", None)
@@ -1962,15 +2107,49 @@ def main():
     )
     parser.add_argument(
         "--steering-op",
-        choices=("auto", "conceptor", "setpoint", "setpoint_seg", "setpoint_vl"),
+        choices=("auto", "conceptor", "setpoint", "setpoint_seg", "setpoint_vl", "condg"),
         default="auto",
         help=(
             "steering 연산자 (exp4-1). auto=NPZ 키로 감지(*_v_steer=setpoint). "
             "명시 시 감지 결과와 불일치하면 기동 abort — 러너가 arm 마다 명시해 "
             "NPZ 오배치를 잡는다. setpoint(setM)는 gated 경로 전용, h'=h−β[(h·r̂)−s]r̂. "
             "setpoint_vl(exp5-2)은 --steering-npz 단일 NPZ + --steering-pathway vl 전용 — "
-            "vlln 출력의 **토큰-평균**을 setpoint 로 이동."
+            "vlln 출력의 **토큰-평균**을 setpoint 로 이동. "
+            "condg(docs/steering/44)는 --condg-npz 전용 — 상태-조건부 대조 guidance."
         ),
+    )
+    parser.add_argument(
+        "--condg-npz",
+        default=None,
+        help=(
+            "상태-조건부 대조 guidance(condg) NPZ (docs/steering/44 §4). phase별 "
+            "W_s/W_f/tau/registered + scene별 mh/mp/sp + global fallback 을 담은 단일 "
+            "파일. /steering_phase {\"phase\":…, \"scene\": int} 로 스위칭하고, /act 요청의 "
+            "observation.state.{eef_pos_rel,eef_quat_rel,gripper_qpos} 로 상태를 주입한다. "
+            "layer 는 --steering-layer(기본 12), β 는 --steering-beta."
+        ),
+    )
+    parser.add_argument(
+        "--condg-mode",
+        choices=("condg", "hs"),
+        default="condg",
+        help=(
+            "condg 적용식. condg=대조 투영(Δ=β⟨h̃−ĥ_s,d̂⟩d̂, d̂=normalize(ĥ_f−ĥ_s)) | "
+            "hs=성공-모방 단독 ablation((1−β)h̃+β·ĥ_s)."
+        ),
+    )
+    parser.add_argument(
+        "--condg-gate",
+        dest="condg_gate",
+        action="store_true",
+        default=True,
+        help="condg margin 게이트 ON (기본) — m>τ 인 record 에서만 개입.",
+    )
+    parser.add_argument(
+        "--no-condg-gate",
+        dest="condg_gate",
+        action="store_false",
+        help="무게이트 ablation: 발화 후 전 record 상시 개입 (g≡1, 44 §3).",
     )
     parser.add_argument(
         "--patch-layers",

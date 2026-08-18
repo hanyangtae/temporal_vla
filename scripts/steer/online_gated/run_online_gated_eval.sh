@@ -69,9 +69,12 @@ case "$STEER_OP" in
   setpoint_seg) ;;
   conceptor)
     [ -n "$STEER_OP_NAME" ] || { echo "[online-gated] ABORT: STEER_OP=conceptor 는 STEER_OP_NAME (sconceptor|conceptor|varc) 필요" >&2; exit 2; } ;;
-  *) echo "[online-gated] ABORT: 알 수 없는 STEER_OP=${STEER_OP} (setpoint_seg|conceptor)" >&2; exit 2 ;;
+  condg) ;;   # 상태-조건부 대조 guidance (docs/steering/44) — NPZ 는 variant 디렉토리/condg.npz 단일 파일
+  *) echo "[online-gated] ABORT: 알 수 없는 STEER_OP=${STEER_OP} (setpoint_seg|conceptor|condg)" >&2; exit 2 ;;
 esac
 is_conceptor_family() { [ "$STEER_OP" = conceptor ]; }
+is_condg() { [ "$STEER_OP" = condg ]; }
+CONDG_GATE="${CONDG_GATE:-1}"   # condg 전용: 0 이면 --no-condg-gate (무게이트 ablation arm)
 DETECTOR_CKPT="${DETECTOR_CKPT:-}"                  # 지정 시 전 slug 공통 (단일 slug 용)
 # slug 별 per-task ckpt 템플릿 (%SLUG% 치환). DETECTOR_CKPT 가 비어 있으면 이걸 사용.
 DETECTOR_CKPT_TMPL="${DETECTOR_CKPT_TMPL:-outputs/analysis/grid_phase/detector_sim/detector_pertask_lstm_%SLUG%.pt}"
@@ -169,6 +172,19 @@ NW=${#PORTS[@]}
 
 # ── arm 별 NPZ base / 모드 ────────────────────────────────────────────────────
 npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, base 는 빈 문자열)
+  if is_condg; then
+    # condg: <NPZ_ROOT>/<slug>/<NPZ_VARIANT>/<variant>/condg.npz.
+    # hs(성공-모방 ablation)는 같은 W 라 NPZ 는 condg_hs 디렉토리(내용 동일, mode 만 다름).
+    local root="${NPZ_ROOT}/${1}/${NPZ_VARIANT}"
+    case "$2" in
+      base)                              printf '' ;;
+      online|online_fut|oracle_always)   printf '%s/condg\n'    "$root" ;;
+      online_pl|online_fut_pl|oracle_always_pl) printf '%s/condg_pl\n' "$root" ;;
+      online_hs)                         printf '%s/condg_hs\n' "$root" ;;
+      *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
+    esac
+    return 0
+  fi
   if is_conceptor_family; then
     # 행렬 연산자: 위약만 별도 트리, future arm 은 같은 NPZ (token-select 로 표현)
     local root="${NPZ_ROOT}/${1}/${NPZ_VARIANT}/${STEER_OP_NAME}"
@@ -195,6 +211,13 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
 # arm 별 적용 토큰. conceptor 계열의 _fut arm 만 future 세그먼트로 좁힌다
 # (setpoint_seg 는 fit 이 토큰 위치별 s_t 를 내므로 항상 all — 기존 동작 불변).
 token_select_for_arm() {  # arm
+  if is_condg; then
+    case "$1" in
+      online_fut|online_fut_pl) printf 'future\n' ;;
+      *) printf '%s\n' "$STEER_TOKEN_SELECT" ;;
+    esac
+    return 0
+  fi
   if is_conceptor_family; then
     case "$1" in
       online_fut|online_fut_pl) printf 'future\n' ;;
@@ -206,13 +229,19 @@ token_select_for_arm() {  # arm
 }
 # base 도 detector 를 태운다(steering 미등록 → 전부 identity): eval 대역 failure_scores 를
 # sidecar 에 남겨 α sweep(발화 시점·오발화율)을 GPU 재실행 없이 사후 재계산하기 위함.
-arm_uses_detector() { case "$1" in base|online|online_fut|online_pl|online_fut_pl) return 0 ;; *) return 1 ;; esac; }
+arm_uses_detector() { case "$1" in base|online|online_fut|online_pl|online_fut_pl|online_hs) return 0 ;; *) return 1 ;; esac; }
 
 # NPZ base 스캔 → PHASES / LAYER 확정.
 # ★ command substitution 안에서 대입하면 subshell 에 갇혀 태그가 빈다 (exp5-2 실측) —
 # 반드시 이 함수를 직접 호출해 전역에 채운다.
 scan_npz_base() {  # base
   local base="$1" ph
+  if is_condg; then
+    # condg 는 단일 NPZ 파일 — phase 목록·layer 는 NPZ 안(serve preflight 로그)에서 확인.
+    [ -f "$base/condg.npz" ] || { echo "ABORT: condg NPZ 없음: $base/condg.npz" >&2; return 1; }
+    PHASES="(npz)"; LAYER="${CONDG_LAYER:-12}"
+    return 0
+  fi
   [ -d "$base" ] || { echo "ABORT: NPZ base 없음: $base" >&2; return 1; }
   PHASES=""
   for ph in "$base"/*/; do
@@ -234,11 +263,20 @@ serve_flags_for() {  # slug arm → serve 추가 플래그 (scan_npz_base 선행
     # setpoint_seg 는 gated 경로(--steering-phase-npz-base) + token-select all 필수
     # (fit 이 전 토큰 위치별 s_t 를 냈다 — last_horizon 이면 좌표가 어긋난다).
     # conceptor 계열은 같은 gated 경로 + --steering-alpha 0 (선택 α 가 NPZ 키에 구워짐).
-    flags="--steering-phase-npz-base ${serve_base} --steering-phases ${PHASES}"
-    flags="${flags} --steering-layers ${LAYER} --steering-op ${STEER_OP}"
-    flags="${flags} --steering-beta ${STEER_BETA}"
-    flags="${flags} --steering-token-select $(token_select_for_arm "$arm")"
-    is_conceptor_family && flags="${flags} --steering-alpha 0"
+    if is_condg; then
+      local mode=condg
+      [ "$arm" = online_hs ] && mode=hs
+      flags="--condg-npz ${serve_base}/condg.npz --steering-op condg"
+      flags="${flags} --steering-beta ${STEER_BETA} --condg-mode ${mode}"
+      flags="${flags} --steering-token-select $(token_select_for_arm "$arm")"
+      [ "$CONDG_GATE" = 1 ] || flags="${flags} --no-condg-gate"
+    else
+      flags="--steering-phase-npz-base ${serve_base} --steering-phases ${PHASES}"
+      flags="${flags} --steering-layers ${LAYER} --steering-op ${STEER_OP}"
+      flags="${flags} --steering-beta ${STEER_BETA}"
+      flags="${flags} --steering-token-select $(token_select_for_arm "$arm")"
+      is_conceptor_family && flags="${flags} --steering-alpha 0"
+    fi
   fi
   if arm_uses_detector "$arm"; then
     local ckpt
@@ -430,9 +468,9 @@ serve_preflight() {  # port arm  — 등록 지문 대조 (무음 identity·arm 
 }
 
 # ── 한 판 ─────────────────────────────────────────────────────────────────────
-run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_host
+run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_host [scene]
   local port="$1" slug="$2" arm="$3" task="$4" envn="$5" instr="$6" ep="$7" inf="$8" seed="$9"
-  local out_host="${10}" mode=()
+  local out_host="${10}" scene="${11:-}" mode=()
   case "$arm" in
     online|online_fut|online_pl|online_fut_pl) mode=(--gated-steering-mode online) ;;
     oracle_always|oracle_always_pl) mode=(--gated-steering) ;;
@@ -451,6 +489,7 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
     --video-fps 20 --steps-per-render 2 --wait-ready
     ${PROX_ARGS[@]+"${PROX_ARGS[@]}"} --no-features --expect-chunk-len "$EXPECT_CHUNK"
     --run-tag "online_gated_${arm}_b${STEER_BETA}"
+    ${scene:+--steering-scene "$scene"}
     "${mode[@]}")
   if [ "$DRY_RUN" = "1" ]; then echo "[dry collect] ${cmd[*]}"; return 0; fi
   local rc=0
@@ -497,7 +536,7 @@ run_job() {  # port gpu slug arm
         continue
       fi
       echo "[${slug}/${arm}] $(date '+%F %T') ep${ep} s${si} n${ni} seed=${seed} inf=${inf} csucc=${csucc}"
-      run_episode "$port" "$slug" "$arm" "$task" "$envn" "$instr" "$ep" "$inf" "$seed" "$out_host" \
+      run_episode "$port" "$slug" "$arm" "$task" "$envn" "$instr" "$ep" "$inf" "$seed" "$out_host" "$si" \
         || rc_any=1
     done < "$tbl"
   else
@@ -512,7 +551,7 @@ run_job() {  # port gpu slug arm
           continue
         fi
         echo "[${slug}/${arm}] $(date '+%F %T') ep${ep} s${si} seed=${seed} inf=${inf}"
-        run_episode "$port" "$slug" "$arm" "$task" "$envn" "$instr" "$ep" "$inf" "$seed" "$out_host" \
+        run_episode "$port" "$slug" "$arm" "$task" "$envn" "$instr" "$ep" "$inf" "$seed" "$out_host" "$si" \
           || rc_any=1
       done
     done < "$tbl"

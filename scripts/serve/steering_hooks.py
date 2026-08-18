@@ -34,8 +34,10 @@ __all__ = [
     "load_steering_matrix",
     "load_steering_matrices_per_step",
     "load_steering_setpoint",
+    "load_cond_guidance",
     "ConceptorSteering",
     "SetpointSteering",
+    "CondGuidanceSteering",
     "Pi05ConceptorSteering",
 ]
 
@@ -610,6 +612,305 @@ class SetpointSteering:
             self._handle = None
 
     def __enter__(self) -> "SetpointSteering":
+        return self.register()
+
+    def __exit__(self, *_exc: Any) -> bool:
+        self.unregister()
+        return False
+
+
+def load_cond_guidance(npz_path: str | Path) -> dict:
+    """상태-조건부 대조 guidance(condg) NPZ → 파라미터 dict (docs/steering/44 §4).
+
+    NPZ 키 계약 (fit_cond_guidance.py ``_save_npz`` 가 단일 출처 — ``__`` 구분):
+
+    - ``{phase}__W_s`` [P, D], ``{phase}__W_f`` [P, D] — 릿지 계수
+      (P=상태 차원 18 = raw 9 + 속도 9, D=주입 지점 hidden dim).
+    - ``{phase}__tau`` 스칼라 — margin 게이트 임계 (held-out 성공 90퍼센타일).
+    - ``{phase}__B`` 스칼라, ``{phase}__registered`` bool — 미등록 phase 는 identity.
+    - ``{phase}__scene{sc}__mh`` [D] / ``__mp`` [P] / ``__sp`` [P] — **phase별**·scene별
+      중심화/z-score (fit 이 phase 마다 stats 를 재계산).
+    - ``{phase}__mh_global`` / ``__mp_global`` / ``__sp_global`` — 미지 scene 폴백 (필수).
+    - ``phases`` / ``registered_phases`` / ``meta_json`` — 목록·메타.
+
+    Returns:
+        {"phases": {name: {"W_s","W_f","tau","B","registered",
+                           "scenes": {int: {"mh","mp","sp"}},
+                           "global": {"mh","mp","sp"}}}}   (모든 배열 float64)
+    """
+    z = np.load(npz_path, allow_pickle=False)
+    if "phases" not in z.files:
+        raise KeyError(f"{npz_path}: 'phases' 키 없음 (condg NPZ 아님? keys={z.files[:8]})")
+    out_phases: dict[str, dict] = {}
+    for ph in [str(p) for p in z["phases"]]:
+        registered = bool(np.asarray(z[f"{ph}__registered"]).reshape(())) \
+            if f"{ph}__registered" in z.files else False
+        if f"{ph}__W_s" not in z.files:
+            if registered:
+                raise KeyError(f"{npz_path}: phase '{ph}' registered 인데 W_s 없음")
+            continue  # 표본 미달로 W 자체가 없는 미등록 phase
+        W_s = np.asarray(z[f"{ph}__W_s"], dtype=np.float64)
+        W_f = np.asarray(z[f"{ph}__W_f"], dtype=np.float64)
+        if W_s.shape != W_f.shape:
+            raise ValueError(f"{npz_path}: phase '{ph}' W_s{W_s.shape} != W_f{W_f.shape}")
+        for suf in ("mh_global", "mp_global", "sp_global"):
+            if f"{ph}__{suf}" not in z.files:
+                raise KeyError(f"{npz_path}: {ph}__{suf} 없음 (미지 scene 폴백 필수)")
+        glob = {k: np.asarray(z[f"{ph}__{k}_global"], dtype=np.float64).reshape(-1)
+                for k in ("mh", "mp", "sp")}
+        scenes: dict[int, dict] = {}
+        for sc in [int(s) for s in z[f"{ph}__scenes"]] if f"{ph}__scenes" in z.files else []:
+            scenes[sc] = {k: np.asarray(z[f"{ph}__scene{sc}__{k}"],
+                                        dtype=np.float64).reshape(-1)
+                          for k in ("mh", "mp", "sp")}
+        out_phases[ph] = {
+            "W_s": W_s, "W_f": W_f,
+            "tau": float(np.asarray(z[f"{ph}__tau"]).reshape(())),
+            "B": int(np.asarray(z[f"{ph}__B"]).reshape(())) if f"{ph}__B" in z.files else None,
+            "registered": registered,
+            "scenes": scenes, "global": glob,
+        }
+    if not out_phases:
+        raise KeyError(f"{npz_path}: W 보유 phase 0개 (전 phase 표본 미달?)")
+    reg = sorted(p for p, v in out_phases.items() if v["registered"])
+    sha = hashlib.sha256(Path(npz_path).read_bytes()).hexdigest()[:12]
+    _any = next(iter(out_phases.values()))
+    print(f"[steer-preflight] npz={npz_path} op=condg phases={sorted(out_phases)} "
+          f"registered={reg} "
+          f"state_dim={_any['W_s'].shape[0]} dim={_any['W_s'].shape[1]} sha={sha}",
+          flush=True)
+    return {"phases": out_phases}
+
+
+COND_GUIDANCE_MODES: tuple[str, ...] = ("condg", "hs")
+
+
+class CondGuidanceSteering:
+    """상태-조건부 대조 guidance(condg) hook (docs/steering/44 §1·§5).
+
+    성공/실패 각각의 상태→활성화 릿지 예측 ĥ_s=φ̃Wₛ, ĥ_f=φ̃W_f 로 현재 활성화가
+    어느 쪽에 가까운지(margin m = ‖h̃−ĥ_s‖² − ‖h̃−ĥ_f‖²)를 재고, m>τ 일 때만
+    실패 방향 성분을 깎는다::
+
+        d̂ = normalize(ĥ_f − ĥ_s),  Δ = β·⟨h̃−ĥ_s, d̂⟩·d̂,  h ← h − Δ   (mode="condg")
+        Δ = β·(h̃ − ĥ_s)  → h' = (1−β)h̃ + β·ĥ_s                       (mode="hs" ablation)
+
+    setM(SetpointSteering)과 달리 setpoint 가 **상태 φ 의 함수**라 요청마다 갱신된다:
+    serve 가 매 /act 에서 ``set_state(p9)`` 로 raw proprio 9차원(eef_pos_rel 3 +
+    eef_quat_rel 4 + gripper_qpos 2)을 주입하고, 속도 9차원은 hook 내부 버퍼의
+    직전 record 차분으로 만든다(첫 record=0, ``reset_state()`` 로 episode 경계 초기화).
+
+    주입 지점·발화 규약:
+
+    - ``action_head.model.transformer_blocks[layer]`` 출력 residual stream (dit 전용,
+      기본 layer=12 — fit 이 L12 에서 이뤄짐).
+    - **마지막 denoise call 한정**: fit 표적이 step K−1(=3, K=num_inference_timesteps)
+      의 활성화라 그 call 에서만 적용한다. 요청 시작마다 serve 가 부르는
+      ``reset_step_counter()`` 로 call index 를 리셋하고, hook 은 call 마다 +1 하며
+      index==K−1 일 때만 발화한다. K 는 생성자에서 action_head 에서 읽는다.
+    - margin·투영은 **전 토큰 mean 공간**에서 계산한다 (fit 이 49토큰 mean 이라
+      τ 캘리브레이션이 그 공간에 묶여 있음). ``token_select="future"`` 는 계산 공간은
+      그대로 두고 **Δ 를 빼는 토큰만** future 세그먼트([1:T−horizon])로 제한한다
+      (setM all-token eef 진동 전례 대응 arm).
+
+    phase/scene 스위칭: ``set_phase(phase, scene)``. 미등록 phase·None → 완전 identity
+    (출력 텐서 그대로 반환, clone 없음 — off≡identity 가 구조적으로 성립).
+    scene 이 NPZ 에 없으면 global fallback 중심화 파라미터를 쓴다.
+    """
+
+    def __init__(
+        self,
+        groot_model: Any,
+        params: dict,
+        beta: float,
+        *,
+        layer: int = 12,
+        mode: str = "condg",
+        token_select: str = "all",
+        gate: bool = True,
+        horizon: int | None = None,
+        num_denoise: int | None = None,
+    ):
+        if mode not in COND_GUIDANCE_MODES:
+            raise ValueError(f"condg mode 는 {COND_GUIDANCE_MODES} (got {mode})")
+        if token_select not in ("all", "future"):
+            raise ValueError(f"condg token_select 는 ('all','future') (got {token_select})")
+        head = groot_model.action_head
+        self.pathway = "dit"
+        self.layer = None if layer is None else int(layer)
+        self.module = head.model if layer is None else head.model.transformer_blocks[int(layer)]
+        self.mode = mode
+        self.token_select = token_select
+        self.gate = bool(gate)
+        self.beta = float(beta)
+        self.horizon = int(horizon if horizon is not None else head.action_horizon)
+        self.num_denoise = int(
+            num_denoise if num_denoise is not None else head.num_inference_timesteps
+        )
+        self.params = params
+        self._phases = params["phases"]
+        _any = next(iter(self._phases.values()))
+        self.state_dim = int(_any["W_s"].shape[0])   # 18 (raw 9 + 속도 9)
+        self.expected_dim = int(_any["W_s"].shape[1])
+        self._handle = None
+        self._k = 0                    # 요청 내 denoise call index
+        self._prev_p9: np.ndarray | None = None
+        self._phi: np.ndarray | None = None      # 18차원 raw 상태(+속도), 정규화 전
+        self._active: dict | None = None         # 현재 phase 파라미터
+        self._scene = None
+        self._stats: dict | None = None          # 활성 phase 의 (scene|global) 중심화
+        self._cache: tuple | None = None         # (device, dtype, W_s, W_f, mh, mp, sp)
+        self._phi_cache: torch.Tensor | None = None
+        # 진단용 (러너가 /health·로그로 dose 를 재구성)
+        self.last_margin: float | None = None
+        self.n_fired = 0               # 마지막 denoise call 에서 실제 개입한 횟수
+        self.n_gated_off = 0           # m ≤ τ 로 no-op 한 횟수
+
+    # -- 폴리모픽 호환 (registry 순회) -----------------------------------------
+    @property
+    def per_step(self) -> bool:
+        return False
+
+    def reset_step_counter(self) -> None:
+        """요청 시작 시 serve 가 호출 — denoise call index 리셋."""
+        self._k = 0
+
+    # -- 상태/phase 주입 --------------------------------------------------------
+    def set_state(self, p9: np.ndarray) -> None:
+        """raw proprio 9차원 주입 → 내부 버퍼 차분으로 18차원 φ 구성 (요청마다 1회)."""
+        arr = np.asarray(p9, dtype=np.float64).reshape(-1)
+        if arr.shape[0] * 2 != self.state_dim:
+            raise ValueError(
+                f"condg set_state: raw 상태 {arr.shape[0]}차원, 기대 {self.state_dim // 2} "
+                f"(W 의 상태 차원 {self.state_dim} = raw+속도)"
+            )
+        vel = np.zeros_like(arr) if self._prev_p9 is None else arr - self._prev_p9
+        self._prev_p9 = arr
+        self._phi = np.concatenate([arr, vel])
+        self._phi_cache = None
+
+    def reset_state(self) -> None:
+        """episode 경계(/reset): 속도 차분 버퍼 초기화 (다음 record 속도=0)."""
+        self._prev_p9 = None
+        self._phi = None
+        self._phi_cache = None
+
+    def set_phase(self, phase: str | None, scene: int | None = None) -> None:
+        """현재 phase·scene 설정. 미등록 phase 또는 None → identity(off).
+
+        중심화/z-score 파라미터는 **phase별**(fit 이 phase 마다 재계산) — 활성 phase
+        엔트리 안의 scene 별 stats 에서 고르고, 미지 scene 은 그 phase 의 global 폴백.
+        """
+        ent = None if not phase else self._phases.get(str(phase))
+        self._active = ent if (ent is not None and ent["registered"]) else None
+        self._scene = None if scene is None else int(scene)
+        if self._active is None:
+            self._stats = None
+        else:
+            stats = self._active["scenes"].get(self._scene) \
+                if self._scene is not None else None
+            self._stats = stats if stats is not None else self._active["global"]
+        self._cache = None
+        self._phi_cache = None
+
+    @property
+    def armed(self) -> bool:
+        return self._active is not None
+
+    def status(self) -> dict:
+        return {
+            "op": "condg", "mode": self.mode, "beta": self.beta,
+            "layer": self.layer, "token_select": self.token_select,
+            "gate": self.gate, "armed": self.armed, "scene": self._scene,
+            "scene_fallback": (self._active is not None
+                               and self._stats is self._active["global"]),
+            "num_denoise": self.num_denoise,
+            "last_margin": self.last_margin,
+            "n_fired": self.n_fired, "n_gated_off": self.n_gated_off,
+        }
+
+    # -- hook -------------------------------------------------------------------
+    def _tensors(self, out: torch.Tensor):
+        """device/dtype 별 텐서 캐시 (W_s/W_f/mh/mp/sp). 계산은 float32 고정."""
+        dev = out.device
+        if self._cache is not None and self._cache[0] == dev:
+            return self._cache[1:]
+        ent = self._active
+        st = self._stats
+        t = lambda a: torch.as_tensor(a, device=dev, dtype=torch.float32)  # noqa: E731
+        pack = (t(ent["W_s"]), t(ent["W_f"]), t(st["mh"]), t(st["mp"]), t(st["sp"]))
+        self._cache = (dev, *pack)
+        self._phi_cache = None
+        return pack
+
+    def _hook(self, _module: Any, _args: tuple, output: Any) -> Any:
+        k = self._k
+        self._k += 1
+        if self._active is None or self._phi is None:
+            return output                      # off — 원본 그대로 (no-hook 과 동일)
+        if k != self.num_denoise - 1:
+            return output                      # 마지막 denoise call 에서만 개입
+        is_tuple = isinstance(output, tuple)
+        out = output[0] if is_tuple else output
+        if out.shape[-1] != self.expected_dim:
+            raise RuntimeError(
+                f"condg: hook 텐서 dim {out.shape[-1]} != NPZ dim {self.expected_dim} "
+                f"(layer={self.layer}) — fit 주입 지점 불일치"
+            )
+        W_s, W_f, mh, mp, sp = self._tensors(out)
+        phi = self._phi_cache
+        if phi is None:
+            phi = torch.as_tensor(self._phi, device=out.device, dtype=torch.float32)
+            self._phi_cache = phi
+        phi_z = (phi - mp) / sp                       # [P] z-score (scene 통계)
+        hs = phi_z @ W_s                              # [D]
+        hf = phi_z @ W_f                              # [D]
+        # fit 공간 = 전 토큰 mean (τ 캘리브레이션이 이 공간에 묶여 있음)
+        hbar = out.to(torch.float32).mean(dim=-2)     # [..., D]
+        ht = hbar - mh                                # scene-중심화
+        es, ef = ht - hs, ht - hf
+        margin = (es * es).sum(-1) - (ef * ef).sum(-1)          # [...]
+        self.last_margin = float(margin.reshape(-1)[0].item())
+        if self.mode == "condg":
+            d = hf - hs
+            nrm = torch.linalg.norm(d)
+            if float(nrm) < 1e-8:                      # 성공/실패 예측이 동일 → 개입 불가
+                return output
+            d = d / nrm
+            delta = self.beta * (es * d).sum(-1, keepdim=True) * d   # [..., D]
+        else:                                          # "hs" — 성공-모방 단독
+            delta = self.beta * es
+        if self.gate:
+            fire = (margin > self._active["tau"]).to(delta.dtype).unsqueeze(-1)
+            if float(fire.reshape(-1)[0].item()) == 0.0:
+                self.n_gated_off += 1
+                return output
+            delta = delta * fire
+        self.n_fired += 1
+        delta = delta.to(out.dtype).unsqueeze(-2)      # [..., 1, D] — 토큰 공통 벡터
+        if self.token_select == "all":
+            steered = out - delta
+        else:                                          # "future" — [1 : T−horizon] 만
+            steered = out.clone()
+            _t = steered.shape[-2]
+            steered[..., 1 : _t - self.horizon, :] = (
+                steered[..., 1 : _t - self.horizon, :] - delta
+            )
+        if is_tuple:
+            return (steered, *output[1:])
+        return steered
+
+    def register(self) -> "CondGuidanceSteering":
+        if self._handle is None:
+            self._handle = self.module.register_forward_hook(self._hook)
+        return self
+
+    def unregister(self) -> None:
+        if self._handle is not None:
+            self._handle.remove()
+            self._handle = None
+
+    def __enter__(self) -> "CondGuidanceSteering":
         return self.register()
 
     def __exit__(self, *_exc: Any) -> bool:
