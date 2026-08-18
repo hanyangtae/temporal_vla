@@ -79,6 +79,29 @@ def annotate_one(mp4: Path, sidecar: Path, out: Path, steps_per_render: int,
         f += 1
     vw.release()
     cap.release()
+    _to_h264(out)
+
+
+def _to_h264(out: Path) -> None:
+    """브라우저 재생용 재인코딩 — OpenCV mp4v(mpeg4)는 <video> 태그에서 검은 화면.
+
+    ffmpeg 가 없으면 mp4v 그대로 둔다 (경고만 — 갤러리 재생 불가).
+    """
+    import shutil
+    import subprocess
+    if shutil.which("ffmpeg") is None:
+        print(f"[annotate] warn: ffmpeg 없음 — {out.name} 은 mp4v (브라우저 재생 불가)")
+        return
+    tmp = out.with_suffix(".h264.mp4")
+    rc = subprocess.run(
+        ["ffmpeg", "-y", "-v", "error", "-i", str(out), "-c:v", "libx264",
+         "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "23",
+         "-movflags", "+faststart", str(tmp)]).returncode
+    if rc == 0 and tmp.exists():
+        tmp.replace(out)
+    else:
+        tmp.unlink(missing_ok=True)
+        print(f"[annotate] warn: h264 변환 실패 rc={rc} — {out.name} 은 mp4v 유지")
 
 
 def main() -> None:
