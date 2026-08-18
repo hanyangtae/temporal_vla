@@ -203,7 +203,7 @@ start_serve() {  # gpu port
   if [ "$DRY_RUN" = "1" ]; then
     echo "[dry] docker exec -d -e CUDA_VISIBLE_DEVICES=${gpu} lerobot bash -lc \"${cmd}\""
   else
-    docker exec -d -e CUDA_VISIBLE_DEVICES="$gpu" lerobot bash -lc "$cmd"
+    docker exec -d -e CUDA_VISIBLE_DEVICES="$gpu" -e OMP_NUM_THREADS="${SERVE_OMP_THREADS:-4}" -e OPENBLAS_NUM_THREADS="${SERVE_OMP_THREADS:-4}" -e MKL_NUM_THREADS="${SERVE_OMP_THREADS:-4}" lerobot bash -lc "$cmd"
   fi
 }
 health_curl() {  # port
