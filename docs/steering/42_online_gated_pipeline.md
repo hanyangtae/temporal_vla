@@ -163,6 +163,30 @@ in-sample)하나, **reach 계열은 실패 산포가 성공의 1.3–1.8배**이
 함정 기록: kanu 병렬 러너는 GPU 목록을 분리할 것(같은 목록 공유 시 GPU당 4 serve OOM),
 worker 기동 500 오류는 resume 반복으로 수렴, 데스크탑 replay 비결정.
 
+## 7. 데스크탑(pdk) replay 비결정 원인 규명 (2026-08-18)
+
+§6.3의 "데스크탑 replay 비결정(base 4/40 재현)"을 층별 절단으로 규명. 판정 사슬:
+
+| 층 | 테스트 | 결과 |
+|---|---|---|
+| serve 단발 추론 | smoke_probe A-B-A·cross-boot·GPU부하 중 | 전부 bit 동일 (결정적) |
+| env 리셋 렌더 | 같은 seed 2회 프레임 sha | 머신 내 동일 (머신 간은 다름) |
+| env 물리 (proprio) | 상수 액션 30스텝, fresh process, GPU부하 중 | 4/4 동일 (결정적) |
+| **env 이미지 (EGL 렌더)** | 상수 액션, **GPU 무부하** | 4/4 동일 |
+| **env 이미지 (EGL 렌더)** | 상수 액션, **GPU 부하 동시** | **6회 중 4종 (비결정)** |
+
+원인: **데스크탑은 GPU 1장(RTX 4070 Ti SUPER)이라 MuJoCo EGL 렌더와 serve 추론이 같은
+GPU를 공유**하고, GPU 동시 부하 하에서 EGL 렌더 픽셀이 간헐적으로 달라진다. 픽셀 차 →
+액션 차 → closed-loop 발산(A/A에서 갈림 시작 inference가 셀마다 1~47로 무작위, 항상
+failure_score와 action이 동일 지점에서 동시 갈림 = 입력 관측이 먼저 변한 것과 정합).
+kanu·srv48·srv50은 다중 GPU로 렌더/serve가 분리되어 40/40 재현.
+
+함의: ① pdk 수집 rollout은 그 run의 관측·행동·판정으로서 **fit 용도로는 유효**하나
+**bit-replay 기반 eval(사분면 replay·record 대조)은 불가**. ② replay eval·수집은 렌더
+GPU와 serve GPU를 분리할 수 있는 다중 GPU 머신에서만. ③ 마시멜로 kanu 재수집본을
+정합본으로 채택(index dedup 1020→931행, s8n5·s8n7·s9행 11셀만 pdk본 잔존). 진단 도구:
+`smoke_probe.py`(bit-identity)·상수액션 env 테스트(A/A 러너 diag_aa).
+
 ## 5. 재현 좌표
 
 - 러너: `scripts/steer/online_gated/run_online_gated_eval.sh` (EP_MODE=replay 기본,
