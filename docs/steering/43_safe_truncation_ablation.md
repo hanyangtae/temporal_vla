@@ -124,6 +124,26 @@ phase-gt 학습 모델은 "phase에 오래 머무는 구간"을 학습에서 본
 4. eval에서 timer arm(t≥W 개입)을 반드시 대조로 — detector 개입의 부가가치는
    "이른 개입이 SR을 더 살리는가"로만 증명됨.
 
+### 7) LOTO task 전이 (zero-shot 9-fold × 3절제 × 3seed) — 전이는 절제로도 살아나지 않음
+
+각 task를 완전히 배제(학습·표준화·CP 보정에 0판)하고 나머지 task로 학습 → held-out task
+전 episode 평가 (`--arm loto`, CP 밴드는 train-task 성공 풀링). 3-seed 평균:
+
+- **pooled 조기 AUROC(td10) = 0.43~0.47, 전 절제 조건 동일 = chance.** phase 단위
+  길이 통제(phase-gt)도 task 전이를 만들지 못한다. (td20도 0.49~0.55.)
+- **방향이 task마다 반전**: drawer-right td10 0.29~0.41(역방향) vs marshmallow 0.72~0.78
+  (정방향) — 실패 표현의 방향이 task-특이적. 41 라운드의 task별 최적 셀 상이·과거
+  cross-task conceptor 공유 음성과 정합.
+- **유일한 생존 = 같은 env family 내 instruction 공유**: 전이가 chance를 넘는 fold는
+  PPCC 형제(bread/candle/jug/apple)를 학습에 포함한 PPCC held-out들(marshmallow td10
+  0.75+, jug/bread td20 0.7~0.8)뿐. → detector는 **task(env) 단위 분리 + task 내
+  instruction 공유**가 근거 있는 구성 (family-pooled vs per-variant head-to-head는 미실행).
+- 문헌 대조: SAFE(LIBERO)·RL²(SIMPLER, 우리 풀 재현 docs/steering/38)의 공유 detector
+  성립은 근접-도메인 task 가족 + seen 한정 — RL²는 플랫폼만 바뀌어도 번들 detector가
+  실패 36.5% 미검출(재학습으로만 복원). 우리 RoboCasa는 task마다 부엌 자체가 다름
+  (같은 seed도 layout/style 상이 실측)이라 공유 전제가 애초에 없음. seen18 재현
+  (unseen 0.434)의 재확인.
+
 ## 후속 후보 (미실행)
 
 - **진행도-사분위 절제**: 연산자-설계 세션 실측(2026-08-14, Notion 3bc63918…)에 따르면 GT
