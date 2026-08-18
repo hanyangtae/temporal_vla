@@ -63,12 +63,14 @@ def main() -> int:
             continue
         want = instr_text[gi]
         cands = []
-        tsv = SCAN / f"{env}.tsv"
-        with tsv.open() as f:
-            for line in f:
-                seed_s, _, text = line.rstrip("\n").partition("\t")
-                if text.strip() == want and int(seed_s) not in used:
-                    cands.append(int(seed_s))
+        for tsv in (SCAN / f"{env}.tsv", SCAN / f"{env}_ext.tsv"):
+            if not tsv.exists():
+                continue
+            with tsv.open() as f:
+                for line in f:
+                    seed_s, _, text = line.rstrip("\n").partition("\t")
+                    if text.strip() == want and int(seed_s) not in used:
+                        cands.append(int(seed_s))
         new_scenes[gi] = cands[:5]
         if len(new_scenes[gi]) < 5:
             print(f"WARN {gi}: 신규 scene 후보 {len(new_scenes[gi])}/5 (스캔 대역 확장 필요)")
