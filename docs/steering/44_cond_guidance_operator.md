@@ -54,6 +54,33 @@ sig 집합, λ식, split seed, 스펙판 44). 경로: 승준
   (setM eef 진동 전례 → fut arm 병행).
 - 스위칭: 기존 online-gated 러너(EP_MODE=replay)·SAFE latch 그대로.
 
+## 7. 결과 (2026-08-18 — drawer-L·Dish 완주, drawer-R은 수집 양보로 유예)
+
+replay 40셀, β0.3, arm = online(condg)/online_pl(위약)/online_hs(성공-모방). 등록 phase:
+drawer-L grasp-handle, Dish contact-rack. **scene 축은 전부 fit-노출** (판정 (c) 체제) —
+in-fit-noise(n0,1) vs held-out-noise(n5,6)로 분리 보고.
+
+| task | 분할 | base SR | 3 arm SR | 구제 (발화·실개입) | 파손 |
+|---|---|---|---|---|---|
+| drawer-L | in-fit n0,1 | 0.450 | **0.400 (3 arm 동일)** | 0/11 (11·8) | 1/9 — s8n0, 3 arm 공동 |
+| drawer-L | held-out n5,6 | 0.700 | 0.700 (동일) | 0/6 (6·4) | 0/14 |
+| Dish | in-fit n0,1 | 0.350 | 0.350 (동일) | 0/13 (12·2) | 0/7 |
+| Dish | held-out n5,6 | 0.450 | 0.450 (동일) | 0/11 (11·3) | 0/9 |
+
+- **판정: condg도 null** — 처치·위약·성공-모방이 셀 단위까지 완전 동일. 실개입 분모
+  (drawer 12판·Dish 5판 + 성공셀 개입 4판)에서 뒤집힘 0, 유일한 변화(s8n0 파손)는 세
+  arm 공동 = 개입 존재의 타이밍 섭동. read(margin AUROC 0.78–0.86)≠write 재확인.
+- β0.3에서는 위약조차 경계셀을 거의 못 뒤집음(β1.0 라운드 대비) — 개입 자체가 sub-섭동.
+- **Dish의 실개입 병목**: 발화 23/24인데 등록 phase(contact-rack) 재방문이 5판뿐 —
+  단일-phase 등록 게이트의 커버리지 대가.
+- hs는 러너 게이팅 버그(수정 커밋 33cb2b9 이후 fix)로 1차분 폐기·재실행분만 사용.
+- **α 부수 산출**: 기록 failure_scores 사후 sweep(재계산=실측 35/35 일치, drawer-L) —
+  α0.2는 FPR 동일(2/20)·발화 record 38→33 (공짜 개선), α0.3은 record 1까지 당겨지나
+  FPR 15/20 붕괴. **SAFE 신호는 컨택-후에만 분리** (43 절제 detector가 preW 0.17→1.00
+  로 이를 해소하는 별도 축 — 후속 arm 후보).
+- 잔여: drawer-R (srv50, base/online/pl 각 34/40 + hs 0/40 — n15_grid_v2 수집 완료 후
+  resume). 현재까지 34판 × 4 arm 뒤집힘 0.
+
 ## 6. eval 계획
 
 replay 40셀(수집 머신 매칭): 등록 통과 cell 보유 task 우선 —
