@@ -179,3 +179,35 @@ tpr/fpr) 병용, 소표본 셀은 n_td 병기.
 3. activation 지표의 유효한 용도(축소된 권고): **혼입 금지 필터** — S1 부호 반전
    (sign_agree 0, S1<0.35) slug 를 같은 detector 에 넣지 말 것 (oven·drawer_right 류
    스크리닝). 묶음 확정은 실측으로.
+
+---
+
+## 라운드 3 — negative filter confirmatory (grid v2, 사전등록)
+
+사용자 지시(08-19): "혼입 금지 필터" 판정을 더 넓은 데이터에서 확인. 데이터 = grid v2
+(plan 3134e339de4c 포함 2236판, scene 15 × noise 15, `index_rollouts_v2.tsv` 정본,
+실패 14셀 제외). v1(930판)에서 도출한 가설을 v2에서 검증 — **아래 가설은 v2 결과를
+보기 전에 고정한다.**
+
+### 사전등록 가설 (v1 도출)
+
+- **H1 (S1 부호 구조 재현)**: v2 공유도 행렬에서 (a) PPCC 형제 정방향 S1≥0.7,
+  (b) OpenDrawer_right↔PPCC 부호 반전(S1<0.4·sign≈0), (c) OvenRack↔{PPCC,drawerL}
+  반전, (d) drawer left↔right 무공유(0.5 근방), (e) Coffee↔PPCC 정방향.
+- **H2 (negative filter 인과, 주 가설)**: v2 co-training에서 부호 반전 쌍의 피해
+  예측 slug Δtd10<0, 정렬 대조 쌍은 Δ≥0 부근. 사전 지정:
+  - 해악 예측 4쌍 (피해 slug): candle+oven(**oven**), drawerL+oven(**oven**),
+    bread+drawerR(**drawerR**), marsh+drawerR(**drawerR**)
+  - 무해 대조 4쌍: bread+marsh, candle+marsh, coffee+bread, bread+candle
+  - 판정: 반전군 피해-slug Δtd10 평균 < 0 이고 정렬군과의 차이가 순열 p<0.1
+    (단측, 탐색→confirmatory 전환이므로 완화 α).
+- **H3 (수혜자 재현)**: marshmallow 가 v2 co-training 에서도 최대 수혜군.
+
+### 설계 고정
+
+- v2 segA 추출: `extract_grid_matrix.py --tier segA` (승준,
+  `analysis/grid_phase_v2/segA`). 머신 중복 셀은 추출기 규칙(max_cells 머신 선택).
+- 공유도: `cluster_share_transfer.py --pairs all --seeds 0,1,2 --k 8` (scene 15 →
+  split test2/calib2/train11, 동일 결정적 split).
+- detector: 상대 세션 러너로 v2 pertask baseline(10 slug) + 위 8쌍 mixed × 3 seed
+  × phase-gt (프로토콜 v1과 동일).
