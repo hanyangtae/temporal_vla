@@ -211,3 +211,27 @@ tpr/fpr) 병용, 소표본 셀은 n_td 병기.
   split test2/calib2/train11, 동일 결정적 split).
 - detector: 상대 세션 러너로 v2 pertask baseline(10 slug) + 위 8쌍 mixed × 3 seed
   × phase-gt (프로토콜 v1과 동일).
+
+### 라운드 3 결과 (1/2) — H1 채점: 공유도 구조의 v2 재현
+
+v2 공유도 600셀 (scene 15, bread=머신 union 각주). scene-centered seed-median:
+
+| 가설 | v1 | v2 | 판정 |
+|---|---|---|---|
+| H1a PPCC 형제 정방향 ≥0.7 | 0.860 | **0.850** | ✓ 재현 |
+| H1b drawerR↔PPCC 반전 <0.4 | 0.284 | **0.332** (전 8쌍 0.14~0.40) | ✓ 재현 |
+| H1c oven 반전 | 0.226 | **0.467 — 재현 실패** | ✗ (아래) |
+| H1d drawer 좌우 무공유 | 0.597 | 0.698 | △ 경계 |
+| H1e Coffee↔PPCC 정방향 | 0.800 | 0.788 | ✓ 재현 |
+| 전 cross 쌍 v1↔v2 Spearman | — | **0.550** (n=66) | 중간 재현 |
+
+**H1c 세부 — oven 의 방향은 scene-set 의존으로 불안정하다.** v2 에서 bread→oven 이
+0.22→**0.86 (z+5.9)** 로 정방향 반전, candle→oven 은 0.18(z−5.2) 역방향 유지,
+jug/marsh→oven 역방향 유지 — 쌍마다 제각각. 43 §3 의 "oven detector 는 held-out
+scene 에 따라 방향이 뒤집힌다"와 같은 성질이 cross-slug 방향에도 나타난 것.
+반면 **drawerR 의 반전은 v1·v2 에서 전 쌍 일관** — 안정적 반전.
+
+→ 시사점: negative filter 의 올바른 형태는 "S1 낮음 = 혼입 금지"가 아니라
+**"안정적 부호 반전(drawerR형) 또는 scene 간 방향 불안정(oven형) 이면 혼입 금지"**.
+두 유형 모두 혼입에 해로울 것으로 예상되나 기전이 다르다 — H2 채점에서 분리 관찰.
+(v2 자기전이 게이트: 8/10 slug 0.88~1.0 통과, coffee 0.54 는 succ 21판 소표본 각주.)
