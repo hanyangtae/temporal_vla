@@ -43,8 +43,8 @@ Vision-Language-Action(VLA) 모델이 작업을 수행할 때 스스로 현재 �
   \centering
   \includegraphics[width=0.96\textwidth]{figs/fig1_purity_residual.pdf}
   \caption{(a) 군집$\times$GT 단계 contingency(PPCC candle, k=8): 행을 최빈 단계로
-  정렬하면 블록-대각 구조 --- 각 군집이 특정 단계에 국한됨(순도 0.910). (b) 장면
-  잔차화 후에도 단계 margin은 유지되고(9/9 양수) (c) 장면 MI는 붕괴한다.}
+  정렬하면 블록-대각 구조 --- 각 군집이 특정 phase에 국한된다(순도 0.888). (b) scene
+  잔차화 후에도 phase margin은 유지되고(10/10 양수) (c) scene MI는 크게 준다.}
   \label{fig:purity}
 \end{figure*}
 \begin{figure}[!t]
@@ -66,19 +66,50 @@ CoffeeSetupMug)에 속하는 10개 instruction -- 같은 task로 분류되더라
 
 \textbf{Clustering.} raw activation(1536차원)을 그대로 오토인코더(AE, latent 16)로 압축한 뒤 KMeans로 스텝 단위 clustering한다(instruction별 분석은 k=8, 전체 통합 분석은 k=24). Cluster center는 train split에서만 만들고 평가 split의 스텝은 k-NN(k=15)으로 분류한다. 재군집화가 필요 없으므로 추론 중 스텝 단위 online 판독이 가능하다.
 
-\textbf{시간 대조군.} activation이 phase 정보를 담는지 재려면, 먼저 ``시간만 알아도
-맞힐 수 있는 몫''을 빼야 한다. 조작 task의 phase는 대체로 순서대로 진행되므로
-activation을 전혀 보지 않고 경과 시간만 보는 판독기도 phase를 어느 정도 맞힌다. 이를
-\textbf{시간 대조군}(clock)으로 정의한다: 에피소드 내 상대 진행도 $t/T$를 발견된 군집
+\textbf{Baseline.} Activation이 action phase 정보를 담는지 재려면, 먼저 ``진행 시간만 알아도 맞힐 수 있는 몫''을 빼야 한다. Manipulation task의 action phase는 대체로 순서대로 진행되므로 activation을 전혀 보지 않고 경과 시간만 보는 판독기도 phase의 정. 이를 \textbf{시간 대조군}으로 정의한다: 에피소드 내 상대 진행도 $t/T$를 발견된 군집
 수와 같은 개수의 구간으로 등분위 분할해 얻은 상태열이다. 상태 수를 맞추는 이유는 상태
 수가 많을수록 상호정보량(MI)이 자동으로 커지기 때문이며, 이렇게 해야 같은 해상도에서
 비교된다.
 
-\textbf{지표.} 군집열이 담는 phase 정보는 MI(군집; GT phase)로 재고, 판정 기준은 시간
-대조군을 뺀 \textbf{margin} $= I(\text{군집};\text{GT}) - I(\text{clock};\text{GT})$을
-쓴다. margin은 activation이 단순 시간 정보를 넘어 추가로 담고 있는 phase 정보량[bits]을
-뜻한다. 각 군집이 특정 phase에 얼마나 국한되는지는 순도(purity)로, phase 경계와의
-정렬은 전환 위치를 에피소드 내에서 무작위로 흩은 300회 대비 z-score로 잰다.
+\textbf{Metric.} 스텝 $i$의 군집 라벨을 $z_i \in \{1,\dots,k\}$, 사람이 붙인 GT
+phase를 $y_i$라 하자. 군집 라벨을 알았을 때 phase에 대한 불확실성이 얼마나 줄어드는지를
+\textbf{상호정보량}(mutual information, MI)으로 잰다:
+%
+\begin{equation}
+I(Z;Y)=\sum_{k}\sum_{c} p(k,c)\,\log_2\frac{p(k,c)}{p(k)\,p(c)}
+      = H(Y)-H(Y\mid Z) \quad [\text{bits}]
+\label{eq:mi}
+\end{equation}
+%
+여기서 $p(k,c)$는 전체 스텝 중 군집이 $k$이면서 phase가 $c$인 비율이다. $I=0$이면 군집
+라벨이 phase에 대해 아무 정보도 주지 않는 것이고, 최대값은 $H(Y)$(phase 라벨 자체의
+엔트로피)로 이때는 군집만 보고 phase를 완전히 결정할 수 있다. 다만 MI는 $k$가 커질수록
+자동으로 커지므로 절대값만으로는 해상도가 다른 방법끼리 비교할 수 없다. 그래서 같은
+상태 수의 시간 대조군을 뺀 값을 판정 기준으로 쓴다:
+%
+\begin{equation}
+\mathrm{margin} = I(Z;Y) - I(Z_{\mathrm{clock}};Y)
+\label{eq:margin}
+\end{equation}
+%
+margin이 양수라는 것은 activation이 ``에피소드의 몇 \% 지점인가''라는 시간 정보만으로는
+설명되지 않는 phase 정보를 추가로 담고 있다는 뜻이다.
+
+MI는 한 phase가 여러 군집으로 쪼개져도 값이 거의 떨어지지 않는다. 즉 대응이 1:1인지가
+아니라 \emph{각 군집이 한 phase에 몰려 있는지}를 재는 양이다. 이 성질을 직접 보는 지표가
+\textbf{순도}(purity)로, 각 군집을 그 안에서 가장 많은 phase 하나로 대표시켰을 때 맞는
+스텝의 비율이다:
+%
+\begin{equation}
+\mathrm{purity}=\frac{1}{N}\sum_{k}\max_{c} \bigl| \{\, i : z_i=k,\; y_i=c \,\}\bigr|
+\label{eq:purity}
+\end{equation}
+%
+예컨대 purity $=0.9$는 군집을 각자의 최빈 phase로 읽었을 때 전체 스텝의 90\%가 맞는다는
+뜻이다. 반대로 한 군집이 여러 phase에 걸쳐 나타날수록 값이 떨어지므로, 본 논문에서는
+군집별 $1-\max_c$점유율을 \textbf{off-phase rate}라 부르고 함께 보고한다. 마지막으로
+phase 경계와의 정렬은 전환 횟수는 그대로 두고 위치만 에피소드 안에서 무작위로 흩은
+상태열 300개를 기준선으로 삼아 $z$-score로 잰다.
 
 \section{결 과}
 \textbf{activation phase cluster는 사람이 정의한 phase보다 세밀하다(그림 2a).} 발견된
@@ -88,27 +119,28 @@ activation을 전혀 보지 않고 경과 시간만 보는 판독기도 phase를
 우연 수준). 그러나 발견 상태를 GT phase 단위로 병합하면 경계 정렬이 유의해진다(z
 +1.3$\sim$+4.9). 즉 activation은 GT phase를 그대로 재현하는 것이 아니라 그보다 잘게
 쪼갠다. 세밀함의 배수는 군집 수 k에 따라 달라지지만, 세밀해진다는 사실 자체는 k를 GT
-phase 수(3$\sim$6)에 맞춰도 남는다: k=8에서도 구간 길이는 GT보다 짧게
-유지되고(10개 중 9개 instruction), 에피소드당 전환 수가 상태를 한 번씩만 지나는 단조
-통과의 상한(k$-$1=7회)을 넘는 instruction이 절반이다(최대 22회) --- 상태가 재방문되는
-구조로, k를 키워서 만들 수 있는 모양이 아니다. 반대로 한 instruction(OvenRack)은 같은
-k=8에서 GT보다 굵게 병합되어, 해상도는 k가 아니라 activation이 정한다.
+phase 수(3$\sim$6)에 맞춰도 남는다: k=8에서도 구간 길이는 10개 instruction 전부에서 GT보다
+짧고(예: PPCC jug 4.2 vs 53.5 스텝), 에피소드당 전환 수도 모두 상태를 한 번씩만 지나는
+단조 통과의 상한(k$-$1=7회)을 넘는다(7.3$\sim$30.0회) --- 상태가 재방문되는 구조로, k를
+키워서 만들 수 있는 모양이 아니다. 반대로 OvenRack은 GT와 거의 같은 해상도로
+병합되어(8.5 vs 8.5 스텝), 해상도는 k가 아니라 activation이 정한다.
 
 \textbf{각 군집은 특정 단계에 국한된다(그림 1a, 그림 2b).} 한 단계에서 나타난 군집은
 다른 단계에서 잘 나타나지 않는다: 군집$\rightarrow$단계 순도 0.80, MI 2.17 bits(상한
 2.82), 시간 대조군 margin +1.665 bits. 군집이 최빈 단계 밖에서 나타나는
-비율(off-phase rate)의 군집별 중앙값은 instruction 중앙값 0.22이며, 순수한 instruction에서는
-0.001$\sim$0.06까지 내려간다(넓게 걸치는 것도 있어 최대 0.47 --- instruction별 편차가
-있다). 단계 하나는 평균 2$\sim$3개 군집으로 세분되어(단계당 군집 수 1.3$\sim$2.7),
+비율(off-phase rate)의 군집별 중앙값은 instruction 중앙값 0.07이며, 순수한 instruction에서는
+0.002까지 내려간다(넓게 걸치는 것도 있어 최대 0.45 --- instruction별 편차가 있다).
+데이터셋 B에서도 순도 중앙값은 0.88로 유지된다. phase 하나는 평균 2$\sim$3개 군집으로
+세분되어(phase당 군집 수 1.3$\sim$2.7),
 대응은 1:1이 아니라 다대일이다 --- 이것이 위의 ``세밀한 하위 분할''과 순도가
 공존하는 이유다. 비디오 행동 분절에서 과분할은 통상 벌점이지만, 여기서 세분은
 phase-순수한 다대일 대응이며 그 판정 근거는 순도·MI·margin이지 경계 F1이 아니다.
 
 \textbf{단계 정보는 장면 암기로 환원되지 않는다(그림 1b).} 활성화에는 장면(scene)
-정보도 섞여 있다(instruction별 mi\_scene 0.2$\sim$1.0 bits). 그러나 instruction 내 scene별 평균을
-제거한 잔차에서 장면 정보는 대부분 사라지는 반면(mi\_scene 중앙값
-0.54$\rightarrow$0.24 bits) phase margin은 소표본 퇴화 1개를 제외한 9개 instruction
-전부에서 양수로 유지된다(중앙값 +0.34$\rightarrow$+0.28; 3개는 오히려 상승).
+정보도 섞여 있다(instruction별 mi\_scene 0.02$\sim$0.86 bits). 그러나 instruction 내
+scene별 평균을 제거한 잔차에서 scene 정보는 크게 줄어드는 반면(mi\_scene 중앙값
+0.44$\rightarrow$0.27 bits) phase margin은 10개 instruction 전부에서 양수로
+유지된다(중앙값 +0.34$\rightarrow$+0.31).
 
 \textbf{구조는 모델·데이터를 바꿔도 재현된다.} 같은 데이터에서 구조가 다른 두 압축
 모델(AE, SAE)이 같은 스텝에서 전환하고(F1 0.66$\sim$0.75, 무작위 0.51$\sim$0.53, z
