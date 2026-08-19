@@ -99,7 +99,30 @@ in-fit-noise(n0,1) vs held-out-noise(n5,6)로 분리 보고.
 
 **타이밍 가설 기각** — 43 예측대로 발화가 컨택 전후 창까지 당겨지고 개입 커버리지가
 거의 전 판으로 늘어도 처치=위약 셀 단위 동일·구제 0. 병목은 발화 시점이 아니라
-**개입 내용/강도**. (다음: β 인상 + denoise step-0 개입 — layer 재선정 sweep 진행 중.)
+**개입 내용/강도**.
+
+### 7.2 β 인상 + denoise step-0 개입 (사용자 지시 라운드, drawer-L)
+
+step-0 layer 재선정 sweep(7 layer × 3 task, `--denoise-step 0`): 게이트 통과 유지·확장
+(drawer-L grasp L4–15 전부, 최고 L15 0.86; drawer-R reach L12 0.83 유일 5/5; **Dish는
+last-call에서 탈락했던 reach가 step-0 L0–8에서 0.95–0.97로 통과** — step-0 활성화가
+조기 phase 정보를 더 담음). 본 fit = drawer-L L15 / drawer-R L12 / Dish L8.
+
+eval (drawer-L, 절제 detector + step-0(k=0) 개입 + L15 재fit W·τ, 처치/위약 쌍):
+
+| β | 구제 (실개입) | 파손 | 처치 vs 위약 |
+|---|---|---|---|
+| 0.3 (last-call, §7.1) | 0/17 (16) | s8n0 1 (공동) | 동일 |
+| **0.6 (step-0)** | 0/17 (16) | **0** | 완전 동일 |
+| **1.0 (step-0)** | 0/17 (16) | 처치만 s8n0 1 | 구제 동일 0 |
+
+- **β·개입시점·layer 전 축 소진 — 조건부 guidance 계열 null 최종 확정.** 특기:
+  step-0 개입은 β를 올려도 파손조차 거의 못 만듦(첫 call 변형이 잔여 denoise에
+  씻겨나감) — β1.0 유일 파손 1건도 상습 경계셀(s8n0).
+- 인프라: `--condg-apply-call first`·CONDG_LAYER 러너 전달·scene-분할 병렬 러너
+  (β1.0을 65분에 완주 — 분할 2 인스턴스 패턴).
+- **다음 = 재샘플 축** (42 §6.4 1순위 재확인): 선형 활성화 개입(setM·수축 3종·condg
+  ×{β,시점,layer})은 전부 소진.
 
 ## 6. eval 계획
 
