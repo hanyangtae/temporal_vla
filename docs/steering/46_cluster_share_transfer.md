@@ -110,3 +110,36 @@ detector 그룹핑은 실측(LOIO/directed pair)으로만 정하는 것이 현�
   저차원·시불변인 정도를 재는 지표가 그룹핑 기준의 다음 후보.
 - 방향-무관 공유 지표: LSTM 이 잡는 정체·반복 패턴 계열 (drawer2→marsh 설명 후보).
 - 풀링 효과의 체계 측정: source 수 1→2→4 를 같은 target 에 사다리로.
+
+---
+
+## 라운드 2 — co-training 정답지 (사용자 방향 정정, 2026-08-19)
+
+사용자 정정: 원래 목적은 zero-shot 전이가 아니라 **"한 detector 에 어떤 slug 데이터를
+같이 넣을지"** 의 선별 기준. 정답지를 co-training Δ 로 교체해 재검증한다:
+Δ(A|+B) = mixed(A+B 합쳐 학습, A 의 held-out scene 평가) − pertask(A 단독).
+방향 부호가 반전된 데이터를 섞으면 그라디언트 충돌로 **간섭**, 방향이 공유되면 표본
+증강으로 **시너지**가 기전상 예상된다 — zero-shot 과 달리 여기서는 S1 이 직접 관여.
+
+### 사전 등록 예측 (결과 수신 전 고정, S1 scene-centered seed-median 기준)
+
+| 쌍 | S1 A→B / B→A | min | 예측 |
+|---|---|---|---|
+| bread+candle | 0.87 / 0.83 | 0.83 | 시너지 |
+| candle+marshmallow | 0.95 / 0.84 | 0.84 | 시너지 |
+| bread+marshmallow | 0.95 / 0.82 | 0.82 | 시너지 |
+| candle+drawer_left | 0.89 / 0.85 | 0.85 | 시너지 (cross-family) |
+| coffee+bread | 0.80 / 0.75 | 0.75 | 시너지 (cross-family) |
+| jug+marshmallow | 0.93 / 0.46 | 0.46 | 중간 (비대칭) |
+| drawer_left+drawer_right | 0.64 / 0.55 | 0.55 | 중간 |
+| drawer_left+ovenrack | 0.47 / 0.36 | 0.36 | 간섭 |
+| candle+ovenrack | 0.37 / 0.21 | 0.21 | 간섭 |
+| bread+drawer_right | 0.32 / 0.12 | 0.12 | 간섭 |
+| marshmallow+drawer_right | 0.29 / 0.12 | 0.12 | 간섭 |
+
+판정 규칙(사전 고정): 쌍별 Δ(양쪽 slug, td10·td20, 3-seed) 부호가 예측 3분류와 단조
+정렬하는가 (Spearman + 시너지군 vs 간섭군 Δ 차이). ⚠ pertask baseline td10 의 seed
+변동이 큼(candle 0.82/0.56/0.09) — Δ 는 3-seed 평균 + 보조 지표(maxscore_auroc,
+tpr/fpr) 병용, 소표본 셀은 n_td 병기.
+
+실행: mixed arm 11쌍 × 3 seed (safe-length-ablation 세션, detector_trunc 와 동일 설정).
