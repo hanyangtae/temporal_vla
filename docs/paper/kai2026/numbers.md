@@ -62,7 +62,8 @@ ref = `outputs/analysis/grid_phase/paper_ref/*.json`, supp = `outputs/analysis/g
 | 수치 | 값 | 출처 |
 |---|---|---|
 | intrinsic k8 vs GT | intrinsic 우세 4/9 task, 동급 1, 열세 1 (drawer-left 0.93/z4.5 vs GT 0.94/z2.3; bread 0.77/z3.4 vs 0.67/z2.3; candle 0.73/z2.6 vs 0.62/z1.8) | 41 §5 |
-| k sweep | 전 셀 mean z: k6 +0.69, k8 +1.05, k12 +0.75, k16 +0.61, k24 −0.30 | 41 §8.3 |
+| k sweep (하류 층화, 전 셀 mean z) | k6 +0.69, k8 +1.05, k12 +0.75, k16 +0.61, k24 −0.30, k32 +0.28 | 41 §8.3 |
+| k sweep (내재 margin, task 중앙값·apple 제외) | k6 0.259, k8 0.337, k12 0.384, k16 0.428, k24 0.542, k32 0.582 — 단조 증가 (내재 지표만으론 최적 k 못 고름 = Fig.3 메시지) | ref align_pertask*.json (make_fig3.py 산출) |
 | global k24 < per-task k8 | phase 구조가 task 특이적 | 41 §5 |
 | ⚠ 한계 | 41은 탐색 라운드 (다중비교 보정 없음, n_perm 100~500, 위약 없음) — 원고에 보조로만 | 41 상단 |
 
