@@ -156,6 +156,19 @@ phase-gt 학습 모델은 "phase에 오래 머무는 구간"을 학습에서 본
   (b) 조기 검출은 variant별 보장 없음 — 조기성이 목적이면 대상 instruction 데이터 포함
   필요. drawer처럼 기하 대칭 variant는 공유 부적합.
 
+**directed pair 1→1 (15쌍+역방향, `run_transfer_pairs.sh`, ×{phase-gt,none}×3seed):**
+
+- **within-family 1→1은 약함** (bread→candle 0.48/0.46, candle→marsh 0.62/0.72) — 4→1
+  LOIO(marsh td10 0.79)에 크게 못 미침. → **family 전이의 실체는 형제 풀링**(다양성/양)이며
+  단일 instruction 간 이식이 아님. 단 1→1 train은 ~34판이라 데이터량 효과 혼입 가능(각주).
+- **cross-family가 균일하게 낮지 않음**: drawer2→marshmallow 0.74/0.81(표 최고),
+  candle→drawer_left 0.70/0.60, PPCC4→drawer_left 0.55/0.69(mlp 0.67/0.74). within/cross
+  이분법은 1→1 입도에서 흐려지고, **target slug의 "잡히기 쉬움"이 source보다 지배적**
+  (→marshmallow는 어디서 와도 0.53~0.78, →candle/bread는 형제조차 평범).
+- PPCC4→coffee 0.49/0.65 (coffee succ 희소 — 각주). apple-source는 실패 0판으로 학습 불가.
+- 후속: cluster 공유도 지표(S1 방향 투영)와의 상관은 exp/cluster-transfer-criterion
+  세션(action phase)이 같은 (src,dst,seed) 키로 종합.
+
 - 문헌 대조: SAFE(LIBERO)·RL²(SIMPLER, 우리 풀 재현 docs/steering/38)의 공유 detector
   성립은 근접-도메인 task 가족 + seen 한정 — RL²는 플랫폼만 바뀌어도 번들 detector가
   실패 36.5% 미검출(재학습으로만 복원). 우리 RoboCasa는 task마다 부엌 자체가 다름
