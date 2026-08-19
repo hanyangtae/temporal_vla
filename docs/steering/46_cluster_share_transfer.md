@@ -235,3 +235,38 @@ scene 에 따라 방향이 뒤집힌다"와 같은 성질이 cross-slug 방향�
 **"안정적 부호 반전(drawerR형) 또는 scene 간 방향 불안정(oven형) 이면 혼입 금지"**.
 두 유형 모두 혼입에 해로울 것으로 예상되나 기전이 다르다 — H2 채점에서 분리 관찰.
 (v2 자기전이 게이트: 8/10 slug 0.88~1.0 통과, coffee 0.54 는 succ 21판 소표본 각주.)
+
+### 라운드 3 결과 (2/2) — H2·H3 채점: confirmatory 실패 (최종)
+
+Δtd10 = v2 mixed − v2 pertask, 3-seed, lstm·mlp 병행. 원자료
+`v2_{pertask,cotrain}_s{0,1,2}/` (스팟체크 6셀 재계산 일치 확인).
+
+- **H2 기각**: 반전군 피해-slug Δ 평균 lstm −0.021/mlp −0.005 (부호만 충족, 미미),
+  **정렬군이 오히려 더 음수** (lstm −0.046/mlp −0.015) — 군간 차이가 예측 반대,
+  순열 p(단측) 0.675/0.615 로 완전 미달.
+- v1 의 대표 적중(candle+oven 의 oven −0.23)이 **비재현** (+0.034) — H1c 에서 본
+  oven 방향의 scene-set 불안정과 정합: v1 해악은 그 scene 조합 특이였다.
+  drawerL+oven 만 −0.147 로 방향 유지 (단독으론 채택 불가).
+- drawerR 쌍들: 표현 수준 반전은 안정 재현(H1b ✓)인데 co-train Δ 는 +0.008~+0.020 =
+  **해악 없음**. 방향 부호 반전이 LSTM co-training 을 해치지 않는다 — R2 의
+  "LSTM 은 diff-of-means 방향과 다른 것을 학습한다"와 정합.
+- H3 판정 불가: v2 는 base SR 상승으로 marshmallow test 실패 2판 (n_sd=2) —
+  검출 불가. coffee 여전히 결측, bread 4쌍 머신혼재 각주.
+
+### ★ 시리즈 최종 판정 (3라운드)
+
+**activation cluster/방향 공유도는 detector 그룹핑에 관해 확증된 예측력이 없다.**
+- R1: zero-shot 전이 예측 실패 (rho ≈ 0)
+- R2: co-training 방향 신호(탐색) → R3 confirmatory 에서 기각 — 마지막 후보였던
+  "혼입 금지 필터"도 미확증. v1 의 해악 사례는 scene-set 특이로 판명.
+- 표현이 공유·반전되는 것(S1 이 안정적으로 재는 것, H1a·b·e 재현)과 detector 학습이
+  영향 받는 것은 **다른 층위**다. LSTM detector 는 방향 부호에 둔감하다.
+- **그룹핑 실무 절차 = 배포 데이터에서 mixed vs pertask 직접 실측** (run 당 수 분)이
+  유일하게 근거 있는 방법. v1 실측 기준 잠정 구성(PPCC family-pooled·drawer 좌우
+  분리)은 유지하되, v2 급 데이터가 쌓이면 재실측.
+- 검정력 각주: v2 confirmatory 자체가 marshmallow·coffee 결측으로 눌려 있어
+  "예측 실패"와 "검출 불가"가 섞여 있다. 단 정렬군이 더 음수인 방향 역전은 표본
+  문제로 설명되지 않는다.
+- S1 도구의 잔존 가치: detector 그룹핑이 아니라 **표현 구조 자체의 지도**
+  (방향 공유·안정 반전·scene-불안정 slug 식별 — oven 형 진단). steering 쪽
+  연산자 공유·phase gating 설계의 입력으로 유효.
