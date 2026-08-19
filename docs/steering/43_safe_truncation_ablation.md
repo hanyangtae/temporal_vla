@@ -172,6 +172,12 @@ phase-gt 학습 모델은 "phase에 오래 머무는 구간"을 학습에서 본
   (LOIO/directed pair)으로만**. 단 정답지(td10) 자체의 seed 변동이 커 상관 상한이 눌린
   판정임을 46이 각주.
 
+**co-training Δ (mixed A+B − pertask, 11쌍×3seed, `run_cotrain_pairs.sh`):** Δ는 pair가
+아니라 **slug 단위 비대칭** — candle+marsh에서 marshmallow +0.28(양 모델 일관)·candle −0.19,
+간섭예상군의 oven은 일관 피해(−0.16~−0.28). 즉 co-training 이득은 "방향 공유"가 아니라
+수혜 slug의 특성+데이터 증가에서 오고 공여 slug은 희석 비용을 치름 → 그룹핑엔 slug별
+득실 회계 필요. S1 공유도와의 정렬 채점은 46 라운드2.
+
 - 문헌 대조: SAFE(LIBERO)·RL²(SIMPLER, 우리 풀 재현 docs/steering/38)의 공유 detector
   성립은 근접-도메인 task 가족 + seen 한정 — RL²는 플랫폼만 바뀌어도 번들 detector가
   실패 36.5% 미검출(재학습으로만 복원). 우리 RoboCasa는 task마다 부엌 자체가 다름
