@@ -53,15 +53,17 @@ from pathlib import Path
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+# 레포 밖(예: 원격 /tmp)에서 단독 실행될 수 있다 — 그땐 cwd 를 루트로 쓴다.
+_p = Path(__file__).resolve()
+REPO_ROOT = _p.parents[3] if len(_p.parents) > 3 else Path.cwd()
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 SCRIPT_REL = "scripts/analysis/grid_phase/paper_supplements.py"
 
 # 기준 run 과 동일 고정 파라미터 (align_pertask.json meta.params 와 일치해야 한다)
-PCA_DIM = 64
-WHITEN = True
+PCA_DIM = 64   # --pca-dim 으로 덮어씀 (raw 파이프라인은 1536 + --no-whiten)
+WHITEN = True  # --no-whiten 으로 끔
 N_INIT = 5
 MAX_ITER = 300
 SEED = 0
@@ -418,6 +420,7 @@ def write_json(path: Path, payload: dict, meta: dict):
 
 
 def main(argv=None):
+    global PCA_DIM, WHITEN
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--shard-dir", "--shards-dir", dest="shard_dir", required=True,
                     type=Path, help="segA shard NPZ 디렉토리 (intrinsic_phase.py 와 동일 규약)")
@@ -437,10 +440,14 @@ def main(argv=None):
                          "(또는 그 루트). 기준 run 과 같은 구현을 쓰기 위한 것")
     ap.add_argument("--kmeans-impl", choices=("auto", "task_classification", "numpy"),
                     default="auto")
+    ap.add_argument("--pca-dim", type=int, default=64,
+                    help="PCA 차원. 1536+--no-whiten 이면 직교회전뿐이라 raw 활성화 KMeans 와 동치")
+    ap.add_argument("--no-whiten", action="store_true")
     ap.add_argument("--gate-tol", type=float, default=1e-6)
     ap.add_argument("--no-global", action="store_true",
                     help="contingency 에서 global k24 를 건너뛴다 (메모리 절약)")
     args = ap.parse_args(argv)
+    PCA_DIM, WHITEN = args.pca_dim, (not args.no_whiten)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     runner = IP.KMeansRunner(args.kmeans_impl, tc_root_from_src(args.kmeans_src),

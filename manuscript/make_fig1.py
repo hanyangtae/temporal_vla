@@ -32,8 +32,8 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 HERE = Path(__file__).resolve().parent
 # The analysis artefacts live under the directory that hosts this paper tree.
 CANDIDATE_ROOTS = [HERE, HERE / "template", HERE.parent, HERE.parents[2]]
-REL_JSON = Path("outputs/analysis/grid_phase/paper_supp/contingency_pertask_k8.json")
-REL_TSV = Path("outputs/analysis/grid_phase/paper_supp/resid_compare.tsv")
+REL_JSON = Path("outputs/analysis/grid_phase/ae_raw/contingency_pertask_k8_ae.json")
+REL_TSV = Path("outputs/analysis/grid_phase/ae_raw/resid_compare_ae.tsv")
 
 
 def _resolve(rel: Path) -> Path:
@@ -50,7 +50,7 @@ OUT_DIR = HERE / "figs"
 OUT_STEM = OUT_DIR / "fig1_purity_residual"
 
 FOCUS_TASK = "PPCC_candle"
-DEGENERATE_TASK = "PPCC_apple"  # negative margin, flagged in the caption
+DEGENERATE_TASK = None  # raw+AE 에서는 전 instruction margin 양수 → 특례 없음
 
 CM = 1.0 / 2.54
 FIG_W = 17.5 * CM
@@ -268,13 +268,15 @@ def build_legend(fig, rows):
                label="residualised (margin)"),
         Line2D([], [], marker="o", ls="none", color=C_SCENE, markersize=3.8,
                label="residualised (scene MI)"),
-        Line2D([], [], marker="D", ls="none", color=C_DEGEN, markersize=3.6,
-               label=f"{short_task(DEGENERATE_TASK)} (margin < 0)"),
     ]
+    if DEGENERATE_TASK is not None:
+        handles.append(Line2D([], [], marker="D", ls="none", color=C_DEGEN,
+                              markersize=3.6,
+                              label=f"{short_task(DEGENERATE_TASK)} (margin < 0)"))
     fig.legend(
         handles=handles,
         loc="lower center",
-        ncol=4,
+        ncol=4 if DEGENERATE_TASK is not None else 3,
         frameon=False,
         fontsize=6.5,
         bbox_to_anchor=(0.55, -0.012),

@@ -12,7 +12,7 @@ ref = `outputs/analysis/grid_phase/paper_ref/*.json`, supp = `outputs/analysis/g
 | 항목 | 값 | 출처 |
 |---|---|---|
 | 모델·캡처 지점 | GR00T N1.5, DiT residual layer 12 · denoise 3 · 49토큰 평균 · 1536d | 40 §2 (노션 "layer 15"는 오기 — git 이력에 없음) |
-| 파이프라인 | PCA-64 whitened → KMeans (AE 생략 근거: 40 §5 부록 AE 1.692 vs 없음 1.634, seed 범위 겹침) | 40 §5 부록, ref meta.deviations |
+| 파이프라인 (메인) | **raw-1536 → AE(latent 16) → KMeans** (PCA 없음; 동료 실험 B 종합판정 "raw-1536 + AE, PCA 불필요, PCA 안 할 시 whitening 금지"). AE 규격은 task_classification 코드 실측: hidden 256×2 GELU, 대각 가우시안 log-likelihood, AdamW 1e-3/wd 1e-4, grad clip 5.0, early stopping | Notion 「Action phase 정리」 실험 B·종합판정, `task_classification/phase/models/autoencoder.py`·`conf/model/ae.yaml`·`conf/train/default.yaml` |
 | 데이터 (동료 pq3) | 23 에피소드, GT phase 경계 91개, val 단일 split | 40 §한계 |
 | 데이터 (grid 930판) | N1.5 grid 930 에피소드 (9 instruction × scene10 × noise10 + apple30), 89,766 record | 41 상단, ref(k24) n |
 | margin 정의 | I(상태열;GT) − I(clock;GT), clock은 상태 수를 발견 상태열에 맞춘 진행도 분위 | 40 §2 |
@@ -42,12 +42,14 @@ ref = `outputs/analysis/grid_phase/paper_ref/*.json`, supp = `outputs/analysis/g
 | 930판 k24 global pooled | MI 1.096, purity 0.751, margin +0.991 | ref align_global.json |
 | scene 오염 (통제 전) | mi_scene 0.2~1.0 bits (dishwasher 1.029, drawer-right 1.018, OvenRack 0.947) | ref align_pertask.json |
 | ① 게이트 (재현 검증) | rung3 per-task k8 대비 10/10 task **bit-identical** (max diff 0) | supp gate_check.json |
-| ① scene 잔차화 후 mi_scene | 중앙값 0.54 → **0.24** bits (최대 1.03→0.25; apple 0.51→0.04) | supp resid_compare.tsv |
-| ① scene 잔차화 후 margin | 9/9 task 양수 유지, 중앙값 +0.337 → **+0.278** (candle +0.51→+0.54·marshmallow +0.34→+0.38·OvenRack +0.25→+0.30 은 상승; apple 퇴화 유지·제외) | supp resid_compare.tsv |
+| 파이프라인 3종 비교 (930ep, k8, margin 중앙값 / 양수 수 / purity 중앙값) | PCA-64w 0.311·9/10·0.778 · raw 직결 0.291·10/10·0.857 · **raw+AE 0.343·10/10·0.875** → raw+AE 채택 | ae_raw/resid_compare_ae.tsv vs paper_supp·paper_raw 동일 파일 |
+| ① scene 잔차화 후 mi_scene (raw+AE) | 중앙값 0.44 → **0.27** bits | ae_raw/resid_compare_ae.tsv |
+| ① scene 잔차화 후 margin (raw+AE) | **10/10 instruction 양수 유지**, 중앙값 +0.343 → **+0.310** | ae_raw/resid_compare_ae.tsv |
 | ① scene 잔차화 후 purity | 유지 (candle 0.910→0.901, jug 0.934→0.932, OvenRack 0.544→0.616) | supp resid_compare.tsv |
-| ② off-phase 출현율 (per-cluster median, 1−top점유) | task 중앙값 0.22; 순수한 task jug 0.001·marshmallow 0.014·candle 0.059 ~ 넓은 task OvenRack 0.471 (task별 편차 큼) | supp contingency_pertask_k8.json |
+| ② off-phase 출현율 (raw+AE, per-cluster median) | instruction 중앙값 **0.07**; 최소 jug 0.002 ~ 최대 drawer-left 0.446 | ae_raw/contingency_pertask_k8_ae.json |
+| ② purity (raw+AE, 930ep) | 중앙값 0.875 (candle 0.888, jug 0.955 ~ OvenRack 0.562) | ae_raw/resid_compare_ae.tsv |
 | ② phase당 cluster 수 (argmax 기준) | 1.33~2.67 (중앙값 2.67 = phase 하나가 평균 2~3개 cluster로 세분) | supp contingency_pertask_k8.json |
-| ② global k24 | purity 0.751, off-phase median 0.350 | supp contingency_global_k24.json |
+| ② global k24 (raw+AE) | purity 0.717, off-phase median 0.371 | ae_raw/contingency_global_k24_ae.json |
 
 ## 주장 3 — 재현성 (특정 모델·데이터의 산물이 아님)
 
