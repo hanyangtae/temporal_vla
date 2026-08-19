@@ -166,8 +166,11 @@ phase-gt 학습 모델은 "phase에 오래 머무는 구간"을 학습에서 본
   이분법은 1→1 입도에서 흐려지고, **target slug의 "잡히기 쉬움"이 source보다 지배적**
   (→marshmallow는 어디서 와도 0.53~0.78, →candle/bread는 형제조차 평범).
 - PPCC4→coffee 0.49/0.65 (coffee succ 희소 — 각주). apple-source는 실패 0판으로 학습 불가.
-- 후속: cluster 공유도 지표(S1 방향 투영)와의 상관은 exp/cluster-transfer-criterion
-  세션(action phase)이 같은 (src,dst,seed) 키로 종합.
+- 후속 종합(docs/steering/46, exp/cluster-transfer-criterion): **공유도→전이 상관은 음성**
+  (S1 vs td10 Spearman +0.07, vs td20 −0.32; 반례 bread→candle S1 0.87/td 0.48 ↔
+  drawer2→marsh S1 0.47/td 0.74+) — **detector 그룹핑 사전 판별은 공유도로 불가, 실측
+  (LOIO/directed pair)으로만**. 단 정답지(td10) 자체의 seed 변동이 커 상관 상한이 눌린
+  판정임을 46이 각주.
 
 - 문헌 대조: SAFE(LIBERO)·RL²(SIMPLER, 우리 풀 재현 docs/steering/38)의 공유 detector
   성립은 근접-도메인 task 가족 + seen 한정 — RL²는 플랫폼만 바뀌어도 번들 detector가
