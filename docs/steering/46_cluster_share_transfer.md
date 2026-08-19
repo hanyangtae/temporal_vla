@@ -143,3 +143,39 @@ detector 그룹핑은 실측(LOIO/directed pair)으로만 정하는 것이 현�
 tpr/fpr) 병용, 소표본 셀은 n_td 병기.
 
 실행: mixed arm 11쌍 × 3 seed (safe-length-ablation 세션, detector_trunc 와 동일 설정).
+
+### 라운드 2 결과 — 사전등록 채점 (2026-08-19)
+
+Δ(mixed − pertask, lstm, 3-seed 평균, 원자료 직접 재계산):
+
+| 채점 | Δtd10 | Δtd20 |
+|---|---|---|
+| pair-mean vs S1min Spearman (n=11) | **+0.26** | +0.16 |
+| 시너지군 Δ평균 vs 간섭군 (사전 3분류) | **+0.051 vs −0.011** | +0.001 vs −0.025 |
+| slug 단위 S1(상대→나) vs Δ (n=21) | +0.20 | — |
+
+- **방향은 사전 예측과 정합** (시너지군 > 간섭군, rho 양수) — zero-shot 라운드(rho ≈ 0)
+  보다 낫다. 간섭 예측의 대표 적중: candle+oven 에서 **oven Δtd10 −0.235** (최저 S1
+  쌍에서 최대 피해), drawer_right 쌍들도 소폭 음.
+- **그러나 효과 크기가 정답지 noise 대역(±0.1) 이내** — 단독 그룹핑 기준으로는 불충분.
+- **실질 발견 = slug 비대칭**: 같은 쌍에서 한쪽만 얻고 한쪽은 잃는다.
+  candle+marsh: marshmallow **+0.28** / candle **−0.19**. bread+candle 도 bread +0.06 /
+  candle −0.13. marshmallow 는 LOIO·directed pair·co-train 3연속 최대 수혜 —
+  "수혜자 성질(잡히기 쉬움)"이 지배하고, 공여 slug 는 신호 희석 비용을 치른다
+  (상대 세션 독립 해석과 일치). S1(상대→나)로 수혜자를 집으려는 시도는 rho 0.20 으로
+  약함 — candle 은 marsh→candle 0.84 인데도 −0.19 손해 (반례).
+- 각주: coffee 는 mixed 행 결측(test 성공 0), jug n(f/s)=19/1, marshmallow·oven 일부
+  seed 결측(n_sd=2), drawer_right 는 pertask 부터 FPR 불량 이력.
+
+### 최종 판정 (질문: "activation 을 보고 detector 학습 단위를 정할 수 있는가")
+
+1. **약한 방향 신호는 있으나 단독 기준으로는 불충분.** S1 공유도는 co-training 의
+   시너지/간섭 방향을 맞추지만(특히 부호 반전 slug 혼입의 해악 — oven), 효과 크기와
+   해상도가 실측 Δ 를 대체할 수준이 아니다.
+2. **그룹핑의 실제 지배 변수는 공유도가 아니라 (a) 수혜자 성질, (b) 풀링 데이터량,
+   (c) slug 비대칭 회계**다. "어떤 단위로 묶을까"보다 "누가 얻고 누가 잃는가"가 옳은
+   질문이며, 이는 mixed vs pertask 실측(run 당 2~4분)으로 직접 재는 것이 현재로선
+   가장 싸고 정확하다.
+3. activation 지표의 유효한 용도(축소된 권고): **혼입 금지 필터** — S1 부호 반전
+   (sign_agree 0, S1<0.35) slug 를 같은 detector 에 넣지 말 것 (oven·drawer_right 류
+   스크리닝). 묶음 확정은 실측으로.
