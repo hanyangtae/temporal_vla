@@ -138,6 +138,24 @@ phase-gt 학습 모델은 "phase에 오래 머무는 구간"을 학습에서 본
   PPCC 형제(bread/candle/jug/apple)를 학습에 포함한 PPCC held-out들(marshmallow td10
   0.75+, jug/bread td20 0.7~0.8)뿐. → detector는 **task(env) 단위 분리 + task 내
   instruction 공유**가 근거 있는 구성 (family-pooled vs per-variant head-to-head는 미실행).
+**family-only LOIO (직접 검증, PPCC 4형제→1 / drawer 1→1, ×3절제×3seed):**
+
+| held-out | td10 (lstm, phase-gt) | td20 | 비고 |
+|---|---|---|---|
+| PPCC/marshmallow | **0.79** | 0.76 | 조기 전이 실재 — **자기 데이터 pertask(td10 ~0.55)보다 높음** (형제 4배 데이터 이득) |
+| PPCC/jug | 0.54 | **0.84** | 늦은 전이만 |
+| PPCC/bread | 0.51 | **0.77** | 늦은 전이만 |
+| PPCC/candle | 0.53 | 0.66 | 약함 |
+| drawer left←right | 0.56 | 0.63 | 약한 정방향 |
+| drawer right←left | **0.32** | 0.32 | 역방향 — 좌/우 비대칭, 공유 불안정 |
+
+- 판정: **family 내 instruction 전이는 "부분 성립"** — 늦은 시점(td20) 신호는 광범위하게
+  넘어가고(0.66~0.87), 조기(td10) 신호는 marshmallow만. family-only ≈ LOTO(전 task 학습)
+  수치 = PPCC held-out 전이의 출처는 형제이며 타 task는 기여 없음. 절제 조건 간 차이 미미.
+- 함의: "task 내 instruction 공유 detector"는 (a) 새 instruction에 늦은-시점 검출은 제공,
+  (b) 조기 검출은 variant별 보장 없음 — 조기성이 목적이면 대상 instruction 데이터 포함
+  필요. drawer처럼 기하 대칭 variant는 공유 부적합.
+
 - 문헌 대조: SAFE(LIBERO)·RL²(SIMPLER, 우리 풀 재현 docs/steering/38)의 공유 detector
   성립은 근접-도메인 task 가족 + seen 한정 — RL²는 플랫폼만 바뀌어도 번들 detector가
   실패 36.5% 미검출(재학습으로만 복원). 우리 RoboCasa는 task마다 부엌 자체가 다름
