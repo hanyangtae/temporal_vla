@@ -1,0 +1,236 @@
+{
+  "k": 8,
+  "tol": 1e-06,
+  "passed": true,
+  "ref_file": "align_pertask.json",
+  "ref_kmeans_impl": "task_classification",
+  "keys": [
+    "mi_phase_bits",
+    "margin_bits",
+    "purity_phase"
+  ],
+  "per_task": {
+    "CoffeeSetupMug": {
+      "status": "identical",
+      "mi_phase_bits": {
+        "ref": 0.5342242397563445,
+        "new": 0.5342242397563445,
+        "diff": 0.0
+      },
+      "margin_bits": {
+        "ref": 0.4174701495615689,
+        "new": 0.4174701495615689,
+        "diff": 0.0
+      },
+      "purity_phase": {
+        "ref": 0.9223553182277385,
+        "new": 0.9223553182277385,
+        "diff": 0.0
+      }
+    },
+    "DishwasherRack_out": {
+      "status": "identical",
+      "mi_phase_bits": {
+        "ref": 0.4681575615233682,
+        "new": 0.4681575615233682,
+        "diff": 0.0
+      },
+      "margin_bits": {
+        "ref": 0.285842636121306,
+        "new": 0.285842636121306,
+        "diff": 0.0
+      },
+      "purity_phase": {
+        "ref": 0.7345380029806259,
+        "new": 0.7345380029806259,
+        "diff": 0.0
+      }
+    },
+    "OpenDrawer_left": {
+      "status": "identical",
+      "mi_phase_bits": {
+        "ref": 0.7102127830382122,
+        "new": 0.7102127830382122,
+        "diff": 0.0
+      },
+      "margin_bits": {
+        "ref": 0.39472136039335476,
+        "new": 0.39472136039335476,
+        "diff": 0.0
+      },
+      "purity_phase": {
+        "ref": 0.6792430926398886,
+        "new": 0.6792430926398886,
+        "diff": 0.0
+      }
+    },
+    "OpenDrawer_right": {
+      "status": "identical",
+      "mi_phase_bits": {
+        "ref": 0.7488811431634365,
+        "new": 0.7488811431634365,
+        "diff": 0.0
+      },
+      "margin_bits": {
+        "ref": 0.36749346858855403,
+        "new": 0.36749346858855403,
+        "diff": 0.0
+      },
+      "purity_phase": {
+        "ref": 0.734856889283337,
+        "new": 0.734856889283337,
+        "diff": 0.0
+      }
+    },
+    "OvenRack_out": {
+      "status": "identical",
+      "mi_phase_bits": {
+        "ref": 0.595163645756039,
+        "new": 0.595163645756039,
+        "diff": 0.0
+      },
+      "margin_bits": {
+        "ref": 0.25071090657942996,
+        "new": 0.25071090657942996,
+        "diff": 0.0
+      },
+      "purity_phase": {
+        "ref": 0.5437150127226463,
+        "new": 0.5437150127226463,
+        "diff": 0.0
+      }
+    },
+    "PPCC_apple": {
+      "status": "identical",
+      "mi_phase_bits": {
+        "ref": 0.3722249713812795,
+        "new": 0.3722249713812795,
+        "diff": 0.0
+      },
+      "margin_bits": {
+        "ref": -0.630688265558838,
+        "new": -0.630688265558838,
+        "diff": 0.0
+      },
+      "purity_phase": {
+        "ref": 0.6294256490952006,
+        "new": 0.6294256490952006,
+        "diff": 0.0
+      }
+    },
+    "PPCC_bread": {
+      "status": "identical",
+      "mi_phase_bits": {
+        "ref": 0.3621725962078146,
+        "new": 0.3621725962078146,
+        "diff": 0.0
+      },
+      "margin_bits": {
+        "ref": 0.14821430420052695,
+        "new": 0.14821430420052695,
+        "diff": 0.0
+      },
+      "purity_phase": {
+        "ref": 0.8201999221082695,
+        "new": 0.8201999221082695,
+        "diff": 0.0
+      }
+    },
+    "PPCC_candle": {
+      "status": "identical",
+      "mi_phase_bits": {
+        "ref": 0.756244859078086,
+        "new": 0.756244859078086,
+        "diff": 0.0
+      },
+      "margin_bits": {
+        "ref": 0.5137234351498173,
+        "new": 0.5137234351498173,
+        "diff": 0.0
+      },
+      "purity_phase": {
+        "ref": 0.9103108154604886,
+        "new": 0.9103108154604886,
+        "diff": 0.0
+      }
+    },
+    "PPCC_jug": {
+      "status": "identical",
+      "mi_phase_bits": {
+        "ref": 0.2483607300760034,
+        "new": 0.2483607300760034,
+        "diff": 0.0
+      },
+      "margin_bits": {
+        "ref": 0.21297018246532967,
+        "new": 0.21297018246532967,
+        "diff": 0.0
+      },
+      "purity_phase": {
+        "ref": 0.9336334704649538,
+        "new": 0.9336334704649538,
+        "diff": 0.0
+      }
+    },
+    "PPCC_marshmallow": {
+      "status": "identical",
+      "mi_phase_bits": {
+        "ref": 0.7591799801643406,
+        "new": 0.7591799801643406,
+        "diff": 0.0
+      },
+      "margin_bits": {
+        "ref": 0.3369689954087264,
+        "new": 0.3369689954087264,
+        "diff": 0.0
+      },
+      "purity_phase": {
+        "ref": 0.8369032619347613,
+        "new": 0.8369032619347613,
+        "diff": 0.0
+      }
+    }
+  },
+  "meta": {
+    "script": "scripts/analysis/grid_phase/paper_supplements.py",
+    "reuses": "scripts/analysis/grid_phase/intrinsic_phase.py",
+    "feature_spec": {
+      "layer": 12,
+      "denoise": 3,
+      "segment": "all(49-token mean)",
+      "layer_axis_index": 5,
+      "denoise_axis_index": 3,
+      "segment_axis_index": 3
+    },
+    "params": {
+      "k": 8,
+      "global_k": 24,
+      "pca_dim": 64,
+      "whiten": true,
+      "n_init": 5,
+      "max_iter": 300,
+      "seed": 0,
+      "boundary_tol": 1,
+      "n_perm": 300,
+      "fit_scenes": null
+    },
+    "kmeans": {
+      "impl": "task_classification",
+      "source": "gpu.py",
+      "load_error": null
+    },
+    "shards": [
+      "CoffeeSetupMug",
+      "DishwasherRack_out",
+      "OpenDrawer_left",
+      "OpenDrawer_right",
+      "OvenRack_out",
+      "PPCC_apple",
+      "PPCC_bread",
+      "PPCC_candle",
+      "PPCC_jug",
+      "PPCC_marshmallow"
+    ],
+    "numpy": "1.26.4"
+  }
+}

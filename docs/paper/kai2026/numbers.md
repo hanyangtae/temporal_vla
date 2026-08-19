@@ -40,8 +40,13 @@ ref = `outputs/analysis/grid_phase/paper_ref/*.json`, supp = `outputs/analysis/g
 | 930판 per-task k8 | MI 0.25~0.76 bits, purity 0.54~0.93, margin +0.15~+0.51 (apple −0.63 퇴화 제외 시) | ref align_pertask.json (41 §5 요약과 일치) |
 | 930판 k24 global pooled | MI 1.096, purity 0.751, margin +0.991 | ref align_global.json |
 | scene 오염 (통제 전) | mi_scene 0.2~1.0 bits (dishwasher 1.029, drawer-right 1.018, OvenRack 0.947) | ref align_pertask.json |
-| ① scene 잔차화 후 | (supp 실행 후 기입) | supp resid_compare.tsv |
-| ② contingency 정량 | (supp 실행 후 기입: per-cluster top-phase 점유율 분포, phase당 cluster 수) | supp contingency_*.json |
+| ① 게이트 (재현 검증) | rung3 per-task k8 대비 10/10 task **bit-identical** (max diff 0) | supp gate_check.json |
+| ① scene 잔차화 후 mi_scene | 중앙값 0.54 → **0.24** bits (최대 1.03→0.25; apple 0.51→0.04) | supp resid_compare.tsv |
+| ① scene 잔차화 후 margin | 9/9 task 양수 유지, 중앙값 +0.337 → **+0.278** (candle +0.51→+0.54·marshmallow +0.34→+0.38·OvenRack +0.25→+0.30 은 상승; apple 퇴화 유지·제외) | supp resid_compare.tsv |
+| ① scene 잔차화 후 purity | 유지 (candle 0.910→0.901, jug 0.934→0.932, OvenRack 0.544→0.616) | supp resid_compare.tsv |
+| ② off-phase 출현율 (per-cluster median, 1−top점유) | task 중앙값 0.22; 순수한 task jug 0.001·marshmallow 0.014·candle 0.059 ~ 넓은 task OvenRack 0.471 (task별 편차 큼) | supp contingency_pertask_k8.json |
+| ② phase당 cluster 수 (argmax 기준) | 1.33~2.67 (중앙값 2.67 = phase 하나가 평균 2~3개 cluster로 세분) | supp contingency_pertask_k8.json |
+| ② global k24 | purity 0.751, off-phase median 0.350 | supp contingency_global_k24.json |
 
 ## 주장 3 — 재현성 (특정 모델·데이터의 산물이 아님)
 
