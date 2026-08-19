@@ -254,9 +254,10 @@ def s1_transfer(A, B, mask_a, mask_b, n_perm, seed):
 
 def kmeans_labels(feat, K, seed):
     """PCA-64w → KMeans(K). intrinsic_phase 부품 재사용. 전 행 fit."""
-    stats, z = IP.pca_fit(feat, 64)
+    stats, _evr = IP.pca_fit(feat, 64)
     zw = IP.pca_apply(feat, stats, whiten=True)
-    lab, cent = IP.kmeans_numpy(zw, K, n_init=5, max_iter=300, seed=seed)
+    cent = IP.kmeans_numpy(zw, K, n_init=5, max_iter=300, seed=seed)
+    lab, _ = IP._assign(zw, cent)
     return np.asarray(lab), stats, cent
 
 
@@ -275,7 +276,7 @@ def s2_transfer(A, B, mask_a, mask_b, K, seed):
     """A 클러스터를 B 에 이식했을 때 margin 유지율 + 원공간 centroid 매칭."""
     lab_a, stats_a, cent_a = kmeans_labels(A["feat"][mask_a], K, seed)
     zb = IP.pca_apply(B["feat"][mask_b], stats_a, whiten=True)
-    lab_b_trans = IP._assign(zb, cent_a)
+    lab_b_trans, _ = IP._assign(zb, cent_a)
     lab_b_self, _, _ = kmeans_labels(B["feat"][mask_b], K, seed)
 
     ph_b = B["phase_code"][mask_b]
