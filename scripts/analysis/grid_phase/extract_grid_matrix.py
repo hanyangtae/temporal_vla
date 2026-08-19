@@ -116,6 +116,22 @@ def select_machine(instruction: str, ep_list: list[Episode],
 
     slug = instr_slug(instruction)
     forced = override.get(slug) or override.get(instruction)
+
+    # v2 보강 (2026-08-19): 머신이 여럿이어도 좌표 (s,n) 가 전혀 겹치지 않으면 이는
+    # 중복이 아니라 **상보 분할**(수집 라우팅이 나눈 것 — 예: v2 bread = kanu 125 +
+    # worker1 100, 충돌 0)이다. 이때 한 머신만 고르면 셀을 통째로 잃으므로 union 을
+    # 유지한다. 머신 효과는 검출한계 이하 실측(hardware calibration, n=60) — 각주 전제.
+    # 좌표가 실제로 겹치면 기존 규칙(정본 머신 선택)으로 간다.
+    if forced is None and len(per) > 1:
+        coords: dict[tuple, set] = {}
+        for e in ep_list:
+            coords.setdefault((e.scene, e.noise), set()).add(e.machine)
+        n_collide = sum(1 for ms in coords.values() if len(ms) > 1)
+        if n_collide == 0:
+            info = {"machine": "+".join(sorted(per)), "rule": "union_disjoint",
+                    "cells_per_machine": counts, "dropped_dup_cells": 0,
+                    "dropped_machines": []}
+            return info["machine"], list(ep_list), info
     if forced is not None:
         if forced not in per:
             raise ValueError(
