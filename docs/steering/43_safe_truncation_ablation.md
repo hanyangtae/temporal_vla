@@ -177,8 +177,12 @@ phase-gt 학습 모델은 "phase에 오래 머무는 구간"을 학습에서 본
 간섭예상군의 oven은 일관 피해(−0.16~−0.28). 즉 co-training 이득은 "방향 공유"가 아니라
 수혜 slug의 특성+데이터 증가에서 오고 공여 slug은 희석 비용을 치름 → 그룹핑엔 slug별
 득실 회계 필요. 46 라운드2 채점: S1 vs Δ Spearman +0.26, 시너지군 +0.051 vs 간섭군
-−0.011 = **방향 신호는 있으나 noise 대역 이내 → 그룹핑 사전판별로는 실측 대체 불가,
-공유도의 유효 용도는 혼입 금지 필터**(부호반전 slug — oven·drawer_right — 스크리닝)뿐.
+−0.011 = 방향 신호는 있으나 noise 대역 이내 → 혼입 금지 필터 용도만 잠정 유지했으나 —
+**라운드3 confirmatory(grid v2 2236판, 사전등록)에서 미확증**: 반전군 피해 Δ lstm −0.021
+(정렬군이 오히려 −0.046으로 더 음수), 순열 p 0.62~0.68, v1의 oven 피해 비재현(+0.03).
+각주: v2는 실패 희소 slug(marsh test fail 2)·coffee 결측·bread 머신혼재로 검정력 자체가
+낮음("예측 실패"와 "검출 불가" 혼재). **최종: activation 공유도는 detector 그룹핑에 확증된
+예측력 없음 — 그룹핑은 배포 데이터에서 mixed vs pertask 직접 실측이 유일**.
 
 - 문헌 대조: SAFE(LIBERO)·RL²(SIMPLER, 우리 풀 재현 docs/steering/38)의 공유 detector
   성립은 근접-도메인 task 가족 + seen 한정 — RL²는 플랫폼만 바뀌어도 번들 detector가
