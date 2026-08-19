@@ -27,6 +27,7 @@ ref = `outputs/analysis/grid_phase/paper_ref/*.json`, supp = `outputs/analysis/g
 | 전환 수 (930판, k24) | GT 4,025 vs 발견 14,038 (≈3.5배) | ref align_global.json |
 | 주기성 없음 | 전환 위치 mod 2/3/4/5 분포 균등 (최대/최소 1.02~1.47) | 40 §5 부수 관찰 |
 | GT 경계 정렬은 우연 수준 | 24상태 boundary z −1.0~+0.5 (F1 0.20~0.23); GT 단위 병합 시 z +1.3~+4.9 | 40 §5 실험 1 |
+| "k 산술" 반박 (k8, per-task) | 구간 길이 GT 대비 짧음 9/10 (candle 23.4→11.0, jug 53.5→5.5, bread 16.7→3.6); 에피소드당 전환 수 > k−1=7 인 task 5/10 (bread 20.1, jug 22.2, coffee 14.7 = 상태 재방문); OvenRack은 역으로 병합(15.9 vs 8.5, 전환 5.2 vs 10.5) | ref align_pertask.json by_k.8 (mean_seg_len_*, n_transitions_*) |
 | 새 수집분 GT 대비 | z −3.0~+0.3 (같은 패턴 재현) | 40 §5 실험 2 절 |
 
 ## 주장 2 — phase-순수성 (cluster는 특정 phase에 국한)
