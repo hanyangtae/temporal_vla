@@ -78,8 +78,28 @@ in-fit-noise(n0,1) vs held-out-noise(n5,6)로 분리 보고.
   α0.2는 FPR 동일(2/20)·발화 record 38→33 (공짜 개선), α0.3은 record 1까지 당겨지나
   FPR 15/20 붕괴. **SAFE 신호는 컨택-후에만 분리** (43 절제 detector가 preW 0.17→1.00
   로 이를 해소하는 별도 축 — 후속 arm 후보).
-- 잔여: drawer-R (srv50, base/online/pl 각 34/40 + hs 0/40 — n15_grid_v2 수집 완료 후
-  resume). 현재까지 34판 × 4 arm 뒤집힘 0.
+- **drawer-R 완주 (08-19 resume)**: base 40/40 수집 완전 재현(srv50 결정성 검증).
+  개입 3 arm — in-fit: SR 0.650 동결(구제 0/7, 실개입 6), held-out: 구제 0/6(실개입 6),
+  파손 1~2건이 arm별 상이 셀(s8n6=pl·hs 공동, s5n0=hs 단독) = 내용-무관 섭동 노이즈.
+  detector 특이: unseen noise 성공 셀 오발화 9/14 (FPR 0.64 — reach 등록 phase 상시
+  재방문과 겹쳐 성공 셀 개입 6판까지 발생, 그래도 파손은 1~2). **3-task 총계: 구제
+  0 / 실패 47셀 (실개입 ~35판)** — condg null 최종 확정.
+
+### 7.1 절제 detector × condg (조기-발화 분리 검증, drawer-L)
+
+연산자·β·셀 동일, detector만 43 phase-gt 절제판으로 교체 (og_condg_trunc):
+
+| | full detector | 절제 detector |
+|---|---|---|
+| 발화 시점 | record 38 일률 | **22–32 (중앙 32), 이벤트-결속** |
+| 실패 셀 실개입 | 12/17 | **16/17** |
+| 구제 | 0 | **0** |
+| 파손 | s8n0 (처치=위약) | s8n0 (동일) |
+| 오발화 | 2/20 | 6/20 |
+
+**타이밍 가설 기각** — 43 예측대로 발화가 컨택 전후 창까지 당겨지고 개입 커버리지가
+거의 전 판으로 늘어도 처치=위약 셀 단위 동일·구제 0. 병목은 발화 시점이 아니라
+**개입 내용/강도**. (다음: β 인상 + denoise step-0 개입 — layer 재선정 sweep 진행 중.)
 
 ## 6. eval 계획
 
