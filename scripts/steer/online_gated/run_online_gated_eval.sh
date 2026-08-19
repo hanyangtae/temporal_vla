@@ -268,6 +268,8 @@ serve_flags_for() {  # slug arm → serve 추가 플래그 (scan_npz_base 선행
       [ "$arm" = online_hs ] && mode=hs
       flags="--condg-npz ${serve_base}/condg.npz --steering-op condg"
       flags="${flags} --steering-beta ${STEER_BETA} --condg-mode ${mode}"
+      [ -n "${CONDG_LAYER:-}" ] && flags="${flags} --steering-layer ${CONDG_LAYER}"
+      [ "${CONDG_APPLY_CALL:-last}" = first ] && flags="${flags} --condg-apply-call first"
       flags="${flags} --steering-token-select $(token_select_for_arm "$arm")"
       [ "$CONDG_GATE" = 1 ] || flags="${flags} --no-condg-gate"
     else

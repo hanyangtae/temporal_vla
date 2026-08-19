@@ -730,7 +730,10 @@ class CondGuidanceSteering:
         gate: bool = True,
         horizon: int | None = None,
         num_denoise: int | None = None,
+        apply_call: str = "last",
     ):
+        if apply_call not in ("last", "first"):
+            raise ValueError(f"condg apply_call 은 ('last','first') (got {apply_call})")
         if mode not in COND_GUIDANCE_MODES:
             raise ValueError(f"condg mode 는 {COND_GUIDANCE_MODES} (got {mode})")
         if token_select not in ("all", "future"):
@@ -747,6 +750,10 @@ class CondGuidanceSteering:
         self.num_denoise = int(
             num_denoise if num_denoise is not None else head.num_inference_timesteps
         )
+        # 개입 call: "last"=k==K−1 (fit denoise_step 3 표적), "first"=k==0
+        # (fit --denoise-step 0 재적합 NPZ 전용 — τ·W 가 step-0 공간 캘리브레이션이어야 함).
+        self.apply_call = apply_call
+        self._apply_k = 0 if apply_call == "first" else self.num_denoise - 1
         self.params = params
         self._phases = params["phases"]
         _any = next(iter(self._phases.values()))
@@ -824,7 +831,7 @@ class CondGuidanceSteering:
             "gate": self.gate, "armed": self.armed, "scene": self._scene,
             "scene_fallback": (self._active is not None
                                and self._stats is self._active["global"]),
-            "num_denoise": self.num_denoise,
+            "num_denoise": self.num_denoise, "apply_call": self.apply_call,
             "last_margin": self.last_margin,
             "n_fired": self.n_fired, "n_gated_off": self.n_gated_off,
         }
@@ -848,8 +855,8 @@ class CondGuidanceSteering:
         self._k += 1
         if self._active is None or self._phi is None:
             return output                      # off — 원본 그대로 (no-hook 과 동일)
-        if k != self.num_denoise - 1:
-            return output                      # 마지막 denoise call 에서만 개입
+        if k != self._apply_k:
+            return output                      # 지정 denoise call(기본 마지막)에서만 개입
         is_tuple = isinstance(output, tuple)
         out = output[0] if is_tuple else output
         if out.shape[-1] != self.expected_dim:

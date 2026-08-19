@@ -1310,9 +1310,10 @@ def _register_steering_if_requested(loaded_policy, args):
         _cg_mode = getattr(args, "condg_mode", "condg") or "condg"
         _cg_gate = bool(getattr(args, "condg_gate", True))
         _cg_token = token_select or "all"
+        _cg_apply = getattr(args, "condg_apply_call", "last") or "last"
         hook = CondGuidanceSteering(
             groot_model, params, beta, layer=_cg_layer, mode=_cg_mode,
-            token_select=_cg_token, gate=_cg_gate,
+            token_select=_cg_token, gate=_cg_gate, apply_call=_cg_apply,
         ).register()
         _steering.append(hook)
         _condg_hooks.append(hook)
@@ -1333,6 +1334,7 @@ def _register_steering_if_requested(loaded_policy, args):
             key=None, token_select=_cg_token, denoise="last_call",
             npz_shas=loaded_npz_shas, phases=_registered_phases,
             extra={"condg_mode": _cg_mode, "condg_gate": _cg_gate,
+                   "condg_apply_call": _cg_apply,
                    "condg_state_dim": hook.state_dim,
                    "condg_num_denoise": hook.num_denoise,
                    "condg_scenes": _cg_scenes},
@@ -2136,6 +2138,15 @@ def main():
         help=(
             "condg 적용식. condg=대조 투영(Δ=β⟨h̃−ĥ_s,d̂⟩d̂, d̂=normalize(ĥ_f−ĥ_s)) | "
             "hs=성공-모방 단독 ablation((1−β)h̃+β·ĥ_s)."
+        ),
+    )
+    parser.add_argument(
+        "--condg-apply-call",
+        choices=("last", "first"),
+        default="last",
+        help=(
+            "condg 개입 denoise call. last=k==K−1 (fit denoise_step 3 표적, 기본) | "
+            "first=k==0 — fit --denoise-step 0 NPZ 전용 (τ·W 가 step-0 공간이어야 함)."
         ),
     )
     parser.add_argument(
