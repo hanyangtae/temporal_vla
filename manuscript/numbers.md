@@ -17,7 +17,25 @@ ref = `outputs/analysis/grid_phase/paper_ref/*.json`, supp = `outputs/analysis/g
 | 데이터 (grid 930판) | N1.5 grid 930 에피소드 (9 instruction × scene10 × noise10 + apple30), 89,766 record | 41 상단, ref(k24) n |
 | margin 정의 | I(상태열;GT) − I(clock;GT), clock은 상태 수를 발견 상태열에 맞춘 진행도 분위 | 40 §2 |
 
-## 주장 1 — 촘촘함 (GT보다 세밀한 하위 분할)
+## ★ 주장 1(메인) — activation으로 현재 phase를 읽을 수 있다 (held-out)
+
+프로토콜: scene 단위 train/test 분리(test 2 scene, split seed 0/1/2 평균), 군집·최빈 phase
+매핑·probe 전부 train scene에서만 적합. 스크립트 `scripts/analysis/grid_phase/phase_readout.py`,
+결과 `outputs/analysis/grid_phase/phase_readout/readout.{tsv,json}`.
+
+| 방법 | 정확도(중앙값) | macro-F1 |
+|---|---|---|
+| 다수 클래스 | 0.561 | 0.231 |
+| 시간 대조군(진행도 분위) | 0.605 | 0.293 |
+| **activation 비지도 군집→최빈 phase** | **0.856** | **0.570** |
+| **activation 지도 probe(로지스틱)** | **0.893** | **0.721** |
+| 시간만 넣은 지도 probe | 0.624 | 0.297 |
+
+- activation > 시간 대조군: **9/10 instruction** (최대 격차 OpenDrawer left 0.26→0.73)
+- 예외 DishwasherRack out: 군집 0.541 < 시계 0.570 (단 probe 0.747)
+- 라벨 사용처는 군집→phase 매핑뿐 (구조 자체는 비지도)
+
+## 주장 2 (보조) — GT보다 세밀한 하위 분할
 
 | 수치 | 값 | 출처 |
 |---|---|---|
