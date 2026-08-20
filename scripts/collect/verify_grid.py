@@ -179,6 +179,52 @@ def deep_check(dirpath: Path, errors: list[str]) -> None:
         errors.append(f"{dirpath}: 실물 shape {list(arr.shape)} != record_shape 기록")
 
 
+def caption_burnin_check(video_path: Path, errors: list[str]) -> None:
+    """수집 영상 하단 caption burn-in tripwire (2026-08 kanu 219판 사고 재발 감지).
+
+    upstream VideoRecordingWrapper(overlay_text=True)는 프레임 하단 장면 위에
+    검은 사각형+흰 텍스트를 굽는다. 마지막 프레임의 하단 밴드에서 그 시그니처
+    (저휘도 배경 비율 高 + 순백 텍스트 픽셀 존재)를 탐지한다. reader 가 없으면
+    경고만 남긴다(무음 통과 금지).
+    """
+    try:
+        import imageio.v2 as iio
+    except ModuleNotFoundError as exc:
+        errors.append(f"{video_path}: caption 검사 불가 — {exc} (imageio 있는 python 으로 재시도)")
+        return
+    try:
+        reader = iio.get_reader(str(video_path))
+        n = reader.count_frames()
+        frame = reader.get_data(max(0, n - 1))
+        reader.close()
+    except Exception as exc:  # 손상 mp4 등
+        errors.append(f"{video_path}: caption 검사 중 읽기 실패 — {exc}")
+        return
+    # 판정식: 하단 40% 에서 "검정 배경(≥0.55) + 순백 텍스트로 행이 거의 채워짐(≥0.85)"인
+    # 연속 행 run ≥ 8 + run 내 순백 픽셀 > 1%. 실측 마진: kanu burn-in 30/30 탐지
+    # (run≥9), 클린 3머신 30/30 통과 (run=0).
+    band = frame[int(frame.shape[0] * 0.60):]
+    gray = band.mean(axis=2)
+    row_dark = (gray < 40).mean(axis=1)
+    row_white = (gray > 235).mean(axis=1)
+    cap_rows = (row_dark >= 0.55) & ((row_dark + row_white) >= 0.85)
+    best, cur, s, best_s = 0, 0, 0, 0
+    for i, d in enumerate(cap_rows):
+        cur = cur + 1 if d else 0
+        if cur == 1:
+            s = i
+        if cur > best:
+            best, best_s = cur, s
+    white_in_run = 0.0
+    if best >= 8:
+        seg = gray[best_s:best_s + best]
+        white_in_run = float((seg > 235).mean())
+    if best >= 8 and white_in_run > 0.01:
+        errors.append(
+            f"{video_path}: 하단 caption burn-in 의심 (연속 caption 행 {best}, "
+            f"white {white_in_run:.3f}) — overlay_text 경로 부활 여부 확인 필요")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -187,6 +233,8 @@ def main() -> int:
     ap.add_argument("--done-list", type=Path, action="append", default=[],
                     help="shipped_cells.txt (복수 가능) — 결손 판정에 합산")
     ap.add_argument("--deep", type=int, default=0, help="pkl 실로드 표본 수 (torch 필요)")
+    ap.add_argument("--check-captions", type=int, default=20,
+                    help="video.mp4 하단 caption burn-in 검사 표본 수 (기본 20, -1=전수, 0=끔)")
     ap.add_argument("--require-complete", action="store_true",
                     help="결손 셀도 오류로 취급 (수집 완주 후 최종 검수용)")
     ap.add_argument("--list-missing", type=int, default=10, help="결손 셀 출력 상한")
@@ -249,6 +297,13 @@ def main() -> int:
     if args.deep and base_dirs:
         for d in random.Random(0).sample(base_dirs, min(args.deep, len(base_dirs))):
             deep_check(d, errors)
+
+    if args.check_captions and base_dirs:
+        vids = [d / "video.mp4" for d in base_dirs if (d / "video.mp4").exists()]
+        if args.check_captions > 0:
+            vids = random.Random(1).sample(vids, min(args.check_captions, len(vids)))
+        for v in vids:
+            caption_burnin_check(v, errors)
 
     # ── 리포트 ──
     per_instr = defaultdict(lambda: [0, 0])  # instruction -> [expected, collected]

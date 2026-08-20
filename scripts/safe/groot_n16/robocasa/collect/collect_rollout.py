@@ -148,8 +148,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--video-fps", type=int, default=20)
     parser.add_argument("--steps-per-render", type=int, default=2)
     parser.add_argument("--no-overlay", action="store_true",
-                        help="영상에 instruction/success 캡션을 안 그림(클린 mp4). "
-                             "instruction은 ep_meta.lang 에 그대로 남음.")
+                        help="(deprecated, 항상 클린) 캡션 overlay 는 장면을 가려 영구 "
+                             "비활성화됨. instruction은 ep_meta.lang 에 남음.")
     return parser.parse_args()
 
 
@@ -211,7 +211,7 @@ def main() -> None:
                 fps=args.video_fps,
                 steps_per_render=args.steps_per_render,
                 max_episode_steps=max_episode_steps,
-                overlay_text=not args.no_overlay,   # --no-overlay → 캡션 없는 클린 영상
+                overlay_text=False,  # 캡션 overlay 영구 금지 (장면 덮어쓰기 사고 재발 방지)
             ),
             multistep=MultiStepConfig(**multistep_kwargs),
         )

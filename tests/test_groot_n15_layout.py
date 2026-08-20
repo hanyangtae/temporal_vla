@@ -7,6 +7,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # 2026-08-10 레포 검토(S1~S9) 완료판 트리로 재생성 — 검토 원장 docs/review/LEDGER.tsv 가 근거.
 CANONICAL_GROOT_N15_ROBOCASA_FILES = {
     "scripts/safe/groot_n15/robocasa/README.md",
+    # 2026-08-12 수집 세션(PR #85) 반입분 — 검토 완료판 이후 dev 머지로 추가.
+    "scripts/safe/groot_n15/robocasa/analyze/dishwasher_rack_feasibility.py",
+    "scripts/safe/groot_n15/robocasa/analyze/drawer_scene_feasibility.py",
+    "scripts/safe/groot_n15/robocasa/analyze/ovenrack_feasibility.py",
+    "scripts/safe/groot_n15/robocasa/collect/build_collection_plan.py",
+    "scripts/safe/groot_n15/robocasa/collect/build_collection_plan_v1b.py",
     "scripts/safe/groot_n15/robocasa/analyze/instruction_pathway_features.py",
     "scripts/safe/groot_n15/robocasa/analyze/phase_separation.py",
     "scripts/safe/groot_n15/robocasa/analyze/summarize_instruction_cells.py",
