@@ -64,7 +64,9 @@ arXiv:2605.17204, 2026.
   정렬해 점수화 — "행동 단위로 활성화를 조건화한다"는 발상의 선례. 다만 이벤트를 활성화
   **바깥**(운동학)에서 정의하는 반면, 우리는 활성화 군집화 자체에서 단위를 얻는다는 점이
   대비된다.
-- 인용 위치: §1 서론(선행 연구 나열), 필요 시 §4 한계 문단.
+- 인용 위치: §1 서론(선행 연구 나열), **§2 방법·§3 결과의 외부 대조군**(이 논문의
+  keyframe-이벤트 파이프라인을 저자 코드로 재현해 같은 scene split 판독 프로토콜로 평가
+  — `scripts/analysis/grid_phase/esae_{prepare,readout}.py`), 필요 시 §4 한계 문단.
 - [확인: 노트 `docs/references/reading_notes/event_grounded_sae.md` (arXiv·저자·코드 URL 명시)]
 
 ---
