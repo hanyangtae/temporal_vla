@@ -116,6 +116,13 @@ eval (drawer-L, 절제 detector + step-0(k=0) 개입 + L15 재fit W·τ, 처치/
 | **0.6 (step-0)** | 0/17 (16) | **0** | 완전 동일 |
 | **1.0 (step-0)** | 0/17 (16) | 처치만 s8n0 1 | 구제 동일 0 |
 
+- **3-task 확장 (08-20, srv50 drawer-R L12·srv48 Dish L8, 6-worker scene-분할 병렬)**:
+  β0.6·1.0 전부 동일 그림 — drawer-R 구제 0/13×2β(파손 1~2, arm별 상이 셀),
+  Dish 구제 0/24×2β(β1.0 파손 0; **step-0 fit에서 reach·contact 양 phase 등록되어
+  실개입 5/24→23/24로 급증**했는데도 구제 0 — "개입 기회 부족" 해석 폐기).
+  **step-0 β sweep 총계: 구제 0/108 (3 task × 2β, 실개입 ~100).**
+- candle step-0 sweep(부속): L0–12 전멸, L15 transport만 0.57 vs 0.45(3/5, 소표본,
+  seed 범위 중첩) — 복귀 근거 부족으로 eval 미진행.
 - **β·개입시점·layer 전 축 소진 — 조건부 guidance 계열 null 최종 확정.** 특기:
   step-0 개입은 β를 올려도 파손조차 거의 못 만듦(첫 call 변형이 잔여 denoise에
   씻겨나감) — β1.0 유일 파손 1건도 상습 경계셀(s8n0).
