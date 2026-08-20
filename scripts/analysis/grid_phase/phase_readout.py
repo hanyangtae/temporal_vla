@@ -25,6 +25,7 @@ probe 도 전부 train scene 에서만 만들고, 한 번도 보지 않은 scene
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from pathlib import Path
 
@@ -117,16 +118,112 @@ def logistic_predict(mdl, X):
     return mdl["classes"][(Xs @ mdl["W"]).argmax(1)]
 
 
+# ---------------------------------------------------------------- 행동 대조군
+
+INSTR2SLUG = {
+    "Open the left drawer.": "OpenDrawer_left",
+    "Open the right drawer.": "OpenDrawer_right",
+    "Fully slide the top dishwasher rack out.": "DishwasherRack_out",
+    "Fully slide the oven rack out.": "OvenRack_out",
+    "Pick the mug from the counter and place it under the coffee machine dispenser.":
+        "CoffeeSetupMug",
+}
+for _obj in ("apple", "bread", "candle", "jug", "marshmallow"):
+    INSTR2SLUG[f"Pick the {_obj} from the counter and place it in the cabinet."] = \
+        f"PPCC_{_obj}"
+
+
+def index_traj(root: Path) -> dict:
+    """{(slug, scene, noise): traj.csv 경로} — meta.json 의 instruction 으로 slug 판정."""
+    import re
+    idx = {}
+    for meta in root.rglob("meta.json"):
+        try:
+            d = json.loads(meta.read_text())
+        except Exception:
+            continue
+        slug = INSTR2SLUG.get(d.get("instruction", ""))
+        traj = meta.parent / "traj.csv"
+        if slug is None or not traj.is_file():
+            continue
+        sc = no = None
+        for part in meta.parts:
+            m = re.fullmatch(r"s(\d+)", part)
+            if m:
+                sc = int(m.group(1))
+            m = re.fullmatch(r"n(\d+)", part)
+            if m:
+                no = int(m.group(1))
+        if sc is None or no is None:
+            continue
+        idx[(slug, sc, no)] = traj
+    return idx
+
+
+def action_features(traj_path: Path, n_rec: int, steps_per_rec: int = 5):
+    """record 별 행동 요약 [mean(7), std(7), last(7), cumsum(7)] = 28 차원.
+
+    정책은 record 하나마다 5 env-step 을 실행하므로, record r 은 csv 행 5r..5r+4 다.
+    """
+    rows = []
+    with traj_path.open() as fh:
+        rd = csv.reader(fh)
+        head = next(rd, None)
+        if not head:
+            return None
+        for line in rd:
+            try:
+                rows.append([float(v) for v in line])
+            except ValueError:
+                continue
+    if not rows:
+        return None
+    A = np.asarray(rows, float)
+    out = np.zeros((n_rec, A.shape[1] * 4), float)
+    for r in range(n_rec):
+        seg = A[r * steps_per_rec:(r + 1) * steps_per_rec]
+        if len(seg) == 0:
+            seg = A[-1:]
+        # 누적합 = 에피소드 시작부터의 변위 적분 → 팔이 지금 어디쯤인지의 대리값
+        cum = A[:(r + 1) * steps_per_rec].sum(0)
+        out[r] = np.concatenate([seg.mean(0), seg.std(0), seg[-1], cum])
+    return out
+
+
 # ---------------------------------------------------------------- 본체
 
-def run_one(path: Path, k: int, n_test_scene: int, seed: int):
+def run_one(path: Path, k: int, n_test_scene: int, seed: int, traj_idx=None):
     d = np.load(path, allow_pickle=True)
     Z = d["latent"].astype(np.float64)
     y = d["phase_code"].astype(np.int64)
     scene = d["scene"].astype(np.int64)
     ep, rec = d["ep_id"].astype(np.int64), d["rec_idx"].astype(np.int64)
+    noise = (d["noise"].astype(np.int64) if "noise" in d.files
+             else np.zeros(len(y), np.int64))
+    slug = path.stem.replace("labels_", "").rsplit("_k", 1)[0]
+
+    # 행동 대조군 특징 (정책이 실제로 낸 action) — 에피소드별로 붙인다
+    A = None
+    if traj_idx:
+        A = np.full((len(y), 28), np.nan)
+        for e in np.unique(d["ep_id"]):
+            m = d["ep_id"] == e
+            key = (slug, int(scene[m][0]), int(noise[m][0]))
+            f = traj_idx.get(key)
+            if f is None:
+                continue
+            feats = action_features(f, int(m.sum()))
+            if feats is not None:
+                ridx = d["rec_idx"][m].astype(int)
+                ridx = np.clip(ridx - ridx.min(), 0, len(feats) - 1)
+                A[m] = feats[ridx]     # npz 행 순서 그대로, record 번호로 직접 색인
+        if np.isnan(A).all(1).any():
+            A = None if np.isnan(A).all() else A
+
     ok = y >= 0
     Z, y, scene, ep, rec = Z[ok], y[ok], scene[ok], ep[ok], rec[ok]
+    if A is not None:
+        A = A[ok]
 
     scenes = np.unique(scene)
     rng = np.random.default_rng(seed)
@@ -171,6 +268,39 @@ def run_one(path: Path, k: int, n_test_scene: int, seed: int):
     res["probe_acc"] = float((pred == y[te]).mean())
     res["probe_f1"] = macro_f1(y[te], pred, classes)
 
+    # 4b) causal time — 에피소드 길이를 모르는 온라인 상황: 절대 스텝 t 만
+    edges_c = np.quantile(rec[tr].astype(float), np.linspace(0, 1, k + 1)[1:-1])
+    m = majority_map(np.digitize(rec[tr].astype(float), edges_c), y[tr], k, fallback)
+    pred = m[np.digitize(rec[te].astype(float), edges_c)]
+    res["causal_time_acc"] = float((pred == y[te]).mean())
+    res["causal_time_f1"] = macro_f1(y[te], pred, classes)
+
+    # 4c) action — 정책이 낸 행동만 (외부 관찰자가 볼 수 있는 출력)
+    if A is not None:
+        good = ~np.isnan(A).any(1)
+        if (good & tr).sum() > k * 5 and (good & te).sum() > 10:
+            At, Ae = A[good & tr], A[good & te]
+            yt, ye = y[good & tr], y[good & te]
+            C = kmeans(At, k, seed=seed)
+            mm = majority_map(assign(At, C), yt, k, fallback)
+            pred = mm[assign(Ae, C)]
+            res["action_cluster_acc"] = float((pred == ye).mean())
+            res["action_cluster_f1"] = macro_f1(ye, pred, classes)
+            mdl = logistic(At, yt, classes, seed=seed)
+            pred = logistic_predict(mdl, Ae)
+            res["action_probe_acc"] = float((pred == ye).mean())
+            res["action_probe_f1"] = macro_f1(ye, pred, classes)
+
+    # 4d) action + time — 외부에서 볼 수 있는 정보를 전부 합친 가장 강한 대조군
+    if A is not None:
+        good = ~np.isnan(A).any(1)
+        if (good & tr).sum() > k * 5 and (good & te).sum() > 10:
+            AT = np.hstack([A, tfrac[:, None], rec[:, None].astype(float)])
+            mdl = logistic(AT[good & tr], y[good & tr], classes, seed=seed)
+            pred = logistic_predict(mdl, AT[good & te])
+            res["action_time_acc"] = float((pred == y[good & te]).mean())
+            res["action_time_f1"] = macro_f1(y[good & te], pred, classes)
+
     # 5) probe_t — 지도 로지스틱 (진행도만)
     mdl = logistic(tfrac[tr][:, None], y[tr], classes, seed=seed)
     pred = logistic_predict(mdl, tfrac[te][:, None])
@@ -188,17 +318,23 @@ def main(argv=None):
     ap.add_argument("--k", type=int, default=8)
     ap.add_argument("--test-scenes", type=int, default=2)
     ap.add_argument("--seeds", default="0,1,2", help="scene split seed 목록")
+    ap.add_argument("--traj-dir", type=Path, default=None,
+                    help="traj.csv 트리 루트 — 있으면 행동 대조군을 함께 잰다")
     args = ap.parse_args(argv)
 
     files = sorted(args.labels_dir.glob("labels_*_k*.npz"))
     if not files:
         raise SystemExit(f"labels_*.npz 없음: {args.labels_dir}")
     seeds = [int(s) for s in args.seeds.split(",") if s.strip()]
+    traj_idx = index_traj(args.traj_dir) if args.traj_dir else None
+    if traj_idx is not None:
+        print(f'[traj] 색인 {len(traj_idx)} 에피소드', flush=True)
 
     per, rows = {}, []
     for f in files:
         name = f.stem.replace("labels_", "").rsplit("_k", 1)[0]
-        runs = [r for r in (run_one(f, args.k, args.test_scenes, s) for s in seeds) if r]
+        runs = [r for r in (run_one(f, args.k, args.test_scenes, s, traj_idx)
+                            for s in seeds) if r]
         if not runs:
             print(f"[skip] {name}", flush=True)
             continue
@@ -214,13 +350,18 @@ def main(argv=None):
               f"(probe_t {avg['probet_acc']:.3f})", flush=True)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    cols = ["major_acc", "clock_acc", "cluster_acc", "probe_acc", "probet_acc",
-            "major_f1", "clock_f1", "cluster_f1", "probe_f1", "probet_f1"]
+    cols = [c for c in ("major_acc", "causal_time_acc", "clock_acc", "probet_acc",
+                        "action_cluster_acc", "action_probe_acc", "action_time_acc",
+                        "cluster_acc", "probe_acc",
+                        "major_f1", "causal_time_f1", "clock_f1", "probet_f1",
+                        "action_cluster_f1", "action_probe_f1", "action_time_f1",
+                        "cluster_f1", "probe_f1")
+            if any(c in a for _, a in rows)]
     with (args.out_dir / "readout.tsv").open("w") as fh:
         fh.write("instruction\tn_phase\tn_test\t" + "\t".join(cols) + "\n")
         for name, a in rows:
             fh.write(f"{name}\t{a['n_phase']}\t{a['n_test']}\t"
-                     + "\t".join(f"{a[c]:.4f}" for c in cols) + "\n")
+                     + "\t".join(f"{a[c]:.4f}" if c in a else "" for c in cols) + "\n")
     meta = {"script": "scripts/analysis/grid_phase/phase_readout.py",
             "k": args.k, "test_scenes": args.test_scenes, "seeds": seeds,
             "protocol": "scene 단위 held-out; 군집·매핑·probe 전부 train scene 에서만 적합",
@@ -228,14 +369,13 @@ def main(argv=None):
     (args.out_dir / "readout.json").write_text(
         json.dumps({"per_instruction": per, "meta": meta}, ensure_ascii=False, indent=1))
 
-    med = {c: float(np.median([a[c] for _, a in rows])) for c in cols}
-    print("\n== 중앙값 ==")
-    print(f"  정확도  major {med['major_acc']:.3f} | clock {med['clock_acc']:.3f} "
-          f"| cluster {med['cluster_acc']:.3f} | probe {med['probe_acc']:.3f} "
-          f"| probe_t {med['probet_acc']:.3f}")
-    print(f"  macroF1 major {med['major_f1']:.3f} | clock {med['clock_f1']:.3f} "
-          f"| cluster {med['cluster_f1']:.3f} | probe {med['probe_f1']:.3f} "
-          f"| probe_t {med['probet_f1']:.3f}")
+    med = {c: float(np.median([a[c] for _, a in rows if c in a])) for c in cols}
+    print("\n== 중앙값 (instruction 10개) ==")
+    for c in cols:
+        if c.endswith("_acc"):
+            f1 = c[:-4] + "_f1"
+            print(f"  {c[:-4]:<14} acc {med[c]:.3f}"
+                  + (f"   macroF1 {med[f1]:.3f}" if f1 in med else ""))
 
 
 if __name__ == "__main__":

@@ -23,16 +23,21 @@ ref = `outputs/analysis/grid_phase/paper_ref/*.json`, supp = `outputs/analysis/g
 매핑·probe 전부 train scene에서만 적합. 스크립트 `scripts/analysis/grid_phase/phase_readout.py`,
 결과 `outputs/analysis/grid_phase/phase_readout/readout.{tsv,json}`.
 
-| 방법 | 정확도(중앙값) | macro-F1 |
-|---|---|---|
-| 다수 클래스 | 0.561 | 0.231 |
-| 시간 대조군(진행도 분위) | 0.605 | 0.293 |
-| **activation 비지도 군집→최빈 phase** | **0.856** | **0.570** |
-| **activation 지도 probe(로지스틱)** | **0.893** | **0.721** |
-| 시간만 넣은 지도 probe | 0.624 | 0.297 |
+| 방법 | 입력 | 정확도(중앙값) | macro-F1 |
+|---|---|---|---|
+| 다수 클래스 | — | 0.561 | 0.231 |
+| 시간(절대 스텝 t, 인과적) | 시간 | 0.675 | 0.307 |
+| 시간(진행도 t/T, 길이 오라클) | 시간 | 0.605 | 0.293 |
+| 시간 지도 probe(t/T) | 시간 | 0.624 | 0.297 |
+| 정책 행동 비지도 군집 | 외부 관찰 | 0.557 | 0.256 |
+| 정책 행동 지도 probe | 외부 관찰 | 0.614 | 0.339 |
+| **행동+시간 지도 probe (최강 외부 대조군)** | 외부 관찰 | 0.773 | 0.559 |
+| **activation 비지도 군집→최빈 phase** | 내부 | **0.856** | **0.570** |
+| **activation 지도 probe** | 내부 | **0.893** | **0.721** |
 
-- activation > 시간 대조군: **9/10 instruction** (최대 격차 OpenDrawer left 0.26→0.73)
-- 예외 DishwasherRack out: 군집 0.541 < 시계 0.570 (단 probe 0.747)
+- 행동 특징 28차원 = record별 action(7) 평균·표준편차·마지막 + 에피소드 시작부터 누적합(팔 위치 대리값). 원자료 `traj.csv` (수집 산출물, 2,236 에피소드 색인)
+- **같은 지도 조건 비교(probe vs 행동+시간): activation 승 9/10** — 예외 OpenDrawer left −0.094
+- 비지도 군집 vs 최강 외부 대조군은 6/10 (지도/비지도 조건이 달라 참고치)
 - 라벨 사용처는 군집→phase 매핑뿐 (구조 자체는 비지도)
 
 ## 주장 2 (보조) — GT보다 세밀한 하위 분할

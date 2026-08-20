@@ -43,8 +43,10 @@ plt.rcParams.update({
     "legend.fontsize": 6.5, "axes.linewidth": 0.6, "pdf.fonttype": 42,
 })
 
-METHODS = [("major_acc", "majority\nclass", "#B0B0B0"),
-           ("clock_acc", "time only\n(clock)", "#9C9C9C"),
+METHODS = [("major_acc", "majority\nclass", "#C4C4C4"),
+           ("causal_time_acc", "time\nonly", "#A8A8A8"),
+           ("action_probe_acc", "policy\naction", "#8C8C8C"),
+           ("action_time_acc", "action\n+ time", "#6E6E6E"),
            ("cluster_acc", "activation\ncluster", "#4C72B0"),
            ("probe_acc", "activation\nprobe", "#1F4E79")]
 
@@ -60,7 +62,8 @@ def main() -> None:
         raise SystemExit(f"empty: {src}")
     print(f"src : {src}  ({len(rows)} instructions)")
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(17.0 * CM, 5.6 * CM))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(17.0 * CM, 5.8 * CM),
+                               gridspec_kw={"width_ratios": [1.35, 1.0]})
 
     # ---- (a) method comparison
     rng = np.random.default_rng(0)
@@ -69,19 +72,19 @@ def main() -> None:
         ax1.bar(i, np.median(v), width=0.62, color=col, zorder=2)
         ax1.scatter(i + rng.uniform(-0.16, 0.16, len(v)), v, s=9,
                     facecolor="white", edgecolor="#333333", linewidth=0.6, zorder=3)
-        ax1.text(i, np.median(v) + 0.03, f"{np.median(v):.2f}", ha="center",
-                 fontsize=7)
+        ax1.text(i, 0.035, f"{np.median(v):.2f}", ha="center", fontsize=7,
+                 color="white" if i >= 4 else "#222222")
     ax1.set_xticks(range(len(METHODS)))
     ax1.set_xticklabels([m[1] for m in METHODS])
     ax1.set_ylim(0, 1.05)
     ax1.set_ylabel("held-out accuracy")
-    ax1.set_title("(a) reading the current phase from one step", pad=4)
+    ax1.set_title("(a) held-out phase readout: internal vs external", pad=5)
     ax1.grid(axis="y", lw=0.4, alpha=0.4, zorder=0)
     ax1.set_axisbelow(True)
 
     # ---- (b) clock vs activation, per instruction
-    x = np.array([float(r["clock_acc"]) for r in rows])
-    y = np.array([float(r["cluster_acc"]) for r in rows])
+    x = np.array([float(r["action_time_acc"]) for r in rows])
+    y = np.array([float(r["probe_acc"]) for r in rows])
     ax2.plot([0, 1], [0, 1], color="#999999", lw=0.8, ls="--", zorder=1)
     ax2.scatter(x, y, s=26, color="#4C72B0", edgecolor="black", linewidth=0.5,
                 zorder=3)
@@ -97,9 +100,9 @@ def main() -> None:
     lo = min(x.min(), y.min()) - 0.06
     ax2.set_xlim(lo, 1.02)
     ax2.set_ylim(lo, 1.02)
-    ax2.set_xlabel("time-only control accuracy")
-    ax2.set_ylabel("activation cluster accuracy")
-    ax2.set_title("(b) per instruction (above line = activation wins)", pad=4)
+    ax2.set_xlabel("best external baseline (action + time)")
+    ax2.set_ylabel("activation probe accuracy")
+    ax2.set_title("(b) same supervision, per instruction (9/10)", pad=4)
     ax2.grid(lw=0.4, alpha=0.35, zorder=0)
     ax2.set_axisbelow(True)
 
@@ -113,7 +116,7 @@ def main() -> None:
     print(f"wrote {stem}.pdf / {stem}.png")
     print("median:", {m[0]: round(float(np.median([float(r[m[0]]) for r in rows])), 3)
                       for m in METHODS})
-    print("activation > clock:", int((y > x).sum()), "/", len(rows))
+    print("activation > best external:", int((y > x).sum()), "/", len(rows))
 
 
 if __name__ == "__main__":

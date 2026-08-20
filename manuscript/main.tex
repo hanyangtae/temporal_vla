@@ -37,7 +37,7 @@
 {\bfseries 요 약}
 \end{center}
 \begin{quote}\small
-Vision-Language-Action(VLA) 모델이 작업을 수행할 때 스스로 현재 어떤 작업 단계를 진행중인지를 우리가 알 수 있다면, 이는 VLA모델에 대한 설명가능성과 추론 시 제어 및 개입의 출발점이 된다. 본 연구는 VLA의 내부 activation을 통해 모델이 스스로 인식하는 현재 작업 단계를 직접 읽는다. Gr00t N1.5의 action head(DiT)의 residual stream activation을 라벨 없이 clustering하면, \new{각 cluster는 특정 primitive action phase에 국한되어 나타나고 다른 phase에서는 잘 나타나지 않는다. 이 대응을 이용하면 한 번도 보지 않은 scene에서도 activation 한 스텝만으로 현재 phase를 정확도 0.86(비지도 clustering)/0.89(지도 probe)로 읽을 수 있으며, 이는 activation을 보지 않고 에피소드 진행 시간만 쓰는 대조군(0.61)을 크게 웃돈다. cluster는 사람이 정의한 phase보다 잘게 나뉘지만, 각 조각이 phase에 대해 순수하기 때문에 판독이 성립한다.} 이 구조는 데이터 처리 과정을 바꾸어도(AE$\rightarrow$SAE) 같은 시점에서 phase전환을 유지하고, 다양한 task,scene에서도 유지된다(z +8.8$\sim$+13.5). 즉, \new{VLA activation에는 action phase와 정합적인 구조가 존재해 추론 중 online 판독이 가능하며, 본 논문에서 이를 held-out 평가로 확인하였다.}
+Vision-Language-Action(VLA) 모델이 작업을 수행할 때 스스로 현재 어떤 작업 단계를 진행중인지를 우리가 알 수 있다면, 이는 VLA모델에 대한 설명가능성과 추론 시 제어 및 개입의 출발점이 된다. 본 연구는 VLA의 내부 activation을 통해 모델이 스스로 인식하는 현재 작업 단계를 직접 읽는다. Gr00t N1.5의 action head(DiT)의 residual stream activation을 라벨 없이 clustering하면, \new{각 cluster는 특정 primitive action phase에 국한되어 나타나고 다른 phase에서는 잘 나타나지 않는다. 이 대응을 이용하면 한 번도 보지 않은 scene에서도 activation 한 스텝만으로 현재 phase를 정확도 0.86(비지도 clustering)/0.89(지도 probe)로 읽을 수 있으며, 이는 밖에서 관찰 가능한 정보(진행 시간·정책이 낸 행동)만 쓰는 대조군(0.61--0.77)을 웃돈다. cluster는 사람이 정의한 phase보다 잘게 나뉘지만, 각 조각이 phase에 대해 순수하기 때문에 판독이 성립한다.} 이 구조는 데이터 처리 과정을 바꾸어도(AE$\rightarrow$SAE) 같은 시점에서 phase전환을 유지하고, 다양한 task,scene에서도 유지된다(z +8.8$\sim$+13.5). 즉, \new{VLA activation에는 action phase와 정합적인 구조가 존재해 추론 중 online 판독이 가능하며, 본 논문에서 이를 held-out 평가로 확인하였다.}
 \end{quote}
 \vspace{1.5ex}
 }]
@@ -117,28 +117,36 @@ phase 경계와의 정렬은 전환 횟수는 그대로 두고 위치만 에피�
 \new{\textbf{판독 프로토콜.} ``읽을 수 있는가''는 held-out 정확도로 잰다. scene 단위로
 train/test를 나누고(테스트 2 scene, split seed 3개 평균) 군집·매핑·probe를 전부 train
 scene에서만 적합한 뒤, 한 번도 보지 않은 scene의 스텝에서 phase를 맞히는 비율을 센다.
-비교 대상은 (i) 다수 클래스, (ii) activation을 보지 않고 진행도 $t/T$만 쓰는 \textbf{시간
-대조군}(train에서 분위 구간별 최빈 phase), (iii) 비지도 군집 + 최빈 phase 매핑(라벨은 이
-매핑에만 쓰인다), (iv) 지도 multinomial logistic probe이다.}
+비교 대상은 (i) 다수 클래스, (ii) \textbf{시간 대조군} --- activation을 보지 않고
+경과 시간만 쓴다(에피소드 길이를 모르는 온라인 상황을 위해 절대 스텝 $t$ 기준, 진행도
+$t/T$ 기준 둘 다), (iii) \textbf{행동 대조군} --- 정책이 실제로 낸 7차원 행동을 record별
+평균·표준편차·마지막값과 에피소드 시작부터의 누적합(팔 위치의 대리값)으로 요약한 28차원.
+이는 정책 바깥에서 관찰 가능한 정보만 쓰는 조건이다. (iv) 행동+시간을 합친 가장 강한
+외부 대조군, (v) activation 비지도 군집 + 최빈 phase 매핑(라벨은 이 매핑에만 쓰인다),
+(vi) activation 지도 multinomial logistic probe이다. (iii)--(vi)은 같은 군집·probe 절차를
+쓰므로 입력만 다르다.}
 
 \begin{figure*}[!t]
   \centering
   \includegraphics[width=0.96\textwidth]{figs/fig_readout_accuracy.pdf}
   \caption{\new{한 번도 보지 않은 scene에서의 phase 판독 정확도. (a) 방법별 중앙값(점 =
-  instruction 10개). activation 기반(파랑)이 시간 대조군·다수 클래스를 크게 앞선다.
-  (b) instruction 별 시간 대조군 대 activation 군집 --- 대각선 위가 activation 승(9/10).}}
+  instruction 10개). 회색은 외부에서 관찰 가능한 정보만 쓰는 대조군(시간·정책 행동·둘의
+  결합), 파랑은 내부 activation. (b) 같은 지도 조건에서 instruction 별 비교 --- 대각선
+  위가 activation 승(9/10).}}
   \label{fig:readout}
 \end{figure*}
 \section{결 과}
 \new{\textbf{activation 한 스텝만으로 현재 phase를 읽을 수 있다(그림 3).} 한 번도 보지
-않은 scene에서 잰 판독 정확도는 비지도 군집 0.86, 지도 probe 0.89(instruction 중앙값)로,
-다수 클래스(0.56)와 시간 대조군(0.61)을 크게 웃돈다. macro-F1로 봐도 0.57/0.72 대
-0.23/0.29로 같은 격차다. 10개 instruction 중 9개에서 activation이 시간 대조군을 이기며,
-격차가 가장 큰 OpenDrawer left는 0.26 대 0.73이다. phase는 대체로 시간 순서대로
-진행하므로 ``시계만 봐도 맞힌다''가 가장 강한 반론인데, 실측은 그 반대다. 특히 비지도
-군집만으로 0.86이 나온다는 점이 중요하다 --- 구조 자체는 라벨 없이 activation에서 나왔고
-라벨은 각 군집에 이름을 붙이는 데만 쓰였다. 군집 중심을 train에서 만들고 평가 스텝은
-최근접 배정으로 옮기므로, 재군집화 없이 추론 중 스텝 단위로 그대로 돌릴 수 있다.}
+않은 scene에서 잰 판독 정확도(instruction 중앙값)는 activation 비지도 군집 0.86, 지도
+probe 0.89이다. 대조군은 다수 클래스 0.56, 시간만 0.61--0.68, 정책 행동만 0.61이고, 밖에서
+볼 수 있는 정보를 모두 합친 가장 강한 외부 대조군(행동+시간)이 0.77이다. macro-F1에서는
+격차가 더 벌어져 0.72(probe) 대 0.56(행동+시간)으로, 드물게 나타나는 phase일수록 차이가
+크다. 같은 지도 조건에서 비교하면 activation probe가 외부 대조군을 10개 instruction 중
+9개에서 이긴다(예외는 OpenDrawer left, $-$0.09). 즉 ``시계만 봐도''도, ``로봇이 무슨 행동을
+내는지 보면''도 내부 표상만큼은 알려주지 못한다. 특히 비지도 군집만으로 0.86이 나온다는
+점이 중요하다 --- 구조 자체는 라벨 없이 activation에서 나왔고 라벨은 각 군집에 이름을
+붙이는 데만 쓰였다. 군집 중심을 train에서 만들고 평가 스텝은 최근접 배정으로 옮기므로,
+재군집화 없이 추론 중 스텝 단위로 그대로 돌릴 수 있다.}
 
 \textbf{발견된 단위는 사람이 정의한 phase보다 잘게 나뉜다\new{(그림 2a).}} 발견된
 상태의 평균 구간 길이는 GT phase보다 짧다(k=24에서 4.3 vs 16.1 스텝, 전환율 18.4\% vs
@@ -199,8 +207,8 @@ scene별 평균을 제거한 잔차에서 scene 정보는 크게 줄어드는 �
 판독 평가는 scene 단위 held-out이지만 instruction 간 전이는 다루지 않았다.}
 
 \new{결론: VLA의 내부 activation만으로 현재 action phase를 읽을 수 있다 --- 처음 보는
-scene에서 정확도 0.86(비지도)/0.89(probe)이며, 시간 정보만 쓰는 대조군(0.61)을 크게
-웃돈다. 이 구조는 라벨 없이 얻어지고 scene 성분을 제거해도 유지되며 모델·데이터를 바꿔도
+scene에서 정확도 0.86(비지도)/0.89(probe)이며, 시간·정책 행동 등 외부 관찰 정보를 쓰는
+대조군(최대 0.77)을 웃돈다. 이 구조는 라벨 없이 얻어지고 scene 성분을 제거해도 유지되며 모델·데이터를 바꿔도
 재현된다. 즉 모델이 지금 무슨 작업을 진행 중이라고 표상하는지를 외부 관측 없이 내부에서
 스텝 단위로 읽을 수 있으며, 이는 VLA 행동의 설명 신호이자 단계 조건부 개입과 실패 감지의
 조건 신호가 된다.}
