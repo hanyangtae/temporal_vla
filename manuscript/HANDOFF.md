@@ -119,7 +119,7 @@ KMeans 게이트 재현에는 `--kmeans-src ~/workspace/temporal_vla/task_classi
 - 참고: 판독 라벨·latent NPZ는 승준 `/tmp/kai_lab/out/labels_*_k8.npz`에도 있음(휘발성 /tmp 주의)
 
 **주의**: OvenRack_out 100판·PPCC_marshmallow 11판의 영상은 시각 임베딩에 쓸 수 없는
-품질 문제가 있어(별도 트랙에서 재생성 중) — Event-SAE 대조군의 vision 성분은 우선
+품질 문제가 있어(재생성은 '데이터 추가 수집' 세션 오너십, 완료 시 이 세션으로 통지 요청됨) — Event-SAE 대조군의 vision 성분은 우선
 깨끗한 8개 instruction으로 돌리고, 해당 2개는 재생성본이 나오면 채울 것.
 
 ## 7. 남은 일 (우선순위)
