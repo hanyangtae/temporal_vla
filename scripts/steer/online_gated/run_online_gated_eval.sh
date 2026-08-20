@@ -75,6 +75,12 @@ esac
 is_conceptor_family() { [ "$STEER_OP" = conceptor ]; }
 is_condg() { [ "$STEER_OP" = condg ]; }
 CONDG_GATE="${CONDG_GATE:-1}"   # condg 전용: 0 이면 --no-condg-gate (무게이트 ablation arm)
+# oracle_early/resample arm 용: 셀별 발화 record 표 (scene	noise	trigger, 헤더 无).
+# oracle_early = (trigger-EARLY_OFFSET) record 부터 phase-follow 개입 (replay oracle 타이밍).
+# resample     = trigger record 부터 inference seed 재추첨 (--reseed-from-record, steering 無).
+TRIGGER_TSV="${TRIGGER_TSV:-}"
+EARLY_OFFSET="${EARLY_OFFSET:-3}"
+RESEED_OFFSET="${RESEED_OFFSET:-900000}"
 DETECTOR_CKPT="${DETECTOR_CKPT:-}"                  # 지정 시 전 slug 공통 (단일 slug 용)
 # slug 별 per-task ckpt 템플릿 (%SLUG% 치환). DETECTOR_CKPT 가 비어 있으면 이걸 사용.
 DETECTOR_CKPT_TMPL="${DETECTOR_CKPT_TMPL:-outputs/analysis/grid_phase/detector_sim/detector_pertask_lstm_%SLUG%.pt}"
@@ -178,9 +184,10 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
     local root="${NPZ_ROOT}/${1}/${NPZ_VARIANT}"
     case "$2" in
       base)                              printf '' ;;
-      online|online_fut|oracle_always)   printf '%s/condg\n'    "$root" ;;
-      online_pl|online_fut_pl|oracle_always_pl) printf '%s/condg_pl\n' "$root" ;;
+      online|online_fut|oracle_always|oracle_early)   printf '%s/condg\n'    "$root" ;;
+      online_pl|online_fut_pl|oracle_always_pl|oracle_early_pl) printf '%s/condg_pl\n' "$root" ;;
       online_hs)                         printf '%s/condg_hs\n' "$root" ;;
+      resample)                          printf '' ;;
       *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
     esac
     return 0
@@ -449,7 +456,7 @@ start_serve() {  # gpu port extra_flags...
 serve_preflight() {  # port arm  — 등록 지문 대조 (무음 identity·arm 오배치 방지)
   local port="$1" arm="$2" body reg
   body="$(health_curl "$port")"
-  if [ "$arm" != "base" ]; then
+  if [ "$arm" != "base" ] && [ "$arm" != "resample" ]; then
     printf '%s' "$body" | grep -q '"steering"' || {
       log "ABORT: serve ${port} /health 에 steering 지문 없음 (arm=${arm})"; return 11; }
     if [ "$SERVE_MODE" = host ]; then
@@ -473,8 +480,23 @@ serve_preflight() {  # port arm  — 등록 지문 대조 (무음 identity·arm 
 run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_host [scene]
   local port="$1" slug="$2" arm="$3" task="$4" envn="$5" instr="$6" ep="$7" inf="$8" seed="$9"
   local out_host="${10}" scene="${11:-}" mode=()
+  local trig=""
+  if [ -n "$TRIGGER_TSV" ] && [ -n "$scene" ]; then
+    trig=$(awk -F'\t' -v s="$scene" -v n="$((ep % EP_IDX_STRIDE))" '$1==s && $2==n {print $3; exit}' "$TRIGGER_TSV")
+  fi
   case "$arm" in
     online|online_fut|online_pl|online_fut_pl|online_hs) mode=(--gated-steering-mode online) ;;
+    oracle_early|oracle_early_pl)
+      # replay oracle: 알려진 발화 record 보다 EARLY_OFFSET 만큼 이른 시점부터 phase-follow.
+      # trigger 없는 셀(수집 성공·미발화)은 개입 없음 = 순수 replay.
+      if [ -n "$trig" ]; then
+        local st=$((trig - EARLY_OFFSET)); [ "$st" -lt 0 ] && st=0
+        mode=(--steer-from-record "$st" --steer-phase-mode current)
+      fi ;;
+    resample)
+      if [ -n "$trig" ]; then
+        mode=(--reseed-from-record "$trig" --reseed-offset "$RESEED_OFFSET")
+      fi ;;
     oracle_always|oracle_always_pl) mode=(--gated-steering) ;;
     # base: detector ON + steering 미등록 → online 모드라도 전 스텝 identity.
     # failure_scores/trigger_step 사이드카 기록이 목적 (α 사후 sweep 용).
