@@ -490,6 +490,8 @@ def main(argv=None):
                     help="task_classification 의 phase/clustering/gpu.py 경로 (또는 루트)")
     ap.add_argument("--kmeans-impl", choices=("auto", "task_classification", "numpy"),
                     default="auto")
+    ap.add_argument("--dump-labels", action="store_true",
+                    help="instruction 별 per-record 라벨 NPZ 덤프 (영상 렌더용)")
     ap.add_argument("--no-global", action="store_true",
                     help="global k24 (main·contingency 양쪽) 를 건너뛴다")
     args = ap.parse_args(argv)
@@ -528,9 +530,12 @@ def main(argv=None):
     raw: dict[str, dict] = {}
     for s in shards:
         Z = Z_by_shard[s["name"]]
-        lab, _cent = runner.fit_predict(Z, Z, args.k)
+        lab, cent = runner.fit_predict(Z, Z, args.k)
         lab = np.asarray(lab)
-        raw[s["name"]] = {"labels": lab, "metrics": metrics_for(s, lab, args.seed)}
+        raw[s["name"]] = {"labels": lab, "metrics": metrics_for(s, lab, args.seed),
+                          "latent": np.asarray(Z, dtype=np.float32),
+                          "centers": (np.asarray(cent, dtype=np.float32)
+                                      if cent is not None else None)}
         print(fmt_line("ae", s["name"], raw[s["name"]]["metrics"]), flush=True)
 
     # ---- global KMeans (global_k) ----
@@ -538,6 +543,25 @@ def main(argv=None):
     if not args.no_global:
         lab_g, _cent = runner.fit_predict(Z_all, Z_all, args.global_k)
         labels_global = np.asarray(lab_g)
+
+    if args.dump_labels:
+        # 영상용: instruction 별 per-record 라벨을 소용량 NPZ 로 덤프
+        # (ep_id/rec_idx/phase_code/scene/succ + AE cluster). 절대경로 기록 없음.
+        for s in shards:
+            np.savez_compressed(
+                args.out_dir / f"labels_{s['name']}_k{args.k}.npz",
+                ep_id=s["ep_id"], rec_idx=s["rec_idx"], scene=s["scene"],
+                noise=s["noise"], ep_len=s["ep_len"],
+                succ=s["succ"], phase_code=s["phase_code"],
+                cluster=raw[s["name"]]["labels"],
+                latent=raw[s["name"]]["latent"],
+                centers=(raw[s["name"]]["centers"]
+                         if raw[s["name"]]["centers"] is not None
+                         else np.zeros((0, 0), np.float32)),
+                phase_codebook=json.dumps(
+                    (s.get("meta") or {}).get("phase_codebook", {}), ensure_ascii=False),
+            )
+        print(f"[dump] labels_*_k{args.k}.npz x{len(shards)}", flush=True)
 
     if args.mode in ("main", "all"):
         payload = {"scope": "per-task", "k": args.k,
