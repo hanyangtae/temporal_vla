@@ -484,6 +484,13 @@ serve_preflight() {  # port arm  — 등록 지문 대조 (무음 identity·arm 
 run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_host [scene]
   local port="$1" slug="$2" arm="$3" task="$4" envn="$5" instr="$6" ep="$7" inf="$8" seed="$9"
   local out_host="${10}" scene="${11:-}" mode=()
+  local CAP_GRID_ARGS=()
+  if [ "${CAPTURE_FEATURES:-0}" = 1 ]; then
+    # pkl 수집 규약(docs/04 §8) — 진단 캡처도 좌표 레이아웃으로 저장
+    CAP_GRID_ARGS=(--grid-root "$(to_cont "$out_host")/diag_grid" --plan-json "$(to_cont "$PLAN_JSON_ABS")"
+                   --scene-idx "$((ep / EP_IDX_STRIDE))" --noise-idx "$((ep % EP_IDX_STRIDE))"
+                   --arm-dir "$arm")
+  fi
   local trig=""
   if [ -n "$TRIGGER_TSV" ] && [ -n "$scene" ]; then
     trig=$(awk -F'\t' -v s="$scene" -v n="$((ep % EP_IDX_STRIDE))" '$1==s && $2==n {print $3; exit}' "$TRIGGER_TSV")
@@ -516,6 +523,7 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
     --n-action-steps "$NAS" --max-episode-steps "$MAXEP"
     --video-fps 20 --steps-per-render 2 --wait-ready
     ${PROX_ARGS[@]+"${PROX_ARGS[@]}"} ${NOFEAT_ARGS[@]+"${NOFEAT_ARGS[@]}"} --expect-chunk-len "$EXPECT_CHUNK"
+    ${CAP_GRID_ARGS[@]+"${CAP_GRID_ARGS[@]}"}
     --run-tag "online_gated_${arm}_b${STEER_BETA}"
     ${scene:+--steering-scene "$scene"}
     "${mode[@]}")
