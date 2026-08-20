@@ -66,7 +66,7 @@ def main() -> None:
     ax.set_xticks(ks)
     ax.set_xticklabels([str(k) for k in ks])
     ax.set_xlabel("number of clusters $k$")
-    ax.set_ylabel("held-out readout")
+    ax.set_ylabel("readout on unseen scenes")
     ax.set_ylim(0, 1.02)
     ax.grid(lw=0.4, alpha=0.35, zorder=0)
     ax.set_axisbelow(True)
