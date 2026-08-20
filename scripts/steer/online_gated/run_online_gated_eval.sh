@@ -114,6 +114,10 @@ PROX="${PROX:-0}"
 PROX_ARGS=()
 [ "$PROX" = "1" ] && PROX_ARGS=(--proximity-phases)
 EXPECT_CHUNK="${EXPECT_CHUNK:-16}"
+# CAPTURE_FEATURES=1: --no-features 해제 → rollout pkl 저장 (eval 캡처 금지 규약의 진단
+# 예외 — margin 자가평가 실측 1-2판 전용, 분석 후 pkl 삭제 전제. docs/steering/44 §7.3)
+NOFEAT_ARGS=(--no-features)
+[ "${CAPTURE_FEATURES:-0}" = 1 ] && NOFEAT_ARGS=()
 
 PROFILE="${PROFILE:-configs/checkpoints/lerobot_groot_n15__robocasa365_ckpt120000.yaml}"
 # SERVE_MODE=docker(기본): lerobot 컨테이너에서 serve (kanu·pdk_external).
@@ -511,7 +515,7 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
     --seed "$seed" --inference-seed "$inf"
     --n-action-steps "$NAS" --max-episode-steps "$MAXEP"
     --video-fps 20 --steps-per-render 2 --wait-ready
-    ${PROX_ARGS[@]+"${PROX_ARGS[@]}"} --no-features --expect-chunk-len "$EXPECT_CHUNK"
+    ${PROX_ARGS[@]+"${PROX_ARGS[@]}"} ${NOFEAT_ARGS[@]+"${NOFEAT_ARGS[@]}"} --expect-chunk-len "$EXPECT_CHUNK"
     --run-tag "online_gated_${arm}_b${STEER_BETA}"
     ${scene:+--steering-scene "$scene"}
     "${mode[@]}")
