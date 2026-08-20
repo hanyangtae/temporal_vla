@@ -58,3 +58,16 @@
 - fit/분석은 index_rollouts_v2.tsv 기준으로 확장 사분면(seen 5×5 fit → unseen scene
   s10–14 × unseen noise n10–14)이 열림 — 기존 s0-9×{0,1,5,6} eval 사분면의 상위집합.
 - pdk는 이후 수집·replay에서 영구 배제 (42 §7).
+
+## 5. 오염영상(caption burn-in) 재생성 (2026-08-20)
+
+kanu v2 수집분은 당시 메인레포(dev)의 collector 기본 overlay_text=True 로 **영상만 오염**
+(pkl·메타·판정 무결; srv48/50분은 False 강제 브랜치 코드 = 클린 — 표본 40/40 실증).
+조치: 국내투고 세션의 action 번들(actions+scenario_seed)로 kanu에서 replay 재생성 —
+**797/797 완주, 전판 eef 편차 0(비트 일치)·실패 0**, 아카이브 video.mp4 교체 완료
+(무작위 25 표본 FLAG 0). 우선군(OvenRack 220 + marshmallow 132)은 국내투고 논문
+일정에 맞춰 선처리·통보. 도구: replay_orchestrate_v2.sh·replay_batch_runner.py(v2 번들
+규약·컨테이너 EGL default 경로)·make_v2_manifest.py·push_clean_videos.sh.
+함정 기록: robocasa 컨테이너 EGL 은 default 1대만 열거(NVML 복구와 무관, GPU 지정 불가
+— eef 게이트로 무해)·robosuite 는 CVD 설정 시 EGL id∈CVD 를 강요.
+
