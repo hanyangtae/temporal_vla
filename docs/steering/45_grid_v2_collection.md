@@ -71,3 +71,11 @@ kanu v2 수집분은 당시 메인레포(dev)의 collector 기본 overlay_text=T
 함정 기록: robocasa 컨테이너 EGL 은 default 1대만 열거(NVML 복구와 무관, GPU 지정 불가
 — eef 게이트로 무해)·robosuite 는 CVD 설정 시 EGL id∈CVD 를 강요.
 
+## 6. v3 지터 축 (k-grid) 정식 채택 (2026-08-21)
+
+§4 의 "재발 변주 3축" 중 배치·로봇자세 축이 **n15_grid_v3 계열로 정식 채택**됐다.
+정본: 좌표·인덱스·replay 규약 = `docs/04` §3.1.1, 검증 실측·설계 이력 =
+`docs/collab/collect_request_v3_jitter.md` §6–7. 요지: ep_meta 고정+연속 reset 으로
+물건·target 고정·배치/관절만 재추첨, (base_es, ep_meta, k) bit 결정적, pkl 좌표는 평탄
+si=scene*100+k, 인덱스는 명시 3축, OpenDrawer 는 방향 재추첨 때문에 k-사전 스캔 필수.
+1차 수집 = task 2(drawer-L kanu·candle srv50) × scene 3 × 채택 k 20 × inf 2 = 240판.
