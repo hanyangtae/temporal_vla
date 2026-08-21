@@ -39,6 +39,35 @@ ref = `outputs/analysis/grid_phase/paper_ref/*.json`, supp = `outputs/analysis/g
 - **같은 지도 조건 비교(probe vs 행동+시간): activation 승 9/10** — 예외 OpenDrawer left −0.094
 - 비지도 군집 vs 최강 외부 대조군은 6/10 (지도/비지도 조건이 달라 참고치)
 - 라벨 사용처는 군집→phase 매핑뿐 (구조 자체는 비지도)
+- ⚠ 정책행동·행동+시간·다수클래스 대조군은 08-20 사용자 지시로 **논문에서 제외**
+  (외부 관찰 역할은 아래 행동 이벤트 대조군이 대신). 위 두 불릿은 기록용.
+
+### 행동 이벤트(behavioral event) 대조군 — Event-SAE(arXiv:2605.17204) 저자 파이프 재현
+
+같은 930판·같은 scene split(seed 0/1/2, test [6,7]/[4,5]/[2,7] 일치 검증).
+파이프: AWE dp_waypoint(pos_only, η=0.05) → 5프레임([-4,-2,0,2,4]) SigLIP-base 평균 →
+descriptor [1.0·L2(vision)‖0.5·L2(zscore(state))‖0.4·zscore(progress)]→행L2 →
+agglomerative(cosine 0.18). 전 단계 저자 코드 무수정(`run_esae.sh`), 판독 연결만 우리
+프로토콜(`esae_readout.py`): z-score·군집·최빈 매핑 train scene에서만 적합, test
+waypoint는 train centroid 최근접, record 예측 = 시간상 최근접 waypoint의 phase.
+
+| instruction | 행동 이벤트 acc | (참고) clock | activation 군집 |
+|---|---|---|---|
+| CoffeeSetupMug | 0.748 | 0.703 | 0.862 |
+| DishwasherRack_out | 0.516 | 0.570 | 0.541 |
+| OpenDrawer_left | 0.451 | 0.517 | 0.733 |
+| OpenDrawer_right | 0.449 | 0.647 | 0.784 |
+| PPCC_apple | 0.721 | 0.760 | 0.861 |
+| PPCC_bread | 0.780 | 0.739 | 0.906 |
+| PPCC_candle | 0.685 | 0.550 | 0.852 |
+| PPCC_jug | 0.849 | 0.850 | 0.916 |
+| PPCC_marshmallow | 0.612 | 0.720 | 0.875 |
+| **중앙값 (9/10)** | **0.685** | 0.675 (10/10 기준) | 0.856 (10/10 기준) |
+
+- activation 군집 > 행동 이벤트: **9/9 전부** (그림 3b)
+- OvenRack_out은 caption 오염 영상 재수집분 도착(08-21) 후 추가 예정; marshmallow는
+  오염 11판(전부 train scene 쪽) 포함 상태의 잠정치 — 교체 후 재산출
+- 원자료 `outputs/analysis/grid_phase/phase_readout/esae.json` (n_seed=3 검증 완료)
 
 ### k 강건성 (판독 정확도 중앙값, 비지도 군집)
 

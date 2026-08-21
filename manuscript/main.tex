@@ -1,7 +1,4 @@
 % 제7회 한국 인공지능 학술대회 (KICS 인공지능소사이어티) 투고 원고
-% 양식: manuscript/양식-논문샘플워드.doc 대응 (국문제목→저자→소속→이메일→영문제목→
-%       영문저자→영문소속→요약→Ⅰ.서론…→참고문헌, 본문 2단, 최대 2쪽)
-% 컴파일: Overleaf에서 XeLaTeX 선택 (kotex 한글)
 \documentclass[a4paper,twocolumn,9pt]{extarticle}
 \usepackage{kotex}
 \usepackage[margin=2.0cm,top=2.5cm,bottom=2.5cm]{geometry}
@@ -10,34 +7,34 @@
 \usepackage{setspace}
 \usepackage[font=small,skip=3pt]{caption}
 \usepackage{xcolor}
-% 이번 개정에서 새로 쓰거나 고친 부분 표시 — 제출 전 \newcommand{\new}[1]{#1} 로 바꾸면 사라짐
+
 \newcommand{\new}[1]{\textcolor{red}{#1}}
 \setlength{\columnsep}{0.8cm}
 \pagestyle{empty}
 
-% 절 번호 로마숫자 (양식: Ⅰ. 서 론)
-\renewcommand{\thesection}{\Roman{section}}
+
+\renewcommand{\thesection}{\Roman{section}.}
 \makeatletter
 \renewcommand\section{\@startsection{section}{1}{\z@}%
-  {1.2ex plus .5ex}{0.8ex plus .3ex}{\centering\normalsize\bfseries}}
+  {1.2ex plus .5ex}{0.8ex plus .3ex}{\normalsize\bfseries}}
 \makeatother
 
 \begin{document}
 
-% ===== 머리 블록 (1단 폭) =====
+
 \twocolumn[{
 \begin{center}
-{\large\bfseries \new{VLA 내부 활성화로부터의 행동 단계 판독}}\\[1.2ex]
+{\large\bfseries Title}\\[1.2ex]
 {박경태, 김상우, 오윤선$^{\dagger}$}\\
 {한양대학교}\\[0.6ex] 
-{\small rudxo1997@hanyang.ac.kr, $^{\dagger}$교신저자 이메일}\\[2.0ex] % TODO: 저자 이메일
-{\large\bfseries \new{Reading the Current Action Phase\\ from the Internal Activations of a VLA Model}}\\[1.2ex]
+{\small rudxo1997@hanyang.ac.kr, kimz1121@hanyang.ac.kr, $^{\dagger}$yoh21@hanyang.ac.kr}\\[2.0ex] 
+{\large\bfseries Title}\\[1.2ex]
 {Kyungtae Park, Sangwoo Kim, Yoonseon Oh$^{\dagger}$}\\ 
-{Hanyang Univ.}\\[2.0ex]
+{Hanyang University.}\\[2.0ex]
 {\bfseries 요 약}
 \end{center}
 \begin{quote}\small
-Vision-Language-Action(VLA) 모델이 작업을 수행할 때 스스로 현재 어떤 작업 단계를 진행중인지를 우리가 알 수 있다면, 이는 VLA모델에 대한 설명가능성과 추론 시 제어 및 개입의 출발점이 된다. 본 연구는 VLA의 내부 activation을 통해 모델이 스스로 인식하는 현재 작업 단계를 직접 읽는다. Gr00t N1.5의 action head(DiT)의 residual stream activation을 라벨 없이 clustering하면, \new{각 cluster는 특정 primitive action phase에 국한되어 나타나고 다른 phase에서는 잘 나타나지 않는다. 이 대응을 이용하면 한 번도 보지 않은 scene에서도 비지도 clustering을 이용해 activation 한 스텝만으로 현재 phase를 정확도 0.86로 읽을 수 있으며, 이는 밖에서 관찰 가능한 정보(진행 시간·정책이 낸 행동)만 쓰는 대조군(0.61--0.77)을 웃돈다. cluster는 사람이 정의한 phase보다 더 잘게 나뉘지만, 각 조각이 phase에 대해 순수하기 때문에 판독이 성립한다.} 이 구조는 데이터 처리 과정을 바꾸어도(AE$\rightarrow$SAE) 같은 시점에서 phase전환을 유지하고, 다양한 task,scene에서도 유지된다(z +8.8$\sim$+13.5). 즉, \new{VLA activation에는 action phase와 정합적인 구조가 존재해 추론 중 online detection이 가능하며, 본 논문에서 이를 학습에 쓰지 않은 scene 평가로 확인하였다.}
+Vision-Language-Action(VLA) 모델이 작업을 수행할 때 스스로 현재 어떤 작업 단계를 진행중인지를 우리가 알 수 있다면, 이는 VLA모델에 대한 설명가능성과 추론 시 제어 및 개입의 출발점이 된다. 본 연구는 VLA의 내부 activation을 통해 모델이 스스로 인식하는 현재 작업 단계를 직접 읽는다. Gr00t N1.5의 action head(DiT)의 residual stream activation을 라벨 없이 clustering하면, 각 cluster는 특정 primitive action phase에 국한되어 나타나고 다른 phase에서는 잘 나타나지 않는다. 이 대응을 이용하면 unseen scene에서도 비지도 clustering을 이용해 activation 한 스텝만으로 현재 phase를 정확도 0.86로 읽을 수 있으며, 이는 \new{진행 시간만 쓰는 시간 대조군(0.61--0.68)과 외부 관찰 기반 행동 이벤트 대조군을 웃돈다.} cluster는 사람이 정의한 phase보다 더 잘게 나뉘지만, 각 조각이 phase에 대해 순수하기 때문에 판독이 성립한다.이 구조는 데이터 처리 과정을 바꾸어도(AE$\rightarrow$SAE) 같은 시점에서 phase전환을 유지하고, 다양한 task,scene에서도 유지된다(z +8.8$\sim$+13.5). 즉,VLA activation에는 action phase와 정합적인 구조가 존재해 추론 중 online detection이 가능하며, 본 논문에서 이를 unseen scene에서 평가하여 확인하였다.
 \end{quote}
 \vspace{1.5ex}
 }]
@@ -53,26 +50,35 @@ Vision-Language-Action(VLA) 모델이 작업을 수행할 때 스스로 현재 �
 \begin{figure}[!t]
   \centering
   \includegraphics[width=\columnwidth]{figs/fig_k_sweep.pdf}
-  \caption{\new{clustering 개수 $k$값 변동에 대한 강건성. 사람 phase 수(3--6, 회색 대역)를 넘는  $k \ge 8$에서 성능이 평평해진다(정확도 0.86--0.89). 옅은 선 = instruction 10개.}}
+  \caption{Clustering 개수 $k$값 변동에 대한 강건성. 사람 phase 수(3--6, 회색 대역)를 넘는  $k \ge 8$에서 성능이 평평해진다(정확도 0.86--0.89). 옅은 선 = instruction 10개.}
   \label{fig:ksweep}
 \end{figure}
 \section{서 론}
-많은 AI모델들이 그러하든 VLA 모델 또한 내부적으로 어떤 상태를 가지는지는 사람이 이해하기 힘든 블랙박스와 같다.  하지만 VLA모델은 실제 존재하는 로봇을 조작하기 때문에 LLM등과 달리 안전과 신뢰가 더욱 중요하다. 따라서 모델이 지금 무슨 작업을 진행중이라고 인지하는지 사람이 파악할 수 있어야 한다는 설명가능성(XAI)이 중요하다. 일반적으로 Pick \& Place task에서는 reach $\rightarrow$ grasp $\rightarrow$ transport $\rightarrow$ place 같은 primitive action phase를 사용할 수 있다. 이러한 현재 action phase를 파악하는 방법에는 외부 관찰자가 카메라나 기타 센서들을 활용해 로봇의 현재 상태나 궤적같은 외부 관찰자를 활용하는 방법이 있다. 하지만 이러한 외부 관찰자로는 현재 로봇이 보기에 무엇을 하고 있는지를 알려줄 뿐, 현재 저 로봇을 움직이는 인공지능이 스스로 무슨 action을 진행중인지는 알려주지 않는다. 모델이 스스로 무엇을 하고 있다고 인지하는지, 즉 모델의 internal representation이 가리키는 action phase는 모델 내부의 activation을 직접 읽어야만 알 수 있다. 이런 내부 표상을 아는것은 겉보기 행동과 어긋났을 경우에 수정을 진행 하기위한 전제 조건이다. VLA 내부 표현을 해석하려는 최근 시도들은
+많은 AI모델들이 그러하듯 VLA 모델 또한 내부적으로 어떤 상태를 가지는지는 사람이 이해하기 힘든 블랙박스와 같다.  하지만 VLA모델은 실제 존재하는 로봇을 조작하기 때문에 LLM등과 달리 안전과 신뢰가 더욱 중요하다. 따라서 모델이 지금 무슨 작업을 진행중이라고 인지하는지 사람이 파악할 수 있어야 한다는 설명 가능성이 중요하다. 일반적으로 Pick \& Place task에서는 reach $\rightarrow$ grasp $\rightarrow$ transport $\rightarrow$ place 같은 primitive action phase를 사용할 수 있다. 이러한 현재 action phase를 파악하는 방법에는 외부 관찰자가 카메라나 기타 센서들을 활용해 로봇의 현재 상태나 궤적같은 외부 관찰자를 활용하는 방법이 있다. 하지만 이러한 외부 관찰자로는 현재 로봇이 보기에 무엇을 하고 있는지를 알려줄 뿐, 현재 저 로봇을 움직이는 인공지능이 스스로 무슨 action을 진행중인지는 알려주지 않는다. 모델이 스스로 무엇을 하고 있다고 인지하는지, 즉 모델의 internal representation이 가리키는 action phase는 모델 내부의 activation을 직접 읽어야만 알 수 있다. 이런 내부 표상을 아는것은 겉보기 행동과 어긋났을 경우에 수정을 진행 하기위한 전제 조건이다. VLA 내부 표현을 해석하려는 최근 시도들은
 Sparse Auto Encoder(SAE)로 residual stream에서 grasp·transport 같은 primitive action에 대응하는 feature를 찾아내거나, linear probe로 layer별 상태를 관측하고 그 방향으로 activation steering을 적용해 행동을 제어 할 수 있음을 보였다. 그러나 이들은 사람이 rollout 영상을 검토해 발견 한 feature와 정렬해주어 이름을 붙힐 뿐, interval representation이 사람이 정의한 action phase와 어떤 해상도로 대응하는지 정량화하지 않는다. VLA의 internal action phase를 추론중에 online으로 읽을 수 있으면 설명을 넘어 조건부 개입이나 실패감지의 조건신호로 활용 할 수 있다. 본연구는 Gr00t N1.5가 RoboCasa환경에서 주방 조작을 수행하는동안 activation을 Autoencoder와 clustering을 사용해 분석하고 모델의 internal action phase가 사람이 붙힌 action phase와 어떤 관계를 가지는지를 MI를 활용해 정량화 한다. 
 
 \section{방 법}
-\textbf{Data.} RoboCasa 주방 조작 환경에서 GR00T N1.5의 rollout을 수집한다.
+\textbf{2.1 Data}
+
+RoboCasa 주방 조작 환경에서 GR00T N1.5의 rollout을 수집한다.
 대상은 5개 task(OpenDrawer, PnPCounterToCab, OvenRack, DishwasherRack,
-CoffeeSetupMug)에 속하는 10개 instruction -- 같은 task로 분류되더라도 실제 모델에 들어가는 language instruction이 다른 case가 있으며, 분석은 이 instruction 단위로 수행한다-- 각instruction별로 10 scene에서, scene별로 diffusion noise를 다르게 해 10회 반복하여 데이터를 수집하였다. 각 rollout의 매 스텝에서 action head(DiT)의 residual stream activation을 캡처한다(layer 12, denoising step 3(last), 49개 토큰 평균 → 스텝당 1536차원). 여기서 한 \textbf{스텝}은 정책 추론 1회를 뜻하며 환경 5 스텝에 해당한다 --- 정책이 action chunk를 예측해 앞의 5개만 실행하고 다시 추론하므로, activation과 GT phase 라벨을 모두 이 시점에서 읽는다. 사람이 주석한 primitive action phase 라벨(instruction당 3~6단계)은 학습에 쓰지 않고 평가에만 사용한다. Detctor 학습에 사용된 데이터 % 학습에 몇개 추론에 몇개 어떻게 썼는지는 추후 작성
+CoffeeSetupMug)에 속하는 10개 instruction -- 같은 task로 분류되더라도 실제 모델에 들어가는 language instruction이 다른 case가 있으며, 분석은 이 instruction 단위로 수행한다-- 각instruction별로 10개 scene에서, scene별로 diffusion noise를 다르게 해 10회 반복하여 데이터를 수집하였다. 판독기의 학습과 평가는 scene 단위로 분리한다: instruction마다 10개 scene 중 8개(rollout 80개)를 학습에, 나머지 2개(rollout 20개)를 평가에 쓴다. 이 train/test scene 조합을 무작위로 3가지 뽑고, 조합마다 clustering·phase 매핑·probe를 학습 scene만으로 처음부터 다시 만들어 각자의 평가 scene에서 채점한 뒤 3조합의 평균을 보고한다.
+각 rollout의 매 스텝에서 action head(DiT)의 residual stream activation을 캡처한다(layer 12, denoising step 3(last), 49개 토큰 평균 → 스텝당 1536차원). 여기서 한 \textbf{스텝}은 정책 추론 1회를 뜻하며 환경 5 스텝에 해당한다 --- 정책이 action chunk를 예측해 앞의 5개만 실행하고 다시 추론하므로, activation과 GT phase 라벨을 모두 이 시점에서 읽는다. 사람이 주석한 primitive action phase 라벨(instruction당 3-6단계)은 학습에 쓰지 않고 평가에만 사용한다.
 
-\textbf{Clustering.} raw activation(1536차원)을 그대로 오토인코더(AE, latent 16)로 압축한 뒤 KMeans로 스텝 단위 clustering한다(instruction별 분석은 k=8, 전체 통합 분석은 k=24). Cluster center는 train split에서만 만들고 평가 split의 스텝은 k-NN(k=15)으로 분류한다. 재군집화가 필요 없으므로 추론 중 스텝 단위 online 판독이 가능하다.
+\textbf{2.2 Clustering}
 
-\textbf{Baseline.} Activation이 action phase 정보를 담는지 재려면, 먼저 ``진행 시간만 알아도 맞힐 수 있는 몫''을 빼야 한다. Manipulation task의 action phase는 대체로 순서대로 진행되므로 activation을 전혀 보지 않고 경과 시간만 보는 판독기도 phase의 정. 이를 \textbf{시간 대조군}으로 정의한다: 에피소드 내 상대 진행도 $t/T$를 발견된 군집
+raw activation(1536차원)을 그대로 오토인코더(AE, latent 16)로 압축한 뒤 KMeans로 스텝 단위 clustering한다(instruction별 분석은 k=8, 전체 통합 분석은 k=24). Cluster center는 train split에서만 만들고 평가 split의 스텝은 k-NN(k=15)으로 분류한다. 재군집화가 필요 없으므로 추론 중 스텝 단위 online 판독이 가능하다.
+
+\textbf{2.3 Baseline}
+
+Activation이 action phase 정보를 담는지 재려면, 먼저 ``진행 시간만 알아도 맞힐 수 있는 몫''을 빼야 한다. Manipulation task의 action phase는 대체로 순서대로 진행되므로 activation을 전혀 보지 않고 경과 시간만 보는 판독기도 phase의 정보를 일부 담고있다. 이를 \textbf{시간 대조군}으로 정의한다: 에피소드 내 상대 진행도 $t/T$를 발견된 군집
 수와 같은 개수의 구간으로 등분위 분할해 얻은 상태열이다. 상태 수를 맞추는 이유는 상태
 수가 많을수록 상호정보량(MI)이 자동으로 커지기 때문이며, 이렇게 해야 같은 해상도에서
 비교된다.
 
-\textbf{Metric.} 스텝 $i$의 군집 라벨을 $z_i \in \{1,\dots,k\}$, 사람이 붙인 GT
+\textbf{2.4 Metric}
+
+스텝 $i$의 군집 라벨을 $z_i \in \{1,\dots,k\}$, 사람이 붙인 GT
 phase를 $y_i$라 하자. 군집 라벨을 알았을 때 phase에 대한 불확실성이 얼마나 줄어드는지를
 \textbf{상호정보량}(mutual information, MI)으로 잰다:
 %
@@ -112,99 +118,52 @@ MI는 한 phase가 여러 군집으로 쪼개져도 값이 거의 떨어지지 �
 phase 경계와의 정렬은 전환 횟수는 그대로 두고 위치만 에피소드 안에서 무작위로 흩은
 상태열 300개를 기준선으로 삼아 $z$-score로 잰다.
 
-\new{\textbf{판독 프로토콜.} ``읽을 수 있는가''는 학습에 쓰지 않은 scene(unseen scene)에서의 정확도로 잰다. scene 단위로
-train/test를 나누고(테스트 2 scene, split seed 3개 평균) 군집·매핑·probe를 전부 train
-scene에서만 적합한 뒤, 한 번도 보지 않은 scene의 스텝에서 phase를 맞히는 비율을 센다.
-비교 대상은 (i) 다수 클래스, (ii) \textbf{시간 대조군} --- activation을 보지 않고
-경과 시간만 쓴다(에피소드 길이를 모르는 온라인 상황을 위해 절대 스텝 $t$ 기준, 진행도
-$t/T$ 기준 둘 다), (iii) \textbf{행동 대조군} --- 정책이 실제로 낸 7차원 행동을 record별
-평균·표준편차·마지막값과 에피소드 시작부터의 누적합(팔 위치의 대리값)으로 요약한 28차원.
-이는 정책 바깥에서 관찰 가능한 정보만 쓰는 조건이다. (iv) 행동+시간을 합친 가장 강한
-외부 대조군, (v) activation 비지도 군집 + 최빈 phase 매핑(라벨은 이 매핑에만 쓰인다),
-(vi) activation 지도 multinomial logistic probe이다. (iii)--(vi)은 같은 군집·probe 절차를
-쓰므로 입력만 다르다.}
 
 \begin{figure*}[!t]
   \centering
   \includegraphics[width=0.96\textwidth]{figs/fig_readout_accuracy.pdf}
-  \caption{\new{한 번도 보지 않은 scene에서의 phase 판독 정확도. (a) 방법별 중앙값(점 =
-  instruction 10개). 회색은 외부에서 관찰 가능한 정보만 쓰는 대조군(시간·정책 행동·둘의
-  결합), 파랑은 내부 activation. (b) 같은 지도 조건에서 instruction 별 비교 --- 대각선
-  위가 activation 승(9/10).}}
+  \caption{Unseen scene에서의 phase 판독 정확도. (a) 방법별 중앙값(점 =
+  instruction 10개). 회색은 외부 정보만 쓰는 대조군(시간 대조군·행동 이벤트),
+  파랑은 내부 activation. (b) 같은 프로토콜(비지도 군집 + train scene 최빈 phase
+  매핑)에서 instruction별 비교.}
   \label{fig:readout}
 \end{figure*}
 \section{결 과}
-\new{\textbf{activation 한 스텝만으로 현재 phase를 읽을 수 있다(그림 3).} 한 번도 보지
-않은 scene에서 잰 판독 정확도(instruction 중앙값)는 activation 비지도 군집 0.86, 지도
-probe 0.89이다. 대조군은 다수 클래스 0.56, 시간만 0.61--0.68, 정책 행동만 0.61이고, 밖에서
-볼 수 있는 정보를 모두 합친 가장 강한 외부 대조군(행동+시간)이 0.77이다. macro-F1로 봐도 0.72(probe) 대 0.56
-(행동+시간)으로 우위가 유지된다. 같은 지도 조건에서 비교하면 activation probe가 외부 대조군을 10개 instruction 중
-9개에서 이긴다(예외는 OpenDrawer left, $-$0.09). 즉 ``시계만 봐도''도, ``로봇이 무슨 행동을
-내는지 보면''도 내부 표상만큼은 알려주지 못한다. 특히 비지도 군집만으로 0.86이 나온다는
-점이 중요하다 --- 구조 자체는 라벨 없이 activation에서 나왔고 라벨은 각 군집에 이름을
-붙이는 데만 쓰였다. 군집 중심을 train에서 만들고 평가 스텝은 최근접 배정으로 옮기므로,
-재군집화 없이 추론 중 스텝 단위로 그대로 돌릴 수 있다.}
+\textbf{3.1 VLA 내부 activation 한 스텝만으로 해당 action phase를 읽을 수 있다}
 
-\textbf{발견된 단위는 사람이 정의한 phase보다 잘게 나뉜다.} 발견된 상태의 평균 구간
-길이는 GT phase보다 짧고(k=8에서 10개 instruction 전부), 에피소드당 전환 수도 상태를 한
-번씩만 지나는 상한($k-1$회)을 모두 넘는다 --- 같은 상태를 여러 번 다시 방문한다는 뜻이다.
-전환 시점 자체는 GT 경계와 정렬되지 않으나(z $-$1.0$\sim$+0.5), GT phase 단위로 병합하면
-정렬이 유의해진다(z +1.3$\sim$+4.9). \new{다만 이 세분이 의미 있는 하위 구조인지는 본
-연구의 범위를 넘는다. 판독 성능은 $k$가 phase 수를 넘기만 하면 평평하므로
-(그림~\ref{fig:ksweep}), 앞의 결과는 특정 $k$ 선택에 기대지 않는다.}
+Unseen scene에서 측정한 Accuracy(instruction 중앙값)는 activation 비지도 군집 0.86, 지도 probe 0.89이다(Figure 3). 시간 대조군(clock)은 0.61--0.68에 그친다. 외부 관찰로 phase를 나누는 기존 방법인 행동 이벤트(behavioral event)\new{ 대조군은 0.68이다. } % 9/10 instruction 중앙값 0.685 (OvenRack은 영상 재수집분 반영 중)
+즉 ``에피소드가 얼마나 진행됐는가''도, 밖에서 관찰한 이벤트 구조도 내부 표상만큼은 알려주지 못한다. 특히 비지도 군집만으로 0.86이 나온다는 점이 중요하다 --- 구조 자체는 라벨 없이 activation에서 나왔고 라벨은 각 군집에 이름을 붙이는 데만 쓰였다. 군집 중심을 train에서 만들고 평가 스텝은 최근접 배정으로 옮기므로, 재군집화 없이 추론 중 스텝 단위로 그대로 돌릴 수 있다.
 
-\textbf{각 군집은 특정 단계에 국한된다(그림 1a).} 한 단계에서 나타난 군집은
-다른 단계에서 잘 나타나지 않는다: 군집$\rightarrow$단계 순도 0.80, MI 2.17 bits(상한
-2.82), 시간 대조군 margin +1.665 bits. 군집이 최빈 단계 밖에서 나타나는
-비율(off-phase rate)의 군집별 중앙값은 instruction 중앙값 0.07이며, 순수한 instruction에서는
-0.002까지 내려간다(넓게 걸치는 것도 있어 최대 0.45 --- instruction별 편차가 있다).
-데이터셋 B에서도 순도 중앙값은 0.88로 유지된다. phase 하나는 평균 2$\sim$3개 군집으로
-세분되어(phase당 군집 수 1.3$\sim$2.7),
-대응은 1:1이 아니라 다대일이다 --- 이것이 위의 ``세밀한 하위 분할''과 순도가
-공존하는 이유다. 비디오 행동 분절에서 과분할은 통상 벌점이지만, 여기서 세분은
-phase-순수한 다대일 대응이며 그 판정 근거는 순도·MI·margin이지 경계 F1이 아니다.
+\textbf{3.2 발견된 단위는 사람이 정의한 phase보다 잘게 나뉜다}
 
-\textbf{단계 정보는 장면 암기로 환원되지 않는다(그림 1b).} 활성화에는 장면(scene)
-정보도 섞여 있다(instruction별 mi\_scene 0.02$\sim$0.86 bits). 그러나 instruction 내
-scene별 평균을 제거한 잔차에서 scene 정보는 크게 줄어드는 반면(mi\_scene 중앙값
-0.44$\rightarrow$0.27 bits) phase margin은 10개 instruction 전부에서 양수로
-유지된다(중앙값 +0.34$\rightarrow$+0.31).
+발견된 상태의 평균 구간
+길이는 GT phase보다 짧고(k=8에서 10개 instruction 전부), 에피소드당 전환 수도 상태를 한 번씩만 지나는 상한($k-1$회)을 모두 넘는다 --- 같은 상태를 여러 번 다시 방문한다는 뜻이다.
+전환 시점 자체는 GT 경계와 정렬되지 않으나(z $-$1.0 $\sim$ +0.5), GT phase 단위로 병합하면 정렬이 유의해진다(z +1.3 $\sim$ +4.9). \new{다만 이 세분이 의미 있는 하위 구조인지는 본 연구의 범위를 넘는다. 판독 성능은 $k$가 phase 수를 넘기만 하면 평평하므로 (Figure~\ref{fig:ksweep}), 앞의 결과는 특정 $k$ 선택에 기대지 않는다.}
 
-\textbf{구조는 모델·데이터를 바꿔도 재현된다.} 같은 데이터에서 구조가 다른 두 압축
-모델(AE, SAE)이 같은 스텝에서 전환하고(F1 0.66$\sim$0.75, 무작위 0.51$\sim$0.53, z
-+8.8$\sim$+13.5), 독립 재수집 데이터에서 새로 학습해도 같은 성질이 나타난다(seed 간 F1
-0.55$\sim$0.58, z +4.3$\sim$+5.1). denoising 슬롯·장면·시드는 에피소드 내 상수라 전환의
-원인이 될 수 없다.
+\textbf{3.3 각 군집은 특정 단계에 국한된다}
 
-\textbf{세밀 단위는 하류 분석에서도 유용하다.} 성공/실패 분리도를 단계 조건부로 잴
-때, 발견 상태(instruction별 k=8)가 GT phase보다 높은 분리도를 주는 instruction이 9개 중
-4개였다(동급 1, 열세 1; 예: OpenDrawer AUROC 0.93/z4.5 vs GT 0.94/z2.3). 이는 탐색적
-관찰이나, 세밀 단위가 사람 정의 단계의 단순 잡음이 아님을 시사한다.
+한 단계에서 나타난 군집은 다른 단계에서 잘 나타나지 않는다(Figure 1a): 군집$\rightarrow$단계 순도 0.80, MI 2.17 bits(상한 .82), 시간 대조군 margin +1.665 bits. 군집이 최빈 단계 밖에서 나타나는 비율(off-phase rate)의 군집별 중앙값은 instruction 중앙값 0.07이며, 순수한 instruction에서는 0.002까지 내려간다(넓게 걸치는 것도 있어 최대 0.45 --- instruction별 편차가 있다).
+데이터셋 B에서도 순도 중앙값은 0.88로 유지된다. 
+phase 하나는 평균 2$\sim$3개 군집으로 세분되어(phase당 군집 수 1.3$\sim$2.7), 대응은 1:1이 아니라 다대일이다 --- 이것이 위의 ``세밀한 하위 분할''과 순도가 공존하는 이유다. 비디오 행동 분절에서 과분할은 통상 벌점이지만, 여기서 세분은 phase-순수한 다대일 대응이며 그 판정 근거는 순도·MI·margin이지 경계 F1이 아니다.
 
+\textbf{3.4 단계 정보는 장면 암기로 환원되지 않는다}
 
+활성화에는 장면(scene) 정보도 섞여 있다(instruction별 mi\_scene 0.02$\sim$0.86 bits). 그러나 instruction 내scene별 평균을 제거한 잔차에서 scene 정보는 크게 줄어드는 반면(mi\_scene 중앙값0.44$\rightarrow$0.27 bits) phase margin은 10개 instruction 전부에서 양수로 유지된다(중앙값 +0.34$\rightarrow$+0.31, Figure 1b).
 
-% 지면 여유 시 사용 (해상도-유용성 곡선):
-% \begin{figure}[t]
-%   \centering
-%   \includegraphics[width=\columnwidth]{figs/fig3_granularity_utility.pdf}
-%   \caption{내재적 margin은 k에 단조 증가하지만 하류 성공/실패 층화는 사람 단계
-%   수(3~6)보다 촘촘한 k=8에서 최대이다.}
-%   \label{fig:utility}
-% \end{figure}
+\textbf{3.5 구조는 모델·데이터를 바꿔도 재현된다}
+
+같은 데이터에서 구조가 다른 두 압축 모델(AE, SAE)이 같은 스텝에서 전환하고(F1 0.66$\sim$0.75, 무작위 0.51$\sim$0.53, z +8.8$\sim$+13.5), 독립 재수집 데이터에서 새로 학습해도 같은 성질이 나타난다(seed 간 F1 0.55$\sim$0.58, z +4.3$\sim$+5.1). denoising 슬롯·장면·시드는 에피소드 내 상수라 전환의 원인이 될 수 없다.
+
+% \textbf{3.6 세밀 단위는 하류 분석에서도 유용하다}
+
+% 성공/실패 분리도를 단계 조건부로 잴
+% 때, 발견 상태(instruction별 k=8)가 GT phase보다 높은 분리도를 주는 instruction이 9개 중
+% 4개였다(동급 1, 열세 1; 예: OpenDrawer AUROC 0.93/z4.5 vs GT 0.94/z2.3). 이는 탐색적
+% 관찰이나, 세밀 단위가 사람 정의 단계의 단순 잡음이 아님을 시사한다.
+
 
 \section{한계와 결론}
-\new{판독의 근거는 각 스텝을 어느 phase로 볼지에 대한 군집 정체성이지 phase 경계 검출이
-아니다 --- 전환 시점 자체는 GT 경계와 정렬되지 않는다(z $\approx$ 0). 또한 GT 라벨 두 벌이
-같은 주석 체계의 두 버전이라 ``어떤 phase 정의와도 어긋난다''고는 할 수 없고, 길이 1의 짧은
-상태가 구간의 31$\sim$37\%를 차지하는데 그것이 의미 있는 하위 구조인지는 미검증이다.
-판독 평가는 scene 단위로 나눴을 뿐 instruction 간 전이는 다루지 않았다.}
 
-\new{결론: VLA의 내부 activation만으로 현재 action phase를 읽을 수 있다 --- 처음 보는
-scene에서 정확도 0.86(비지도)/0.89(probe)이며, 시간·정책 행동 등 외부 관찰 정보를 쓰는
-대조군(최대 0.77)을 웃돈다. 이 구조는 라벨 없이 얻어지고 scene 성분을 제거해도 유지되며 모델·데이터를 바꿔도
-재현된다. 즉 모델이 지금 무슨 작업을 진행 중이라고 표상하는지를 외부 관측 없이 내부에서
-스텝 단위로 읽을 수 있으며, 이는 VLA 행동의 설명 신호이자 단계 조건부 개입과 실패 감지의
-조건 신호가 된다.}
 
 % \section*{ACKNOWLEDGMENT}
 % TODO: 과제 사사 문구

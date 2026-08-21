@@ -46,7 +46,6 @@ def main() -> None:
     blob = json.loads(src.read_text())
     ks = sorted(int(k) for k in blob)
     acc = [blob[str(k)]["acc"] for k in ks]
-    f1 = [blob[str(k)]["f1"] for k in ks]
     names = sorted(blob[str(ks[0])]["per"])
 
     fig, ax = plt.subplots(figsize=(8.4 * CM, 5.6 * CM))
@@ -59,8 +58,6 @@ def main() -> None:
         ax.plot(ks, v, color="#9DB8D6", lw=0.7, alpha=0.75, zorder=1)
     ax.plot(ks, acc, "-o", color="#1F4E79", lw=1.6, ms=4.5, zorder=3,
             label="accuracy (median)")
-    ax.plot(ks, f1, "--s", color="#C44E52", lw=1.4, ms=4.0, zorder=3,
-            label="macro-F1 (median)")
 
     ax.set_xscale("log", base=2)
     ax.set_xticks(ks)
@@ -82,7 +79,6 @@ def main() -> None:
     print(f"wrote {out}.pdf / {out}.png")
     print("k:", ks)
     print("acc:", [round(a, 3) for a in acc])
-    print("f1 :", [round(a, 3) for a in f1])
 
 
 if __name__ == "__main__":
