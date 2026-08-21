@@ -85,3 +85,22 @@ reset-dump 실측 (kanu robocasa 컨테이너, drawer-L es100001·candle es10021
 - (c) 축 폐기: 재발 변주는 ①(denoise seed)만으로 진행.
 
 수집 미착수. 방향 결정을 사용자/exp6 세션에 요청.
+
+## 7. 재검증 결과 (2026-08-21) — ★ep_meta 주입 축 성립, 진행 가능
+
+exp6 재검증 프로토콜(set_ep_meta 주입 + 연속 reset) 실측:
+
+| 항목 | candle es100214 | drawer-L es100001 |
+|---|---|---|
+| 물건 종류·target | **4/4 불변** (obj:candle 유지) | 불변 (distractor·drawer_obj 고정) |
+| instruction | **4/4 불변** | **left/right 재추첨** (k=0 R, k=1 L, k=2-3 R) |
+| 배치·로봇 관절 | k마다 전부 변주 (img·prop·q_nonrobot) | 동일 |
+| (base, ep_meta, k) 결정성 | fresh 2-run bit 동일 | 동일 |
+| 주입 유지(iv) | 1회 주입으로 object_cfgs·lang 유지 | 방향 제외 유지 |
+
+판정: **v3는 env 수정 없이 (base_es, reset_idx k) + ep_meta 고정으로 원래 스펙 진행
+가능.** drawer의 방향 흔들림은 ep_meta 주입으로 고정되지 않으나 좌표가 결정적이므로
+**k-사전 스캔**(목표 instruction 일치 k만 채택 — 기존 seed 스캔 규약의 k-버전)으로 해결.
+index 계약: reset_idx 열 추가 (env_seed=base 고정, reset_idx가 지터 좌표).
+수집기 수정 필요 사항: --ep-meta-dir 주입 + reset_idx만큼 연속 reset 후 에피소드 시작
++ index에 reset_idx 기록. 검증 스크립트: outputs/collect/seed_scan_v2/v3_epmeta_test*.py.
