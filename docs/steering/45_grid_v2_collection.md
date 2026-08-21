@@ -79,3 +79,26 @@ kanu v2 수집분은 당시 메인레포(dev)의 collector 기본 overlay_text=T
 물건·target 고정·배치/관절만 재추첨, (base_es, ep_meta, k) bit 결정적, pkl 좌표는 평탄
 si=scene*100+k, 인덱스는 명시 3축, OpenDrawer 는 방향 재추첨 때문에 k-사전 스캔 필수.
 1차 수집 = task 2(drawer-L kanu·candle srv50) × scene 3 × 채택 k 20 × inf 2 = 240판.
+
+## 7. v4 지터 확대 수집 결산 (2026-08-21)
+
+사용자 재지시로 §6 파일럿(240판)을 접고 **전 task 확대**로 전환 — 신규 1,000판 수집 완료.
+
+- plan **46ea62d53e09** (`configs/collect/n15_grid_v4/`): 10 task × v2 scene 0-4 ×
+  v2 noise 0-4(1300000-4) × 신규 k 4개. base 상태는 **기존 v2/v1 셀 재사용**(재수집 없음)
+  → task·scene·noise 당 **5상태**(base + k4).
+- 좌표(exp6 합의): pkl/디렉토리는 평탄 `s{scene*100+k}` 2축 유지, **base 슬롯 = scene*100+99**
+  (채택 k 가 0-3 고정이 아니라 스캔 통과분이라 +4 는 충돌 — 실측 최대 채택 k=9).
+- **index_rollouts_v4.tsv = 1,250행** (지터 1,000 + base 250, 결손 0, 무결성 위반 0):
+  scene_idx=base scene(0-4), `cell_si`=평탄, `jitter_reset_idx`= k 또는 `"base"`.
+  base 는 plan_id 가 아니라 **좌표 기준**으로 선별해야 한다 (v2 plan 아래 s0-4×n0-4 는
+  35개뿐 — 나머지는 v1 수집분 979d/b805; 좌표 중복은 v2>v1b>v1 우선).
+- SR(5상태 합산): apple 1.00, oven 0.82, drawer-R 0.77, marshmallow 0.78, bread 0.74,
+  candle 0.69, drawer-L 0.41, dish 0.34, jug 0.18, coffee 0.07.
+- ep_meta JSON 50개(10 task × 5 scene) 아카이브 동봉: `46ea62d53e09/ep_meta/<task>/`.
+- 수집 머신 = v2 매칭 (kanu 5task 500 · srv50 3task 300 · srv48 2task 200).
+- 함정: srv50/srv48 런처에 **SERVE_MODE=host·SERVE_PY·SERVE_PYTHONPATH 누락 시 전멸**
+  (`No such container: lerobot` → serve TIMEOUT → ABORT). v3 파일럿에서 실제 발생.
+  또 신규 plan 은 **전용 staging** 을 써야 한다 (평탄 si 가 기존 plan 셀 키와 문자열
+  충돌해 DONE_LIST 오판).
+
