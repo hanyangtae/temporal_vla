@@ -110,8 +110,11 @@ def derive_task(env: str) -> str:
     return leaf.split("_PandaOmron")[0].split("_Env")[0]
 
 
+adopted = set((extra.get("adopted_cells") or []))
 for cell in plan.cells():
     if cell.instruction not in wanted or cell.noise_idx >= limit:
+        continue
+    if adopted and cell.key not in adopted:   # v3 지터 plan: 채택 셀만 (dummy 제외)
         continue
     env = env_names[cell.instruction]
     print("\t".join([
@@ -264,6 +267,11 @@ run_worker() {  # wid port
       --n-action-steps 5 --max-episode-steps 720
       --video-fps 20 --steps-per-render 2 --wait-ready
     )
+    if [ "${JITTER_MODE:-0}" = "1" ]; then
+      # v3 지터 plan: si=scene*100+k 평탄 좌표 → 실제 reset_idx=si%100.
+      # ep_meta 는 GRID_ROOT/ep_meta 에 export (base seed 키) — 아카이브 동봉 대상.
+      args+=(--jitter-reset-idx "$((si % 100))" --ep-meta-dir "${GRID_ROOT_CONT}/ep_meta")
+    fi
     if [ "$DRY_RUN" = "1" ]; then
       echo "[dry] docker exec robocasa ${args[*]}"
     else

@@ -745,6 +745,18 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--jitter-reset-idx",
+        type=int,
+        default=None,
+        metavar="K",
+        help=(
+            "v3 지터 축 (docs/collab/collect_request_v3_jitter.md §7): reset(seed) 후 "
+            "ep_meta 주입+plain reset 을 (K+1)회 반복해 K번째 지터 상태에서 에피소드를 "
+            "시작한다. 물건 종류·target 은 ep_meta 로 고정, 배치·로봇 초기관절만 재추첨. "
+            "(base_es, ep_meta, K) 좌표는 결정적 — replay 시 같은 시퀀스로 재현."
+        ),
+    )
+    parser.add_argument(
         "--probe-seeds",
         default=None,
         metavar="S1,S2,...",
@@ -935,6 +947,13 @@ def run() -> dict[str, Any]:
                 set_robocasa_ep_meta(env, replay_ep_meta)
             obs, _info = env.reset(seed=scenario_seed)
             captured_ep_meta = replay_ep_meta or get_robocasa_ep_meta(env)
+            if getattr(args, "jitter_reset_idx", None) is not None:
+                # v3 지터 축 (요청서 §7 검증 시퀀스와 동일): 주입+plain reset (K+1)회.
+                # ep_meta 가 물건 종류·target 을 고정하고 배치·로봇 관절만 재추첨된다.
+                from copy import deepcopy as _dc  # noqa: PLC0415
+                for _ in range(args.jitter_reset_idx + 1):
+                    set_robocasa_ep_meta(env, _dc(captured_ep_meta))
+                    obs, _info = env.reset()
             if (
                 ep_meta_dir is not None
                 and scenario_seed is not None
@@ -1155,6 +1174,8 @@ def run() -> dict[str, Any]:
                     "plan_id": grid_plan.plan_id,
                     "armsig": grid_dir.name.split("__")[0],
                 })
+            if getattr(args, "jitter_reset_idx", None) is not None:
+                extra_metadata["jitter_reset_idx"] = args.jitter_reset_idx
             if cell_id is not None:
                 extra_metadata.update(
                     {
