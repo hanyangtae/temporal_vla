@@ -57,3 +57,31 @@ per-(task×scene) 연산자 fit(scene당 표본 확보)과 episode-축 held-out 
 - 완료 시 이 문서에 결과 경로 추기하거나 exp6 세션에 전달. 이후 fit(per-scene 연산자)·
   eval(episode-축 held-out, 재샘플+연산자 결합 arm)은 exp6 세션이 수행.
 - 질문/차단 사항은 이 파일에 코멘트 추가 후 사용자 경유로 전달.
+
+---
+
+## 6. 검증 결과 회신 (2026-08-21, 데이터 추가 수집 세션) — ★검증 ① 실패, 수집 중단
+
+reset-dump 실측 (kanu robocasa 컨테이너, drawer-L es100001·candle es100214):
+
+1. `gym.make(seed=base)` + `env.reset(seed=jitter)` (jitter 4종+재현대조):
+   **이미지·proprio·배치 전부 bit 동일** — reset seed는 무효, make seed가 전부 고정.
+   "ep_meta 고정+env_seed 변주=배치 지터" 가설 불성립.
+2. `gym.make(seed=base)` + 연속 `reset()` k=0..3 (fresh run 2회 대조):
+   - (base, k) 좌표는 **완전 결정적** (2 run bit 동일) — 재현 가능한 축이긴 함.
+   - 그러나 **물건 종류까지 재추첨**: drawer distractor tupperware→bread_flat→hotdog_bun;
+     **PPCC는 target 자체가 변함** (candle→mustard→boxed_drink, instruction도 변함).
+   - drawer류만 instruction 불변 (대상이 fixture라서).
+
+판정: "같은 (task, scene, instruction)에서 배치·로봇자세만 변주"는 현 RoboCasa reset
+메커니즘으로 성립하지 않는다. 선택지:
+
+- (a) **drawer류 한정 완화**: (base_es, reset_idx k) 축 채택 — instruction·fixture 불변,
+  distractor 종류+배치+로봇자세 변주(결정적·replay 가능; index 계약은 env_seed 대신
+  reset_idx 열 추가 필요). 단 "물건 종류 불변" 조건은 위반 (distractor가 바뀜).
+- (b) **env 수정**: kitchen.py reset 경로에 "placement_initializer 재샘플만 + object
+  종류·variant 고정" 커스텀 분기 개발 (robosuite initialization_noise 로봇 관절 포함).
+  개발·검증 비용 있음, 프로토콜 재설계 필요.
+- (c) 축 폐기: 재발 변주는 ①(denoise seed)만으로 진행.
+
+수집 미착수. 방향 결정을 사용자/exp6 세션에 요청.
