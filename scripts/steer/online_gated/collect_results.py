@@ -17,7 +17,12 @@ replay 모드(`--cells-tsv`)에서는 셀 좌표(scene_idx/noise_idx)와 **수�
   ep  scene_idx  env_seed  inference_seed  success  steps  n_inferences
   trigger_step  phase_at_trigger  n_gated  gated_mode  arm  slug  beta  op  serve_gpu  run_tag
   noise_idx  seen_scene  seen_noise  quadrant  collection_success
+  cell_key  jitter_reset_idx
 (새 열은 **뒤에** 붙인다 — 기존 소비자의 열 위치를 깨지 않기 위함.)
+
+v4 지터 축(docs/04 §3.1.1)에서는 한 scene 의 k 셀들이 env_seed 를 공유하므로
+셀 되찾기 키가 (env_seed, inference_seed) → `ep`(= cell_key*EP_IDX_STRIDE + noise)로
+바뀐다 (`--ep-idx-stride`). scene_idx 열은 base scene(0-4), 평탄 cell id 는 cell_key 열.
 
 사용:
     # replay
@@ -43,7 +48,8 @@ STEM_RE = re.compile(r"task(?P<tid>\d+)--ep(?P<ep>\d+)--succ(?P<succ>[01])$")
 COLUMNS = ("ep", "scene_idx", "env_seed", "inference_seed", "success", "steps",
            "n_inferences", "trigger_step", "phase_at_trigger", "n_gated", "gated_mode",
            "arm", "slug", "beta", "op", "serve_gpu", "run_tag",
-           "noise_idx", "seen_scene", "seen_noise", "quadrant", "collection_success")
+           "noise_idx", "seen_scene", "seen_noise", "quadrant", "collection_success",
+           "cell_key", "jitter_reset_idx")
 
 
 def cell(v) -> str:
@@ -67,21 +73,38 @@ def load_scenes(path: Path | None) -> dict[int, int]:
     return out
 
 
-def load_cells(path: Path | None) -> dict[tuple[int, int], dict]:
-    """(env_seed, inference_seed) → 셀 좌표 + 수집 판정 (replay_cells.py 출력)."""
+def load_cells(path: Path | None, ep_stride: int = 100) -> tuple[dict, bool]:
+    """셀 표(replay_cells.py 출력) → (조회표, v4 여부).
+
+    v1/v2 (8열): 키 = (env_seed, inference_seed) — 기존 그대로.
+    v4 (9·10열, `jitter_reset_idx` 포함): 한 scene 의 모든 k 셀이 **같은 env_seed 를
+    공유**하므로 seed 쌍으로는 셀을 구분할 수 없다 → 키를 `ep`(= cell_key*stride + noise,
+    러너의 EP_IDX_STRIDE 산식)로 바꾼다. scene_idx 자리에는 base scene 을 넣는다
+    (사분면 태깅은 base scene 0-4 기준).
+    """
     if path is None:
-        return {}
-    out: dict[tuple[int, int], dict] = {}
+        return {}, False
+    out: dict = {}
+    is_v4 = False
     for ln in path.read_text(encoding="utf-8").splitlines():
         if not ln.strip():
             continue
         p = ln.split("\t")
         si, ni, es, inf, cs = int(p[0]), int(p[1]), int(p[2]), int(p[3]), p[4]
-        out[(es, inf)] = {
-            "scene_idx": si, "noise_idx": ni,
+        jit = p[8].strip() if len(p) > 8 else ""
+        base_scene = int(p[9]) if len(p) > 9 and p[9].strip() else (
+            si // 100 if si >= 100 else si)
+        rec = {
+            "scene_idx": base_scene if jit else si, "noise_idx": ni,
+            "cell_key": si, "jitter_reset_idx": jit or "base",
             "collection_success": None if cs in ("", "NA") else int(cs),
         }
-    return out
+        if jit:
+            is_v4 = True
+            out[si * ep_stride + ni] = rec
+        else:
+            out[(es, inf)] = rec
+    return out, is_v4
 
 
 def parse_int_list(spec: str) -> set[int]:
@@ -133,10 +156,12 @@ def main() -> int:
     ap.add_argument("--slug", default="NA")
     ap.add_argument("--expect", type=int, default=0)
     ap.add_argument("--out", type=Path, default=None, help="기본 <job-dir>/per_episode.tsv")
+    ap.add_argument("--ep-idx-stride", type=int, default=100,
+                    help="러너 EP_IDX_STRIDE (v4 셀 표를 ep 로 되찾을 때 사용)")
     args = ap.parse_args()
 
     seed2scene = load_scenes(args.scenes_tsv)
-    cells = load_cells(args.cells_tsv)
+    cells, cells_v4 = load_cells(args.cells_tsv, args.ep_idx_stride)
     fit_scenes = parse_int_list(args.fit_scenes)
     fit_noises = parse_int_list(args.fit_noises)
     rows = []
@@ -150,8 +175,14 @@ def main() -> int:
         env_seed = sc.get("scenario_seed", sc.get("seed"))
         inf_seed = sc.get("inference_seed")
         # replay: (env_seed, inference_seed) 로 셀을 되찾아 좌표·수집판정을 붙인다.
+        # v4(지터)는 seed 가 셀 간 공유라 ep(= cell_key*stride + noise)로 되찾는다.
         cellrec = None
-        if cells and env_seed is not None and inf_seed is not None:
+        if cells and cells_v4:
+            cellrec = cells.get(int(m.group("ep")))
+            if cellrec is None:
+                raise SystemExit(
+                    f"{jp}: ep={m.group('ep')} 가 v4 셀 표에 없다 — 재생 좌표가 어긋났다")
+        elif cells and env_seed is not None and inf_seed is not None:
             cellrec = cells.get((int(env_seed), int(inf_seed)))
             if cellrec is None:
                 raise SystemExit(
@@ -177,6 +208,10 @@ def main() -> int:
             "quadrant": quad,
             "collection_success": (cellrec["collection_success"]
                                    if cellrec is not None else None),
+            # v4 지터 축 (docs/04 §3.1.1): 평탄 cell id 와 k. v1/v2 는 NA.
+            "cell_key": cellrec.get("cell_key") if cellrec is not None else None,
+            "jitter_reset_idx": (cellrec.get("jitter_reset_idx")
+                                 if cellrec is not None else None),
             # 스템의 succ 와 본문 판정이 어긋나면 사이드카가 손상된 것 → fail-loud
             "success": int(sc.get("episode_success", m.group("succ"))),
             "steps": sc.get("steps"),
