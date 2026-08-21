@@ -46,7 +46,7 @@ CAPTURE_FEATURES=1 + 좌표 인자 배선 완료·커밋됨) → pkl에서 L15 d
 - 머신 매칭: drawer-L=kanu, Dish=srv48(GPU0), drawer-R·candle=srv50(GPU2).
   A100 serve ~6GB(8/GPU 가능하나 **동시부팅 실질 한계 6** — 240s 시차 부팅).
   kanu는 빈 GPU만(compute-apps PID로 타인 확인, <1GB 잔여도 사용 중일 수 있음).
-- 집계: `final_agg_condg.py`(jobs tmp — 레포 이관 안 됨, 셀-paired 구제/파손+in-fit/
+- 집계: `scripts/steer/online_gated/final_agg_condg.py`(셀-paired 구제/파손+in-fit/
   held-out-noise 2분할). scene 분할 병합은 cells tsv cat + raw_rollouts cp -rl.
 - 갤러리: `outputs/eval/robocasa/groot_n15/video_gallery/` (http://166.104.35.33:8898).
   annotate는 h264 자동. **caption burn-in 절대 금지** — dev 차단판 유지, 장시간 스크립트는
