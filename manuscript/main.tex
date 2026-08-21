@@ -131,7 +131,7 @@ phase 경계와의 정렬은 전환 횟수는 그대로 두고 위치만 에피�
 \section{결 과}
 \textbf{3.1 VLA 내부 activation 한 스텝만으로 해당 action phase를 읽을 수 있다}
 
-Unseen scene에서 측정한 Accuracy(instruction 중앙값)는 activation 비지도 군집 0.86, 지도 probe 0.89이다(Figure 3). 시간 대조군(clock)은 0.61--0.68에 그친다. 외부 관찰로 phase를 나누는 기존 방법인 행동 이벤트(behavioral event)\new{ 대조군은 0.68이다. } % 9/10 instruction 중앙값 0.685 (OvenRack은 영상 재수집분 반영 중)
+Unseen scene에서 측정한 Accuracy(instruction 중앙값)는 activation 비지도 군집 0.86, 지도 probe 0.89이다(Figure 3). 시간 대조군(clock)은 0.61--0.68에 그친다. 외부 관찰로 phase를 나누는 기존 방법인 행동 이벤트(behavioral event)\new{ 대조군은 0.65이다. } % 10/10 instruction 중앙값 0.648 (최종, 클린 영상 기준)
 즉 ``에피소드가 얼마나 진행됐는가''도, 밖에서 관찰한 이벤트 구조도 내부 표상만큼은 알려주지 못한다. 특히 비지도 군집만으로 0.86이 나온다는 점이 중요하다 --- 구조 자체는 라벨 없이 activation에서 나왔고 라벨은 각 군집에 이름을 붙이는 데만 쓰였다. 군집 중심을 train에서 만들고 평가 스텝은 최근접 배정으로 옮기므로, 재군집화 없이 추론 중 스텝 단위로 그대로 돌릴 수 있다.
 
 \textbf{3.2 발견된 단위는 사람이 정의한 phase보다 잘게 나뉜다}
