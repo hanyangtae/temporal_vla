@@ -11,6 +11,10 @@
 #   online_pl      setM_seg_pl (라벨순열·dose-match 위약) + 같은 detector
 #   oracle_always  setM_seg gated 등록 + collector --gated-steering
 #                  (라벨러 phase 를 매 스텝 POST, latch 없이 처음부터 = 개입 상한)
+#   rs_early       steering 無. (trigger-EARLY_OFFSET) record 부터 denoise seed 재추첨
+#                  (resample 의 조기 판 — 개입 시점만 앞당긴 대조)
+#   rs_steer       위와 같은 record 부터 seed 재추첨 + 같은 시점에 steering latch
+#                  (재추첨 × 개입 결합 arm; STEER_PHASE_MODE 로 phase-follow/고정 선택)
 #
 # EP_MODE (episode 열거 방식)
 #   replay (기본) — grid 수집 셀을 **그대로 재생**. (scene s, noise m) 의 수집 당시
@@ -78,9 +82,14 @@ CONDG_GATE="${CONDG_GATE:-1}"   # condg 전용: 0 이면 --no-condg-gate (무게
 # oracle_early/resample arm 용: 셀별 발화 record 표 (scene	noise	trigger, 헤더 无).
 # oracle_early = (trigger-EARLY_OFFSET) record 부터 phase-follow 개입 (replay oracle 타이밍).
 # resample     = trigger record 부터 inference seed 재추첨 (--reseed-from-record, steering 無).
+# rs_early     = (trigger-EARLY_OFFSET) record 부터 seed 재추첨 (steering 無).
+# rs_steer     = 같은 record 부터 seed 재추첨 + steering latch (재추첨 × 개입 결합).
 TRIGGER_TSV="${TRIGGER_TSV:-}"
 EARLY_OFFSET="${EARLY_OFFSET:-3}"
 RESEED_OFFSET="${RESEED_OFFSET:-900000}"
+# rs_steer 용 — current=phase-follow, global=단일 phase(예: COAST global conceptor) 고정.
+STEER_PHASE_MODE="${STEER_PHASE_MODE:-current}"
+STEER_PHASE_NAME="${STEER_PHASE_NAME:-global}"
 DETECTOR_CKPT="${DETECTOR_CKPT:-}"                  # 지정 시 전 slug 공통 (단일 slug 용)
 # slug 별 per-task ckpt 템플릿 (%SLUG% 치환). DETECTOR_CKPT 가 비어 있으면 이걸 사용.
 DETECTOR_CKPT_TMPL="${DETECTOR_CKPT_TMPL:-outputs/analysis/grid_phase/detector_sim/detector_pertask_lstm_%SLUG%.pt}"
@@ -188,10 +197,10 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
     local root="${NPZ_ROOT}/${1}/${NPZ_VARIANT}"
     case "$2" in
       base)                              printf '' ;;
-      online|online_fut|oracle_always|oracle_early)   printf '%s/condg\n'    "$root" ;;
+      online|online_fut|oracle_always|oracle_early|rs_steer)   printf '%s/condg\n'    "$root" ;;
       online_pl|online_fut_pl|oracle_always_pl|oracle_early_pl) printf '%s/condg_pl\n' "$root" ;;
       online_hs)                         printf '%s/condg_hs\n' "$root" ;;
-      resample)                          printf '' ;;
+      resample|rs_early)                 printf '' ;;
       *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
     esac
     return 0
@@ -200,21 +209,22 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
     # 행렬 연산자: 위약만 별도 트리, future arm 은 같은 NPZ (token-select 로 표현)
     local root="${NPZ_ROOT}/${1}/${NPZ_VARIANT}/${STEER_OP_NAME}"
     case "$2" in
-      base)                            printf '' ;;
-      online|online_fut|oracle_always) printf '%s\n'    "$root" ;;
+      base|rs_early)                   printf '' ;;
+      online|online_fut|oracle_always|rs_steer) printf '%s\n'    "$root" ;;
       online_pl|online_fut_pl|oracle_always_pl) printf '%s_pl\n' "$root" ;;
       *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
     esac
     return 0
   fi
   case "$2" in
-    base)          printf '' ;;
+    base|rs_early) printf '' ;;
     online)        printf '%s/%s/%s\n'        "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     online_fut)    printf '%s/%s/%s_fut\n'    "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     online_fut_pl) printf '%s/%s/%s_fut_pl\n' "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     online_pl)     printf '%s/%s/%s_pl\n'     "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     oracle_always) printf '%s/%s/%s\n'        "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     oracle_always_pl) printf '%s/%s/%s_pl\n'  "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
+    rs_steer)      printf '%s/%s/%s\n'        "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
   esac
 }
@@ -460,7 +470,8 @@ start_serve() {  # gpu port extra_flags...
 serve_preflight() {  # port arm  — 등록 지문 대조 (무음 identity·arm 오배치 방지)
   local port="$1" arm="$2" body reg
   body="$(health_curl "$port")"
-  if [ "$arm" != "base" ] && [ "$arm" != "resample" ]; then
+  # steering 미등록 arm(base·resample·rs_early)은 지문 검사 제외. rs_steer 는 개입 arm 이라 포함.
+  if [ "$arm" != "base" ] && [ "$arm" != "resample" ] && [ "$arm" != "rs_early" ]; then
     printf '%s' "$body" | grep -q '"steering"' || {
       log "ABORT: serve ${port} /health 에 steering 지문 없음 (arm=${arm})"; return 11; }
     if [ "$SERVE_MODE" = host ]; then
@@ -507,6 +518,17 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
     resample)
       if [ -n "$trig" ]; then
         mode=(--reseed-from-record "$trig" --reseed-offset "$RESEED_OFFSET")
+      fi ;;
+    rs_early|rs_steer)
+      # 발화보다 EARLY_OFFSET 이른 record 부터 denoise seed 재추첨.
+      # rs_steer 는 같은 시점에 steering 도 latch (재추첨 × 개입 결합).
+      if [ -n "$trig" ]; then
+        local st=$((trig - EARLY_OFFSET)); [ "$st" -lt 0 ] && st=0
+        mode=(--reseed-from-record "$st" --reseed-offset "$RESEED_OFFSET")
+        if [ "$arm" = rs_steer ]; then
+          mode+=(--steer-from-record "$st" --steer-phase-mode "$STEER_PHASE_MODE")
+          [ "$STEER_PHASE_MODE" = global ] && mode+=(--steer-phase-name "$STEER_PHASE_NAME")
+        fi
       fi ;;
     oracle_always|oracle_always_pl) mode=(--gated-steering) ;;
     # base: detector ON + steering 미등록 → online 모드라도 전 스텝 identity.

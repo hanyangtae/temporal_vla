@@ -26,6 +26,9 @@
   · τ = 전 seed held-out 성공 episode 고정B margin 을 **pool** 한 분포의 90퍼센타일.
     B = seed 별 B (train 성공 dwell 25퍼센타일, max(3,·)) 의 중앙값(int) — 진단용.
 미달 cell 은 registered=False 로 기록만 하고 serve 는 무시(identity).
+  · `--force-register` (탐색 라운드 전용) 를 주면 이 안전장치를 해제하고 W 가 fit 된 전
+    phase 를 등록한다. 게이트 판정은 계속 계산해 gate_registered/gate_reason 에 남긴다.
+    W 자체를 못 뽑은 phase(경성 하한 미달 등) 는 그대로 identity 잔존.
 
 변형 (44 §3):
   condg     처치.
@@ -461,6 +464,31 @@ def save_npz(out_dir: Path, variant: str, mode: str, results: dict[str, dict],
     return path
 
 
+def force_register(results: dict[str, dict]) -> tuple[list[str], list[str]]:
+    """--force-register: 게이트 판정을 무시하고 W 가 fit 된 전 phase 를 등록시킨다.
+
+    탐색 라운드 전용 — 44 §2 의 "미달 cell = identity" 안전장치를 해제한다.
+    게이트 판정 자체는 계속 계산·보존한다 (`gate_registered` / `gate_reason`).
+    경성 표본 하한 등으로 **W 조차 못 뽑은** phase 는 강제 등록 대상이 아니고
+    serve 에서 identity 로 남는다 (반환값 둘째 원소).
+
+    반환: (강제 등록된 phase 목록, W 부재로 identity 잔존하는 phase 목록)
+    """
+    forced, identity = [], []
+    for ph, r in results.items():
+        r["gate_registered"] = bool(r.get("registered"))
+        r["gate_reason"] = r.get("skip_reason", "")
+        if "W_s" not in r:
+            identity.append(ph)
+            continue
+        if not r["gate_registered"]:
+            forced.append(ph)
+        r["registered"] = True
+        r["forced_register"] = not r["gate_registered"]
+        r["skip_reason"] = ""
+    return forced, identity
+
+
 def _spread(v: list[float]) -> str:
     """중앙값(min–max) 문자열. 5-seed CV 진단용."""
     a = np.array([x for x in v if np.isfinite(x)], dtype=np.float64)
@@ -479,6 +507,9 @@ def print_table(variant: str, results: dict[str, dict]) -> None:
                   f"{'no':<5} ← {r.get('skip_reason', '')}", flush=True)
             continue
         flag = "  [소표본]" if r.get("small_sample") else ""
+        if r.get("forced_register"):
+            flag += (f"  [force-register] 게이트 판정 무시: {ph}"
+                     f"(원판정 FAIL: {r.get('gate_reason', '')})")
         win = f"{r.get('gate_wins', 0)}/{r.get('gate_seeds_ok', 0)}"
         print(f"  {ph:<14}{_spread(r.get('auroc_margin_seeds', [])):>22}"
               f"{_spread(r.get('auroc_len_seeds', [])):>22}{win:>6}{r['B']:>5d}"
@@ -515,6 +546,9 @@ def main() -> None:
                     help="denoise step 인덱스 (기본 3 = 마지막)")
     ap.add_argument("--min-train-eps", type=int, default=MIN_TRAIN_EPS,
                     help=f"등록 게이트의 클래스당 train episode 하한 (기본 {MIN_TRAIN_EPS})")
+    ap.add_argument("--force-register", action="store_true",
+                    help="게이트 판정을 무시하고 W가 fit된 전 phase를 등록 (탐색 라운드 전용 "
+                         "— 45 스펙의 \"미달 cell=identity\" 안전장치 해제)")
     args = ap.parse_args()
 
     if args.slug not in TASKMAP:
@@ -563,6 +597,10 @@ def main() -> None:
                 f"AND 과반({args.gate_seeds // 2 + 1}/{args.gate_seeds}) seed 에서 margin>길이 "
                 f"AND 전체 fit 셋 클래스당 episode ≥ {HARD_MIN_EPS}",
         "gate_seeds": args.gate_seeds,
+        "force_register": bool(args.force_register),
+        "force_register_note": ("게이트 판정 무시하고 W fit된 전 phase 등록 (탐색 라운드 전용). "
+                                "판정 자체는 gate_registered/gate_reason 로 보존"
+                                if args.force_register else ""),
         "small_sample_rule": f"클래스당 episode < {args.min_train_eps} 이면 등록하되 "
                              "small_sample=True 딱지",
         "tau": f"{args.gate_seeds}-seed held-out 성공 episode 고정B margin pool 의 90퍼센타일",
@@ -586,6 +624,15 @@ def main() -> None:
         res_treat[ph] = r
     if not res_treat:
         raise SystemExit("처리 가능한 phase 0개")
+    if args.force_register:
+        forced, identity = force_register(res_treat)
+        print(f"  [force-register] 게이트 판정 무시 — 강제 등록 {sorted(forced) or '없음'}",
+              flush=True)
+        for ph in forced:
+            print(f"    · {ph} (원판정 FAIL: {res_treat[ph].get('gate_reason', '')})", flush=True)
+        if identity:
+            print(f"    · W 산출 실패로 identity 잔존(강제 등록 불가): {sorted(identity)}",
+                  flush=True)
     print_table("condg", res_treat)
     reg_phases = {ph for ph, r in res_treat.items() if r.get("registered")}
     print(f"  등록 phase: {sorted(reg_phases) or '없음'}", flush=True)

@@ -857,8 +857,8 @@ def run() -> dict[str, Any]:
     if steer_from_record is not None and steer_from_record < 0:
         raise ValueError(f"--steer-from-record 는 음수 불가: {steer_from_record}")
     reseed_from_record = getattr(args, "reseed_from_record", None)
-    if reseed_from_record is not None and steer_from_record is not None:
-        raise ValueError("--reseed-from-record 는 steering latch 와 상호배타 (noise_resample 단독 arm)")
+    # reseed(serve측 denoise seed 산술)와 steer-from-record(/steering_phase POST)는 독립 경로
+    # — rs_steer arm(재추첨+개입 동시)이 둘을 같은 record 에 함께 쓴다.
     if reseed_from_record is not None:
         policy.reseed_from_call = int(reseed_from_record)
         policy.reseed_offset = int(getattr(args, "reseed_offset", 500000))
