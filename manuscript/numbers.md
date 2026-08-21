@@ -60,13 +60,14 @@ waypoint는 train centroid 최근접, record 예측 = 시간상 최근접 waypoi
 | PPCC_apple | 0.721 | 0.760 | 0.861 |
 | PPCC_bread | 0.780 | 0.739 | 0.906 |
 | PPCC_candle | 0.685 | 0.550 | 0.852 |
+| OvenRack_out | 0.402 | 0.510 | 0.487 |
 | PPCC_jug | 0.849 | 0.850 | 0.916 |
 | PPCC_marshmallow | 0.612 | 0.720 | 0.875 |
-| **중앙값 (9/10)** | **0.685** | 0.675 (10/10 기준) | 0.856 (10/10 기준) |
+| **중앙값 (10/10)** | **0.648** | 0.675 | 0.856 |
 
-- activation 군집 > 행동 이벤트: **9/9 전부** (그림 3b)
-- OvenRack_out은 caption 오염 영상 재수집분 도착(08-21) 후 추가 예정; marshmallow는
-  오염 11판(전부 train scene 쪽) 포함 상태의 잠정치 — 교체 후 재산출
+- activation 군집 > 행동 이벤트: **10/10 전부** (그림 3b)
+- OvenRack·marshmallow는 재수집 클린 영상 기준 최종치(08-21). marshmallow는 오염
+  11판 교체 전후 acc 0.612로 동일(오염분이 전부 train scene 쪽이었음).
 - 원자료 `outputs/analysis/grid_phase/phase_readout/esae.json` (n_seed=3 검증 완료)
 
 ### k 강건성 (판독 정확도 중앙값, 비지도 군집)
