@@ -450,7 +450,8 @@ def _median(v: list[float]) -> float:
 
 # ------------------------------------------------------------------ phase fit
 def fit_phase(eps: list[dict], labels: list[int], phase: str, seed: int,
-              min_train_eps: int, gate_seeds: int = GATE_SEEDS) -> dict | None:
+              min_train_eps: int, gate_seeds: int = GATE_SEEDS,
+              min_eps_per_class: int = MIN_EPS_PER_CLASS) -> dict | None:
     """한 phase 의 W_s/W_f/B/τ/AUROC.
 
     배포 W·stats = **전체 fit 셋** fit. 등록 게이트 = gate_seeds 개 split CV 의
@@ -466,9 +467,13 @@ def fit_phase(eps: list[dict], labels: list[int], phase: str, seed: int,
     ns = sum(r[1] for r in rows)
     nf = len(rows) - ns
     base = {"phase": phase, "n_eps": len(rows), "n_eps_succ": int(ns), "n_eps_fail": int(nf)}
-    if ns < MIN_EPS_PER_CLASS or nf < MIN_EPS_PER_CLASS:
+    if ns < min_eps_per_class or nf < min_eps_per_class:
+        print(f"  [{phase}] episode 부족 s/f={ns}/{nf} (유효 하한 {min_eps_per_class}"
+              f", 기본 {MIN_EPS_PER_CLASS}) — W fit 자체를 건너뜀", flush=True)
         return {**base, "registered": False,
-                "skip_reason": f"episode 부족 s/f={ns}/{nf} (<{MIN_EPS_PER_CLASS})"}
+                "skip_reason": f"episode 부족 s/f={ns}/{nf} (<{min_eps_per_class})"}
+    # 하한을 기본값 아래로 내려 fit 한 경우 = [극소표본]. 기존 [소표본](min_train_eps)과 별개 딱지.
+    sub_floor = min(ns, nf) < MIN_EPS_PER_CLASS
 
     # --- 배포 연산자: 전체 fit 셋 (split 무관) ------------------------------------
     all_s = [i for i, r in enumerate(rows) if r[1] == 1]
@@ -511,6 +516,7 @@ def fit_phase(eps: list[dict], labels: list[int], phase: str, seed: int,
         **base, "registered": not reasons,
         "skip_reason": "; ".join(reasons) if reasons else "",
         "small_sample": bool(small_sample),
+        "sub_floor": bool(sub_floor), "min_eps_per_class": int(min_eps_per_class),
         "W_s": Ws, "W_f": Wf, "B": B, "tau": tau, "sign": 1.0,
         # 대표값 = CV 중앙값 (기존 키 이름 유지)
         "auroc_margin_fixB": med_marg, "auroc_len": med_len,
@@ -625,6 +631,9 @@ def print_table(variant: str, results: dict[str, dict]) -> None:
                   f"{'no':<5} ← {r.get('skip_reason', '')}", flush=True)
             continue
         flag = "  [소표본]" if r.get("small_sample") else ""
+        if r.get("sub_floor"):
+            flag += (f"  [극소표본] 클래스당 episode 하한을 "
+                     f"{r.get('min_eps_per_class')} 로 낮춰 fit (기본 {MIN_EPS_PER_CLASS})")
         if r.get("forced_register"):
             flag += (f"  [force-register] 게이트 판정 무시: {ph}"
                      f"(원판정 FAIL: {r.get('gate_reason', '')})")
@@ -664,6 +673,10 @@ def main() -> None:
                     help="denoise step 인덱스 (기본 3 = 마지막)")
     ap.add_argument("--min-train-eps", type=int, default=MIN_TRAIN_EPS,
                     help=f"등록 게이트의 클래스당 train episode 하한 (기본 {MIN_TRAIN_EPS})")
+    ap.add_argument("--min-eps-per-class", type=int, default=MIN_EPS_PER_CLASS,
+                    help=f"클래스당 최소 episode 수 (기본 {MIN_EPS_PER_CLASS}). 탐색 라운드에서 "
+                         "소표본 케이스(예: 성공 5판)를 그래도 fit 하려면 낮춘다 — "
+                         "[극소표본] 딱지가 결과에 남는다")
     ap.add_argument("--episode-manifest", type=Path, default=None,
                     help="경로 명시 episode manifest (헤더 tsv: pkl_path·label·base_scene "
                          "[·cell_si·noise_idx]). 지정하면 glob/셀 필터를 쓰지 않고 나열된 "
@@ -751,6 +764,11 @@ def main() -> None:
                                 if args.force_register else ""),
         "small_sample_rule": f"클래스당 episode < {args.min_train_eps} 이면 등록하되 "
                              "small_sample=True 딱지",
+        "min_eps_per_class": int(args.min_eps_per_class),
+        "sub_floor_rule": (f"클래스당 episode 하한을 기본 {MIN_EPS_PER_CLASS} 아래"
+                           f"({args.min_eps_per_class})로 내림 — fit 된 phase 에 "
+                           "sub_floor=True 딱지"
+                           if args.min_eps_per_class < MIN_EPS_PER_CLASS else ""),
         "tau": f"{args.gate_seeds}-seed held-out 성공 episode 고정B margin pool 의 90퍼센타일",
         "B": "seed 별 max(3, train 성공 dwell 25퍼센타일) 의 중앙값(int)",
         "sign_note": "margin 부호 고정(m 클수록 실패) — 역전 cell 은 게이트가 배제",
@@ -776,13 +794,16 @@ def main() -> None:
     labels_treat = [e["success"] for e in eps]
     res_treat: dict[str, dict] = {}
     for ph in phases:
-        r = fit_phase(eps, labels_treat, ph, args.seed, args.min_train_eps, args.gate_seeds)
+        r = fit_phase(eps, labels_treat, ph, args.seed, args.min_train_eps, args.gate_seeds,
+                      args.min_eps_per_class)
         if r is None:
             print(f"  [{ph}] phase 없음(codebook) — 건너뜀", flush=True)
             continue
         res_treat[ph] = r
     if not res_treat:
         raise SystemExit("처리 가능한 phase 0개")
+    # 기본 하한 미만 표본으로 fit 된 phase 가 하나라도 있으면 NPZ meta 에도 남긴다
+    base_meta["sub_floor"] = any(r.get("sub_floor") for r in res_treat.values())
     if args.force_register:
         forced, identity = force_register(res_treat)
         print(f"  [force-register] 게이트 판정 무시 — 강제 등록 {sorted(forced) or '없음'}",
@@ -810,7 +831,8 @@ def main() -> None:
         labels_pl = scene_stratified_permute(eps, args.seed)
         res_pl: dict[str, dict] = {}
         for ph in res_treat:
-            r = fit_phase(eps, labels_pl, ph, args.seed, args.min_train_eps, args.gate_seeds)
+            r = fit_phase(eps, labels_pl, ph, args.seed, args.min_train_eps, args.gate_seeds,
+                          args.min_eps_per_class)
             if r is None:
                 continue
             # 44 §3: 위약은 자기 등록 게이트를 **우회**하고, 등록 집합을 처치와 일치시킨다.

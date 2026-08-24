@@ -324,7 +324,8 @@ def main() -> None:
     ap.add_argument("--out-root", type=Path, required=True,
                     help="산출 루트. <out-root>/<op>/<phase>/dit_L{n}/conceptors.npz")
     ap.add_argument("--phase-groups", default="auto",
-                    help="콤마목록 또는 'auto'(데이터에 있는 phase 전부, terminal 동치 제외)")
+                    help="콤마목록 또는 'auto'(데이터에 있는 phase 전부, terminal 동치 제외). "
+                         "'global' = phase 무구분 전 rollout 풀 (COAST Global variant)")
     ap.add_argument("--layers", default=None,
                     help="DiT 물리 layer 콤마목록 (권장 — 미지정 시 capture 전부, tok 메모리 큼)")
     ap.add_argument("--ops", default=",".join(OPS), help=f"fit 할 연산자 (기본 {','.join(OPS)})")

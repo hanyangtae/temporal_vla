@@ -396,19 +396,30 @@ def episode_phase_records(roll, layer_idx: int, ph: str, dwell_cap: int) -> np.n
 
     길이 통제는 phase 별 dwell cap 으로 한다 (2026-07-23 사용자 지적): episode 전역 cap 을
     먼저 걸면 cap 밖의 후반 phase(place·pull 등) record 가 통째로 소실. dwell cap 은
-    성공 episode 들의 그 phase 체류 길이 스케일 — 실패의 timeout 체류 과대가중만 제어."""
+    성공 episode 들의 그 phase 체류 길이 스케일 — 실패의 timeout 체류 과대가중만 제어.
+
+    ph=='global' 은 phase 무구분 전 rollout 풀 (COAST Global variant) —
+    fit_phase_conceptor._roll_records 관례를 그대로 이식: 필터 없이 앞에서부터 cap 개."""
     X = roll["dit"][:, layer_idx, :]
+    if ph == "global":
+        return X[:dwell_cap]
     idx = [i for i, p in enumerate(roll["phases"]) if p == ph][:dwell_cap]
     return X[idx]
 
 
 def phase_dwell_caps(rolls, labels, phases) -> dict:
     """phase 별 dwell cap = 성공 episode 체류 길이(>0)의 ceil(μ+1σ). 성공 dwell 없는
-    phase 는 미포함 (대조 불가 — 호출부에서 skip)."""
+    phase 는 미포함 (대조 불가 — 호출부에서 skip).
+
+    'global'(전 rollout 풀)은 fit_phase_conceptor.compute_length_caps 와 **동일 규약** —
+    체류 길이 대신 성공 episode 의 **record 수** 로 ceil(μ+1σ)."""
     caps = {}
     for ph in phases:
-        dw = [sum(1 for p in r["phases"] if p == ph)
-              for r, y in zip(rolls, labels) if y == 1]
+        if ph == "global":
+            dw = [len(r["phases"]) for r, y in zip(rolls, labels) if y == 1]
+        else:
+            dw = [sum(1 for p in r["phases"] if p == ph)
+                  for r, y in zip(rolls, labels) if y == 1]
         dw = [d for d in dw if d > 0]
         if dw:
             caps[ph] = int(np.ceil(np.mean(dw) + np.std(dw)))
@@ -421,7 +432,10 @@ def gather_phase_tok(rolls, labels, layer_idx, cls, ph, dwell_cap):
     for r, y in zip(rolls, labels):
         if y != cls:
             continue
-        idx = [i for i, p in enumerate(r["phases"]) if p == ph][:dwell_cap]
+        if ph == "global":   # 전 rollout 풀 (phase 필터 없음)
+            idx = list(range(len(r["phases"])))[:dwell_cap]
+        else:
+            idx = [i for i, p in enumerate(r["phases"]) if p == ph][:dwell_cap]
         if idx:
             out.append(r["tok"][idx, layer_idx].astype(np.float32))  # fp16 저장 대응
             n_eps += 1
@@ -811,7 +825,9 @@ def resolve_phase_groups(spec: str, rolls) -> tuple[list[str], list[str]]:
         excluded = [p for p in present if p in TERMINAL_PHASES]
     else:
         groups = [g.strip() for g in spec.split(",") if g.strip()]
-        missing = [g for g in groups if g not in present]
+        # 'global' = 전 rollout 풀 (COAST Global variant). phase 라벨이 아니므로 존재 검사에서
+        # 제외 — fit_phase_conceptor._roll_records 관례를 fit_setm 스택에 이식.
+        missing = [g for g in groups if g != "global" and g not in present]
         if missing:
             raise SystemExit(f"phase {missing} 이 데이터에 없음 (있는 phase: {present})")
         excluded = []
