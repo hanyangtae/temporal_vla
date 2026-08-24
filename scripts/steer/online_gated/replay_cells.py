@@ -202,9 +202,10 @@ def main() -> int:
                 missing.append((si, ni))
                 continue
             # plan 과의 env_seed 교차검증 (다른 scene 을 조용히 도는 사고 방지).
-            # v4 plan 은 seeds 리스트 index 가 평탄 si 라 base scene 의 대표 자리
-            # (base_scene*100) 로 조회한다 — 한 scene 의 모든 k 행이 base seed 공유.
-            pk = rec["base_scene"] * 100 if is_v4 else si
+            # v4 plan 의 seeds 리스트도 index = 평탄 si (채택 슬롯만 실 seed, 미채택은
+            # 필러) — si 로 직접 조회한다. base 행(si=s*100+99)은 v4 plan 범위 밖이라
+            # 자동 스킵 (base 셀 seed 는 v1/v2 plan 에서 이미 검증된 값).
+            pk = si
             if pk in plan_seeds and plan_seeds[pk] != rec["env_seed"]:
                 raise SystemExit(
                     f"cell{si}: index env_seed {rec['env_seed']} != plan {plan_seeds[pk]}")
