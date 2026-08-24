@@ -27,6 +27,15 @@ Layer 선정 (2026-07-22 사용자 결정 — setM 은 activation 평균 분리�
 사용 (승준):
   python fit_mean_diff.py --manifest <task_PPCC_fit.tsv> --cell pq3_ppcc_bread \
     --targets <annotation_t0.tsv> --out-root outputs/eval/robocasa/groot_n15/exp4_1/npz
+
+phase 축 fit (2026-08-13 추가 — grid phase 라운드):
+  `--phase-groups` 를 주면 t0-window(--targets) 경로 대신 **phase 별 setM** 을 fit 해
+  serve 의 phase-gated 등록 계약 그대로 떨군다 (LOO·layer CV 없음 — 탐색 라운드용):
+    <out_root>/<phase>/dit_L{n}/conceptors.npz      처치
+    <out_root>_pl/<phase>/dit_L{n}/conceptors.npz   위약 (라벨 순열, dose 진단 동반)
+  `--token-pool {mean,state,future,action}` 으로 fit 공간을 토큰 세그먼트로 좁힐 수 있다
+  (load_rollout_fulltoken 과 같은 경계 — future = 1:33). 두 플래그 모두 미지정이면
+  기존 동작과 bit-동일.
 """
 from __future__ import annotations
 
@@ -288,6 +297,83 @@ def select_placebo_seg(ep_tok, labels_arr, v_seg_ref, s_tok_ref, rng, tag="", do
     return sel
 
 
+def select_placebo_pooled(ep_recs, labels_arr, v_ref, s_ref, rng, tag="", dose_ep=None):
+    """위약 순열 선택 — **pooled(단일 r̂ + 스칼라 s) 공간**. select_placebo_seg 의 pooled 판.
+
+    phase 축 fit(--phase-groups)의 기본 산출 규약이 v1 pooled 키(alpha0_v_steer/alpha0_s)라
+    준직교·dose 판정도 그 공간에서 해야 한다 (세그먼트 공간에서 고르면 실제 개입 축과
+    어긋난다 — 07-23 교정의 반대 방향 같은 실수).
+
+    기준은 select_placebo_seg 와 동일하게 ① |cos(r̂_pl, r̂_treat)| ≤ PL_COS_MAX 준직교,
+    ② dose-match — 다만 pooled NPZ 에는 세그먼트 게인(seg_mask) 자리가 없어 **스케일을
+    실을 수 없다**. 그래서 dose 는 "가장 잘 맞는 후보 선택"까지만 하고, 남은 비율은
+    metadata 의 dose_ratio 로 기록한다 (해석 시 dose 비대칭 감안 필수).
+    dose calibration 표본은 seg 판과 같은 규약 — dose_ep(un-truncated)의 실패 기록.
+    """
+    keep = [i for i, X in enumerate(ep_recs) if len(X)]
+    if not keep:
+        raise ValueError("표본 있는 episode 0개")
+    sums = {i: ep_recs[i].astype(np.float64).sum(axis=0) for i in keep}
+    cnts = {i: len(ep_recs[i]) for i in keep}
+    X_all = np.concatenate([ep_recs[i] for i in keep], axis=0)
+    if dose_ep is not None:
+        di = [i for i in range(len(dose_ep)) if len(dose_ep[i]) and labels_arr[i] == 0]
+        X_dose = np.concatenate([dose_ep[i] for i in di], axis=0) if di else X_all
+    else:
+        X_dose = X_all
+    dose_ref = float(np.median(np.abs(X_dose @ v_ref - s_ref)))
+
+    def build(pl):
+        si = [i for i in keep if pl[i] == 1]
+        fi = [i for i in keep if pl[i] == 0]
+        if not si or not fi:
+            raise ValueError("클래스 고갈")
+        mu_s = sum(sums[i] for i in si) / sum(cnts[i] for i in si)
+        mu_f = sum(sums[i] for i in fi) / sum(cnts[i] for i in fi)
+        d = mu_f - mu_s
+        n = float(np.linalg.norm(d))
+        if n == 0.0:
+            raise ValueError("μ_fail == μ_succ — 순열 방향 없음")
+        v = d / n
+        return v, float(mu_s @ v)
+
+    cands, n_drawn, ortho = [], 0, []
+    while n_drawn < N_PERM_PL_MAX:
+        for _ in range(N_PERM_PL):
+            pl = labels_arr.copy()
+            rng.shuffle(pl)
+            pl = pl.tolist()
+            n_drawn += 1
+            try:
+                v_c, s_c = build(pl)
+            except ValueError:
+                continue
+            cands.append({"perm_id": n_drawn - 1, "labels": pl, "v": v_c, "s": s_c,
+                          "cos": float(v_c @ v_ref)})
+        ortho = [c for c in cands if abs(c["cos"]) <= PL_COS_MAX]
+        if ortho:
+            break
+    if not cands:
+        raise ValueError("위약 후보 0 — 전 순열에서 클래스 고갈")
+    fb = None
+    if not ortho:  # 준직교 후보 없음 — |cos| 최소 폴백 (기록)
+        ortho = sorted(cands, key=lambda c: abs(c["cos"]))[:5]
+        fb = f"no-ortho(min |cos|={abs(ortho[0]['cos']):.2f}, n={n_drawn})"
+    for c in ortho:  # dose 는 준직교 통과분만 (비용 절감)
+        c["dose"] = float(np.median(np.abs(X_dose @ c["v"] - c["s"])))
+        c["scale_gap"] = abs(float(np.log(max(dose_ref, 1e-12) / max(c["dose"], 1e-12))))
+    ortho.sort(key=lambda c: c["scale_gap"])
+    sel = {**ortho[0], "dose_ref": dose_ref,
+           "dose_ratio": ortho[0]["dose"] / dose_ref if dose_ref else None,
+           "fallback": fb, "n_drawn": n_drawn, "n_cand": len(cands),
+           "n_ortho": len([c for c in cands if abs(c["cos"]) <= PL_COS_MAX])}
+    print(f"  [placebo{tag}] perm={sel['perm_id']} cos={sel['cos']:+.2f} "
+          f"dose={sel['dose']:.1f} (처치 {dose_ref:.1f}, ratio="
+          f"{sel['dose_ratio']:.2f}) 후보={sel['n_cand']} ortho={sel['n_ortho']}"
+          + (f" FALLBACK {fb}" if fb else ""), flush=True)
+    return sel
+
+
 def auroc(pos: np.ndarray, neg: np.ndarray) -> float:
     """rank AUROC (pos=fail 사영이 커야 1)."""
     if len(pos) == 0 or len(neg) == 0:
@@ -310,19 +396,30 @@ def episode_phase_records(roll, layer_idx: int, ph: str, dwell_cap: int) -> np.n
 
     길이 통제는 phase 별 dwell cap 으로 한다 (2026-07-23 사용자 지적): episode 전역 cap 을
     먼저 걸면 cap 밖의 후반 phase(place·pull 등) record 가 통째로 소실. dwell cap 은
-    성공 episode 들의 그 phase 체류 길이 스케일 — 실패의 timeout 체류 과대가중만 제어."""
+    성공 episode 들의 그 phase 체류 길이 스케일 — 실패의 timeout 체류 과대가중만 제어.
+
+    ph=='global' 은 phase 무구분 전 rollout 풀 (COAST Global variant) —
+    fit_phase_conceptor._roll_records 관례를 그대로 이식: 필터 없이 앞에서부터 cap 개."""
     X = roll["dit"][:, layer_idx, :]
+    if ph == "global":
+        return X[:dwell_cap]
     idx = [i for i, p in enumerate(roll["phases"]) if p == ph][:dwell_cap]
     return X[idx]
 
 
 def phase_dwell_caps(rolls, labels, phases) -> dict:
     """phase 별 dwell cap = 성공 episode 체류 길이(>0)의 ceil(μ+1σ). 성공 dwell 없는
-    phase 는 미포함 (대조 불가 — 호출부에서 skip)."""
+    phase 는 미포함 (대조 불가 — 호출부에서 skip).
+
+    'global'(전 rollout 풀)은 fit_phase_conceptor.compute_length_caps 와 **동일 규약** —
+    체류 길이 대신 성공 episode 의 **record 수** 로 ceil(μ+1σ)."""
     caps = {}
     for ph in phases:
-        dw = [sum(1 for p in r["phases"] if p == ph)
-              for r, y in zip(rolls, labels) if y == 1]
+        if ph == "global":
+            dw = [len(r["phases"]) for r, y in zip(rolls, labels) if y == 1]
+        else:
+            dw = [sum(1 for p in r["phases"] if p == ph)
+                  for r, y in zip(rolls, labels) if y == 1]
         dw = [d for d in dw if d > 0]
         if dw:
             caps[ph] = int(np.ceil(np.mean(dw) + np.std(dw)))
@@ -335,9 +432,12 @@ def gather_phase_tok(rolls, labels, layer_idx, cls, ph, dwell_cap):
     for r, y in zip(rolls, labels):
         if y != cls:
             continue
-        idx = [i for i, p in enumerate(r["phases"]) if p == ph][:dwell_cap]
+        if ph == "global":   # 전 rollout 풀 (phase 필터 없음)
+            idx = list(range(len(r["phases"])))[:dwell_cap]
+        else:
+            idx = [i for i, p in enumerate(r["phases"]) if p == ph][:dwell_cap]
         if idx:
-            out.append(r["tok"][idx, layer_idx])
+            out.append(r["tok"][idx, layer_idx].astype(np.float32))  # fp16 저장 대응
             n_eps += 1
     return (np.concatenate(out, axis=0) if out else np.empty((0, 0, 0))), n_eps
 
@@ -392,7 +492,14 @@ def cv_auroc(rolls, labels, layer_idx, cap, rng) -> float:
 
 
 # ---------------------------------------------------------------------------- IO
-def load_cell_rolls(manifest: Path, cell: str):
+def load_cell_rolls(manifest: Path, cell: str, token_pool: str = "mean",
+                    tok_layer_blks: list[int] | None = None):
+    """token_pool: fit 에 쓰는 record 벡터의 토큰 세그먼트 (load_rollout_fulltoken 경계와 동일).
+    기본 'mean' = 49토큰 평균 (기존 동작). 세그먼트 연산자용 r["tok"] 는 항상 full-token.
+
+    tok_layer_blks: 지정 시 layer 축을 해당 물리 block 만 남기고 슬라이스 + tok fp16 저장
+    (전 layer fp32 tok 은 instruction 100판에서 ~30GB — 32GB 노드 OOM). 슬라이스 시
+    r["capture_layers"]/dit/dit_k/tok 이 함께 좁혀져 하류의 cap_layers.index() 정합 유지."""
     rows = []
     for line in manifest.read_text().splitlines():
         line = line.strip()
@@ -416,11 +523,25 @@ def load_cell_rolls(manifest: Path, cell: str):
             d = pickle.load(f)
         if d.get("capture_token_mode") != FULLTOKEN_MODE:
             raise SystemExit(f"{m['pkl']}: full-token pkl 아님 ({d.get('capture_token_mode')})")
-        r = load_rollout_fulltoken(d, m["pkl"], "mean")
+        r = load_rollout_fulltoken(d, m["pkl"], token_pool)
+        keep = None
+        if tok_layer_blks is not None:
+            cap = [int(x) for x in r["capture_layers"]]
+            for b in tok_layer_blks:
+                if b not in cap:
+                    raise SystemExit(f"{m['pkl']}: layer {b} 는 capture {cap} 에 없음")
+            keep = [cap.index(b) for b in tok_layer_blks]
+            r["capture_layers"] = [cap[i] for i in keep]
+            r["dit"] = r["dit"][:, keep, :]
+            if "dit_k" in r:
+                r["dit_k"] = r["dit_k"][:, keep, :, :]
         # 토큰 보존본 [n, T, D] (선정 layer 는 호출부에서 인덱싱) — 세그먼트 fit 용
+        tok_dtype = np.float16 if keep is not None else np.float32
         r["tok"] = np.stack(
-            [np.asarray(rec, dtype=np.float32).mean(axis=1) for rec in d["hidden_states"]],
-            axis=0)  # [n, L, T, D] → denoise mean
+            [np.asarray(rec, dtype=np.float32).mean(axis=1)[keep if keep is not None
+                                                            else slice(None)]
+             .astype(tok_dtype) for rec in d["hidden_states"]],
+            axis=0)  # [n, L(선택), T, D] → denoise mean
         r["success"] = m["label"]  # manifest 라벨 override (fit_phase_conceptor 관례)
         # docs/04 규약 — 입력 rollout 의 내용 지문. 경로가 아니라 sig 로 출처를 남긴다.
         r["sig"] = hashlib.sha256(m["pkl"].read_bytes()).hexdigest()[:16]
@@ -694,15 +815,249 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
     print(f"[gated done] {out_cell}/setM_gated (+placebo) phases={len(phases)}", flush=True)
 
 
+def resolve_phase_groups(spec: str, rolls) -> tuple[list[str], list[str]]:
+    """--phase-groups 해석. 'auto' = 데이터에 있는 phase 전부 (terminal 동치 phase 제외)."""
+    present = sorted({p for r in rolls for p in r["phases"] if p})
+    if not present:
+        raise SystemExit("pkl sidecar 에 feature_phases 없음 — phase 축 fit 불가")
+    if spec.strip() == "auto":
+        groups = [p for p in present if p not in TERMINAL_PHASES]
+        excluded = [p for p in present if p in TERMINAL_PHASES]
+    else:
+        groups = [g.strip() for g in spec.split(",") if g.strip()]
+        # 'global' = 전 rollout 풀 (COAST Global variant). phase 라벨이 아니므로 존재 검사에서
+        # 제외 — fit_phase_conceptor._roll_records 관례를 fit_setm 스택에 이식.
+        missing = [g for g in groups if g != "global" and g not in present]
+        if missing:
+            raise SystemExit(f"phase {missing} 이 데이터에 없음 (있는 phase: {present})")
+        excluded = []
+    if not groups:
+        raise SystemExit(f"fit 할 phase 0개 (present={present}, terminal 제외 규약)")
+    return groups, excluded
+
+
+def fit_phase_groups(args, rolls, labels, out_root: Path) -> None:
+    """phase 축 setM fit — serve phase-gated 등록 계약 그대로 (<out_root>/<phase>/dit_L{n}/).
+
+    t0-window(--targets) 경로와 배타. layer CV·LOO 없이 지정 layer 전부에 바로 fit 하는
+    탐색용 경로다 (grid phase 라운드: phase × layer 격자에서 어디가 분리되는지 먼저 본다).
+    길이 통제는 gated 와 같은 phase dwell cap (성공 dwell 의 ceil(μ+1σ)) — 실패의 timeout
+    체류 과대가중만 제어하고 episode 전역 cap 은 걸지 않는다 (후반 phase 소실 방지).
+
+    quota 미달 phase 는 **NPZ 미생성 = serve 미등록 → identity(무개입)** (07-23 사용자 결정
+    유지). 위약은 phase 별 독립 선택 — 순열 방향이 phase 부분표본마다 회전하므로 전역
+    동결 순열을 물려받으면 준직교가 깨진다 (fit_gated docstring 참조).
+    """
+    import shutil
+
+    out_pl = out_root.with_name(out_root.name + "_pl")
+    for d in (out_root, out_pl):
+        shutil.rmtree(d, ignore_errors=True)   # stale phase 디렉토리 → 무음 오등록 방지
+    out_root.mkdir(parents=True, exist_ok=True)
+    out_pl.mkdir(parents=True, exist_ok=True)
+
+    cap_layers = [int(x) for x in rolls[0]["capture_layers"]]
+    layer_blks = ([int(x) for x in args.layers.split(",")] if args.layers else cap_layers)
+    for b in layer_blks:
+        if b not in cap_layers:
+            raise SystemExit(f"layer {b} 는 capture {cap_layers} 에 없음")
+    groups, excluded = resolve_phase_groups(args.phase_groups, rolls)
+    labels_arr = np.asarray(labels)
+
+    dwell_caps = phase_dwell_caps(rolls, labels, groups)
+    if args.no_length_control:
+        dwell_caps = {ph: 10**9 for ph in dwell_caps}
+        print(f"[no-length-control] phase dwell cap 해제 — phases={sorted(dwell_caps)}",
+              flush=True)
+    n_s = sum(labels)
+    print(f"[{args.cell}] rollouts={len(rolls)} succ={n_s} fail={len(rolls)-n_s} "
+          f"phases={groups} layers={layer_blks} token_pool={args.token_pool} "
+          f"npz_format={args.npz_format}", flush=True)
+    if excluded:
+        print(f"  (terminal 동치 phase 제외: {excluded})", flush=True)
+
+    manifest_sha = hashlib.sha256(args.manifest.read_bytes()).hexdigest()[:12]
+    base_meta = {
+        # docs/04 규약 — 연산자마다 입력 sig 동반 (경로 아님)
+        "input_sigs": [r["sig"] for r in rolls],
+        "cell": args.cell, "token_pool": args.token_pool,
+        "length_control": not args.no_length_control,
+        "manifest_sha": manifest_sha, "rng_seed": RNG_SEED,
+        "n_rollouts": len(rolls), "n_succ": int(n_s), "n_fail": int(len(rolls) - n_s),
+    }
+    diag, written = [], 0
+    for ph in groups:
+        if ph not in dwell_caps:
+            diag.append({"phase": ph, "skipped_identity": True,
+                         "skip_reason": "성공 episode dwell 없음 (대조 불가)"})
+            print(f"  [{ph}] SKIP(성공 dwell 없음)", flush=True)
+            continue
+        dcap = dwell_caps[ph]
+        for blk in layer_blks:
+            li = cap_layers.index(blk)
+            Xs, ns_eps = gather_phase(rolls, labels, li, 1, ph, dcap)
+            Xf, nf_eps = gather_phase(rolls, labels, li, 0, ph, dcap)
+            entry = {"phase": ph, "layer": blk, "dwell_cap": dcap,
+                     "n_rec_succ": int(len(Xs)), "n_rec_fail": int(len(Xf)),
+                     "n_eps_succ": ns_eps, "n_eps_fail": nf_eps}
+            if not (len(Xs) >= args.min_records and len(Xf) >= args.min_records
+                    and ns_eps >= args.min_per_class and nf_eps >= args.min_per_class):
+                entry.update({"skipped_identity": True,
+                              "skip_reason": f"quota 미달 (record ≥{args.min_records}/클래스, "
+                                             f"episode ≥{args.min_per_class}/클래스)"})
+                diag.append(entry)
+                print(f"  [{ph}|L{blk}] Nrec s/f={len(Xs)}/{len(Xf)} "
+                      f"Neps s/f={ns_eps}/{nf_eps} SKIP(quota 미달 → 무개입)", flush=True)
+                continue
+            v_ph, s_ph = mean_diff(Xs, Xf)
+            proj_f = np.concatenate([episode_phase_records(r, li, ph, dcap) @ v_ph
+                                     for r, y in zip(rolls, labels) if y == 0
+                                     and len(episode_phase_records(r, li, ph, dcap))])
+            proj_s = np.concatenate([episode_phase_records(r, li, ph, dcap) @ v_ph
+                                     for r, y in zip(rolls, labels) if y == 1
+                                     and len(episode_phase_records(r, li, ph, dcap))])
+            entry.update({"fit_auroc": auroc(proj_f, proj_s), "s": s_ph,
+                          "note_auroc": "fit-표본 사영 AUROC (held-out 아님 — 탐색 지표)"})
+            # 위약 순열: 처치와 **같은 공간**에서 phase 별 독립 선택
+            ep_recs, dose_recs = [], []
+            for r in rolls:
+                ph_idx = [i for i, p in enumerate(r["phases"]) if p == ph]
+                X = r["dit"][:, li, :]
+                ep_recs.append(X[ph_idx[:dcap]] if ph_idx else np.empty((0, 0)))
+                # dose calibration 은 dwell-cap 없는 전체 phase 기록(런타임 개입 분포)
+                dose_recs.append(X[ph_idx] if ph_idx else np.empty((0, 0)))
+            try:
+                if args.npz_format == "seg":
+                    Xs_t = gather_phase_tok(rolls, labels, li, 1, ph, dcap)[0]
+                    Xf_t = gather_phase_tok(rolls, labels, li, 0, ph, dcap)[0]
+                    v_seg_ph, s_tok_ph, sd_ph = fit_seg_setpoint(Xs_t, Xf_t)
+                    ep_tok, dose_tok = [], []
+                    for r in rolls:
+                        ph_idx = [i for i, p in enumerate(r["phases"]) if p == ph]
+                        idx = ph_idx[:dcap]
+                        ep_tok.append(r["tok"][idx, li].astype(np.float32)
+                                      if idx else np.empty((0, 0, 0)))
+                        dose_tok.append(r["tok"][ph_idx, li].astype(np.float32)
+                                        if ph_idx else np.empty((0, 0, 0)))
+                    sel = select_placebo_seg(
+                        ep_tok, labels_arr, v_seg_ph, s_tok_ph,
+                        np.random.default_rng(RNG_SEED + 555), tag=f" {ph}|L{blk}",
+                        dose_ep_tok=dose_tok)
+                else:
+                    sel = select_placebo_pooled(
+                        ep_recs, labels_arr, v_ph, s_ph,
+                        np.random.default_rng(RNG_SEED + 555), tag=f" {ph}|L{blk}",
+                        dose_ep=dose_recs)
+            except ValueError as e:
+                # 위약 성립 불가 → 처치도 제외 (dose 대칭 — 미등록=identity)
+                entry.update({"skipped_identity": True, "skip_reason": f"placebo 후보 0 ({e})"})
+                diag.append(entry)
+                print(f"  [{ph}|L{blk}] SKIP(위약 불가 → 양쪽 무개입)", flush=True)
+                continue
+            meta = {**base_meta, "phase": ph, "layer": blk, "dwell_cap": dcap,
+                    **{k: entry[k] for k in entry if k != "phase"}}
+            if args.npz_format == "seg":
+                entry["seg_diag"] = sd_ph
+                save_segment_npz(out_root / ph, blk, v_seg_ph, s_tok_ph, subdir=None,
+                                 meta={**meta, "operator": "setM_phase", "seg_diag": sd_ph})
+                pl_scale = sel["scale"]
+                entry.update({"placebo_perm_id": sel["perm_id"],
+                              "placebo_cos_seg_vs_treat": sel["cos_seg"],
+                              "placebo_dose_match_scale": pl_scale.tolist(),
+                              "placebo_scale_clipped": sel["scale_clipped"],
+                              "placebo_fallback": sel["fallback"]})
+                save_segment_npz(out_pl / ph, blk, sel["v_seg"], sel["s_tok"], subdir=None,
+                                 seg_mask=pl_scale,
+                                 meta={**meta, "operator": "setM_phase_placebo",
+                                       "perm_id": sel["perm_id"],
+                                       "cos_seg_vs_treat": sel["cos_seg"],
+                                       "cos_seg_max": sel["cos_max"],
+                                       "dose_match_scale": pl_scale.tolist(),
+                                       "scale_clipped": sel["scale_clipped"],
+                                       "fallback": sel["fallback"]})
+            else:
+                save_setpoint_npz(out_root / ph, blk, v_ph, s_ph, subdir=None,
+                                  meta={**meta, "operator": "setM_phase"})
+                entry.update({"placebo_perm_id": sel["perm_id"],
+                              "placebo_cos_vs_treat": sel["cos"],
+                              "placebo_dose_ratio": sel["dose_ratio"],
+                              "placebo_fallback": sel["fallback"]})
+                save_setpoint_npz(out_pl / ph, blk, sel["v"], sel["s"], subdir=None,
+                                  meta={**meta, "operator": "setM_phase_placebo",
+                                        "perm_id": sel["perm_id"],
+                                        "cos_vs_treat": sel["cos"], "pl_cos_max": PL_COS_MAX,
+                                        "dose": sel["dose"], "dose_treat": sel["dose_ref"],
+                                        "dose_ratio": sel["dose_ratio"],
+                                        "dose_match_carried": False,
+                                        "fallback": sel["fallback"],
+                                        "note": "pooled NPZ 에는 dose 스케일을 실을 자리가 "
+                                                "없다 — dose_ratio 로만 기록 (해석 시 감안)"})
+            written += 1
+            diag.append(entry)
+            print(f"  [{ph}|L{blk}] Nrec s/f={entry['n_rec_succ']}/{entry['n_rec_fail']} "
+                  f"Neps s/f={ns_eps}/{nf_eps} auroc={entry['fit_auroc']:.3f} "
+                  f"s={s_ph:.3f}", flush=True)
+
+    fitted_phases = sorted({e["phase"] for e in diag if not e.get("skipped_identity")})
+    # serve 는 layer × phase Cartesian 완전성을 요구한다 (lerobot.py: 누락 시 기동 실패)
+    per_layer = {b: sorted({e["phase"] for e in diag
+                            if e.get("layer") == b and not e.get("skipped_identity")})
+                 for b in layer_blks}
+    ragged = sorted({b for b, ps in per_layer.items() if ps != fitted_phases})
+    summary = {
+        "cell": args.cell, "mode": "phase_groups", "npz_format": args.npz_format,
+        "token_pool": args.token_pool, "layers": layer_blks,
+        "layer_selection": "explicit(--layers)" if args.layers else "all_capture(선정 CV 없음)",
+        "phase_groups_arg": args.phase_groups, "phases_requested": groups,
+        "phases_excluded_terminal": excluded, "phases_fitted": fitted_phases,
+        "phases_per_layer": {str(b): ps for b, ps in per_layer.items()},
+        "layers_with_missing_phase": ragged,
+        "dwell_caps": dwell_caps if not args.no_length_control else "disabled",
+        "length_control": not args.no_length_control,
+        "quota": {"min_rec": args.min_records, "min_eps": args.min_per_class},
+        "n_npz_written": written, "phases": diag,
+        "manifest_sha": manifest_sha, "rng_seed": RNG_SEED,
+        "input_sigs": [r["sig"] for r in rolls],
+        "placebo_dir": out_pl.name,
+        "note": "fit-표본 AUROC 는 탐색 지표(held-out 아님). quota 미달 phase 는 NPZ 미생성 "
+                "= serve 미등록 → identity(무개입).",
+    }
+    (out_root / "fit_summary.json").write_text(json.dumps(summary, indent=2,
+                                                          ensure_ascii=False))
+    if ragged:
+        print(f"[warn] layer {ragged} 의 phase 집합이 다름 — serve 는 layer×phase 완전성을 "
+              f"요구한다 (해당 layer 는 단독 등록만 가능)", flush=True)
+    print(f"[phase done] {out_root} (+{out_pl.name}) phases={fitted_phases} "
+          f"layers={layer_blks} npz={written}", flush=True)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--manifest", type=Path, required=True, help="fit30 tsv (pkl\\tlabel\\tscene)")
     ap.add_argument("--cell", required=True, help="예: pq3_ppcc_bread (within-instruction fit)")
-    ap.add_argument("--targets", type=Path, required=True,
-                    help="annotation_t0.tsv — fit-풀 대상은 LOO, eval-풀 대상은 침범 검사")
+    ap.add_argument("--targets", type=Path, default=None,
+                    help="annotation_t0.tsv — fit-풀 대상은 LOO, eval-풀 대상은 침범 검사 "
+                         "(t0-window 경로 필수. --phase-groups 와 동시 지정 불가)")
     ap.add_argument("--out-root", type=Path, required=True)
     ap.add_argument("--layers", default=None,
-                    help="sweep 할 DiT 물리 layer 콤마목록 (기본: capture 전부)")
+                    help="sweep 할 DiT 물리 layer 콤마목록 (기본: capture 전부). "
+                         "--phase-groups 경로에서는 선정 CV 없이 이 layer 전부에 바로 fit")
+    ap.add_argument("--phase-groups", default=None,
+                    help="phase 축 fit: 콤마목록 또는 'auto'(데이터에 있는 phase 전부, "
+                         "terminal 동치 제외). 산출 = <out_root>/<phase>/dit_L{n} + "
+                         "<out_root>_pl/<phase>/dit_L{n}. --targets 와 배타")
+    ap.add_argument("--token-pool", choices=["mean", "state", "future", "action"],
+                    default="mean",
+                    help="fit record 의 토큰 세그먼트 (SEGMENTS 경계와 동일 — future=1:33). "
+                         "기본 mean = 49토큰 평균(기존 동작)")
+    ap.add_argument("--npz-format", choices=["pooled", "seg"], default="pooled",
+                    help="--phase-groups 산출 키 규약. pooled=alpha0_v_steer/alpha0_s "
+                         "(serve --steering-op setpoint), seg=alpha0_v_seg/alpha0_s_tok "
+                         "(setpoint_seg, --token-pool mean 전용 — 세그먼트 fit 은 full-token)")
+    ap.add_argument("--min-per-class", type=int, default=GATED_MIN_EPS,
+                    help=f"phase 채택 최소 **episode** 수/클래스 (기본 {GATED_MIN_EPS})")
+    ap.add_argument("--min-records", type=int, default=GATED_MIN_REC,
+                    help=f"phase 채택 최소 record 수/클래스 (기본 {GATED_MIN_REC})")
     ap.add_argument("--gated", action="store_true",
                     help="setM_gated/placebo 만 fit (permanent 산출물 전제 — 같은 layer·동결 순열)")
     ap.add_argument("--no-length-control", action="store_true",
@@ -711,9 +1066,28 @@ def main() -> None:
                          "주의: 연산자가 길이/후반-phase 신호를 학습할 수 있음(의도된 실험).")
     args = ap.parse_args()
 
+    # 경로 배타성: phase 축 fit 은 t0-window(--targets)/gated 경로와 섞지 않는다
+    if args.phase_groups:
+        if args.targets is not None:
+            raise SystemExit("--phase-groups 와 --targets 는 동시 지정 불가 "
+                             "(t0-window 경로와 배타)")
+        if args.gated:
+            raise SystemExit("--phase-groups 와 --gated 는 동시 지정 불가")
+        if args.npz_format == "seg" and args.token_pool != "mean":
+            raise SystemExit("--npz-format seg 는 full-token 세그먼트 fit 이라 "
+                             "--token-pool mean 전용")
+    elif not args.gated and args.targets is None:
+        raise SystemExit("--targets 필수 (t0-window 경로). phase 축 fit 은 --phase-groups")
+
     rng = np.random.default_rng(RNG_SEED)
-    rolls = load_cell_rolls(args.manifest, args.cell)
+    tok_blks = ([int(x) for x in args.layers.split(",")]
+                if (args.phase_groups and args.layers) else None)
+    rolls = load_cell_rolls(args.manifest, args.cell, args.token_pool,
+                            tok_layer_blks=tok_blks)
     labels = [r["success"] for r in rolls]
+    if args.phase_groups:
+        fit_phase_groups(args, rolls, labels, args.out_root)
+        return
     if args.gated:
         fit_gated(args, rolls, labels, args.out_root / args.cell)
         return
