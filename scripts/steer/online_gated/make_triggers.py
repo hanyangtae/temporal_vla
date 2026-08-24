@@ -26,13 +26,20 @@ MISSING = {"", "NA", "None", "none", "nan"}
 
 
 def build_rows(per_episode: Path) -> tuple[list[tuple[int, int, str]], int]:
-    """per_episode.tsv → [(scene, noise, trigger)] (정렬됨) 과 전체 행 수."""
+    """per_episode.tsv → [(cell, noise, trigger)] (정렬됨) 과 전체 행 수.
+
+    셀 키: **v4 는 `cell_key`(평탄 cell id) 열을 우선** 사용한다 — v4 의 scene_idx
+    열은 base scene(0-4)으로 접혀 있어서 그걸 쓰면 러너의 평탄 cell id awk 조회와
+    어긋나 trig 미발견 = rs arm 무음 순수 replay 가 된다. cell_key 열이 없는
+    v1/v2 산출물은 기존대로 scene_idx.
+    """
     with per_episode.open(encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f, delimiter="\t")
         for col in ("scene_idx", "noise_idx", "trigger_step"):
             if reader.fieldnames is None or col not in reader.fieldnames:
                 raise SystemExit(f"per_episode.tsv 에 {col} 열이 없음 "
                                  f"(열: {reader.fieldnames})")
+        has_cell_key = reader.fieldnames is not None and "cell_key" in reader.fieldnames
         rows: list[tuple[int, int, str]] = []
         total = 0
         for rec in reader:
@@ -40,7 +47,9 @@ def build_rows(per_episode: Path) -> tuple[list[tuple[int, int, str]], int]:
             trig = (rec.get("trigger_step") or "").strip()
             if trig in MISSING:
                 continue
-            scene = (rec.get("scene_idx") or "").strip()
+            scene = (rec.get("cell_key") or "").strip() if has_cell_key else ""
+            if scene in MISSING:
+                scene = (rec.get("scene_idx") or "").strip()
             noise = (rec.get("noise_idx") or "").strip()
             if scene in MISSING or noise in MISSING:
                 continue
