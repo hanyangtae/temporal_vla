@@ -203,10 +203,11 @@ def main() -> int:
                 continue
             # plan 과의 env_seed 교차검증 (다른 scene 을 조용히 도는 사고 방지).
             # v4 plan 의 seeds 리스트도 index = 평탄 si (채택 슬롯만 실 seed, 미채택은
-            # 필러) — si 로 직접 조회한다. base 행(si=s*100+99)은 v4 plan 범위 밖이라
-            # 자동 스킵 (base 셀 seed 는 v1/v2 plan 에서 이미 검증된 값).
-            pk = si
-            if pk in plan_seeds and plan_seeds[pk] != rec["env_seed"]:
+            # 필러) — si 로 직접 조회한다. base 행(jit=="base", si=s*100+99)은 v4 plan
+            # 소관이 아니므로 스킵 (s0-3 의 base si 가 리스트 범위 안에 떨어져 필러와
+            # 충돌하는 함정; base 셀 seed 는 v1/v2 plan 에서 이미 검증된 값).
+            pk = None if (is_v4 and rec["jitter"] == "base") else si
+            if pk is not None and pk in plan_seeds and plan_seeds[pk] != rec["env_seed"]:
                 raise SystemExit(
                     f"cell{si}: index env_seed {rec['env_seed']} != plan {plan_seeds[pk]}")
             rows.append((si, ni, rec["env_seed"], rec["inference_seed"],
