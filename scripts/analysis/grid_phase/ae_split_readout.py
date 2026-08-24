@@ -42,6 +42,8 @@ def main(argv=None):
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--seeds", default="0,1,2")
     ap.add_argument("--k", type=int, default=8)
+    ap.add_argument("--ks", default=None,
+                    help="k sweep 목록(쉼표). 지정 시 --k 대신 각 k로 판독")
     ap.add_argument("--latent", type=int, default=16)
     ap.add_argument("--epochs", type=int, default=200)
     ap.add_argument("--batch-size", type=int, default=1024)
@@ -97,21 +99,26 @@ def main(argv=None):
             del Xtr
             Zte = AC.encode(model, AC.standardize_apply(F[te], scaler))
 
-            # ---- 판독 (phase_readout.run_one 과 동일 절차) ----
+            # ---- 판독 (phase_readout.run_one 과 동일 절차; k sweep 은 AE 재사용) ----
             classes = np.unique(Y)
             fallback = int(np.bincount(Y[tr]).argmax())
-            C = PR.kmeans(Ztr.astype(np.float64), args.k, seed=seed)
-            m = PR.majority_map(PR.assign(Ztr.astype(np.float64), C), Y[tr],
-                                args.k, fallback)
-            pred = m[PR.assign(Zte.astype(np.float64), C)]
-            acc = float((pred == Y[te]).mean())
-            f1 = PR.macro_f1(Y[te], pred, classes)
-            runs.append({"seed": seed, "cluster_acc": acc, "cluster_f1": f1,
+            ks = ([int(x) for x in args.ks.split(",")] if args.ks else [args.k])
+            per_k = {}
+            for kk in ks:
+                C = PR.kmeans(Ztr.astype(np.float64), kk, seed=seed)
+                m = PR.majority_map(PR.assign(Ztr.astype(np.float64), C), Y[tr],
+                                    kk, fallback)
+                pred = m[PR.assign(Zte.astype(np.float64), C)]
+                per_k[str(kk)] = {
+                    "cluster_acc": float((pred == Y[te]).mean()),
+                    "cluster_f1": PR.macro_f1(Y[te], pred, classes)}
+            base = per_k[str(args.k)] if str(args.k) in per_k else per_k[str(ks[0])]
+            runs.append({"seed": seed, **base, "per_k": per_k,
                          "test_scenes": [int(x) for x in np.sort(test_scenes)],
                          "n_train": int(tr.sum()), "n_test": int(te.sum()),
                          "ae_epochs": int(summ.get("best_epoch", -1))})
-            print(f"  [{slug} seed{seed}] acc {acc:.3f} f1 {f1:.3f} "
-                  f"(AE best ep {summ.get('best_epoch')})", flush=True)
+            print(f"  [{slug} seed{seed}] " + " ".join(
+                f"k{kk}:{per_k[str(kk)]['cluster_acc']:.3f}" for kk in ks), flush=True)
             del Ztr, Zte, model
 
         entry = {"runs": runs,

@@ -17,6 +17,22 @@ ref = `outputs/analysis/grid_phase/paper_ref/*.json`, supp = `outputs/analysis/g
 | 데이터 (grid 930판) | N1.5 grid 930 에피소드 (9 instruction × scene10 × noise10 + apple30), 89,766 record | 41 상단, ref(k24) n |
 | margin 정의 | I(상태열;GT) − I(clock;GT), clock은 상태 수를 발견 상태열에 맞춘 진행도 분위 | 40 §2 |
 
+
+## ★ 누수 제거판 (최종 게재 수치, 08-24) — Codex 리뷰 ⑤ 대응
+
+`ae_split_readout.py`: split(seed 0/1/2)마다 표준화·AE·KMeans·매핑을 **train scene만으로**
+재적합. 원자료 `manuscript/ref/split_ae_readout.json` (구 누수판 백업: readout_leakyAE.tsv).
+
+| 지표 | 구(전체 AE) | 신(무누수) |
+|---|---|---|
+| 정확도 중앙값 | 0.856 | **0.822** |
+| macro-F1 중앙값 | 0.570 | **0.574** |
+| vs 행동 이벤트 우위 | 10/10 | **9/10** (예외 DishwasherRack 0.489<0.516) |
+
+- Δacc instruction별 −0.05~+0.08 양방향(OvenRack +0.084 상승) → 체계적 누수 이득 없음.
+- 일부 변화는 AE seed 차이(구 seed0 고정, 신 1000+split) 잡음 포함.
+- k sweep도 무누수 재실행 (split_ae_ksweep.json, 완료 후 3.2·그림 갱신).
+
 ## ★ 주장 1(메인) — activation으로 현재 phase를 읽을 수 있다 (held-out)
 
 프로토콜: scene 단위 train/test 분리(test 2 scene, split seed 0/1/2 평균), 군집·최빈 phase
