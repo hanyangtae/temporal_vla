@@ -69,6 +69,18 @@ arXiv:2605.17204, 2026.
   — `scripts/analysis/grid_phase/esae_{prepare,readout}.py`), 필요 시 §4 한계 문단.
 - [확인: 노트 `docs/references/reading_notes/event_grounded_sae.md` (arXiv·저자·코드 URL 명시)]
 
+**[10] AWE**
+L. X. Shi, A. Sharma, T. Z. Zhao, C. Finn. *Waypoint-Based Imitation Learning for
+Robotic Manipulation.* CoRL 2023. arXiv:2307.14326.
+- 왜 인용: 행동 이벤트 대조군([5] 재현)의 waypoint 추출기. §2.3에서 이름 언급.
+- [확인: 웹 — arxiv.org/abs/2307.14326, proceedings.mlr.press/v229/shi23b]
+
+**[11] SigLIP**
+X. Zhai, B. Mustafa, A. Kolesnikov, L. Beyer. *Sigmoid Loss for Language Image
+Pre-Training.* ICCV 2023. arXiv:2303.15343.
+- 왜 인용: 행동 이벤트 대조군의 시각 임베딩. §2.3에서 이름 언급.
+- [확인: 웹 — arxiv.org/abs/2303.15343]
+
 ---
 
 ## 3. 활용처 근거 — steering / 실패 감지 (§1 도입부, §4 결론에서 인용)

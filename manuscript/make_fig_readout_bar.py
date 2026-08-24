@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Figure: unseen-scene phase readout accuracy (KAI-2026).
+"""Figure: unseen-scene phase readout accuracy — bar only (2-page version).
 
 Panel (a): median accuracy per method with per-instruction points overlaid.
            Methods: majority / time (clock) / [Event-SAE, if results exist]
@@ -81,8 +81,7 @@ def main() -> None:
     methods += [("cluster_acc", "activation\ncluster", "#4C72B0",
                  np.array([float(r["cluster_acc"]) for r in rows]))]
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(17.0 * CM, 5.8 * CM),
-                               gridspec_kw={"width_ratios": [1.35, 1.0]})
+    fig, ax1 = plt.subplots(figsize=(8.0 * CM, 5.4 * CM))
 
     # ---- (a) method comparison
     rng = np.random.default_rng(0)
@@ -97,53 +96,19 @@ def main() -> None:
     ax1.set_xticklabels([m[1] for m in methods])
     ax1.set_ylim(0, 1.05)
     ax1.set_ylabel("accuracy on unseen scenes")
-    ax1.set_title("(a) phase readout on unseen scenes: internal vs external", pad=5)
+    ax1.set_title("phase readout on unseen scenes", pad=5)
     ax1.grid(axis="y", lw=0.4, alpha=0.4, zorder=0)
     ax1.set_axisbelow(True)
 
-    # ---- (b) external baseline vs activation cluster, per instruction
-    if len(esae) >= 5:      # instruction 이 충분히 모이기 전엔 (b)는 clock 유지
-        x = np.array([esae.get(r["instruction"], np.nan) for r in rows])
-        xlabel = "behavioral event accuracy"
-    else:
-        x = np.array([float(r["causal_time_acc"]) for r in rows])
-        xlabel = "time (clock) accuracy"
-    y = np.array([float(r["cluster_acc"]) for r in rows])
-    good = ~np.isnan(x)
-    ax2.plot([0, 1], [0, 1], color="#999999", lw=0.8, ls="--", zorder=1)
-    ax2.scatter(x[good], y[good], s=26, color="#4C72B0", edgecolor="black",
-                linewidth=0.5, zorder=3)
-    # 라벨이 몰리는 우상단을 피해 x 순서대로 위/아래 번갈아 배치
-    idx_good = np.where(good)[0]
-    for rank, idx in enumerate(idx_good[np.argsort(x[good])]):
-        r, xi, yi = rows[idx], x[idx], y[idx]
-        dx, dy = (5, 4) if rank % 2 == 0 else (5, -9)
-        if xi > 0.75:                      # 오른쪽 끝은 왼쪽으로 뽑는다
-            dx, dy = (-6, 6 if rank % 2 == 0 else -10)
-        ax2.annotate(short(r["instruction"]), (xi, yi), fontsize=5.4,
-                     textcoords="offset points", xytext=(dx, dy), color="#333333",
-                     ha="right" if xi > 0.75 else "left")
-    lo = min(x[good].min(), y[good].min()) - 0.06
-    ax2.set_xlim(lo, 1.02)
-    ax2.set_ylim(lo, 1.02)
-    ax2.set_xlabel(xlabel)
-    ax2.set_ylabel("activation cluster accuracy")
-    n_win = int((y[good] > x[good]).sum())
-    ax2.set_title(f"(b) same protocol, per instruction ({n_win}/{int(good.sum())})",
-                  pad=4)
-    ax2.grid(lw=0.4, alpha=0.35, zorder=0)
-    ax2.set_axisbelow(True)
-
     out_dir = HERE / "figs"
     out_dir.mkdir(parents=True, exist_ok=True)
-    stem = out_dir / "fig_readout_accuracy"
+    stem = out_dir / "fig_readout_bar"
     fig.tight_layout()
     fig.savefig(stem.with_suffix(".pdf"))
     fig.savefig(stem.with_suffix(".png"), dpi=300)
     plt.close(fig)
     print(f"wrote {stem}.pdf / {stem}.png")
     print("median:", {m[0]: round(float(np.nanmedian(m[3])), 3) for m in methods})
-    print("activation cluster > external:", n_win, "/", int(good.sum()))
 
 
 if __name__ == "__main__":
