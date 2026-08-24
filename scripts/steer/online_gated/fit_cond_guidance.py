@@ -47,6 +47,18 @@ cond_margin.py 대비 차이 (전부 44 문서가 요구한 것):
   5. 게이트가 단일 split 이 아니라 5-seed CV 이고, 배포 W 는 전체 셋 fit 이다 (위 참조).
   전처리·릿지·B·margin·auroc 함수는 라인 단위로 동일하다.
 
+셀 선택 vs scene 그룹 (v4 지터 격자):
+  · **선택** 키 = 평탄 cell id si (= base_scene*100 + k, base 재사용 셀 = +99).
+    manifest·경로 glob·pkl `scene_idx` 가 전부 이 값이다.
+  · **그룹** 키 = base scene (평탄 si // 100). `--v4-jitter` 를 주면 scene 통계
+    (mh/mp/sp)·층화 분할·위약 라벨 순열·NPZ `scene{sc}__*` 키가 base scene 으로 접힌다.
+    serve 러너가 base scene(0-4)을 post 하므로 이게 serve 계약과 맞는다.
+  · ⚠ grid_root 아래에 plan_id 디렉토리가 여럿 섞여 있으면(v4 지터 격자 vs v2/v1 구
+    격자) **평탄 si 가 충돌**한다 — v2 base scene1 과 v4 scene0·k=1 이 둘 다
+    `scene_idx=1`. 이 경우 (scene_idx, noise_idx) 튜플 선택은 조용히 오귀속되므로
+    반드시 경로 명시 모드 `--episode-manifest` 를 쓴다 (glob·셀 필터 미사용,
+    scene 그룹 키 = manifest 의 base_scene 열, 라벨 정본 = manifest label).
+
 사용 (승준 노드, pkl 있는 곳):
   ~/anaconda3/bin/python scripts/steer/online_gated/fit_cond_guidance.py \
       --slug OpenDrawer_right --phases reach,grasp,pull
@@ -99,6 +111,20 @@ TRAIN_FRAC = 0.6
 GATE_SCHEME = "cv5_median_majority"
 CELL_RE = re.compile(r"/s(\d+)/n(\d+)/")
 SPEC = "44"
+V4_SCENE_STRIDE = 100       # v4 지터 격자: 평탄 cell id = base_scene*100 + k (base 재사용 = +99)
+
+
+def fold_scene(si: int, v4_jitter: bool) -> int:
+    """평탄 cell id → 그룹 키.
+
+    두 층위를 구분한다 (v4 지터 격자):
+      · **선택(=평탄 si)** — manifest·경로 glob·pkl 의 `scene_idx` 는 전부 평탄 id
+        (base_scene*100 + k, base 셀은 +99). 셀 필터는 이 평탄 id 로 그대로 매칭한다.
+      · **그룹(=base scene)** — scene 통계(mh/mp/sp)·층화 분할·라벨 순열·NPZ
+        `scene{sc}__*` 키는 base scene(평탄//100) 단위로 접는다. serve 러너가
+        base scene(0-4)을 post 하기 때문.
+    v4_jitter=False 면 항등 (기존 s0-4 격자와 완전 동일)."""
+    return si // V4_SCENE_STRIDE if v4_jitter else si
 
 
 # ------------------------------------------------------------------ 정확식 (cond_margin 이식)
@@ -129,6 +155,11 @@ def load_fit_cells(path: Path | None) -> tuple[set[tuple[int, int]], str]:
       (b) fit_setm 계열 headerless `pkl경로 \\t label \\t scene` → 경로에서 s*/n* 파싱
       (c) replay_cells 계열 headerless `scene_idx \\t noise_idx \\t env_seed ...`
     파일이 없으면 s0–4 × n0–4 fallback (+경고).
+
+    v4 지터 격자에서는 scene_idx 열이 **평탄 si**(base*100+k, base 셀=+99)를 담는다.
+    여기서 뽑는 셀 집합은 pkl 경로·`scene_idx` 와 대조하는 **선택** 키이므로 평탄 si
+    그대로 두고 접지 않는다 (접기는 --v4-jitter 의 그룹 단계에서만). 선택=평탄 si,
+    그룹=base scene.
     """
     if path is None or not path.exists():
         print(f"[warn] fit manifest 없음 ({path}) — s0-4 × n0-4 fallback 사용", flush=True)
@@ -165,9 +196,27 @@ def load_fit_cells(path: Path | None) -> tuple[set[tuple[int, int]], str]:
     return set(FALLBACK_CELLS), "fallback_s5m5"
 
 
+def _features(d: dict, layer: int, denoise_step: int) -> tuple[np.ndarray, np.ndarray]:
+    """rollout dict → (H, P). 추출식은 cond_margin 과 라인 단위로 동일."""
+    cap = [int(x) for x in d["capture_layers"]]
+    H = np.stack([np.asarray(h[cap.index(layer), denoise_step], dtype=np.float32).mean(0)
+                  for h in d["hidden_states"]])
+    st = [np.concatenate([np.asarray(s["observation.state.eef_pos_rel"]),
+                          np.asarray(s["observation.state.eef_quat_rel"]),
+                          np.asarray(s["observation.state.gripper_qpos"])])
+          for s in d["states"]]
+    P0 = np.stack(st).astype(np.float64)
+    P = np.hstack([P0, np.vstack([np.zeros((1, 9)), np.diff(P0, axis=0)])])
+    return H.astype(np.float64), P
+
+
 def load_episodes(slug: str, grid_root: Path, cells: set[tuple[int, int]],
-                  layer: int, denoise_step: int) -> list[dict]:
-    """rollout pkl → episode 레코드. 특징 추출식은 cond_margin 과 동일."""
+                  layer: int, denoise_step: int, v4_jitter: bool = False) -> list[dict]:
+    """rollout pkl → episode 레코드. 특징 추출식은 cond_margin 과 동일.
+
+    셀 **선택**(경로 사전필터·pkl scene_idx 대조·중복 제거)은 언제나 평탄 si 로 한다.
+    v4_jitter=True 면 레코드의 `scene`(=그룹 키)만 base scene 으로 접고, 평탄 id 는
+    `cell_si` 로 보존한다 (로그·provenance 용)."""
     pat = str(grid_root / f"*/*/{TASKMAP[slug]}/s*/n*/base/rollout.pkl")
     pkls = sorted(globmod.glob(pat))
     # 경로 기반 사전 필터 (pkl 로드 비용 절감). 최종 판정은 pkl 안의 scene_idx/noise_idx.
@@ -189,23 +238,92 @@ def load_episodes(slug: str, grid_root: Path, cells: set[tuple[int, int]],
         if cell in seen_cells:      # 다중 머신 수집 task 의 중복 셀 제거 (첫 등장만)
             continue
         seen_cells.add(cell)
-        cap = [int(x) for x in d["capture_layers"]]
-        H = np.stack([np.asarray(h[cap.index(layer), denoise_step], dtype=np.float32).mean(0)
-                      for h in d["hidden_states"]])
-        st = [np.concatenate([np.asarray(s["observation.state.eef_pos_rel"]),
-                              np.asarray(s["observation.state.eef_quat_rel"]),
-                              np.asarray(s["observation.state.gripper_qpos"])])
-              for s in d["states"]]
-        P0 = np.stack(st).astype(np.float64)
-        P = np.hstack([P0, np.vstack([np.zeros((1, 9)), np.diff(P0, axis=0)])])
+        H, P = _features(d, layer, denoise_step)
         eps.append({
-            "scene": int(d["scene_idx"]), "noise": int(d["noise_idx"]),
+            # scene = 그룹 키(v4 면 base scene), cell_si = 평탄 cell id 원본
+            "scene": fold_scene(int(d["scene_idx"]), v4_jitter),
+            "cell_si": int(d["scene_idx"]), "noise": int(d["noise_idx"]),
             "success": int(d["episode_success"]),
-            "H": H.astype(np.float64), "P": P,
+            "H": H, "P": P,
             "phases": list(d["feature_phases"]),
             # docs/04 규약 — 출처는 절대경로가 아니라 내용 지문으로 남긴다.
             "sig": hashlib.sha256(Path(p).read_bytes()).hexdigest()[:16],
         })
+    return eps
+
+
+def parse_episode_manifest(path: Path) -> list[dict]:
+    """경로 기반 episode manifest(헤더 tsv) → 행 dict 목록.
+
+    필수 열: `pkl_path` (grid_root 기준 상대 또는 절대), `label` (1=succ/0=fail),
+    `base_scene` (0-4, scene 그룹 키). 선택 열: `cell_si`, `noise_idx`.
+    numpy 없이도 동작하는 순수 파싱부 (단위 검증용으로 분리)."""
+    lines = [ln for ln in path.read_text(encoding="utf-8").splitlines()
+             if ln.strip() and not ln.startswith("#")]
+    if not lines:
+        raise SystemExit(f"episode manifest 비어 있음: {path}")
+    head = lines[0].split("\t")
+    need = ("pkl_path", "label", "base_scene")
+    missing = [c for c in need if c not in head]
+    if missing:
+        raise SystemExit(f"episode manifest 필수 열 없음 {missing} (head={head})")
+    idx = {c: head.index(c) for c in head}
+    rows: list[dict] = []
+    for ln in lines[1:]:
+        p = ln.split("\t")
+        r = {"pkl_path": p[idx["pkl_path"]].strip(),
+             "label": int(p[idx["label"]]),
+             "base_scene": int(p[idx["base_scene"]])}
+        for opt in ("cell_si", "noise_idx"):
+            if opt in idx and idx[opt] < len(p) and p[idx[opt]].strip() != "":
+                r[opt] = int(p[idx[opt]])
+        rows.append(r)
+    return rows
+
+
+def load_episodes_manifest(manifest: Path, grid_root: Path,
+                           layer: int, denoise_step: int) -> list[dict]:
+    """경로 명시 manifest 로 episode 를 고른다 (plan_id 혼재 grid_root 안전 경로).
+
+    grid_root 아래에 plan_id 디렉토리가 여럿 섞여 있으면 (v4=지터 격자, v2/v1=구
+    격자) **평탄 si 가 충돌한다**: v2 base scene1 과 v4 scene0·k=1 이 둘 다
+    `scene_idx=1` 이라 (scene_idx, noise_idx) 튜플 선택은 조용히 오귀속된다.
+    이 모드는 glob·셀 필터를 전혀 쓰지 않고 manifest 가 나열한 pkl 만 읽으며,
+    scene 그룹 키는 `base_scene` 열을 그대로 쓴다 (--v4-jitter 의 //100 폴딩과
+    같은 결과지만 출처가 명시적).
+
+    label 정본 = manifest. pkl 내부 `episode_success` 와 어긋나면 fail-loud.
+    """
+    rows = parse_episode_manifest(manifest)
+    print(f"# episode manifest {manifest.name}: {len(rows)}행 (경로 명시 모드 — "
+          f"glob/셀 필터 미사용)", flush=True)
+    eps: list[dict] = []
+    mismatch: list[str] = []
+    for r in rows:
+        p = Path(r["pkl_path"]).expanduser()
+        if not p.is_absolute():
+            p = grid_root / p
+        if not p.exists():
+            raise SystemExit(f"episode manifest 의 pkl 없음: {r['pkl_path']}")
+        with open(p, "rb") as f:
+            d = pickle.load(f)
+        pkl_succ = int(d["episode_success"])
+        if pkl_succ != r["label"]:
+            mismatch.append(f"{r['pkl_path']}: manifest label={r['label']} vs "
+                            f"pkl episode_success={pkl_succ}")
+        H, P = _features(d, layer, denoise_step)
+        eps.append({
+            "scene": int(r["base_scene"]),          # 그룹 키 = manifest 명시 base scene
+            "cell_si": int(r.get("cell_si", d["scene_idx"])),   # 평탄 si (기록용)
+            "noise": int(r.get("noise_idx", d["noise_idx"])),
+            "success": int(r["label"]),             # 라벨 정본 = manifest
+            "H": H, "P": P,
+            "phases": list(d["feature_phases"]),
+            "sig": hashlib.sha256(p.read_bytes()).hexdigest()[:16],
+        })
+    if mismatch:
+        raise SystemExit("episode manifest label 불일치 %d건 (fail-loud):\n  %s"
+                         % (len(mismatch), "\n  ".join(mismatch[:20])))
     return eps
 
 
@@ -546,6 +664,16 @@ def main() -> None:
                     help="denoise step 인덱스 (기본 3 = 마지막)")
     ap.add_argument("--min-train-eps", type=int, default=MIN_TRAIN_EPS,
                     help=f"등록 게이트의 클래스당 train episode 하한 (기본 {MIN_TRAIN_EPS})")
+    ap.add_argument("--episode-manifest", type=Path, default=None,
+                    help="경로 명시 episode manifest (헤더 tsv: pkl_path·label·base_scene "
+                         "[·cell_si·noise_idx]). 지정하면 glob/셀 필터를 쓰지 않고 나열된 "
+                         "pkl 만 로드하고 scene 그룹 키로 base_scene 열을 쓴다. plan_id 가 "
+                         "섞인 grid_root(v4 지터 vs v2/v1)에서는 평탄 si 가 충돌하므로 "
+                         "이 모드를 쓸 것")
+    ap.add_argument("--v4-jitter", action="store_true",
+                    help="v4 지터 격자 — pkl 의 평탄 cell id(s=base_scene*100+k, base=+99)를 "
+                         "base scene(//100)으로 접어 scene 통계·층화·등록을 base scene "
+                         "단위로 묶는다 (셀 선택 자체는 평탄 si 그대로)")
     ap.add_argument("--force-register", action="store_true",
                     help="게이트 판정을 무시하고 W가 fit된 전 phase를 등록 (탐색 라운드 전용 "
                          "— 45 스펙의 \"미달 cell=identity\" 안전장치 해제)")
@@ -564,7 +692,10 @@ def main() -> None:
     out_dir = (args.out_dir or
                Path(f"outputs/steer/online_pipe/{args.slug}/condg_s5m5")).expanduser()
 
-    if args.cell_scenes is not None or args.cell_noises is not None:
+    if args.episode_manifest is not None:
+        # 경로 명시 모드 — plan_id 혼재로 평탄 si 가 충돌하는 grid_root 의 유일한 안전 경로.
+        cells, cells_mode = set(), f"episode_manifest:{args.episode_manifest.name}"
+    elif args.cell_scenes is not None or args.cell_noises is not None:
         if not (args.cell_scenes and args.cell_noises):
             raise SystemExit("--cell-scenes 와 --cell-noises 는 쌍으로 지정")
 
@@ -576,13 +707,30 @@ def main() -> None:
         cells_mode = f"explicit_s{args.cell_scenes}_n{args.cell_noises}"
     else:
         cells, cells_mode = load_fit_cells(cells_tsv)
-    eps = load_episodes(args.slug, grid_root, cells, args.layer, args.denoise_step)
+    # 셀 선택(cells)은 평탄 si 기준 그대로 — --cell-scenes/--cell-noises 나 manifest 의
+    # scene_idx 열이 평탄 si 를 담고 있어야 pkl glob 필터와 맞는다. 접기는 그룹 단계에서만.
+    if args.episode_manifest is not None:
+        eps = load_episodes_manifest(args.episode_manifest.expanduser(), grid_root,
+                                     args.layer, args.denoise_step)
+    else:
+        eps = load_episodes(args.slug, grid_root, cells, args.layer, args.denoise_step,
+                            v4_jitter=args.v4_jitter)
     if not eps:
         raise SystemExit(f"fit cell 에 해당하는 rollout 0개 (slug={args.slug})")
     n_s = sum(e["success"] for e in eps)
-    used_cells = sorted((e["scene"], e["noise"]) for e in eps)
+    used_cells = sorted((e["cell_si"], e["noise"]) for e in eps)   # provenance = 평탄 si
     print(f"[{args.slug}] episode {len(eps)} (succ {n_s} / fail {len(eps) - n_s}) "
           f"scene {sorted({e['scene'] for e in eps})} cells_mode={cells_mode}", flush=True)
+    if args.v4_jitter or args.episode_manifest is not None:
+        fold_summary = {}
+        for e in eps:
+            g = fold_summary.setdefault(e["scene"], [set(), 0])
+            g[0].add((e["cell_si"], e["noise"]))
+            g[1] += 1
+        tag = "episode-manifest" if args.episode_manifest is not None else "v4-jitter"
+        print(f"  [{tag}] base scene별 접기: " + ", ".join(
+            f"s{sc}={len(v[0])}셀/{v[1]}ep" for sc, v in sorted(fold_summary.items())),
+            flush=True)
 
     base_meta = {
         "spec": SPEC, "lambda": "1e-3*n", "seed": args.seed, "slug": args.slug,
@@ -613,6 +761,17 @@ def main() -> None:
         "source": "docs/steering/44_cond_guidance_operator.md + "
                   "scripts/analysis/grid_phase/cond_margin.py",
     }
+    if args.v4_jitter:   # 기본 off 일 때 meta 를 건드리지 않도록 켰을 때만 추가
+        base_meta["v4_jitter"] = True
+        base_meta["scene_grouping"] = ("셀 선택=평탄 si(base*100+k, base=+99) / "
+                                       "그룹·NPZ scene 키=base scene(평탄//100)")
+        base_meta["fit_base_scenes"] = sorted({int(e["scene"]) for e in eps})
+    if args.episode_manifest is not None:
+        base_meta["episode_manifest"] = args.episode_manifest.name   # 절대경로 미기록
+        base_meta["scene_grouping"] = ("episode manifest 의 base_scene 열 = 그룹·NPZ scene 키 "
+                                       "(plan_id 혼재 시 평탄 si 충돌 회피)")
+        base_meta["fit_base_scenes"] = sorted({int(e["scene"]) for e in eps})
+        base_meta["label_source"] = "episode manifest 의 label 열 (pkl success 와 대조 검증)"
 
     labels_treat = [e["success"] for e in eps]
     res_treat: dict[str, dict] = {}
