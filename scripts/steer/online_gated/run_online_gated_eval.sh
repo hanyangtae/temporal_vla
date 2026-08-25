@@ -464,9 +464,10 @@ start_serve() {  # gpu port extra_flags...
     fi
     docker exec -d -e CUDA_VISIBLE_DEVICES="$gpu" lerobot bash -lc "$inner"
   fi
-  # health poll (로드 중 VRAM 피크 때문에 순차 기동 — 워커별 1 serve 라 여기서 대기)
+  # health poll (로드 중 VRAM 피크 때문에 순차 기동 — 워커별 1 serve 라 여기서 대기).
+  # 공유 GPU 에 타인 대형 작업이 있으면 로딩이 12분+ 걸릴 수 있어 한도는 env 로 조절.
   local ok=0
-  for _ in $(seq 1 150); do
+  for _ in $(seq 1 "${SERVE_BOOT_TRIES:-150}"); do
     if health_curl "$port" | grep -q '"status":"ok"'; then ok=1; break; fi
     sleep 5
   done
