@@ -320,6 +320,10 @@ serve_flags_for() {  # slug arm → serve 추가 플래그 (scan_npz_base 선행
     flags="${flags} --groot-dit-capture-layers ${DETECTOR_LAYERS} --groot-dit-token-pool ${TOKEN_POOL}"
     flags="${flags} --failure-detector ${ckpt} --failure-alpha ${FAILURE_ALPHA}"
     flags="${flags} --failure-task ${FAILURE_TASK:-$slug}"
+  elif [ "${CAPTURE_FEATURES:-0}" = 1 ]; then
+    # 진단 캡처: detector 없는 arm(serve) 도 같은 block-residual 캡처를 강제 —
+    # 없으면 serve 기본(pre-decode action tokens, 1024d)이 나가 fit 공간과 안 맞는다.
+    flags="${flags} --groot-dit-capture-layers ${DETECTOR_LAYERS} --groot-dit-token-pool ${TOKEN_POOL}"
   fi
   printf '%s\n' "$flags"
 }
