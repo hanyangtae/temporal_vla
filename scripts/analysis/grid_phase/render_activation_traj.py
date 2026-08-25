@@ -55,6 +55,8 @@ C_POST = "#ffb03a"     # 개입 구간 궤적
 C_TEXT = "#e8ecf2"
 C_DIM = "#98a2b0"
 TRAIL_N = 15
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))))
 
 # 캔버스: 플롯 720x780 + 로봇 3분할 열 240x780 = 960x780 (yuv420p 용 짝수)
 PLOT_W, PLOT_H = 720, 780
@@ -257,6 +259,29 @@ def robot_column(pkl_path: str, n_rec: int, d: dict, video_path: str | None):
     return cols[..., ::-1].copy()  # BGR -> RGB
 
 
+def offline_detector(d: dict, n_rec: int, ckpt_path: str, task: str):
+    """detector 를 record 시퀀스에 오프라인으로 돌려 (score, δ, 첫 발화 t) 를 낸다.
+
+    rs_* arm 은 serve 에 detector 가 안 붙어 기록이 없지만 입력(L12/denoise last/49토큰)
+    은 pkl 에 그대로 있다. 온라인 게이팅이 아니었으므로 표시는 '사후' 로 명시한다.
+    """
+    if not os.path.exists(ckpt_path):
+        die(f"detector ckpt 없음: {ckpt_path}")
+    sys.path.insert(0, REPO_ROOT)
+    from src.failure_online.online_failure import OnlineFailureDetector
+
+    det = OnlineFailureDetector.from_checkpoint(ckpt_path, alpha=0.1, task=task)
+    li = det.resolve_layer_index(d.get("capture_layers"))
+    det.reset()
+    sc, dl = np.empty(n_rec, np.float32), np.empty(n_rec, np.float32)
+    for i, h in enumerate(d["hidden_states"]):
+        arr = np.asarray(h.float().cpu().numpy() if hasattr(h, "float") else h)
+        r = det.step(det.feature_from_hidden(arr, li))
+        sc[i], dl[i] = r["score"], r["delta"]
+    fire = np.nonzero(sc > dl)[0]
+    return sc, dl, (int(fire[0]) if len(fire) else None)
+
+
 # ---------------------------------------------------------------- 오버레이 문구
 def intervention_label(arm: str, t: int, st: int, trig: int, phase: str) -> str:
     if arm == "base":
@@ -294,7 +319,16 @@ def render(args) -> dict:
     n = len(xy)
     phases = phase_labels(d, n)
     scores = detector_series(d, n)
-    deltas = detector_deltas(d, n, args.detector_ckpt) if scores is not None else None
+    posthoc = False
+    fire_t = None
+    if scores is not None:
+        deltas = detector_deltas(d, n, args.detector_ckpt)
+    elif args.detector_ckpt and args.detector_task:
+        # 기록 없음(rs_* arm) → 같은 정본 ckpt 로 사후 재계산
+        scores, deltas, fire_t = offline_detector(d, n, args.detector_ckpt, args.detector_task)
+        posthoc = True
+    else:
+        deltas = None
     succ = int(d.get("episode_success", 0) or 0)
     st, trig = int(args.st), int(args.trig)
     cols = None if args.no_robot else robot_column(args.pkl, n, d, args.video)
@@ -399,9 +433,14 @@ def render(args) -> dict:
             f"개입: {intervention_label(args.arm, t, st, trig, phases[t])}",
         ]
         if scores is not None:
-            fired = " ▲발화" if (show_tg and t >= trig) else ""
+            if posthoc:
+                hit = fire_t is not None and t >= fire_t
+            else:
+                hit = show_tg and t >= trig
+            fired = " ▲발화" if hit else ""
             dl = "" if deltas is None else f" / δ {deltas[t]:.3f}"
-            lines.append(f"검출 p {scores[t]:.3f}{dl}{fired}")
+            tag = " (사후)" if posthoc else ""
+            lines.append(f"검출 p{tag} {scores[t]:.3f}{dl}{fired}")
         txt.set_text("\n".join(lines))
         prog.set_width(max(t, 1e-6))
         prog.set_color(col)
@@ -420,7 +459,7 @@ def render(args) -> dict:
     size = os.path.getsize(args.out)
     info = {"case": args.case, "arm": args.arm, "records": n, "frames": n,
             "success": succ, "detector": scores is not None,
-            "delta": deltas is not None,
+            "delta": deltas is not None, "posthoc": posthoc,
             "size": f"{out_w}x{H}", "bytes": size, "out": args.out}
     print(json.dumps(info, ensure_ascii=False))
     return info
@@ -439,6 +478,8 @@ def main():
     ap.add_argument("--crf", type=int, default=26)
     ap.add_argument("--video", default=None, help="로봇 3분할 영상 (기본: pkl 옆 video.mp4)")
     ap.add_argument("--no-robot", action="store_true", help="로봇 3분할 열 생략")
+    ap.add_argument("--detector-task", default=None,
+                    help="detector cp_bands 의 task 키 (기록 없는 arm 을 사후 채점할 때 필요)")
     ap.add_argument("--detector-ckpt", default=None,
                     help="발화 임계 δ_t 를 읽을 detector ckpt (pkl 의 band_L·bw 와 대조 검증)")
     ap.add_argument("--font", default=None)
