@@ -515,7 +515,9 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
     if [ "$scene" -ge 100 ]; then base_scene=$((scene / 100)); else base_scene="$scene"; fi
   fi
   local CAP_GRID_ARGS=()
-  if [ "${CAPTURE_FEATURES:-0}" = 1 ]; then
+  # CAP_GRID=0: 좌표 레이아웃 없이 raw_rollouts 삼중항으로 저장 (진단 캡처 — v4 평탄
+  # cell id 는 plan 좌표 검증(docs/04 §5.1)과 어긋나므로 진단은 이 경로를 쓴다).
+  if [ "${CAPTURE_FEATURES:-0}" = 1 ] && [ "${CAP_GRID:-1}" = 1 ]; then
     # pkl 수집 규약(docs/04 §8) — 진단 캡처도 좌표 레이아웃으로 저장
     CAP_GRID_ARGS=(--grid-root "$(to_cont "$out_host")/diag_grid" --plan-json "$(to_cont "$PLAN_JSON_ABS")"
                    --scene-idx "$((ep / EP_IDX_STRIDE))" --noise-idx "$((ep % EP_IDX_STRIDE))"
