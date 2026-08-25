@@ -597,6 +597,9 @@ def parse_args() -> argparse.Namespace:
     from src.collect.plan import add_grid_args  # noqa: PLC0415
 
     add_grid_args(parser)
+    parser.add_argument("--diag-unplanned", action="store_true",
+                        help="진단 캡처: plan 좌표 검증 생략, <grid-root>/diag/ 하위에 저장 "
+                             "(정본 store 와 분리; v4 평탄 cell id 진단용)")
     parser.add_argument("--cell-id", default=None)
     parser.add_argument("--cell-index", type=int, default=None)
     parser.add_argument("--canonical-instruction", default=None)
@@ -885,7 +888,9 @@ def run() -> dict[str, Any]:
             "— serve 를 --failure-detector <ckpt.pt> 로 기동할 것")
     from src.collect.plan import resolve_grid  # noqa: PLC0415
 
-    grid_plan, grid_cell = resolve_grid(args)
+    # --diag-unplanned: 진단 캡처 — plan 대조를 생략한다 (grid_dir 은 diag/ 하위로).
+    grid_plan, grid_cell = ((None, None) if getattr(args, "diag_unplanned", False)
+                            else resolve_grid(args))
     # arm 결정 — steering 이 걸린 serve 로 돌면 자동으로 arm 디렉토리(armsig)가 된다.
     arm_name, arm_params = _resolve_arm(args, serve_identity)
     if arm_name is not None:
@@ -1173,6 +1178,18 @@ def run() -> dict[str, Any]:
                     **grid_cell.as_metadata(),
                     "plan_id": grid_plan.plan_id,
                     "armsig": grid_dir.name.split("__")[0],
+                })
+            elif getattr(args, "diag_unplanned", False) and getattr(args, "grid_root", None):
+                # 진단 캡처 전용 — plan 대조 없이 diag/ 하위 좌표에 쓴다 (docs/04 정본
+                # store 와 절대 섞이지 않게 diag 접두). v4 평탄 cell id 는 plan 좌표
+                # 검증과 어긋나므로(base 슬롯 부재·명칭 불일치) 이 경로만 허용한다.
+                grid_dir = (Path(args.grid_root) / "diag"
+                            / (cell_id or args.task)
+                            / f"s{args.scene_idx}" / f"n{args.noise_idx}"
+                            / (getattr(args, "arm_dir", None) or "arm"))
+                extra_metadata.update({
+                    "diag_unplanned": True,
+                    "scene_idx": args.scene_idx, "noise_idx": args.noise_idx,
                 })
             if getattr(args, "jitter_reset_idx", None) is not None:
                 extra_metadata["jitter_reset_idx"] = args.jitter_reset_idx
