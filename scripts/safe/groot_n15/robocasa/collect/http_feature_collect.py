@@ -1289,6 +1289,7 @@ def run() -> dict[str, Any]:
                     task_suite_name="lerobot_groot_n15_robocasa",
                     extra_metadata=extra_metadata,
                     grid_dir=grid_dir,
+                    diag_unplanned=bool(getattr(args, "diag_unplanned", False)),
                     # steered 수집(arm)일 때만 개입의 진실 기록 — base 는 None
                     arm_config=(
                         None if (arm_params is None or grid_dir is None) else {
