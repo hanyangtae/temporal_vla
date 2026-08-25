@@ -270,3 +270,31 @@ scene 에 따라 방향이 뒤집힌다"와 같은 성질이 cross-slug 방향�
 - S1 도구의 잔존 가치: detector 그룹핑이 아니라 **표현 구조 자체의 지도**
   (방향 공유·안정 반전·scene-불안정 slug 식별 — oven 형 진단). steering 쪽
   연산자 공유·phase gating 설계의 입력으로 유효.
+
+---
+
+## 부록 — phase 판독기 fit 단위 비교 (instruction vs task vs global, v2)
+
+사용자 질문(08-25): SAFE failure detector 는 task(env family) 단위인데, phase 판독기
+(PCA-64w→KMeans)도 task 단위로 가도 되는가. v2 segA 2236판, 평가는 항상 instruction 별
+margin(vs clock)·purity. `intrinsic_phase.py --scope per-family` 신설.
+
+| 비교 (같은 k) | 결과 (10 instruction, |Δmargin|≤0.02 동) |
+|---|---|
+| k16: instruction vs task | task 2승 / 0패 / 8동 |
+| k24: instruction vs task | task 0승 / 4패 / 6동 |
+| k24: task vs global | task 10승 0패 (예: drawerL +0.64 vs +0.14) |
+
+- **판정: instruction ≈ task (동률), global 만 명확히 손해.** k8 에서 보였던 "PPCC 는
+  family 로 뭉치면 이득"(candle +0.07→+0.44)은 k 부족 상황에서 표본 증가가 돕던 것 —
+  k 를 16~24 로 주면 단위 차이가 사라진다. **지배 변수는 단위가 아니라 k** (v2 에서
+  k16~24 ≫ k8, 전 instruction).
+- 운영 권고: 품질 동률이므로 SAFE detector 와 단위를 맞춰 **task 단위 + k16~24** 채택
+  가능 (판독기 수 10→6, family 내 새 instruction 에 재사용 여지). global(모델 1개)은 불가.
+- 한계: GT-phase 정렬 기준 판정. succ/fail 층화 기준(41 §5)의 단위 비교는 별도이며,
+  41 의 "global k24 < per-instruction k8"도 k 교란을 포함했을 수 있음 (미재검).
+- 부수 실측 (rack out 2종, gating 설계용): intrinsic k8 은 push-in(역행)/pull-out(진행)을
+  약하게만 구분 (다수결 0.73/0.79, 기저 0.67/0.56). 그러나 raw 1536d 선형 probe 는
+  **0.905/0.862** (ep-holdout) — 정보는 있고 비지도 k8 이 그 축으로 안 자를 뿐.
+  gating 은 cluster + 방향 판독기(w 투영 1회) 하이브리드 권고. GT 라벨 분포:
+  성공판은 전원 pull-out 도달(111/111·75/75), 실패판은 disengage+reach 맴돌기 지배.
