@@ -37,7 +37,7 @@
 {\bfseries 요 약}
 \end{center}
 \begin{quote}\small
-Vision-Language-Action(VLA) 모델이 작업을 수행할 때 스스로 현재 어떤 \term{작업 단계(action phase)}를 진행중인지를 우리가 알 수 있다면, 이는 VLA모델에 대한 설명가능성과 추론 시 제어 및 개입의 출발점이 된다. 본 연구는 모델이 현재 수행 중인 \term{phase}를 내부 activation에서 판독할 수 있음을 보인다. GR00T N1.5의 action head(DiT)의 residual stream activation을 라벨 없이 clustering하면, 각 cluster는 특정 \term{primitive action phase}에 국한되어 나타나고 다른 \term{phase}에서는 잘 나타나지 않는다. \rev{이 대응을 이용하면 학습에 사용하지 않은 scene에서도 activation 한 스텝만으로 현재 \term{phase}를 정확도 0.82로 읽을 수 있으며,} 이는 진행 시간만 쓰는 시간 대조군과 외부 관찰 기반 행동 이벤트 대조군을 웃돈다. cluster는 사람이 정의한 \term{phase}보다 더 잘게 나뉘지만, 각 조각이 \term{phase}에 대해 순수하기 때문에 판독이 성립한다. \rev{이 구조는 압축 모델을 AE에서 SAE로 바꾸어도, 독립적으로 재수집한 데이터에서도 재현된다.} 즉, VLA activation에는 \term{phase}와 정합적인 구조가 존재해 추론 중 online detection이 가능하며, 본 논문에서 이를 unseen scene에서 평가하여 확인하였다.
+Vision-Language-Action(VLA) 모델이 작업을 수행할 때 스스로 현재 어떤 \term{작업 단계(action phase)}를 진행중인지를 우리가 알 수 있다면, 이는 VLA모델에 대한 설명가능성과 추론 시 제어 및 개입의 출발점이 된다. 본 연구는 모델이 현재 수행 중인 \term{phase}를 내부 activation에서 판독할 수 있음을 보인다. GR00T N1.5의 action head(DiT)의 residual stream activation을 라벨 없이 clustering하면, 각 cluster는 특정 \term{primitive action phase}에 국한되어 나타나고 다른 \term{phase}에서는 잘 나타나지 않는다. \rev{이 대응을 이용하면 학습에 사용하지 않은 scene에서도 activation 한 스텝만으로 현재 \term{phase}를 정확도 0.82로 읽을 수 있으며,} 이는 진행 시간만 쓰는 시간 대조군과 외부 관찰 기반 행동 이벤트 대조군을 웃돈다. Cluster는 사람이 정의한 \term{phase}보다 더 잘게 나뉘지만, 각 조각이 \term{phase}에 대해 순수하기 때문에 판독이 성립한다. \rev{이 구조는 압축 모델을 AE에서 SAE로 바꾸어도, 독립적으로 재수집한 데이터에서도 재현된다.} 즉, VLA activation에는 \term{phase}와 정합적인 구조가 존재해 추론 중 online detection이 가능하며, 본 논문에서 이를 unseen scene에서 평가하여 확인하였다.
 \end{quote}
 \vspace{0.8ex}
 }]
@@ -57,7 +57,7 @@ Sparse Auto Encoder(SAE)로 residual stream에서 grasp, transport와 같은 pri
 
 \rev{\rev{detector의} 학습과 평가는 scene 단위로 분리한다. 10개 scene 중 8개 scene의 rollout 80개로 학습하고 나머지 2개 scene의 rollout 20개로 평가하며, 이 조합을 무작위로 3가지 만들어 조합마다 표준화, AE, clustering, \term{phase} 매핑을 학습 scene만으로 새로 적합한 뒤 3조합의 평균을 보고한다. AE와 KMeans 학습에는 사람이 주석한 \term{phase} 라벨(instruction당 3--6개)을 쓰지 않으며, 학습 scene의 라벨은 cluster를 최빈 \term{phase}에 대응시키는 매핑에만, 평가 scene의 라벨은 채점에만 쓴다.}
 
-\textbf{Clustering.} \rev{raw activation 1{,}536차원을 오토인코더(AE)로 16차원 latent로 압축한 뒤 KMeans로 스텝 단위 clustering한다. cluster 수는 instruction별 분석에서 $k=8$, 전체 통합 분석에서 $k=24$를 사용한다. cluster 중심은 학습 split에서만 만들고, 평가 split의 스텝은 가장 가까운 cluster 중심에 배정한다. \rev{다시 clustering할 필요가 없으므로} 추론 중 스텝 단위의 online 판독이 가능하다.}
+\textbf{Clustering.} \rev{Raw activation 1{,}536차원을 오토인코더(AE)로 16차원 latent로 압축한 뒤 KMeans로 스텝 단위 clustering한다. Cluster 수는 instruction별 분석에서 $k=8$, 전체 통합 분석에서 $k=24$를 사용한다. Cluster 중심은 학습 split에서만 만들고, 평가 split의 스텝은 가장 가까운 cluster 중심에 배정한다. \rev{다시 clustering할 필요가 없으므로} 추론 중 스텝 단위의 online 판독이 가능하다.}
 
 \textbf{Baseline.} Manipulation task의 \term{phase}는 대체로 순서대로 진행되므로, activation을 보지 않고 경과 시간만 보는 \rev{detector도} \term{phase}를 상당 부분 맞힌다. 이 몫을 빼기 위한 \textbf{시간 대조군}은 에피소드 내 상대 진행도 $t/T$를 발견된 \rev{cluster}
 수와 같은 개수의 구간으로 \rev{등분위 분할해 얻은 상태열이다. 상태 수를 맞춰야 같은 해상도에서 비교되기 때문이다.}
@@ -80,7 +80,7 @@ waypoint의 이벤트가 갖는 \term{phase}로 예측한다.
 \label{eq:margin}
 \end{equation}
 %
-margin이 양수라는 것은 activation이 ``에피소드의 몇 \% 지점인가''라는 시간 정보만으로는
+Margin이 양수라는 것은 activation이 ``에피소드의 몇 \% 지점인가''라는 시간 정보만으로는
 설명되지 않는 \term{phase} 정보를 추가로 담고 있다는 뜻이다.
 
 MI는 한 \term{phase}가 여러 \rev{cluster}로 쪼개져도 거의 떨어지지 않는, \emph{각 \rev{cluster}가 한 \term{phase}에 몰려 있는지}를 재는 양이다. 이를 직접 보는 지표가
@@ -98,16 +98,16 @@ MI는 한 \term{phase}가 여러 \rev{cluster}로 쪼개져도 거의 떨어지�
 \end{figure}
 \section{결 과}
 \textbf{VLA 내부 activation 한 스텝만으로 해당 \term{phase}를 읽을 수 있다.} \rev{Unseen scene에서 측정한 정확도의 instruction 중앙값은 activation 비지도 cluster가 0.82, macro-F1은 0.57이다(Figure~\ref{fig:readout}). 시간 대조군은 정확도 0.61--0.68에 그치고, 외부 관찰로 \term{phase}를 나누는 행동 이벤트 대조군\cite{egsae}은 0.65와 macro-F1 0.37에 그친다.}
-\rev{같은 프로토콜에서 activation cluster는 10개 instruction 중 9개에서 행동 이벤트 대조군을 앞서며, 유일한 예외는 모든 방법이 무작위 수준에 머무는 DishwasherRack이다.} 즉 ``에피소드가 얼마나 진행됐는가''도, 밖에서 관찰한 이벤트 구조도 내부 표상만큼은 알려주지 못한다. \rev{특히 비지도 cluster만으로 0.82가 나온다는 점이 중요하다. 구조 자체는 라벨 없이 activation에서 나왔고, 라벨은 각 cluster에 이름을 붙이는 데만 쓰였다.} \rev{cluster} 중심을 train에서 만들고 평가 스텝은 최근접 배정으로 옮기므로, \rev{다시 clustering하지 않고} 추론 중 스텝 단위로 그대로 돌릴 수 있다.
+\rev{같은 프로토콜에서 activation cluster는 10개 instruction 중 9개에서 행동 이벤트 대조군을 앞서며, 유일한 예외는 모든 방법이 무작위 수준에 머무는 DishwasherRack이다.} 즉 ``에피소드가 얼마나 진행됐는가''도, 밖에서 관찰한 이벤트 구조도 내부 표상만큼은 알려주지 못한다. \rev{특히 비지도 cluster만으로 0.82가 나온다는 점이 중요하다. 구조 자체는 라벨 없이 activation에서 나왔고, 라벨은 각 cluster에 이름을 붙이는 데만 쓰였다.} \rev{Cluster} 중심을 train에서 만들고 평가 스텝은 최근접 배정으로 옮기므로, \rev{다시 clustering하지 않고} 추론 중 스텝 단위로 그대로 돌릴 수 있다.
 
 \textbf{발견된 단위는 사람이 정의한 \term{phase}보다 잘게 나뉜다.} 발견된 상태의 평균 구간 길이는 GT \term{phase}보다 짧고(k=8에서 10개 instruction 전부), 에피소드당 전환 수는 상한($k-1$회)을 모두 넘어 같은 상태를 여러 번 재방문한다.
 전환 시점 자체는 GT 경계와 정렬되지 않으나(z $-$1.0 $\sim$ +0.5), GT \term{phase} 단위로 병합하면 정렬이 유의해진다(z +1.3 $\sim$ +4.9). \new{다만 이 세분이 의미 있는 하위 구조인지는 본 연구의 범위를 넘는다. \rev{판독 성능은 $k$가 \term{phase} 수를 넘기만 하면 평평하므로($k=8\sim32$에서 0.82--0.88), 앞의 결과는 특정 $k$ 선택에 기대지 않는다.}}
 
-\textbf{각 \rev{cluster}는 특정 \term{phase}에 국한된다.} 한 \term{phase}에서 나타난 \rev{cluster}는 다른 \term{phase}에서 잘 나타나지 않는다(Figure 1a). \rev{cluster를 최빈 \term{phase}로 읽었을 때의 순도 중앙값은 0.875, MI 중앙값은 0.670 bits이며, 시간 대조군 margin의 중앙값은 +0.343 bits로 10개 instruction 전부에서 양수다.} \rev{cluster}가 최빈 \term{phase} 밖에서 나타나는 비율(\term{off-phase rate})의 중앙값은 0.07이다(instruction별 0.002$\sim$0.45). \new{$k$가 \term{phase} 수보다 크면 실제 \term{phase}보다 많은 \rev{cluster}가 생기는데, 그런 상황에서도 각 \rev{cluster}는 특정 \term{phase}에 국한되어 나타나므로 한 \term{phase}를 여러 \rev{cluster}가 나눠 갖는, 대체로 다대일인 매핑이 된다. \rev{따라서 cluster를 최빈 \term{phase}에 대응시키는 매핑으로 현재 \term{phase}를 읽는 데 지장이 없다. 이것이 세밀한 하위 분할과 \term{phase} 판독이 공존하는 이유다.}}
+\textbf{각 \rev{cluster}는 특정 \term{phase}에 국한된다.} 한 \term{phase}에서 나타난 \rev{cluster}는 다른 \term{phase}에서 잘 나타나지 않는다(Figure 1a). \rev{Cluster를 최빈 \term{phase}로 읽었을 때의 순도 중앙값은 0.875, MI 중앙값은 0.670 bits이며, 시간 대조군 margin의 중앙값은 +0.343 bits로 10개 instruction 전부에서 양수다.} \rev{Cluster}가 최빈 \term{phase} 밖에서 나타나는 비율(\term{off-phase rate})의 중앙값은 0.07이다(instruction별 0.002$\sim$0.45). \new{$k$가 \term{phase} 수보다 크면 실제 \term{phase}보다 많은 \rev{cluster}가 생기는데, 그런 상황에서도 각 \rev{cluster}는 특정 \term{phase}에 국한되어 나타나므로 한 \term{phase}를 여러 \rev{cluster}가 나눠 갖는, 대체로 다대일인 매핑이 된다. \rev{따라서 cluster를 최빈 \term{phase}에 대응시키는 매핑으로 현재 \term{phase}를 읽는 데 지장이 없다. 이것이 세밀한 하위 분할과 \term{phase} 판독이 공존하는 이유다.}}
 
-\textbf{\term{phase} 정보는 장면 암기로 환원되지 않는다.} \rev{activation에는 scene 정보도 섞여 있다(instruction별 mi\_scene 0.02$\sim$0.86 bits). 그러나 scene별 평균을 제거한 잔차에서 scene 정보는 중앙값 0.44에서 0.27 bits로 크게 줄어드는 반면, \term{phase} margin은 +0.34에서 +0.31로 10개 instruction 전부에서 양수로 유지된다(Figure 1b).}
+\textbf{\term{Phase} 정보는 장면 암기로 환원되지 않는다.} \rev{Activation에는 scene 정보도 섞여 있다(instruction별 mi\_scene 0.02$\sim$0.86 bits). 그러나 scene별 평균을 제거한 잔차에서 scene 정보는 중앙값 0.44에서 0.27 bits로 크게 줄어드는 반면, \term{phase} margin은 +0.34에서 +0.31로 10개 instruction 전부에서 양수로 유지된다(Figure 1b).}
 
-\textbf{구조는 모델·데이터를 바꿔도 재현된다.} \rev{별도의 23-에피소드 분석셋에서, 구조가 다른 두 압축 모델(AE와 SAE)이 같은 스텝에서 전환하고}(F1 0.66$\sim$0.75, 무작위 0.51$\sim$0.53, z +8.8$\sim$+13.5), 독립 재수집 데이터에서 새로 학습해도 같은 성질이 나타난다(seed 간 F1 0.55$\sim$0.58, z +4.3$\sim$+5.1). denoising 슬롯·장면·시드는 에피소드 내 상수라 전환의 원인이 될 수 없다.
+\textbf{구조는 모델·데이터를 바꿔도 재현된다.} \rev{별도의 23-에피소드 분석셋에서, 구조가 다른 두 압축 모델(AE와 SAE)이 같은 스텝에서 전환하고}(F1 0.66$\sim$0.75, 무작위 0.51$\sim$0.53, z +8.8$\sim$+13.5), 독립 재수집 데이터에서 새로 학습해도 같은 성질이 나타난다(seed 간 F1 0.55$\sim$0.58, z +4.3$\sim$+5.1). Denoising 슬롯·장면·시드는 에피소드 내 상수라 전환의 원인이 될 수 없다.
 
 % \textbf{세밀 단위는 하류 분석에서도 유용하다.} % 성공/실패 분리도를 단계 조건부로 잴
 % 때, 발견 상태(instruction별 k=8)가 GT phase보다 높은 분리도를 주는 instruction이 9개 중
@@ -118,7 +118,7 @@ MI는 한 \term{phase}가 여러 \rev{cluster}로 쪼개져도 거의 떨어지�
 \section{한계와 결론}
 \textbf{한계.} 평가는 단일 모델(GR00T N1.5)·단일 벤치마크(RoboCasa, 시뮬레이션)에 한정되어 다른 VLA나 실제 로봇으로의 일반화는 확인하지 않았다. GT \term{phase} 라벨은 한 명의 주석자가 부여한 것으로 정확도의 절대값은 주석 기준에 의존하나, 핵심 비교는 모든 방법이 같은 라벨로 채점되므로 영향을 같게 받는다. 마지막으로 본 연구는 내부 표상을 읽을 수 있음(read)을 보인 것이며, 그 표상에 개입해 행동을 바꿀 수 있음(write)은 별개의 검증을 요한다.
 
-\textbf{결론.} VLA의 action head activation에는 사람이 정의한 \term{phase}와 정합적인 구조가 라벨 없이도 드러나며, 이를 이용하면 학습에 쓰지 않은 scene에서도 한 스텝의 activation만으로 \rev{현재 \term{phase}를 정확도 0.82로 읽을 수 있다. 이는 진행 시간(0.67)이나 외부 관찰 기반 행동 이벤트(0.65)로는 닿지 못하는 수준이다.} \rev{cluster} 중심 최근접 배정만으로 추론 중 스텝 단위 online 판독이 가능하며, \term{phase} 조건부 개입·실패 감지의 조건 신호로 나아가는 출발점이 된다.
+\textbf{결론.} VLA의 action head activation에는 사람이 정의한 \term{phase}와 정합적인 구조가 라벨 없이도 드러나며, 이를 이용하면 학습에 쓰지 않은 scene에서도 한 스텝의 activation만으로 \rev{현재 \term{phase}를 정확도 0.82로 읽을 수 있다. 이는 진행 시간(0.67)이나 외부 관찰 기반 행동 이벤트(0.65)로는 닿지 못하는 수준이다.} \rev{Cluster} 중심 최근접 배정만으로 추론 중 스텝 단위 online 판독이 가능하며, \term{phase} 조건부 개입·실패 감지의 조건 신호로 나아가는 출발점이 된다.
 
 % \section*{ACKNOWLEDGMENT}
 % TODO: 과제 사사 문구
