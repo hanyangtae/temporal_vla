@@ -1092,6 +1092,7 @@ def run() -> dict[str, Any]:
             perstep_fired_flags: list = []
             perstep_seed2_list: list = []
             perstep_gate_skipped_list: list = []   # 발화했지만 phase 미등록으로 실개입 0인 record
+            perstep_debug_diffs: list = []         # --perstep-debug-rerun 배관 동치 진단
             success = False
             first_success_step = None
             step_i = 0
@@ -1179,6 +1180,8 @@ def run() -> dict[str, Any]:
                         )
                         perstep_seed2_list.append(_f.get("perstep_seed2"))
                         perstep_gate_skipped_list.append(_f.get("gate_skipped"))
+                        if _f.get("debug_max_action_diff") is not None:
+                            perstep_debug_diffs.append(float(_f["debug_max_action_diff"]))
                     # 떨림 진단: 이 record 의 명령 action 벡터(첫 실행 스텝)와 개입 활성 여부.
                     action_traj.append(_extract_groot_action_vector(official_action))
                     if no_features:
@@ -1255,11 +1258,15 @@ def run() -> dict[str, Any]:
                     "perstep_seed2": perstep_seed2_list,
                     "perstep_gate_skipped": perstep_gate_skipped_list,
                     "perstep_fire_count": int(sum(perstep_fired_flags)),
-                    # 실개입 = 발화 ∧ ¬skipped (dose 감사 분모)
-                    "perstep_applied_count": int(sum(
-                        1 for f, sk in zip(perstep_fired_flags, perstep_gate_skipped_list)
-                        if f and not sk
-                    )),
+                    "perstep_debug_max_action_diff": (
+                        max(perstep_debug_diffs) if perstep_debug_diffs else None
+                    ),
+                    # 실개입 = op 있음 ∧ 발화 ∧ ¬skipped (dose 감사 분모; ps_base=0)
+                    "perstep_applied_count": (0 if getattr(args, "perstep_op", "none") == "none"
+                        else int(sum(
+                            1 for f, sk in zip(perstep_fired_flags, perstep_gate_skipped_list)
+                            if f and not sk
+                        ))),
                     "feature_phases": list(feature_phases),
                 }
 

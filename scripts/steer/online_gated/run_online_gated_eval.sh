@@ -576,6 +576,10 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
     ps_setm)   mode=(--gated-steering-mode perstep --perstep-op setm) ;;
     ps_condg)  mode=(--gated-steering-mode perstep --perstep-op condg) ;;
   esac
+  # PERSTEP_DEBUG=1: 배관 동치 스모크 — 매 record hook off·동일 seed 2차 실행 진단
+  if [ "${#mode[@]}" -gt 0 ] && [ "${PERSTEP_DEBUG:-0}" = "1" ]; then
+    mode+=(--perstep-debug-rerun)
+  fi
   if [ "${#mode[@]}" -eq 0 ]; then
     local trig=""
     # TRIGGER_TSV 는 $1==scene 으로 찾는다 — v4 에서는 이 자리가 **평탄 cell id** 다
