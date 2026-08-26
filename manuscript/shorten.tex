@@ -57,7 +57,7 @@ Sparse Auto Encoder(SAE)로 residual stream에서 grasp, transport와 같은 pri
 
 \rev{\rev{Detector의} 학습과 평가는 scene 단위로 분리한다. 10개 scene 중 8개를 학습용, 2개를 평가용으로 나누고, 이러한 분할을 무작위로 3가지 구성한다. 분할마다 표준화, AE, clustering, \term{phase} 매핑을 학습 scene만으로 새로 적합하며, 세 분할의 평가 결과를 평균해 보고한다. AE와 KMeans 학습에는 사람이 주석한 \term{phase} 라벨(instruction당 3--6개)을 쓰지 않으며, 학습 scene의 라벨은 cluster를 최빈 \term{phase}에 대응시키는 매핑에만, 평가 scene의 라벨은 채점에만 사용한다.}
 
-\textbf{Clustering.} \rev{Raw activation 1{,}536차원을 오토인코더(AE)로 16차원 latent로 압축한 뒤 KMeans로 스텝 단위 clustering한다. Cluster 수는 instruction별 분석에서 $k=8$, 전체 통합 분석에서 $k=24$를 사용한다. Cluster 중심은 학습 split에서만 만들고, 평가 split의 스텝은 가장 가까운 cluster 중심에 배정한다. \rev{다시 clustering할 필요가 없으므로} 추론 중 스텝 단위의 online 판독이 가능하다.}
+\textbf{Clustering.} \rev{Raw activation 1{,}536차원을 오토인코더(AE)로 16차원 latent로 압축한 뒤 KMeans로 스텝 단위 clustering한다. \rev{Cluster 수는 \term{phase} 수(3--6)를 넘는 평탄 구간의 최소값인 $k=8$을 사용한다.} Cluster 중심은 학습 split에서만 만들고, 평가 split의 스텝은 가장 가까운 cluster 중심에 배정한다. \rev{다시 clustering할 필요가 없으므로} 추론 중 스텝 단위의 online 판독이 가능하다.}
 
 \textbf{Baseline.} Manipulation task의 \term{phase}는 대체로 순서대로 진행되므로, activation을 보지 않고 경과 시간만 보는 detector도 \term{phase}를 어느정도 맞힌다. 이 몫을 빼기 위한 \textbf{시간 대조군}은 에피소드 내 상대 진행도 $t/T$를 발견된 cluster
 수와 같은 개수의 구간으로 \rev{등분위 분할해 얻은 상태열이다.} \rev{또한 외부 관찰만으로 \term{phase}를 나누는 기존 방법과 비교하기 위해, \textbf{행동 이벤트(behavioral event) 대조군}으로 기존 연구\cite{egsae}의 이벤트 발견 파이프라인을 채택한다. 저자가 공개한 구현을 수정 없이 사용하여,} 에피소드의 end-effector 궤적에서 \rev{선형 보간으로 궤적을 복원할 수 있는 최소한의 점을 고르는} AWE\cite{awe}\rev{를 사용하여} waypoint를 추출하고, 각 waypoint 주변
@@ -82,9 +82,7 @@ Margin이 양수라는 것은 activation이 ``에피소드의 몇 \% 지점인�
 
 MI는 한 \term{phase}가 여러 cluster로 쪼개져도 거의 떨어지지 않는, \emph{각 cluster가 한 \term{phase}에 몰려 있는지}를 재는 양이다. 이를 직접 보는 지표가
 \textbf{순도}(purity)로, 각 cluster를 그 안에서 가장 많은 \term{phase} 하나로 대표시켰을 때 맞는
-스텝의 비율 $\mathrm{purity}=\frac{1}{N}\sum_{k}\max_{c}|\{i : z_i=k,\, y_i=c\}|$ 이다. \rev{반대로 한 cluster가 여러 \term{phase}에 걸쳐 나타날수록 순도는 떨어지므로, cluster가 최빈 \term{phase} 밖에서 나타난 비율을 \textbf{\term{off-phase rate}}라 부르고 함께 보고한다.} 마지막으로
-\term{phase} 경계와의 정렬은 전환 횟수는 그대로 두고 위치만 에피소드 안에서 무작위로 흩은
-상태열 300개를 기준선으로 삼아 $z$-score로 측정한다.
+스텝의 비율 $\mathrm{purity}=\frac{1}{N}\sum_{k}\max_{c}|\{i : z_i=k,\, y_i=c\}|$ 이다. \rev{반대로 한 cluster가 여러 \term{phase}에 걸쳐 나타날수록 순도는 떨어지므로, cluster가 최빈 \term{phase} 밖에서 나타난 비율을 \textbf{\term{off-phase rate}}라 부르고 함께 보고한다.} 
 
 
 \begin{figure}[!t]
@@ -98,7 +96,7 @@ MI는 한 \term{phase}가 여러 cluster로 쪼개져도 거의 떨어지지 않
 \rev{같은 프로토콜에서 activation cluster는 10개 instruction 중 9개에서 행동 이벤트 대조군을 앞서며, 유일한 예외는 모든 방법이 무작위 수준에 머무는 DishwasherRack이다.} 즉 ``에피소드가 얼마나 진행됐는가''도, 밖에서 관찰한 이벤트 구조도 내부 표상만큼은 알려주지 못한다. \rev{특히 비지도 cluster만으로 0.82가 나온다는 점이 중요하다. 구조 자체는 라벨 없이 activation에서 나왔고, 라벨은 각 cluster에 이름을 붙이는 데만 쓰였다.} cluster 중심을 train에서 만들고 평가 스텝은 최근접 배정으로 옮기므로, \rev{다시 clustering하지 않고} 추론 중 스텝 단위로 그대로 돌릴 수 있다.
 
 \textbf{발견된 단위는 사람이 정의한 \term{phase}보다 잘게 나뉜다.} 발견된 상태의 평균 구간 길이는 GT \term{phase}보다 짧고(k=8에서 10개 instruction 전부), 에피소드당 전환 수는 상한($k-1$회)을 모두 넘어 같은 상태를 여러 번 재방문한다.
-전환 시점 자체는 GT 경계와 정렬되지 않으나(z $-$1.0 $\sim$ +0.5), GT \term{phase} 단위로 병합하면 정렬이 유의해진다(z +1.3 $\sim$ +4.9). \new{다만 이 세분이 의미 있는 하위 구조인지는 본 연구의 범위를 넘는다. \rev{판독 성능은 $k$가 \term{phase} 수를 넘기만 하면 평평하므로($k=8\sim32$에서 0.82--0.88), 앞의 결과는 특정 $k$ 선택에 기대지 않는다.}}
+ \new{다만 이 세분이 의미 있는 하위 구조인지는 본 연구의 범위를 넘는다. \rev{판독 성능은 $k$가 \term{phase} 수를 넘기만 하면 평평하므로($k=8\sim32$에서 0.82--0.88), 앞의 결과는 특정 $k$ 선택에 기대지 않는다.}}
 
 \textbf{각 cluster는 특정 \term{phase}에 국한된다.} 한 \term{phase}에서 나타난 cluster는 다른 \term{phase}에서 잘 나타나지 않는다(Figure 1a). \rev{Cluster를 최빈 \term{phase}로 읽었을 때의 순도 중앙값은 0.875, MI 중앙값은 0.670 bits이며, 시간 대조군 margin의 중앙값은 +0.343 bits로 10개 instruction 전부에서 양수다.} cluster가 최빈 \term{phase} 밖에서 나타나는 비율(\term{off-phase rate})의 중앙값은 0.07이다(instruction별 0.002$\sim$0.45). \new{$k$가 \term{phase} 수보다 크면 실제 \term{phase}보다 많은 cluster가 생기는데, 그런 상황에서도 각 cluster는 특정 \term{phase}에 국한되어 나타나므로 한 \term{phase}를 여러 cluster가 나눠 갖는, 대체로 다대일인 매핑이 된다. \rev{따라서 cluster를 최빈 \term{phase}에 대응시키는 매핑으로 현재 \term{phase}를 읽는 데 지장이 없다. 이것이 세밀한 하위 분할과 \term{phase} 판독이 공존하는 이유다.}}
 
