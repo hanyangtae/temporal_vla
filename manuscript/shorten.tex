@@ -55,16 +55,12 @@ Sparse Auto Encoder(SAE)로 residual stream에서 grasp, transport와 같은 pri
 \section{방 법}
 \textbf{Data. } RoboCasa 주방 조작 환경에서 GR00T N1.5의 rollout을 수집한다. 대상은 5개 task(OpenDrawer, PnPCounterToCab, OvenRack, DishwasherRack, CoffeeSetupMug)에 속하는 10개 instruction이며, instruction마다 10개 scene에서 10회씩 총 100회의 rollout을 수집하였다. \rev{정책 추론 1회는 환경 5스텝에 해당하며, 이를 한 \textbf{스텝}으로 삼아 매 스텝 action head(DiT)의 residual stream activation을 캡처한다. 이 activation은 12번째 layer의 마지막 denoising step에서 49개 토큰을 평균한 스텝당 1{,}536차원 벡터이고, GT \term{phase} 라벨도 같은 시점에서 읽는다.}
 
-\rev{\rev{Detector의} 학습과 평가는 scene 단위로 분리한다. 10개 scene 중 8개 scene의 rollout 80개로 학습하고 나머지 2개 scene의 rollout 20개로 평가하며, 이 조합을 무작위로 3가지 만들어 조합마다 표준화, AE, clustering, \term{phase} 매핑을 학습 scene만으로 새로 적합한 뒤 3조합의 평균을 보고한다. AE와 KMeans 학습에는 사람이 주석한 \term{phase} 라벨(instruction당 3--6개)을 쓰지 않으며, 학습 scene의 라벨은 cluster를 최빈 \term{phase}에 대응시키는 매핑에만, 평가 scene의 라벨은 채점에만 쓴다.}
+\rev{\rev{Detector의} 학습과 평가는 scene 단위로 분리한다. 10개 scene 중 8개 scene의 rollout 80개로 학습하고 나머지 2개 scene의 rollout 20개로 평가하며, 이 조합을 무작위로 3가지 만들어 조합마다 표준화, AE, clustering, \term{phase} 매핑을 학습 scene만으로 새로 적합한 뒤 3조합의 평균을 보고한다. AE와 KMeans 학습에는 사람이 주석한 \term{phase} 라벨(instruction당 3--6개)을 쓰지 않으며, 학습 scene의 라벨은 cluster를 최빈 \term{phase}에 대응시키는 매핑에만, 평가 scene의 라벨은 채점에만 사용한다.}
 
 \textbf{Clustering.} \rev{Raw activation 1{,}536차원을 오토인코더(AE)로 16차원 latent로 압축한 뒤 KMeans로 스텝 단위 clustering한다. Cluster 수는 instruction별 분석에서 $k=8$, 전체 통합 분석에서 $k=24$를 사용한다. Cluster 중심은 학습 split에서만 만들고, 평가 split의 스텝은 가장 가까운 cluster 중심에 배정한다. \rev{다시 clustering할 필요가 없으므로} 추론 중 스텝 단위의 online 판독이 가능하다.}
 
-\textbf{Baseline.} Manipulation task의 \term{phase}는 대체로 순서대로 진행되므로, activation을 보지 않고 경과 시간만 보는 \rev{detector도} \term{phase}를 상당 부분 맞힌다. 이 몫을 빼기 위한 \textbf{시간 대조군}은 에피소드 내 상대 진행도 $t/T$를 발견된 \rev{cluster}
-수와 같은 개수의 구간으로 \rev{등분위 분할해 얻은 상태열이다. 상태 수를 맞춰야 같은 해상도에서 비교되기 때문이다.}
-
-외부 관찰만으로 \term{phase}를 나누는 기존 방법과의 비교를 위해, \textbf{행동 이벤트(behavioral
-event) 대조군}은 기존 논문\cite{egsae}의 이벤트 발견 파이프라인을 저자 구현 그대로 재현해 얻는다:
-에피소드의 end-effector 궤적에서 AWE\cite{awe}로 waypoint를 추출하고, 각 waypoint 주변
+\textbf{Baseline.} Manipulation task의 \term{phase}는 대체로 순서대로 진행되므로, activation을 보지 않고 경과 시간만 보는 detector도 \term{phase}를 어느정도 맞힌다. 이 몫을 빼기 위한 \textbf{시간 대조군}은 에피소드 내 상대 진행도 $t/T$를 발견된 cluster
+수와 같은 개수의 구간으로 \rev{등분위 분할해 얻은 상태열이다.} \rev{또한 외부 관찰만으로 \term{phase}를 나누는 기존 방법과 비교하기 위해, \textbf{행동 이벤트(behavioral event) 대조군}으로 기존 연구\cite{egsae}의 이벤트 발견 파이프라인을 채택한다. 저자가 공개한 구현을 수정 없이 사용하여,} 에피소드의 end-effector 궤적에서 AWE\cite{awe}로 waypoint를 추출하고, 각 waypoint 주변
 5프레임의 SigLIP\cite{siglip} 시각 임베딩에 로봇 상태와 진행도를 이어붙인 descriptor를 \rev{clustering해}
 행동 이벤트를 얻는다. 판독 평가는 우리와 같은 scene 분할을 적용해 이벤트 \rev{cluster}와 최빈
 \term{phase} 매핑을 학습 scene에서만 적합하고, 평가 scene의 각 스텝은 시간상 가장 가까운
@@ -72,8 +68,8 @@ waypoint의 이벤트가 갖는 \term{phase}로 예측한다.
 
 \textbf{Metric.} 스텝 $i$의 \rev{cluster} 라벨을 $z_i \in \{1,\dots,k\}$, 사람이 붙인 GT
 \term{phase}를 $y_i$라 하자. \rev{cluster} 라벨을 알았을 때 \term{phase}에 대한 불확실성이 얼마나 줄어드는지를
-\textbf{상호정보량}(MI) $I(Z;Y)=\sum_{k}\sum_{c} p(k,c)\log_2\frac{p(k,c)}{p(k)p(c)}$ 로 잰다. 여기서 $p(k,c)$는 전체 스텝 중 \rev{cluster}가 $k$이면서 \term{phase}가 $c$인 비율이다. 다만 MI는 $k$가 커질수록
-자동으로 커지므로 절대값만으로는 해상도가 다른 방법끼리 비교할 수 없다. \rev{그래서 앞의 Baseline에서 정의한, 같은 상태 수를 갖는 시간 대조군의 MI를 뺀 값을 판정 기준으로 쓴다:}
+\textbf{상호정보량}(MI) $I(Z;Y)=\sum_{k}\sum_{c} p(k,c)\log_2\frac{p(k,c)}{p(k)p(c)}$ 로 측정한다. 여기서 $p(k,c)$는 전체 스텝 중 \rev{cluster}가 $k$이면서 \term{phase}가 $c$인 비율이다. 다만 MI는 $k$가 커질수록
+자동으로 커지므로 절대값만으로는 해상도가 다른 방법끼리 비교할 수 없다. \rev{그래서 앞의 Baseline에서 정의한, 같은 상태 수를 갖는 시간 대조군의 MI를 뺀 값을 판정 기준으로 사용한다:}
 %
 \begin{equation}
 \mathrm{margin} = I(Z;Y) - I(Z_{\mathrm{clock}};Y)
@@ -87,7 +83,7 @@ MI는 한 \term{phase}가 여러 \rev{cluster}로 쪼개져도 거의 떨어지�
 \textbf{순도}(purity)로, 각 \rev{cluster}를 그 안에서 가장 많은 \term{phase} 하나로 대표시켰을 때 맞는
 스텝의 비율 $\mathrm{purity}=\frac{1}{N}\sum_{k}\max_{c}|\{i : z_i=k,\, y_i=c\}|$ 이다. \rev{반대로 한 cluster가 여러 \term{phase}에 걸쳐 나타날수록 순도는 떨어지므로, cluster가 최빈 \term{phase} 밖에서 나타난 비율을 \textbf{\term{off-phase rate}}라 부르고 함께 보고한다.} 마지막으로
 \term{phase} 경계와의 정렬은 전환 횟수는 그대로 두고 위치만 에피소드 안에서 무작위로 흩은
-상태열 300개를 기준선으로 삼아 $z$-score로 잰다.
+상태열 300개를 기준선으로 삼아 $z$-score로 측정한다.
 
 
 \begin{figure}[!t]
