@@ -1,7 +1,7 @@
 % 제7회 한국 인공지능 학술대회 (KICS 인공지능소사이어티) 투고 원고
 \documentclass[a4paper,twocolumn,9pt]{extarticle}
 \usepackage{kotex}
-\usepackage[margin=1.7cm,top=1.9cm,bottom=1.5cm]{geometry}
+\usepackage[margin=1.7cm,top=1.9cm,bottom=1.6cm]{geometry}
 \usepackage{graphicx}
 \usepackage{amsmath}
 \usepackage{setspace}
@@ -50,12 +50,12 @@ Vision-Language-Action(VLA) 모델이 작업을 수행할 때 스스로 현재 �
 \end{figure*}
 \section{서 론}
 VLA 모델은 내부 상태를 이해하기 힘든 블랙박스이지만 실제 로봇을 조작하므로, 모델이 지금 무슨 작업을 진행 중이라고 인지하는지 사람이 파악할 수 있어야 한다는 설명 가능성이 특히 중요하다. 본 논문에서 \term{action phase}란 manipulation task를 의미 단위로 나누었을 때 로봇이 수행하고 있는 하위 작업(subtask)을 의미한다. 예컨대 Pick \& Place task는 reach, grasp, transport, place의 \term{phase}로 구성된다\cite{options}. 이러한 현재 \term{phase}를 파악하는 방법에는 외부 관찰자가 카메라나 기타 센서들을 활용해 로봇의 현재 상태나 궤적 같은 외부 관찰 정보를 활용하는 방법이 있다\cite{lotus}. 하지만 외부 관찰은 로봇이 겉보기에 무엇을 하는지 알려줄 뿐이며, 모델이 스스로 어떤 작업을 하고 있다고 인지하는지, 즉 내부 표상이 가리키는 \term{phase}는 내부 activation을 직접 읽어야만 알 수 있고, 이는 겉보기 행동과 어긋났을 때 수정을 위한 전제 조건이다. VLA 내부 표현을 해석하려는 최근 시도들은
-Sparse Auto Encoder(SAE)로 residual stream에서 grasp, transport와 같은 primitive action에 대응하는 feature를 찾아내거나\cite{saevla,egsae}, linear probe로 layer별 상태를 관측하고 그 방향으로 activation steering을 적용해 행동을 제어할 수 있음을 보였다\cite{observing,mechinterp}. \rev{그러나 이들은 발견된 feature가 언제 활성화되는지를 사람이 rollout 영상과 대조해 수동으로 이름을 붙이는 데 그치며, 내부 표상이 사람이 정의한 phase를 얼마나 정확히, 어떤 단위로 담고 있는지는 정량화하지 않는다.} VLA의 내부 \term{phase}를 추론 중에 online으로 읽을 수 있으면 설명을 넘어 조건부 개입이나 실패감지\cite{safe}의 조건신호로 활용할 수 있다. 본 연구는 GR00T N1.5\cite{groot}가 RoboCasa\cite{robocasa} 주방 조작을 수행하는 동안의 activation을 Autoencoder와 clustering으로 분석해, 모델 내부 \term{phase}가 사람이 정의한 \term{phase}와 갖는 관계를 Mutual Information(MI)로 정량화한다. 
+Sparse Auto Encoder(SAE)로 residual stream에서 grasp, transport와 같은 primitive action에 대응하는 feature를 찾아내거나\cite{saevla,egsae}, linear probe로 layer별 상태를 관측하고 그 방향으로 activation steering을 적용해 행동을 제어할 수 있음을 보였다\cite{observing,mechinterp}. \rev{그러나 이들은 발견된 feature가 언제 활성화되는지를 사람이 rollout 영상과 대조해 수동으로 이름을 붙이는 데 그치며, 내부 표상이 사람이 정의한 phase를 얼마나 정확히, 어떤 단위로 담고 있는지는 정량화하지 않는다.} VLA의 내부 \term{phase}를 추론 중에 online으로 읽을 수 있으면 설명을 넘어 조건부 개입이나 실패감지\cite{safe}의 조건신호로 활용할 수 있다. 본 연구는 GR00T N1.5\cite{groot}가 RoboCasa\cite{robocasa} 주방 조작을 수행하는 동안의 activation을 Autoencoder(AE)와 clustering으로 분석해, 모델 내부 \term{phase}가 사람이 정의한 \term{phase}와 갖는 관계를 Mutual Information(MI)로 정량화한다. 
 
 \section{방 법}
 \textbf{Data. } RoboCasa 주방 조작 환경에서 GR00T N1.5의 rollout을 수집한다. 대상은 5개 task(OpenDrawer, PnPCounterToCab, OvenRack, DishwasherRack, CoffeeSetupMug)에 속하는 10개 instruction이며, instruction마다 10개 scene에서 10회씩 총 100회의 rollout을 수집하였다. \rev{모델이 1회 추론 할 떄 마다 action expert의 resudual sttream activation을 캡쳐한다. 모델은 추론당 16개의 action step을 추론하며 그중 5개 action을 환경에서 실행하도록 세팅하였다. 이 activation은 12번째 layer의 마지막 denoising step에서 49개 토큰을 평균한 스텝당 1{,}536차원 벡터이고, GT \term{phase} 라벨도 같은 시점에서 읽는다.}
 
-\rev{\rev{Detector의} 학습과 평가는 scene 단위로 분리한다. 10개 scene 중 8개를 학습용, 2개를 평가용으로 나누고, 이러한 분할을 무작위로 3가지 구성한다. 분할마다 표준화, AE, clustering, \term{phase} 매핑을 학습 scene만으로 새로 적합하며, 세 분할의 평가 결과를 평균해 보고한다. AE와 KMeans 학습에는 사람이 주석한 \term{phase} 라벨(instruction당 3--6개)을 쓰지 않으며, 학습 scene의 라벨은 cluster를 최빈 \term{phase}에 대응시키는 매핑에만, 평가 scene의 라벨은 채점에만 사용한다.}
+\rev{Detector의} 학습과 평가는 scene 단위로 분리한다. 10개 scene 중 8개를 학습용, 2개를 평가용으로 나누고, 이러한 분할을 무작위로 3가지 구성한다. 분할마다 표준화, AE, clustering, \term{phase} 매핑을 학습 scene만으로 새로 적합하며, 세 분할의 평가 결과를 평균해 보고한다.  사람이 주석한 \term{phase} 라벨은 cluster를 최빈 phase에 대응시키는 매핑과 평가시의 채점에 사용된다.
 
 \textbf{Clustering.} \rev{Raw activation 1{,}536차원을 오토인코더(AE)로 16차원 latent로 압축한 뒤 KMeans로 스텝 단위 clustering한다. \rev{Cluster 수는 \term{phase} 수(3--6)를 넘는 평탄 구간의 최소값인 $k=8$을 사용한다.} Cluster 중심은 학습 split에서만 만들고, 평가 split의 스텝은 가장 가까운 cluster 중심에 배정한다. \rev{다시 clustering할 필요가 없으므로} 추론 중 스텝 단위의 online 판독이 가능하다.}
 
