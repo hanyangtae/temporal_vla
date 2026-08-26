@@ -69,7 +69,7 @@ waypoint의 이벤트가 갖는 \term{phase}로 예측한다.
 \textbf{Metric.} 스텝 $i$의 cluster 라벨을 $z_i \in \{1,\dots,k\}$, 사람이 붙인 GT
 \term{phase}를 $y_i$라 하자. cluster 라벨을 알았을 때 \term{phase}에 대한 불확실성이 얼마나 줄어드는지를
 \textbf{상호정보량}(MI) $I(Z;Y)=\sum_{k}\sum_{c} p(k,c)\log_2\frac{p(k,c)}{p(k)p(c)}$ 로 측정한다. 여기서 $p(k,c)$는 전체 스텝 중 cluster가 $k$이면서 \term{phase}가 $c$인 비율이다. 다만 MI는 $k$가 커질수록
-자동으로 커지므로 절대값만으로는 해상도가 다른 방법끼리 비교할 수 없다. \rev{그래서 앞의 Baseline에서 정의한, 같은 상태 수를 갖는 시간 대조군의 MI를 뺀 값을 판정 기준으로 사용한다:}
+자동으로 커지므로 절대값만으로는 해상도가 다른 방법끼리 비교할 수 없다. 시간 대조군의 MI를 뺀 값을 판정 기준으로 사용한다:
 %
 \begin{equation}
 \mathrm{margin} = I(Z;Y) - I(Z_{\mathrm{clock}};Y)
