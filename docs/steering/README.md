@@ -41,6 +41,7 @@
 | [`33_exp5_round_summary.md`](33_exp5_round_summary.md) | exp5 라운드 종합 + 다음 카드 |
 | [`35_exp5-2_results.md`](35_exp5-2_results.md) | 섭동-유도 실패 회복 (RESULTS와 별도 유지 — 무대가 다름) |
 | [`37_exp5-4_noise_selection.md`](37_exp5-4_noise_selection.md) | noise 선별 판정 (verifier 종결 / seed 주효과는 미착수) |
+| [`47_perstep_gating_pipeline.md`](47_perstep_gating_pipeline.md) | **per-step 게이팅 파이프 설계 정본** (latch 폐기, pre-hook detector 규칙) |
 
 ## 수집·운영
 

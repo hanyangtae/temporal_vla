@@ -180,6 +180,12 @@ phase를 online에 아는 방법 (열린 설계):
   묻지 않으므로 5.1의 문제는 그대로 남아 있다. (c) RL2의 개입은 best-of-N 후보 선별이라
   verifier가 오답을 걸러주지만, 우리 단일-forward write-in은 그 안전망이 없다 → 게이팅의
   정밀도(false positive 시 해악)가 우리 쪽에서 더 load-bearing.
+- **게이트 설계 확정 (2026-08-26)**: **per-step 게이팅** — 매 inference step마다
+  (개입 여부, 연산자)를 결정하는 1회성 개입, latch(발화 후 상시 적용) 폐기. detector
+  입력은 항상 pre-hook(steering 적용 전) 활성화 — 연산자가 detector와 같은 공간을 밀기
+  때문에 post-hook 입력은 순환(자가 소등)을 만든다는 실측 근거. RL2의 binary 게이트
+  대비 step-wise×연산자-선택이 차별 축. 정본:
+  [`47_perstep_gating_pipeline.md`](47_perstep_gating_pipeline.md).
 
 ### 5.2 C2를 여는 것 — 어떤 연산자인가
 
