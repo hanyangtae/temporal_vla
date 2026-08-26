@@ -283,6 +283,29 @@ def offline_detector(d: dict, n_rec: int, ckpt_path: str, task: str):
 
 
 # ---------------------------------------------------------------- 오버레이 문구
+def perstep_series(d: dict, n_rec: int):
+    """per-step arm 기록: (fired, applied, post, op) — 없으면 (None,)*4.
+
+    applied = fired ∧ ¬gate_skipped ∧ op 있음 (ps_base 는 전부 False).
+    길이 불일치는 즉시 에러 (다른 arm 계열 차용 금지).
+    """
+    pf = d.get("perstep_fired")
+    if pf is None:
+        return None, None, None, None
+    pf = [bool(x) for x in pf]
+    if len(pf) != n_rec:
+        die(f"perstep_fired 길이 {len(pf)} != record {n_rec}")
+    sk = d.get("perstep_gate_skipped") or [None] * n_rec
+    if len(sk) != n_rec:
+        die(f"perstep_gate_skipped 길이 {len(sk)} != record {n_rec}")
+    op = d.get("perstep_op")
+    applied = [bool(f and not k and op) for f, k in zip(pf, sk)]
+    post = d.get("failure_scores_post")
+    if post is not None and len(post) != n_rec:
+        die(f"failure_scores_post 길이 {len(post)} != record {n_rec}")
+    return pf, applied, post, op
+
+
 def intervention_label(arm: str, t: int, st: int, trig: int, phase: str) -> str:
     if arm == "base":
         return f"없음 (발화 r{trig})"
@@ -330,6 +353,8 @@ def render(args) -> dict:
     else:
         deltas = None
     succ = int(d.get("episode_success", 0) or 0)
+    ps_fired, ps_applied, ps_post, ps_op = perstep_series(d, n)
+    perstep = ps_fired is not None
     st, trig = int(args.st), int(args.trig)
     cols = None if args.no_robot else robot_column(args.pkl, n, d, args.video)
 
@@ -382,8 +407,18 @@ def render(args) -> dict:
     axp.set_xlim(0, max(n - 1, 1))
     axp.set_ylim(0, 1)
     prog = axp.axvspan(0, 0, color=C_PRE, alpha=0.85)
-    show_st = (0 <= st < n) and args.arm != "base"
-    show_tg = 0 <= trig < n
+    show_st = (0 <= st < n) and args.arm != "base" and not perstep
+    show_tg = 0 <= trig < n and not perstep
+    if perstep:
+        for i, a in enumerate(ps_applied):
+            if a:
+                axp.axvline(i, color=C_POST, lw=0.9, alpha=0.75)
+        n_ap = sum(ps_applied)
+        n_fi = sum(ps_fired)
+        lbl = (f"발화 {n_fi}회 (perstep 감시만)" if not ps_op
+               else f"개입 {n_ap}회 · 발화 {n_fi}회 (perstep {ps_op})")
+        axp.text(0, 1.5, lbl, color=C_POST if ps_op else C_DIM, fontsize=9.5,
+                 ha="left", va="bottom")
     if show_st:
         axp.axvline(st, color=C_POST, lw=1.6)
     if show_tg:
@@ -411,36 +446,58 @@ def render(args) -> dict:
     dump_at = args.dump_frame if args.dump_frame is not None else -1
 
     for t in range(n):
-        post = (args.arm != "base") and (t >= st)
+        if perstep:
+            post = ps_applied[t]
+        else:
+            post = (args.arm != "base") and (t >= st)
         col = C_POST if post else C_PRE
         path_ln.set_data(xy[: t + 1, 0], xy[: t + 1, 1])
         s0 = max(0, t - TRAIL_N)
         seg = xy[s0 : t + 1]
         k = len(seg)
         alphas = np.linspace(0.10, 0.75, k) if k > 1 else np.array([0.75])
-        tc = np.array(
-            [matplotlib.colors.to_rgba(C_POST if (args.arm != "base" and (s0 + i) >= st) else C_PRE, a)
-             for i, a in enumerate(alphas)]
-        )
+        if perstep:
+            tc = np.array(
+                [matplotlib.colors.to_rgba(C_POST if ps_applied[s0 + i] else C_PRE, a)
+                 for i, a in enumerate(alphas)]
+            )
+        else:
+            tc = np.array(
+                [matplotlib.colors.to_rgba(C_POST if (args.arm != "base" and (s0 + i) >= st) else C_PRE, a)
+                 for i, a in enumerate(alphas)]
+            )
         trail.set_offsets(seg)
         trail.set_facecolors(tc)
         trail.set_sizes(np.linspace(8, 52, k) if k > 1 else np.array([52.0]))
         cur.set_offsets(xy[t : t + 1])
         cur.set_facecolor(col)
+        if perstep:
+            if ps_applied[t]:
+                iv = f"perstep {ps_op} — 이 record 개입"
+            elif ps_fired[t]:
+                iv = "발화 (개입 없음)" if not ps_op else "발화 (phase 미등록 — 개입 생략)"
+            else:
+                iv = "감시 중"
+        else:
+            iv = intervention_label(args.arm, t, st, trig, phases[t])
         lines = [
             f"record {t}/{n - 1}",
             f"phase: {phases[t]}",
-            f"개입: {intervention_label(args.arm, t, st, trig, phases[t])}",
+            f"개입: {iv}",
         ]
         if scores is not None:
-            if posthoc:
-                hit = fire_t is not None and t >= fire_t
+            if perstep:
+                fired = " ▲발화" if ps_fired[t] else ""
+            elif posthoc:
+                fired = " ▲발화" if (fire_t is not None and t >= fire_t) else ""
             else:
-                hit = show_tg and t >= trig
-            fired = " ▲발화" if hit else ""
+                fired = " ▲발화" if (show_tg and t >= trig) else ""
             dl = "" if deltas is None else f" / δ {deltas[t]:.3f}"
             tag = " (사후)" if posthoc else ""
-            lines.append(f"검출 p{tag} {scores[t]:.3f}{dl}{fired}")
+            pline = f"검출 p{tag} {scores[t]:.3f}{dl}{fired}"
+            if perstep and ps_applied[t] and ps_post is not None and ps_post[t] is not None:
+                pline += f" → p′ {ps_post[t]:.3f}"
+            lines.append(pline)
         txt.set_text("\n".join(lines))
         prog.set_width(max(t, 1e-6))
         prog.set_color(col)
@@ -471,8 +528,8 @@ def main():
     ap.add_argument("--arm", required=True)
     ap.add_argument("--pkl", required=True)
     ap.add_argument("--bg-npz", required=True)
-    ap.add_argument("--st", type=int, required=True, help="개입(재추첨/steer) 시작 record")
-    ap.add_argument("--trig", type=int, required=True, help="검출기 발화 record")
+    ap.add_argument("--st", type=int, default=-1, help="개입 시작 record (latch arm 전용; perstep 은 무시)")
+    ap.add_argument("--trig", type=int, default=-1, help="검출기 발화 record (latch arm 전용; perstep 은 무시)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--fps", type=int, default=8)
     ap.add_argument("--crf", type=int, default=26)
