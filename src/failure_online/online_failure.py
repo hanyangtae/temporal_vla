@@ -234,6 +234,46 @@ class OnlineFailureDetector:
         self._t += 1
         return rec
 
+    # -------------------------------------------------- 롤백/재전진 (per-step 게이팅)
+    def snapshot(self) -> dict:
+        """현재 detector 상태를 떠 놓는다 (docs/steering/47 per-step 게이팅).
+
+        serve 는 1차 무개입 pass 의 x_t 로 발화를 판정한 뒤, 발화하면 이 스냅샷으로
+        되돌려 2차 steered pass 의 x_t' 로 다시 전진시킨다. LSTM (h,c) 는 이후 step 이
+        같은 텐서를 덮어쓰지 않도록 반드시 clone 한다. MLP 경로는 `_hc` 가 None 이다.
+        """
+        hc = self._hc
+        if hc is None:
+            hc_snap = None
+        else:
+            if not (isinstance(hc, tuple) and len(hc) == 2):
+                raise RuntimeError(
+                    f"failure-detector: snapshot 불가 — _hc 가 (h,c) 튜플이 아님 ({type(hc)})")
+            hc_snap = (hc[0].detach().clone(), hc[1].detach().clone())
+        return {"_hc": hc_snap, "_sum": float(self._sum), "_t": int(self._t)}
+
+    def restore(self, snap: dict) -> None:
+        """`snapshot()` 이 뜬 상태로 되돌린다 (fail-loud: 키 누락이면 즉시 예외)."""
+        if not isinstance(snap, dict):
+            raise RuntimeError(
+                f"failure-detector: restore 인자가 dict 가 아님 ({type(snap)})")
+        for key in ("_hc", "_sum", "_t"):
+            if key not in snap:
+                raise RuntimeError(
+                    f"failure-detector: restore snapshot 에 '{key}' 없음 "
+                    f"(있는 것: {sorted(snap)}) — snapshot() 산출물이 맞나")
+        hc = snap["_hc"]
+        if hc is None:
+            self._hc = None
+        else:
+            if not (isinstance(hc, tuple) and len(hc) == 2):
+                raise RuntimeError(
+                    f"failure-detector: restore 의 _hc 가 (h,c) 튜플이 아님 ({type(hc)})")
+            # 복원본을 또 clone: 같은 스냅샷으로 여러 번 되돌려도 서로 오염되지 않게.
+            self._hc = (hc[0].detach().clone(), hc[1].detach().clone())
+        self._sum = float(snap["_sum"])
+        self._t = int(snap["_t"])
+
     # ---------------------------------------------------------------- 지문
     def spec(self) -> dict:
         return dict(self.meta)
@@ -316,6 +356,35 @@ def _self_test() -> int:
             same = abs(s0 - rec[0]["score"]) < 1e-9
             ok &= same
             print(f"[self-test] {kind}: reset 재현 {'OK' if same else 'FAIL'}")
+
+            # snapshot/restore: 중간에서 뜬 상태로 되돌리면 이후 점수가 bit 일치
+            mid = 4
+            det.reset()
+            for f in feats[:mid]:
+                det.step(f)
+            snap = det.snapshot()
+            tail_a = [det.step(f)["score"] for f in feats[mid:]]
+            det.restore(snap)
+            tail_b = [det.step(f)["score"] for f in feats[mid:]]
+            bitsame = all(a == b for a, b in zip(tail_a, tail_b))
+            # 원 시퀀스(rec) 와도 일치해야 한다 = 스냅샷이 진짜 그 시점 상태
+            vs_full = all(a == r["score"] for a, r in zip(tail_a, rec[mid:]))
+            ok &= bitsame and vs_full
+            print(f"[self-test] {kind}: snapshot/restore bit 일치 "
+                  f"{'OK' if bitsame else 'FAIL'} / 원시퀀스 대조 "
+                  f"{'OK' if vs_full else 'FAIL'} (mid={mid})")
+
+            # 발화 후 재전진 시나리오: 같은 t 에서 다른 입력(x') 로 다시 전진해도
+            # 상태가 x' 기준으로만 커밋되는지 (스냅샷 복원 → 다른 feature → 원복 확인)
+            det.restore(snap)
+            alt = feats[mid] + 0.5
+            det.step(alt)
+            det.restore(snap)
+            after = det.step(feats[mid])["score"]
+            clean = (after == rec[mid]["score"])
+            ok &= clean
+            print(f"[self-test] {kind}: 롤백 후 재전진 오염 없음 "
+                  f"{'OK' if clean else 'FAIL'}")
 
             # 미등록 α / task 는 fail-loud
             for bad in (dict(alpha=0.05), dict(task="NoSuchTask")):

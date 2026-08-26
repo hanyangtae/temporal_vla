@@ -219,6 +219,15 @@ class N15LerobotHttpFeatureClient(VLAClient):
                 and calls_done >= self.reseed_from_call):
             seed_base += self.reseed_offset
         call_inference_seed = None if seed_base is None else seed_base + calls_done
+        # per-step 게이팅(docs/steering/47): serve 가 1차 무개입 pass 로 발화를 판정하고,
+        # 발화 시 이 record 만 DiT 재실행해 action 을 교체한다. 클라이언트는 seed 를
+        # 건드리지 않는다(재추첨은 serve 의 2차 pass 몫) — reseed arm 과 독립 경로.
+        extra_payload: dict[str, Any] = {}
+        perstep_gate = getattr(self, "perstep_gate", None)
+        if perstep_gate is not None:
+            extra_payload["perstep_gate"] = perstep_gate
+            if getattr(self, "perstep_debug_rerun", False):
+                extra_payload["perstep_debug_rerun"] = True
         if self.no_features:
             # /act 는 groot 16-큐 팝(16콜당 1추론)이라 캡처 경로와 실행 단위가 어긋남
             # (Gate 2 치명#1) — skip_features 로 /act_with_features 의 chunk 추론 경로를
@@ -228,7 +237,7 @@ class N15LerobotHttpFeatureClient(VLAClient):
                 states,
                 instruction,
                 inference_seed=call_inference_seed,
-                extra_payload={"skip_features": 1},
+                extra_payload={"skip_features": 1, **extra_payload},
             )
             self.n_calls += 1
             if features is not None:
@@ -248,6 +257,7 @@ class N15LerobotHttpFeatureClient(VLAClient):
             states,
             instruction,
             inference_seed=call_inference_seed,
+            extra_payload=(extra_payload or None),
         )
         self.n_calls += 1
         if not isinstance(actions, dict):
@@ -651,13 +661,43 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--gated-steering-mode",
-        choices=("off", "online"),
+        choices=("off", "online", "perstep"),
         default="off",
         help=(
             "online: serve 의 failure detector 발화(features.failure_fired)로 개입을 "
             "latch — 발화 전엔 'off' POST(=identity), 최초 발화 이후 매 스텝 라벨러의 "
             "현재 phase 를 POST(phase-follow). serve 는 --failure-detector + "
-            "--steering-phase-npz-base 필요. --gated-steering/--steer-from-record 와 배타."
+            "--steering-phase-npz-base 필요. --gated-steering/--steer-from-record 와 배타. "
+            "| perstep: latch 없음(docs/steering/47) — 매 record 마다 serve 가 1차 무개입 "
+            "pass 로 발화를 판정하고, 발화한 그 record 만 DiT 재실행으로 action 교체. "
+            "연산자는 --perstep-op. 클라이언트는 phase 를 매 스텝 POST 하지만 그 값은 "
+            "'발화 시 적용할 phase' 정보로만 쓰인다."
+        ),
+    )
+    parser.add_argument(
+        "--perstep-op",
+        choices=("none", "reseed", "setm", "condg"),
+        default="none",
+        help=(
+            "--gated-steering-mode perstep 에서 발화 시 적용할 연산자 family. "
+            "none=발화만 기록하고 개입 없음(게이트 감지-only 대조)."
+        ),
+    )
+    parser.add_argument(
+        "--perstep-reseed-offset",
+        type=int,
+        default=900000,
+        help=(
+            "--perstep-op reseed 의 2차 pass denoise seed offset (serve 가 "
+            "seed+offset 으로 재추첨). --reseed-offset(클라이언트 latch arm)과 무관."
+        ),
+    )
+    parser.add_argument(
+        "--perstep-debug-rerun",
+        action="store_true",
+        help=(
+            "perstep 배관 동치 스모크: 발화 무관 매 record hook off·동일 seed 로 2차 "
+            "pass 를 돌려 max|action1-action2| 를 응답으로 받는다 (action 은 1차 유지)."
         ),
     )
     parser.add_argument(
@@ -877,6 +917,31 @@ def run() -> dict[str, Any]:
     if reseed_from_record is not None:
         policy.reseed_from_call = int(reseed_from_record)
         policy.reseed_offset = int(getattr(args, "reseed_offset", 500000))
+    # per-step 게이팅(docs/steering/47): latch 계열(online/steer-from-record) 및 클라이언트
+    # seed 산술(reseed-from-record), 사전표 phase 게이트(--gated-steering) 전부와 배타 —
+    # 개입 시점의 출처가 둘일 수 없다.
+    perstep_gating = getattr(args, "gated_steering_mode", "off") == "perstep"
+    if perstep_gating:
+        conflicts = [
+            name
+            for name, active in (
+                ("--gated-steering", bool(getattr(args, "gated_steering", False))),
+                ("--steer-from-record", steer_from_record is not None),
+                ("--reseed-from-record", reseed_from_record is not None),
+            )
+            if active
+        ]
+        if conflicts:
+            raise ValueError(
+                "--gated-steering-mode perstep 은 " + "/".join(conflicts) + " 와 배타 "
+                "(개입 시점의 출처가 둘일 수 없다)")
+        policy.perstep_gate = {
+            "op": (None if getattr(args, "perstep_op", "none") == "none"
+                   else str(args.perstep_op)),
+            "reseed_offset": int(getattr(args, "perstep_reseed_offset", 900000)),
+        }
+        if getattr(args, "perstep_debug_rerun", False):
+            policy.perstep_debug_rerun = True
     if args.wait_ready:
         policy.wait_until_ready(max_wait=args.timeout)
     serve_identity = _get_serve_identity(args.vla_server)
@@ -885,6 +950,12 @@ def run() -> dict[str, Any]:
         # 산출물은 "online arm" 으로 남는다 (무음 위약). 즉시 중단한다.
         raise RuntimeError(
             "--gated-steering-mode online 인데 serve /health 에 failure_detector 가 없다 "
+            "— serve 를 --failure-detector <ckpt.pt> 로 기동할 것")
+    if perstep_gating and not serve_identity.get("serve_failure_detector"):
+        # detector 없는 serve 면 게이트가 영영 미발화 = 전 판 무개입인데 산출물은
+        # "perstep arm" 으로 남는다 (무음 위약). 즉시 중단한다.
+        raise RuntimeError(
+            "--gated-steering-mode perstep 인데 serve /health 에 failure_detector 가 없다 "
             "— serve 를 --failure-detector <ckpt.pt> 로 기동할 것")
     from src.collect.plan import resolve_grid  # noqa: PLC0415
 
@@ -986,6 +1057,11 @@ def run() -> dict[str, Any]:
                 if local_ep_idx == 0:
                     _warn_phase_vocab_mismatch(
                         labeler, getattr(args, "proximity_phases", False), serve_identity)
+            elif perstep_gating and local_ep_idx == 0:
+                # perstep 은 episode 시작 'off' POST 가 필요 없다(latch 없음 — serve 가
+                # 매 record 스스로 게이팅). 다만 phase 어휘 대조는 동일하게 유용하다.
+                _warn_phase_vocab_mismatch(
+                    labeler, getattr(args, "proximity_phases", False), serve_identity)
             env_gt = None
             if getattr(args, "env_step_phases", True):
                 _probe = find_probe_wrapper(env)
@@ -1010,6 +1086,12 @@ def run() -> dict[str, Any]:
             failure_latched = False
             trigger_step: int | None = None
             phase_at_trigger: str | None = None
+            # per-step 게이팅(docs/steering/47): latch 변수 없음 — record 별 1회성 개입.
+            # y_t(1차 무개입 pass) / y_t'(발화 시 2차 pass) / 발화 flag / 2차 seed.
+            perstep_scores_post: list = []
+            perstep_fired_flags: list = []
+            perstep_seed2_list: list = []
+            perstep_gate_skipped_list: list = []   # 발화했지만 phase 미등록으로 실개입 0인 record
             success = False
             first_success_step = None
             step_i = 0
@@ -1051,6 +1133,11 @@ def run() -> dict[str, Any]:
                     # record r 에서 발화하면 개입은 r+1 부터. 발화 전엔 off = identity.
                     want = phase if failure_latched else "off"
                     gated_now = _post_steering_phase(args.vla_server, want, scene=getattr(args, "steering_scene", None))
+                elif perstep_gating:
+                    # latch 없음 — 매 record 현재 phase 를 POST 한다. serve 는 이 값을
+                    # "발화 시 적용할 phase" 정보로만 보관하고, 발화 판정은 1차 무개입
+                    # pass 점수로 자기가 한다(개입은 그 record 1회성).
+                    gated_now = _post_steering_phase(args.vla_server, phase, scene=getattr(args, "steering_scene", None))
                 official_action, _ = policy.get_action(obs)
                 if online_gating:
                     fail = getattr(policy, "last_failure", None)
@@ -1062,6 +1149,18 @@ def run() -> dict[str, Any]:
                         failure_latched = True
                         trigger_step = progress_before
                         phase_at_trigger = phase
+                if perstep_gating:
+                    fail = getattr(policy, "last_failure", None)
+                    if fail is None:
+                        raise RuntimeError(
+                            "perstep gating 인데 응답에 features.failure_score 가 없다 — "
+                            "serve --failure-detector 배선 확인 (무음 미개입 방지)")
+                    fired_now = bool(fail.get("perstep_fired", fail.get("fired")))
+                    if fired_now and trigger_step is None:
+                        # 첫 발화만 기존 online arm 의 trigger_step 호환 필드로 남긴다
+                        # (latch 의미 아님 — 집계 스크립트 호환용 좌표).
+                        trigger_step = progress_before
+                        phase_at_trigger = phase
                 if perturber is not None:
                     official_action = perturber.maybe_apply(progress_before, official_action)
                 progress_after = policy.n_calls if no_features else len(policy.records)
@@ -1071,6 +1170,15 @@ def run() -> dict[str, Any]:
                     if online_gating:
                         # record 축과 1:1 (feature_phases 와 같은 길이)
                         failure_scores.append(policy.last_failure["score"])
+                    if perstep_gating:
+                        _f = policy.last_failure
+                        failure_scores.append(_f["score"])
+                        perstep_scores_post.append(_f.get("score_post"))
+                        perstep_fired_flags.append(
+                            bool(_f.get("perstep_fired", _f.get("fired")))
+                        )
+                        perstep_seed2_list.append(_f.get("perstep_seed2"))
+                        perstep_gate_skipped_list.append(_f.get("gate_skipped"))
                     # 떨림 진단: 이 record 의 명령 action 벡터(첫 실행 스텝)와 개입 활성 여부.
                     action_traj.append(_extract_groot_action_vector(official_action))
                     if no_features:
@@ -1100,6 +1208,19 @@ def run() -> dict[str, Any]:
                     "failure_scores/inference-count misaligned: "
                     f"{len(failure_scores)} != {n_inferences}"
                 )
+            if perstep_gating:
+                for _name, _seq in (
+                    ("failure_scores", failure_scores),
+                    ("failure_scores_post", perstep_scores_post),
+                    ("perstep_fired", perstep_fired_flags),
+                    ("perstep_seed2", perstep_seed2_list),
+                    ("perstep_gate_skipped", perstep_gate_skipped_list),
+                ):
+                    if len(_seq) != n_inferences:
+                        raise RuntimeError(
+                            f"{_name}/inference-count misaligned: "
+                            f"{len(_seq)} != {n_inferences}"
+                        )
 
             # online gating 감사 필드 (그 모드일 때만 기록 — 기존 arm 산출물 스키마 불변).
             # trigger_step=None = 미발화(=전 판 무개입), failure_scores 는 record 축 1:1.
@@ -1115,6 +1236,32 @@ def run() -> dict[str, Any]:
                 if online_gating
                 else {}
             )
+            # per-step 게이팅 감사 필드 (docs/steering/47). latch 없음 — 전 열이 record 축
+            # 1:1. trigger_step/phase_at_trigger 는 첫 발화 좌표(호환 필드)일 뿐 개입 구간
+            # 을 뜻하지 않는다: 실제 개입 record 는 perstep_fired 가 정본.
+            if perstep_gating:
+                online_gate_meta = {
+                    "gated_steering_mode": "perstep",
+                    "perstep_op": (None if getattr(args, "perstep_op", "none") == "none"
+                                   else str(args.perstep_op)),
+                    "perstep_reseed_offset": int(
+                        getattr(args, "perstep_reseed_offset", 900000)
+                    ),
+                    "trigger_step": trigger_step,
+                    "phase_at_trigger": phase_at_trigger,
+                    "failure_scores": failure_scores,
+                    "failure_scores_post": perstep_scores_post,
+                    "perstep_fired": perstep_fired_flags,
+                    "perstep_seed2": perstep_seed2_list,
+                    "perstep_gate_skipped": perstep_gate_skipped_list,
+                    "perstep_fire_count": int(sum(perstep_fired_flags)),
+                    # 실개입 = 발화 ∧ ¬skipped (dose 감사 분모)
+                    "perstep_applied_count": int(sum(
+                        1 for f, sk in zip(perstep_fired_flags, perstep_gate_skipped_list)
+                        if f and not sk
+                    )),
+                    "feature_phases": list(feature_phases),
+                }
 
             rendered_video = env.render()
             upstream_video_path = _find_latest_video(upstream_video_dir)

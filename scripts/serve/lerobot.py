@@ -22,11 +22,13 @@ lerobot 컨테이너에서 실행:
 """
 
 import argparse
+import contextlib
 import logging
 import os
 import random
 import sys
 import time
+import types
 import uuid
 from pathlib import Path
 from typing import Any, Optional
@@ -288,16 +290,21 @@ def _load_failure_detector_if_requested(args) -> None:
     )
 
 
-def _reset_steering_step_counters() -> None:
+def _reset_steering_step_counters(*, include_patch: bool = True) -> None:
     """Per-Step steering 의 denoise call 카운터를 요청 시작 시 리셋.
 
     phase 는 요청 단위(/steering_phase), step 은 요청 내 denoise call 단위라 직교 —
     /act·/act_with_features 진입부에서 매 요청 호출한다 (global M 단일 hook 은 no-op).
+
+    ``include_patch=False``: per-step 게이트의 2차 pass(같은 record 재실행)용 —
+    patch hook 의 reset 은 record cursor 전진을 겸하므로 요청당 1회만 불러야 한다.
     """
     for hook in _steering:
         reset = getattr(hook, "reset_step_counter", None)
         if reset is not None:
             reset()
+    if not include_patch:
+        return
     # patch hook 은 같은 호출이 k 리셋 + record cursor 전진을 겸한다
     # (요청 1개 = record 1개 규약, patching_hooks.PatchSteering docstring)
     for hook in _patch_hooks.values():
@@ -588,6 +595,47 @@ def parse_payload(payload: dict) -> dict:
 # ─── FastAPI 엔드포인트 ───────────────────────────────────────────────────────
 
 
+def _apply_steering_phase_state(phase: str | None, scene: int | None) -> None:
+    """등록된 gated hook 을 (phase, scene) 상태로 스위칭 — 실제 배선 본문.
+
+    ``/steering_phase`` 핸들러와 per-step 게이트의 2차 pass 가 공유한다
+    (docs/steering/47 §3-3). ``phase`` 가 None/빈 문자열이거나 미등록 phase 면
+    무개입(identity / set_vector(None) / set_phase(None)) — 즉 off 와 같은 경로다.
+    ``_gated_registry["current"]`` 는 여기서 건드리지 않는다 (핸들러 책임).
+    """
+    for layer, hook in _gated_registry["hooks"].items():
+        if hasattr(hook, "set_phase"):
+            # condg: hook 이 전 phase 파라미터를 들고 있어 이름·scene 만 스위칭.
+            hook.set_phase(phase or None, scene)
+            continue
+        M = _gated_registry["matrices"][layer].get(phase) if phase else None
+        if hasattr(hook, "set_vector"):
+            # setpoint hook: 등록 phase → 활성, 미등록 → 비활성(no-op).
+            # 4-튜플=세그먼트 연산자(v_seg,s_tok,bounds,mask), 2-튜플=구 pooled (r̂,s)
+            if M is None:
+                hook.set_segment(None)
+                hook.set_vector(None)
+            elif len(M) == 4:
+                hook.set_segment(M)
+            else:
+                hook.set_vector(*M)
+        else:
+            # set_matrices 가 M(단일) / M_seq(per-step 리스트) 모두 수용, 텐서 캐시·step
+            # 카운터도 함께 리셋한다 (구 ``hook.M=...; hook._Mt=None`` 배선 대체).
+            hook.set_matrices(M if M is not None else _gated_registry["identity"][layer])
+
+
+def _steering_phase_off() -> None:
+    """전 gated hook 무개입 전환 (미등록 phase 폴백과 동일 경로). 등록 없으면 no-op.
+
+    per-step 게이트 규약: 요청 시작 시 무조건 off → 1차 pass 는 자연 활성화,
+    발화한 record 만 2차 pass 에서 잠깐 on 했다가 다시 off (latch 없음).
+    """
+    if not _gated_registry:
+        return
+    _apply_steering_phase_state(None, None)
+
+
 @app.post("/steering_phase")
 def steering_phase(payload: dict):
     """Oracle phase-gated steering: 현재 phase 의 conceptor 로 hook M 을 스위칭.
@@ -603,26 +651,9 @@ def steering_phase(payload: dict):
     phase = str(payload.get("phase", ""))
     scene = payload.get("scene")
     scene = None if scene is None else int(scene)
-    for layer, hook in _gated_registry["hooks"].items():
-        if hasattr(hook, "set_phase"):
-            # condg: hook 이 전 phase 파라미터를 들고 있어 이름·scene 만 스위칭.
-            hook.set_phase(phase or None, scene)
-            continue
-        M = _gated_registry["matrices"][layer].get(phase)
-        if hasattr(hook, "set_vector"):
-            # setpoint hook: 등록 phase → 활성, 미등록 → 비활성(no-op).
-            # 4-튜플=세그먼트 연산자(v_seg,s_tok,bounds,mask), 2-튜플=구 pooled (r̂,s)
-            if M is None:
-                hook.set_segment(None)
-                hook.set_vector(None)
-            elif len(M) == 4:
-                hook.set_segment(M)
-            else:
-                hook.set_vector(*M)
-        else:
-            # set_matrices 가 M(단일) / M_seq(per-step 리스트) 모두 수용, 텐서 캐시·step
-            # 카운터도 함께 리셋한다 (구 ``hook.M=...; hook._Mt=None`` 배선 대체).
-            hook.set_matrices(M if M is not None else _gated_registry["identity"][layer])
+    # 비-perstep 경로는 현행 그대로: POST 즉시 적용 (per-step 게이트는 /act 진입부에서
+    # off 시킨 뒤 발화한 record 의 2차 pass 에서만 이 상태를 다시 적용한다).
+    _apply_steering_phase_state(phase, scene)
     _gated_registry["current"] = phase
     _gated_registry["current_scene"] = scene
     return {"ok": True, "phase": phase, "scene": scene,
@@ -899,6 +930,279 @@ def _action_to_emit_array(action: torch.Tensor) -> np.ndarray:
     raise ValueError(f"Unsupported action tensor shape: {action_np.shape}")
 
 
+# ─── per-step 게이트 (docs/steering/47) ────────────────────────────────────────
+# 규약: 1차 pass 는 **hook 전부 off** 로 돌려 자연 활성화 x_t 를 얻고(detector 순환
+# 차단, §1-2), detector 가 발화한 record 에서만 **DiT-only 2차 pass** 로 개입한다.
+# 개입은 그 record 1회성 — 다음 record 는 다시 무개입이 기본값(latch 폐기).
+_PERSTEP_OPS = ("setm", "condg", "reseed")
+_PERSTEP_DEFAULT_RESEED_OFFSET = 900000
+# action_head.get_action 호출 인자 캐시 — backbone(VL) 재실행 없이 DiT 만 다시 돌린다.
+_dit_call_cache: dict = {}
+
+
+def _shallow_copy_model_inputs(obj):
+    """``BatchFeature`` (또는 dict) 얕은 복사 — 키 in-place 교체로부터 캐시 보호.
+
+    값(텐서)은 공유하고 매핑만 새로 만든다. ``process_backbone_output`` 이 하는 건
+    ``backbone_output["backbone_features"] = ...`` (키 재바인딩)이라 이걸로 충분하다.
+    """
+    if type(obj) is dict:
+        return dict(obj)
+    return type(obj)(data=dict(obj))  # BatchFeature(data=...) — 속성 접근 보존
+
+
+def _parse_perstep_gate(payload: dict) -> dict | None:
+    """payload 의 ``perstep_gate`` / ``perstep_debug_rerun`` 파싱 + 사전 배선 검증.
+
+    payload 계약:
+      ``perstep_gate``: {"op": "setm"|"condg"|"reseed"|null,
+                         "reseed_offset": int (기본 900000)}
+      ``perstep_debug_rerun``: bool — 발화 무관하게 hook off·같은 seed 로 2차 실행해
+      배관 동치(max|Δaction|)만 재는 스모크 모드 (응답 action 은 1차 것 유지).
+
+    없으면 None (기존 경로 그대로). 오배선은 전부 명시 에러 — 조용히 개입 없는
+    "개입 arm" 이 도는 사고 방지.
+    """
+    raw = payload.get("perstep_gate")
+    debug = bool(payload.get("perstep_debug_rerun"))
+    if raw is None and not debug:
+        return None
+    if raw is not None and not isinstance(raw, dict):
+        raise HTTPException(status_code=422, detail="perstep_gate 는 dict 여야 한다")
+    cfg = dict(raw or {})
+
+    op = cfg.get("op")
+    if op is not None:
+        op = str(op).strip().lower()
+        if op in ("", "none", "null"):
+            op = None
+    if op is not None and op not in _PERSTEP_OPS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"perstep_gate.op 불명: {op!r} (허용 {list(_PERSTEP_OPS)} 또는 null)",
+        )
+
+    if _policy_type != "groot":
+        # DiT-only 재실행은 GR00T action_head 구조 전용 (fail-loud, 무음 no-op 금지)
+        raise HTTPException(
+            status_code=409,
+            detail=f"per-step 게이트는 policy_type='groot' 전용 (현재 {_policy_type!r})",
+        )
+    if _failure_detector is None and not debug:
+        raise HTTPException(
+            status_code=409,
+            detail="per-step 게이트는 --failure-detector 필요 (게이트 신호 없음)",
+        )
+    if _patch_hooks:
+        # patch hook 은 "요청 1개 = record 1개" 커서 규약 — 2차 pass 재실행이 발화
+        # 횟수를 2배로 만들어 over-fire 가드를 터뜨린다 (동시 사용 금지).
+        raise HTTPException(
+            status_code=409,
+            detail="per-step 게이트는 patch serve(--patch-layers)와 동시 사용 불가",
+        )
+    if payload.get("skip_features") and _failure_detector is None:
+        # detector 없는 skip_features 는 hook 없는 chunk 경로로 빠져 인자 캐시가 안 찬다
+        raise HTTPException(
+            status_code=409,
+            detail="per-step 게이트 + skip_features 는 detector 켜진 serve 에서만 가능",
+        )
+    if op in ("setm", "condg"):
+        if not _gated_registry:
+            raise HTTPException(
+                status_code=409,
+                detail=f"perstep op={op} 인데 gated steering 미등록 (serve 재기동 필요)",
+            )
+        want_family = "condg" if op == "condg" else "setpoint"
+        fams = {ent["family"] for ent in _arm_registry.values()}
+        if want_family not in fams:
+            raise HTTPException(
+                status_code=409,
+                detail=f"perstep op={op}(family={want_family}) != 등록 family {sorted(fams)}",
+            )
+
+    try:
+        offset = int(cfg.get("reseed_offset", _PERSTEP_DEFAULT_RESEED_OFFSET))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="perstep_gate.reseed_offset 은 int") from exc
+
+    return {"op": op, "reseed_offset": offset, "debug_rerun": debug}
+
+
+def _ensure_dit_rerun_wrap() -> None:
+    """``action_head.get_action`` 을 감싸 호출 인자를 캐시 (2차 pass 재실행용).
+
+    ``flow_matching_action_head.process_backbone_output`` 이
+    ``backbone_output["backbone_features"]`` 를 **in-place 로 덮어쓴다** — 그래서
+    원함수 호출 **전에** 얕은 복사를 떠 둔다. 아니면 2차 pass 가 vlln·vl_self_attention
+    을 두 번 먹인 값을 받아 조용히 다른 조건이 된다.
+    """
+    if _dit_call_cache.get("installed"):
+        return
+    groot_model = getattr(policy, "_groot_model", None)
+    if groot_model is None:
+        raise HTTPException(status_code=500, detail="per-step 게이트: policy._groot_model 없음")
+    head = groot_model.action_head
+    orig = head.get_action  # 클래스 구현에 바인딩된 원함수 (래핑 전에 확보 — 재귀 방지)
+
+    def _capturing_get_action(self, backbone_output, action_input):  # noqa: ARG001
+        _dit_call_cache["backbone_output"] = _shallow_copy_model_inputs(backbone_output)
+        _dit_call_cache["action_input"] = _shallow_copy_model_inputs(action_input)
+        return orig(backbone_output, action_input)
+
+    head.get_action = types.MethodType(_capturing_get_action, head)
+    _dit_call_cache["orig"] = orig
+    _dit_call_cache["installed"] = True
+    logger.info("per-step 게이트: action_head.get_action 인자 캐시 wrap 설치")
+
+
+def _rerun_dit_only(*, capture: bool) -> tuple[torch.Tensor, np.ndarray | None]:
+    """캐시된 (backbone_output, action_input) 으로 action_head 만 재실행 (2차 pass).
+
+    backbone(VL)은 다시 돌지 않는다 — 같은 관측·같은 VL 조건 위에서 denoise 만 다시
+    한다. 반환 action 은 ``predict_action_chunk`` 와 같은 [B,H,D] raw 텐서(원 action_dim
+    슬라이스 완료). ``capture=True`` 면 별도 ``SafeFeatureCapture`` 로 2차 활성화
+    ([L,K,T,D])를 함께 반환한다 (1차 캡처 컨텍스트 밖 — [K]→[2K] 오염 방지).
+    """
+    if "backbone_output" not in _dit_call_cache:
+        raise HTTPException(
+            status_code=500,
+            detail="per-step 게이트: 1차 pass 의 action_head 인자 캐시가 비었다 (wrap 미발화)",
+        )
+    bo_cached = _dit_call_cache["backbone_output"]
+    ai_cached = _dit_call_cache["action_input"]
+    # 2차 호출도 복사본으로 — get_action 이 backbone_features 를 다시 in-place 덮어쓴다
+    bo = _shallow_copy_model_inputs(bo_cached)
+    ai = _shallow_copy_model_inputs(ai_cached)
+    orig = _dit_call_cache["orig"]
+
+    device = next(policy.parameters()).device
+    use_bf16 = bool(getattr(policy.config, "use_bf16", False))
+    # per-step hook 의 denoise 카운터·condg call 카운터를 2차 pass 용으로 리셋
+    # (안 하면 over-fire 가드가 터지거나 apply_call 지점이 어긋난다).
+    # patch hook 은 제외 — 그 reset 은 record cursor 전진을 겸한다(요청당 1회).
+    _reset_steering_step_counters(include_patch=False)
+
+    cap = None
+    if capture:
+        cap = safe_hooks.SafeFeatureCapture(
+            policy,
+            _policy_type,
+            capture_vl=_capture_vl_features,
+            groot_dit_layers=_groot_dit_capture_layers,
+            pi05_expert_layers=_pi05_expert_capture_layers,
+            groot_dit_token_pool=_groot_dit_token_pool,
+            vl_capture_point=_groot_vl_capture_point,
+        )
+    with torch.inference_mode():
+        with (cap if cap is not None else contextlib.nullcontext()):
+            with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16):
+                out = orig(bo, ai)
+    _assert_per_step_hook_counts()
+
+    actions = out["action_pred"]
+    from lerobot.utils.constants import ACTION as _ACTION  # noqa: PLC0415
+
+    original_action_dim = int(policy.config.output_features[_ACTION].shape[0])
+    actions = actions[:, :, :original_action_dim]
+
+    hidden2 = None
+    if cap is not None:
+        hidden2 = cap.assemble_blocks()
+        if hidden2 is None:
+            raise HTTPException(
+                status_code=500, detail="per-step 게이트: 2차 pass 활성화 캡처 실패(무발화)"
+            )
+    return actions, hidden2
+
+
+def _gated_phase_registered(phase: str | None) -> bool:
+    """해당 phase 에 실제 연산자가 등록돼 있는지 (미등록이면 적용해도 identity)."""
+    if not phase or not _gated_registry:
+        return False
+    return any(phase in table for table in _gated_registry["matrices"].values())
+
+
+def _run_perstep_gate(
+    cfg: dict, action1: torch.Tensor, hidden1, inference_seed: int | None
+) -> tuple[torch.Tensor, Any, dict, dict | None]:
+    """1차 pass 결과 → detector → (발화 시) 2차 pass. 반환 (action, hidden, extras, y_t).
+
+    - detector 입력은 **항상 1차 pass(pre-hook)** 활성화 (docs/steering/47 §1-2).
+    - 2차 pass 후 detector 상태를 1차 step 직전으로 되돌린 뒤 x_t' 로 다시 step —
+      즉 상태 커밋은 실제로 실행된 활성화 쪽(h_t = h′).
+    """
+    extras: dict[str, Any] = {
+        "features.perstep_fired": False,
+        "features.perstep_op": None,
+        "features.perstep_seed2": None,
+    }
+    snap = None
+    fail1 = None
+    if _failure_detector is not None:
+        if hidden1 is None:
+            raise HTTPException(status_code=500, detail="per-step 게이트: 1차 pass hidden 없음")
+        snap = _failure_detector.snapshot()
+        fail1 = _failure_from_hidden(np.asarray(hidden1))
+        extras["features.perstep_fired"] = bool(fail1["fired"])
+
+    if cfg["debug_rerun"]:
+        # 배관 동치 스모크: hook off·seed1 로 2차 실행 → raw action 동치 확인만.
+        # 응답 action 은 1차 것 유지(개입 아님), detector 도 1차 step 만 커밋.
+        if inference_seed is not None:
+            torch.manual_seed(int(inference_seed))
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(int(inference_seed))
+        action2, _ = _rerun_dit_only(capture=False)
+        diff = float((action2.detach().float() - action1.detach().float()).abs().max().item())
+        extras["features.perstep_debug_max_action_diff"] = diff
+        return action1, hidden1, extras, fail1
+
+    op = cfg["op"]
+    if op is None or not extras["features.perstep_fired"]:
+        return action1, hidden1, extras, fail1
+
+    if inference_seed is None:
+        raise HTTPException(
+            status_code=422,
+            detail="per-step 게이트 2차 pass 는 payload.inference_seed 필요 "
+            "(noise 재현/재추첨의 기준 seed)",
+        )
+    seed1 = int(inference_seed)
+    # 1차 pass 가 전역 RNG 를 소모했으므로 2차 직전 반드시 재설정:
+    #   setm/condg → seed1 (1차와 같은 noise, 차이는 개입뿐)
+    #   reseed     → seed1+offset (denoise noise 재추첨 자체가 개입)
+    seed2 = seed1 + int(cfg["reseed_offset"]) if op == "reseed" else seed1
+    torch.manual_seed(seed2)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed2)
+
+    cur_phase = _gated_registry.get("current") if _gated_registry else None
+    if op in ("setm", "condg") and not _gated_phase_registered(cur_phase):
+        # 현재 phase 에 연산자가 없으면 2차 pass 는 identity — "개입했다"고 기록하면
+        # 거짓이다. 개입 없음으로 커밋하고 사유를 데이터에 남긴다 (무음 no-op 금지).
+        extras["features.perstep_gate_skipped"] = f"phase_unregistered:{cur_phase!r}"
+        return action1, hidden1, extras, fail1
+
+    applied = False
+    try:
+        if op in ("setm", "condg"):
+            # 마지막으로 POST 된 phase/scene 상태를 그 record 에만 적용
+            _apply_steering_phase_state(cur_phase, _gated_registry.get("current_scene"))
+            applied = True
+        action2, hidden2 = _rerun_dit_only(capture=True)
+    finally:
+        if applied:
+            _steering_phase_off()
+
+    if _failure_detector is not None:
+        _failure_detector.restore(snap)
+        fail2 = _failure_from_hidden(np.asarray(hidden2))
+        extras["features.failure_score_post"] = fail2["score"]
+    extras["features.perstep_op"] = op
+    extras["features.perstep_seed2"] = seed2
+    return action2, hidden2, extras, fail1
+
+
 @app.post("/act")
 async def predict_action(payload: dict):
     """통일 API: observation → action sub-keys."""
@@ -933,6 +1237,12 @@ async def predict_action(payload: dict):
             status_code=409,
             detail="patch serve 는 /act(큐 팝) 미지원 — "
             "/act_with_features (skip_features=1) 를 사용하라",
+        )
+    if payload.get("perstep_gate") is not None or payload.get("perstep_debug_rerun"):
+        # per-step 게이트는 활성화(detector 입력)가 필요 — /act 는 16-큐 팝이라 불가
+        raise HTTPException(
+            status_code=409,
+            detail="per-step 게이트는 /act 미지원 — /act_with_features 를 사용하라",
         )
     inference_seed = _apply_inference_seed(payload)
     _reset_steering_step_counters()
@@ -983,6 +1293,13 @@ async def predict_action_with_features(payload: dict):
     if preprocessor is not None:
         batch = preprocessor(batch)
 
+    # per-step 게이트 (docs/steering/47): 1차 pass 는 반드시 무개입이어야 하므로
+    # 요청 시작에 hook 을 전부 off 하고, action_head 인자 캐시 wrap 을 보장한다.
+    perstep_cfg = _parse_perstep_gate(payload)
+    if perstep_cfg is not None:
+        _ensure_dit_rerun_wrap()
+        _steering_phase_off()
+
     # detector 가 켜져 있으면 skip_features 는 "hook 없이 돌라"가 아니라 **"blob 만 빼라"**
     # 로 해석한다 — detector 는 hidden 이 있어야 점수를 낸다. 아래 hook 경로가 hidden 을
     # 만들고 응답에서 blob 만 억제하므로 --no-features eval 의 응답 크기 이점은 유지된다
@@ -1027,6 +1344,15 @@ async def predict_action_with_features(payload: dict):
     )
     if _policy_type == "groot":
         _assert_per_step_hook_counts()
+
+    perstep_extras: dict = {}
+    fail_precomputed: dict | None = None
+    if perstep_cfg is not None:
+        # 발화 시 action·hidden 이 2차 pass 것으로 교체된다 (응답 action = 실행된 것).
+        action, hidden, perstep_extras, fail_precomputed = _run_perstep_gate(
+            perstep_cfg, action, hidden, inference_seed
+        )
+
     action = _postprocess_action_preserve_chunk(action)
     action_np = _action_to_emit_array(action)
 
@@ -1037,7 +1363,13 @@ async def predict_action_with_features(payload: dict):
         hidden_np = np.asarray(hidden)
         # online failure detector — blob 억제 여부와 무관하게 매 record 1 step 전진.
         if _failure_detector is not None:
-            fail = _failure_from_hidden(hidden_np)
+            # per-step 게이트에서는 1차 pass(pre-hook, y_t) 점수를 그대로 싣는다 —
+            # hidden_np 는 2차 pass 것이라 여기서 다시 step 하면 순환·이중 전진.
+            fail = (
+                fail_precomputed
+                if fail_precomputed is not None
+                else _failure_from_hidden(hidden_np)
+            )
             result["features.failure_score"] = fail["score"]
             result["features.failure_fired"] = fail["fired"]
             result["features.failure_delta"] = fail["delta"]
@@ -1078,6 +1410,8 @@ async def predict_action_with_features(payload: dict):
             )
     else:
         result["has_feature"] = False
+    # per-step 게이트 보고 필드 (발화 여부·적용 연산자·2차 seed·post 점수·디버그 diff)
+    result.update(perstep_extras)
     if inference_seed is not None:
         result["inference_seed"] = inference_seed
     result["latency_ms"] = (time.time() - t0) * 1000

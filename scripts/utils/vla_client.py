@@ -242,16 +242,29 @@ class VLAClient:
         # online failure detector (serve --failure-detector): plain JSON 스칼라.
         # feature blob 유무와 무관하게 오므로(--no-features eval 은 blob 억제 + score 만)
         # features dict 가 아니라 클라이언트 속성으로 노출한다.
-        self.last_failure = (
-            {
+        # per-step 게이팅(docs/steering/47): serve 가 1차 무개입 pass 점수(y_t)로 발화를
+        # 판정하고 발화 시 DiT 만 2차 재실행한다. 그 감사 필드(post 점수·발화 flag·op·
+        # 2차 seed)는 있을 때만 실어 준다 — 기존 arm 응답 스키마는 불변(하위 호환).
+        if "features.failure_score" in result:
+            failure = {
                 "score": result.get("features.failure_score"),
                 "fired": bool(result.get("features.failure_fired")),
                 "delta": result.get("features.failure_delta"),
                 "step": result.get("features.failure_step"),
             }
-            if "features.failure_score" in result
-            else None
-        )
+            for src_key, dst_key in (
+                ("features.failure_score_post", "score_post"),
+                ("features.perstep_fired", "perstep_fired"),
+                ("features.perstep_op", "perstep_op"),
+                ("features.perstep_seed2", "perstep_seed2"),
+                ("features.perstep_gate_skipped", "gate_skipped"),
+                ("features.perstep_debug_max_action_diff", "debug_max_action_diff"),
+            ):
+                if src_key in result:
+                    failure[dst_key] = result.get(src_key)
+            self.last_failure = failure
+        else:
+            self.last_failure = None
 
         blob = result.get("features.hidden_states")
         if isinstance(blob, dict):
