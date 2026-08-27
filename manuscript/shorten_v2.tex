@@ -71,7 +71,7 @@ waypoint의 이벤트가 갖는 phase로 예측한다.
 \mathrm{margin} = I(Z;Y) - I(Z_{\mathrm{clock}};Y).
 \label{eq:margin}
 \end{equation}
-Margin이 양수라는 것은 ``에피소드의 몇 \% 지점인가''라는 시간 정보만으로는 설명되지 않는 phase 정보를 activation이 담고 있다는 뜻이다.
+Margin이 양수라는 것은 ``에피소드의 몇 \% 지점인가''라는 시간 정보만으로는 설명되지 않는 phase 정보를 activation이 담고 있다는 뜻이다. \chg{판독 성능은 정확도와 함께 phase별 F1을 단순 평균한 macro-F1로도 보고한다. 빈도가 높은 phase가 정확도를 지배해 드문 phase의 성능이 가려지는 것을 드러내기 위함이다.}
 
 \begin{figure}[!t]
   \centering
@@ -96,7 +96,7 @@ Margin이 양수라는 것은 ``에피소드의 몇 \% 지점인가''라는 시�
 
 \textbf{Phase 정보는 장면 암기로 환원되지 않는다.} \rev{Activation에는 scene 정보도 섞여 있다(instruction별 mi\_scene 0.02$\sim$0.86 bits). 그러나 scene별 평균을 제거한 잔차에서 scene 정보는 중앙값 0.44에서 0.27 bits로 크게 줄어드는 반면, phase margin은 +0.34에서 +0.31로 10개 instruction 전부에서 양수로 유지된다(Figure 1b).}
 
-\textbf{구조는 모델·데이터를 바꿔도 재현된다.} \rev{별도의 23-에피소드 분석셋에서, 구조가 다른 두 압축 모델(AE와 SAE)이 같은 스텝에서 전환하고}(F1 0.66$\sim$0.75, 무작위 0.51$\sim$0.53, z +8.8$\sim$+13.5), 독립 재수집 데이터에서 새로 학습해도 같은 성질이 나타난다(seed 간 F1 0.55$\sim$0.58, z +4.3$\sim$+5.1). Denoising 슬롯·장면·시드는 에피소드 내 상수라 전환의 원인이 될 수 없다.
+\textbf{구조는 모델·데이터를 바꿔도 재현된다.} \rev{별도의 23-에피소드 분석셋에서, 구조가 다른 두 압축 모델(AE와 SAE)이 같은 스텝에서 전환하고}(\chg{전환 일치 F1} 0.66$\sim$0.75, 무작위 0.51$\sim$0.53, z +8.8$\sim$+13.5), 독립 재수집 데이터에서 새로 학습해도 같은 성질이 나타난다(seed 간 \chg{전환 일치 F1} 0.55$\sim$0.58, z +4.3$\sim$+5.1). Denoising 슬롯·장면·시드는 에피소드 내 상수라 전환의 원인이 될 수 없다.
 
 % \textbf{세밀 단위는 하류 분석에서도 유용하다.} % 성공/실패 분리도를 단계 조건부로 잴
 % 때, 발견 상태(instruction별 k=8)가 GT phase보다 높은 분리도를 주는 instruction이 9개 중
