@@ -96,7 +96,6 @@ def main() -> None:
     ax1.set_xticklabels([m[1] for m in methods])
     ax1.set_ylim(0, 1.05)
     ax1.set_ylabel("accuracy on unseen scenes")
-    ax1.set_title("phase readout on unseen scenes", pad=5)
     ax1.grid(axis="y", lw=0.4, alpha=0.4, zorder=0)
     ax1.set_axisbelow(True)
 
