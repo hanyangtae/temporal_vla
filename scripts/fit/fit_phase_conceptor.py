@@ -78,6 +78,282 @@ FULLTOKEN_MODE = "all_token_full"  # serve --groot-dit-token-pool 신모드와 �
 FULLTOKEN_KIND = "groot_n15_dit_block_residual_full_tokens_denoise"  # safe_metadata 와 일치
 
 
+# ============================================================================
+# cluster phase 라벨 어댑터 (cluster-k8 라운드 — docs/steering/47 후속)
+# ----------------------------------------------------------------------------
+# GT phase(pkl `feature_phases`) 대신 **activation cluster 배정**을 phase 라벨로 쓰는
+# 공용 어댑터. 연산자 fit 스크립트(fit_setm.py / steer/online_gated/fit_cond_guidance.py)
+# 가 이걸 import 해서 쓴다 — 중복 구현 금지 (배정 수식의 단일 출처는
+# scripts/analysis/grid_phase/cluster_prediag.py 의 Bundle).
+#
+# 판정 좌표는 ae_cluster shard 특징(cluster_prediag D2 추출)과 **라인 단위로 동일**:
+#   capture_layers 에서 layer 12 인덱스 역산 (하드코딩 금지) · 마지막 denoise step ·
+#   49 토큰 mean → raw [D] → (x-mu)/scalar_std → encoder → 최근접 center → "c{idx}".
+# 좌표가 어긋나면 배정이 조용히 무의미해지므로 전부 fail-loud 로 막는다.
+# ============================================================================
+
+CLUSTER_LAYER = 12                 # 판정 layer (shard/segA 특징과 동일 — 변경 시 번들 재학습)
+CLUSTER_DENOISE_IDX = -1           # 마지막 denoise step
+CLUSTER_EXPECT_K = 4               # denoise 축 크기 (num_inference_timesteps)
+CLUSTER_FEATURE_AXES = ("layer", "denoise_step", "model_token", "feature_dim")
+_CLUSTER_BUNDLE_CACHE: dict = {}   # 번들 로드 1회 캐시 (경로 → Bundle)
+
+
+def _cluster_fail(msg: str):
+    raise SystemExit(f"[cluster-phase] {msg}")
+
+
+def load_cluster_bundle(path):
+    """ae_cluster.py --export-bundle NPZ → 판정기 (프로세스당 경로별 1회 로드).
+
+    배정 수식(표준화 → 3층 encoder → 최근접 center)의 정본은
+    `scripts/analysis/grid_phase/cluster_prediag.py: Bundle` 이라 그 클래스를 파일 경로로
+    import 해 그대로 쓴다. torch 는 그 모듈이 끌어오므로 cluster 모드에서만 지연 로드된다.
+    """
+    key = str(Path(path).expanduser().resolve())
+    hit = _CLUSTER_BUNDLE_CACHE.get(key)
+    if hit is not None:
+        return hit
+    if not Path(key).is_file():
+        _cluster_fail(f"번들 NPZ 없음: {key}")
+    src = REPO / "scripts/analysis/grid_phase/cluster_prediag.py"
+    if not src.is_file():
+        _cluster_fail(f"cluster_prediag.py 없음 (배정 수식 단일 출처): {src}")
+    from importlib.util import module_from_spec, spec_from_file_location
+    spec = spec_from_file_location("_grid_cluster_prediag", src)
+    mod = module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    b = mod.Bundle(Path(key))
+    b.bundle_path = Path(key)        # 출처 표기용 (basename 만 기록 — docs/04 규약)
+    _CLUSTER_BUNDLE_CACHE[key] = b
+    return b
+
+
+def cluster_phase_names(bundle) -> list:
+    """번들 k 에 대응하는 phase 라벨 목록 ["c0", ..., "c{k-1}"]."""
+    return [f"c{i}" for i in range(int(bundle.k))]
+
+
+def cluster_label_source(bundle) -> str:
+    """NPZ meta 용 출처 문자열 — 절대경로 금지(docs/04), basename 만."""
+    name = Path(getattr(bundle, "bundle_path", "unknown.npz")).name
+    return f"cluster-k{int(bundle.k)}:{name}"
+
+
+def check_cluster_slug(bundle, slug: str) -> None:
+    if slug not in getattr(bundle, "centers", {}):
+        _cluster_fail(f"번들에 centers.{slug} 없음 (있는 slug: {bundle.slugs})")
+
+
+def _check_cluster_axes(axes, where: str) -> None:
+    """pkl feature_axes 검사. 축 순서가 다르면 [L,K,T,D] 인덱싱이 무의미해진다."""
+    if axes is None:
+        _cluster_fail(f"{where}: feature_axes 없음 — 축 순서를 확인할 수 없다 "
+                      f"(기대 {list(CLUSTER_FEATURE_AXES)})")
+    got = tuple(str(a) for a in axes)
+    if got != CLUSTER_FEATURE_AXES:
+        _cluster_fail(f"{where}: feature_axes {list(got)} != {list(CLUSTER_FEATURE_AXES)}")
+
+
+def _cluster_layer_index(capture_layers, where: str):
+    cap = [int(x) for x in (capture_layers or [])]
+    if CLUSTER_LAYER not in cap:
+        _cluster_fail(f"{where}: capture_layers={cap} 에 layer {CLUSTER_LAYER} 없음")
+    return cap.index(CLUSTER_LAYER), cap
+
+
+def cluster_features_from_pkl(d: dict, where: str = "<pkl>") -> np.ndarray:
+    """rollout pkl(dict 로드본) → cluster 판정 feature [n_rec, D] (f32).
+
+    cluster_prediag.pkl_features 와 같은 좌표 (L12 · 마지막 denoise · 전 토큰 mean).
+    """
+    _check_cluster_axes(d.get("feature_axes"), where)
+    li, cap = _cluster_layer_index(d.get("capture_layers"), where)
+    hs = d.get("hidden_states")
+    if not hs:
+        _cluster_fail(f"{where}: hidden_states 없음/비어 있음")
+    out = None
+    for i, rec in enumerate(hs):
+        a = np.asarray(rec, dtype=np.float32)
+        if a.ndim != 4:
+            _cluster_fail(f"{where}: record{i} shape {a.shape} — [L,K,T,D] 기대")
+        if a.shape[0] != len(cap):
+            _cluster_fail(f"{where}: record{i} L={a.shape[0]} != capture_layers {len(cap)}")
+        if a.shape[1] != CLUSTER_EXPECT_K:
+            _cluster_fail(f"{where}: record{i} denoise K={a.shape[1]} != {CLUSTER_EXPECT_K} "
+                          "— 번들 학습 특징과 denoise 좌표가 다르다")
+        v = a[li, CLUSTER_DENOISE_IDX].mean(axis=0)
+        if out is None:
+            out = np.zeros((len(hs), v.shape[0]), np.float32)
+        out[i] = v
+    return out
+
+
+def cluster_features_from_roll(r: dict) -> np.ndarray:
+    """load_rollout_fulltoken roll(dit_k [n,L,K,D], token-pool 완료) → feature [n, D].
+
+    ⚠ dit_k 는 로드 시점 token_pool 로 이미 접혀 있다 — 번들 좌표(49토큰 mean)와 맞추려면
+    token_pool='mean' 로 로드한 roll 이어야 한다 (호출부가 강제).
+    """
+    where = str(r.get("name") or "<roll>")
+    axes = r.get("feature_axes")
+    if axes is not None:                      # 로더가 실어 준 경우에만 검사 (있으면 강제)
+        _check_cluster_axes(axes, where)
+    li, cap = _cluster_layer_index(r.get("capture_layers"), where)
+    dk = r.get("dit_k")
+    if dk is None:
+        _cluster_fail(f"{where}: dit_k 없음 — full-token 로더(token_pool)로 읽은 roll 필요")
+    dk = np.asarray(dk)
+    if dk.ndim != 4:
+        _cluster_fail(f"{where}: dit_k shape {dk.shape} — [n,L,K,D] 기대")
+    if dk.shape[1] != len(cap):
+        _cluster_fail(f"{where}: dit_k L={dk.shape[1]} != capture_layers {len(cap)}")
+    if dk.shape[2] != CLUSTER_EXPECT_K:
+        _cluster_fail(f"{where}: dit_k denoise K={dk.shape[2]} != {CLUSTER_EXPECT_K} "
+                      "— 번들 학습 특징과 denoise 좌표가 다르다")
+    return np.ascontiguousarray(dk[:, li, CLUSTER_DENOISE_IDX, :], dtype=np.float32)
+
+
+def relabel_rollout_phases_by_cluster(roll: dict, bundle, slug: str) -> list:
+    """rollout/episode dict 의 `phases` 를 activation cluster 라벨 "c{idx}" 로 치환.
+
+    feature 출처 우선순위 (전부 같은 좌표 = L12 · 마지막 denoise · 토큰 mean):
+      1. roll["cluster_feat"]  — 로더가 pkl 에서 미리 뽑아 둔 [n, D]
+      2. roll["dit_k"]         — fit_setm load_cell_rolls (token_pool='mean' 전제)
+      3. roll["hidden_states"] — 원본 pkl dict 를 그대로 넘긴 경우
+    record 수(=phases 길이)는 보존되며, 어긋나면 fail-loud.
+    반환값 = 치환된 phases 리스트 (dict 도 in-place 로 갱신).
+    """
+    where = str(roll.get("name") or roll.get("pkl_path") or "<rollout>")
+    check_cluster_slug(bundle, slug)
+    feats = roll.get("cluster_feat")
+    if feats is not None:
+        feats = np.asarray(feats, dtype=np.float32)
+        if feats.ndim != 2:
+            _cluster_fail(f"{where}: cluster_feat shape {feats.shape} — [n, D] 기대")
+    elif roll.get("dit_k") is not None:
+        feats = cluster_features_from_roll(roll)
+    elif roll.get("hidden_states"):
+        feats = cluster_features_from_pkl(roll, where)
+    else:
+        _cluster_fail(f"{where}: cluster feature 를 뽑을 키가 없다 "
+                      "(cluster_feat / dit_k / hidden_states 중 하나 필요)")
+    dim = int(np.asarray(bundle.mu).shape[0])
+    if feats.shape[1] != dim:
+        _cluster_fail(f"{where}: feature dim {feats.shape[1]} != 번들 mu dim {dim}")
+    prev = list(roll.get("phases") or [])
+    if prev and len(prev) != feats.shape[0]:
+        _cluster_fail(f"{where}: feature record {feats.shape[0]} != phases {len(prev)}")
+    lab = bundle.assign(feats, slug)
+    roll["phases_gt"] = prev                     # 원 GT 라벨 보존 (진단용)
+    roll["phases"] = [f"c{int(c)}" for c in lab]
+    roll["phase_label_source"] = cluster_label_source(bundle)
+    return roll["phases"]
+
+
+def relabel_all_by_cluster(rolls, bundle, slug: str, tag: str = "") -> dict:
+    """rolls/episodes 목록 일괄 치환 + 점유 요약 출력 (fit 로그 감사용)."""
+    from collections import Counter
+    cnt = Counter()
+    for r in rolls:
+        cnt.update(relabel_rollout_phases_by_cluster(r, bundle, slug))
+    total = sum(cnt.values()) or 1
+    names = cluster_phase_names(bundle)
+    print(f"[cluster-phase{tag}] slug={slug} src={cluster_label_source(bundle)} "
+          f"rollouts={len(rolls)} records={total} 점유="
+          + " ".join(f"{c}:{cnt.get(c, 0)}({100.0 * cnt.get(c, 0) / total:.0f}%)"
+                     for c in names), flush=True)
+    return dict(cnt)
+
+
+def _self_test_cluster() -> int:
+    """합성 pkl + 합성 번들로 어댑터 단위 검증 (라벨 치환·길이 보존·fail-loud).
+
+    실행:  python scripts/fit/fit_phase_conceptor.py --self-test-cluster
+    (numpy + torch 필요 — 번들 encoder 가 torch state_dict 라 CPU torch 만 있으면 된다)
+    """
+    import tempfile
+    from importlib.util import module_from_spec, spec_from_file_location
+
+    import torch  # noqa: F401  (없으면 여기서 바로 실패 = fail-loud)
+
+    D, LAT, K_CL, T, N = 32, 4, 3, 5, 7
+    layers = [9, CLUSTER_LAYER, 15]
+    ae_py = REPO / "scripts/analysis/grid_phase/ae_cluster.py"
+    spec = spec_from_file_location("_selftest_ae_cluster", ae_py)
+    ae = module_from_spec(spec)
+    spec.loader.exec_module(ae)
+
+    torch.manual_seed(0)
+    enc = ae.Encoder(D, LAT)
+    payload = {f"enc.{k}": v.detach().cpu().numpy().astype(np.float32)
+               for k, v in enc.state_dict().items()}
+    rng = np.random.default_rng(0)
+    payload.update({
+        "mu": rng.normal(size=D).astype(np.float32),
+        "scalar_std": np.asarray(2.0, dtype=np.float32),
+        "k": np.asarray(K_CL, dtype=np.int32),
+        "latent": np.asarray(LAT, dtype=np.int32),
+        "slugs": np.asarray(["TaskA", "TaskB"], dtype=np.str_),
+        "centers.TaskA": rng.normal(size=(K_CL, LAT)).astype(np.float32) * 3.0,
+        "centers.TaskB": rng.normal(size=(K_CL, LAT)).astype(np.float32) * 3.0,
+        "arch": np.asarray(json.dumps({"hidden": 256, "latent": LAT, "input_dim": D})),
+    })
+    tmp = Path(tempfile.mkdtemp(prefix="cluster_selftest_"))
+    bpath = tmp / "bundle_k3.npz"
+    np.savez(bpath, **payload)
+    bundle = load_cluster_bundle(bpath)
+    assert load_cluster_bundle(bpath) is bundle, "번들 캐시가 동작하지 않는다"
+
+    hs = [rng.normal(size=(len(layers), CLUSTER_EXPECT_K, T, D)).astype(np.float32)
+          for _ in range(N)]
+    gt = [f"gt{i % 2}" for i in range(N)]
+    pkl_d = {"hidden_states": hs, "capture_layers": layers, "phases": gt,
+             "feature_axes": list(CLUSTER_FEATURE_AXES), "name": "synthetic.pkl"}
+    labs = relabel_rollout_phases_by_cluster(dict(pkl_d), bundle, "TaskA")
+    assert len(labs) == N, f"길이 미보존 {len(labs)} != {N}"
+    assert all(l in cluster_phase_names(bundle) for l in labs), labs
+
+    # dit_k 경로(= fit_setm roll)와 pkl 경로가 같은 라벨을 줘야 한다 (좌표 동일성)
+    dit_k = np.stack([a.mean(axis=2) for a in hs], axis=0)      # [n,L,K,D] token mean
+    roll = {"dit_k": dit_k, "capture_layers": layers, "phases": list(gt),
+            "feature_axes": list(CLUSTER_FEATURE_AXES), "name": "synthetic-roll"}
+    labs_roll = relabel_rollout_phases_by_cluster(roll, bundle, "TaskA")
+    assert labs_roll == labs, f"dit_k 경로 라벨 불일치: {labs_roll} vs {labs}"
+    assert roll["phases_gt"] == gt, "GT 라벨 보존 실패"
+    assert roll["phase_label_source"] == f"cluster-k3:{bpath.name}"
+
+    # cluster_feat 선주입 경로
+    feats = cluster_features_from_pkl(pkl_d, "synthetic.pkl")
+    ep = {"cluster_feat": feats, "phases": list(gt)}
+    assert relabel_rollout_phases_by_cluster(ep, bundle, "TaskA") == labs
+
+    # fail-loud 4종
+    def _expect_fail(fn, tag):
+        try:
+            fn()
+        except SystemExit:
+            return
+        raise AssertionError(f"fail-loud 미작동: {tag}")
+
+    _expect_fail(lambda: relabel_rollout_phases_by_cluster(dict(pkl_d), bundle, "NoSuch"),
+                 "slug 없음")
+    _expect_fail(lambda: relabel_rollout_phases_by_cluster(
+        {**pkl_d, "feature_axes": ["layer", "model_token", "denoise_step", "feature_dim"]},
+        bundle, "TaskA"), "feature_axes 불일치")
+    _expect_fail(lambda: relabel_rollout_phases_by_cluster(
+        {**pkl_d, "hidden_states": [a[:, :2] for a in hs]}, bundle, "TaskA"), "denoise 축 크기")
+    _expect_fail(lambda: relabel_rollout_phases_by_cluster(
+        {**pkl_d, "capture_layers": [9, 15, 20]}, bundle, "TaskA"), "layer 12 없음")
+    _expect_fail(lambda: relabel_rollout_phases_by_cluster(
+        {**pkl_d, "phases": gt + ["extra"]}, bundle, "TaskA"), "record 수 불일치")
+
+    import shutil
+    shutil.rmtree(tmp, ignore_errors=True)
+    print("[self-test cluster] OK — 치환·길이보존·좌표일치·fail-loud 5종 통과")
+    return 0
+
+
 def carve_5phase(pkl_path, phases: list[str], w: int) -> list[str]:
     """5-phase carving (사용자 지시): event 직전 W record 를 pre-grasp/pre-place 로 재라벨.
 
@@ -333,6 +609,7 @@ def load_rollout_fulltoken(d: dict, pkl_path, token_pool: str):
         "vl": vl_arr,
         "phases": phases,
         "capture_layers": d.get("capture_layers"),
+        "feature_axes": d.get("feature_axes"),
         "token_count": T_seen,
         "capture_token_mode": d.get("capture_token_mode"),
     }
@@ -855,4 +1132,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--self-test-cluster" in sys.argv[1:]:
+        sys.exit(_self_test_cluster())
     main()

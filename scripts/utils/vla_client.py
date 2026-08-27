@@ -73,6 +73,10 @@ class VLAClient:
         self.timeout = timeout
         # 마지막 /act_with_features 응답의 failure detector 신호 (serve 가 안 보내면 None)
         self.last_failure: dict | None = None
+        # 마지막 /act_with_features 응답의 cluster phase 자체판정
+        # (serve --cluster-phase-bundle 전용 — 안 보내면 None). detector 유무와 독립이라
+        # last_failure 와 별도 속성으로 둔다(detector 없는 순수 라벨링 수집도 읽을 수 있게).
+        self.last_cluster: dict | None = None
 
     def health_check(self, timeout: float = 5.0) -> dict | None:
         try:
@@ -107,6 +111,7 @@ class VLAClient:
         r.raise_for_status()
         # serve 의 detector 상태도 /reset 에서 초기화된다 — 클라이언트 캐시도 같이 비운다.
         self.last_failure = None
+        self.last_cluster = None
 
     def _build_payload(
         self,
@@ -259,12 +264,24 @@ class VLAClient:
                 ("features.perstep_seed2", "perstep_seed2"),
                 ("features.perstep_gate_skipped", "gate_skipped"),
                 ("features.perstep_debug_max_action_diff", "debug_max_action_diff"),
+                # cluster phase 자체판정(serve --cluster-phase-bundle): "c0".."c7" + 거리.
+                ("features.perstep_cluster", "cluster"),
+                ("features.perstep_cluster_dist", "cluster_dist"),
             ):
                 if src_key in result:
                     failure[dst_key] = result.get(src_key)
             self.last_failure = failure
         else:
             self.last_failure = None
+
+        # cluster phase 는 detector 없이도 올 수 있으므로 별도 속성으로도 노출한다.
+        if "features.perstep_cluster" in result:
+            self.last_cluster = {
+                "cluster": result.get("features.perstep_cluster"),
+                "cluster_dist": result.get("features.perstep_cluster_dist"),
+            }
+        else:
+            self.last_cluster = None
 
         blob = result.get("features.hidden_states")
         if isinstance(blob, dict):

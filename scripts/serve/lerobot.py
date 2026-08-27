@@ -231,6 +231,72 @@ _failure_layer_idx: int | None = None
 _failure_spec: dict = {}         # /health 노출용
 
 
+# ---------------------------------------------------------------- cluster phase assigner
+# per-step 게이트의 phase 를 GT POST 값 대신 serve 자체 activation cluster 로 정한다
+# (docs/steering/47 후속, cluster-k8 라운드). 번들 = ae_cluster.py --export-bundle 산출 NPZ.
+_cluster_assigner = None         # ClusterPhaseAssigner | None
+_cluster_layer_idx: int | None = None
+_cluster_spec: dict = {}         # /health 노출용
+
+
+def _cluster_phase_from_hidden(hidden_np) -> dict | None:
+    """features.hidden_states [L,K,T,D] → {"name":"c3","idx":3,"dist":float}.
+
+    detector 와 달리 상태가 없다 (per-record 독립) — /reset 에서 할 일도 없다.
+    좌표(L12·마지막 denoise·49토큰 mean)는 detector 와 동일해야 한다.
+    """
+    if _cluster_assigner is None:
+        return None
+    feat = _cluster_assigner.feature_from_hidden(
+        np.asarray(hidden_np), _cluster_layer_idx)
+    return _cluster_assigner.assign(feat)
+
+
+def _load_cluster_phase_if_requested(args) -> None:
+    """--cluster-phase-bundle 시 판정기를 로드하고 캡처 설정 정합을 검증한다.
+
+    detector 와 **같은 좌표 전제**(groot + all_token_full + 번들 layer 가 capture layers
+    에 포함)를 fail-loud 로 건다 — 조용히 틀린 좌표로 phase 를 붙이는 것 방지.
+    """
+    global _cluster_assigner, _cluster_layer_idx, _cluster_spec
+    path = getattr(args, "cluster_phase_bundle", None)
+    if not path:
+        return
+    if _policy_type != "groot":
+        raise ValueError("--cluster-phase-bundle 는 policy_type='groot' 전용")
+    if _groot_dit_capture_layers is None:
+        raise ValueError(
+            "--cluster-phase-bundle 는 --groot-dit-capture-layers 필요 "
+            "(DiT residual 캡처가 켜져야 cluster feature 를 만든다)"
+        )
+    if _groot_dit_token_pool != "all_token_full":
+        raise ValueError(
+            "--cluster-phase-bundle 는 --groot-dit-token-pool all_token_full 필요 "
+            f"(현재 {_groot_dit_token_pool!r}) — 번들은 49토큰 mean 으로 학습됨"
+        )
+    from src.failure_online.cluster_phase import ClusterPhaseAssigner
+
+    bundle_path = Path(path)
+    if not bundle_path.is_absolute():
+        bundle_path = Path(__file__).resolve().parents[2] / bundle_path
+    _cluster_assigner = ClusterPhaseAssigner.from_bundle(
+        bundle_path,
+        task=getattr(args, "cluster_phase_task", None) or None,
+        device=str(getattr(args, "cluster_phase_device", "cpu")),
+    )
+    _cluster_layer_idx = _cluster_assigner.resolve_layer_index(
+        list(_groot_dit_capture_layers)
+    )  # preflight (capture layers 에 번들 layer 존재)
+    _cluster_spec = {"enabled": True, **_cluster_assigner.spec()}
+    logger.info(
+        "cluster phase assigner ON: bundle=%s slug=%s k=%s latent=%s layer=%s "
+        "denoise_index=%s seg=%s",
+        _cluster_spec["bundle"], _cluster_spec["slug"], _cluster_spec["k"],
+        _cluster_spec["latent"], _cluster_spec["layer"],
+        _cluster_spec["denoise_index"], _cluster_spec["seg"],
+    )
+
+
 def _failure_from_hidden(hidden_np) -> dict | None:
     """features.hidden_states [L,K,T,D] → {"score","fired","delta","t"} (1 step 전진).
 
@@ -1145,6 +1211,17 @@ def _run_perstep_gate(
         fail1 = _failure_from_hidden(np.asarray(hidden1))
         extras["features.perstep_fired"] = bool(fail1["fired"])
 
+    # cluster phase 판정: **발화 여부와 무관하게 매 요청** 1차 pass(pre-hook) 활성화로
+    # 계산해 응답에 싣는다 (클라이언트가 feature_phases 에 기록해야 하므로).
+    cluster1 = None
+    if _cluster_assigner is not None:
+        if hidden1 is None:
+            raise HTTPException(
+                status_code=500, detail="per-step 게이트: cluster phase 용 1차 pass hidden 없음")
+        cluster1 = _cluster_phase_from_hidden(np.asarray(hidden1))
+        extras["features.perstep_cluster"] = cluster1["name"]
+        extras["features.perstep_cluster_dist"] = cluster1["dist"]
+
     if cfg["debug_rerun"]:
         # 배관 동치 스모크: hook off·seed1 로 2차 실행 → raw action 동치 확인만.
         # 응답 action 은 1차 것 유지(개입 아님), detector 도 1차 step 만 커밋.
@@ -1176,7 +1253,12 @@ def _run_perstep_gate(
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed2)
 
-    cur_phase = _gated_registry.get("current") if _gated_registry else None
+    if cluster1 is not None:
+        # 번들이 있으면 phase 는 serve 자체 판정("c0".."c{k-1}") — 클라이언트가 POST 한
+        # GT phase 값은 **무시**한다 (online 자립 조건). 번들이 없으면 현행 POST current.
+        cur_phase = cluster1["name"]
+    else:
+        cur_phase = _gated_registry.get("current") if _gated_registry else None
     if op in ("setm", "condg") and not _gated_phase_registered(cur_phase):
         # 현재 phase 에 연산자가 없으면 2차 pass 는 identity — "개입했다"고 기록하면
         # 거짓이다. 개입 없음으로 커밋하고 사유를 데이터에 남긴다 (무음 no-op 금지).
@@ -1374,6 +1456,12 @@ async def predict_action_with_features(payload: dict):
             result["features.failure_fired"] = fail["fired"]
             result["features.failure_delta"] = fail["delta"]
             result["features.failure_step"] = fail["t"]
+        # cluster phase — per-step 게이트 경로에서는 1차 pass 것을 perstep_extras 가
+        # 이미 싣는다 (여기 hidden_np 는 2차 pass 라 다시 재면 좌표가 어긋난다).
+        if _cluster_assigner is not None and perstep_cfg is None:
+            cl = _cluster_phase_from_hidden(hidden_np)
+            result["features.perstep_cluster"] = cl["name"]
+            result["features.perstep_cluster_dist"] = cl["dist"]
     if suppress_blob and hidden is not None:
         # 클라이언트(VLAClient)는 blob 이 없고 has_feature=False 면 features=None 을 받는다
         # → --no-features 수집기의 "skip_features 인데 features 가 왔다" 가드와 양립.
@@ -1440,6 +1528,7 @@ async def health():
         patch=_patch_spec or None,
         phase_readout=_phase_spec or None,
         failure_detector=_failure_spec or None,
+        cluster_phase=_cluster_spec or None,
         # exp4-1: client 가 사이드카에 GPU 를 기록해 arm×GPU confound 를 사후 감사
         serve_gpu=os.environ.get("CUDA_VISIBLE_DEVICES"),
         # docs/04 규약 — rollout 인덱스의 machine·ckpt 열 원천 (헬퍼가 단일 출처)
@@ -2061,7 +2150,7 @@ def _load_model_impl():
     _register_patching_if_requested(policy, args)
     _load_phase_readouts_if_requested(args)
     _load_failure_detector_if_requested(args)
-
+    _load_cluster_phase_if_requested(args)
 
     from lerobot.configs.types import FeatureType
     from lerobot.utils.constants import ACTION
@@ -2396,6 +2485,35 @@ def main():
             "cp_bands 에서 쓸 task slug (mixed arm 은 밴드가 task 별 보정 — 필수). "
             "밴드가 하나뿐이면 생략 가능."
         ),
+    )
+    parser.add_argument(
+        "--cluster-phase-bundle",
+        type=str,
+        default=None,
+        metavar="BUNDLE.npz",
+        help=(
+            "per-step 게이트의 phase 를 GT POST 값 대신 serve 자체 activation cluster "
+            "판정으로 정한다: ae_cluster.py --export-bundle 산출 NPZ(표준화+encoder+"
+            "instruction 별 centers)를 얹어 phase 이름 'c0'..'c{k-1}' 을 낸다. "
+            "응답에 features.perstep_cluster / features.perstep_cluster_dist 노출. "
+            "--groot-dit-capture-layers(번들 layer=12 포함) + "
+            "--groot-dit-token-pool all_token_full 필요. 미지정 시 현행(POST current) 유지."
+        ),
+    )
+    parser.add_argument(
+        "--cluster-phase-task",
+        type=str,
+        default=None,
+        help=(
+            "번들에서 쓸 instruction slug (centers 는 instruction 별로 따로 적합 — 필수). "
+            "번들에 slug 가 하나뿐이면 생략 가능."
+        ),
+    )
+    parser.add_argument(
+        "--cluster-phase-device",
+        type=str,
+        default="cpu",
+        help="cluster phase 판정기 device (cpu 권장 — 연산량 미미, GPU 경합 회피).",
     )
     parser.add_argument(
         "--failure-device",

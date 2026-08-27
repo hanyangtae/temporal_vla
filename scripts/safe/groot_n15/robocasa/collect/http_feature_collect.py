@@ -701,6 +701,19 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--perstep-cluster-phase",
+        action="store_true",
+        help=(
+            "cluster-k8 라운드: serve(--cluster-phase-bundle)가 매 요청 활성에서 스스로 "
+            "판정한 cluster phase('c0'..'c7')를 record 의 phase 로 기록한다. "
+            "① /steering_phase POST 생략(serve 자체 판정이라 POST 값은 무시됨) "
+            "② feature_phases = 응답의 cluster 값 (응답에 cluster 키가 없으면 즉시 중단 "
+            "— serve 미배선 무음 방지) ③ GT 라벨러 값은 gt_phases 로 병행 기록. "
+            "phase POST 가 실제 개입을 결정하는 모드(--gated-steering/--steer-from-record/"
+            "--gated-steering-mode online)와는 배타."
+        ),
+    )
+    parser.add_argument(
         "--instruction-override",
         default=None,
         help=(
@@ -942,6 +955,23 @@ def run() -> dict[str, Any]:
         }
         if getattr(args, "perstep_debug_rerun", False):
             policy.perstep_debug_rerun = True
+    # cluster-k8: serve 가 활성에서 스스로 판정한 cluster phase 를 record phase 로 기록.
+    # POST 가 개입을 결정하는 모드와는 배타 (POST 를 생략하므로 조용히 무개입이 된다).
+    cluster_phase_mode = bool(getattr(args, "perstep_cluster_phase", False))
+    if cluster_phase_mode:
+        conflicts = [
+            name
+            for name, active in (
+                ("--gated-steering", bool(getattr(args, "gated_steering", False))),
+                ("--steer-from-record", steer_from_record is not None),
+                ("--gated-steering-mode online", online_gating),
+            )
+            if active
+        ]
+        if conflicts:
+            raise ValueError(
+                "--perstep-cluster-phase 는 " + "/".join(conflicts) + " 와 배타 "
+                "(/steering_phase POST 를 생략하므로 개입 시점이 사라진다)")
     if args.wait_ready:
         policy.wait_until_ready(max_wait=args.timeout)
     serve_identity = _get_serve_identity(args.vla_server)
@@ -1054,10 +1084,10 @@ def run() -> dict[str, Any]:
                 # /reset(=policy.reset, serve 의 detector 상태 리셋) **이후** 에 off 를
                 # 걸어야 이전 판의 개입이 이 판 첫 추론까지 새지 않는다.
                 _post_steering_phase(args.vla_server, "off", scene=getattr(args, "steering_scene", None))
-                if local_ep_idx == 0:
+                if local_ep_idx == 0 and not cluster_phase_mode:
                     _warn_phase_vocab_mismatch(
                         labeler, getattr(args, "proximity_phases", False), serve_identity)
-            elif perstep_gating and local_ep_idx == 0:
+            elif perstep_gating and local_ep_idx == 0 and not cluster_phase_mode:
                 # perstep 은 episode 시작 'off' POST 가 필요 없다(latch 없음 — serve 가
                 # 매 record 스스로 게이팅). 다만 phase 어휘 대조는 동일하게 유용하다.
                 _warn_phase_vocab_mismatch(
@@ -1081,6 +1111,10 @@ def run() -> dict[str, Any]:
                 obs = perturber.on_episode_start(obs)
             feature_phases: list[str] = []
             phase_gated_flags: list[bool] = []
+            # cluster-k8: feature_phases 에 cluster 값을 넣는 모드에서 GT 라벨러 값을
+            # 병행 보관 (사후 GT↔cluster 대조용). cluster_dists = centroid 거리.
+            gt_phases: list[str] = []
+            cluster_dists: list = []
             # online gating: detector 발화로 latch. failure_scores 는 record 별 score.
             failure_scores: list = []
             failure_latched = False
@@ -1116,7 +1150,11 @@ def run() -> dict[str, Any]:
                 # to switch the serve-side conceptor for this call.
                 phase = labeler.step()
                 gated_now = False
-                if getattr(args, "gated_steering", False):
+                if cluster_phase_mode:
+                    # serve 가 활성에서 스스로 phase 를 판정하므로 POST 는 무의미하다
+                    # (값이 무시됨) — 트래픽·혼동 제거를 위해 생략한다.
+                    pass
+                elif getattr(args, "gated_steering", False):
                     gated_now = _post_steering_phase(args.vla_server, phase, scene=getattr(args, "steering_scene", None))
                 elif steer_from_record is not None:
                     # exp4-1 latch: K번째 record 부터 끝까지 ON (record r ⇔ env-step
@@ -1140,6 +1178,21 @@ def run() -> dict[str, Any]:
                     # pass 점수로 자기가 한다(개입은 그 record 1회성).
                     gated_now = _post_steering_phase(args.vla_server, phase, scene=getattr(args, "steering_scene", None))
                 official_action, _ = policy.get_action(obs)
+                record_phase = phase
+                cluster_dist_now = None
+                if cluster_phase_mode:
+                    # serve --cluster-phase-bundle 미배선이면 여기서 즉시 중단한다
+                    # (GT phase 로 조용히 되돌아가 "cluster arm" 산출물이 되는 것 방지).
+                    _c = getattr(policy, "last_cluster", None)
+                    if _c is None or _c.get("cluster") is None:
+                        raise RuntimeError(
+                            "--perstep-cluster-phase 인데 응답에 features.perstep_cluster "
+                            "가 없다 — ① serve 가 --cluster-phase-bundle 로 떴는지 "
+                            "② 클라이언트가 --gated-steering-mode perstep 인지 확인 "
+                            "(serve 는 per-step 게이트 경로에서 cluster 를 싣는다). "
+                            "무음 GT 폴백 방지 가드.")
+                    record_phase = str(_c["cluster"])
+                    cluster_dist_now = _c.get("cluster_dist")
                 if online_gating:
                     fail = getattr(policy, "last_failure", None)
                     if fail is None:
@@ -1166,8 +1219,11 @@ def run() -> dict[str, Any]:
                     official_action = perturber.maybe_apply(progress_before, official_action)
                 progress_after = policy.n_calls if no_features else len(policy.records)
                 if progress_after > progress_before:
-                    feature_phases.append(phase)
+                    feature_phases.append(record_phase)
                     phase_gated_flags.append(gated_now)
+                    if cluster_phase_mode:
+                        gt_phases.append(phase)
+                        cluster_dists.append(cluster_dist_now)
                     if online_gating:
                         # record 축과 1:1 (feature_phases 와 같은 길이)
                         failure_scores.append(policy.last_failure["score"])
@@ -1206,6 +1262,14 @@ def run() -> dict[str, Any]:
                     "feature_phases/inference-count misaligned: "
                     f"{len(feature_phases)} != {n_inferences}"
                 )
+            if cluster_phase_mode:
+                for _name, _seq in (("gt_phases", gt_phases),
+                                    ("cluster_dists", cluster_dists)):
+                    if len(_seq) != n_inferences:
+                        raise RuntimeError(
+                            f"{_name}/inference-count misaligned: "
+                            f"{len(_seq)} != {n_inferences}"
+                        )
             if online_gating and len(failure_scores) != n_inferences:
                 raise RuntimeError(
                     "failure_scores/inference-count misaligned: "
@@ -1290,7 +1354,10 @@ def run() -> dict[str, Any]:
                 "phase_scheme": "event_state",
                 "feature_phases": feature_phases,
                 "phase_timeline": labeler.phase_timeline,
-                **(env_gt.export(feature_phases, args.n_action_steps) if env_gt is not None else {}),
+                # env-step GT 대조는 라벨러 어휘끼리 해야 뜻이 있다 — cluster 모드에서는
+                # feature_phases 가 'c0'.. 라 GT 열(gt_phases)을 넘긴다.
+                **(env_gt.export(gt_phases if cluster_phase_mode else feature_phases,
+                                 args.n_action_steps) if env_gt is not None else {}),
                 "event_steps": labeler.event_steps,
                 "event_order": labeler.event_order_keys,
                 # drop-aware fields (per-step grasp signal for offline drop analysis)
@@ -1300,6 +1367,14 @@ def run() -> dict[str, Any]:
                 "grasp_timeline": list(getattr(labeler, "grasp_timeline", []) or []),
                 "wrong_grasp_steps": list(getattr(labeler, "wrong_grasp_steps", []) or []),
                 "wrong_grasp_timeline": list(getattr(labeler, "wrong_grasp_timeline", []) or []),
+                # cluster-k8: feature_phases = serve 자체판정 cluster('c0'..), GT 라벨러
+                # 값은 gt_phases 로 병행 (둘 다 record 축 1:1). 이 모드일 때만 실린다.
+                **({
+                    "perstep_cluster_phase": True,
+                    "phase_scheme_records": "serve_cluster",
+                    "gt_phases": list(gt_phases),
+                    "cluster_dists": list(cluster_dists),
+                } if cluster_phase_mode else {}),
                 **online_gate_meta,
             }
             # 떨림(jitter) 진단 — 개입이 액션 궤적에 준 speed/jerk (record 해상도, 판정 무영향).
