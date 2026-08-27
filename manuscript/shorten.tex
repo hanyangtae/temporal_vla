@@ -57,7 +57,7 @@ Sparse Auto Encoder(SAE)로 residual stream에서 grasp, transport와 같은 pri
 
 \rev{Detector의} 학습과 평가는 scene 단위로 분리한다. 10개 scene 중 8개를 학습용, 2개를 평가용으로 나누고, 이러한 분할을 무작위로 3가지 구성한다. 분할마다 표준화, AE, clustering, \term{phase} 매핑을 학습 scene만으로 새로 적합하며, 세 분할의 평가 결과를 평균해 보고한다.  사람이 주석한 \term{phase} 라벨은 cluster를 최빈 phase에 대응시키는 매핑과 평가시의 채점에 사용된다.
 
-\textbf{Clustering.} \rev{Raw activation 1{,}536차원을 오토인코더(AE)로 16차원 latent로 압축한 뒤 KMeans로 스텝 단위 clustering한다. \rev{Cluster 수는 \term{phase} 수(3--6)를 넘는 평탄 구간의 최소값인 $k=8$을 사용한다.} Cluster 중심은 학습 split에서만 만들고, 평가 split의 스텝은 가장 가까운 cluster 중심에 배정한다. \rev{다시 clustering할 필요가 없으므로} 추론 중 스텝 단위의 online 판독이 가능하다.}
+\textbf{Clustering.} \rev{Raw activation 1{,}536차원을 오토인코더(AE)로 16차원 latent로 압축한 뒤 KMeans로 스텝 단위 clustering한다. \rev{Cluster 수는 $k=8$을 사용한다. \term{phase} 수(3--6)를 넘는 $k$에서 판독 성능이 평탄해 특정 $k$ 선택에 기대지 않음은 결과에서 보인다.} Cluster 중심은 학습 split에서만 만들고, 평가 split의 스텝은 가장 가까운 cluster 중심에 배정한다. \rev{다시 clustering할 필요가 없으므로} 추론 중 스텝 단위의 online 판독이 가능하다.}
 
 \textbf{Baseline.} Manipulation task의 \term{phase}는 대체로 순서대로 진행되므로, activation을 보지 않고 경과 시간만 보는 detector도 \term{phase}를 어느정도 맞힌다. 이 몫을 빼기 위한 \textbf{시간 대조군}은 에피소드 내 상대 진행도 $t/T$를 발견된 cluster
 수와 같은 개수의 구간으로 \rev{등분위 분할해 얻은 상태열이다.} \rev{또한 외부 관찰만으로 \term{phase}를 나누는 기존 방법과 비교하기 위해, \textbf{행동 이벤트(behavioral event) 대조군}으로 기존 연구\cite{egsae}의 이벤트 발견 파이프라인을 채택한다. 저자가 공개한 구현을 수정 없이 사용하여,} 에피소드의 end-effector 궤적에서 \rev{선형 보간으로 궤적을 복원할 수 있는 최소한의 점을 고르는} AWE\cite{awe}\rev{를 사용하여} waypoint를 추출하고, 각 waypoint 주변
