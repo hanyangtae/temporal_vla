@@ -108,6 +108,9 @@ RESEED_OFFSET="${RESEED_OFFSET:-900000}"
 STEER_PHASE_MODE="${STEER_PHASE_MODE:-current}"
 STEER_PHASE_NAME="${STEER_PHASE_NAME:-global}"
 DETECTOR_CKPT="${DETECTOR_CKPT:-}"                  # 지정 시 전 slug 공통 (단일 slug 용)
+# cluster-k8 라운드: 지정 시 serve 가 활성화에서 phase(c0..c7)를 자체 판정하고
+# ps arm 클라이언트는 --perstep-cluster-phase 로 그 값을 기록한다 (GT POST 무시).
+CLUSTER_BUNDLE="${CLUSTER_BUNDLE:-}"
 # slug 별 per-task ckpt 템플릿 (%SLUG% 치환). DETECTOR_CKPT 가 비어 있으면 이걸 사용.
 DETECTOR_CKPT_TMPL="${DETECTOR_CKPT_TMPL:-outputs/analysis/grid_phase/detector_sim/detector_pertask_lstm_%SLUG%.pt}"
 DETECTOR_LAYERS="${DETECTOR_LAYERS:-12}"            # serve 캡처 layer (ckpt layer 포함 필수)
@@ -184,6 +187,7 @@ PLAN_JSON_ABS="$(abspath "$PLAN_JSON")"
 [ -n "$INDEX_TSV" ] && INDEX_TSV="$(abspath "$INDEX_TSV")"
 [ -n "$EP_META_DIR" ] && EP_META_DIR="$(abspath "$EP_META_DIR")"
 [ -n "$DETECTOR_CKPT" ] && DETECTOR_CKPT="$(abspath "$DETECTOR_CKPT")"
+[ -n "$CLUSTER_BUNDLE" ] && CLUSTER_BUNDLE="$(abspath "$CLUSTER_BUNDLE")"
 LOGDIR="${OUT_ROOT}/logs"
 mkdir -p "$LOGDIR"
 
@@ -337,6 +341,11 @@ serve_flags_for() {  # slug arm → serve 추가 플래그 (scan_npz_base 선행
       flags="${flags} --steering-token-select $(token_select_for_arm "$arm")"
       is_conceptor_family && flags="${flags} --steering-alpha 0"
     fi
+  fi
+  if [ -n "$CLUSTER_BUNDLE" ] && arm_uses_detector "$arm"; then
+    local cb="$CLUSTER_BUNDLE"
+    [ "$SERVE_MODE" = host ] || cb="$(to_cont "$cb")"
+    flags="${flags} --cluster-phase-bundle ${cb} --cluster-phase-task ${slug}"
   fi
   if arm_uses_detector "$arm"; then
     local ckpt
@@ -579,6 +588,10 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
   # PERSTEP_DEBUG=1: 배관 동치 스모크 — 매 record hook off·동일 seed 2차 실행 진단
   if [ "${#mode[@]}" -gt 0 ] && [ "${PERSTEP_DEBUG:-0}" = "1" ]; then
     mode+=(--perstep-debug-rerun)
+  fi
+  # cluster phase 모드: serve 자체 판정 사용 (GT POST 생략·cluster 기록)
+  if [ "${#mode[@]}" -gt 0 ] && [ -n "$CLUSTER_BUNDLE" ]; then
+    mode+=(--perstep-cluster-phase)
   fi
   if [ "${#mode[@]}" -eq 0 ]; then
     local trig=""
