@@ -10,14 +10,9 @@
 
 1. shard NPZ(`extract_grid_matrix.py` Tier A) → record 를 `ep_id` 로 묶고 `rec_idx`
    순 정렬 → episode 당 [T, D] 시퀀스. 라벨 y=1 은 **failure**(SAFE 규약).
-2. 분할. 두 방식이 있다.
-   (a) scene 단위 결정적 분할 (기본, train 6 / calib 2 / test 2). scene 을 섞지 않는다 —
-       같은 scene 의 판이 train/test 에 갈리면 scene 암기가 검출로 보인다
-       ([[scene-matched-succfail-verdict]]).
-   (b) **셀 지정 분할** (`--fit-scenes`/`--fit-noises`). eval 프로토콜과 같은 셀을 쓴다:
-       fit 셀(예 scene 0–4 × noise 0–4) 안에서 train = noise 0–2 / calib = noise 3–4,
-       test = **그 밖 전부**(unseen scene 또는 unseen noise). test 는 사분면
-       (seen/unseen scene × seen/unseen noise)으로도 분해해 요약한다.
+2. scene 단위 결정적 분할 (train 6 / calib 2 / test 2). scene 을 섞지 않는다 —
+   같은 scene 의 판이 train/test 에 갈리면 scene 암기가 검출로 보인다
+   ([[scene-matched-succfail-verdict]]).
 3. detector 학습 (SAFE-LSTM / SAFE-MLP). 구현 출처 =
    `scripts/safe/groot_n16/robocasa/analyze/pathway_lstm_detector.py` +
    `scripts/safe/groot_n16/robocasa/vis/core/lstm.py` (아키텍처·손실·정규화 동일).
@@ -25,14 +20,24 @@
 4. functional CP 밴드 δ_t = μ_t + bw·σ_t (성공 궤적의 시변 밴드).
    μ_t/σ_t = train 성공 판, bw = **calib 성공 판**의 max-normalized 초과량의
    (1−α) 분위수. t 가 밴드 길이를 넘으면 마지막 밴드 유지(plateau).
+   `--truncate-train` 을 켜면 밴드 출처(train/calib)가 절제되어 밴드 길이가 W 로
+   줄지만, **plateau 규약이 그대로 적용**되어 full test 시퀀스의 t>W 구간은 마지막
+   밴드값으로 판정된다 (별도 처리 불필요).
 5. 발화 시뮬: test 판마다 `score_t > δ_t` 인 **첫 t**. 기록 = fired / t_fire /
    relpos = t_fire/(T−1) / 그 순간의 GT phase 이름 / 종결까지 남은 step.
+6. 길이 confound 통제 (`--truncate-train {none,rollout,phase-gt}`) + 그 판정을 위한
+   무feature **timer 기준선**(t ≥ W 발화) · `tpr_before_W` · `lead_vs_W` ·
+   고정 판정시각 AUROC(`auroc_td*`). 절제는 학습·보정에만 걸고 test 는 항상 full.
 
 ## arm
 
 - `pertask` — task 별 detector 9개 (task 내부 일반화).
 - `mixed`   — 전 task 풀링 detector 1개. 표준화·가중치는 공유하되 **CP 밴드는
   per-task calib 로 보정**(RL²-VLA 방식) — task 별 점수 스케일 차이를 밴드가 흡수.
+- `loto`    — leave-one-task-out. task 하나를 빼고 학습, 그 task 의 **전 episode** 를
+  zero-shot test (밴드도 train task 풀링으로 잡아 held-out 판을 한 개도 안 쓴다).
+  질문 = "학습에 없던 task 에서 작동하나, phase 절제가 전이를 살리나"
+  (SAFE 논문 unseen 전이 주장 재검 — seen18 재현은 unseen 0.434 였다).
 
 ## 입력 계약 (Tier A shard)
 `<shard-dir>/<instr_slug>.npz`
@@ -58,11 +63,17 @@ layer 는 meta 의 layer 리스트에서 **인덱스 역산**한다 (하드코�
         --out ~/workspace/.../analysis/grid_phase/detector_sim \
         --arm both --models lstm,mlp --threads 8
 
-    # 셀 지정 분할 (eval replay 프로토콜과 같은 s5m5 fit)
-    ~/anaconda3/bin/python scripts/analysis/grid_phase/failure_detector_sim.py \
-        --shard-dir .../segA --out .../detector_sim_s5m5 \
-        --fit-scenes 0,1,2,3,4 --fit-noises 0,1,2,3,4 --calib-noises 3,4 \
-        --arm pertask --models lstm --threads 8
+    # 길이 절제 ablation (학습·보정만 절제, test 는 full)
+    ... failure_detector_sim.py --shard-dir <segA> --out <out>/trunc_rollout \
+        --truncate-train rollout --arm both --models lstm,mlp --threads 8
+    ... failure_detector_sim.py --shard-dir <segA> --out <out>/trunc_phasegt \
+        --truncate-train phase-gt --arm both --models lstm,mlp --threads 8
+
+    # task 전이 (leave-one-task-out) — 절제 모드 3종을 각각
+    for M in none rollout phase-gt; do \
+      ~/anaconda3/bin/python scripts/analysis/grid_phase/failure_detector_sim.py \
+        --shard-dir <segA> --out <out>/loto_$M --arm loto --truncate-train $M \
+        --models lstm --threads 8 --quiet; done
 """
 from __future__ import annotations
 
@@ -89,6 +100,8 @@ from torch.nn.utils import clip_grad_norm_
 DEFAULT_ALPHAS = (0.05, 0.1, 0.2, 0.3)
 MIN_BAND_EPS = 3          # μ/σ, bw 추정에 필요한 최소 성공 판 수 (참조 구현과 동일)
 EPS = 1e-8
+TD_GRID = (5, 10, 15, 20, 30)   # 고정 판정시각 AUROC 격자 (causal, full test 시퀀스 위)
+MIN_TRUNC_LEN = 2         # 절제 후 이보다 짧은 시퀀스는 버린다
 
 
 # =============================================================================
@@ -281,46 +294,6 @@ def split_scenes(task: str, scenes: list[int], n_train: int, n_calib: int,
             "train": sorted(order[te + ca:])}
 
 
-def parse_int_list(spec: str) -> list[int]:
-    """"0,1,5,6" / "0-4" / "0-2,8" → 정수 목록. 빈 문자열 → []."""
-    out: set[int] = set()
-    for tok in str(spec or "").split(","):
-        tok = tok.strip()
-        if not tok:
-            continue
-        if "-" in tok[1:]:
-            a, b = tok.split("-", 1)
-            out.update(range(int(a), int(b) + 1))
-        else:
-            out.add(int(tok))
-    return sorted(out)
-
-
-def split_cells(task: str, eps: list[Episode], fit_scenes: set[int],
-                fit_noises: set[int], calib_noises: set[int]) -> dict[str, list[Episode]]:
-    """셀 지정 분할 — eval replay 프로토콜과 같은 (scene, noise) 격자.
-
-    train = fit 셀 중 noise ∉ calib_noises / calib = fit 셀 중 noise ∈ calib_noises /
-    test  = fit 셀 **밖** 전부 (unseen scene 또는 unseen noise).
-    """
-    in_fit = [e for e in eps if e.scene in fit_scenes and e.noise in fit_noises]
-    train = [e for e in in_fit if e.noise not in calib_noises]
-    calib = [e for e in in_fit if e.noise in calib_noises]
-    test = [e for e in eps if not (e.scene in fit_scenes and e.noise in fit_noises)]
-    if not train:
-        raise ValueError(f"{task}: 셀 분할 train 판 0 "
-                         f"(fit_scenes={sorted(fit_scenes)} fit_noises={sorted(fit_noises)} "
-                         f"calib_noises={sorted(calib_noises)})")
-    if not test:
-        raise ValueError(f"{task}: 셀 분할 test 판 0 — fit 셀이 전체를 덮는다")
-    return {"train": train, "calib": calib, "test": test}
-
-
-def quadrant_of(scene: int, noise: int, fit_scenes: set[int], fit_noises: set[int]) -> str:
-    return (f"{'seen' if scene in fit_scenes else 'unseen'}_scene×"
-            f"{'seen' if noise in fit_noises else 'unseen'}_noise")
-
-
 def standardizer(eps: list[Episode]) -> tuple[np.ndarray, np.ndarray]:
     allf = np.concatenate([e.X for e in eps], axis=0)
     mu = allf.mean(axis=0)
@@ -331,6 +304,88 @@ def standardizer(eps: list[Episode]) -> tuple[np.ndarray, np.ndarray]:
 
 def apply_std(e: Episode, mu, sd) -> np.ndarray:
     return ((e.X - mu) / sd).astype(np.float32)
+
+
+# =============================================================================
+# 학습 데이터 길이 절제 (length confound ablation)
+# =============================================================================
+# 실패는 항상 timeout(길다) / 성공은 조기종료(짧다) → full 시퀀스 학습은 "길면 실패"를
+# 학습할 수 있다([[seen18-rollout-length-confound]]). cap 정의는 레포 규약과 동일:
+#   rollout  W    = TRAIN 성공 episode record 수의 ceil(μ+1σ)
+#   phase-gt cap  = TRAIN 성공 episode 의 그 phase dwell(>0) 의 ceil(μ+1σ)
+# (`scripts/fit/fit_setm.py::phase_dwell_caps`,
+#  `scripts/fit/fit_phase_conceptor.py::compute_length_caps` 와 같은 식. np.std 는
+#  모집단 표준편차(ddof=0) — 그쪽 구현과 동일하게 맞춘다.)
+# 성공 dwell 이 없는 phase 는 fit 쪽 규약대로 **대조 불가 → skip**: 해당 record 를
+# 버린다. phase_code<0 (unknown/terminal) 도 같은 규칙이 적용된다 — 성공 판에 그
+# code 가 있으면 cap 이 생기고, 없으면 drop.
+# 절제는 **TRAIN·CALIB 에만** 건다. TEST 는 항상 full (온라인 현실성).
+
+
+def _ceil_mu_sigma(vals: list[int]) -> int:
+    v = np.asarray([x for x in vals if x > 0], dtype=np.float64)
+    return int(np.ceil(v.mean() + v.std()))
+
+
+def rollout_cap(train_eps: list[Episode]) -> int | None:
+    """W = TRAIN 성공 판 record 수의 ceil(μ+1σ). 성공 판이 없으면 None."""
+    lens = [e.T for e in train_eps if e.succ == 1]
+    return _ceil_mu_sigma(lens) if any(x > 0 for x in lens) else None
+
+
+def phase_dwell_caps(train_eps: list[Episode]) -> dict[int, int]:
+    """phase code → dwell cap. TRAIN 성공 판의 dwell(>0) 만 사용."""
+    codes: set[int] = set()
+    for e in train_eps:
+        codes.update(int(c) for c in np.unique(e.phase))
+    caps: dict[int, int] = {}
+    for c in sorted(codes):
+        dw = [int((e.phase == c).sum()) for e in train_eps if e.succ == 1]
+        dw = [d for d in dw if d > 0]
+        if dw:
+            caps[c] = _ceil_mu_sigma(dw)
+    return caps
+
+
+def truncate_episode(e: Episode, mode: str, W: int | None,
+                     caps: dict[int, int] | None) -> Episode | None:
+    """절제된 사본. 절제 불가/너무 짧으면 None (호출부에서 skip 카운트)."""
+    if mode == "none":
+        return e
+    if mode == "rollout":
+        if W is None:
+            return e
+        idx = np.arange(min(e.T, int(W)))
+    elif mode == "phase-gt":
+        if not caps:
+            return e
+        keep: list[int] = []
+        for c, cap in caps.items():
+            sel = np.where(e.phase == c)[0][:cap]     # 시간순 앞쪽 우선
+            keep.extend(int(i) for i in sel)
+        idx = np.asarray(sorted(keep), dtype=np.int64)
+    else:
+        raise ValueError(f"알 수 없는 truncate 모드: {mode}")
+    if len(idx) < MIN_TRUNC_LEN:
+        return None
+    return Episode(e.task, e.ep_id, e.scene, e.noise, e.succ,
+                   np.ascontiguousarray(e.X[idx]), np.ascontiguousarray(e.phase[idx]))
+
+
+def apply_truncation(split: dict, mode: str, W: int | None,
+                     caps: dict[int, int] | None) -> dict:
+    """TRAIN·CALIB 만 절제하고 dropped 수를 센다. TEST 는 손대지 않는다."""
+    dropped = {"train": 0, "calib": 0}
+    for part in ("train", "calib"):
+        kept = []
+        for e in split[part]:
+            te = truncate_episode(e, mode, W, caps)
+            if te is None:
+                dropped[part] += 1
+            else:
+                kept.append(te)
+        split[part] = kept
+    return dropped
 
 
 # =============================================================================
@@ -450,6 +505,52 @@ def _med(v: list[float]) -> float | None:
     return round(float(np.median(v)), 4) if v else None
 
 
+def td_auroc(pairs: list[tuple[float, int]]) -> tuple[float | None, int]:
+    """(score, y) 목록 → AUROC + 표본 수. 단일 클래스면 None."""
+    if not pairs:
+        return None, 0
+    sc = np.array([p[0] for p in pairs], dtype=np.float64)
+    yy = np.array([p[1] for p in pairs], dtype=np.int64)
+    a = auroc(sc, yy)
+    return (None if a is None else round(a, 4)), len(pairs)
+
+
+def td_pairs(test_scores: list[tuple[Episode, np.ndarray]], t_d: int
+             ) -> list[tuple[float, int]]:
+    """t_d 시점의 causal score. **t_d 에 이미 끝난 판(T ≤ t_d)은 제외** — 종료 자체가
+    성공 신호라 포함하면 길이 confound 를 AUROC 에 되돌려 넣는 꼴이다."""
+    return [(float(sc[t_d]), e.y) for e, sc in test_scores if e.T > t_d]
+
+
+def td_metrics(test_scores: list[tuple[Episode, np.ndarray]]) -> dict:
+    out: dict = {}
+    for t_d in TD_GRID:
+        a, n = td_auroc(td_pairs(test_scores, t_d))
+        out[f"auroc_td{t_d}"] = a
+        out[f"n_td{t_d}"] = n
+    return out
+
+
+def timer_records(test_eps: list[Episode], task: str, W: int | None,
+                  phase_names: dict) -> list[dict]:
+    """무feature 기준선: t ≥ W 이면 발화. W 이후로 판이 이어지는가만 본다."""
+    recs = []
+    for e in test_eps:
+        ft = int(W) if (W is not None and e.T > int(W)) else None
+        recs.append({
+            "task": task, "arm": "-", "model": "timer", "alpha": None,
+            "ep_id": e.ep_id, "scene": e.scene, "noise": e.noise,
+            "succ": e.succ, "y": e.y, "T": e.T, "W": None if W is None else int(W),
+            "fired": ft is not None, "t_fire": ft,
+            "relpos": None if ft is None else round(ft / max(e.T - 1, 1), 4),
+            "steps_before_end": None if ft is None else int(e.T - 1 - ft),
+            "fire_phase": None if ft is None else
+                          phase_names.get(int(e.phase[ft]), str(int(e.phase[ft]))),
+            "max_score": None,
+        })
+    return recs
+
+
 def summarize(records: list[dict], phase_top: int = 4) -> dict:
     """episode 발화 기록 → TSV 한 행 분량의 지표."""
     fail = [r for r in records if r["y"] == 1]
@@ -463,16 +564,29 @@ def summarize(records: list[dict], phase_top: int = 4) -> dict:
     top = sorted(dist.items(), key=lambda kv: (-kv[1], kv[0]))[:phase_top]
     la = auroc(np.array([r["T"] for r in records], dtype=np.float64),
                np.array([r["y"] for r in records]))
+    # timer(=길이만 보는 기준선) 대비 조기성. W 는 판마다 task 별 값이 실려 있다.
+    early = [r for r in f_fired if r.get("W") is not None and r["t_fire"] < r["W"]]
+    lead = [float(r["W"] - r["t_fire"]) for r in f_fired if r.get("W") is not None]
+    ws = sorted({r["W"] for r in records if r.get("W") is not None})
+    # 시퀀스 수준(=판 끝까지 본) 분리도. causal 하지 않으므로 조기 검출 근거가 아니라
+    # "길이만 학습했는지" 대조용 (length_auroc 와 나란히 읽는다).
+    ms = [r["max_score"] for r in records]
+    msa = (auroc(np.array(ms, dtype=np.float64), np.array([r["y"] for r in records]))
+           if all(v is not None for v in ms) and records else None)
     return {
         "n_test_ep": len(records),
         "n_fail": len(fail), "n_succ": len(succ),
         "tpr": round(len(f_fired) / len(fail), 4) if fail else None,
         "fpr": round(len(s_fired) / len(succ), 4) if succ else None,
+        "tpr_before_W": round(len(early) / len(fail), 4) if fail and ws else None,
+        "lead_vs_W": _med(lead),
+        "W": ws[0] if len(ws) == 1 else ("|".join(map(str, ws)) if ws else None),
         "median_relpos_fail": _med([r["relpos"] for r in f_fired]),
         "median_steps_before_end_fail": _med([r["steps_before_end"] for r in f_fired]),
         "median_relpos_fp": _med([r["relpos"] for r in s_fired]),
         "fire_phase_dist": "|".join(f"{k}:{v}" for k, v in top),
         "length_auroc": None if la is None else round(la, 4),
+        "maxscore_auroc": None if msa is None else round(msa, 4),
     }
 
 
@@ -487,6 +601,7 @@ def run_arm(arm: str, kind: str, tasks: dict, splits: dict, args,
     rows: list[dict] = []
     detail: list[dict] = []
     ckpts: dict[str, dict] = {}
+    td_pool: dict[int, list[tuple[float, int]]] = {t_d: [] for t_d in TD_GRID}
 
     groups = [("__all__", sorted(tasks))] if arm == "mixed" else \
              [(t, [t]) for t in sorted(tasks)]
@@ -526,6 +641,10 @@ def run_arm(arm: str, kind: str, tasks: dict, splits: dict, args,
                              "skip_reason": "test 판 0"})
                 continue
             test_scores = [(e, score_seq(model, apply_std(e, mu, sd))) for e in test_eps]
+            tdm = td_metrics(test_scores)          # α 무관 (밴드 안 씀) — 행마다 동일값
+            for t_d in TD_GRID:
+                td_pool[t_d].extend(td_pairs(test_scores, t_d))
+            W_task = tasks[t].get("W")
 
             band_ck: dict[str, dict] = {}
             for a in alphas:
@@ -543,6 +662,7 @@ def run_arm(arm: str, kind: str, tasks: dict, splits: dict, args,
                         "task": t, "arm": arm, "model": kind, "alpha": a,
                         "ep_id": e.ep_id, "scene": e.scene, "noise": e.noise,
                         "succ": e.succ, "y": e.y, "T": e.T,
+                        "W": None if W_task is None else int(W_task),
                         "fired": ft is not None,
                         "t_fire": ft,
                         "relpos": None if ft is None else
@@ -552,29 +672,23 @@ def run_arm(arm: str, kind: str, tasks: dict, splits: dict, args,
                                       tasks[t]["phase_names"].get(int(e.phase[ft]),
                                                                   str(int(e.phase[ft]))),
                         "max_score": round(float(sc.max()), 4),
-                        "quadrant": None if not args.cell_split else
-                                    quadrant_of(e.scene, e.noise, args.fit_scene_set,
-                                                args.fit_noise_set),
                     }
                     recs.append(rec)
                     detail.append(rec)
                 row = {"task": t, "instruction": tasks[t]["instruction"], "arm": arm,
-                       "model": kind, "alpha": a, "subset": "test", "band_L": band["L"],
+                       "model": kind, "alpha": a, "band_L": band["L"],
                        "bw": round(band["bw"], 4),
                        "n_train_ep": len(seqs), "n_band_succ": len(band_scores),
                        "n_calib_succ": len(calib_scores),
                        "train_scenes": ",".join(map(str, sp["scenes"]["train"])),
                        "calib_scenes": ",".join(map(str, sp["scenes"]["calib"])),
                        "test_scenes": ",".join(map(str, sp["scenes"]["test"])),
+                       "truncate": args.truncate_train,
+                       "n_trunc_dropped": tasks[t].get("n_trunc_dropped", 0),
                        "skip_reason": ""}
                 row.update(summarize([r for r in recs]))
+                row.update(tdm)
                 rows.append(row)
-                # test 를 사분면(seen/unseen scene × seen/unseen noise)으로 분해
-                for q in sorted({r["quadrant"] for r in recs if r["quadrant"]}):
-                    qrow = dict(row)
-                    qrow["subset"] = q
-                    qrow.update(summarize([r for r in recs if r["quadrant"] == q]))
-                    rows.append(qrow)
                 band_ck[f"{a:.2f}"] = {"mu": band["mu"].astype(np.float32),
                                        "sd": band["sd"].astype(np.float32),
                                        "bw": band["bw"],
@@ -598,21 +712,27 @@ def run_arm(arm: str, kind: str, tasks: dict, splits: dict, args,
             "train": {"epochs": args.epochs, "lr": args.lr, "lambda_reg": args.lambda_reg,
                       "grad_clip": args.grad_clip, "batch_size": args.batch_size,
                       "seed": args.seed, "band_mu": args.band_mu},
+            "truncate": {
+                "mode": args.truncate_train,
+                "rollout_W": {t: tasks[t].get("W") for t in gtasks},
+                "phase_caps": {t: tasks[t].get("phase_caps") for t in gtasks},
+                "n_dropped": {t: tasks[t].get("n_trunc_dropped", 0) for t in gtasks},
+            },
         }
 
     # 풀링 행 (arm/model/α 별 전체 test 합산)
+    pooled_td = {}
+    for t_d in TD_GRID:
+        a_, n_ = td_auroc(td_pool[t_d])
+        pooled_td[f"auroc_td{t_d}"], pooled_td[f"n_td{t_d}"] = a_, n_
     for a in alphas:
         recs = [r for r in detail if r["alpha"] == a]
         if recs:
             row = {"task": "__pooled__", "instruction": "", "arm": arm, "model": kind,
-                   "alpha": a, "subset": "test", "skip_reason": ""}
+                   "alpha": a, "truncate": args.truncate_train, "skip_reason": ""}
             row.update(summarize(recs))
+            row.update(pooled_td)
             rows.append(row)
-            for q in sorted({r["quadrant"] for r in recs if r.get("quadrant")}):
-                qrow = dict(row)
-                qrow["subset"] = q
-                qrow.update(summarize([r for r in recs if r.get("quadrant") == q]))
-                rows.append(qrow)
 
     for gname, payload in ckpts.items():
         slug = "all" if gname == "__all__" else gname
@@ -620,16 +740,202 @@ def run_arm(arm: str, kind: str, tasks: dict, splits: dict, args,
     return rows, detail, ckpts
 
 
+def run_loto(kind: str, tasks: dict, splits: dict, args,
+             out_dir: Path) -> tuple[list[dict], list[dict], dict]:
+    """leave-one-task-out (zero-shot task 전이) arm.
+
+    질문: **학습에 없던 task 에서 detector 가 작동하나, phase 단위 길이 절제가 전이를
+    살리나** (SAFE 논문의 unseen 전이 주장 재검 — 우리 seen18 재현은 unseen 0.434).
+
+    fold 규약 (held-out task h 하나당 1 fold):
+      학습   = h 를 뺀 나머지 task 들의 **train scene** episode (기존 scene split 재사용).
+      절제   = train task 별 자기 W/phase cap (mixed arm 과 동일 — cap 은 task-로컬).
+               h 는 **항상 full** (절제도, 학습·보정도 없음).
+      표준화 = train(=나머지 task) 통계.
+      CP밴드 = h 데이터를 쓸 수 없으므로 **train task 들의 성공 판을 전부 풀링**해
+               μ_t/σ_t (band_mu 출처 규약 동일) · bw(calib 성공 풀) 를 잡는다.
+               시간축은 절대 record index, 밴드 길이 초과 시 마지막값 유지(plateau).
+      test   = h 의 **전 episode** (train/calib/test 분할 무시 = 한 판도 안 쓴 zero-shot).
+
+    W(=timer 기준선·tpr_before_W·lead_vs_W) 는 h 자신의 성공 길이 통계라 zero-shot 이
+    아니다 — **oracle 참조용 지표**로만 읽는다 (열 이름은 다른 arm 과 맞추려고 그대로).
+    """
+    alphas = args.alphas
+    rows: list[dict] = []
+    detail: list[dict] = []
+    ckpts: dict[str, dict] = {}
+    td_pool: dict[int, list[tuple[float, int]]] = {t_d: [] for t_d in TD_GRID}
+    timer_all: list[dict] = []
+
+    all_tasks = sorted(tasks)
+    if len(all_tasks) < 2:
+        raise SystemExit("--arm loto 는 task 2개 이상 필요")
+
+    for held in all_tasks:
+        tr_tasks = [t for t in all_tasks if t != held]
+        tr_eps = [e for t in tr_tasks for e in splits[t]["train"]]
+        test_eps = tasks[held].get("all_eps")
+        if test_eps is None:
+            raise SystemExit("loto: held-out 전 episode 사본이 없다 (run() 배선 확인)")
+        base_row = {"task": held, "instruction": tasks[held]["instruction"],
+                    "arm": "loto", "model": kind, "truncate": args.truncate_train}
+        if not tr_eps:
+            rows.append({**base_row, "alpha": None, "skip_reason": "train 판 0"})
+            continue
+        if not test_eps:
+            rows.append({**base_row, "alpha": None, "skip_reason": "test 판 0"})
+            continue
+
+        mu, sd = standardizer(tr_eps)
+        seqs = [(apply_std(e, mu, sd), e.y) for e in tr_eps]
+        input_dim = seqs[0][0].shape[1]
+        n_fail_tr = sum(1 for _, y in seqs if y == 1)
+        print(f"  [train] arm=loto model={kind} heldout={held} "
+              f"n_train={len(seqs)} (fail {n_fail_tr}, {len(tr_tasks)} task) "
+              f"n_test={len(test_eps)} dim={input_dim}", flush=True)
+        if n_fail_tr == 0 or n_fail_tr == len(seqs):
+            print(f"  [skip] loto/{kind}/{held}: train 이 단일 클래스", flush=True)
+            rows.append({**base_row, "alpha": None, "skip_reason": "train single-class"})
+            continue
+
+        model = train_detector(kind, seqs, input_dim, args.epochs, args.lr, args.hidden,
+                               args.lambda_reg, args.grad_clip, args.batch_size,
+                               args.seed, verbose=not args.quiet)
+
+        # CP 밴드 출처 = train task 풀링 (held-out 판은 단 한 개도 안 쓴다).
+        band_src = [e for t in tr_tasks for e in splits[t]["train"] if e.succ == 1] \
+            if args.band_mu == "train" else \
+            [e for t in tr_tasks for e in splits[t]["calib"] if e.succ == 1]
+        calib_src = [e for t in tr_tasks for e in splits[t]["calib"] if e.succ == 1]
+        band_scores = [score_seq(model, apply_std(e, mu, sd)) for e in band_src]
+        calib_scores = [score_seq(model, apply_std(e, mu, sd)) for e in calib_src]
+
+        test_scores = [(e, score_seq(model, apply_std(e, mu, sd))) for e in test_eps]
+        tdm = td_metrics(test_scores)              # α 무관 (밴드 안 씀)
+        for t_d in TD_GRID:
+            td_pool[t_d].extend(td_pairs(test_scores, t_d))
+        W_task = tasks[held].get("W")              # oracle 참조용 (아래 docstring 참조)
+
+        band_ck: dict[str, dict] = {}
+        for a in alphas:
+            band = functional_cp_band(band_scores, calib_scores, a)
+            if band is None:
+                rows.append({**base_row, "alpha": a,
+                             "skip_reason": f"성공 판 부족 (band {len(band_scores)} / "
+                                            f"calib {len(calib_scores)} < {MIN_BAND_EPS})"})
+                continue
+            recs = []
+            for e, sc in test_scores:
+                ft = fire_step(sc, band["delta"])
+                rec = {
+                    "task": held, "arm": "loto", "model": kind, "alpha": a,
+                    "ep_id": e.ep_id, "scene": e.scene, "noise": e.noise,
+                    "succ": e.succ, "y": e.y, "T": e.T,
+                    "W": None if W_task is None else int(W_task),
+                    "fired": ft is not None,
+                    "t_fire": ft,
+                    "relpos": None if ft is None else round(ft / max(e.T - 1, 1), 4),
+                    "steps_before_end": None if ft is None else int(e.T - 1 - ft),
+                    "fire_phase": None if ft is None else
+                                  tasks[held]["phase_names"].get(int(e.phase[ft]),
+                                                                 str(int(e.phase[ft]))),
+                    "max_score": round(float(sc.max()), 4),
+                }
+                recs.append(rec)
+                detail.append(rec)
+            row = {**base_row, "alpha": a, "band_L": band["L"],
+                   "bw": round(band["bw"], 4),
+                   "n_train_ep": len(seqs), "n_band_succ": len(band_scores),
+                   "n_calib_succ": len(calib_scores),
+                   # loto 는 scene 이 아니라 task 로 fold 를 가른다 — 열 이름은 공용
+                   "train_scenes": f"{len(tr_tasks)}tasks",
+                   "calib_scenes": f"{len(tr_tasks)}tasks",
+                   "test_scenes": "all(heldout)",
+                   "n_trunc_dropped": sum(tasks[t].get("n_trunc_dropped", 0)
+                                          for t in tr_tasks),
+                   "skip_reason": ""}
+            row.update(summarize(recs))
+            row.update(tdm)
+            rows.append(row)
+            band_ck[f"{a:.2f}"] = {"mu": band["mu"].astype(np.float32),
+                                   "sd": band["sd"].astype(np.float32),
+                                   "bw": band["bw"],
+                                   "delta": band["delta"].astype(np.float32)}
+
+        # 같은 fold 의 무feature 기준선 (held-out 전 episode 위).
+        trecs = timer_records(test_eps, held, W_task, tasks[held]["phase_names"])
+        for r in trecs:
+            r["arm"] = "loto"
+        if trecs:
+            timer_all += trecs
+            detail += trecs
+            trow = {**base_row, "alpha": None, "model": "timer", "skip_reason": ""}
+            trow.update(summarize(trecs))
+            rows.append(trow)
+
+        ckpts[held] = {
+            "arm": "loto", "model": kind, "group": held,
+            "state_dict": {k: v.cpu() for k, v in model.state_dict().items()},
+            "input_dim": input_dim, "hidden": args.hidden,
+            "std_mean": mu, "std_std": sd,
+            "feature": {"layer": args.layer, "denoise": args.denoise, "seg": args.seg,
+                        "layer_idx": tasks[held]["layer_idx"],
+                        "denoise_idx": tasks[held]["denoise_idx"],
+                        "seg_idx": tasks[held]["seg_idx"],
+                        "dim": input_dim},
+            "cp_bands": {held: band_ck} if band_ck else {},
+            "tasks": tr_tasks,                 # 학습에 쓴 task (held-out 은 제외)
+            "heldout_task": held,
+            "shards": [tasks[t]["shard"] for t in tr_tasks],   # basename 만 (docs/04 §8)
+            "train": {"epochs": args.epochs, "lr": args.lr, "lambda_reg": args.lambda_reg,
+                      "grad_clip": args.grad_clip, "batch_size": args.batch_size,
+                      "seed": args.seed, "band_mu": args.band_mu,
+                      "band_source": "pooled train tasks (zero-shot)"},
+            "truncate": {
+                "mode": args.truncate_train,
+                "rollout_W": {t: tasks[t].get("W") for t in tr_tasks},
+                "phase_caps": {t: tasks[t].get("phase_caps") for t in tr_tasks},
+                "n_dropped": {t: tasks[t].get("n_trunc_dropped", 0) for t in tr_tasks},
+                "heldout": "full (절제 없음)",
+            },
+        }
+
+    # 풀링 행 (전 fold 합산)
+    pooled_td = {}
+    for t_d in TD_GRID:
+        a_, n_ = td_auroc(td_pool[t_d])
+        pooled_td[f"auroc_td{t_d}"], pooled_td[f"n_td{t_d}"] = a_, n_
+    for a in alphas:
+        recs = [r for r in detail if r["alpha"] == a]
+        if recs:
+            row = {"task": "__pooled__", "instruction": "", "arm": "loto", "model": kind,
+                   "alpha": a, "truncate": args.truncate_train, "skip_reason": ""}
+            row.update(summarize(recs))
+            row.update(pooled_td)
+            rows.append(row)
+    if timer_all:
+        row = {"task": "__pooled__", "instruction": "", "arm": "loto", "model": "timer",
+               "alpha": None, "truncate": args.truncate_train, "skip_reason": ""}
+        row.update(summarize(timer_all))
+        rows.append(row)
+
+    for held, payload in ckpts.items():
+        torch.save(payload, out_dir / f"detector_loto_{kind}_{held}.pt")
+    return rows, detail, ckpts
+
+
 # =============================================================================
 # TSV
 # =============================================================================
 
-TSV_COLS = ["task", "instruction", "arm", "model", "alpha", "subset", "n_test_ep", "n_fail",
-            "n_succ", "tpr", "fpr", "median_relpos_fail",
-            "median_steps_before_end_fail", "median_relpos_fp", "fire_phase_dist",
-            "length_auroc", "band_L", "bw", "n_train_ep", "n_band_succ",
-            "n_calib_succ", "train_scenes", "calib_scenes", "test_scenes",
-            "skip_reason"]
+TSV_COLS = (["task", "instruction", "arm", "model", "alpha", "truncate", "n_test_ep",
+             "n_fail", "n_succ", "tpr", "fpr", "tpr_before_W", "lead_vs_W", "W",
+             "median_relpos_fail", "median_steps_before_end_fail", "median_relpos_fp",
+             "fire_phase_dist", "length_auroc", "maxscore_auroc"]
+            + [f"auroc_td{t}" for t in TD_GRID] + [f"n_td{t}" for t in TD_GRID]
+            + ["band_L", "bw", "n_train_ep", "n_band_succ", "n_calib_succ",
+               "n_trunc_dropped", "train_scenes", "calib_scenes", "test_scenes",
+               "skip_reason"])
 
 
 def write_tsv(rows: list[dict], path: Path) -> None:
@@ -646,8 +952,15 @@ def write_tsv(rows: list[dict], path: Path) -> None:
 # =============================================================================
 
 def _write_synth_shard(path: Path, n_scene=10, n_noise=6, dim=32, seed=0,
-                       onset=0.4, signal=1.6):
-    """shard 계약과 동일한 NPZ 를 합성한다. 실패 판은 onset 이후 일부 축이 이동."""
+                       onset=0.4, signal=1.6, sig_off=0, sig_rand_sign=False):
+    """shard 계약과 동일한 NPZ 를 합성한다. 실패 판은 onset 이후 일부 축이 이동.
+
+    `sig_off` = 실패 신호가 실리는 축 offset. task 마다 다르게 주면 **공유 신호 없음**
+    (loto 전이 음성 대조).
+    `sig_rand_sign` = 실패 이동의 부호를 판마다 무작위로. 다른 task 에서 학습한 고정
+    readout 의 투영이 ± 대칭이 되어 held-out AUROC 가 기대값 0.5 로 모인다 (부호가
+    고정이면 우연히 −방향에 걸려 0.5 에서 크게 벗어난다 — 음성 대조가 불안정).
+    """
     rng = np.random.default_rng(seed)
     layers = [0, 2, 4, 8, 10, 12, 15]
     K, S = 4, 4
@@ -662,7 +975,8 @@ def _write_synth_shard(path: Path, n_scene=10, n_noise=6, dim=32, seed=0,
             base += rng.normal(0, 0.5, size=(1, dim)).astype(np.float32)   # scene 효과
             if fail:
                 t0 = int(onset * T)
-                base[t0:, :4] += signal
+                sgn = -1.0 if (sig_rand_sign and rng.random() < 0.5) else 1.0
+                base[t0:, sig_off:sig_off + 4] += sgn * signal
             blk = np.zeros((T, len(layers), K, S, dim), dtype=np.float16)
             # layer 12 × denoise 3 × seg "all" 만 신호를 담고 나머지는 잡음
             blk[:] = rng.normal(0, 1, size=blk.shape).astype(np.float16)
@@ -687,36 +1001,173 @@ def _write_synth_shard(path: Path, n_scene=10, n_noise=6, dim=32, seed=0,
              meta_json=np.array(json.dumps(meta, ensure_ascii=False)))
 
 
+def _synth_case(root: Path, tag: str, seed: int, signal: float, onset: float,
+                n_scene: int, n_noise: int, sig_offs=(0, 0),
+                sig_rand_sign: bool = False) -> Path:
+    """합성 shard 2개(=task 2개)를 담은 디렉터리. sig_offs 가 다르면 공유 신호 없음."""
+    sd = root / f"segA_{tag}"
+    sd.mkdir(parents=True, exist_ok=True)
+    for i, name in enumerate(("SynthTaskA", "SynthTaskB")):
+        _write_synth_shard(sd / f"{name}.npz", n_scene=n_scene, n_noise=n_noise,
+                           seed=seed + i, onset=onset, signal=signal,
+                           sig_off=sig_offs[i], sig_rand_sign=sig_rand_sign)
+    return sd
+
+
+def _synth_run(args, shard_dir: Path, out_dir: Path, truncate: str,
+               epochs: int, arm: str = "pertask") -> list[dict]:
+    """합성 케이스 1회 실행 → sim_rows.json 의 행 목록."""
+    a = argparse.Namespace(**vars(args))
+    a.shard_dir, a.out = shard_dir, out_dir
+    a.truncate_train = truncate
+    a.epochs = epochs
+    a.self_test = False
+    a.arm = arm
+    a.models = "lstm"
+    a.quiet = True
+    a.train_scenes, a.calib_scenes, a.test_scenes = 8, 3, 3
+    rc = run(a)
+    if rc != 0:
+        raise RuntimeError(f"self-test 하위 실행 실패 (truncate={truncate})")
+    return json.loads((out_dir / "sim_rows.json").read_text())
+
+
+def _pooled(rows: list[dict]) -> list[dict]:
+    return [r for r in rows
+            if r.get("task") == "__pooled__" and r.get("model") != "timer"
+            and r.get("tpr") is not None]
+
+
 def self_test(args) -> int:
-    """합성 shard 2개로 전 파이프라인을 돌리고 TPR > FPR 를 확인한다."""
+    """합성 데이터 게이트.
+
+    (1) 기존 게이트 — 신호 있는 합성에서 TPR > FPR.
+    (2) 길이 절제 게이트 — 합성 2종:
+        (a) feature 신호 O + 길이 confound  → truncate=rollout 에서도 조기 AUROC 유지
+        (b) feature 신호 X + 길이 confound  → truncate=rollout 이면 조기 AUROC ≈ 0.5,
+            full 학습이면 (길이만 보고) 종반 검출은 살아난다.
+    합성 잡음을 감안해 임계는 느슨하게 잡고, 어긋나면 이유를 찍고 fail-loud.
+    """
+    epochs = min(args.epochs, 8)
+    t_early = 10          # (a) 의 onset(0.25·T ≈ 4~6) 이후이면서 W 보다 한참 앞
     with tempfile.TemporaryDirectory() as td:
-        sd = Path(td) / "segA"
-        sd.mkdir(parents=True)
-        out = Path(td) / "out"
-        for i, name in enumerate(("SynthTaskA", "SynthTaskB")):
-            _write_synth_shard(sd / f"{name}.npz", seed=args.seed + i)
-        args.shard_dir = sd
-        args.out = out
-        args.epochs = min(args.epochs, 8)
-        args.self_test = False
-        rc = run(args)
-        if rc != 0:
-            return rc
-        rows = [r for r in json.loads((out / "sim_rows.json").read_text())
-                if r.get("task") == "__pooled__" and r.get("tpr") is not None]
-        ok = True
-        print("\n[self-test] pooled 행 (TPR > FPR 이어야 통과)")
-        for r in rows:
+        root = Path(td)
+        sig_dir = _synth_case(root, "sig", args.seed, signal=2.0, onset=0.25,
+                              n_scene=14, n_noise=8)
+        len_dir = _synth_case(root, "lenonly", args.seed + 100, signal=0.0, onset=0.4,
+                              n_scene=14, n_noise=8)
+
+        print("\n=== [self-test 1/6] 신호 O · truncate=none (기존 게이트) ===")
+        rows_a_none = _synth_run(args, sig_dir, root / "out_a_none", "none", epochs)
+        print("\n=== [self-test 2/6] 신호 O · truncate=rollout ===")
+        rows_a_tr = _synth_run(args, sig_dir, root / "out_a_rollout", "rollout", epochs)
+        print("\n=== [self-test 3/6] 신호 X(길이만) · truncate=none ===")
+        rows_b_none = _synth_run(args, len_dir, root / "out_b_none", "none", epochs)
+        print("\n=== [self-test 4/6] 신호 X(길이만) · truncate=rollout ===")
+        rows_b_tr = _synth_run(args, len_dir, root / "out_b_rollout", "rollout", epochs)
+
+        def _td(rows) -> float | None:
+            v = [r.get(f"auroc_td{t_early}") for r in _pooled(rows)
+                 if r.get(f"auroc_td{t_early}") is not None]
+            return float(v[0]) if v else None
+
+        def _best_gap(rows) -> float | None:
+            g = [r["tpr"] - (r["fpr"] or 0.0) for r in _pooled(rows)]
+            return max(g) if g else None
+
+        def _late(rows) -> float | None:
+            v = [r.get("maxscore_auroc") for r in _pooled(rows)
+                 if r.get("maxscore_auroc") is not None]
+            return float(v[0]) if v else None
+
+        fails: list[str] = []
+
+        pooled = _pooled(rows_a_none)
+        if not pooled:
+            fails.append("(1) 신호 O/none: pooled 유효 행 0")
+        print("\n[self-test] (1) 신호 O · none — pooled (TPR > FPR 이어야 통과)")
+        for r in pooled:
             good = r["tpr"] > (r["fpr"] or 0.0)
-            ok &= bool(good) or r["alpha"] > 0.25
+            if not good and r["alpha"] <= 0.25:
+                fails.append(f"(1) α={r['alpha']}: TPR {r['tpr']} ≤ FPR {r['fpr']}")
             print(f"  arm={r['arm']:7s} model={r['model']:4s} α={r['alpha']:.2f} "
                   f"TPR={r['tpr']} FPR={r['fpr']} relpos={r['median_relpos_fail']} "
                   f"{'OK' if good else 'FAIL'}")
-        if not rows:
-            print("[self-test] FAIL — 유효 행 0")
+
+        a_tr, b_tr, b_none = _td(rows_a_tr), _td(rows_b_tr), _td(rows_b_none)
+        gap_b_none, gap_b_tr = _best_gap(rows_b_none), _best_gap(rows_b_tr)
+        late_b_none, late_b_tr = _late(rows_b_none), _late(rows_b_tr)
+        print(f"\n[self-test] 절제 게이트 (t_d={t_early} 조기 AUROC / 종반 maxscore AUROC)")
+        print(f"  (a) 신호 O  rollout 절제 : auroc_td{t_early}={_fmt(a_tr)}  (> 0.65 기대)")
+        print(f"  (b) 신호 X  rollout 절제 : auroc_td{t_early}={_fmt(b_tr)}  (≲ 0.65 기대)"
+              f" | 종반={_fmt(late_b_tr)} TPR−FPR(best α)={_fmt(gap_b_tr)}")
+        print(f"  (b) 신호 X  none        : auroc_td{t_early}={_fmt(b_none)}  "
+              f"| 종반={_fmt(late_b_none)} "
+              f"TPR−FPR(best α)={_fmt(gap_b_none)} (> 0.10 기대)")
+
+        if a_tr is None:
+            fails.append(f"(a) 신호 O/rollout: auroc_td{t_early} 계산 불가 (표본 부족)")
+        elif a_tr <= 0.65:
+            fails.append(f"(a) 신호 O/rollout: 조기 AUROC {a_tr} ≤ 0.65 — 절제가 "
+                         "진짜 feature 신호까지 죽였다")
+        if b_tr is None:
+            fails.append(f"(b) 신호 X/rollout: auroc_td{t_early} 계산 불가")
+        elif b_tr > 0.65:
+            fails.append(f"(b) 신호 X/rollout: 조기 AUROC {b_tr} > 0.65 — 길이만 있는 "
+                         "합성인데 조기 분리가 나온다 (절제 누수 의심)")
+        # (b) 에 길이 confound 가 실제로 있고 종반에는 읽힌다는 것의 근거:
+        #   ① timer(무feature 길이 기준선)가 (b) 에서 거의 완벽히 분리한다 — 데이터 sanity
+        #   ② full 학습 detector 도 종반 발화로 양의 TPR−FPR 를 낸다 (조기 td 는 ≈0.5)
+        timer_gap = None
+        for r in rows_b_none:
+            if r.get("task") == "__pooled__" and r.get("model") == "timer" \
+                    and r.get("tpr") is not None:
+                timer_gap = r["tpr"] - (r["fpr"] or 0.0)
+        print(f"  (b) timer 기준선(길이만)  : TPR−FPR={_fmt(timer_gap)} (> 0.5 기대)")
+        if timer_gap is None or timer_gap <= 0.5:
+            fails.append(f"(b) timer 기준선 TPR−FPR={timer_gap} — 합성에 길이 confound "
+                         "가 없다. 대조 자체가 성립하지 않는다")
+        if gap_b_none is None:
+            fails.append("(b) 신호 X/none: pooled 유효 행 0")
+        elif gap_b_none <= 0.10:
+            fails.append(f"(b) 신호 X/none: TPR−FPR {gap_b_none:.3f} ≤ 0.10 — full 학습 "
+                         "detector 가 길이 신호조차 못 잡았다 (대조 무의미)")
+
+        # ---- (c) loto (task 전이) 게이트 ----------------------------------
+        # 공유 신호 O(두 합성 task 가 같은 축으로 실패) → held-out AUROC > 0.65,
+        # 공유 신호 X(task 마다 다른 축) → ≈ 0.5. 전자만 되면 전이 배선이 살아있고,
+        # 후자에서 높게 나오면 held-out 판이 학습·보정에 샜다는 뜻.
+        nosh_dir = _synth_case(root, "loto_nosh", args.seed + 200, signal=2.0,
+                               onset=0.25, n_scene=14, n_noise=8, sig_offs=(0, 8),
+                               sig_rand_sign=True)
+        print("\n=== [self-test 5/6] loto · 공유 신호 O ===")
+        rows_c_sh = _synth_run(args, sig_dir, root / "out_c_shared", "none", epochs,
+                               arm="loto")
+        print("\n=== [self-test 6/6] loto · 공유 신호 X (다른 축) ===")
+        rows_c_no = _synth_run(args, nosh_dir, root / "out_c_noshare", "none", epochs,
+                               arm="loto")
+        c_sh, c_no = _td(rows_c_sh), _td(rows_c_no)
+        print(f"\n[self-test] loto 게이트 (t_d={t_early} held-out AUROC, pooled)")
+        print(f"  (c) 공유 신호 O : {_fmt(c_sh)}  (> 0.65 기대)")
+        print(f"  (c) 공유 신호 X : {_fmt(c_no)}  (0.35~0.65 기대)")
+        if c_sh is None:
+            fails.append("(c) loto/공유O: auroc 계산 불가 (표본 부족)")
+        elif c_sh <= 0.65:
+            fails.append(f"(c) loto/공유O: held-out AUROC {c_sh} ≤ 0.65 — 공유 신호가 "
+                         "있는데 전이가 안 된다 (배선 의심)")
+        if c_no is None:
+            fails.append("(c) loto/공유X: auroc 계산 불가")
+        elif not (0.35 <= c_no <= 0.65):
+            fails.append(f"(c) loto/공유X: held-out AUROC {c_no} 이 0.35~0.65 밖 — "
+                         "공유 신호 없는 합성인데 전이가 보인다 (held-out 누수 의심)")
+
+        if fails:
+            print("\n[self-test] FAIL")
+            for f in fails:
+                print(f"  - {f}")
             return 1
-        print(f"[self-test] {'PASS' if ok else 'FAIL'}")
-        return 0 if ok else 1
+        print("\n[self-test] PASS")
+        return 0
 
 
 # =============================================================================
@@ -740,15 +1191,9 @@ def run(args) -> int:
     for p in paths:
         eps, spec = load_shard_episodes(p, args.layer, args.denoise, args.seg)
         slug = p.stem
-        if args.cell_split:
-            part = split_cells(slug, eps, args.fit_scene_set, args.fit_noise_set,
-                               args.calib_noise_set)
-            # TSV 의 *_scenes 열은 각 파트에 **실제로 들어간** scene 목록으로 채운다.
-            sc_split = {k: sorted({e.scene for e in v}) for k, v in part.items()}
-        else:
-            sc_split = split_scenes(slug, [e.scene for e in eps], args.train_scenes,
-                                    args.calib_scenes, args.test_scenes, args.seed)
-            part = {k: [e for e in eps if e.scene in set(v)] for k, v in sc_split.items()}
+        sc_split = split_scenes(slug, [e.scene for e in eps], args.train_scenes,
+                                args.calib_scenes, args.test_scenes, args.seed)
+        part = {k: [e for e in eps if e.scene in set(v)] for k, v in sc_split.items()}
         tasks[slug] = {
             "instruction": spec.instruction, "shard": p.name,
             "phase_names": spec.phase_names, "dim": spec.dim,
@@ -756,10 +1201,29 @@ def run(args) -> int:
             "seg_idx": spec.seg_idx, "layers": spec.layers,
         }
         splits[slug] = {**part, "scenes": sc_split}
+        if args.arm == "loto":
+            # held-out fold 의 test = 전 episode(절제 전 원본). 아래 apply_truncation 은
+            # train/calib 리스트를 절제 사본으로 갈아끼우므로 여기서 원본을 붙들어 둔다.
+            tasks[slug]["all_eps"] = eps
+        # W/cap 은 truncate 모드와 무관하게 **항상** 계산한다 — timer 기준선·tpr_before_W
+        # 가 모든 run 에서 필요하고, task 별(mixed arm 에서도 task 별)로 잡는다.
+        W = rollout_cap(part["train"])
+        caps = phase_dwell_caps(part["train"])
+        tasks[slug]["W"] = W
+        tasks[slug]["phase_caps"] = {str(k): v for k, v in caps.items()}
+        dropped = apply_truncation(splits[slug], args.truncate_train, W, caps)
+        tasks[slug]["n_trunc_dropped"] = int(sum(dropped.values()))
+        if args.truncate_train != "none":
+            print(f"[trunc] {slug}: mode={args.truncate_train} W={W} caps={caps} "
+                  f"dropped(train/calib)={dropped['train']}/{dropped['calib']}", flush=True)
+        elif W is not None:
+            print(f"[trunc] {slug}: mode=none (W={W} 는 timer 기준선용으로만 사용)",
+                  flush=True)
+        sp = splits[slug]
         print(f"[load] {slug}: ep {len(eps)} (fail {sum(1 for e in eps if e.y == 1)}) "
-              f"| train {len(part['train'])} / calib {len(part['calib'])} "
-              f"(succ {sum(1 for e in part['calib'] if e.succ == 1)}) "
-              f"/ test {len(part['test'])} | scenes {sc_split}", flush=True)
+              f"| train {len(sp['train'])} / calib {len(sp['calib'])} "
+              f"(succ {sum(1 for e in sp['calib'] if e.succ == 1)}) "
+              f"/ test {len(sp['test'])} | scenes {sc_split}", flush=True)
 
     dims = {t["dim"] for t in tasks.values()}
     if len(dims) != 1:
@@ -775,9 +1239,34 @@ def run(args) -> int:
     detail: list[dict] = []
     for arm in arms:
         for kind in models:
-            r, d, _ = run_arm(arm, kind, tasks, splits, args, out_dir)
+            if arm == "loto":
+                r, d, _ = run_loto(kind, tasks, splits, args, out_dir)
+            else:
+                r, d, _ = run_arm(arm, kind, tasks, splits, args, out_dir)
             rows += r
             detail += d
+
+    # timer 기준선 (무feature): "t ≥ W 면 발화". detector 가 이것보다 못하면 학습한 것은
+    # 길이뿐이다. arm/α 무관이라 task 당 한 행 + 풀링 한 행.
+    # (loto 는 fold 마다 held-out 전 episode 위 timer 행을 run_loto 안에서 이미 낸다)
+    timer_all: list[dict] = []
+    for t in (sorted(tasks) if arms != ["loto"] else []):
+        recs = timer_records(splits[t]["test"], t, tasks[t].get("W"),
+                             tasks[t]["phase_names"])
+        if not recs:
+            continue
+        timer_all += recs
+        row = {"task": t, "instruction": tasks[t]["instruction"], "arm": "-",
+               "model": "timer", "alpha": None, "truncate": args.truncate_train,
+               "skip_reason": ""}
+        row.update(summarize(recs))
+        rows.append(row)
+    if timer_all:
+        row = {"task": "__pooled__", "instruction": "", "arm": "-", "model": "timer",
+               "alpha": None, "truncate": args.truncate_train, "skip_reason": ""}
+        row.update(summarize(timer_all))
+        rows.append(row)
+        detail += timer_all
 
     write_tsv(rows, out_dir / "sim_summary.tsv")
     (out_dir / "sim_rows.json").write_text(json.dumps(rows, ensure_ascii=False, indent=1),
@@ -791,14 +1280,20 @@ def run(args) -> int:
             "hidden": args.hidden, "lambda_reg": args.lambda_reg,
             "grad_clip": args.grad_clip, "batch_size": args.batch_size,
             "band_mu": args.band_mu,
-            "split": ({"unit": "cell",
-                       "fit_scenes": sorted(args.fit_scene_set),
-                       "fit_noises": sorted(args.fit_noise_set),
-                       "calib_noises": sorted(args.calib_noise_set),
-                       "test": "fit 셀 밖 전부 (unseen scene 또는 unseen noise)"}
-                      if args.cell_split else
-                      {"train": args.train_scenes, "calib": args.calib_scenes,
-                       "test": args.test_scenes, "unit": "scene"}),
+            "truncate_train": args.truncate_train,
+            "truncate_caps": {t: {"rollout_W": tasks[t].get("W"),
+                                  "phase_caps": tasks[t].get("phase_caps"),
+                                  "n_dropped": tasks[t].get("n_trunc_dropped", 0)}
+                              for t in sorted(tasks)},
+            "td_grid": list(TD_GRID),
+            "split": {"train": args.train_scenes, "calib": args.calib_scenes,
+                      "test": args.test_scenes, "unit": "scene"},
+            **({"loto": {"folds": {h: [t for t in sorted(tasks) if t != h]
+                                   for h in sorted(tasks)},
+                         "test": "held-out task 전 episode (full, zero-shot)",
+                         "band": "train task 성공 판 풀링",
+                         "W": "held-out 자기 성공 통계 = oracle 참조용"}}
+               if args.arm == "loto" else {}),
             "label": "y=1 은 failure (SAFE 규약)",
         },
         "scene_split": {t: splits[t]["scenes"] for t in splits},
@@ -808,18 +1303,21 @@ def run(args) -> int:
                                              encoding="utf-8")
 
     print(f"\n[summary] {time.time()-t0:.0f}s — {len(rows)} 행 → {out_dir.name}/")
-    hdr = f"{'task':22s} {'arm':7s} {'model':5s} {'α':>5s} {'subset':24s} " \
-          f"{'TPR':>5s} {'FPR':>5s} {'relpos':>6s} {'left':>5s} {'lenA':>5s}"
+    hdr = f"{'task':22s} {'arm':7s} {'model':5s} {'α':>5s} {'TPR':>5s} {'FPR':>5s} " \
+          f"{'preW':>5s} {'lead':>5s} {'relpos':>6s} {'left':>5s} {'lenA':>5s} " \
+          f"{'td10':>5s} {'td20':>5s}"
     print(hdr)
     for r in rows:
         if r.get("tpr") is None:
             continue
         print(f"{str(r['task'])[:22]:22s} {r['arm']:7s} {r['model']:5s} "
-              f"{r['alpha']:5.2f} {str(r.get('subset','test')):24s} "
-              f"{r['tpr']:5.2f} {(r['fpr'] or 0):5.2f} "
+              f"{_fmt(r['alpha']):>5s} {r['tpr']:5.2f} {(r['fpr'] or 0):5.2f} "
+              f"{_fmt(r.get('tpr_before_W')):>5s} "
+              f"{_fmt(r.get('lead_vs_W'), 1):>5s} "
               f"{_fmt(r['median_relpos_fail']):>6s} "
               f"{_fmt(r['median_steps_before_end_fail'],1):>5s} "
-              f"{_fmt(r['length_auroc']):>5s}")
+              f"{_fmt(r['length_auroc']):>5s} "
+              f"{_fmt(r.get('auroc_td10')):>5s} {_fmt(r.get('auroc_td20')):>5s}")
     return 0
 
 
@@ -838,18 +1336,19 @@ def main() -> int:
                     help="denoise step index (-1 = 마지막 k)")
     ap.add_argument("--seg", default="all",
                     help="token segment 이름 (state|future|action|all)")
-    ap.add_argument("--arm", default="both", choices=("both", "pertask", "mixed"))
+    ap.add_argument("--arm", default="both",
+                    choices=("both", "pertask", "mixed", "loto"),
+                    help="both=pertask+mixed. loto=leave-one-task-out (task 전이) 단독 실행")
     ap.add_argument("--models", default="lstm,mlp", help="lstm,mlp")
     ap.add_argument("--alphas", default="0.05,0.1,0.2,0.3", help="CP 유의수준(FPR 목표)")
     ap.add_argument("--train-scenes", type=int, default=6)
     ap.add_argument("--calib-scenes", type=int, default=2)
     ap.add_argument("--test-scenes", type=int, default=2)
-    # 셀 지정 분할 (둘 다 주면 scene 셔플 분할 대신 이쪽을 쓴다 — eval replay 와 같은 격자)
-    ap.add_argument("--fit-scenes", default="",
-                    help='fit 셀 scene (예 "0,1,2,3,4"). --fit-noises 와 함께 지정')
-    ap.add_argument("--fit-noises", default="", help='fit 셀 noise (예 "0,1,2,3,4")')
-    ap.add_argument("--calib-noises", default="3,4",
-                    help="fit 셀 중 calib 으로 뺄 noise (나머지가 train)")
+    ap.add_argument("--truncate-train", default="none",
+                    choices=("none", "rollout", "phase-gt"),
+                    help="학습 데이터 길이 절제 (TRAIN·CALIB 만; TEST 는 항상 full). "
+                         "rollout=성공 record 수 ceil(μ+1σ) 로 앞부분만, "
+                         "phase-gt=phase 별 성공 dwell ceil(μ+1σ) cap. 기본 none")
     ap.add_argument("--band-mu", default="train", choices=("train", "calib"),
                     help="δ_t 의 μ/σ 출처 (bw 는 항상 calib 성공 판)")
     ap.add_argument("--epochs", type=int, default=25)
@@ -865,15 +1364,6 @@ def main() -> int:
                     help="합성 데이터로 파이프라인 검증 (TPR > FPR)")
     args = ap.parse_args()
     args.alphas = [float(x) for x in str(args.alphas).split(",") if str(x).strip()]
-
-    fs, fn = parse_int_list(args.fit_scenes), parse_int_list(args.fit_noises)
-    if bool(fs) != bool(fn):
-        ap.error("--fit-scenes 와 --fit-noises 는 함께 지정해야 한다")
-    args.cell_split = bool(fs)
-    args.fit_scene_set, args.fit_noise_set = set(fs), set(fn)
-    args.calib_noise_set = set(parse_int_list(args.calib_noises)) & args.fit_noise_set
-    if args.cell_split and not args.calib_noise_set:
-        ap.error("--calib-noises 가 --fit-noises 와 겹치지 않는다 (calib 판 0)")
 
     if args.self_test:
         return self_test(args)

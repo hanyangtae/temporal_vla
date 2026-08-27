@@ -171,7 +171,8 @@ def rewrite_one(shard: Path, labels: Path, out: Path, k: int, dry: bool) -> dict
                 continue
             zi = zipfile.ZipInfo(info.filename, info.date_time)
             zi.compress_type = info.compress_type
-            with zin.open(info, "r") as src, zout.open(zi, "w") as dst:
+            zi.file_size = info.file_size  # 4GB 초과 멤버 zip64 헤더 예약 (X.npy ~10GB)
+            with zin.open(info, "r") as src, zout.open(zi, "w", force_zip64=True) as dst:
                 shutil.copyfileobj(src, dst, CHUNK)
     tmp.replace(out)
     return {"slug": shard.stem, "n_rec": n_shard, "k": k,
