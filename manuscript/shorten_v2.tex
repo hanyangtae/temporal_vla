@@ -45,7 +45,7 @@ Vision-Language-Action(VLA) 모델이 작업을 수행할 때 스스로 현재 �
 \begin{figure*}[!t]
   \centering
   \includegraphics[width=0.70\textwidth]{figs/fig1_purity_residual.pdf}
-  \caption{(a) Cluster$\times$GT phase contingency(PPCC candle, k=8). 최빈 phase로 행을 정렬하면 블록-대각 구조가 나타난다(순도 0.888). (b) scene 잔차화 후에도 phase margin은 유지되고, (c) scene MI는 급감한다.}
+  \caption{(a) Cluster$\times$GT phase \chg{동시 출현 행렬}(PPCC candle, k=8). 최빈 phase로 행을 정렬하면 블록-대각 구조가 나타난다(순도 0.888). (b) scene 잔차화 후에도 phase margin은 유지되고, (c) scene MI는 급감한다.}
   \label{fig:purity}
 \end{figure*}
 \section{서 론}
@@ -71,7 +71,7 @@ waypoint의 이벤트가 갖는 phase로 예측한다.
 \mathrm{margin} = I(Z;Y) - I(Z_{\mathrm{clock}};Y).
 \label{eq:margin}
 \end{equation}
-Margin이 양수라는 것은 ``에피소드의 몇 \% 지점인가''라는 시간 정보만으로는 설명되지 않는 phase 정보를 activation이 담고 있다는 뜻이다. \chg{판독 성능은 정확도와 함께 phase별 F1을 단순 평균한 macro-F1로도 보고한다. 빈도가 높은 phase가 정확도를 지배해 드문 phase의 성능이 가려지는 것을 드러내기 위함이다.}
+Margin이 양수라는 것은 ``에피소드의 몇 \% 지점인가''라는 시간 정보만으로는 설명되지 않는 phase 정보를 activation이 담고 있다는 뜻이다. \rev{판독 성능은 정확도와 함께 phase별 F1을 단순 평균한 macro-F1로도 보고한다. 빈도가 높은 phase가 정확도를 지배해 드문 phase의 성능이 가려지는 것을 드러내기 위함이다.}
 
 \begin{figure}[!t]
   \centering
@@ -92,7 +92,7 @@ Margin이 양수라는 것은 ``에피소드의 몇 \% 지점인가''라는 시�
 \textbf{발견된 단위는 사람이 정의한 phase보다 잘게 나뉜다.} 발견된 상태의 평균 구간 길이는 GT phase보다 짧고(k=8에서 10개 instruction 전부), 에피소드당 전환 수는 상한($k-1$회)을 모두 넘어 같은 상태를 여러 번 재방문한다.
  \new{다만 이 세분이 의미 있는 하위 구조인지는 본 연구의 범위를 넘는다. \chg{판독 성능은 $k$가 phase 수를 넘기만 하면 평탄하므로(Figure~\ref{fig:ksweep}), 앞의 결과는 특정 $k$ 선택에 기대지 않는다.}}
 
-\textbf{각 cluster는 특정 phase에 국한된다.} 한 phase에서 나타난 cluster는 다른 phase에서 잘 나타나지 않는다(Figure 1a). \chg{Cluster를 각자의 최빈 phase로 읽었을 때 맞는 스텝의 비율(순도)은 중앙값 0.875, instruction별 0.56$\sim$0.96이다. MI 중앙값은 0.670 bits, 시간 대조군 margin의 중앙값은 +0.343 bits로 10개 instruction 전부에서 양수다.} \rev{Cluster별로 보아도 최빈 phase 점유율의 중앙값은 0.93이며, instruction에 따라 0.55까지 내려가는 예외적 cluster도 있다.} \new{$k$가 phase 수보다 크면 실제 phase보다 많은 cluster가 생기는데, 그런 상황에서도 각 cluster는 특정 phase에 국한되어 나타나므로 한 phase를 여러 cluster가 나눠 갖는, 대체로 다대일인 매핑이 된다. \rev{따라서 cluster를 최빈 phase에 대응시키는 매핑으로 현재 phase를 읽는 데 지장이 없다. 이것이 세밀한 하위 분할과 phase 판독이 공존하는 이유다.}}
+\textbf{각 cluster는 특정 phase에 국한된다.} 한 phase에서 나타난 cluster는 다른 phase에서 잘 나타나지 않는다. \chg{Cluster와 phase의 동시 출현 비율 $p(k,c)$를 나타낸 행렬을 최빈 phase 순으로 정렬하면 블록-대각 구조가 나타나며(Figure 1a), Metric의 MI는 이 행렬에서 계산된다. Cluster를 각자의 최빈 phase로 읽었을 때 맞는 스텝의 비율(순도)은 중앙값 0.875, instruction별 0.56$\sim$0.96이다. MI 중앙값은 0.670 bits, 시간 대조군 margin의 중앙값은 +0.343 bits로 10개 instruction 전부에서 양수다.} \rev{Cluster별로 보아도 최빈 phase 점유율의 중앙값은 0.93이며, instruction에 따라 0.55까지 내려가는 예외적 cluster도 있다.} \new{$k$가 phase 수보다 크면 실제 phase보다 많은 cluster가 생기는데, 그런 상황에서도 각 cluster는 특정 phase에 국한되어 나타나므로 한 phase를 여러 cluster가 나눠 갖는, 대체로 다대일인 매핑이 된다. \rev{따라서 cluster를 최빈 phase에 대응시키는 매핑으로 현재 phase를 읽는 데 지장이 없다. 이것이 세밀한 하위 분할과 phase 판독이 공존하는 이유다.}}
 
 \textbf{Phase 정보는 장면 암기로 환원되지 않는다.} \rev{Activation에는 scene 정보도 섞여 있다(instruction별 mi\_scene 0.02$\sim$0.86 bits). 그러나 scene별 평균을 제거한 잔차에서 scene 정보는 중앙값 0.44에서 0.27 bits로 크게 줄어드는 반면, phase margin은 +0.34에서 +0.31로 10개 instruction 전부에서 양수로 유지된다(Figure 1b).}
 
