@@ -191,6 +191,53 @@ phase-gt 학습 모델은 "phase에 오래 머무는 구간"을 학습에서 본
   (같은 seed도 layout/style 상이 실측)이라 공유 전제가 애초에 없음. seen18 재현
   (unseen 0.434)의 재확인.
 
+### 8) RL2/SAFE 원본 세팅 대조 — "절제 효과 없음" 보고는 지표 축 문제 (2026-08-28)
+
+RL2 심화 세션이 "절제가 효과 없다"고 보고한 건에 대한 3자 대조. **RL2의 원본 세팅이 무엇인지**를
+논문·코드에서 확정하고, 같은 데이터·같은 프로토콜에서 세 조건을 두 지표축으로 재채점했다.
+
+**RL2 원본 세팅의 실체 (근거 소재)**: RL2-VLA(arXiv 2607.26991)는 검출기를 SAFE
+(arXiv 2506.09937)에서 그대로 가져온다(`RL2-VLA/third_party/SAFE`, README "Adapted SAFE for RL2-VLA").
+- **길이 절제 없음**: 학습은 full 시퀀스 zero-pad + valid mask
+  (`failure_prob/data/utils.py` `pad_rollout_batch`:208-265). 데이터 경로 어디에도 길이 cap 없음.
+- **loss = per-step BCE, episode 라벨 전 step broadcast** (`failure_prob/model/lstm.py`:99-108).
+  실패 조기 timestep 지수 가중 옵션(`get_time_weight`, `model/utils.py`:39-65)이 있으나
+  RL2 재학습 config는 **`use_time_weighting: false`** (logs/open_pizero-bridge-lstm-ours_cpTrue/
+  20260807/123421/config.yaml) — 즉 원본 세팅은 길이 완화 장치를 아무것도 켜지 않는다.
+- **평가·모델선택 지표 = episode max점수 AUROC**: `falert_end_roc_auc`
+  (`utils/metrics.py`:215-224, score=`s[:len(ep)].max()`) 기준 wandb ROC-AUC 정렬로
+  하이퍼파라미터 선택(README step 3). 38 문서의 길이-confound 지적이 그대로 적용되는 지표.
+
+→ **우리 sim의 `--truncate-train none`이 RL2 원본 세팅과 등가** (full 길이 + per-step BCE
+broadcast + LSTM-256 + 성공판 functional CP, α=0.2 = RL2 `eval_cp_alpha`와 동일).
+잔여 차이는 클래스 빈도 가중(SAFE 有/우리 無)·feature 출처(action-expert embeds vs DiT L12)
+— 절제 대조축과 무관하게 세 조건에 동일.
+
+**재채점 (기존 3-seed 산출물, pertask lstm α=0.2, 클린 6-task¹, seed-paired Δ vs none):**
+
+| 지표 축 | rollout − none | phase-gt − none | 판정 |
+|---|---|---|---|
+| **RL2 지표**: maxscore AUROC (none 기준 0.895) | −0.030±0.093 | −0.003±0.055 | **무차별** |
+| TPR (0.907) | −0.025 | +0.014 | 무차별 |
+| FPR (0.332) | −0.002 | +0.030 | 무차별 |
+| **조기성**: preW (0.544) | **+0.226±0.365** | **+0.236±0.372** | **개선** |
+| 고정시각 AUROC td10 (0.611) | −0.031 | −0.029 | 무차별 |
+
+¹ OvenRack(초기조건형, §3에서 이미 제외)·PPCC_jug(FPR 1.0 퇴화, n_sd=2) 제외. n=16~17쌍.
+
+**판정**: RL2식 지표(episode-max AUROC·TPR/FPR)에서는 절제 효과가 실제로 없다 — **그 세션의
+관측은 재현되며, 우리 §1 결론("검출률 불변")과 동일한 사실이다.** 그러나 그 지표축은
+(a) 절제의 유일한 효과 지점인 **조기성(preW +0.23)을 원리적으로 측정하지 못하고**
+(b) full 길이 test에서 length_auroc=1.0인 우리 세팅(실패=timeout)에선 timer도 만점을 받는
+길이 지름길 지표다(38 문서 "보너스 발견"의 자기 플랫폼 재확인). 절제의 가치 주장은 처음부터
+"검출률 개선"이 아니라 "timer 대비 조기성"이었으므로(§2·§4), **"효과 없음" 보고는 반박이 아니라
+측정 축 누락**이다.
+
+부기: 해당 세션의 절제 구현(`third_party/SAFE/failure_prob/train.py`:150-186,
+`SAFE_TRUNC_MODE=success_mu1sd`, train+val_seen만 절제)은 우리 rollout 규약과 정합. 단
+worktree에 남은 08-26 trunc 재학습 흔적은 config 2개·빈 train.log·미완결 wandb run뿐 —
+완주 산출물은 그쪽 세션에 확인 필요.
+
 ## 후속 후보 (미실행)
 
 - **진행도-사분위 절제**: 연산자-설계 세션 실측(2026-08-14, Notion 3bc63918…)에 따르면 GT
