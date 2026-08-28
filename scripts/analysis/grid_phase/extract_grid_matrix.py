@@ -14,8 +14,11 @@
   Tier B  `<out>/tokB/<instr_slug>__L<layers>.npz`
       X   fp16 [n_rec, n_layers, 49, 1536]  — K 축 mean pool, 토큰 49 보존
 
-두 tier 모두 record 별 열(`ep_id/scene/noise/rec_idx/succ/phase_code/ep_len`)과 `vl`,
-`meta_json` 을 함께 담는다. `meta_json` 에는 **절대경로를 쓰지 않는다** (docs/04 §8) —
+두 tier 모두 record 별 열(`ep_id/scene/noise/jitter/rec_idx/succ/phase_code/ep_len`)과
+`vl`, `meta_json` 을 함께 담는다. `jitter` 는 v3/v4 지터 축(k = reset_idx) 좌표로,
+**항상 존재하는 열**이다 — 인덱스에 `jitter_reset_idx` 열이 없는 v1/v2 추출에서는 전부
+`-1` 로 채운다("지터 축 없음"). base 판은 99. `meta_json.jitter_axis` 가 이 열이 실좌표
+(true)인지 -1 채움(false)인지 알려 준다. `meta_json` 에는 **절대경로를 쓰지 않는다** (docs/04 §8) —
 출처는 `sigs`(meta.json 의 내용 지문)로만 남긴다.
 
 사용:
@@ -59,6 +62,8 @@ EXPECT_D = 1536
 N_FUTURE = 32                      # state 1 + future 32 + action 16 = 49
 SEGMENT_NAMES = ["state", "future", "action", "all"]
 BASE_ARM = "base"
+JITTER_BASE = 99          # index 의 jitter_reset_idx == "base" (지터 없는 원본 판)
+JITTER_NONE = -1          # 지터 축 자체가 없는 인덱스(v1/v2) 의 채움값
 
 
 def token_segments(T: int, action_horizon: int, n_future: int = N_FUTURE):
@@ -83,31 +88,62 @@ class Episode:
     """index tsv 한 행 = base 셀 하나 (좌표 + 신원). pkl 은 아직 열지 않는다."""
 
     __slots__ = ("plan_id", "machine", "instruction", "scene", "noise",
-                 "success", "rel_path", "sig")
+                 "jitter", "success", "rel_path", "sig")
 
     def __init__(self, plan_id, machine, instruction, scene, noise,
-                 success, rel_path, sig):
+                 success, rel_path, sig, jitter=JITTER_NONE):
         self.plan_id = plan_id
         self.machine = machine
         self.instruction = instruction
         self.scene = scene
         self.noise = noise
+        # 지터 축 좌표 k (docs/04 §3.1.1). "base"→99, 지터 축 없는 인덱스→-1.
+        self.jitter = jitter
         self.success = success
         self.rel_path = rel_path
         self.sig = sig
 
     def key(self):
-        return (self.plan_id, self.machine, self.scene, self.noise)
+        """정렬·중복 판정의 정본 키.
+
+        **이 순서가 shard 의 `ep_id` 를 정한다** — ep_id = 이 키로 오름차순 정렬한
+        판 목록의 0-based 인덱스. v1/v2(지터 축 없음)에서는 jitter 가 전부 -1 이라
+        (plan, machine, scene, noise) 정렬과 완전히 같아 ep_id 가 바뀌지 않는다.
+        """
+        return (self.plan_id, self.machine, self.scene, self.noise, self.jitter)
+
+    def cell(self):
+        """머신을 뺀 좌표 — union 가능성(머신 간 셀 서로소) 판정용."""
+        return (self.plan_id, self.scene, self.noise, self.jitter)
+
+
+def _cells_disjoint(per: dict[str, list[Episode]]) -> bool:
+    """머신별 셀 집합이 pairwise 서로소인가 (= 중복 좌표가 하나도 없는가)."""
+    total = 0
+    seen: set[tuple] = set()
+    for eps in per.values():
+        cells = {e.cell() for e in eps}
+        if len(cells) != len(eps):
+            return False          # 같은 머신 안에서 이미 중복 — union 대상 아님
+        total += len(cells)
+        seen |= cells
+    return len(seen) == total
 
 
 def select_machine(instruction: str, ep_list: list[Episode],
                    override: dict[str, str]) -> tuple[str, list[Episode], dict]:
     """instruction 하나의 판 목록 → (선택 머신, 그 머신의 판, 선택 기록).
 
-    같은 좌표 `(instruction, s, n)` 가 두 머신에 있는 경우가 실제로 있다 (정본 수집 +
-    다른 머신의 부산물). 머신을 섞으면 §3.2 층화 위험이라 **instruction 당 머신 하나만**
-    쓴다. 규칙 = 셀 수가 가장 많은(= 완결된) 머신. 동수면 자동 선택이 근거 없는 추측이
+    같은 좌표 `(instruction, s, n, k)` 가 두 머신에 있는 경우가 실제로 있다 (정본 수집 +
+    다른 머신의 부산물). 머신을 섞으면 §3.2 층화 위험이라 원칙은 **instruction 당 머신
+    하나**. 규칙 = 셀 수가 가장 많은(= 완결된) 머신. 동수면 자동 선택이 근거 없는 추측이
     되므로 fail-loud — `--machine <slug>=<machine>` 으로 사람이 정한다.
+
+    예외 `union_disjoint`: 머신들의 **셀 집합 `(plan, scene, noise, jitter)` 이 서로소**
+    면 union 한다. v4 지터 인덱스의 `PPCC/bread` 가 이 경우다 — 지터 100 판은 kanu,
+    base 25 판은 worker1 이라 좌표가 하나도 겹치지 않는다. 겹치는 좌표가 없으면 "어느
+    판이 정본인가" 라는 모호함 자체가 없으므로 버릴 이유가 없다 (버리면 base arm 전체가
+    사라진다). 하나라도 겹치면 기존 규칙(다수 머신 채택 + drop 로그)으로 되돌아간다.
     """
     per: dict[str, list[Episode]] = {}
     for e in ep_list:
@@ -124,6 +160,13 @@ def select_machine(instruction: str, ep_list: list[Episode],
         chosen, how = forced, "override"
     elif len(per) == 1:
         chosen, how = next(iter(per)), "only"
+    elif _cells_disjoint(per):
+        kept_all = sorted(ep_list, key=lambda e: e.key())
+        machines = sorted(per)
+        info = {"machine": machines, "rule": "union_disjoint",
+                "cells_per_machine": counts, "dropped_dup_cells": 0,
+                "dropped_machines": []}
+        return "+".join(machines), kept_all, info
     else:
         top = max(counts.values())
         tied = sorted(m for m, c in counts.items() if c == top)
@@ -151,12 +194,32 @@ def _int_or_none(s: str):
         return None
 
 
-def read_index(index_tsv: Path, grid_root: Path) -> list[Episode]:
-    """rollouts.tsv → Episode 목록.
+def _jitter_of(raw: str) -> int:
+    """index 의 `jitter_reset_idx` 문자열 → 정수 좌표.
+
+    `"base"`(지터 없는 원본 판) → 99, 그 외 정수 문자열 → 그 값. 빈 칸은 base 취급
+    (지터 축 인덱스에서 값이 비면 base 재사용 행이다).
+    """
+    v = (raw or "").strip()
+    if v == "" or v.lower() == BASE_ARM:
+        return JITTER_BASE
+    try:
+        return int(v)
+    except ValueError:
+        raise ValueError(
+            f"jitter_reset_idx={raw!r} — 정수 또는 {BASE_ARM!r} 이어야 한다") from None
+
+
+def read_index(index_tsv: Path, grid_root: Path) -> tuple[list[Episode], bool]:
+    """rollouts.tsv → (Episode 목록, 지터 축 유무).
 
     열은 `scripts/collect/build_grid_index.py` 의 ROLLOUT_COLS 를 헤더로 읽는다
     (하드코딩 인덱스 금지 — 열이 늘어나도 깨지지 않게). base arm + pkl 보유 행만 남긴다.
     `rel_path` 가 없는 옛 인덱스면 좌표로 경로를 조립한다.
+
+    `jitter_reset_idx` 열이 있으면(v3/v4 지터 인덱스) 지터 축 k 를 **정식 좌표로**
+    싣는다 — 같은 `(scene, noise)` 셀에 지터 변형이 여러 판 있으므로 이게 없으면
+    중복 좌표로 오인된다. 열이 없으면(v1/v2) 전부 -1 이라 이전 동작과 완전히 같다.
     """
     lines = index_tsv.read_text(encoding="utf-8").splitlines()
     if not lines:
@@ -169,6 +232,7 @@ def read_index(index_tsv: Path, grid_root: Path) -> list[Episode]:
             f"{index_tsv}: 필수 열 없음 {sorted(missing)} — build_grid_index.py 로 "
             "만든 rollouts.tsv 인지 확인할 것 (헤더: {})".format(",".join(header[:8])))
     col = {c: i for i, c in enumerate(header)}
+    has_jitter = "jitter_reset_idx" in col
 
     def get(parts, name, default=""):
         i = col.get(name)
@@ -194,13 +258,15 @@ def read_index(index_tsv: Path, grid_root: Path) -> list[Episode]:
         rel = get(parts, "rel_path").strip()
         if not rel:
             rel = f"{plan_id}/{machine}/{instruction}/s{scene}/n{noise}/{BASE_ARM}"
+        jitter = _jitter_of(get(parts, "jitter_reset_idx")) if has_jitter \
+            else JITTER_NONE
         eps.append(Episode(plan_id, machine, instruction, scene, noise,
                            _int_or_none(get(parts, "success")), rel,
-                           get(parts, "sig").strip()))
+                           get(parts, "sig").strip(), jitter))
     if not eps:
         raise ValueError(f"{index_tsv}: base+pkl 행이 하나도 없다")
     _ = grid_root  # 경로 검증은 워커에서 (인덱싱 시점엔 파일 접근하지 않는다)
-    return eps
+    return eps, has_jitter
 
 
 # ── 판 하나 처리 (워커) ────────────────────────────────────────────────────
@@ -305,6 +371,7 @@ def process_episode(job: dict) -> dict:
         "n_rec": n_rec,
         "scene": job["scene"],
         "noise": job["noise"],
+        "jitter": job.get("jitter", JITTER_NONE),
         "succ": int(d["episode_success"]),
         "sig": job["sig"] or str(d.get("sig") or ""),
         "plan_id": job["plan_id"],
@@ -330,14 +397,27 @@ def _init_worker() -> None:
 # ── shard 조립 ────────────────────────────────────────────────────────────
 def build_shard(results: list[dict], instruction: str, tier: str,
                 layers_sel: list[int], layer_ids: list[int],
-                extra_meta: dict | None = None) -> dict[str, Any]:
-    """판별 결과 → NPZ 배열 묶음. record 축으로만 concat (rollout pooling 없음)."""
+                extra_meta: dict | None = None,
+                jitter_axis: bool = False) -> dict[str, Any]:
+    """판별 결과 → NPZ 배열 묶음. record 축으로만 concat (rollout pooling 없음).
+
+    `ep_id` 규칙: `results` 는 호출 전에 `Episode.key()`
+    = `(plan_id, machine, scene, noise, jitter)` 오름차순으로 정렬돼 있고, ep_id 는 그
+    목록의 0-based 인덱스다. 지터 축이 키에 들어가므로 v4 처럼 같은 `(scene, noise)` 에
+    변형이 여러 판 있어도 판마다 ep_id 가 유일하고 순서가 결정적이다
+    (`rewrite_shard_clusters` 가 ep_id/rec_idx 를 원소 단위로 대조한다).
+
+    `jitter` 열은 에피소드 좌표를 record 축으로 브로드캐스트한 값이다 — 지터 축이 없는
+    v1/v2 인덱스에서는 열을 그대로 두되 전부 -1 로 채우고 `meta_json.jitter_axis=false`
+    로 표시한다 (다운스트림은 열을 무시해도 무방).
+    """
     codebook: dict[str, int] = {}
     for lab in sorted({p for r in results for p in r["phases"]}):
         codebook[lab] = len(codebook)
 
     Xs, vls, has_vls = [], [], []
     ep_id, scene, noise, rec_idx, succ, phase_code, ep_len = [], [], [], [], [], [], []
+    jitter: list[np.ndarray] = []
     sigs = []
     for e, r in enumerate(results):
         n = r["n_rec"]
@@ -347,6 +427,7 @@ def build_shard(results: list[dict], instruction: str, tier: str,
         ep_id.append(np.full(n, e, dtype=np.int32))
         scene.append(np.full(n, r["scene"], dtype=np.int16))
         noise.append(np.full(n, r["noise"], dtype=np.int16))
+        jitter.append(np.full(n, r.get("jitter", JITTER_NONE), dtype=np.int16))
         rec_idx.append(np.arange(n, dtype=np.int16))
         succ.append(np.full(n, r["succ"], dtype=np.int8))
         phase_code.append(np.array([codebook[p] for p in r["phases"]], dtype=np.int16))
@@ -366,6 +447,8 @@ def build_shard(results: list[dict], instruction: str, tier: str,
         "denoise_k": EXPECT_K,
         "dim": EXPECT_D,
         "tier": tier,
+        # 지터 축 실좌표인가(true) / -1 채움인가(false) — jitter 열 해석의 단일 근거.
+        "jitter_axis": bool(jitter_axis),
         "sigs": sigs,          # 출처는 sig 로만 — 절대경로 기록 금지 (docs/04 §8)
     }
     if tier == "tokB":
@@ -382,6 +465,7 @@ def build_shard(results: list[dict], instruction: str, tier: str,
         "ep_id": np.concatenate(ep_id),
         "scene": np.concatenate(scene),
         "noise": np.concatenate(noise),
+        "jitter": np.concatenate(jitter),
         "rec_idx": np.concatenate(rec_idx),
         "succ": np.concatenate(succ),
         "phase_code": np.concatenate(phase_code),
@@ -427,7 +511,10 @@ def main() -> int:
     else:
         layers_sel = list(range(len(EXPECT_LAYERS)))
 
-    eps = read_index(args.index_tsv, args.grid_root)
+    eps, jitter_axis = read_index(args.index_tsv, args.grid_root)
+    if jitter_axis:
+        print("[extract] index 에 jitter_reset_idx 열 있음 — 지터 축 k 를 정식 좌표로 "
+              "쓴다 (base=99)", flush=True)
     if args.plan_ids != "all":
         want = {p.strip() for p in args.plan_ids.split(",") if p.strip()}
         eps = [e for e in eps if e.plan_id in want]
@@ -463,11 +550,15 @@ def main() -> int:
                   f"중복 {info['dropped_dup_cells']} 셀 제외 "
                   f"{info['dropped_machines']} — 분포 {info['cells_per_machine']}",
                   flush=True)
+        elif info["rule"] == "union_disjoint":
+            print(f"[machine] {instruction}: {info['machine']} union "
+                  f"(셀 서로소, 제외 0) — 분포 {info['cells_per_machine']}", flush=True)
     # 같은 머신 안에서도 좌표가 겹치면 인덱스가 깨진 것 — 조용히 중복 집계하지 않는다.
     for instruction, v in by_instr.items():
         seen: dict[tuple, str] = {}
         for e in v:
-            k = (e.plan_id, e.scene, e.noise)
+            # 지터 축 포함 (v1/v2 는 jitter 가 상수 -1 이라 이전 키와 동치).
+            k = (e.plan_id, e.machine, e.scene, e.noise, e.jitter)
             if k in seen:
                 raise ValueError(
                     f"{instruction}: 좌표 중복 {k} — {seen[k]} 와 {e.rel_path}")
@@ -498,6 +589,7 @@ def main() -> int:
         jobs = [{
             "grid_root": str(args.grid_root), "rel_path": e.rel_path,
             "index_success": e.success, "scene": e.scene, "noise": e.noise,
+            "jitter": e.jitter,
             "sig": e.sig, "plan_id": e.plan_id, "machine": e.machine,
             "tier": args.tier, "layers_sel": layers_sel,
         } for e in ep_list]
@@ -525,7 +617,9 @@ def main() -> int:
             with ctx.Pool(args.workers, initializer=_init_worker) as pool:
                 for res in pool.imap_unordered(_safe_process, jobs, chunksize=1):
                     _handle(res)
-            results.sort(key=lambda r: (r["plan_id"], r["machine"], r["scene"], r["noise"]))
+            # Episode.key() 와 **같은 순서** — ep_id 가 이 정렬의 인덱스라 어긋나면 안 된다.
+            results.sort(key=lambda r: (r["plan_id"], r["machine"], r["scene"],
+                                        r["noise"], r.get("jitter", JITTER_NONE)))
         else:
             _init_worker()
             for job in jobs:
@@ -545,7 +639,8 @@ def main() -> int:
 
         arrays = build_shard(results, instruction, args.tier, layers_sel, layer_ids,
                              extra_meta={"machine_rule": pick["rule"],
-                                         "dropped_dup_cells": pick["dropped_dup_cells"]})
+                                         "dropped_dup_cells": pick["dropped_dup_cells"]},
+                             jitter_axis=jitter_axis)
         name = slug if args.tier == "segA" else \
             f"{slug}__L{'-'.join(str(l) for l in layer_ids)}"
         out_path = tier_dir / f"{name}.npz"
