@@ -258,6 +258,37 @@ broadcast + LSTM-256 + 성공판 functional CP, α=0.2 = RL2 `eval_cp_alpha`와 
 - 절제 구현(`third_party/SAFE/failure_prob/train.py`, `SAFE_TRUNC_MODE=success_mu1sd`,
   train+val_seen만 절제)은 우리 rollout 규약과 정합 확인 — no-op이지만 코드는 동작 검증됨.
 
+#### 8.2) SIMPLER에서 phase-dwell 비대칭·post-success cluster 실측 (2026-08-28)
+
+§8.1의 "SIMPLER엔 길이 축이 없다"는 **총길이 기준에서만** 맞다 — phase 해상도로 내려가면
+비대칭이 부활하는지, 그리고 성공 후 잉여 구간(성공 판도 38 step 완주)이 feature 공간에서
+따로 노는지를 RL2 학습 rollout(IID 4 task × succ/fail 각 25판 = 200판·7,600 step,
+SAFE 학습과 동일 1024d feature)으로 실측했다. 산출: 세션 tmp
+`simpler_phase_analysis/` TSV. 데이터 특이사항 2건: ① `src_on_target`≡`success`(7,600 step
+전수 불일치 0)라 place phase는 정의상 공집합 — 실질 phase는 reach/manip/post 3개.
+② 파일명 라벨=마지막 step 기준이라 `success_False` 중 "달성 후 상실" 판 존재
+(eggplant 13/25, spoon 5/25, stack 5/25).
+
+**(1) phase-dwell 비대칭 — 4 task 전부 존재, 지배 phase는 reach.** 성공 판(post 제거,
+t<first_succ_t)은 reach를 9~15 step에 끝내는데 실패 판은 26~37 step을 reach에서 소비
+(Δ +16~+26; grasp 한 번도 못 한 실패판 60~80%). 즉 **총길이 고정이어도 "실패=특정 phase에
+갇힘" 구조는 그대로**이고, phase-gt 절제의 SIMPLER 대응물(phase-dwell cap)이 정의 가능하다.
+예외 = eggplant: 실패 절반이 "넣었다 놓침"(transient-post 17.5% step)으로 reach-갇힘형이 아님.
+
+**(2) post-success는 별도 공간을 점유한다 (시간 confound 통제 후에도).** 성공 판 step의
+53~66%가 post인데: k-means k=8에서 post가 소수 cluster에 이봉 집중(cluster별 post 비율
+0.00~0.06 vs 0.93~1.00), episode-fold 선형 probe pre/post AUROC 0.97~0.99. 시간 통제:
+t 단독 0.84~0.96 → 겹침창에서 t 0.66~0.82로 붕괴하는 동안 feature 0.94~1.00 유지,
+**t 완전 고정(시계 정보 0) probe도 평균 0.85~0.98 (pooled 0.893)** — 내용 신호다.
+post vs 실패-판 step 분리도 AUROC 0.94~0.99 → "성공 후 정지"와 "실패 중 배회"는 서로
+닮지 않은 별개 상태.
+
+**함의**: SAFE 학습은 이 post 구간(성공 클래스의 과반)을 성공 라벨로 그대로 흡수하고
+있다 — succ/fail 분류기가 사실상 "정지 감지기"를 겸하게 되는 오염이며, **SIMPLER에서의
+올바른 절제 = 성공 판을 first_succ_t에서 절단**(+phase-dwell cap)이다. 우리 RoboCasa
+절제 규약이 "수집이 성공 시점에 끊어주는" 환경의 특권이었음이 역으로 확인됨. 단 이 분리는
+read이고, transient-post 실패가 있어 "post=성공" 단순 매핑은 불성립.
+
 ## 후속 후보 (미실행)
 
 - **진행도-사분위 절제**: 연산자-설계 세션 실측(2026-08-14, Notion 3bc63918…)에 따르면 GT
