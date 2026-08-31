@@ -16,6 +16,23 @@
 - `데이터 추가 수집` — 수집 라운드 담당(v4 지터 수집이 여기 산출).
 - 원격 compute(승준 노드) = remote-compute 에이전트, GPU eval = 중추가 직접.
 
+**용어 최소 사전** (이 문서 자기완결용):
+- **SAFE detector** = per-record causal LSTM 실패 검출기(DiT L12 활성화 입력, SAFE 논문
+  계열). **CP 밴드/α** = 성공 판으로 보정한 시변 conformal 임계 δ_t(α=허용 FPR 수준,
+  낮출수록 발화↓). 러너 env `FAILURE_ALPHA`(기본 0.1)로 선택.
+- **latch** = 폐기된 구설계: 발화 후 에피소드 끝까지 상시 개입. per-step(1회성)의 반대.
+- **arm**: `ps_base`=무개입(판정 기록만) / `ps_reseed`=발화 record만 denoise noise 재추첨 /
+  `ps_setm`=성공 setpoint(mean-diff) 쪽으로 활성화 당김(β1.0) / `ps_condg`=상태-조건부
+  대조 guidance delta. `ps_base2`=base 재현성 2회차.
+- **segA/shard** = rollout 활성화를 [record, layer, denoise, segment, 1536]로 구운 학습용
+  NPZ(태스크당 1파일). **v2/v4** = grid 수집 세대(v2=15scene grid, v4=지터 격자: scene
+  s0-4 × noise n0-4 × 지터 k∈{0..3,base}, task당 125판).
+- **exp2~6** = 과거 실험 라운드 번호(exp2 이래 setM 구제 0이었음 — RESULTS.md).
+- task 별명: apple/bread/candle/jug/marshmallow=PPCC_*(PickPlaceCounterToCabinet 물체),
+  coffee=CoffeeSetupMug, dish=DishwasherRack_out, oven/rack=OvenRack_out,
+  drawer-L/R=OpenDrawer_left/right. 전체 10 task, detector "8 task"=apple·coffee 제외분.
+- ListAgents/SendMessage = Claude Code 하네스의 세션 간 통신 도구(다음 세션도 보유).
+
 **프로젝트 목적**: VLA의 반복 실패를 백본 무학습으로 **가볍게 hotfix**한다 — 배포 로그로
 detector+연산자를 자동 fit해 per-step으로 감지·개입. 이 세션은 그 파이프의 실효성을
 측정하는 자리다. 방향 정본 = docs/steering/RESEARCH_DIRECTION.md, 시나리오 정본 = 45,
@@ -35,7 +52,8 @@ detector+연산자를 자동 fit해 per-step으로 감지·개입. 이 세션은
 - 검증: 스모크 5/5 — 배관 동치 max|Δaction|=0.0(144 record), 발화 재현, 개입 인과(개입
   다음 record부터 활성화 분기), y′ 기록, 2회 실행 bit 재현.
 - 첫 실증: GT-phase 파일럿에서 **marshmallow ps_reseed 구제** — 발화 13회 만에 detector
-  자연 침묵·조기 성공 = "개입→다음 step 자연 활성화로 재판정→회복 시 침묵" 폐루프 작동.
+  자연 침묵·조기 성공 = "개입→다음 step 자연 활성화로 재판정→회복 시 침묵" 폐루프의
+  첫 실증(n=1 — v4판에서 구제 5~6판으로 재현 누적).
 
 ### 1-2. GT phase → cluster phase 전환 (완료)
 - 동기: action phase 세션 실측 "GT event-labeler phase가 활성화 동역학과 비정합".
@@ -50,7 +68,10 @@ detector+연산자를 자동 fit해 per-step으로 감지·개입. 이 세션은
 - cluster 파일럿 성과: **setM 최초 구제**(marshmallow, 실개입 3회 — exp2 이래 처음).
 
 ### 1-3. ★수집 라벨 비신뢰 발견 → base-재정박 프레임 (판정 확정)
-- 51케이스 확장에서 ps_base(무개입)가 수집-실패 판의 ~55%에서 성공 — **개입 탓이 아니라
+- 규모 관계: 구제 대상 = **51케이스**(instruction×scene×지터k 단위) / 그 케이스들의
+  수집-실패 판 = **118판**(kanu 55·srv50 36·srv48 27) / 이 중 실제 pair 성립(양 세션
+  실행분, drawer-L 제외) = v4 68·v2 65판. srv48 몫 27판은 미실행.
+- 확장에서 ps_base(무개입)가 수집-실패 판(pair 65판 기준 36판, ~55%)에서 성공 — **개입 탓이 아니라
   v4 수집 시점 라벨이 경계 판에서 비결정**(고부하 병렬 수집 추정). 반면 **replay 자체는
   완전 결정적**: base 2회 36판 불일치 0, v2판↔v4판 base 교차 65/65 일치, seed 좌표
   전수 일치 확인.
@@ -63,16 +84,24 @@ detector+연산자를 자동 fit해 per-step으로 감지·개입. 이 세션은
   동작점이 어긋나 성공 판에서 FP 폭주 → 파손이 구제의 2~4배(v2판). detector 재학습만으로
   task 동작점이 요동한다는 것도 실측(bread FPR 0.06→0.67 = 실전 발화 1→117회).
 - v4 segA를 새로 추출(추출기를 지터-인식으로 패치)해 cluster·detector를 **eval과 같은
-  분포로 재학습** → 최종표 (base-paired, drawer-L 제외):
+  분포로 재학습** → 최종표. 조건: **α=0.1**, base-paired, drawer-L 제외.
+  분모 규칙: pair 모수(base 있는 판)는 v4 68 / v2 65이고, **arm별 분모는 그보다 작을 수
+  있음** — 해당 arm 판이 결손(rc=13 부분실행)이거나 연산자 NPZ 미등록(rc=12)이면 그 판은
+  그 arm 분모에서 빠진다. "5/29"=base실패 중 그 arm 결과가 있는 29판 중 5 구제.
 
-  | arm | **v4 정렬판** 구제/파손 (68 pair) | v2 학습판 (65 pair) |
+  | arm | **v4 정렬판** 구제 · 파손 | v2 학습판 |
   |---|---|---|
-  | ps_reseed | **5/29(17%) · 5/37(14%)** | 2/28 · 10/34 |
-  | ps_setm | **6/29(21%) · 9/34** | 3/29 · 12/33 |
-  | ps_condg | 1/26 · 4/20 | 3/27 · 6/22 |
+  | ps_reseed | **5/29(17%) · 5/37(14%)** | 2/28(7%) · 10/34(29%) |
+  | ps_setm | **6/29(21%) · 9/34(26%)** | 3/29(10%) · 12/33(36%) |
+  | ps_condg | 1/26(4%) · 4/20(20%) | 3/27(11%) · 6/22(27%) |
 
-- 판정: 구제 ~2배, 파손 절반. reseed 순효과 균형 도달, setM 구제율 최고(bread2·marsh2·
-  candle2). **파손의 주범 = detector 동작점 불일치(FP)로 확정** — "정렬이 load-bearing".
+- 판정(정직하게): **reseed가 유일하게 순효과 균형**(구제 17% vs 파손 14%; v2 대비 구제
+  2.5배·파손 절반). setM은 구제율 최고(21%, bread2·marsh2·candle2 — exp2 이래 최초
+  구제)이나 파손 26%로 순효과는 아직 음수. **condg는 v4에서 오히려 악화**(3→1, 원인
+  미진단 — §2 발주). "구제 2배·파손 절반"은 reseed·setm 총합 경향이지 전 arm 아님.
+- 파손 감소의 **주 가설 = detector 동작점(CP δ) 정렬**. 단 v4 정렬에서 cluster도 함께
+  재학습돼 detector 단독 기여는 미분리 — 단독 귀속하려면 (v4 detector × v2 cluster)
+  교차 arm 1개가 필요(미실행). 방향 증거로는 충분(FPR 매개 파손 기전 + bread 실측).
 - v4판 detector ckpt에 **α 0.05/0.1/0.2 3종 저장**(FP 레버, 재학습 없이 serve 인자로 스윕 가능).
 
 ## 2. 파트별 상태 → 개선 요청 후보 (다음 루프에서 담당 세션에 발주할 것)
@@ -90,7 +119,8 @@ detector+연산자를 자동 fit해 per-step으로 감지·개입. 이 세션은
 - **kanu(로컬)**: A4000 16GB×8, **serve 1개/GPU**(GR00T ~11.6GB). GPU 0-3 동료 예약
   경향·수시 변동 — **발사 직전 compute-apps 소유자 확인, 타인 프로세스(443MiB 상주
   포함) 있는 GPU 금지, 총 3 GPU 상한**. eval serve는 lerobot 컨테이너(docker exec -d).
-- **srv50 = `AISem_50_junhyeong`(worker2)** / **srv48 = `AISem_48_junhyeong`(worker1)**:
+- **srv50 = `AISem_50_junhyeong`(worker2, junhyeong@166.104.35.50)** /
+  **srv48 = `AISem_48_junhyeong`(worker1, junhyeong@166.104.35.48)** — ~/.ssh/config 등록됨:
   A100 80GB×4. **serve = host conda** `~/miniconda3/envs/lerobot_050_groot/bin/python`
   + `SERVE_PYTHONPATH=~/pkt_ws/temporal_vla/lerobot/src`, **serve 6/GPU·빈 GPU만**.
   repo = `~junhyeong/pkt_ws/temporal_vla`(git pull 가능; 연산자 NPZ·번들·ckpt는 git에
@@ -137,6 +167,23 @@ detector+연산자를 자동 fit해 per-step으로 감지·개입. 이 세션은
   `features.{failure_*,failure_score_post,perstep_fired/op/seed2/cluster,gate_skipped}`;
   클라 `--gated-steering-mode perstep --perstep-op {none,reseed,setm,condg}
   --perstep-cluster-phase`; 러너 env `CLUSTER_BUNDLE`·`DETECTOR_CKPT`.
+- **실행 예시** (전부 main tree에서):
+  ```bash
+  # v4 정렬판 eval 재실행/재개 (멱등): kanu 몫
+  setsid nohup bash outputs/tmp/og_ck8v4_expand_kanu.sh <빈GPU> [GPU2] [GPU3] \
+    > outputs/eval/robocasa/groot_n15/og_ps_smoke/logs/ck8v4_orch.log 2>&1 < /dev/null &
+  # α=0.05 스윕 = 위 커맨드 앞에 FAILURE_ALPHA=0.05 만 추가 (OUT_ROOT 분리 위해
+  #   스크립트 내 B= 경로를 og_ck8v4a005_expand 로 바꾼 사본으로)
+  # 단일 판 수동 실행(디버그):
+  bash outputs/tmp/run_case.sh <task> <cell_si> <noise> <env_name> <GPU> \
+    ARMS=ps_setm STEER_OP=setpoint_seg NPZ_VARIANT=case_setm_ck8v4 STEER_BETA=1.0 \
+    NPZ_ROOT=$PWD/outputs/steer/online_pipe_v4_pilot/.roots/<case_slug> \
+    CLUSTER_BUNDLE=$PWD/outputs/analysis/grid_phase/ae_v4_k8/ae_bundle_v4_k8.npz \
+    DETECTOR_CKPT=$PWD/outputs/analysis/grid_phase/detector_v4/cluster-k8/detector_pertask_lstm_<task>.pt \
+    OUT_ROOT=<결과경로>
+  # 집계: og_ck8v4_expand{,_srv50} 의 per_episode.tsv 를 (case,noise)로 모아
+  #   base 기준 paired (이 세션은 인라인 python 사용 — 스크립트化는 잔여 §6-7)
+  ```
 - 영상: 렌더러 `scripts/analysis/grid_phase/render_activation_traj.py`(per-step 대응),
   아티팩트 https://claude.ai/code/artifact/4fbe7cf9-4c77-4230-bcd4-39e97ec03f1e (GT
   파일럿 기준 — v4판 미갱신).
@@ -146,7 +193,7 @@ detector+연산자를 자동 fit해 per-step으로 감지·개입. 이 세션은
 1. srv48 몫 27판(coffee·dish·bread-w1) — v2·v4판 모두 미실행(coffee는 v4 δ 부재).
 2. α=0.05 스윕으로 setM 잔여 파손 재시험(serve 인자만, 재학습 불요).
 3. condg v4 위축 진단(sidecar perstep_gate_skipped 집계) → 연산자 파트 발주.
-4. FP 억제 규칙(#11)·상시-재샘플 대조(#13)·margin 자가평가(#8).
+4. FP 억제 규칙(연속 M record 발화 시만 개입)·상시-재샘플 대조 arm(record 0부터 재추첨 — 감지의 타이밍 가치 검증)·margin 자가평가 진단.
 5. 파트 발주(§2 표) — 특히 수집 규약 개선·시나리오 스펙 개정 전달.
 6. 정리: 진단 pkl ~12GB(og_ps_pilot_cap*), 원격 segA_v4 ~120G, detector_v4/cluster-k8_bad.
 7. 라운드 문서 docs/steering/48 작성·아티팩트 v4판 갱신.
