@@ -1334,7 +1334,10 @@ def _run_resample_gate(
     extras["features.perstep_cand_sel"] = int(sel)
     extras["features.perstep_cand_reject"] = rejects
     if skipped is not None:
-        extras["features.perstep_gate_skipped"] = skipped
+        # 주의: gate_skipped 가 아니다 — fallback 도 후보 0 으로 **개입은 일어난다**.
+        # gate_skipped 는 "무개입" 전용(집계 applied_count 가 ¬skipped 로 세므로),
+        # LLR 선별 불가 사유는 별도 필드로 남긴다.
+        extras["features.perstep_llr_fallback"] = skipped
     seed_sel, action_sel, hidden_sel = cands[sel]
     return action_sel, hidden_sel, seed_sel
 
