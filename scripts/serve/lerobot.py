@@ -297,6 +297,74 @@ def _load_cluster_phase_if_requested(args) -> None:
     )
 
 
+# ---------------------------------------------------------------- LLR 재샘플 채점기
+# best-of-N 재샘플(op=rsn_llr)에서 후보 활성화를 phase 조건부 성공/실패 가우시안
+# 로그우도비로 채점한다. NPZ 계약의 단일 출처 = src/failure_online/llr_scorer.py docstring.
+_llr_scorer = None               # LLRScorer | None
+_llr_scene: str | None = None    # 기동 시 고정하는 scene ("s3") — 등록 단위가 (scene, phase)
+_llr_spec: dict = {}             # /health 노출용
+
+
+def _raw_feature_from_hidden(hidden_np) -> np.ndarray:
+    """features.hidden_states [L,K,T,D] → LLR 입력 raw feature [1536] (표준화 전).
+
+    좌표 추출은 **기존 헬퍼만** 쓴다 (새 추출 경로를 만들면 학습 좌표와 조용히 어긋난다):
+    cluster 번들이 있으면 그 좌표, 없으면 detector 좌표 — 둘은 같은 좌표 전제다.
+    """
+    if _cluster_assigner is not None:
+        return _cluster_assigner.feature_from_hidden(np.asarray(hidden_np), _cluster_layer_idx)
+    if _failure_detector is not None:
+        return _failure_detector.feature_from_hidden(np.asarray(hidden_np), _failure_layer_idx)
+    raise HTTPException(
+        status_code=409,
+        detail="LLR 재샘플: raw feature 좌표를 정할 판정기가 없음 "
+        "(--cluster-phase-bundle 또는 --failure-detector 필요)",
+    )
+
+
+def _load_llr_scorer_if_requested(args) -> None:
+    """--llr-bundle 시 채점기를 로드한다 (미지정이면 None — rsn_llr 요청 시 409).
+
+    연산자 등록 단위가 **(scene, phase)** 라 번들은 task 당 1개이고 scene 은 기동
+    인자(--llr-scene)로 고정한다 — 없으면 기동 실패(어느 scene 의 가우시안으로 채점하는지
+    불명인 채 도는 것 방지).
+    """
+    global _llr_scorer, _llr_scene, _llr_spec
+    path = getattr(args, "llr_bundle", None)
+    if not path:
+        return
+    if _policy_type != "groot":
+        raise ValueError("--llr-bundle 는 policy_type='groot' 전용")
+    if _groot_dit_capture_layers is None or _groot_dit_token_pool != "all_token_full":
+        raise ValueError(
+            "--llr-bundle 는 --groot-dit-capture-layers + "
+            "--groot-dit-token-pool all_token_full 필요 (후보 활성화 캡처 좌표)"
+        )
+    from src.failure_online.llr_scorer import LLRScorer, normalize_scene
+
+    scene_arg = getattr(args, "llr_scene", None)
+    if scene_arg in (None, ""):
+        raise ValueError(
+            "--llr-bundle 는 --llr-scene 필요 (등록 단위가 (scene, phase) — "
+            "어느 scene 의 가우시안으로 채점할지 명시할 것)"
+        )
+    _llr_scene = normalize_scene(scene_arg)
+
+    bundle_path = Path(path)
+    if not bundle_path.is_absolute():
+        bundle_path = Path(__file__).resolve().parents[2] / bundle_path
+    _llr_scorer = LLRScorer.from_bundle(bundle_path)
+    if _llr_scene not in _llr_scorer.scenes():
+        raise ValueError(
+            f"--llr-scene {_llr_scene} 이 번들에 없음 (있는 scene: {_llr_scorer.scenes()})"
+        )
+    # basename 만 기록 (docs/04 §8 — 산출물 안 절대경로 금지)
+    _llr_spec = {"enabled": True, "bundle": bundle_path.name, "scene": _llr_scene,
+                 **_llr_scorer.spec()}
+    logger.info("LLR resample scorer ON: bundle=%s scene=%s registered=%s",
+                _llr_spec["bundle"], _llr_scene, _llr_spec["registered"])
+
+
 def _failure_from_hidden(hidden_np) -> dict | None:
     """features.hidden_states [L,K,T,D] → {"score","fired","delta","t"} (1 step 전진).
 
@@ -1000,8 +1068,13 @@ def _action_to_emit_array(action: torch.Tensor) -> np.ndarray:
 # 규약: 1차 pass 는 **hook 전부 off** 로 돌려 자연 활성화 x_t 를 얻고(detector 순환
 # 차단, §1-2), detector 가 발화한 record 에서만 **DiT-only 2차 pass** 로 개입한다.
 # 개입은 그 record 1회성 — 다음 record 는 다시 무개입이 기본값(latch 폐기).
-_PERSTEP_OPS = ("setm", "condg", "reseed")
+_PERSTEP_OPS = ("setm", "condg", "reseed", "rsn_llr", "rsn_rand")
+# rsn_* = best-of-N 재샘플: 후보 n 개를 DiT-only 로 뽑아 하나만 실행(순수 재샘플 —
+# setm/condg 훅은 적용하지 않는다). 선택 규칙만 다르다 (llr argmin vs 무작위).
+_PERSTEP_RESAMPLE_OPS = ("rsn_llr", "rsn_rand")
 _PERSTEP_DEFAULT_RESEED_OFFSET = 900000
+_PERSTEP_DEFAULT_N = 8
+_PERSTEP_MAX_N = 32
 # action_head.get_action 호출 인자 캐시 — backbone(VL) 재실행 없이 DiT 만 다시 돌린다.
 _dit_call_cache: dict = {}
 
@@ -1021,8 +1094,9 @@ def _parse_perstep_gate(payload: dict) -> dict | None:
     """payload 의 ``perstep_gate`` / ``perstep_debug_rerun`` 파싱 + 사전 배선 검증.
 
     payload 계약:
-      ``perstep_gate``: {"op": "setm"|"condg"|"reseed"|null,
-                         "reseed_offset": int (기본 900000)}
+      ``perstep_gate``: {"op": "setm"|"condg"|"reseed"|"rsn_llr"|"rsn_rand"|null,
+                         "reseed_offset": int (기본 900000),
+                         "n": int (rsn_* 후보 수, 기본 8, 1≤n≤32)}
       ``perstep_debug_rerun``: bool — 발화 무관하게 hook off·같은 seed 로 2차 실행해
       배관 동치(max|Δaction|)만 재는 스모크 모드 (응답 action 은 1차 것 유지).
 
@@ -1086,12 +1160,29 @@ def _parse_perstep_gate(payload: dict) -> dict | None:
                 detail=f"perstep op={op}(family={want_family}) != 등록 family {sorted(fams)}",
             )
 
+    if op == "rsn_llr" and _llr_scorer is None:
+        # 채점기 없이 rsn_llr 를 돌리면 조용히 "후보 0 고정"=reseed 1회 arm 이 된다.
+        raise HTTPException(
+            status_code=409,
+            detail="perstep op=rsn_llr 인데 LLR 채점기 미로드 — serve 를 --llr-bundle 로 재기동",
+        )
+
     try:
         offset = int(cfg.get("reseed_offset", _PERSTEP_DEFAULT_RESEED_OFFSET))
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail="perstep_gate.reseed_offset 은 int") from exc
 
-    return {"op": op, "reseed_offset": offset, "debug_rerun": debug}
+    try:
+        n_cand = int(cfg.get("n", _PERSTEP_DEFAULT_N))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="perstep_gate.n 은 int") from exc
+    if not (1 <= n_cand <= _PERSTEP_MAX_N):
+        raise HTTPException(
+            status_code=422,
+            detail=f"perstep_gate.n={n_cand} 범위 밖 (1≤n≤{_PERSTEP_MAX_N})",
+        )
+
+    return {"op": op, "reseed_offset": offset, "n": n_cand, "debug_rerun": debug}
 
 
 def _ensure_dit_rerun_wrap() -> None:
@@ -1188,6 +1279,66 @@ def _gated_phase_registered(phase: str | None) -> bool:
     return any(phase in table for table in _gated_registry["matrices"].values())
 
 
+def _run_resample_gate(
+    cfg: dict, op: str, seed1: int, cur_phase: str | None, extras: dict
+) -> tuple[torch.Tensor, Any, int]:
+    """best-of-N 재샘플 2차 pass: 후보 n 개 → 1개 선택. 반환 (action, hidden, seed).
+
+    후보 i 의 seed = seed1 + reseed_offset + i (n=1 이면 기존 reseed 와 동일한 후보).
+    **선택된 후보 = 실제로 실행된 세계** — detector 재step·응답 action 모두 그 후보 것을
+    쓴다. setm/condg 훅은 얹지 않는다 (순수 재샘플 arm).
+    """
+    n_cand = int(cfg["n"])
+    base = seed1 + int(cfg["reseed_offset"])
+    cands: list[tuple[int, torch.Tensor, Any]] = []
+    for i in range(n_cand):
+        seed_i = base + i
+        # 후보마다 전역 RNG 를 다시 심는다 (앞 후보가 소모한 상태를 물려받지 않도록).
+        torch.manual_seed(seed_i)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed_i)
+        # step counter reset 은 _rerun_dit_only 내부에서 수행 — 여기서 중복 호출 금지.
+        act_i, hid_i = _rerun_dit_only(capture=True)
+        cands.append((seed_i, act_i, hid_i))
+
+    llrs: list[float] | None = None
+    rejects: list[str | None] | None = None
+    skipped: str | None = None
+    scored = None
+    # 채점 가능 = 채점기 로드 + (기동 scene, 현재 phase) 가 번들에 등록됨
+    # (등록 단위가 (scene, phase) — phase 만으로 판정하면 다른 scene 의 연산자를 쓴다)
+    if _llr_scorer is not None and _llr_scorer.registered(_llr_scene, cur_phase):
+        scored = [_llr_scorer.score(_raw_feature_from_hidden(h), _llr_scene, cur_phase)
+                  for _, _, h in cands]
+        llrs = [float(s["llr"]) for s in scored]
+        rejects = ["ood" if s["ood_reject"] else None for s in scored]
+
+    if op == "rsn_rand":
+        # 위약 arm: 같은 후보 풀에서 무작위 선택 (seed1 고정 → 재현 가능)
+        sel = int(np.random.RandomState(seed1).randint(n_cand))
+    elif scored is None:
+        # (scene, phase) 미등록 → 점수를 낼 수 없다. 개입은 하되(후보 0 = reseed 1회
+        # fallback) 선택이 LLR 이 아니었음을 데이터에 남긴다 (무음 no-op 금지).
+        sel = 0
+        skipped = f"llr_unregistered:{_llr_scene}:{cur_phase}"
+    else:
+        keep = [i for i, s in enumerate(scored) if not s["ood_reject"]]
+        if not keep:
+            sel = 0
+            skipped = "llr_all_ood"
+        else:
+            sel = min(keep, key=lambda i: llrs[i])
+
+    extras["features.perstep_cand_n"] = n_cand
+    extras["features.perstep_cand_llr"] = llrs
+    extras["features.perstep_cand_sel"] = int(sel)
+    extras["features.perstep_cand_reject"] = rejects
+    if skipped is not None:
+        extras["features.perstep_gate_skipped"] = skipped
+    seed_sel, action_sel, hidden_sel = cands[sel]
+    return action_sel, hidden_sel, seed_sel
+
+
 def _run_perstep_gate(
     cfg: dict, action1: torch.Tensor, hidden1, inference_seed: int | None
 ) -> tuple[torch.Tensor, Any, dict, dict | None]:
@@ -1245,36 +1396,40 @@ def _run_perstep_gate(
             "(noise 재현/재추첨의 기준 seed)",
         )
     seed1 = int(inference_seed)
-    # 1차 pass 가 전역 RNG 를 소모했으므로 2차 직전 반드시 재설정:
-    #   setm/condg → seed1 (1차와 같은 noise, 차이는 개입뿐)
-    #   reseed     → seed1+offset (denoise noise 재추첨 자체가 개입)
-    seed2 = seed1 + int(cfg["reseed_offset"]) if op == "reseed" else seed1
-    torch.manual_seed(seed2)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed2)
-
     if cluster1 is not None:
         # 번들이 있으면 phase 는 serve 자체 판정("c0".."c{k-1}") — 클라이언트가 POST 한
         # GT phase 값은 **무시**한다 (online 자립 조건). 번들이 없으면 현행 POST current.
         cur_phase = cluster1["name"]
     else:
         cur_phase = _gated_registry.get("current") if _gated_registry else None
-    if op in ("setm", "condg") and not _gated_phase_registered(cur_phase):
-        # 현재 phase 에 연산자가 없으면 2차 pass 는 identity — "개입했다"고 기록하면
-        # 거짓이다. 개입 없음으로 커밋하고 사유를 데이터에 남긴다 (무음 no-op 금지).
-        extras["features.perstep_gate_skipped"] = f"phase_unregistered:{cur_phase!r}"
-        return action1, hidden1, extras, fail1
 
-    applied = False
-    try:
-        if op in ("setm", "condg"):
-            # 마지막으로 POST 된 phase/scene 상태를 그 record 에만 적용
-            _apply_steering_phase_state(cur_phase, _gated_registry.get("current_scene"))
-            applied = True
-        action2, hidden2 = _rerun_dit_only(capture=True)
-    finally:
-        if applied:
-            _steering_phase_off()
+    if op in _PERSTEP_RESAMPLE_OPS:
+        action2, hidden2, seed2 = _run_resample_gate(cfg, op, seed1, cur_phase, extras)
+    else:
+        # 1차 pass 가 전역 RNG 를 소모했으므로 2차 직전 반드시 재설정:
+        #   setm/condg → seed1 (1차와 같은 noise, 차이는 개입뿐)
+        #   reseed     → seed1+offset (denoise noise 재추첨 자체가 개입)
+        seed2 = seed1 + int(cfg["reseed_offset"]) if op == "reseed" else seed1
+        torch.manual_seed(seed2)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed2)
+
+        if op in ("setm", "condg") and not _gated_phase_registered(cur_phase):
+            # 현재 phase 에 연산자가 없으면 2차 pass 는 identity — "개입했다"고 기록하면
+            # 거짓이다. 개입 없음으로 커밋하고 사유를 데이터에 남긴다 (무음 no-op 금지).
+            extras["features.perstep_gate_skipped"] = f"phase_unregistered:{cur_phase!r}"
+            return action1, hidden1, extras, fail1
+
+        applied = False
+        try:
+            if op in ("setm", "condg"):
+                # 마지막으로 POST 된 phase/scene 상태를 그 record 에만 적용
+                _apply_steering_phase_state(cur_phase, _gated_registry.get("current_scene"))
+                applied = True
+            action2, hidden2 = _rerun_dit_only(capture=True)
+        finally:
+            if applied:
+                _steering_phase_off()
 
     if _failure_detector is not None:
         _failure_detector.restore(snap)
@@ -1529,6 +1684,8 @@ async def health():
         phase_readout=_phase_spec or None,
         failure_detector=_failure_spec or None,
         cluster_phase=_cluster_spec or None,
+        # 러너 preflight: rsn_llr arm 발사 전 채점기 로드 여부를 /health 로 확인
+        llr_scorer=_llr_spec or None,
         # exp4-1: client 가 사이드카에 GPU 를 기록해 arm×GPU confound 를 사후 감사
         serve_gpu=os.environ.get("CUDA_VISIBLE_DEVICES"),
         # docs/04 규약 — rollout 인덱스의 machine·ckpt 열 원천 (헬퍼가 단일 출처)
@@ -2151,6 +2308,7 @@ def _load_model_impl():
     _load_phase_readouts_if_requested(args)
     _load_failure_detector_if_requested(args)
     _load_cluster_phase_if_requested(args)
+    _load_llr_scorer_if_requested(args)
 
     from lerobot.configs.types import FeatureType
     from lerobot.utils.constants import ACTION
@@ -2498,6 +2656,30 @@ def main():
             "응답에 features.perstep_cluster / features.perstep_cluster_dist 노출. "
             "--groot-dit-capture-layers(번들 layer=12 포함) + "
             "--groot-dit-token-pool all_token_full 필요. 미지정 시 현행(POST current) 유지."
+        ),
+    )
+    parser.add_argument(
+        "--llr-bundle",
+        type=str,
+        default=None,
+        metavar="BUNDLE.npz",
+        help=(
+            "best-of-N 재샘플(perstep_gate.op=rsn_llr)의 후보 채점기 NPZ. phase 조건부 "
+            "성공/실패 가우시안 로그우도비로 후보를 고르고(llr argmin), OOD 후보는 기각. "
+            "NPZ 계약 = src/failure_online/llr_scorer.py docstring (단일 출처, "
+            "등록 단위 (scene, phase) — --llr-scene 동반 필수). "
+            "--groot-dit-capture-layers + --groot-dit-token-pool all_token_full 필요. "
+            "미지정 시 rsn_llr 요청은 409 (rsn_rand 는 채점 없이 동작)."
+        ),
+    )
+    parser.add_argument(
+        "--llr-scene",
+        type=str,
+        default=None,
+        metavar="SCENE",
+        help=(
+            "LLR 채점에 쓸 scene (int 또는 's3'). 번들 등록 단위가 (scene, phase) 라 "
+            "--llr-bundle 지정 시 **필수** — 없거나 번들에 없는 scene 이면 기동 실패."
         ),
     )
     parser.add_argument(

@@ -676,11 +676,23 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--perstep-op",
-        choices=("none", "reseed", "setm", "condg"),
+        choices=("none", "reseed", "setm", "condg", "rsn_llr", "rsn_rand"),
         default="none",
         help=(
             "--gated-steering-mode perstep 에서 발화 시 적용할 연산자 family. "
-            "none=발화만 기록하고 개입 없음(게이트 감지-only 대조)."
+            "none=발화만 기록하고 개입 없음(게이트 감지-only 대조). "
+            "rsn_llr=발화 step 만 best-of-N 재샘플 후 LLR 채점기로 후보 선택 "
+            "(serve 는 --llr-bundle 필요), rsn_rand=같은 N 후보 중 무작위 1개 "
+            "(재샘플 자체의 효과를 분리하는 위약 대조). 후보 수는 --perstep-n."
+        ),
+    )
+    parser.add_argument(
+        "--perstep-n",
+        type=int,
+        default=8,
+        help=(
+            "--perstep-op rsn_llr|rsn_rand 의 best-of-N 후보 수 (기본 8). "
+            "perstep_gate payload 의 'n' 으로 serve 에 전달된다."
         ),
     )
     parser.add_argument(
@@ -952,6 +964,8 @@ def run() -> dict[str, Any]:
             "op": (None if getattr(args, "perstep_op", "none") == "none"
                    else str(args.perstep_op)),
             "reseed_offset": int(getattr(args, "perstep_reseed_offset", 900000)),
+            # best-of-N 재샘플 후보 수 (rsn_* op 전용 — 그 외 op 은 serve 가 무시).
+            "n": int(getattr(args, "perstep_n", 8)),
         }
         if getattr(args, "perstep_debug_rerun", False):
             policy.perstep_debug_rerun = True
@@ -1127,6 +1141,11 @@ def run() -> dict[str, Any]:
             perstep_seed2_list: list = []
             perstep_gate_skipped_list: list = []   # 발화했지만 phase 미등록으로 실개입 0인 record
             perstep_debug_diffs: list = []         # --perstep-debug-rerun 배관 동치 진단
+            # best-of-N 재샘플(rsn_llr/rsn_rand) 후보 감사 — 미발화 record 는 None.
+            perstep_cand_n_list: list = []          # 그 record 에서 생성된 후보 수
+            perstep_cand_llr_list: list = []        # 후보별 LLR 점수 (rsn_rand 는 None)
+            perstep_cand_sel_list: list = []        # 채택된 후보 index
+            perstep_cand_reject_list: list = []     # 기각 사유/flag 열
             success = False
             first_success_step = None
             step_i = 0
@@ -1236,6 +1255,10 @@ def run() -> dict[str, Any]:
                         )
                         perstep_seed2_list.append(_f.get("perstep_seed2"))
                         perstep_gate_skipped_list.append(_f.get("gate_skipped"))
+                        perstep_cand_n_list.append(_f.get("perstep_cand_n"))
+                        perstep_cand_llr_list.append(_f.get("perstep_cand_llr"))
+                        perstep_cand_sel_list.append(_f.get("perstep_cand_sel"))
+                        perstep_cand_reject_list.append(_f.get("perstep_cand_reject"))
                         if _f.get("debug_max_action_diff") is not None:
                             perstep_debug_diffs.append(float(_f["debug_max_action_diff"]))
                     # 떨림 진단: 이 record 의 명령 action 벡터(첫 실행 스텝)와 개입 활성 여부.
@@ -1282,6 +1305,10 @@ def run() -> dict[str, Any]:
                     ("perstep_fired", perstep_fired_flags),
                     ("perstep_seed2", perstep_seed2_list),
                     ("perstep_gate_skipped", perstep_gate_skipped_list),
+                    ("cand_n", perstep_cand_n_list),
+                    ("cand_llr", perstep_cand_llr_list),
+                    ("cand_sel", perstep_cand_sel_list),
+                    ("cand_reject", perstep_cand_reject_list),
                 ):
                     if len(_seq) != n_inferences:
                         raise RuntimeError(
@@ -1321,6 +1348,12 @@ def run() -> dict[str, Any]:
                     "perstep_fired": perstep_fired_flags,
                     "perstep_seed2": perstep_seed2_list,
                     "perstep_gate_skipped": perstep_gate_skipped_list,
+                    # best-of-N 재샘플 후보 감사 (record 축 1:1 — 미발화·비 rsn op 은 None).
+                    "perstep_n": int(getattr(args, "perstep_n", 8)),
+                    "cand_n": perstep_cand_n_list,
+                    "cand_llr": perstep_cand_llr_list,
+                    "cand_sel": perstep_cand_sel_list,
+                    "cand_reject": perstep_cand_reject_list,
                     "perstep_fire_count": int(sum(perstep_fired_flags)),
                     "perstep_debug_max_action_diff": (
                         max(perstep_debug_diffs) if perstep_debug_diffs else None

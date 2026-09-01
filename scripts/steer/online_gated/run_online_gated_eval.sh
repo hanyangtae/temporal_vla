@@ -25,6 +25,11 @@
 #   ps_setm        detector + setpoint_seg 등록 (기존 online arm 의 serve 배선 재사용).
 #                  --perstep-op setm — 발화 step 만 setM 적용
 #   ps_condg       detector + condg 등록. --perstep-op condg — 발화 step 만 condg 적용
+#   ps_rsn_rand    detector 탑재 + steering 미등록. --perstep-op rsn_rand
+#                  (발화 step 만 후보 ${PERSTEP_N} 개 재샘플 → 무작위 1개 채택.
+#                   best-of-N 의 "재샘플 자체" 성분을 분리하는 대조 arm)
+#   ps_rsn_llr     detector 탑재 + steering 미등록. --perstep-op rsn_llr
+#                  (같은 N 후보를 LLR 채점기로 선택 — serve 는 --llr-bundle ${LLR_BUNDLE} 필수)
 #   ★ ps_* arm 은 **라이브 게이트**라 TRIGGER_TSV(사전 발화표) 를 쓰지 않는다.
 #     미발화 셀 개념이 없고, 대상 판 전부가 perstep 모드로 돈다.
 #
@@ -104,6 +109,13 @@ CONDG_GATE="${CONDG_GATE:-1}"   # condg 전용: 0 이면 --no-condg-gate (무게
 TRIGGER_TSV="${TRIGGER_TSV:-}"
 EARLY_OFFSET="${EARLY_OFFSET:-3}"
 RESEED_OFFSET="${RESEED_OFFSET:-900000}"
+# best-of-N 재샘플 arm(ps_rsn_rand|ps_rsn_llr) 용 — 후보 수와 LLR 채점기 번들.
+# LLR_BUNDLE 은 ps_rsn_llr 에서만 필수 (없으면 preflight 에서 ABORT — 무음 위약 방지).
+PERSTEP_N="${PERSTEP_N:-8}"
+LLR_BUNDLE="${LLR_BUNDLE:-}"
+# LLR 번들 계약의 scene 차원 — serve 기동 인자(--llr-scene)라 판마다 바뀌지 않는다.
+# ps_rsn_llr 이 ARMS 에 있으면 필수 (미지정 = 잘못된 scene 통계로 무음 채점).
+LLR_SCENE="${LLR_SCENE:-}"
 # rs_steer 용 — current=phase-follow, global=단일 phase(예: COAST global conceptor) 고정.
 STEER_PHASE_MODE="${STEER_PHASE_MODE:-current}"
 STEER_PHASE_NAME="${STEER_PHASE_NAME:-global}"
@@ -188,6 +200,7 @@ PLAN_JSON_ABS="$(abspath "$PLAN_JSON")"
 [ -n "$EP_META_DIR" ] && EP_META_DIR="$(abspath "$EP_META_DIR")"
 [ -n "$DETECTOR_CKPT" ] && DETECTOR_CKPT="$(abspath "$DETECTOR_CKPT")"
 [ -n "$CLUSTER_BUNDLE" ] && CLUSTER_BUNDLE="$(abspath "$CLUSTER_BUNDLE")"
+[ -n "$LLR_BUNDLE" ] && LLR_BUNDLE="$(abspath "$LLR_BUNDLE")"
 LOGDIR="${OUT_ROOT}/logs"
 mkdir -p "$LOGDIR"
 
@@ -230,6 +243,7 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
       resample|rs_early)                 printf '' ;;
       ps_condg)                          printf '%s/condg\n'    "$root" ;;
       ps_base|ps_reseed)                 printf '' ;;
+      ps_rsn_rand|ps_rsn_llr)            printf '' ;;
       ps_setm) echo "ABORT: arm=ps_setm 은 STEER_OP=setpoint_seg 에서만 (현재 STEER_OP=${STEER_OP})" >&2; return 2 ;;
       *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
     esac
@@ -243,6 +257,7 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
       online|online_fut|oracle_always|rs_steer) printf '%s\n'    "$root" ;;
       online_pl|online_fut_pl|oracle_always_pl) printf '%s_pl\n' "$root" ;;
       ps_base|ps_reseed)               printf '' ;;
+      ps_rsn_rand|ps_rsn_llr)          printf '' ;;
       ps_setm|ps_condg) echo "ABORT: arm=$2 는 STEER_OP=conceptor 와 맞지 않는다 (setpoint_seg|condg 필요)" >&2; return 2 ;;
       *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
     esac
@@ -260,6 +275,8 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
     # per-step arm: ps_setm 만 setM 트리 등록, ps_base/ps_reseed 는 steering 미등록.
     ps_setm)       printf '%s/%s/%s\n'        "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     ps_base|ps_reseed) printf '' ;;
+    # best-of-N 재샘플 arm: 연산자 NPZ 불요 (ps_reseed 와 같은 취급).
+    ps_rsn_rand|ps_rsn_llr) printf '' ;;
     ps_condg) echo "ABORT: arm=ps_condg 는 STEER_OP=condg 에서만 (현재 STEER_OP=${STEER_OP})" >&2; return 2 ;;
     *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
   esac
@@ -290,6 +307,7 @@ token_select_for_arm() {  # arm
 arm_uses_detector() { case "$1" in
   base|online|online_fut|online_pl|online_fut_pl|online_hs) return 0 ;;
   ps_base|ps_reseed|ps_setm|ps_condg) return 0 ;;
+  ps_rsn_rand|ps_rsn_llr) return 0 ;;
   *) return 1 ;;
 esac; }
 
@@ -342,6 +360,15 @@ serve_flags_for() {  # slug arm → serve 추가 플래그 (scan_npz_base 선행
       is_conceptor_family && flags="${flags} --steering-alpha 0"
     fi
   fi
+  # best-of-N LLR arm: 후보 채점기 번들을 serve 에 등록 (rsn_llr 전용).
+  if [ "$arm" = ps_rsn_llr ]; then
+    local lb
+    lb="$LLR_BUNDLE"
+    [ -n "$lb" ] || { echo "ABORT: arm=ps_rsn_llr 은 LLR_BUNDLE 필수" >&2; return 2; }
+    [ -n "$LLR_SCENE" ] || { echo "ABORT: arm=ps_rsn_llr 은 LLR_SCENE 필수" >&2; return 2; }
+    [ "$SERVE_MODE" = host ] || lb="$(to_cont "$lb")"
+    flags="${flags} --llr-bundle ${lb} --llr-scene ${LLR_SCENE}"
+  fi
   if [ -n "$CLUSTER_BUNDLE" ] && arm_uses_detector "$arm"; then
     local cb="$CLUSTER_BUNDLE"
     [ "$SERVE_MODE" = host ] || cb="$(to_cont "$cb")"
@@ -370,6 +397,13 @@ detector_ckpt_for() {  # slug → ckpt 경로 (DETECTOR_CKPT 지정 시 그것, 
   if [ -n "$DETECTOR_CKPT" ]; then printf '%s\n' "$DETECTOR_CKPT"
   else printf '%s\n' "$(abspath "${DETECTOR_CKPT_TMPL//%SLUG%/$1}")"; fi
 }
+# ps_rsn_llr 은 채점기 번들이 없으면 무음으로 "재샘플만" arm 이 된다 — 발사 전에 막는다.
+for arm in "${ARM_ARR[@]}"; do
+  [ "$arm" = ps_rsn_llr ] || continue
+  [ -n "$LLR_BUNDLE" ] || { log "ABORT: arm=ps_rsn_llr 은 LLR_BUNDLE (rsn_llr 채점기 npz) 필수"; exit 2; }
+  [ -f "$LLR_BUNDLE" ] || { log "ABORT: LLR_BUNDLE 없음: $LLR_BUNDLE"; exit 2; }
+  [ -n "$LLR_SCENE" ] || { log "ABORT: arm=ps_rsn_llr 은 LLR_SCENE (번들 scene 차원 키) 필수"; exit 2; }
+done
 need_detector=0
 for arm in "${ARM_ARR[@]}"; do arm_uses_detector "$arm" && need_detector=1; done
 if [ "$need_detector" = 1 ]; then
@@ -435,6 +469,7 @@ log "serve ${NW}개 (gpus=${GPUS} × ${SERVES_PER_GPU}) ports=${PORTS[*]} mode=$
   echo "detector_ckpt=$(basename "${DETECTOR_CKPT:-none}") alpha=${FAILURE_ALPHA} layers=${DETECTOR_LAYERS}"
   echo "steer_beta=${STEER_BETA} npz_root=${NPZ_ROOT#"$MAIN_HOST"/} npz_variant=${NPZ_VARIANT}"
   echo "steer_op=${STEER_OP} steer_op_name=${STEER_OP_NAME:-NA} token_select=${STEER_TOKEN_SELECT}"
+  echo "perstep_n=${PERSTEP_N} llr_bundle=${LLR_BUNDLE:-none} llr_scene=${LLR_SCENE:-none}"
   echo "ep_mode=${EP_MODE} n_ep_total=${N_EP_TOTAL}"
   if [ "$EP_MODE" = replay ]; then
     echo "eval_scenes=${EVAL_SCENES} eval_noises=${EVAL_NOISES}"
@@ -522,10 +557,10 @@ start_serve() {  # gpu port extra_flags...
 serve_preflight() {  # port arm  — 등록 지문 대조 (무음 identity·arm 오배치 방지)
   local port="$1" arm="$2" body reg
   body="$(health_curl "$port")"
-  # steering 미등록 arm(base·resample·rs_early·ps_base·ps_reseed)은 지문 검사 제외.
+  # steering 미등록 arm(base·resample·rs_early·ps_base·ps_reseed·ps_rsn_*)은 지문 검사 제외.
   # rs_steer·ps_setm·ps_condg 는 개입 arm 이라 [steer-registered] 검사 유지.
   local skip_fp=0
-  case "$arm" in base|resample|rs_early|ps_base|ps_reseed) skip_fp=1 ;; esac
+  case "$arm" in base|resample|rs_early|ps_base|ps_reseed|ps_rsn_rand|ps_rsn_llr) skip_fp=1 ;; esac
   if [ "$skip_fp" != 1 ]; then
     printf '%s' "$body" | grep -q '"steering"' || {
       log "ABORT: serve ${port} /health 에 steering 지문 없음 (arm=${arm})"; return 11; }
@@ -584,6 +619,10 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
                      --perstep-reseed-offset "$RESEED_OFFSET") ;;
     ps_setm)   mode=(--gated-steering-mode perstep --perstep-op setm) ;;
     ps_condg)  mode=(--gated-steering-mode perstep --perstep-op condg) ;;
+    ps_rsn_rand) mode=(--gated-steering-mode perstep --perstep-op rsn_rand
+                       --perstep-n "$PERSTEP_N") ;;
+    ps_rsn_llr)  mode=(--gated-steering-mode perstep --perstep-op rsn_llr
+                       --perstep-n "$PERSTEP_N") ;;
   esac
   # PERSTEP_DEBUG=1: 배관 동치 스모크 — 매 record hook off·동일 seed 2차 실행 진단
   if [ "${#mode[@]}" -gt 0 ] && [ "${PERSTEP_DEBUG:-0}" = "1" ]; then
