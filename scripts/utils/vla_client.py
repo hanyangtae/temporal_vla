@@ -275,6 +275,10 @@ class VLAClient:
                 # LLR 선별 불가 사유(fallback=후보 0 개입 — gate_skipped 와 다름: 개입은 일어남)
                 ("features.perstep_cand_entry", "perstep_cand_entry"),
                 ("features.perstep_llr_fallback", "perstep_llr_fallback"),
+                # 2차 pass 소요(ms)·후보별 소요·미등록 phase 대체개입 사유
+                ("features.perstep_rerun_ms", "perstep_rerun_ms"),
+                ("features.perstep_cand_ms", "perstep_cand_ms"),
+                ("features.perstep_fallback", "perstep_fallback"),
             ):
                 if src_key in result:
                     failure[dst_key] = result.get(src_key)

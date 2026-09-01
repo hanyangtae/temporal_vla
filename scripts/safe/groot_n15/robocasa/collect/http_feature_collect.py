@@ -696,6 +696,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--perstep-fallback",
+        choices=("skip", "reseed"),
+        default="skip",
+        help=(
+            "발화했지만 연산자를 적용하지 못한 record 에서 serve 가 취할 대체 동작. "
+            "skip=1차 무개입 action 유지(기존 동작), reseed=denoise seed 재추첨으로 대체. "
+            "perstep_gate payload 의 'fallback' 으로 전달된다."
+        ),
+    )
+    parser.add_argument(
         "--perstep-reseed-offset",
         type=int,
         default=900000,
@@ -966,6 +976,8 @@ def run() -> dict[str, Any]:
             "reseed_offset": int(getattr(args, "perstep_reseed_offset", 900000)),
             # best-of-N 재샘플 후보 수 (rsn_* op 전용 — 그 외 op 은 serve 가 무시).
             "n": int(getattr(args, "perstep_n", 8)),
+            # 발화했으나 연산자 미적용 시 serve 의 대체 동작 (skip|reseed).
+            "fallback": str(getattr(args, "perstep_fallback", "skip")),
         }
         if getattr(args, "perstep_debug_rerun", False):
             policy.perstep_debug_rerun = True
@@ -1148,6 +1160,9 @@ def run() -> dict[str, Any]:
             perstep_cand_reject_list: list = []     # 기각 사유/flag 열
             perstep_llr_fallback_list: list = []    # LLR 선별 불가 사유(개입은 후보 0으로 일어남)
             perstep_cand_entry_list: list = []      # 후보별 배정 등록 entry (score_nearest)
+            perstep_rerun_ms_list: list = []       # 2차 pass(재실행) 소요 ms
+            perstep_cand_ms_list: list = []        # 후보 생성·채점 소요 ms
+            perstep_fallback_list: list = []       # 그 record 에서 실제로 탄 fallback
             success = False
             first_success_step = None
             step_i = 0
@@ -1263,6 +1278,9 @@ def run() -> dict[str, Any]:
                         perstep_cand_reject_list.append(_f.get("perstep_cand_reject"))
                         perstep_llr_fallback_list.append(_f.get("perstep_llr_fallback"))
                         perstep_cand_entry_list.append(_f.get("perstep_cand_entry"))
+                        perstep_rerun_ms_list.append(_f.get("perstep_rerun_ms"))
+                        perstep_cand_ms_list.append(_f.get("perstep_cand_ms"))
+                        perstep_fallback_list.append(_f.get("perstep_fallback"))
                         if _f.get("debug_max_action_diff") is not None:
                             perstep_debug_diffs.append(float(_f["debug_max_action_diff"]))
                     # 떨림 진단: 이 record 의 명령 action 벡터(첫 실행 스텝)와 개입 활성 여부.
@@ -1315,6 +1333,9 @@ def run() -> dict[str, Any]:
                     ("cand_reject", perstep_cand_reject_list),
                     ("llr_fallback", perstep_llr_fallback_list),
                     ("cand_entry", perstep_cand_entry_list),
+                    ("rerun_ms", perstep_rerun_ms_list),
+                    ("cand_ms", perstep_cand_ms_list),
+                    ("gate_fallback", perstep_fallback_list),
                 ):
                     if len(_seq) != n_inferences:
                         raise RuntimeError(
@@ -1362,6 +1383,11 @@ def run() -> dict[str, Any]:
                     "cand_reject": perstep_cand_reject_list,
                     "llr_fallback": perstep_llr_fallback_list,
                     "cand_entry": perstep_cand_entry_list,
+                    # 게이트 비용(ms)·실제로 탄 fallback 감사 (record 축 1:1).
+                    "perstep_fallback_mode": str(getattr(args, "perstep_fallback", "skip")),
+                    "rerun_ms": perstep_rerun_ms_list,
+                    "cand_ms": perstep_cand_ms_list,
+                    "gate_fallback": perstep_fallback_list,
                     "perstep_fire_count": int(sum(perstep_fired_flags)),
                     "perstep_debug_max_action_diff": (
                         max(perstep_debug_diffs) if perstep_debug_diffs else None

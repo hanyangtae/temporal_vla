@@ -116,6 +116,9 @@ LLR_BUNDLE="${LLR_BUNDLE:-}"
 # LLR 번들 계약의 scene 차원 — serve 기동 인자(--llr-scene)라 판마다 바뀌지 않는다.
 # ps_rsn_llr 이 ARMS 에 있으면 필수 (미지정 = 잘못된 scene 통계로 무음 채점).
 LLR_SCENE="${LLR_SCENE:-}"
+# 발화했으나 연산자 미적용(phase 미등록 등) record 의 대체 동작 — ps_setm/ps_condg 전용.
+# skip(기본)=1차 무개입 유지(기존 동작 불변) | reseed=denoise seed 재추첨으로 대체.
+PERSTEP_FALLBACK="${PERSTEP_FALLBACK:-skip}"
 # rs_steer 용 — current=phase-follow, global=단일 phase(예: COAST global conceptor) 고정.
 STEER_PHASE_MODE="${STEER_PHASE_MODE:-current}"
 STEER_PHASE_NAME="${STEER_PHASE_NAME:-global}"
@@ -470,6 +473,7 @@ log "serve ${NW}개 (gpus=${GPUS} × ${SERVES_PER_GPU}) ports=${PORTS[*]} mode=$
   echo "steer_beta=${STEER_BETA} npz_root=${NPZ_ROOT#"$MAIN_HOST"/} npz_variant=${NPZ_VARIANT}"
   echo "steer_op=${STEER_OP} steer_op_name=${STEER_OP_NAME:-NA} token_select=${STEER_TOKEN_SELECT}"
   echo "perstep_n=${PERSTEP_N} llr_bundle=${LLR_BUNDLE:-none} llr_scene=${LLR_SCENE:-none}"
+  echo "perstep_fallback=${PERSTEP_FALLBACK} cluster_bundle=${CLUSTER_BUNDLE:-none}"
   echo "ep_mode=${EP_MODE} n_ep_total=${N_EP_TOTAL}"
   if [ "$EP_MODE" = replay ]; then
     echo "eval_scenes=${EVAL_SCENES} eval_noises=${EVAL_NOISES}"
@@ -617,8 +621,10 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
     ps_base)   mode=(--gated-steering-mode perstep --perstep-op none) ;;
     ps_reseed) mode=(--gated-steering-mode perstep --perstep-op reseed
                      --perstep-reseed-offset "$RESEED_OFFSET") ;;
-    ps_setm)   mode=(--gated-steering-mode perstep --perstep-op setm) ;;
-    ps_condg)  mode=(--gated-steering-mode perstep --perstep-op condg) ;;
+    ps_setm)   mode=(--gated-steering-mode perstep --perstep-op setm
+                     --perstep-fallback "$PERSTEP_FALLBACK") ;;
+    ps_condg)  mode=(--gated-steering-mode perstep --perstep-op condg
+                     --perstep-fallback "$PERSTEP_FALLBACK") ;;
     ps_rsn_rand) mode=(--gated-steering-mode perstep --perstep-op rsn_rand
                        --perstep-n "$PERSTEP_N") ;;
     ps_rsn_llr)  mode=(--gated-steering-mode perstep --perstep-op rsn_llr

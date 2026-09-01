@@ -1073,6 +1073,8 @@ _PERSTEP_OPS = ("setm", "condg", "reseed", "rsn_llr", "rsn_rand")
 # setm/condg 훅은 적용하지 않는다). 선택 규칙만 다르다 (llr argmin vs 무작위).
 _PERSTEP_RESAMPLE_OPS = ("rsn_llr", "rsn_rand")
 _PERSTEP_DEFAULT_RESEED_OFFSET = 900000
+# setm/condg 가 발화했는데 phase 미등록일 때: skip=무개입 | reseed=reseed 로 대체 개입
+_PERSTEP_FALLBACKS = ("skip", "reseed")
 _PERSTEP_DEFAULT_N = 8
 _PERSTEP_MAX_N = 32
 # action_head.get_action 호출 인자 캐시 — backbone(VL) 재실행 없이 DiT 만 다시 돌린다.
@@ -1096,7 +1098,10 @@ def _parse_perstep_gate(payload: dict) -> dict | None:
     payload 계약:
       ``perstep_gate``: {"op": "setm"|"condg"|"reseed"|"rsn_llr"|"rsn_rand"|null,
                          "reseed_offset": int (기본 900000),
-                         "n": int (rsn_* 후보 수, 기본 8, 1≤n≤32)}
+                         "n": int (rsn_* 후보 수, 기본 8, 1≤n≤32),
+                         "fallback": "skip"(기본)|"reseed" — setm/condg 가 발화했는데
+                           현재 phase 에 연산자가 없을 때의 처리. skip=무개입,
+                           reseed=reseed 2차 pass 로 대체 개입. rsn_*/reseed 는 무관}
       ``perstep_debug_rerun``: bool — 발화 무관하게 hook off·같은 seed 로 2차 실행해
       배관 동치(max|Δaction|)만 재는 스모크 모드 (응답 action 은 1차 것 유지).
 
@@ -1172,6 +1177,14 @@ def _parse_perstep_gate(payload: dict) -> dict | None:
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail="perstep_gate.reseed_offset 은 int") from exc
 
+    fallback = cfg.get("fallback", "skip")
+    fallback = str(fallback).strip().lower() if fallback is not None else "skip"
+    if fallback not in _PERSTEP_FALLBACKS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"perstep_gate.fallback 불명: {fallback!r} (허용 {list(_PERSTEP_FALLBACKS)})",
+        )
+
     try:
         n_cand = int(cfg.get("n", _PERSTEP_DEFAULT_N))
     except (TypeError, ValueError) as exc:
@@ -1182,7 +1195,8 @@ def _parse_perstep_gate(payload: dict) -> dict | None:
             detail=f"perstep_gate.n={n_cand} 범위 밖 (1≤n≤{_PERSTEP_MAX_N})",
         )
 
-    return {"op": op, "reseed_offset": offset, "n": n_cand, "debug_rerun": debug}
+    return {"op": op, "reseed_offset": offset, "n": n_cand, "fallback": fallback,
+            "debug_rerun": debug}
 
 
 def _ensure_dit_rerun_wrap() -> None:
@@ -1294,6 +1308,7 @@ def _run_resample_gate(
     n_cand = int(cfg["n"])
     base = seed1 + int(cfg["reseed_offset"])
     cands: list[tuple[int, torch.Tensor, Any]] = []
+    cand_ms: list[float] = []      # 후보별 DiT-only rerun 소요 (제어 주기 영향 정량화용)
     for i in range(n_cand):
         seed_i = base + i
         # 후보마다 전역 RNG 를 다시 심는다 (앞 후보가 소모한 상태를 물려받지 않도록).
@@ -1301,7 +1316,9 @@ def _run_resample_gate(
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed_i)
         # step counter reset 은 _rerun_dit_only 내부에서 수행 — 여기서 중복 호출 금지.
+        _t_cand = time.perf_counter()
         act_i, hid_i = _rerun_dit_only(capture=True)
+        cand_ms.append((time.perf_counter() - _t_cand) * 1e3)
         cands.append((seed_i, act_i, hid_i))
 
     llrs: list[float | None] | None = None
@@ -1338,6 +1355,7 @@ def _run_resample_gate(
             sel = min(keep, key=lambda i: llrs[i])
 
     extras["features.perstep_cand_n"] = n_cand
+    extras["features.perstep_cand_ms"] = [float(v) for v in cand_ms]
     extras["features.perstep_cand_llr"] = llrs
     extras["features.perstep_cand_entry"] = cand_entries
     extras["features.perstep_cand_sel"] = int(sel)
@@ -1415,6 +1433,9 @@ def _run_perstep_gate(
     else:
         cur_phase = _gated_registry.get("current") if _gated_registry else None
 
+    # 2차 pass 전체 소요 (rsn 후보 루프+채점 포함, detector 재step 직전까지) — 제어
+    # 주기 영향 정량화용. 무발화 record 는 여기 오지 않으므로 필드 자체가 없다.
+    _t_rerun = time.perf_counter()
     if op in _PERSTEP_RESAMPLE_OPS:
         # 발동 조건 = SAFE 발화뿐 (phase 분기 없음). cur_phase 는 채점에 쓰지 않는다 —
         # 응답의 perstep_cluster 기록은 위에서 이미 실었다.
@@ -1429,14 +1450,27 @@ def _run_perstep_gate(
             torch.cuda.manual_seed_all(seed2)
 
         if op in ("setm", "condg") and not _gated_phase_registered(cur_phase):
-            # 현재 phase 에 연산자가 없으면 2차 pass 는 identity — "개입했다"고 기록하면
-            # 거짓이다. 개입 없음으로 커밋하고 사유를 데이터에 남긴다 (무음 no-op 금지).
-            extras["features.perstep_gate_skipped"] = f"phase_unregistered:{cur_phase!r}"
-            return action1, hidden1, extras, fail1
+            # 현재 phase 에 연산자가 없으면 setm/condg 2차 pass 는 identity.
+            if cfg["fallback"] != "reseed":
+                # 개입 없음으로 커밋하고 사유를 데이터에 남긴다 (무음 no-op 금지).
+                extras["features.perstep_gate_skipped"] = f"phase_unregistered:{cur_phase!r}"
+                return action1, hidden1, extras, fail1
+            # fallback=reseed: 연산자 대신 **reseed 2차 pass 로 대체 개입**(후보 1개).
+            # 개입이 실제로 일어나므로 gate_skipped 가 아니라 별도 필드에 남긴다
+            # (llr_fallback 규약과 동일 논리 — 집계 applied_count 가 ¬skipped 로 센다).
+            seed2 = seed1 + int(cfg["reseed_offset"])
+            torch.manual_seed(seed2)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed2)
+            extras["features.perstep_fallback"] = f"reseed:phase_unregistered:{cur_phase}"
+            # 아래 공통 2차 pass 로 내려간다 — 연산자 적용만 건너뛴다(=reseed 와 동일).
+            op_apply = None
+        else:
+            op_apply = op
 
         applied = False
         try:
-            if op in ("setm", "condg"):
+            if op_apply in ("setm", "condg"):
                 # 마지막으로 POST 된 phase/scene 상태를 그 record 에만 적용
                 _apply_steering_phase_state(cur_phase, _gated_registry.get("current_scene"))
                 applied = True
@@ -1444,6 +1478,8 @@ def _run_perstep_gate(
         finally:
             if applied:
                 _steering_phase_off()
+
+    extras["features.perstep_rerun_ms"] = (time.perf_counter() - _t_rerun) * 1e3
 
     if _failure_detector is not None:
         _failure_detector.restore(snap)
