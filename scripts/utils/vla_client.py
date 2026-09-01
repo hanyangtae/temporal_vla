@@ -274,6 +274,7 @@ class VLAClient:
                 ("features.perstep_cand_reject", "perstep_cand_reject"),
                 # LLR 선별 불가 사유(fallback=후보 0 개입 — gate_skipped 와 다름: 개입은 일어남)
                 ("features.perstep_cand_entry", "perstep_cand_entry"),
+                ("features.perstep_cand_logs", "perstep_cand_logs"),
                 ("features.perstep_llr_fallback", "perstep_llr_fallback"),
                 # 2차 pass 소요(ms)·후보별 소요·미등록 phase 대체개입 사유
                 ("features.perstep_rerun_ms", "perstep_rerun_ms"),

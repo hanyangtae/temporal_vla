@@ -1321,6 +1321,7 @@ def _run_resample_gate(
         cand_ms.append((time.perf_counter() - _t_cand) * 1e3)
         cands.append((seed_i, act_i, hid_i))
 
+    cand_logs: list | None = None
     llrs: list[float | None] | None = None
     rejects: list[str | None] | None = None
     cand_entries: list[str | None] | None = None
@@ -1336,6 +1337,8 @@ def _run_resample_gate(
         llrs = [None if s["llr"] is None else float(s["llr"]) for s in scored]
         rejects = ["ood" if s["ood_reject"] else None for s in scored]
         cand_entries = [s["entry"] for s in scored]
+        # 외삽 깊이 사후분석용 (연산자 설계 요청): 후보별 [log_s, log_f]
+        cand_logs = [[float(s["log_s"]), float(s["log_f"])] for s in scored]
 
     if op == "rsn_rand":
         # 위약 arm: 같은 후보 풀에서 무작위 선택 (seed1 고정 → 재현 가능).
@@ -1358,6 +1361,7 @@ def _run_resample_gate(
     extras["features.perstep_cand_ms"] = [float(v) for v in cand_ms]
     extras["features.perstep_cand_llr"] = llrs
     extras["features.perstep_cand_entry"] = cand_entries
+    extras["features.perstep_cand_logs"] = cand_logs
     extras["features.perstep_cand_sel"] = int(sel)
     extras["features.perstep_cand_reject"] = rejects
     if skipped is not None:

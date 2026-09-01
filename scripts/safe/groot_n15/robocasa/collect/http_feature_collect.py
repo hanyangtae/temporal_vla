@@ -1160,6 +1160,7 @@ def run() -> dict[str, Any]:
             perstep_cand_reject_list: list = []     # 기각 사유/flag 열
             perstep_llr_fallback_list: list = []    # LLR 선별 불가 사유(개입은 후보 0으로 일어남)
             perstep_cand_entry_list: list = []      # 후보별 배정 등록 entry (score_nearest)
+            perstep_cand_logs_list: list = []       # 후보별 [log_s, log_f] (외삽 깊이 사후분석)
             perstep_rerun_ms_list: list = []       # 2차 pass(재실행) 소요 ms
             perstep_cand_ms_list: list = []        # 후보 생성·채점 소요 ms
             perstep_fallback_list: list = []       # 그 record 에서 실제로 탄 fallback
@@ -1278,6 +1279,7 @@ def run() -> dict[str, Any]:
                         perstep_cand_reject_list.append(_f.get("perstep_cand_reject"))
                         perstep_llr_fallback_list.append(_f.get("perstep_llr_fallback"))
                         perstep_cand_entry_list.append(_f.get("perstep_cand_entry"))
+                        perstep_cand_logs_list.append(_f.get("perstep_cand_logs"))
                         perstep_rerun_ms_list.append(_f.get("perstep_rerun_ms"))
                         perstep_cand_ms_list.append(_f.get("perstep_cand_ms"))
                         perstep_fallback_list.append(_f.get("perstep_fallback"))
@@ -1333,6 +1335,7 @@ def run() -> dict[str, Any]:
                     ("cand_reject", perstep_cand_reject_list),
                     ("llr_fallback", perstep_llr_fallback_list),
                     ("cand_entry", perstep_cand_entry_list),
+                    ("cand_logs", perstep_cand_logs_list),
                     ("rerun_ms", perstep_rerun_ms_list),
                     ("cand_ms", perstep_cand_ms_list),
                     ("gate_fallback", perstep_fallback_list),
@@ -1383,6 +1386,7 @@ def run() -> dict[str, Any]:
                     "cand_reject": perstep_cand_reject_list,
                     "llr_fallback": perstep_llr_fallback_list,
                     "cand_entry": perstep_cand_entry_list,
+                    "cand_logs": perstep_cand_logs_list,
                     # 게이트 비용(ms)·실제로 탄 fallback 감사 (record 축 1:1).
                     "perstep_fallback_mode": str(getattr(args, "perstep_fallback", "skip")),
                     "rerun_ms": perstep_rerun_ms_list,
