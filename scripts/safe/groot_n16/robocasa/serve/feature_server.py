@@ -224,7 +224,12 @@ class SafeN16FeaturePolicy:
     def get_action_with_multilayer_features(
         self, observation: dict[str, Any], options: dict[str, Any] | None = None
     ) -> dict[str, Any]:
-        with torch.inference_mode():
+        # per-call inference_seed 적용 — get_action_with_features 와 동일 규약.
+        # (2026-09-01 수정: 여기 빠져 있어 다층 캡처가 호출 seed 를 무시했고,
+        #  HTTP 이식본과 값이 갈렸다. denoise RNG 가 seed 로 고정돼야 replay·
+        #  셀-paired 비교가 성립한다.)
+        inference_seed = None if options is None else options.get("inference_seed")
+        with temporary_inference_seed(inference_seed), torch.inference_mode():
             (action, pooled, layers, model_action_horizon, valid_action_horizon,
              num_inference, token_count, vl_pooled) = (
                 self._get_action_and_multilayer_features(observation, options)

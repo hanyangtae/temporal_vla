@@ -26,7 +26,11 @@ from src.utils.common.serving import (  # noqa: E402
     run_uvicorn,
     setup_serve_logging,
 )
-from src.policies.groot.safe.features import FEATURE_DTYPES, FEATURE_SLICES  # noqa: E402
+from src.policies.groot.safe.features import (  # noqa: E402
+    CAPTURE_TOKEN_MODES,
+    FEATURE_DTYPES,
+    FEATURE_SLICES,
+)
 from src.policies.groot.core.schema import build_video_mapping  # noqa: E402
 from src.policies.groot.core.service import (  # noqa: E402
     GrootFeatureConfig,
@@ -152,6 +156,30 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Leading action-token count to export. Defaults to the feature-slice horizon.",
     )
+    # ── 다층 DiT residual 캡처 (ZMQ feature_server 와 동일 수식·공유 구현) ──
+    # 지정하면 /act_with_features 가 SAFE pre-velocity 슬라이스 대신 다층 캡처를
+    # 돌려준다 (N1.5 lerobot.py --groot-dit-token-pool 관례).
+    parser.add_argument(
+        "--capture-token-mode",
+        type=str,
+        choices=CAPTURE_TOKEN_MODES,
+        default=None,
+        help=(
+            "다층 캡처 token 축 처리. valid/all=action token K·H mean → [L,D], "
+            "full=block 출력 시퀀스 T 보존 K mean → [L,T,D]. 미지정 시 기존 경로."
+        ),
+    )
+    parser.add_argument(
+        "--capture-layers",
+        type=str,
+        default=None,
+        help="다층 캡처 대상 DiT block 인덱스 (쉼표구분). 미지정 시 전 layer.",
+    )
+    parser.add_argument(
+        "--capture-vl",
+        action="store_true",
+        help="다층 캡처 시 VL(goal) pathway vlln seq-mean 동시 캡처",
+    )
     return parser
 
 
@@ -160,6 +188,8 @@ def main() -> None:
 
     args = build_parser().parse_args()
 
+    if getattr(args, "capture_layers", None):
+        args.capture_layers = [int(x) for x in str(args.capture_layers).split(",") if x != ""]
     profile = load_profile(args.profile)
     if args.model_path_override is not None:
         profile.checkpoint_source.id = args.model_path_override
