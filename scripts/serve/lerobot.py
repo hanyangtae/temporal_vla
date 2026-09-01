@@ -1280,13 +1280,16 @@ def _gated_phase_registered(phase: str | None) -> bool:
 
 
 def _run_resample_gate(
-    cfg: dict, op: str, seed1: int, cur_phase: str | None, extras: dict
+    cfg: dict, op: str, seed1: int, extras: dict
 ) -> tuple[torch.Tensor, Any, int]:
     """best-of-N 재샘플 2차 pass: 후보 n 개 → 1개 선택. 반환 (action, hidden, seed).
 
     후보 i 의 seed = seed1 + reseed_offset + i (n=1 이면 기존 reseed 와 동일한 후보).
     **선택된 후보 = 실제로 실행된 세계** — detector 재step·응답 action 모두 그 후보 것을
     쓴다. setm/condg 훅은 얹지 않는다 (순수 재샘플 arm).
+
+    발동 조건은 detector 발화뿐 — phase 조건은 없다. 채점 entry 는 후보 latent 의
+    최근접 비-OOD 등록 entry (`LLRScorer.score_nearest`).
     """
     n_cand = int(cfg["n"])
     base = seed1 + int(cfg["reseed_offset"])
@@ -1301,29 +1304,34 @@ def _run_resample_gate(
         act_i, hid_i = _rerun_dit_only(capture=True)
         cands.append((seed_i, act_i, hid_i))
 
-    llrs: list[float] | None = None
+    llrs: list[float | None] | None = None
     rejects: list[str | None] | None = None
+    cand_entries: list[str | None] | None = None
     skipped: str | None = None
     scored = None
-    # 채점 가능 = 채점기 로드 + (기동 scene, 현재 phase) 가 번들에 등록됨
-    # (등록 단위가 (scene, phase) — phase 만으로 판정하면 다른 scene 의 연산자를 쓴다)
-    if _llr_scorer is not None and _llr_scorer.registered(_llr_scene, cur_phase):
-        scored = [_llr_scorer.score(_raw_feature_from_hidden(h), _llr_scene, cur_phase)
+    # 채점은 **후보 자신의 latent 위치**로 entry 를 정한다 (score_nearest) — "현재 cluster
+    # phase" 로 entry 를 조회하지 않는다. 발화 시점 online cluster 가 등록 entry 와 전면
+    # 불일치해 (scene, phase) 조회는 전 케이스 fallback 으로 퇴화했다(설계 세션 실측).
+    # scene 에 entry 가 없는 경우는 기동 시 --llr-scene 검증에서 이미 걸러진다.
+    if _llr_scorer is not None:
+        scored = [_llr_scorer.score_nearest(_raw_feature_from_hidden(h), _llr_scene)
                   for _, _, h in cands]
-        llrs = [float(s["llr"]) for s in scored]
+        llrs = [None if s["llr"] is None else float(s["llr"]) for s in scored]
         rejects = ["ood" if s["ood_reject"] else None for s in scored]
+        cand_entries = [s["entry"] for s in scored]
 
     if op == "rsn_rand":
-        # 위약 arm: 같은 후보 풀에서 무작위 선택 (seed1 고정 → 재현 가능)
+        # 위약 arm: 같은 후보 풀에서 무작위 선택 (seed1 고정 → 재현 가능).
+        # 채점기가 있으면 llr/entry 는 **기록만** 한다 (선택에는 쓰지 않는다).
         sel = int(np.random.RandomState(seed1).randint(n_cand))
-    elif scored is None:
-        # (scene, phase) 미등록 → 점수를 낼 수 없다. 개입은 하되(후보 0 = reseed 1회
-        # fallback) 선택이 LLR 이 아니었음을 데이터에 남긴다 (무음 no-op 금지).
-        sel = 0
-        skipped = f"llr_unregistered:{_llr_scene}:{cur_phase}"
     else:
+        if scored is None:  # _parse_perstep_gate 가 이미 막지만 무음 퇴화 방지
+            raise HTTPException(
+                status_code=409, detail="perstep op=rsn_llr 인데 LLR 채점기 미로드")
         keep = [i for i, s in enumerate(scored) if not s["ood_reject"]]
         if not keep:
+            # 전 후보 기각 → 후보 0 으로 **개입은 한다**(=reseed 1회). 선택이 LLR 이
+            # 아니었음을 별도 필드로 남긴다 (무음 no-op 금지).
             sel = 0
             skipped = "llr_all_ood"
         else:
@@ -1331,6 +1339,7 @@ def _run_resample_gate(
 
     extras["features.perstep_cand_n"] = n_cand
     extras["features.perstep_cand_llr"] = llrs
+    extras["features.perstep_cand_entry"] = cand_entries
     extras["features.perstep_cand_sel"] = int(sel)
     extras["features.perstep_cand_reject"] = rejects
     if skipped is not None:
@@ -1407,7 +1416,9 @@ def _run_perstep_gate(
         cur_phase = _gated_registry.get("current") if _gated_registry else None
 
     if op in _PERSTEP_RESAMPLE_OPS:
-        action2, hidden2, seed2 = _run_resample_gate(cfg, op, seed1, cur_phase, extras)
+        # 발동 조건 = SAFE 발화뿐 (phase 분기 없음). cur_phase 는 채점에 쓰지 않는다 —
+        # 응답의 perstep_cluster 기록은 위에서 이미 실었다.
+        action2, hidden2, seed2 = _run_resample_gate(cfg, op, seed1, extras)
     else:
         # 1차 pass 가 전역 RNG 를 소모했으므로 2차 직전 반드시 재설정:
         #   setm/condg → seed1 (1차와 같은 noise, 차이는 개입뿐)

@@ -17,7 +17,14 @@ erf GELU)이며, 여기서는 serve 에 torch 의존을 더하지 않기 위해 
       → encode : Linear(1536→256) GELU Linear(256→256) GELU Linear(256→16)
       → 중심화 : z~ = latent - succ_mean[e]           (등록 엔트리 e 의 성공 중심 기준 좌표)
       → 점수   : llr = logN(z~; mu_f, cov_f) - logN(z~; mu_s, cov_s)
-      → OOD    : max(log_s, log_f) < ood_lo[e] 이면 후보 기각 (train 분포 밖)
+      → OOD    : max(log_s, log_f) < ood_lo[e] 이면 그 entry 에 대해 후보 기각
+
+serve 의 실제 채점 경로는 `score_nearest(vec, scene)` 다 — **"현재 cluster phase" 로
+entry 를 고르지 않는다**. 발화 시점의 online cluster 가 등록 entry 와 전면 불일치해
+(scene, phase) 조회는 전 케이스 fallback 으로 퇴화했기 때문(연산자 설계 세션 실측).
+대신 그 scene 의 모든 등록 entry 중 **OOD 가 아니면서 succ_mean 이 latent 공간에서 가장
+가까운** entry 에 후보를 배정하고 그 entry 의 llr 을 쓴다. `score(vec, scene, phase)` 는
+진단용으로 남긴다.
 
 ★ NPZ 계약 (이 docstring 이 단일 출처 — export 코드는 이 키들을 그대로 쓸 것)
     meta               : json str — {"task":..., "ae_ref":..., "scenes":[...], "phases":[...]}
@@ -144,7 +151,8 @@ class LLRScorer:
         self.weights = [np.asarray(w, dtype=np.float64) for w in weights]
         self.biases = [np.asarray(b, dtype=np.float64).ravel() for b in biases]
         # key "s3__c2" -> {"succ_mean","gs","gf","ood_lo"}
-        self.entries = dict(entries)
+        # (속성명이 table 인 이유: 공개 API 는 entries(scene) 메서드다)
+        self.table = dict(entries)
         self.meta = dict(meta)
 
     # ---------------------------------------------------------------- 로딩
@@ -218,15 +226,15 @@ class LLRScorer:
             key = entry_key(scene, phase)
         except ValueError:
             return False
-        return key in self.entries
+        return key in self.table
 
     def scenes(self) -> list[str]:
         """번들에 등록된 scene 목록 ("s1","s3" …)."""
-        return sorted({e.split("__", 1)[0] for e in self.entries})
+        return sorted({e.split("__", 1)[0] for e in self.table})
 
     def spec(self) -> dict:
         return {
-            "registered": sorted(self.entries),
+            "registered": sorted(self.table),
             "scenes": self.scenes(),
             "latent": LATENT_DIM,
             "input_dim": INPUT_DIM,
@@ -250,9 +258,9 @@ class LLRScorer:
         llr>0 = 실패 가우시안 쪽 — serve 는 llr argmin 후보를 실행한다.
         """
         key = entry_key(scene, phase)
-        ent = self.entries.get(key)
+        ent = self.table.get(key)
         if ent is None:
-            raise KeyError(f"llr: 엔트리 '{key}' 미등록 (등록: {sorted(self.entries)})")
+            raise KeyError(f"llr: 엔트리 '{key}' 미등록 (등록: {sorted(self.table)})")
         z = self.encode(vec) - ent["succ_mean"]
         log_s = ent["gs"].logpdf(z)
         log_f = ent["gf"].logpdf(z)
@@ -262,6 +270,44 @@ class LLRScorer:
             "log_f": float(log_f),
             "ood_reject": bool(max(log_s, log_f) < ent["ood_lo"]),
         }
+
+    def entries(self, scene) -> list[str]:
+        """해당 scene 의 등록 entry 키 목록 (정렬). scene 표기가 깨지면 ValueError."""
+        pref = normalize_scene(scene) + "__"
+        return sorted(e for e in self.table if e.startswith(pref))
+
+    def score_nearest(self, vec: np.ndarray, scene) -> dict:
+        """raw feature [1536] × scene → 가장 가까운 **비-OOD** entry 로 배정해 채점.
+
+        반환 {"entry": str|None, "llr": float|None, "log_s","log_f","ood_reject"}.
+        배정 규칙: entry e 마다 z~ = latent - succ_mean[e] 로 log_s/log_f 를 구하고
+        max(log_s,log_f) < ood_lo[e] 인 e 는 후보 기각. 남은 e 중 latent 공간
+        유클리드 거리 ||latent - succ_mean[e]|| 최소인 e 에 배정한다. 전 entry 에서
+        기각이면 entry=None, llr=None, ood_reject=True (log_s/log_f 는 거리 최소
+        entry 의 값 — 진단용). scene 에 entry 가 하나도 없으면 ValueError (fail-loud).
+        """
+        keys = self.entries(scene)
+        if not keys:
+            raise ValueError(
+                f"llr: scene '{normalize_scene(scene)}' 에 등록 entry 없음 "
+                f"(번들 scenes={self.scenes()})")
+        latent = self.encode(vec)
+        rows = []
+        for e in keys:
+            ent = self.table[e]
+            z = latent - ent["succ_mean"]
+            log_s = ent["gs"].logpdf(z)
+            log_f = ent["gf"].logpdf(z)
+            rows.append((e, float(np.linalg.norm(z)), log_s, log_f,
+                         bool(max(log_s, log_f) < ent["ood_lo"])))
+        keep = [r for r in rows if not r[4]]
+        if not keep:
+            _, _, log_s, log_f, _ = min(rows, key=lambda r: r[1])
+            return {"entry": None, "llr": None, "log_s": float(log_s),
+                    "log_f": float(log_f), "ood_reject": True}
+        e, _, log_s, log_f, _ = min(keep, key=lambda r: r[1])
+        return {"entry": e, "llr": float(log_f - log_s), "log_s": float(log_s),
+                "log_f": float(log_f), "ood_reject": False}
 
 
 # ---------------------------------------------------------------------------
@@ -314,9 +360,9 @@ def _self_test() -> int:
         payload = make_dummy_bundle(bp)
         sc = LLRScorer.from_bundle(bp)
 
-        good = sorted(sc.entries) == ["s1__c0", "s1__c2", "s3__c2"]
+        good = sorted(sc.table) == ["s1__c0", "s1__c2", "s3__c2"]
         ok &= good
-        print(f"[self-test] 왕복 로드 registered={sorted(sc.entries)} {'OK' if good else 'FAIL'}")
+        print(f"[self-test] 왕복 로드 registered={sorted(sc.table)} {'OK' if good else 'FAIL'}")
 
         good = sc.scenes() == ["s1", "s3"]
         ok &= good
@@ -353,9 +399,56 @@ def _self_test() -> int:
         print(f"[self-test] scene 축 유효 (max|Δllr| s3 vs s1 = {d:.3e}) "
               f"{'OK' if good else 'FAIL'}")
 
+        # score_nearest: scene 의 entry 목록·거리 규칙·OOD 기각
+        good = sc.entries(1) == ["s1__c0", "s1__c2"] and sc.entries("s3") == ["s3__c2"]
+        ok &= good
+        print(f"[self-test] entries(scene) {'OK' if good else 'FAIL'}")
+
+        mism = 0
+        for v in vecs:
+            out = sc.score_nearest(v, 1)
+            lat = sc.encode(v)
+            # 참조: 비-OOD entry 중 ||latent - succ_mean|| 최소
+            cand = []
+            for e in sc.entries(1):
+                ent = sc.table[e]
+                z = lat - ent["succ_mean"]
+                ls, lf = ent["gs"].logpdf(z), ent["gf"].logpdf(z)
+                if max(ls, lf) >= ent["ood_lo"]:
+                    cand.append((float(np.linalg.norm(z)), e, lf - ls))
+            if not cand:
+                mism += int(out["entry"] is not None or not out["ood_reject"])
+                continue
+            _, ref_e, ref_llr = min(cand)
+            mism += int(out["entry"] != ref_e or abs(out["llr"] - ref_llr) > 1e-9)
+        good = mism == 0
+        ok &= good
+        print(f"[self-test] score_nearest 배정=최근접 비-OOD entry (불일치 {mism}) "
+              f"{'OK' if good else 'FAIL'}")
+
+        # 전-OOD: 그 scene 의 모든 entry ood_lo 를 올리면 entry=None·llr=None·기각
+        saved = {e: sc.table[e]["ood_lo"] for e in sc.entries(1)}
+        for e in saved:
+            sc.table[e]["ood_lo"] = 1e9
+        outs_n = [sc.score_nearest(v, 1) for v in vecs]
+        good = all(o["entry"] is None and o["llr"] is None and o["ood_reject"]
+                   and np.isfinite([o["log_s"], o["log_f"]]).all() for o in outs_n)
+        ok &= good
+        print(f"[self-test] score_nearest 전-OOD 기각 {'OK' if good else 'FAIL'}")
+        for e, v in saved.items():
+            sc.table[e]["ood_lo"] = v
+
+        # entry 없는 scene 은 fail-loud
+        try:
+            sc.score_nearest(vecs[0], 7)
+            print("[self-test] entry 없는 scene 이 통과됨 FAIL")
+            ok = False
+        except ValueError:
+            print("[self-test] entry 없는 scene 거부 OK")
+
         # 정칙화: 대칭 + PD + 원본 대비 tr 증가율 = _COV_REG
         c0 = payload["cov_s.s3__c2"].astype(np.float64)
-        reg = sc.entries["s3__c2"]["gs"].cov
+        reg = sc.table["s3__c2"]["gs"].cov
         sym = float(np.abs(reg - reg.T).max())
         eig = float(np.linalg.eigvalsh(reg).min())
         ratio = float(np.trace(reg) / np.trace(0.5 * (c0 + c0.T)) - 1.0)
@@ -366,7 +459,7 @@ def _self_test() -> int:
 
         # cholesky 전방대입이 numpy solve 와 일치
         z = rng.normal(0, 1.0, LATENT_DIM)
-        gs = sc.entries["s3__c2"]["gs"]
+        gs = sc.table["s3__c2"]["gs"]
         ref = float(-0.5 * (LATENT_DIM * math.log(2 * math.pi)
                             + float(np.log(np.linalg.det(reg)))
                             + (z - gs.mu) @ np.linalg.solve(reg, z - gs.mu)))
@@ -377,7 +470,7 @@ def _self_test() -> int:
               f"{'OK' if good else 'FAIL'}")
 
         # OOD: ood_lo 를 아주 높이면 전부 기각되어야 한다
-        sc.entries["s3__c2"]["ood_lo"] = 1e9
+        sc.table["s3__c2"]["ood_lo"] = 1e9
         good = all(sc.score(v, 3, "c2")["ood_reject"] for v in vecs)
         ok &= good
         print(f"[self-test] ood_reject 발화 {'OK' if good else 'FAIL'}")

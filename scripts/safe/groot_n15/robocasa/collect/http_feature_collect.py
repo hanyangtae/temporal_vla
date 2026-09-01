@@ -1147,6 +1147,7 @@ def run() -> dict[str, Any]:
             perstep_cand_sel_list: list = []        # 채택된 후보 index
             perstep_cand_reject_list: list = []     # 기각 사유/flag 열
             perstep_llr_fallback_list: list = []    # LLR 선별 불가 사유(개입은 후보 0으로 일어남)
+            perstep_cand_entry_list: list = []      # 후보별 배정 등록 entry (score_nearest)
             success = False
             first_success_step = None
             step_i = 0
@@ -1261,6 +1262,7 @@ def run() -> dict[str, Any]:
                         perstep_cand_sel_list.append(_f.get("perstep_cand_sel"))
                         perstep_cand_reject_list.append(_f.get("perstep_cand_reject"))
                         perstep_llr_fallback_list.append(_f.get("perstep_llr_fallback"))
+                        perstep_cand_entry_list.append(_f.get("perstep_cand_entry"))
                         if _f.get("debug_max_action_diff") is not None:
                             perstep_debug_diffs.append(float(_f["debug_max_action_diff"]))
                     # 떨림 진단: 이 record 의 명령 action 벡터(첫 실행 스텝)와 개입 활성 여부.
@@ -1312,6 +1314,7 @@ def run() -> dict[str, Any]:
                     ("cand_sel", perstep_cand_sel_list),
                     ("cand_reject", perstep_cand_reject_list),
                     ("llr_fallback", perstep_llr_fallback_list),
+                    ("cand_entry", perstep_cand_entry_list),
                 ):
                     if len(_seq) != n_inferences:
                         raise RuntimeError(
@@ -1358,6 +1361,7 @@ def run() -> dict[str, Any]:
                     "cand_sel": perstep_cand_sel_list,
                     "cand_reject": perstep_cand_reject_list,
                     "llr_fallback": perstep_llr_fallback_list,
+                    "cand_entry": perstep_cand_entry_list,
                     "perstep_fire_count": int(sum(perstep_fired_flags)),
                     "perstep_debug_max_action_diff": (
                         max(perstep_debug_diffs) if perstep_debug_diffs else None
