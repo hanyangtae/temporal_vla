@@ -1601,6 +1601,24 @@ def run() -> dict[str, Any]:
                 )
                 # write_safe_triplet 이 grid_dir=None 이면 raise 하므로 여기 도달 = 좌표 확정
                 out_path = grid_dir / "rollout.pkl"
+                # 캡처 수집도 판정 원천(raw_rollouts sidecar json)을 함께 남긴다 —
+                # collect_results 가 per_episode 를 여기서 만들므로 없으면 INCOMPLETE 오판.
+                _mini = {
+                    "scenario_seed": scenario_seed,
+                    "seed": scenario_seed,
+                    "inference_seed": args.inference_seed,
+                    "episode_success": int(success),
+                    "first_success_step": first_success_step,
+                    "steps": step_i,
+                    "n_inferences": n_inferences,
+                    "phase_gated_flags": phase_gated_flags,
+                    **online_gate_meta,
+                    **serve_identity,
+                    **extra_metadata,
+                }
+                (output_dir / f"{stem}.json").write_text(
+                    json.dumps(json_safe(_mini), indent=2, ensure_ascii=False)
+                )
             _append_summary(summary_path, effective_task_id, args.task, episode_idx, scenario_seed, out_path)
             results.append(
                 {
