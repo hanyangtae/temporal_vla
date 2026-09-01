@@ -267,6 +267,11 @@ class VLAClient:
                 # cluster phase 자체판정(serve --cluster-phase-bundle): "c0".."c7" + 거리.
                 ("features.perstep_cluster", "cluster"),
                 ("features.perstep_cluster_dist", "cluster_dist"),
+                # best-of-N 재샘플(rsn_*): 후보 수·LLR·선택 idx·기각 사유.
+                ("features.perstep_cand_n", "perstep_cand_n"),
+                ("features.perstep_cand_llr", "perstep_cand_llr"),
+                ("features.perstep_cand_sel", "perstep_cand_sel"),
+                ("features.perstep_cand_reject", "perstep_cand_reject"),
             ):
                 if src_key in result:
                     failure[dst_key] = result.get(src_key)
