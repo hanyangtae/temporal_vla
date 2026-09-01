@@ -93,10 +93,11 @@ STEER_OP_NAME="${STEER_OP_NAME:-}"                  # conceptor 계열 전용: s
 STEER_TOKEN_SELECT="${STEER_TOKEN_SELECT:-all}"     # conceptor 계열 기본 토큰 선택
 case "$STEER_OP" in
   setpoint_seg) ;;
+  setpoint) ;;   # 비-seg setpoint (instr-단위 v4r fit이 이 포맷 — serve가 NPZ 자동감지 대조)
   conceptor)
     [ -n "$STEER_OP_NAME" ] || { echo "[online-gated] ABORT: STEER_OP=conceptor 는 STEER_OP_NAME (sconceptor|conceptor|varc) 필요" >&2; exit 2; } ;;
   condg) ;;   # 상태-조건부 대조 guidance (docs/steering/44) — NPZ 는 variant 디렉토리/condg.npz 단일 파일
-  *) echo "[online-gated] ABORT: 알 수 없는 STEER_OP=${STEER_OP} (setpoint_seg|conceptor|condg)" >&2; exit 2 ;;
+  *) echo "[online-gated] ABORT: 알 수 없는 STEER_OP=${STEER_OP} (setpoint|setpoint_seg|conceptor|condg)" >&2; exit 2 ;;
 esac
 is_conceptor_family() { [ "$STEER_OP" = conceptor ]; }
 is_condg() { [ "$STEER_OP" = condg ]; }
