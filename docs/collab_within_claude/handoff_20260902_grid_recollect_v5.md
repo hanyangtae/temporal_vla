@@ -1,4 +1,82 @@
-# 핸드오프 — GR00T N1.6 HTTP full 다층 수집 (grid 규약 포함)
+# 핸드오프 — grid 재수집 (시나리오 v5) + N1.6 HTTP full 수집 절차
+
+**2026-09-02 갱신 (최우선으로 읽을 것)**: 기존 grid 데이터를 **전량 폐기**했고, 다음 세션은
+아래 §0 의 **수집 계약**대로 처음부터 다시 모은다. 폐기 원장·보존물 =
+`configs/collect/ledger_20260902_purge/` (README 에 시나리오·보존 목록·삭제 목록).
+이전 내용(§1~§5)은 규약·절차 참고용으로 그대로 둔다.
+
+---
+
+## 0. 이번 수집 계약 (2026-09-02, 사용자 확정)
+
+### 0.1 왜 다시 모으나
+
+- **replay 시 데이터와 수집 시 데이터가 다르다**(v4r 라운드: 수집 라벨 vs replay 라벨 반전
+  59%, `handoff_20260902_v4r_round.md`). 원인 미규명. 기존 activation 으로 fit 한 연산자·
+  분석물은 replay 세계와 어긋나 **전부 폐기**했다. 연산자는 activation 이 있으면 재생성
+  가능하므로 남길 가치가 없다.
+- **재수집 시 반드시 지킬 것: 수집 경로 = 향후 replay/eval 경로.** 라벨이 갈리는 원인을
+  모르는 상태이므로, 수집기 플래그(n_action_steps·max_steps·ep_meta 처리·reset 시퀀스·
+  capture 설정)를 eval 러너와 **동일하게** 두고, 첫 셀에서 **fresh replay 로 수집 결과가
+  bit 재현되는지(success·eef 궤적) 확인한 뒤** 본수집에 들어간다. 재현이 안 되면 멈추고
+  사용자 보고.
+
+### 0.2 시나리오 (수집의 목적)
+
+VLA 는 작업장마다 finetune 이 필요한데, 작업장에 **약간의 변화**가 생길 때마다 finetune
+하기엔 데이터·주기 부담이 크다. → 같은 작업장에서 변화로 SR 이 떨어졌을 때 finetune 보다
+적은 데이터로 **activation 기반 감지 → steering** 으로 회복을 시도한다.
+전제 데이터: ① finetune 에 쓰인 expert 데이터, ② 과거 같은 scene 의 rollout(물건 배치만
+약간 다름), ③ 현재 scene 의 실패 rollout(구제 가능한 case 만). **unseen scene 은 대상 외.**
+
+### 0.3 격자 (v5 = v4 구조, base 재사용 없음)
+
+| 축 | 값 | 출처 |
+|---|---|---|
+| instruction | 10 (v2 와 동일) | `configs/collect/n15_grid_v2/collection_plan.json` |
+| scene | 5 = v2 s0–4 (base env_seed 5개/instruction) | 위 plan 의 `instructions[instr][:5]` |
+| noise (denoise seed) | 5 = v2 n0–4 (1300000–1300004) | 위 plan 의 `noise_seeds[:5]` |
+| **물체 재배치 k** | **5 — 전부 신규**, base(v2 셀) 재사용 **없음** | ep_meta 고정+연속 reset (docs/04 §3.1.1) |
+| 합계 | **1,250판** (instruction 당 125, scene 당 25) | |
+
+- k 는 사전 스캔 채택분에서 **앞 5개** (drawer 계열은 left/right 재추첨 → 목표 instruction
+  일치 k 만). 스캔 원본 `ledger_20260902_purge/kscan_v4/*.tsv` (N=12) 로 **50/50 scene 전부
+  채택 k ≥ 5 확인됨** — 재스캔 불필요.
+- plan 은 `scripts/collect/build_v4_plan.py` 를 복제해 **N_K=5, base 병합 없음, 이름
+  n15_grid_v5_scenario** 로 굽는다(좌표 = 평탄 `s{scene*100+k}/n{noise}`, `adopted_cells` 만
+  수집). 새 plan 은 **전용 staging** 필수(§4-4 함정).
+- 모델·캡처: **N1.5** (`lerobot_groot_n15__robocasa365_ckpt120000`), capture_layers
+  0,2,4,8,10,12,15 · all_token_full · denoise_k 4 · n_action_steps 5 · max 720 — v4 와 동일.
+  (N1.6 은 §3 절차로 가능하나 이번 계약은 N1.5.)
+- 용량: 판당 ~600MB × 1,250 ≈ **750GB**. 폐기 후 HDD 여유 ≈ 1.7TB → 수용.
+
+### 0.4 머신 배정 (= 향후 replay 홈, 고정)
+
+| 머신 | instruction | 판수 |
+|---|---|---|
+| kanu | OpenDrawer/left · PPCC/apple · PPCC/marshmallow · **PPCC/bread** · OvenRack/out | 625 |
+| srv50 (worker2) | OpenDrawer/right · PPCC/candle · PPCC/jug | 375 |
+| srv48 (worker1) | CoffeeSetupMug · DishwasherRack/out | 250 |
+
+bread 는 이번에 base 까지 새로 모으므로 **kanu 단일 홈**이 된다(구 v1 worker1 base 문제
+해소). 데스크탑(pdk) 금지. 발사 전 `docs/05_gpu_server_rules.md` 의 `gpu_lease.sh claim`.
+
+### 0.5 산출 계약
+
+- 아카이브: 승준 HDD `temporal_vla_store/groot/n15/grid/<plan_id>/<machine>/...` +
+  `<plan_id>/ep_meta/<task>/<env>--seed<es>.json` 동봉.
+- 인덱스 정본: `index_rollouts_v5.tsv` — 명시 3축(scene_idx 0–4 · `jitter_reset_idx` k ·
+  noise_idx) + `cell_si`(평탄) + env_seed(base) + success. base 행 없음(전부 k).
+- 완료 판정 = 아카이브 `meta.json` 수 == 1,250 (실패 셀은 재시도 2회 후 feasibility 로 기록).
+
+### 0.6 착수 순서
+
+1. `git pull` dev 최신 → v5 plan 생성 → DRY_RUN 으로 결손 1,250 확인.
+2. **첫 셀 1판 수집 → 같은 좌표 fresh replay → bit 재현 확인** (0.1). 불일치 시 중단·보고.
+3. lease claim → 3머신 발사(kanu GPU 3장×2 / srv 1장×6, `SERVE_MODE=host` 3종, backpressure,
+   PARALLEL 8 shipper) → 완료 후 index_v5 생성·ep_meta 동봉 → 3머신 staging 정리·GPU 반납.
+
+---
 
 2026-09-01. 작성 = '데이터 추가 수집' 세션. branch `feat/online-gated-pipe`.
 대상 독자 = 이 수집을 이어받아 돌릴 세션/사람. **읽는 순서: §1 규약 → §2 자원 규칙 →
@@ -150,7 +228,14 @@ n16 분기를 추가하거나 (b) n16 전용 러너를 두는 방식 중 택일�
 
 ---
 
-## 5. 현재 데이터 상태 (2026-09-01)
+## 5. 데이터 상태 (2026-09-02 폐기 후)
+
+- 아카이브 grid 는 **껍데기만** 남아 있다: 셀별 `meta.json` 3,282개 + `46ea62d53e09/ep_meta/`
+  50개. pkl·mp4·csv 는 전부 삭제, `analysis/` 전부 삭제. 원장 `configs/collect/ledger_20260902_purge/`.
+- 이전 상태(참고): 3,282 rollout ≈ 1.97TB, 그중 k 변주 좌표 250개(1,250판).
+- N1.7: 이 환경에 체크포인트 없음.
+
+### 5.1 (구) 현재 데이터 상태 (2026-09-01)
 
 - 아카이브: 승준 HDD `/home/kimseungjun/datasets/temporal_vla_store/groot/n15/grid/`
   (SSH `kimseungjun@166.104.146.37:11112`), 여유 **369GB**.

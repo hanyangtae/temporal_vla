@@ -1,0 +1,327 @@
+{
+  "env_name": "robocasa_panda_omron/SlideOvenRack_PandaOmron_Env",
+  "ep_meta": {
+    "cam_configs": {
+      "robot0_agentview_center": {
+        "parent_body": "mobilebase0_support",
+        "pos": [
+          -0.6,
+          0.0,
+          1.15
+        ],
+        "quat": [
+          0.636945903301239,
+          0.3325185477733612,
+          -0.3199238181114197,
+          -0.6175596117973328
+        ]
+      },
+      "robot0_agentview_left": {
+        "camera_attribs": {
+          "fovy": "60"
+        },
+        "parent_body": "mobilebase0_support",
+        "pos": [
+          -0.5,
+          0.35,
+          1.05
+        ],
+        "quat": [
+          0.55623853,
+          0.29935253,
+          -0.37678665,
+          -0.6775092
+        ]
+      },
+      "robot0_agentview_right": {
+        "camera_attribs": {
+          "fovy": "60"
+        },
+        "parent_body": "mobilebase0_support",
+        "pos": [
+          -0.5,
+          -0.35,
+          1.05
+        ],
+        "quat": [
+          0.6775091886520386,
+          0.3767866790294647,
+          -0.2993525564670563,
+          -0.55623859167099
+        ]
+      },
+      "robot0_eye_in_hand": {
+        "parent_body": "robot0_right_hand",
+        "pos": [
+          0.05,
+          0,
+          0
+        ],
+        "quat": [
+          0,
+          0.707107,
+          0.707107,
+          0
+        ]
+      },
+      "robot0_frontview": {
+        "camera_attribs": {
+          "fovy": "60"
+        },
+        "parent_body": "mobilebase0_support",
+        "pos": [
+          -0.5,
+          0,
+          0.95
+        ],
+        "quat": [
+          0.6088936924934387,
+          0.3814677894115448,
+          -0.3673907518386841,
+          -0.5905545353889465
+        ]
+      }
+    },
+    "fixture_refs": {
+      "oven": "oven_left_group"
+    },
+    "fixtures": {
+      "bottom_left_group_1": {
+        "cls": "Drawer"
+      },
+      "bottom_left_group_2": {
+        "cls": "Drawer"
+      },
+      "bottom_left_group_base": {
+        "cls": "Box"
+      },
+      "cab_1_left_group": {
+        "cls": "SingleCabinet"
+      },
+      "cab_2_left_group": {
+        "cls": "SingleCabinet"
+      },
+      "cab_corner_3_left_group": {
+        "cls": "Box"
+      },
+      "cab_corner_4_left_group": {
+        "cls": "Box"
+      },
+      "cab_main_main_group": {
+        "cls": "HingeCabinet"
+      },
+      "coffee_machine_left_group": {
+        "cls": "CoffeeMachine"
+      },
+      "counter_1_left_left_group": {
+        "cls": "Counter"
+      },
+      "counter_1_right_main_group": {
+        "cls": "Counter"
+      },
+      "counter_corner_left_group": {
+        "cls": "Counter"
+      },
+      "counter_corner_main_main_group": {
+        "cls": "Counter"
+      },
+      "counter_main_main_group": {
+        "cls": "Counter"
+      },
+      "dishwasher_left_group": {
+        "cls": "Dishwasher"
+      },
+      "floor_backing_room": {
+        "cls": "Floor"
+      },
+      "floor_room": {
+        "cls": "Floor"
+      },
+      "fridge_cab_main_group": {
+        "cls": "HingeCabinet"
+      },
+      "fridge_housing_main_group": {
+        "cls": "HousingCabinet"
+      },
+      "fridge_main_group": {
+        "cls": "FridgeFrenchDoor"
+      },
+      "hood_main_group": {
+        "cls": "Hood"
+      },
+      "island_island_group": {
+        "cls": "Counter"
+      },
+      "knife_block_main_group": {
+        "cls": "Accessory"
+      },
+      "light_switch_2_room": {
+        "cls": "WallAccessory"
+      },
+      "light_switch_room": {
+        "cls": "WallAccessory"
+      },
+      "micro_housing_left_group": {
+        "cls": "HousingCabinet"
+      },
+      "microwave_left_group": {
+        "cls": "Microwave"
+      },
+      "outlet_2_room": {
+        "cls": "WallAccessory"
+      },
+      "outlet_room": {
+        "cls": "WallAccessory"
+      },
+      "oven_housing_left_group": {
+        "cls": "HousingCabinet"
+      },
+      "oven_left_group": {
+        "cls": "Oven"
+      },
+      "paper_towel_main_group": {
+        "cls": "Accessory"
+      },
+      "plant_island_group": {
+        "cls": "Accessory"
+      },
+      "shelves_main_group": {
+        "cls": "OpenCabinet"
+      },
+      "sink_left_group": {
+        "cls": "Sink"
+      },
+      "stack_1_left_group": {
+        "cls": "SingleCabinet"
+      },
+      "stack_1_main_group_1": {
+        "cls": "Drawer"
+      },
+      "stack_1_main_group_2": {
+        "cls": "Drawer"
+      },
+      "stack_1_main_group_3": {
+        "cls": "Drawer"
+      },
+      "stack_1_main_group_4": {
+        "cls": "Drawer"
+      },
+      "stack_1_main_group_base": {
+        "cls": "Box"
+      },
+      "stack_2_left_group_1": {
+        "cls": "HingeCabinet"
+      },
+      "stack_2_left_group_2": {
+        "cls": "PanelCabinet"
+      },
+      "stack_2_left_group_base": {
+        "cls": "Box"
+      },
+      "stack_2_main_group_1": {
+        "cls": "HingeCabinet"
+      },
+      "stack_2_main_group_2": {
+        "cls": "PanelCabinet"
+      },
+      "stack_2_main_group_base": {
+        "cls": "Box"
+      },
+      "stack_3_left_group_1": {
+        "cls": "HingeCabinet"
+      },
+      "stack_3_left_group_2": {
+        "cls": "Drawer"
+      },
+      "stack_3_left_group_3": {
+        "cls": "Drawer"
+      },
+      "stack_3_left_group_base": {
+        "cls": "Box"
+      },
+      "stack_3_main_group_1": {
+        "cls": "HingeCabinet"
+      },
+      "stack_3_main_group_2": {
+        "cls": "Drawer"
+      },
+      "stack_3_main_group_3": {
+        "cls": "Drawer"
+      },
+      "stack_3_main_group_base": {
+        "cls": "Box"
+      },
+      "stool_1_room": {
+        "cls": "Stool"
+      },
+      "stool_2_room": {
+        "cls": "Stool"
+      },
+      "stool_3_room": {
+        "cls": "Stool"
+      },
+      "stovetop_main_group": {
+        "cls": "Stovetop"
+      },
+      "toaster_main_group": {
+        "cls": "Toaster"
+      },
+      "toaster_oven_main_group": {
+        "cls": "ToasterOven"
+      },
+      "top_left_group": {
+        "cls": "HingeCabinet"
+      },
+      "utensil_set_main_group": {
+        "cls": "Accessory"
+      },
+      "wall_backing_room": {
+        "cls": "Wall"
+      },
+      "wall_front_backing_room": {
+        "cls": "Wall"
+      },
+      "wall_front_room": {
+        "cls": "Wall"
+      },
+      "wall_left_backing_room": {
+        "cls": "Wall"
+      },
+      "wall_left_room": {
+        "cls": "Wall"
+      },
+      "wall_right_backing_room": {
+        "cls": "Wall"
+      },
+      "wall_right_room": {
+        "cls": "Wall"
+      },
+      "wall_room": {
+        "cls": "Wall"
+      },
+      "window_group_room": {
+        "cls": "Window"
+      }
+    },
+    "gen_textures": {},
+    "init_robot_base_ori": [
+      0.0,
+      0.0,
+      3.1415963267948968
+    ],
+    "init_robot_base_pos": [
+      0.9331153295116837,
+      -4.56248062865081,
+      0.0
+    ],
+    "lang": "Fully slide the oven rack out.",
+    "layout_id": 4,
+    "object_cfgs": [],
+    "rack_level": 1,
+    "should_pull": true,
+    "style_id": 4
+  },
+  "format": "robocasa_ep_meta_manifest.v1",
+  "robocasa_env_source": "robocasa365",
+  "scenario_seed": 100017
+}
