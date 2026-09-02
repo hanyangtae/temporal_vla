@@ -16,7 +16,7 @@ CLAUDE.md "평가 표준" and docs/steering/RESEARCH_DIRECTION.md.
 | Item | Value |
 |---|---|
 | EVAL_SEED | 100000 (launcher default; matches colleague collection seeds) |
-| GPUs | (2026-07-21/08-10 개정, 구 "4/5/6 고정" 폐기) **빈 GPU만** 사용 — `nvidia-smi`로 확인, 타인이 쓰는 GPU에는 발사 금지. **kanu = 최대 3장·GPU당 serve ≤2**, **srv48/srv50(A100) = 서버당 1장·GPU당 serve ≤6**. srv48/50에 `junhyeong` 계정 프로세스가 이미 있으면 이 연구 작업인지 확인하고 그 세션과 조율해 합산이 상한을 넘지 않게 한다. launcher `GPUS` 리스트를 현재 빈 GPU로 명시 지정 |
+| GPUs | (2026-07-21/08-10 개정, 구 "4/5/6 고정" 폐기) **빈 GPU만** 사용 — `nvidia-smi`로 확인, 타인이 쓰는 GPU에는 발사 금지. **정본 `docs/05_gpu_server_rules.md`** — 발사 전 `scripts/utils/gpu_lease.sh claim` 필수(타 세션 점유 시 wait/보고), 종료 시 release. 요지: **kanu 최대 3장·serve ≤2/GPU**, **srv48/srv50 serve ≤6/GPU**. srv48/50에 `junhyeong` 프로세스가 이미 있으면 이 연구 작업인지 확인·조율. launcher `GPUS` 리스트를 현재 빈 GPU로 명시 지정 |
 | Episodes | n16 compare: `N_ENVS=2 N_EP=20` per condition. n15 held-out cell: `EP0=30 EP1=59` (defaults — keep; disjoint from fit ep0-14) |
 | Per-episode log | `per_episode.tsv` (episode_idx, success, language) must be produced |
 | Where | SR eval runs LOCAL-only (robocasa Docker). Never on the remote node. |

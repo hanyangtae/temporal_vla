@@ -34,22 +34,21 @@
 
 ---
 
-## 2. 자원 점유 규칙 (발사 전 필수 확인)
+## 2. 자원 점유 규칙 — 정본 `docs/05_gpu_server_rules.md`
 
-| 머신 | 상한 | 비고 |
-|---|---|---|
-| **kanu** | **총 3 GPU**, **GPU당 모델 2개** | A4000 16GB. serve 로드 피크가 안정 상태의 2배라 순차 기동 필수 |
-| **srv48 / srv50** | **서버당 총 1 GPU**, **GPU당 모델 6개** | A100 80GB. N1.5·N1.6 모두 6개까지 올라감 |
+**GPU 서버(kanu·srv48·srv50) 운영·세션 간 예약의 단일 출처는
+[`docs/05_gpu_server_rules.md`](../05_gpu_server_rules.md)** (2026-09-01 신설, 커밋
+53fc816). 상한 수치와 절차는 그 문서가 이기며, 여기서는 수집 발사 시 놓치기 쉬운 것만
+짚는다.
 
-공통:
-1. **빈 GPU 에만 발사**한다. `nvidia-smi` 로 확인하고, 타인이 쓰는 GPU 에는 올리지 않는다.
-2. **srv48/50 에 `junhyeong` 계정 프로세스가 이미 떠 있으면**, 그것이 이 연구의 작업인지
-   먼저 확인한다(`ps -o user=,lstart=,cmd= -p <pid>`, 다른 세션에 문의). 우리 연구 작업이면
-   그 세션과 조율하고, 합산이 위 상한(서버당 1 GPU·GPU당 6 모델)을 넘지 않게 한다.
-3. 다른 계정(jongu·woongq·root 등) 프로세스가 있는 GPU 는 회피한다.
-4. 종료 보고 전 `pgrep` + `nvidia-smi` 로 정리를 확인한다 (잔존 serve 금지).
-
----
+- **발사 전 `scripts/utils/gpu_lease.sh claim <machine> <gpu> "<세션명>" "<용도>"` 필수.**
+  이미 잡혀 있으면 exit 3 + 소유자 출력 → 발사 금지, `wait` 로 기다리거나 사용자에게 보고.
+  끝나면 serve kill → `nvidia-smi` 반납 확인 → `release`.
+- 상한 요지(정본 §1): 빈 GPU만(타인 프로세스 있는 GPU 금지), **kanu 최대 3장·serve 2/GPU**,
+  **srv48/srv50 serve 6/GPU**.
+- srv48/50 에 `junhyeong` 계정 프로세스가 이미 있으면 **이 연구의 작업인지 먼저 확인**하고
+  (`ps -o user=,lstart=,cmd= -p <pid>`, 해당 세션에 문의) 합산이 상한을 넘지 않게 조율한다.
+  lease 는 우리 세션 간 예약이지 타 계정 점유를 대신 판정해 주지 않는다.
 
 ## 3. N1.6 HTTP full 다층 수집 — 실행 절차
 
@@ -162,5 +161,5 @@ n16 분기를 추가하거나 (b) n16 전용 러너를 두는 방식 중 택일�
 - N1.7: **이 환경에 체크포인트 없음**(캐시엔 N1.6 만). 쓰려면 모델·robocasa 파인튜닝
   확보부터 필요.
 
-관련 문서: `docs/04_data_storage_convention.md`(정본), `docs/steering/45`(v2·v4 수집 결산),
+관련 문서: `docs/05_gpu_server_rules.md`(GPU 운영·lease 정본), `docs/04_data_storage_convention.md`(저장 규약 정본), `docs/steering/45`(v2·v4 수집 결산),
 `docs/collab/collect_request_v3_jitter.md`(지터 축 검증 이력), `.claude/skills/robocasa-steer-eval/SKILL.md`(eval 표준).

@@ -533,17 +533,14 @@ task 의 셀-paired eval(구제/파손 판정)이 성립하지 않는다. 홈이
 base 를 새 머신에서 재수집한다. **데스크탑(pdk)은 수집·replay 영구 배제**
 (단일 GPU 에서 EGL 렌더×serve 동시부하 시 렌더 비결정 — `docs/steering/42` §7).
 
-**자원 상한 (발사 전 확인 필수)**
+**자원 상한·예약 — 정본은 [`docs/05_gpu_server_rules.md`](05_gpu_server_rules.md)**
+(GPU 서버 운영·세션 간 lease). 수집도 예외 없이 **발사 전 `scripts/utils/gpu_lease.sh
+claim`**, 종료 시 `release`. 상한 요지: 빈 GPU만·kanu 최대 3장·kanu serve 2/GPU·srv 6/GPU.
 
-| 머신 | 총 GPU | GPU당 모델(serve) |
-|---|---|---|
-| kanu (A4000 16GB) | 3 | 2 |
-| srv48 / srv50 (A100 80GB) | 서버당 1 | 6 |
-
-- **빈 GPU 에만** 발사한다(`nvidia-smi` 확인, 타인 사용 GPU 금지).
-- srv48/50 에 **`junhyeong` 계정 프로세스가 이미 있으면** 이 연구의 작업인지 먼저 확인하고
-  (다른 세션과 조율), **합산이 위 상한을 넘지 않게** 한다.
+수집 고유 주의:
 - serve 는 **순차 기동**한다 — 로드 중 VRAM 피크가 안정 상태의 2배라 동시 기동은 OOM.
+- srv48/50 에 `junhyeong` 계정 프로세스가 이미 있으면 이 연구 작업인지 확인하고 조율한다
+  (lease 는 우리 세션 간 예약일 뿐 타 계정 점유를 판정하지 않는다).
 - 종료 보고 전 `pgrep` + `nvidia-smi` 로 잔존 serve 0 을 확인한다.
 
 **러너 규약** (`scripts/safe/groot_n15/robocasa/collect/collect_grid.sh`)
