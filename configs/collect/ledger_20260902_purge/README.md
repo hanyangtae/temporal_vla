@@ -34,6 +34,7 @@ VLA 는 작업장마다 finetune 이 필요한데, 작업장에 **약간의 변�
 | `index_rollouts_v1_dedup_820.tsv` | v1 dedup 인덱스(마시멜로 kanu 정본화 후) |
 | `grid_meta_json_3282.tgz` | 셀별 `meta.json` 전부(좌표·seed·k·캡처밀도 5열·sig). 아카이브에도 **제자리 보존** |
 | `ep_meta/<task>/<env>--seed<es>.json` | v4 지터 재현용 ep_meta 50개 (task 10 × scene 5) |
+| `kscan_v4/*.tsv` | k-스캔 원본 50개(scene당 N=12, `k \t instruction`) — v5 채택 k 5개 산출 근거, 50/50 scene 충족 확인 |
 | (레포) `configs/collect/n15_grid_v{1,2,3,4}/collection_plan.json` | plan 정본 — instruction 별 scene seed 목록·noise seed·ckpt·capture_layers·denoise_k·token_mode |
 | (레포) `configs/collect/n15_grid_v{3,4}/kscan_adopted.json` | k-스캔 채택/기각 k (drawer 는 방향 재추첨 때문에 필터 필수) |
 
@@ -45,9 +46,10 @@ N1.5 러너 = `scripts/safe/groot_n15/robocasa/collect/collect_grid.sh`
 
 | 대상 | 용량 | 처리 |
 |---|---|---|
-| `grid/*/rollout.pkl` 3,282 · `video.mp4` 3,282 · `traj.csv` 3,282 | ~1,200GB | 삭제 (`meta.json`·`ep_meta/` 는 제자리 유지) |
-| `analysis/` (grid_phase·grid_phase_v2·grid_phase_v4: 연산자 npz·segA shard·v4r 진단 캡처) | ~408GB | 전부 삭제 |
+| `grid/*/rollout.pkl` 3,282 · `video.mp4` 3,282 · `traj.csv` 3,282 | **1,287.8GB** (pkl 1,284.3 + mp4 3.5) | 삭제 완료 — `meta.json` 3,282·`ep_meta/` 50 제자리 유지 확인 |
+| `analysis/` (grid_phase·grid_phase_v2·grid_phase_v4: 연산자 npz·segA shard·v4r 진단 캡처, 1,280 파일) | **438.0GB** | 전부 삭제 완료 |
 | `runs/` | 19GB | **유지** (legacy 집계·로그, 수집 데이터 아님) |
 | `index/` | 소량 | 유지 |
 
-삭제 실행 원장: `DELETED_20260902.tsv` (경로·개수·바이트).
+삭제 실행 원장: `DELETED_20260902.tsv` (경로·개수·바이트). 삭제 후 HDD 여유 **1.7TB**.
+재수집 계약·착수 순서: `docs/collab_within_claude/handoff_20260902_grid_recollect_v5.md` §0.
