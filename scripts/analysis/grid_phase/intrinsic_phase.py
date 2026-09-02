@@ -524,8 +524,11 @@ def main(argv=None):
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--shards", default=None,
                     help="쉼표구분 instr_slug 부분집합 (기본: 디렉토리 전체)")
-    ap.add_argument("--scope", choices=("per-task", "global"), default="global",
-                    help="per-task: instruction 별 개별 fit / global: 전 shard 합쳐 1회")
+    ap.add_argument("--scope", choices=("per-task", "per-family", "global"),
+                    default="global",
+                    help="per-task: instruction 별 개별 fit (구명 유지 — 실제 단위는 "
+                         "instruction) / per-family: task(env family) 단위 fit / "
+                         "global: 전 shard 합쳐 1회")
     ap.add_argument("--k", default=None,
                     help="클러스터 수. 쉼표로 sweep 가능 (per-task 기본 6,8,12 / global 기본 24)")
     ap.add_argument("--pca-dim", type=int, default=64)
@@ -545,7 +548,8 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     ks = ([int(x) for x in args.k.split(",") if x.strip()] if args.k
-          else ([6, 8, 12] if args.scope == "per-task" else [24]))
+          else ({"per-task": [6, 8, 12], "per-family": [8, 16, 24, 40],
+                 "global": [24]}[args.scope]))
     fit_scenes = parse_scene_spec(args.fit_scenes)
     args.out.mkdir(parents=True, exist_ok=True)
 
@@ -573,23 +577,34 @@ def main(argv=None):
         fit_arrays: dict[str, np.ndarray] = {}
         fit_rows: dict[str, int] = {}
 
-        if args.scope == "global":
-            feat = np.concatenate([s["feat"] for s in shards], 0)
-            scene = (np.concatenate([s["scene"] for s in shards], 0)
-                     if all(s["scene"] is not None for s in shards) else None)
-            lab, stats, evr, cent, nfit = run_group(
-                feat, scene, fit_scenes, args.pca_dim, K, runner, not args.no_whiten)
-            del feat
-            off = 0
-            for s in shards:
-                m = len(s["feat"])
-                labels_by_shard[s["name"]] = lab[off:off + m].astype(np.int16)
-                off += m
-            g = "__global__"
-            fit_arrays.update({f"{g}__pca_mu": stats["mu"], f"{g}__pca_V": stats["V"],
-                               f"{g}__pca_sqrt_lam": stats["sqrt_lam"],
-                               f"{g}__pca_evr": evr, f"{g}__centroids": cent})
-            fit_rows[g] = nfit
+        if args.scope in ("global", "per-family"):
+            # per-family (2026-08-20): task = env family 단위 fit. SAFE failure
+            # detector 가 task 단위이므로 phase 판독기도 같은 단위가 가능한지 비교용.
+            # family = instruction 이름의 '_' 앞 접두 (PPCC_bread→PPCC,
+            # OpenDrawer_left→OpenDrawer, 나머지는 단독 family).
+            if args.scope == "global":
+                groups = {"__global__": list(shards)}
+            else:
+                groups = {}
+                for s in shards:
+                    groups.setdefault(s["name"].split("_")[0], []).append(s)
+            for g, members in sorted(groups.items()):
+                feat = np.concatenate([s["feat"] for s in members], 0)
+                scene = (np.concatenate([s["scene"] for s in members], 0)
+                         if all(s["scene"] is not None for s in members) else None)
+                lab, stats, evr, cent, nfit = run_group(
+                    feat, scene, fit_scenes, args.pca_dim, K, runner,
+                    not args.no_whiten)
+                del feat
+                off = 0
+                for s in members:
+                    m = len(s["feat"])
+                    labels_by_shard[s["name"]] = lab[off:off + m].astype(np.int16)
+                    off += m
+                fit_arrays.update({f"{g}__pca_mu": stats["mu"], f"{g}__pca_V": stats["V"],
+                                   f"{g}__pca_sqrt_lam": stats["sqrt_lam"],
+                                   f"{g}__pca_evr": evr, f"{g}__centroids": cent})
+                fit_rows[g] = nfit
         else:
             for s in shards:
                 lab, stats, evr, cent, nfit = run_group(
