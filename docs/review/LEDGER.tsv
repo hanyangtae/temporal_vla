@@ -457,3 +457,13 @@ docs/steering/38_collection_round_handoff.md	S10	archive	v2 수집 라운드 완
 docs/steering/39_steer_eval_usage.md	S10	archive	robocasa-steer-eval 스킬이 정본(중복)	적용(archive)	811793f
 docs/steering/45_grid_v2_collection.md	S10	archive	v2 수집 완결 기록, 데이터 전면 재수집 예정	적용(archive)	811793f
 docs/collab/{handoff_20260831_perstep_cluster,handoff_20260902_v4r_round,collect_request_v3_jitter}.md	S10	이동	collab는 Codex 원장 전용 → docs/handoff/ 신설(사용자 재명명: collab→collab_codex, handoff→collab_within_claude)	적용(이동)	811793f
+docs/steering/05_safe_lerobot_collection.md	S10	archive	SAFE 수집 lerobot 확장 설계, 수집은 러너·docs/04로 대체	적용(archive)	7dc0619
+docs/steering/07_steering_methods_survey.md	S10	archive	연산자 서베이, write-in 계열 종결	적용(archive)	7dc0619
+docs/steering/24d_exp4-3_variance_aware_direction_input.md	S10	archive	분산 연산자 설계, write-in 종결	적용(archive)	7dc0619
+docs/steering/31_sae_g1_results.md	S10	archive	SAE G1, 판정은 DIRECTION §5.2	적용(archive)	7dc0619
+docs/steering/32_g2_scene_residual_results.md	S10	archive	SAE G2, 판정은 DIRECTION §5.2	적용(archive)	7dc0619
+docs/steering/35_exp5-2_results.md	S10	archive	exp5-2 섭동 회복, 요지는 RESULTS §1·§3	적용(archive)	7dc0619
+docs/steering/39_resample_verifier_round.md	S10	archive	rsN 배경, 핸드오프·DIRECTION 흡수	적용(archive)	7dc0619
+docs/steering/40_action_phase_readout_review.md	S10	archive	동료 phase readout 검증, 41 배경	적용(archive)	7dc0619
+docs/steering/41_grid_phase_separation.md	S10	archive	grid phase 분리 라운드, cluster k8 채택 근거는 memory·핸드오프	적용(archive)	7dc0619
+docs/steering/sae_g1_refs/	S10	archive	SAE G1 atlas 참조 tsv, 31과 함께	적용(archive)	7dc0619
