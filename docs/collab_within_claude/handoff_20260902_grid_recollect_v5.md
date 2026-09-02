@@ -85,7 +85,9 @@ ep_meta JSON 을 `reset(seed)` 전에 주입한 replay 관례(C)** — 지터 �
 돌렸던 것. 조치: collector 가 `--jitter-reset-idx`+`--ep-meta-load-env-name` 조합을 거부,
 runner 주석 갱신. **v5 replay/eval 은 EP_META_DIR 없이** 돌린다(ep_meta JSON 은 기록·검증용).
 게이트 산출물: srv48 `outputs/collect/v5_gate/{VERDICT_ABD.txt,A.log,C.log}`.
-kanu·srv50 은 각자 첫 발사 전 같은 게이트를 1회 돌린다(`GPU= INSTR= GATE_ROOT=` 지정).
+**kanu 게이트(DishwasherRack/out s0 k0 n0, GPU2)도 동일 패턴**: A=B=D bit 동일, C 는 첫 행부터
+불일치(maxdiff 1.29; k=0 에서도 재현 → 지터 회수와 무관하게 JSON 사전 주입 자체가 상태를 바꾼다).
+산출물 kanu `outputs/collect/v5_gate_kanu/VERDICT_kanu.txt`. srv50 은 첫 발사 전 1회 실행.
 
 ### 0.6 착수 순서
 
@@ -97,7 +99,10 @@ kanu·srv50 은 각자 첫 발사 전 같은 게이트를 1회 돌린다(`GPU= I
    (D 는 원인 국소화용). 결과 `<GATE_ROOT>/VERDICT.txt`.
 3. (진행 상태 09-02 19:32) **srv48 GPU2 발사됨**(drawer left/right·coffee 375, 게이트 셀 1 포함,
    `outputs/collect/logs/{grid_v5_worker1,shipper_v5}.log`, STAGING_WAIT 12GB — 디스크 여유 33GB).
-   kanu(8장 전부 junhyeong main.py 상주)·srv50(4장 전부 타인·finetune 점유)은 **발사 불가 대기**.
+   **kanu GPU 2·5·6 발사됨**(10:57 KST, dish/oven rack·apple 375, 게이트 셀 1 포함, lease 3장,
+   `outputs/collect/logs/{grid_v5_kanu,shipper_v5}.log`, STAGING_WAIT 20GB). kanu 는 git worktree
+   `.claude/worktrees/grid-phase-sep` 의 plan 경로로 발사(메인 트리에 PR #99 미머지 시점).
+   srv50(4장 전부 타인·finetune 점유)은 **발사 불가 대기** — 빈 GPU 감시 중.
    런처 = 각 머신 `outputs/collect/logs/launch_v5_{srv,kanu}.sh`.
    lease claim → 3머신 발사(kanu GPU 3장×2 / srv 1장×6, `SERVE_MODE=host` 3종, backpressure,
    PARALLEL 8 shipper) → 완료 후 index_v5 생성·ep_meta 동봉 → 3머신 staging 정리·GPU 반납.
