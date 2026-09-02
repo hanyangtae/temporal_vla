@@ -25,7 +25,9 @@ PLAN_JSON_ABS="$(realpath -m -- "$PLAN_JSON")"
 RUNNER="${REPO_ROOT}/scripts/safe/groot_n15/robocasa/collect/collect_grid.sh"
 PYPATH="/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite:/temporal_vla"
 log() { echo "[gate] $(date '+%F %T') $*"; }
-to_container() { case "$1" in "${REPO_ROOT}"/*) printf '/temporal_vla/%s\n' "${1#"${REPO_ROOT}"/}";; *) printf '%s\n' "$1";; esac; }
+GIT_COMMON="$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "${REPO_ROOT}/.git")"
+MOUNT_ROOT="${MOUNT_ROOT:-$(dirname -- "$GIT_COMMON")}"   # 컨테이너 /temporal_vla = 메인 워크트리
+to_container() { case "$1" in "${MOUNT_ROOT}"/*) printf '/temporal_vla/%s\n' "${1#"${MOUNT_ROOT}"/}";; *) printf '%s\n' "$1";; esac; }
 
 export PLAN_JSON="$PLAN_JSON_ABS" INSTRUCTIONS="$INSTR" GPUS="$GPU" SERVES_PER_GPU=1 \
   NOISE_LIMIT=1 MAX_CELLS=1 JITTER_MODE=1 DONE_LIST=/dev/null SERVE_MODE SERVE_PY SERVE_PYTHONPATH PY_HOST
