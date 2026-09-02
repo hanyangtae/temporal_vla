@@ -42,6 +42,10 @@
 | [`35_exp5-2_results.md`](35_exp5-2_results.md) | 섭동-유도 실패 회복 (RESULTS와 별도 유지 — 무대가 다름) |
 | [`37_exp5-4_noise_selection.md`](37_exp5-4_noise_selection.md) | noise 선별 판정 (verifier 종결 / seed 주효과는 미착수) |
 | [`47_perstep_gating_pipeline.md`](47_perstep_gating_pipeline.md) | **per-step 게이팅 파이프 설계 정본** (latch 폐기, pre-hook detector 규칙) |
+| [`39_resample_verifier_round.md`](39_resample_verifier_round.md) | 재샘플+verifier 계보·rsN 연산자 라운드 배경 |
+| [`41_grid_phase_separation.md`](41_grid_phase_separation.md) | grid phase 분리 라운드 — intrinsic k8 vs GT, OvenRack reach 암기 검증 |
+| [`45_hotfix_scenario_spec.md`](45_hotfix_scenario_spec.md) | **hotfix 시나리오 스펙 정본**(시나리오 구체화 세션) — "재발 실패" 정의는 base-replay 재정박 프레임으로 개정 필요 |
+| [`../collab/handoff_20260902_v4r_round.md`](../collab/handoff_20260902_v4r_round.md) | **현행 중추 세션 핸드오프** — rsN·v4sb·v4r 재수집 라운드 서사·최종표·함정·좌표·잔여 (구 8-31판 대체) |
 
 ## 수집·운영
 
@@ -50,6 +54,11 @@
 | [`05_safe_lerobot_collection.md`](05_safe_lerobot_collection.md) | SAFE 수집 lerobot 멀티벤치 확장 |
 | [`27_standmixer_phase_labeler.md`](27_standmixer_phase_labeler.md) | OpenStandMixerHead instruction·성공판정·phase 라벨러 |
 | [`13_lab_meeting_ppt_notes.md`](13_lab_meeting_ppt_notes.md) | 랩미팅 발표 노트 (2026-06 시점 흐름 요약) |
+| [`38_collection_round_handoff.md`](38_collection_round_handoff.md) · [`45_grid_v2_collection.md`](45_grid_v2_collection.md) | grid 수집 라운드 핸드오프·v2 수집 완결 기록 (v4 지터 수집은 docs/04 §3.1.1) |
+| [`39_steer_eval_usage.md`](39_steer_eval_usage.md) | steer eval 러너 사용법 (정본은 `.claude/skills/robocasa-steer-eval`) |
+| [`38_rl2_simpler_repro.md`](38_rl2_simpler_repro.md) | RL²-VLA SIMPLER 재현 기록 (경쟁 분석 부속) |
+
+> ⚠ 번호 45가 두 파일(`45_grid_v2_collection`·`45_hotfix_scenario_spec`)에 중복 — 전역 재명명 시 정리.
 
 > 번호 prefix는 생성 순서일 뿐 읽기 순서가 아니다. 전역 재명명은 레포 검토 완료 후 일괄 예정
 > ([`../review/`](../review/)).
