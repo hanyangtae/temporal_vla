@@ -113,6 +113,8 @@ runner 주석 갱신. **v5 replay/eval 은 EP_META_DIR 없이** 돌린다(ep_met
    ≤ ~22 유지: kanu PARALLEL 6). 아카이브 완료 판정은 승준 `meta.json` 수 == 1,250.
    **srv48 수집 완료 375/375**(09-03 04:5x KST; serve 정리·lease 반납, 잔여 이관 20셀).
    srv50 은 staging 상한을 150GB 로 올려 재기동(02:24 KST, 워커 전원 대기 시점) — GPU 유휴 방지.
+   **srv50 수집 완료 500/500**(09-03 06:0x KST; lease 반납). **→ 1,250/1,250 수집 완료, 3머신 GPU 전부 반납.**
+   ep_meta 50 파일은 승준 `8daefeabf020/ep_meta/<task>/` 에 동봉 완료. 잔여 = 이관(srv50 234셀 등)·index_v5.
    운영 메모: 총 완료 시각은 이관 속도가 정한다 — GPU util 0 은 정지가 아니라 이관 대기일 수 있다
    (`worker_w*.log` 마지막 줄 "이관 대기" 확인).
    런처 = 각 머신 `outputs/collect/logs/launch_v5_{srv,kanu}.sh`.
