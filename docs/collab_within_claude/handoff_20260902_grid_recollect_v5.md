@@ -108,6 +108,9 @@ runner 주석 갱신. **v5 replay/eval 은 EP_META_DIR 없이** 돌린다(ep_met
    marshmallow 500, 게이트 셀 1 포함, STAGING_WAIT 40GB, `outputs/collect/logs/{grid_v5_worker2,shipper_v5}.log`).
    **3머신 전부 가동 중.** kanu 는 이관 병목(kanu→승준 ~5MB/s)으로 backpressure 대기가 생겨
    14:10 KST(kanu 시계) 에 STAGING_WAIT 45GB·shipper PARALLEL 16 으로 재기동(진행 판 손실 0).
+   **kanu 수집 완료 375/375**(15:37 kanu 시계; serve 정리·lease 2/5/6 반납, 잔여 이관 151셀은
+   shipper 만 계속 — kanu→승준 링크 ~3MB/s, 승준 sshd MaxStartups 10 이라 3머신 합산 스트림
+   ≤ ~22 유지: kanu PARALLEL 6). 아카이브 완료 판정은 승준 `meta.json` 수 == 1,250.
    운영 메모: 총 완료 시각은 이관 속도가 정한다 — GPU util 0 은 정지가 아니라 이관 대기일 수 있다
    (`worker_w*.log` 마지막 줄 "이관 대기" 확인).
    런처 = 각 머신 `outputs/collect/logs/launch_v5_{srv,kanu}.sh`.
