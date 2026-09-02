@@ -87,7 +87,9 @@ runner 주석 갱신. **v5 replay/eval 은 EP_META_DIR 없이** 돌린다(ep_met
 게이트 산출물: srv48 `outputs/collect/v5_gate/{VERDICT_ABD.txt,A.log,C.log}`.
 **kanu 게이트(DishwasherRack/out s0 k0 n0, GPU2)도 동일 패턴**: A=B=D bit 동일, C 는 첫 행부터
 불일치(maxdiff 1.29; k=0 에서도 재현 → 지터 회수와 무관하게 JSON 사전 주입 자체가 상태를 바꾼다).
-산출물 kanu `outputs/collect/v5_gate_kanu/VERDICT_kanu.txt`. srv50 은 첫 발사 전 1회 실행.
+산출물 kanu `outputs/collect/v5_gate_kanu/VERDICT_kanu.txt`.
+**srv50 게이트(PPCC/bread s0 k0 n0, GPU2, 23:00 KST)**: A=B=D bit 동일(C 는 새 collector 가드가
+거부 — 설계된 실패). 산출물 srv50 `outputs/collect/v5_gate/VERDICT_ABD.txt`. **3머신 전부 통과.**
 
 ### 0.6 착수 순서
 
@@ -102,7 +104,12 @@ runner 주석 갱신. **v5 replay/eval 은 EP_META_DIR 없이** 돌린다(ep_met
    **kanu GPU 2·5·6 발사됨**(10:57 KST, dish/oven rack·apple 375, 게이트 셀 1 포함, lease 3장,
    `outputs/collect/logs/{grid_v5_kanu,shipper_v5}.log`, STAGING_WAIT 20GB). kanu 는 git worktree
    `.claude/worktrees/grid-phase-sep` 의 plan 경로로 발사(메인 트리에 PR #99 미머지 시점).
-   srv50(4장 전부 타인·finetune 점유)은 **발사 불가 대기** — 빈 GPU 감시 중.
+   **srv50 GPU2 발사됨**(23:22 KST, junhyeong finetune 종료로 GPU0/2 비움; PPCC bread/candle/jug/
+   marshmallow 500, 게이트 셀 1 포함, STAGING_WAIT 40GB, `outputs/collect/logs/{grid_v5_worker2,shipper_v5}.log`).
+   **3머신 전부 가동 중.** kanu 는 이관 병목(kanu→승준 ~5MB/s)으로 backpressure 대기가 생겨
+   14:10 KST(kanu 시계) 에 STAGING_WAIT 45GB·shipper PARALLEL 16 으로 재기동(진행 판 손실 0).
+   운영 메모: 총 완료 시각은 이관 속도가 정한다 — GPU util 0 은 정지가 아니라 이관 대기일 수 있다
+   (`worker_w*.log` 마지막 줄 "이관 대기" 확인).
    런처 = 각 머신 `outputs/collect/logs/launch_v5_{srv,kanu}.sh`.
    lease claim → 3머신 발사(kanu GPU 3장×2 / srv 1장×6, `SERVE_MODE=host` 3종, backpressure,
    PARALLEL 8 shipper) → 완료 후 index_v5 생성·ep_meta 동봉 → 3머신 staging 정리·GPU 반납.
