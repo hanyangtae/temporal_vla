@@ -138,9 +138,11 @@ TOKEN_POOL="${TOKEN_POOL:-all_token_full}"          # detector 계약(고정)
 PLAN_JSON="${PLAN_JSON:-configs/collect/n15_grid_v1/collection_plan.json}"
 # replay 모드에서는 index 가 **필수** (수집 당시 env_seed·inference_seed 의 유일한 출처).
 INDEX_TSV="${INDEX_TSV:-outputs/steer/online_pipe/manifests/index_rollouts.tsv}"
-# v4 지터 셀 replay 용 — collector --ep-meta-dir 로 전달 (seed 키 ep_meta JSON 디렉토리).
-# 비우면 미전달. EP_META_LOAD_ENV_NAME 을 함께 주면 매니페스트를 **읽어서** 주입한다
-# (안 주면 collector 는 seed reset 으로 얻은 ep_meta 를 쓰고 매니페스트를 내보낸다).
+# ep_meta JSON 디렉토리 — collector --ep-meta-dir 로 전달. 비우면 미전달.
+# ★ 지터 셀(jitter_reset_idx 有) replay 에는 **EP_META_DIR/EP_META_LOAD_ENV_NAME 을 주지 말 것**
+#   — JSON 사전 주입이 k 번째 지터 상태를 수집과 다르게 만든다(2026-09-02 v5 게이트 실측,
+#   v4r replay≠수집 59% 반전의 원인). collector 가 이 조합을 fail-loud 로 거부한다.
+#   seed reset 으로 재획득한 ep_meta 가 수집과 bit 동일하다(게이트 A=B=D).
 EP_META_DIR="${EP_META_DIR:-}"
 EP_META_LOAD_ENV_NAME="${EP_META_LOAD_ENV_NAME:-}"
 N_SCENES="${N_SCENES:-10}"

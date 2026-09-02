@@ -1,0 +1,594 @@
+{
+  "PPCC/bread|s0|es100084": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/bread|s1|es100197": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/bread|s2|es100201": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/bread|s3|es100228": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/bread|s4|es100317": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/apple|s0|es100025": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/apple|s1|es100069": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/apple|s2|es100192": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/apple|s3|es100195": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/apple|s4|es100243": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/candle|s0|es100058": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/candle|s1|es100107": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/candle|s2|es100154": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/candle|s3|es100166": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/candle|s4|es100214": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "OpenDrawer/left|s0|es100001": {
+    "adopted_k": [
+      1,
+      4,
+      6,
+      8,
+      9
+    ],
+    "rejected_k": [
+      0,
+      2,
+      3,
+      5,
+      7
+    ],
+    "scanned": 12
+  },
+  "OpenDrawer/left|s1|es100002": {
+    "adopted_k": [
+      1,
+      3,
+      5,
+      6,
+      7
+    ],
+    "rejected_k": [
+      0,
+      2,
+      4,
+      8,
+      11
+    ],
+    "scanned": 12
+  },
+  "OpenDrawer/left|s2|es100004": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "OpenDrawer/left|s3|es100007": {
+    "adopted_k": [
+      1,
+      3,
+      6,
+      7,
+      9
+    ],
+    "rejected_k": [
+      0,
+      2,
+      4,
+      5,
+      8,
+      10
+    ],
+    "scanned": 12
+  },
+  "OpenDrawer/left|s4|es100008": {
+    "adopted_k": [
+      2,
+      4,
+      6,
+      9,
+      10
+    ],
+    "rejected_k": [
+      0,
+      1,
+      3,
+      5,
+      7,
+      8
+    ],
+    "scanned": 12
+  },
+  "OpenDrawer/right|s0|es100000": {
+    "adopted_k": [
+      0,
+      1,
+      4,
+      6,
+      7
+    ],
+    "rejected_k": [
+      2,
+      3,
+      5,
+      8,
+      11
+    ],
+    "scanned": 12
+  },
+  "OpenDrawer/right|s1|es100003": {
+    "adopted_k": [
+      0,
+      3,
+      4,
+      5,
+      7
+    ],
+    "rejected_k": [
+      1,
+      2,
+      6,
+      11
+    ],
+    "scanned": 12
+  },
+  "OpenDrawer/right|s2|es100005": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "OpenDrawer/right|s3|es100006": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "OpenDrawer/right|s4|es100009": {
+    "adopted_k": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "rejected_k": [
+      0,
+      6,
+      9,
+      11
+    ],
+    "scanned": 12
+  },
+  "CoffeeSetupMug|s0|es100000": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "CoffeeSetupMug|s1|es100001": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "CoffeeSetupMug|s2|es100002": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "CoffeeSetupMug|s3|es100003": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "CoffeeSetupMug|s4|es100004": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "DishwasherRack/out|s0|es100000": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "DishwasherRack/out|s1|es100003": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "DishwasherRack/out|s2|es100008": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "DishwasherRack/out|s3|es100010": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "DishwasherRack/out|s4|es100011": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "OvenRack/out|s0|es100006": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "OvenRack/out|s1|es100014": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "OvenRack/out|s2|es100016": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "OvenRack/out|s3|es100017": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "OvenRack/out|s4|es100020": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/marshmallow|s0|es100007": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/marshmallow|s1|es100179": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/marshmallow|s2|es100222": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/marshmallow|s3|es100424": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/marshmallow|s4|es100553": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/jug|s0|es100095": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/jug|s1|es100128": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/jug|s2|es100137": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/jug|s3|es100360": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  },
+  "PPCC/jug|s4|es100387": {
+    "adopted_k": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "rejected_k": [],
+    "scanned": 12
+  }
+}

@@ -1075,6 +1075,16 @@ def run() -> dict[str, Any]:
             max_episode_steps=max_steps,
         )
         try:
+            if replay_ep_meta is not None and getattr(args, "jitter_reset_idx", None) is not None:
+                # 2026-09-02 v5 첫 셀 게이트 실측: 지터 셀에서 ep_meta JSON 을 reset(seed) 전에
+                # 주입하면 k 번째 지터 상태가 수집과 달라진다(k=1: 수집 'left' → replay 'right').
+                # 수집=eval 경로 동일성(docs/collab_within_claude/handoff_20260902_grid_recollect_v5
+                # §0.1)을 깨므로 금지 — 지터 셀 replay 는 --ep-meta-dir 없이 seed reset 으로
+                # ep_meta 를 재획득한다(bit 동일 실증). v4r 의 replay≠수집 반전(59%)의 원인.
+                raise RuntimeError(
+                    "--jitter-reset-idx 와 --ep-meta-load-env-name(ep_meta JSON 사전 주입) 동시 사용 "
+                    "금지 — 지터 상태가 수집과 어긋난다. EP_META_DIR/--ep-meta-dir 없이 돌릴 것."
+                )
             if replay_ep_meta is not None:
                 set_robocasa_ep_meta(env, replay_ep_meta)
             obs, _info = env.reset(seed=scenario_seed)

@@ -40,10 +40,13 @@ DONE_LIST="${DONE_LIST:-${GRID_ROOT}/shipped_cells.txt}"
 DRY_RUN="${DRY_RUN:-0}"
 PY_HOST="${PY_HOST:-python3}"
 
-# 컨테이너에서 본 경로. repo 는 /temporal_vla 로 마운트된다.
-to_container() {  # 호스트 절대경로 → 컨테이너 경로 (repo 밖이면 그대로)
+# 컨테이너에서 본 경로. 컨테이너에 마운트되는 것은 **메인 워크트리**(/temporal_vla) 이므로
+# 이 스크립트가 git worktree(.claude/worktrees/<x>) 에서 돌아도 메인 루트 기준으로 매핑한다.
+GIT_COMMON="$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "${REPO_ROOT}/.git")"
+MOUNT_ROOT="${MOUNT_ROOT:-$(dirname -- "$GIT_COMMON")}"
+to_container() {  # 호스트 절대경로 → 컨테이너 경로 (마운트 밖이면 그대로)
   case "$1" in
-    "${REPO_ROOT}"/*) printf '/temporal_vla/%s\n' "${1#"${REPO_ROOT}"/}" ;;
+    "${MOUNT_ROOT}"/*) printf '/temporal_vla/%s\n' "${1#"${MOUNT_ROOT}"/}" ;;
     *) printf '%s\n' "$1" ;;
   esac
 }
@@ -145,8 +148,12 @@ while IFS=$'\t' read -r key instr si seed ni inf env task text; do
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$key" "$instr" "$si" "$seed" "$ni" "$inf" "$env" "$task" "$text" >> "$TODO_TSV"
 done < "$CELLS_TSV"
+# MAX_CELLS: 결손 중 앞 N 셀만 (스모크·첫 셀 게이트용). 미지정이면 전부.
+if [ -n "${MAX_CELLS:-}" ]; then
+  head -n "$MAX_CELLS" "$TODO_TSV" > "${TODO_TSV}.lim" && mv "${TODO_TSV}.lim" "$TODO_TSV"
+fi
 N_TODO=$(wc -l < "$TODO_TSV")
-log "결손 ${N_TODO} / 계획 ${N_PLANNED} (완료: DONE_LIST ${n_done_list} + 로컬 meta.json ${n_done_local})"
+log "결손 ${N_TODO} / 계획 ${N_PLANNED} (완료: DONE_LIST ${n_done_list} + 로컬 meta.json ${n_done_local})${MAX_CELLS:+ [MAX_CELLS=${MAX_CELLS}]}"
 [ "$N_TODO" -gt 0 ] || { log "할 일 없음 — 종료"; exit 0; }
 
 # ── 4. serve 기동 (GPU × SERVES_PER_GPU) ──────────────────────────────────────
