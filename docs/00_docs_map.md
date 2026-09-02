@@ -36,9 +36,8 @@
 - **표현 분석**: [01 seen18 Latent Analysis](steering/01_seen18_latent_analysis.md) (길이 confound 통제 전제),
   [08 Pathway Separation](steering/08_pathway_separation_analysis.md) ⚠ 분리 시점 주장 반증됨,
   [22 wrong-grasp VL](steering/22_wrong_grasp_vl_separation.md)
-- **SAE (scene 분리)**: [31 G1](steering/31_sae_g1_results.md) · [32 G2](steering/32_g2_scene_residual_results.md)
-- **섭동 계열**: [35 exp5-2](steering/35_exp5-2_results.md) — 유도된 실패의 회복
-- **방법론 후보**: [07 Steering Methods Survey](steering/07_steering_methods_survey.md)
+- **현행 설계**: [45 hotfix 시나리오](steering/45_hotfix_scenario_spec.md) · [47 per-step 게이팅](steering/47_perstep_gating_pipeline.md)
+- **archive된 라인**(SAE 31·32, 섭동 35, 연산자 서베이 07 등): 요지는 RESULTS·DIRECTION, 원본은 git 이력([`review/LEDGER.tsv`](review/LEDGER.tsv))
 - **라운드 종합**: [RESULTS.md](steering/RESULTS.md) 원장 (exp2~v4r). 최신 라운드 서사 = [collab_within_claude/](collab_within_claude/)
 
 상시 규약 (라운드 무관):

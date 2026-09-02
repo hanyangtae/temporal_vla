@@ -204,8 +204,10 @@ phase를 online에 아는 방법 (열린 설계):
 exp2~exp5가 닫은 것은 "raw 대조 conceptor + setM"이고, 열린 축은 아직 있다.
 
 - **연산자**: WA-LQR 계열(diff-of-means + LQR) 재현 검토, 평균 연산자, 평균+분산 연산자(whitened
-  mean-diff — [`24d_exp4-3_variance_aware_direction_input.md`](24d_exp4-3_variance_aware_direction_input.md)).
-- **scene 성분 분리 후 steering**: SAE 경로([`31_`](31_sae_g1_results.md)·[`32_`](32_g2_scene_residual_results.md)).
+  mean-diff — `24d_exp4-3_variance_aware_direction_input.md`, archive). ⚠ write-in 계열 전체가
+  08-20 종결 — 이 줄은 기록용.
+- **scene 성분 분리 후 steering**: SAE 경로(`31_`·`32_`, archive). G2 판정 = scene 부분공간을
+  제거해도 outcome read 유지(0.88~0.90), scene 암기는 scene-특이라 unseen 전이 불가. 휴면.
   단 unseen scene 전이는 구조적 제약이 있다(32 §3).
 - **phase 앵커 재정의**: 절대 t가 아니라 이벤트 기준.
 - **개입 시점**: 오라클 t0로 상한을 먼저 재고, 검출기는 그 다음.

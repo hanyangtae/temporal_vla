@@ -97,5 +97,5 @@ arm별 경로는 `results.tsv`의 `데이터` 열. 루트는 `outputs/eval/roboc
 | `36_exp5-3_within_scene_steer.md` | drawer setM · β sweep (mixer 수집분은 별도) |
 | `28_exp4-2_p0_report.md` | 섭동 메뉴 확정 · 유도 실패율 게이트 (SR 개입 아님 — 전제 기록) |
 
-`35_exp5-2_results.md`는 **섭동 계열로 분리 유지**한다(무대가 다름 — clean 실패가 아니라
-유도된 실패). `31_`·`32_`는 SAE 표현 분석이라 이 원장에 넣지 않는다.
+`35_exp5-2_results.md`(섭동-유도 실패 회복, 2026-09-02 archive)의 요지는 §1·§3 행에 있다 —
+무대가 다름(clean 실패가 아니라 유도된 실패)을 잊지 말 것. 상세는 git 이력. `31_`·`32_`는 SAE 표현 분석이라 이 원장에 넣지 않는다.
