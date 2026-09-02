@@ -162,4 +162,4 @@ n16 분기를 추가하거나 (b) n16 전용 러너를 두는 방식 중 택일�
   확보부터 필요.
 
 관련 문서: `docs/05_gpu_server_rules.md`(GPU 운영·lease 정본), `docs/04_data_storage_convention.md`(저장 규약 정본), `docs/steering/45`(v2·v4 수집 결산),
-`docs/collab/collect_request_v3_jitter.md`(지터 축 검증 이력), `.claude/skills/robocasa-steer-eval/SKILL.md`(eval 표준).
+`docs/collab_within_claude/collect_request_v3_jitter.md`(지터 축 검증 이력), `.claude/skills/robocasa-steer-eval/SKILL.md`(eval 표준).
