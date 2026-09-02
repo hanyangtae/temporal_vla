@@ -18,6 +18,7 @@
 
 - **승준**(원격 CPU, `kimseungjun@166.104.146.37:11112`): GPU 없음. CPU 8코어 공유 → 스레드 cap 8, 무거운 job 동시 2 이하. 코드는 git만(scp 금지), 데이터는 tar 스트림. srv에서 직송 가능.
 - 빈 GPU 판정 = `nvidia-smi --query-compute-apps=gpu_uuid,pid` 로 **프로세스 소유자까지** 확인. 메모리 잔량만 보고 판단 금지.
+- srv48/50은 **타 계정(jongu·woongq·root 등) 점유가 수시로 바뀐다** — lease는 우리 세션끼리의 약속일 뿐이라 이걸 못 잡는다. 발사 직전 `nvidia-smi` + `ps -o user -p <pid>`로 소유자 확인, 타 계정 프로세스 있는 GPU는 관례 GPU(48=2, 50=1)라도 쓰지 않는다.
 - 컨테이너 4일+ 가동 시 NVML 상실(`Failed to initialize NVML`) → `docker restart lerobot`. serve가 CPU로 뜨면 FlashAttention 에러로 위장 사망.
 - 끝나면 **반드시 정리**: serve kill(포트로 식별) → `nvidia-smi`로 반납 확인 → lease release.
 
