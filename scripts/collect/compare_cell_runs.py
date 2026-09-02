@@ -23,7 +23,8 @@ def load(root: Path):
     if not csvp.exists():
         return None, "traj.csv 없음"
     with csvp.open() as f:
-        rows = [list(map(float, r)) for r in csv.reader(f)][1:] if True else []
+        rd = csv.reader(f); next(rd, None)  # header
+        rows = [list(map(float, r)) for r in rd if r]
     return {"success": succ, "rows": rows, "raw": csvp.read_bytes(), "machine": m.get("machine")}, None
 
 
