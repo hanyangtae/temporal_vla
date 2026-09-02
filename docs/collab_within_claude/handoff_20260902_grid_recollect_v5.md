@@ -71,6 +71,22 @@ VLA 는 작업장마다 finetune 이 필요한데, 작업장에 **약간의 변�
   noise_idx) + `cell_si`(평탄) + env_seed(base) + success. base 행 없음(전부 k).
 - 완료 판정 = 아카이브 `meta.json` 수 == 1,250 (실패 셀은 재시도 2회 후 feasibility 로 기록).
 
+### 0.5.1 첫 셀 게이트 결과 (2026-09-02, srv48 GPU2, OpenDrawer/left s1(=s0,k1) n0)
+
+| run | 경로 | success | traj.csv(144행) |
+|---|---|---|---|
+| A | 수집 경로(collect_grid.sh) | 0 | 기준 |
+| B | A 재실행(fresh serve+collector) | 0 | **A 와 bit 동일** |
+| C | eval 경로 + ep_meta JSON 사전 주입(v4r replay 관례) | — | **실패**: k=1 상태가 'Open the right drawer.' 로 어긋남(canonical 불일치 RuntimeError) |
+| D | eval 경로, ep_meta JSON 미로드(seed reset 재획득) | 0 | **A 와 bit 동일** |
+
+→ **수집 경로 = eval 경로(D 관례) 성립. v4r 의 "수집 실패 → replay 성공 59%" 원인 =
+ep_meta JSON 을 `reset(seed)` 전에 주입한 replay 관례(C)** — 지터 상태 자체가 다른 판을
+돌렸던 것. 조치: collector 가 `--jitter-reset-idx`+`--ep-meta-load-env-name` 조합을 거부,
+runner 주석 갱신. **v5 replay/eval 은 EP_META_DIR 없이** 돌린다(ep_meta JSON 은 기록·검증용).
+게이트 산출물: srv48 `outputs/collect/v5_gate/{VERDICT_ABD.txt,A.log,C.log}`.
+kanu·srv50 은 각자 첫 발사 전 같은 게이트를 1회 돌린다(`GPU= INSTR= GATE_ROOT=` 지정).
+
 ### 0.6 착수 순서
 
 1. `git pull` dev 최신 → v5 plan 생성 → DRY_RUN 으로 결손 1,250 확인.
@@ -79,7 +95,11 @@ VLA 는 작업장마다 finetune 이 필요한데, 작업장에 **약간의 변�
    `--no-features`·ep_meta JSON 로드) / D eval 경로에서 ep_meta JSON 로드만 제거 → 
    `compare_cell_runs.py` 가 success·traj.csv bit 대조. **A=B=C 아니면 본수집 금지·보고**
    (D 는 원인 국소화용). 결과 `<GATE_ROOT>/VERDICT.txt`.
-3. lease claim → 3머신 발사(kanu GPU 3장×2 / srv 1장×6, `SERVE_MODE=host` 3종, backpressure,
+3. (진행 상태 09-02 19:32) **srv48 GPU2 발사됨**(drawer left/right·coffee 375, 게이트 셀 1 포함,
+   `outputs/collect/logs/{grid_v5_worker1,shipper_v5}.log`, STAGING_WAIT 12GB — 디스크 여유 33GB).
+   kanu(8장 전부 junhyeong main.py 상주)·srv50(4장 전부 타인·finetune 점유)은 **발사 불가 대기**.
+   런처 = 각 머신 `outputs/collect/logs/launch_v5_{srv,kanu}.sh`.
+   lease claim → 3머신 발사(kanu GPU 3장×2 / srv 1장×6, `SERVE_MODE=host` 3종, backpressure,
    PARALLEL 8 shipper) → 완료 후 index_v5 생성·ep_meta 동봉 → 3머신 staging 정리·GPU 반납.
 
 ---

@@ -1,3 +1,8 @@
+> **2026-09-02 후속(v5 첫 셀 게이트)**: 여기서 관찰된 "수집 실패 → 무개입 replay 성공 59%" 의 원인은
+> replay 가 `EP_META_DIR`(ep_meta JSON 을 `reset(seed)` 전에 주입) 로 돌아 **k 번째 지터 상태가 수집과
+> 달랐기 때문**이다(같은 좌표에서 drawer 방향까지 바뀜). JSON 미로드 replay 는 수집과 bit 동일. 상세
+> `handoff_20260902_grid_recollect_v5.md` §0.5.1. 이 문서의 v4r 라벨은 수집 좌표와 다른 판의 라벨이다.
+
 # Handoff — 중추(전체 파이프) 세션 (2026-09-02)
 
 > [`handoff_20260831_perstep_cluster.md`](handoff_20260831_perstep_cluster.md) 대체. 구 문서는 8-31까지 기록용.
