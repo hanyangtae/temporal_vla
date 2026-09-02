@@ -215,7 +215,7 @@ scene·noise 2축에 **셋째 축 reset_idx(k)** 가 추가됐다: 같은 (task,
 에서 **ep_meta 고정 + 연속 `reset()`** 으로 물건 종류·target 은 고정한 채 **배치와 로봇
 초기 관절만 재추첨**한 상태. `(base_env_seed, ep_meta, k)` 는 bit 결정적이라 replay 재생이
 성립한다 (반증된 대안: reset(seed=jitter) 는 완전 무효, ep_meta 미고정 연속 reset 은
-물건·instruction 까지 재추첨 — `docs/collab/collect_request_v3_jitter.md` §6–7 실측).
+물건·instruction 까지 재추첨 — `docs/collab_within_claude/collect_request_v3_jitter.md` §6–7 실측).
 
 - **디렉토리/pkl 좌표는 2축 유지** (기존 인프라 무수정): scene 자리 = **평탄
   `si = base_scene*100 + k`**, noise 자리 = inference 축. 복원은 `si//100`, `si%100`.

@@ -55,6 +55,12 @@ scene 잔차화 · 분할표 집계는 `paper_supplements.py` 를 그대로 impo
     contingency_pertask_k8_ae.json  instruction 별 cluster×GT phase 분할표
     contingency_global_k24_ae.json  global 분할표 (+ cluster×task)
 
+`--export-bundle <path.npz>` 를 주면 **온라인 판정기 번들** 을 하나 더 쓴다 (기존 산출물
+불변). 번들 = mu[1536] + scalar_std + encoder state_dict(`enc.*`) + instruction 별
+KMeans centers(`centers.<slug>`) + arch/provenance json. 새 rollout 을 학습 때와 같은
+좌표계로 배정하는 데 필요한 전부다: standardize → encoder → 최근접 center.
+`--dump-labels` 와 같이 쓰면 라벨과 번들이 **같은 KMeans 결과** 인지 재배정으로 검증한다.
+
 실행 환경: 승준 노드 `~/anaconda3/bin/python` (numpy + torch **CPU**). GPU 를 쓰지 않는다.
 scipy / sklearn 없음 — numpy + torch 만 쓴다.
 """
@@ -383,6 +389,126 @@ def build_meta(args, runner, shards, ae_summary, scaler, extra=None):
     return meta
 
 
+def _git_info() -> dict:
+    """repo commit/branch (없으면 unknown). 산출물 재현 메타용 — 경로는 넣지 않는다."""
+    import subprocess
+    out = {}
+    for key, cmd in (("commit", ["git", "rev-parse", "HEAD"]),
+                     ("branch", ["git", "rev-parse", "--abbrev-ref", "HEAD"])):
+        try:
+            out[key] = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True,
+                                      text=True, timeout=10).stdout.strip() or "unknown"
+        except Exception:
+            out[key] = "unknown"
+    return out
+
+
+def _check_centers_match(Z: np.ndarray, labels: np.ndarray, centers: np.ndarray,
+                         name: str, tol: float = 1e-4) -> None:
+    """번들에 담는 centers 가 실제 라벨을 재현하는지 fail-loud 확인.
+
+    KMeans predict = 최근접 center 이므로 (라벨, centers) 가 같은 fit 결과라면
+    argmin 이 라벨과 일치해야 한다. 동률 근처의 부동소수 잡음만 tol 로 봐준다.
+    """
+    Zf = np.asarray(Z, dtype=np.float32)
+    C = np.asarray(centers, dtype=np.float32)
+    cn = (C ** 2).sum(1)[None, :]
+    d2 = np.empty((len(Zf), len(C)), np.float32)
+    for s in range(0, len(Zf), 8192):     # peak 억제 (chunk)
+        blk = Zf[s:s + 8192]
+        d2[s:s + 8192] = (blk ** 2).sum(1)[:, None] - 2.0 * (blk @ C.T) + cn
+    arg = d2.argmin(1)
+    lab = np.asarray(labels).astype(np.int64)
+    if lab.min() < 0 or lab.max() >= len(C):
+        raise SystemExit(f"[export-bundle] {name}: 라벨 범위 {lab.min()}~{lab.max()} "
+                         f"가 centers {len(C)} 개와 맞지 않는다")
+    bad = arg != lab
+    if bad.any():
+        gap = d2[np.arange(len(lab)), lab] - d2[np.arange(len(lab)), arg]
+        hard = bad & (gap > tol)
+        if hard.any():
+            raise SystemExit(
+                f"[export-bundle] {name}: centers 가 라벨을 재현하지 못한다 "
+                f"(불일치 {int(hard.sum())}/{len(lab)}, max gap {float(gap.max()):.6g}) "
+                "— 라벨과 번들이 다른 KMeans 결과일 수 있다")
+        print(f"[export-bundle] {name}: 동률 부근 불일치 {int(bad.sum())} "
+              f"(tol {tol} 이내, 허용)", flush=True)
+
+
+def export_bundle(path: Path, model: BaseAE, scaler: dict, raw: dict, args,
+                  shards, ae_summary: dict) -> None:
+    """온라인 판정기 번들 = 표준화 + encoder + instruction 별 KMeans centers 1개 NPZ.
+
+    이 번들 하나면 새 rollout 의 raw-1536 feature 를 학습 때와 **같은 좌표계**로
+    cluster 에 배정할 수 있다 (standardize → encoder → 최근접 center).
+    docs/04 규약: 절대경로 기록 금지 → shard 디렉토리는 basename 만 남긴다.
+    """
+    payload: dict = {}
+    payload["mu"] = np.asarray(scaler["mu"], dtype=np.float32)
+    payload["scalar_std"] = np.asarray(float(scaler["scalar_std"]), dtype=np.float32)
+
+    enc_state = model.enc.state_dict()
+    for k, v in enc_state.items():
+        payload[f"enc.{k}"] = v.detach().cpu().numpy().astype(np.float32)
+
+    slugs = [s["name"] for s in shards]
+    for name in slugs:
+        cent = raw[name]["centers"]
+        if cent is None:
+            raise SystemExit(f"[export-bundle] {name}: centers 가 없다 "
+                             "(KMeans 구현이 centroid 를 돌려주지 않음)")
+        cent = np.asarray(cent, dtype=np.float32)
+        if cent.shape != (args.k, args.latent):
+            raise SystemExit(f"[export-bundle] {name}: centers shape {cent.shape} != "
+                             f"({args.k}, {args.latent})")
+        _check_centers_match(raw[name]["latent"], raw[name]["labels"], cent, name)
+        payload[f"centers.{name}"] = cent
+
+    payload["k"] = np.asarray(int(args.k), dtype=np.int32)
+    payload["latent"] = np.asarray(int(args.latent), dtype=np.int32)
+    payload["slugs"] = np.asarray(slugs, dtype=np.str_)
+    payload["arch"] = np.asarray(json.dumps({
+        "encoder": [
+            {"op": "Linear", "in": int(payload["mu"].shape[0]), "out": AE_HIDDEN,
+             "state_key": "enc.net.0"},
+            {"op": "GELU"},
+            {"op": "Linear", "in": AE_HIDDEN, "out": AE_HIDDEN, "state_key": "enc.net.2"},
+            {"op": "GELU"},
+            {"op": "Linear", "in": AE_HIDDEN, "out": int(args.latent),
+             "state_key": "enc.head"},
+        ],
+        "gelu": "exact (erf), torch nn.GELU default",
+        "preprocess": "x_std = (x - mu) / scalar_std  (축별 whitening 아님)",
+        "assign": "argmin_c ||enc(x_std) - centers[c]||^2",
+        "hidden": AE_HIDDEN, "latent": int(args.latent),
+        "input_dim": int(payload["mu"].shape[0]),
+        "state_keys": sorted(f"enc.{k}" for k in enc_state),
+    }, ensure_ascii=False))
+
+    git = _git_info()
+    payload["provenance"] = np.asarray(json.dumps({
+        "script": SCRIPT_REL,
+        "seed": int(args.seed),
+        "shard_dir_basename": Path(str(args.shard_dir)).name,
+        "shards": slugs,
+        "k": int(args.k), "latent": int(args.latent),
+        "epochs": int(args.epochs), "batch_size": int(args.batch_size),
+        "patience": int(args.patience),
+        "kmeans_n_init": N_INIT, "kmeans_max_iter": MAX_ITER,
+        "ae_summary": ae_summary,
+        "feature_spec": {"layer": 12, "denoise_index": IP.DENOISE_IDX,
+                         "segment": "all(49-token mean)",
+                         "layer_axis_index": IP.LAYER_IDX, "dim": 1536},
+        "git_commit": git["commit"], "git_branch": git["branch"],
+        "numpy": np.__version__, "torch": torch.__version__,
+    }, ensure_ascii=False))
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(path, **payload)
+    print(f"[export-bundle] {path.name}: enc {len(enc_state)} tensors, "
+          f"centers x{len(slugs)} (k={args.k}, latent={args.latent})", flush=True)
+
+
 def write_json(path: Path, payload: dict, meta: dict):
     payload = dict(payload)
     payload["meta"] = meta
@@ -492,6 +618,9 @@ def main(argv=None):
                     default="auto")
     ap.add_argument("--dump-labels", action="store_true",
                     help="instruction 별 per-record 라벨 NPZ 덤프 (영상 렌더용)")
+    ap.add_argument("--export-bundle", type=Path, default=None,
+                    help="온라인 판정기 번들 NPZ 경로 (mu·scalar_std·encoder state·"
+                         "instruction 별 KMeans centers). 미지정 시 저장하지 않는다")
     ap.add_argument("--no-global", action="store_true",
                     help="global k24 (main·contingency 양쪽) 를 건너뛴다")
     args = ap.parse_args(argv)
@@ -537,6 +666,10 @@ def main(argv=None):
                           "centers": (np.asarray(cent, dtype=np.float32)
                                       if cent is not None else None)}
         print(fmt_line("ae", s["name"], raw[s["name"]]["metrics"]), flush=True)
+
+    # ---- 온라인 판정기 번들 (--dump-labels 라벨과 **같은 raw[] 객체**에서 저장) ----
+    if args.export_bundle is not None:
+        export_bundle(args.export_bundle, model, scaler, raw, args, shards, ae_summary)
 
     # ---- global KMeans (global_k) ----
     labels_global = None

@@ -1,15 +1,17 @@
 # 45 — VLA Hotfix 시나리오 명세 (논문 프레이밍 정본)
 
 2026-08-18, "시나리오 구체화" 세션. 목적: activation steering 기반 **VLA hotfix** 주장의
-스코프·요구 일반화·검증 프로토콜을 조작적으로 고정한다. 근거 실측은 42(파이프)·43(detector
-절제·LOTO)·44(condg)와 이 세션의 환경 코드 검증.
+스코프·요구 일반화·검증 프로토콜을 조작적으로 고정한다. 근거 실측은 43(detector
+절제·LOTO)과 이 세션의 환경 코드 검증. **게이팅 설계 정본은
+[`47_perstep_gating_pipeline.md`](47_perstep_gating_pipeline.md)** (2026-08-26 per-step
+확정 — 구 latch 파이프 문서는 삭제).
 
 ## 1. 시나리오 정의
 
 배포된 VLA가 특정 상황에서 실패를 반복한다. 사용자는 다음 모델 업데이트 전까지, 자기
 로그(sparse 실패 rollout + 약간의 성공)만으로 백본 무학습 패치를 만들어 그 상황의 SR을
-올린다. 패치 = 실패 detector(발화 게이트) + phase-매칭 activation 연산자, 둘 다 로그에서
-자동 fit·자동 등록 판정.
+올린다. 패치 = 실패 detector(**per-step 게이트** — 매 inference step 개입 여부·연산자
+결정, 1회성 개입, 47) + phase-매칭 activation 연산자, 둘 다 로그에서 자동 fit·자동 등록 판정.
 
 **상황(situation)의 조작적 정의** = (task, 배포지 환경, 물건 집합) — fit에 노출 허용, 명시.
 **재발(recurrence)** = 같은 상황에서 아래 3축 변주로 다시 발생한 실패:
@@ -18,7 +20,7 @@
 |---|---|---|
 | 정책 확률성 (denoise seed) | ✓ (현 격자 커버) | drawer-L 실측: 동일 reset에서 seed만으로 succ/fail 갈리는 scene 7/10 |
 | 물건 배치 지터 (주방 고정) | ✓ (ep_meta 고정 + env_seed 변주) | kitchen.py: ep_meta는 reset_region(규칙)만 저장, 실제 배치는 reset마다 placement_initializer.sample() 재추첨 (L818) |
-| 로봇 초기 자세 지터 | ✓ | robosuite initialization_noise="default" (reset마다 관절 지터) |
+| ~~로봇 초기 자세 지터~~ | ✗ (사실상 없음) | v4 실측(08-25): base pos는 ep_meta로 고정, 관절 지터는 mm~cm로 미미 — 재발 축은 위 2축뿐 |
 
 **스코프 밖(보너스 실험)**: 물건 종류/집합 변화, 새 layout/scene, 새 task, 초기조건형
 실패(OvenRack류 — detector 후보 제외, 43; 처방은 재샘플/섭동 계열로 분리).
@@ -26,8 +28,8 @@
 ## 2. 요구 일반화 (컴포넌트별)
 
 - **Detector (더 넓은 쪽)**: 표적 상황 내 새-episode TPR + **배포 트래픽 전체에서의 FPR
-  상한**. 회귀 위험 ≈ FPR × 개입 파손률 (개입은 위약조차 성공 판을 깨뜨릴 수 있음 — 42·44
-  실측). 구성은 **per-task** (task 혼합·zero-shot 전이는 LOTO에서 chance — 43), instruction
+  상한**. 회귀 위험 ≈ FPR × 개입 파손률 (개입은 위약조차 성공 판을 깨뜨릴 수 있음 — latch
+  라운드 실측, git 이력). 구성은 **per-task** (task 혼합·zero-shot 전이는 LOTO에서 chance — 43), instruction
   family 공유는 방향 증거만. 학습은 phase-gt 길이 절제(검출률 불변·조기성 preW 0.17→1.00,
   drawer-L) — full 학습 신호는 컨택-후에만 분리(α sweep: α0.2=공짜 5-record 조기가 한계,
   α0.3=FPR 붕괴).
@@ -48,7 +50,7 @@
 - **자동 등록 게이트**: cell별 held-out margin AUROC > 길이단독(5-seed CV 중앙값+과반),
   클래스당 ≥8 ep 경성 하한·<15 소표본 딱지 — 미달 cell은 identity. "데이터 부족하면 패치
   안 함"이 시나리오의 안전장치.
-- **최소 로그 규모**: task당 ~50판 (25판 규모에서 등록 0 cell 실측 — 44).
+- **최소 로그 규모**: task당 ~50판 (25판 규모에서 등록 0 cell 실측 — latch 라운드, git 이력).
 
 ## 4. 수집 설계 (n15_grid_v2 제안)
 
@@ -100,6 +102,6 @@ RoboCasa 제약 프로토콜(ep_meta 고정)이 "벤치 원래 의미(scene 일�
     존재 이유가 기준 ①에서 나옴. 여력 시 다른 seed-offset 재추첨 1회로 추첨 운 분산 추정.
 - 무학습 경쟁: 같은 sparse 로그 LoRA 미세조정 — 차별점은 절대 SR이 아니라
   무학습·즉시배포·가역성·cell 단위 안전 판정.
-- 솔직한 현재 상태: 감지·게이팅·비회귀는 스펙 충족, **구제는 미달성**(42·44 — raw 연산자
+- 솔직한 현재 상태: 감지·게이팅·비회귀는 스펙 충족, **구제는 미달성**(latch 라운드 — raw 연산자
   전 계열 + condg 처치≈위약). 주장의 무게중심은 "요구 일반화를 최소화하는 프레임 + 자동
   검증 게이트 체계"에 둔다.

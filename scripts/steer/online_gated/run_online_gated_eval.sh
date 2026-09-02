@@ -16,6 +16,23 @@
 #   rs_steer       위와 같은 record 부터 seed 재추첨 + 같은 시점에 steering latch
 #                  (재추첨 × 개입 결합 arm; STEER_PHASE_MODE 로 phase-follow/고정 선택)
 #
+#   ── per-step 게이트 arm (docs/steering/47 — latch 폐기, 매 step 1회성 개입) ──
+#   ps_base        detector 탑재 + steering 미등록. collector
+#                  --gated-steering-mode perstep --perstep-op none
+#                  (라이브 게이트가 매 step 판정만 하고 개입은 안 함 = per-step 대조)
+#   ps_reseed      detector 탑재 + steering 미등록. --perstep-op reseed
+#                  --perstep-reseed-offset ${RESEED_OFFSET} (발화 step 만 denoise seed 재추첨)
+#   ps_setm        detector + setpoint_seg 등록 (기존 online arm 의 serve 배선 재사용).
+#                  --perstep-op setm — 발화 step 만 setM 적용
+#   ps_condg       detector + condg 등록. --perstep-op condg — 발화 step 만 condg 적용
+#   ps_rsn_rand    detector 탑재 + steering 미등록. --perstep-op rsn_rand
+#                  (발화 step 만 후보 ${PERSTEP_N} 개 재샘플 → 무작위 1개 채택.
+#                   best-of-N 의 "재샘플 자체" 성분을 분리하는 대조 arm)
+#   ps_rsn_llr     detector 탑재 + steering 미등록. --perstep-op rsn_llr
+#                  (같은 N 후보를 LLR 채점기로 선택 — serve 는 --llr-bundle ${LLR_BUNDLE} 필수)
+#   ★ ps_* arm 은 **라이브 게이트**라 TRIGGER_TSV(사전 발화표) 를 쓰지 않는다.
+#     미발화 셀 개념이 없고, 대상 판 전부가 perstep 모드로 돈다.
+#
 # EP_MODE (episode 열거 방식)
 #   replay (기본) — grid 수집 셀을 **그대로 재생**. (scene s, noise m) 의 수집 당시
 #     env_seed·inference_seed 를 index 에서 읽어 동일 조건으로 재실행한다
@@ -76,10 +93,11 @@ STEER_OP_NAME="${STEER_OP_NAME:-}"                  # conceptor 계열 전용: s
 STEER_TOKEN_SELECT="${STEER_TOKEN_SELECT:-all}"     # conceptor 계열 기본 토큰 선택
 case "$STEER_OP" in
   setpoint_seg) ;;
+  setpoint) ;;   # 비-seg setpoint (instr-단위 v4r fit이 이 포맷 — serve가 NPZ 자동감지 대조)
   conceptor)
     [ -n "$STEER_OP_NAME" ] || { echo "[online-gated] ABORT: STEER_OP=conceptor 는 STEER_OP_NAME (sconceptor|conceptor|varc) 필요" >&2; exit 2; } ;;
   condg) ;;   # 상태-조건부 대조 guidance (docs/steering/44) — NPZ 는 variant 디렉토리/condg.npz 단일 파일
-  *) echo "[online-gated] ABORT: 알 수 없는 STEER_OP=${STEER_OP} (setpoint_seg|conceptor|condg)" >&2; exit 2 ;;
+  *) echo "[online-gated] ABORT: 알 수 없는 STEER_OP=${STEER_OP} (setpoint|setpoint_seg|conceptor|condg)" >&2; exit 2 ;;
 esac
 is_conceptor_family() { [ "$STEER_OP" = conceptor ]; }
 is_condg() { [ "$STEER_OP" = condg ]; }
@@ -92,10 +110,23 @@ CONDG_GATE="${CONDG_GATE:-1}"   # condg 전용: 0 이면 --no-condg-gate (무게
 TRIGGER_TSV="${TRIGGER_TSV:-}"
 EARLY_OFFSET="${EARLY_OFFSET:-3}"
 RESEED_OFFSET="${RESEED_OFFSET:-900000}"
+# best-of-N 재샘플 arm(ps_rsn_rand|ps_rsn_llr) 용 — 후보 수와 LLR 채점기 번들.
+# LLR_BUNDLE 은 ps_rsn_llr 에서만 필수 (없으면 preflight 에서 ABORT — 무음 위약 방지).
+PERSTEP_N="${PERSTEP_N:-8}"
+LLR_BUNDLE="${LLR_BUNDLE:-}"
+# LLR 번들 계약의 scene 차원 — serve 기동 인자(--llr-scene)라 판마다 바뀌지 않는다.
+# ps_rsn_llr 이 ARMS 에 있으면 필수 (미지정 = 잘못된 scene 통계로 무음 채점).
+LLR_SCENE="${LLR_SCENE:-}"
+# 발화했으나 연산자 미적용(phase 미등록 등) record 의 대체 동작 — ps_setm/ps_condg 전용.
+# skip(기본)=1차 무개입 유지(기존 동작 불변) | reseed=denoise seed 재추첨으로 대체.
+PERSTEP_FALLBACK="${PERSTEP_FALLBACK:-skip}"
 # rs_steer 용 — current=phase-follow, global=단일 phase(예: COAST global conceptor) 고정.
 STEER_PHASE_MODE="${STEER_PHASE_MODE:-current}"
 STEER_PHASE_NAME="${STEER_PHASE_NAME:-global}"
 DETECTOR_CKPT="${DETECTOR_CKPT:-}"                  # 지정 시 전 slug 공통 (단일 slug 용)
+# cluster-k8 라운드: 지정 시 serve 가 활성화에서 phase(c0..c7)를 자체 판정하고
+# ps arm 클라이언트는 --perstep-cluster-phase 로 그 값을 기록한다 (GT POST 무시).
+CLUSTER_BUNDLE="${CLUSTER_BUNDLE:-}"
 # slug 별 per-task ckpt 템플릿 (%SLUG% 치환). DETECTOR_CKPT 가 비어 있으면 이걸 사용.
 DETECTOR_CKPT_TMPL="${DETECTOR_CKPT_TMPL:-outputs/analysis/grid_phase/detector_sim/detector_pertask_lstm_%SLUG%.pt}"
 DETECTOR_LAYERS="${DETECTOR_LAYERS:-12}"            # serve 캡처 layer (ckpt layer 포함 필수)
@@ -172,6 +203,8 @@ PLAN_JSON_ABS="$(abspath "$PLAN_JSON")"
 [ -n "$INDEX_TSV" ] && INDEX_TSV="$(abspath "$INDEX_TSV")"
 [ -n "$EP_META_DIR" ] && EP_META_DIR="$(abspath "$EP_META_DIR")"
 [ -n "$DETECTOR_CKPT" ] && DETECTOR_CKPT="$(abspath "$DETECTOR_CKPT")"
+[ -n "$CLUSTER_BUNDLE" ] && CLUSTER_BUNDLE="$(abspath "$CLUSTER_BUNDLE")"
+[ -n "$LLR_BUNDLE" ] && LLR_BUNDLE="$(abspath "$LLR_BUNDLE")"
 LOGDIR="${OUT_ROOT}/logs"
 mkdir -p "$LOGDIR"
 
@@ -212,6 +245,10 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
       online_pl|online_fut_pl|oracle_always_pl|oracle_early_pl) printf '%s/condg_pl\n' "$root" ;;
       online_hs)                         printf '%s/condg_hs\n' "$root" ;;
       resample|rs_early)                 printf '' ;;
+      ps_condg)                          printf '%s/condg\n'    "$root" ;;
+      ps_base|ps_reseed)                 printf '' ;;
+      ps_rsn_rand|ps_rsn_llr)            printf '' ;;
+      ps_setm) echo "ABORT: arm=ps_setm 은 STEER_OP=setpoint_seg 에서만 (현재 STEER_OP=${STEER_OP})" >&2; return 2 ;;
       *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
     esac
     return 0
@@ -223,6 +260,9 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
       base|rs_early)                   printf '' ;;
       online|online_fut|oracle_always|rs_steer) printf '%s\n'    "$root" ;;
       online_pl|online_fut_pl|oracle_always_pl) printf '%s_pl\n' "$root" ;;
+      ps_base|ps_reseed)               printf '' ;;
+      ps_rsn_rand|ps_rsn_llr)          printf '' ;;
+      ps_setm|ps_condg) echo "ABORT: arm=$2 는 STEER_OP=conceptor 와 맞지 않는다 (setpoint_seg|condg 필요)" >&2; return 2 ;;
       *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
     esac
     return 0
@@ -236,6 +276,12 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
     oracle_always) printf '%s/%s/%s\n'        "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     oracle_always_pl) printf '%s/%s/%s_pl\n'  "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     rs_steer)      printf '%s/%s/%s\n'        "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
+    # per-step arm: ps_setm 만 setM 트리 등록, ps_base/ps_reseed 는 steering 미등록.
+    ps_setm)       printf '%s/%s/%s\n'        "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
+    ps_base|ps_reseed) printf '' ;;
+    # best-of-N 재샘플 arm: 연산자 NPZ 불요 (ps_reseed 와 같은 취급).
+    ps_rsn_rand|ps_rsn_llr) printf '' ;;
+    ps_condg) echo "ABORT: arm=ps_condg 는 STEER_OP=condg 에서만 (현재 STEER_OP=${STEER_OP})" >&2; return 2 ;;
     *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
   esac
 }
@@ -261,7 +307,13 @@ token_select_for_arm() {  # arm
 }
 # base 도 detector 를 태운다(steering 미등록 → 전부 identity): eval 대역 failure_scores 를
 # sidecar 에 남겨 α sweep(발화 시점·오발화율)을 GPU 재실행 없이 사후 재계산하기 위함.
-arm_uses_detector() { case "$1" in base|online|online_fut|online_pl|online_fut_pl|online_hs) return 0 ;; *) return 1 ;; esac; }
+# per-step arm 4종은 라이브 게이트라 전부 detector 필수 (ps_base/ps_reseed 는 steering 미등록).
+arm_uses_detector() { case "$1" in
+  base|online|online_fut|online_pl|online_fut_pl|online_hs) return 0 ;;
+  ps_base|ps_reseed|ps_setm|ps_condg) return 0 ;;
+  ps_rsn_rand|ps_rsn_llr) return 0 ;;
+  *) return 1 ;;
+esac; }
 
 # NPZ base 스캔 → PHASES / LAYER 확정.
 # ★ command substitution 안에서 대입하면 subshell 에 갇혀 태그가 빈다 (exp5-2 실측) —
@@ -312,6 +364,20 @@ serve_flags_for() {  # slug arm → serve 추가 플래그 (scan_npz_base 선행
       is_conceptor_family && flags="${flags} --steering-alpha 0"
     fi
   fi
+  # best-of-N LLR arm: 후보 채점기 번들을 serve 에 등록 (rsn_llr 전용).
+  if [ "$arm" = ps_rsn_llr ]; then
+    local lb
+    lb="$LLR_BUNDLE"
+    [ -n "$lb" ] || { echo "ABORT: arm=ps_rsn_llr 은 LLR_BUNDLE 필수" >&2; return 2; }
+    [ -n "$LLR_SCENE" ] || { echo "ABORT: arm=ps_rsn_llr 은 LLR_SCENE 필수" >&2; return 2; }
+    [ "$SERVE_MODE" = host ] || lb="$(to_cont "$lb")"
+    flags="${flags} --llr-bundle ${lb} --llr-scene ${LLR_SCENE}"
+  fi
+  if [ -n "$CLUSTER_BUNDLE" ] && arm_uses_detector "$arm"; then
+    local cb="$CLUSTER_BUNDLE"
+    [ "$SERVE_MODE" = host ] || cb="$(to_cont "$cb")"
+    flags="${flags} --cluster-phase-bundle ${cb} --cluster-phase-task ${slug}"
+  fi
   if arm_uses_detector "$arm"; then
     local ckpt
     ckpt="$(detector_ckpt_for "$slug")"
@@ -320,6 +386,10 @@ serve_flags_for() {  # slug arm → serve 추가 플래그 (scan_npz_base 선행
     flags="${flags} --groot-dit-capture-layers ${DETECTOR_LAYERS} --groot-dit-token-pool ${TOKEN_POOL}"
     flags="${flags} --failure-detector ${ckpt} --failure-alpha ${FAILURE_ALPHA}"
     flags="${flags} --failure-task ${FAILURE_TASK:-$slug}"
+  elif [ "${CAPTURE_FEATURES:-0}" = 1 ]; then
+    # 진단 캡처: detector 없는 arm(serve) 도 같은 block-residual 캡처를 강제 —
+    # 없으면 serve 기본(pre-decode action tokens, 1024d)이 나가 fit 공간과 안 맞는다.
+    flags="${flags} --groot-dit-capture-layers ${DETECTOR_LAYERS} --groot-dit-token-pool ${TOKEN_POOL}"
   fi
   printf '%s\n' "$flags"
 }
@@ -331,6 +401,13 @@ detector_ckpt_for() {  # slug → ckpt 경로 (DETECTOR_CKPT 지정 시 그것, 
   if [ -n "$DETECTOR_CKPT" ]; then printf '%s\n' "$DETECTOR_CKPT"
   else printf '%s\n' "$(abspath "${DETECTOR_CKPT_TMPL//%SLUG%/$1}")"; fi
 }
+# ps_rsn_llr 은 채점기 번들이 없으면 무음으로 "재샘플만" arm 이 된다 — 발사 전에 막는다.
+for arm in "${ARM_ARR[@]}"; do
+  [ "$arm" = ps_rsn_llr ] || continue
+  [ -n "$LLR_BUNDLE" ] || { log "ABORT: arm=ps_rsn_llr 은 LLR_BUNDLE (rsn_llr 채점기 npz) 필수"; exit 2; }
+  [ -f "$LLR_BUNDLE" ] || { log "ABORT: LLR_BUNDLE 없음: $LLR_BUNDLE"; exit 2; }
+  [ -n "$LLR_SCENE" ] || { log "ABORT: arm=ps_rsn_llr 은 LLR_SCENE (번들 scene 차원 키) 필수"; exit 2; }
+done
 need_detector=0
 for arm in "${ARM_ARR[@]}"; do arm_uses_detector "$arm" && need_detector=1; done
 if [ "$need_detector" = 1 ]; then
@@ -396,6 +473,8 @@ log "serve ${NW}개 (gpus=${GPUS} × ${SERVES_PER_GPU}) ports=${PORTS[*]} mode=$
   echo "detector_ckpt=$(basename "${DETECTOR_CKPT:-none}") alpha=${FAILURE_ALPHA} layers=${DETECTOR_LAYERS}"
   echo "steer_beta=${STEER_BETA} npz_root=${NPZ_ROOT#"$MAIN_HOST"/} npz_variant=${NPZ_VARIANT}"
   echo "steer_op=${STEER_OP} steer_op_name=${STEER_OP_NAME:-NA} token_select=${STEER_TOKEN_SELECT}"
+  echo "perstep_n=${PERSTEP_N} llr_bundle=${LLR_BUNDLE:-none} llr_scene=${LLR_SCENE:-none}"
+  echo "perstep_fallback=${PERSTEP_FALLBACK} cluster_bundle=${CLUSTER_BUNDLE:-none}"
   echo "ep_mode=${EP_MODE} n_ep_total=${N_EP_TOTAL}"
   if [ "$EP_MODE" = replay ]; then
     echo "eval_scenes=${EVAL_SCENES} eval_noises=${EVAL_NOISES}"
@@ -464,9 +543,10 @@ start_serve() {  # gpu port extra_flags...
     fi
     docker exec -d -e CUDA_VISIBLE_DEVICES="$gpu" lerobot bash -lc "$inner"
   fi
-  # health poll (로드 중 VRAM 피크 때문에 순차 기동 — 워커별 1 serve 라 여기서 대기)
+  # health poll (로드 중 VRAM 피크 때문에 순차 기동 — 워커별 1 serve 라 여기서 대기).
+  # 공유 GPU 에 타인 대형 작업이 있으면 로딩이 12분+ 걸릴 수 있어 한도는 env 로 조절.
   local ok=0
-  for _ in $(seq 1 150); do
+  for _ in $(seq 1 "${SERVE_BOOT_TRIES:-150}"); do
     if health_curl "$port" | grep -q '"status":"ok"'; then ok=1; break; fi
     sleep 5
   done
@@ -482,8 +562,11 @@ start_serve() {  # gpu port extra_flags...
 serve_preflight() {  # port arm  — 등록 지문 대조 (무음 identity·arm 오배치 방지)
   local port="$1" arm="$2" body reg
   body="$(health_curl "$port")"
-  # steering 미등록 arm(base·resample·rs_early)은 지문 검사 제외. rs_steer 는 개입 arm 이라 포함.
-  if [ "$arm" != "base" ] && [ "$arm" != "resample" ] && [ "$arm" != "rs_early" ]; then
+  # steering 미등록 arm(base·resample·rs_early·ps_base·ps_reseed·ps_rsn_*)은 지문 검사 제외.
+  # rs_steer·ps_setm·ps_condg 는 개입 arm 이라 [steer-registered] 검사 유지.
+  local skip_fp=0
+  case "$arm" in base|resample|rs_early|ps_base|ps_reseed|ps_rsn_rand|ps_rsn_llr) skip_fp=1 ;; esac
+  if [ "$skip_fp" != 1 ]; then
     printf '%s' "$body" | grep -q '"steering"' || {
       log "ABORT: serve ${port} /health 에 steering 지문 없음 (arm=${arm})"; return 11; }
     if [ "$SERVE_MODE" = host ]; then
@@ -514,11 +597,14 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
     if [ "$scene" -ge 100 ]; then base_scene=$((scene / 100)); else base_scene="$scene"; fi
   fi
   local CAP_GRID_ARGS=()
+  # CAP_GRID=0: --diag-unplanned 진단 캡처 — plan 좌표 검증을 생략하고
+  # <grid-root>/diag/ 하위에 저장한다 (v4 평탄 cell id 는 plan 검증과 어긋남).
   if [ "${CAPTURE_FEATURES:-0}" = 1 ]; then
     # pkl 수집 규약(docs/04 §8) — 진단 캡처도 좌표 레이아웃으로 저장
     CAP_GRID_ARGS=(--grid-root "$(to_cont "$out_host")/diag_grid" --plan-json "$(to_cont "$PLAN_JSON_ABS")"
                    --scene-idx "$((ep / EP_IDX_STRIDE))" --noise-idx "$((ep % EP_IDX_STRIDE))"
                    --arm-dir "$arm")
+    [ "${CAP_GRID:-1}" = 1 ] || CAP_GRID_ARGS+=(--diag-unplanned)
   fi
   # v4 지터 셀: (base_es, ep_meta, k) 시퀀스 재현 — collector 가 주입+plain reset 을
   # (k+1)회 돌린다 (docs/04 §3.1.1). ep_meta 디렉토리는 지정됐을 때만 전달.
@@ -530,41 +616,66 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
     JIT_ARGS+=(--ep-meta-dir "$(to_cont "$EP_META_DIR")")
     [ -n "$EP_META_LOAD_ENV_NAME" ] && JIT_ARGS+=(--ep-meta-load-env-name "$EP_META_LOAD_ENV_NAME")
   fi
-  local trig=""
-  # TRIGGER_TSV 는 $1==scene 으로 찾는다 — v4 에서는 이 자리가 **평탄 cell id** 다
-  # (trigger 표도 같은 평탄 좌표로 생성되어야 한다).
-  if [ -n "$TRIGGER_TSV" ] && [ -n "$scene" ]; then
-    trig=$(awk -F'\t' -v s="$scene" -v n="$((ep % EP_IDX_STRIDE))" '$1==s && $2==n {print $3; exit}' "$TRIGGER_TSV")
-  fi
+  # per-step(라이브 게이트) arm 은 사전 발화표를 쓰지 않는다 — trig 조회 자체를 생략.
+  # 미발화 셀 개념이 없어 대상 판 전부가 perstep 모드로 돈다.
   case "$arm" in
-    online|online_fut|online_pl|online_fut_pl|online_hs) mode=(--gated-steering-mode online) ;;
-    oracle_early|oracle_early_pl)
-      # replay oracle: 알려진 발화 record 보다 EARLY_OFFSET 만큼 이른 시점부터 phase-follow.
-      # trigger 없는 셀(수집 성공·미발화)은 개입 없음 = 순수 replay.
-      if [ -n "$trig" ]; then
-        local st=$((trig - EARLY_OFFSET)); [ "$st" -lt 0 ] && st=0
-        mode=(--steer-from-record "$st" --steer-phase-mode current)
-      fi ;;
-    resample)
-      if [ -n "$trig" ]; then
-        mode=(--reseed-from-record "$trig" --reseed-offset "$RESEED_OFFSET")
-      fi ;;
-    rs_early|rs_steer)
-      # 발화보다 EARLY_OFFSET 이른 record 부터 denoise seed 재추첨.
-      # rs_steer 는 같은 시점에 steering 도 latch (재추첨 × 개입 결합).
-      if [ -n "$trig" ]; then
-        local st=$((trig - EARLY_OFFSET)); [ "$st" -lt 0 ] && st=0
-        mode=(--reseed-from-record "$st" --reseed-offset "$RESEED_OFFSET")
-        if [ "$arm" = rs_steer ]; then
-          mode+=(--steer-from-record "$st" --steer-phase-mode "$STEER_PHASE_MODE")
-          [ "$STEER_PHASE_MODE" = global ] && mode+=(--steer-phase-name "$STEER_PHASE_NAME")
-        fi
-      fi ;;
-    oracle_always|oracle_always_pl) mode=(--gated-steering) ;;
-    # base: detector ON + steering 미등록 → online 모드라도 전 스텝 identity.
-    # failure_scores/trigger_step 사이드카 기록이 목적 (α 사후 sweep 용).
-    base) mode=(--gated-steering-mode online) ;;
+    ps_base)   mode=(--gated-steering-mode perstep --perstep-op none) ;;
+    ps_reseed) mode=(--gated-steering-mode perstep --perstep-op reseed
+                     --perstep-reseed-offset "$RESEED_OFFSET") ;;
+    ps_setm)   mode=(--gated-steering-mode perstep --perstep-op setm
+                     --perstep-fallback "$PERSTEP_FALLBACK") ;;
+    ps_condg)  mode=(--gated-steering-mode perstep --perstep-op condg
+                     --perstep-fallback "$PERSTEP_FALLBACK") ;;
+    ps_rsn_rand) mode=(--gated-steering-mode perstep --perstep-op rsn_rand
+                       --perstep-n "$PERSTEP_N") ;;
+    ps_rsn_llr)  mode=(--gated-steering-mode perstep --perstep-op rsn_llr
+                       --perstep-n "$PERSTEP_N") ;;
   esac
+  # PERSTEP_DEBUG=1: 배관 동치 스모크 — 매 record hook off·동일 seed 2차 실행 진단
+  if [ "${#mode[@]}" -gt 0 ] && [ "${PERSTEP_DEBUG:-0}" = "1" ]; then
+    mode+=(--perstep-debug-rerun)
+  fi
+  # cluster phase 모드: serve 자체 판정 사용 (GT POST 생략·cluster 기록)
+  if [ "${#mode[@]}" -gt 0 ] && [ -n "$CLUSTER_BUNDLE" ]; then
+    mode+=(--perstep-cluster-phase)
+  fi
+  if [ "${#mode[@]}" -eq 0 ]; then
+    local trig=""
+    # TRIGGER_TSV 는 $1==scene 으로 찾는다 — v4 에서는 이 자리가 **평탄 cell id** 다
+    # (trigger 표도 같은 평탄 좌표로 생성되어야 한다).
+    if [ -n "$TRIGGER_TSV" ] && [ -n "$scene" ]; then
+      trig=$(awk -F'\t' -v s="$scene" -v n="$((ep % EP_IDX_STRIDE))" '$1==s && $2==n {print $3; exit}' "$TRIGGER_TSV")
+    fi
+    case "$arm" in
+      online|online_fut|online_pl|online_fut_pl|online_hs) mode=(--gated-steering-mode online) ;;
+      oracle_early|oracle_early_pl)
+        # replay oracle: 알려진 발화 record 보다 EARLY_OFFSET 만큼 이른 시점부터 phase-follow.
+        # trigger 없는 셀(수집 성공·미발화)은 개입 없음 = 순수 replay.
+        if [ -n "$trig" ]; then
+          local st=$((trig - EARLY_OFFSET)); [ "$st" -lt 0 ] && st=0
+          mode=(--steer-from-record "$st" --steer-phase-mode current)
+        fi ;;
+      resample)
+        if [ -n "$trig" ]; then
+          mode=(--reseed-from-record "$trig" --reseed-offset "$RESEED_OFFSET")
+        fi ;;
+      rs_early|rs_steer)
+        # 발화보다 EARLY_OFFSET 이른 record 부터 denoise seed 재추첨.
+        # rs_steer 는 같은 시점에 steering 도 latch (재추첨 × 개입 결합).
+        if [ -n "$trig" ]; then
+          local st=$((trig - EARLY_OFFSET)); [ "$st" -lt 0 ] && st=0
+          mode=(--reseed-from-record "$st" --reseed-offset "$RESEED_OFFSET")
+          if [ "$arm" = rs_steer ]; then
+            mode+=(--steer-from-record "$st" --steer-phase-mode "$STEER_PHASE_MODE")
+            [ "$STEER_PHASE_MODE" = global ] && mode+=(--steer-phase-name "$STEER_PHASE_NAME")
+          fi
+        fi ;;
+      oracle_always|oracle_always_pl) mode=(--gated-steering) ;;
+      # base: detector ON + steering 미등록 → online 모드라도 전 스텝 identity.
+      # failure_scores/trigger_step 사이드카 기록이 목적 (α 사후 sweep 용).
+      base) mode=(--gated-steering-mode online) ;;
+    esac
+  fi
   local cmd=(docker exec -e MUJOCO_GL=egl -e PYTHONPATH="$PYPATH" robocasa
     python "${REPO_CONT}/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py"
     --vla-server "http://127.0.0.1:${port}" --task "$task" --env-name "$envn"

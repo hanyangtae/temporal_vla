@@ -92,6 +92,26 @@ try:  # rollout pkl 은 torch 텐서를 담고 있어 unpickle 에 torch 가 필
 except Exception:  # pragma: no cover - torch 없는 환경에서도 import 자체는 통과시킨다
     torch = None
 
+_CLUSTER_MOD = None
+
+
+def _cluster_api():
+    """cluster phase 라벨 어댑터(scripts/fit/fit_phase_conceptor.py)를 **지연** import.
+
+    중복 구현 금지 — 번들 로드·좌표 검사·배정은 전부 그쪽 공용 함수다. cluster 모드가
+    아닐 때는 부르지 않으므로 이 스크립트의 기존 의존성은 그대로다.
+    """
+    global _CLUSTER_MOD
+    if _CLUSTER_MOD is None:
+        repo = Path(__file__).resolve().parents[3]
+        for pth in (str(repo), str(repo / "scripts/fit")):
+            if pth not in sys.path:
+                sys.path.insert(0, pth)
+        import fit_phase_conceptor as _m  # noqa: PLC0415
+        _CLUSTER_MOD = _m
+    return _CLUSTER_MOD
+
+
 # cond_margin.py 와 동일한 slug → grid 경로 매핑
 TASKMAP = {"OpenDrawer_left": "OpenDrawer/left", "OpenDrawer_right": "OpenDrawer/right",
            "DishwasherRack_out": "DishwasherRack/out", "OvenRack_out": "OvenRack/out",
@@ -211,7 +231,8 @@ def _features(d: dict, layer: int, denoise_step: int) -> tuple[np.ndarray, np.nd
 
 
 def load_episodes(slug: str, grid_root: Path, cells: set[tuple[int, int]],
-                  layer: int, denoise_step: int, v4_jitter: bool = False) -> list[dict]:
+                  layer: int, denoise_step: int, v4_jitter: bool = False,
+                  cluster_feat: bool = False) -> list[dict]:
     """rollout pkl → episode 레코드. 특징 추출식은 cond_margin 과 동일.
 
     셀 **선택**(경로 사전필터·pkl scene_idx 대조·중복 제거)은 언제나 평탄 si 로 한다.
@@ -246,6 +267,10 @@ def load_episodes(slug: str, grid_root: Path, cells: set[tuple[int, int]],
             "success": int(d["episode_success"]),
             "H": H, "P": P,
             "phases": list(d["feature_phases"]),
+            # cluster 모드용 판정 feature (L12 · 마지막 denoise · 49토큰 mean). --layer/
+            # --denoise-step 과 무관하게 번들 학습 좌표로 고정 뽑는다.
+            **({"cluster_feat": _cluster_api().cluster_features_from_pkl(d, Path(p).name)}
+               if cluster_feat else {}),
             # docs/04 규약 — 출처는 절대경로가 아니라 내용 지문으로 남긴다.
             "sig": hashlib.sha256(Path(p).read_bytes()).hexdigest()[:16],
         })
@@ -282,7 +307,8 @@ def parse_episode_manifest(path: Path) -> list[dict]:
 
 
 def load_episodes_manifest(manifest: Path, grid_root: Path,
-                           layer: int, denoise_step: int) -> list[dict]:
+                           layer: int, denoise_step: int,
+                           cluster_feat: bool = False) -> list[dict]:
     """경로 명시 manifest 로 episode 를 고른다 (plan_id 혼재 grid_root 안전 경로).
 
     grid_root 아래에 plan_id 디렉토리가 여럿 섞여 있으면 (v4=지터 격자, v2/v1=구
@@ -319,6 +345,8 @@ def load_episodes_manifest(manifest: Path, grid_root: Path,
             "success": int(r["label"]),             # 라벨 정본 = manifest
             "H": H, "P": P,
             "phases": list(d["feature_phases"]),
+            **({"cluster_feat": _cluster_api().cluster_features_from_pkl(d, p.name)}
+               if cluster_feat else {}),
             "sig": hashlib.sha256(p.read_bytes()).hexdigest()[:16],
         })
     if mismatch:
@@ -687,6 +715,16 @@ def main() -> None:
                     help="v4 지터 격자 — pkl 의 평탄 cell id(s=base_scene*100+k, base=+99)를 "
                          "base scene(//100)으로 접어 scene 통계·층화·등록을 base scene "
                          "단위로 묶는다 (셀 선택 자체는 평탄 si 그대로)")
+    ap.add_argument("--cluster-bundle", type=Path, default=None,
+                    help="ae_cluster.py --export-bundle NPZ. 지정 시 phase 라벨을 GT "
+                         "feature_phases 대신 activation cluster 배정으로 치환한다 "
+                         "(판정 좌표 = DiT L12 · 마지막 denoise · 49토큰 mean, --layer/"
+                         "--denoise-step 과 무관). 이때 --phases 에는 클러스터 라벨을 넘긴다 "
+                         "(예: --phases c0,c1,c2,c3,c4,c5,c6,c7). ⚠ split 시드가 "
+                         "(seed, crc32(phase)) 라 phase 문자열이 바뀌면 6:4 분할이 통째로 "
+                         "달라진다 — GT 라벨로 낸 기준선과 직접 비교 불가(기준선 리셋).")
+    ap.add_argument("--cluster-task", default=None,
+                    help="--cluster-bundle 안의 slug (centers.<slug>). 미지정 시 --slug 사용")
     ap.add_argument("--force-register", action="store_true",
                     help="게이트 판정을 무시하고 W가 fit된 전 phase를 등록 (탐색 라운드 전용 "
                          "— 45 스펙의 \"미달 cell=identity\" 안전장치 해제)")
@@ -722,14 +760,31 @@ def main() -> None:
         cells, cells_mode = load_fit_cells(cells_tsv)
     # 셀 선택(cells)은 평탄 si 기준 그대로 — --cell-scenes/--cell-noises 나 manifest 의
     # scene_idx 열이 평탄 si 를 담고 있어야 pkl glob 필터와 맞는다. 접기는 그룹 단계에서만.
+    use_cluster = args.cluster_bundle is not None
     if args.episode_manifest is not None:
         eps = load_episodes_manifest(args.episode_manifest.expanduser(), grid_root,
-                                     args.layer, args.denoise_step)
+                                     args.layer, args.denoise_step,
+                                     cluster_feat=use_cluster)
     else:
         eps = load_episodes(args.slug, grid_root, cells, args.layer, args.denoise_step,
-                            v4_jitter=args.v4_jitter)
+                            v4_jitter=args.v4_jitter, cluster_feat=use_cluster)
     if not eps:
         raise SystemExit(f"fit cell 에 해당하는 rollout 0개 (slug={args.slug})")
+    phase_label_source = "gt:feature_phases"
+    if use_cluster:
+        # phase 라벨 = activation cluster 배정 (로더 반환 직후 치환 — 이후 로직은 phase
+        # 문자열만 보므로 무수정). ⚠ split rng 가 crc32(phase) 라 GT 라벨 라운드와
+        # 분할이 달라진다 = 기준선 리셋 (도움말 참조).
+        api = _cluster_api()
+        bundle = api.load_cluster_bundle(args.cluster_bundle)
+        ctask = args.cluster_task or args.slug
+        api.relabel_all_by_cluster(eps, bundle, ctask, tag=f" {args.slug}")
+        phase_label_source = api.cluster_label_source(bundle)
+        names = api.cluster_phase_names(bundle)
+        bad_ph = [p for p in phases if p not in names]
+        if bad_ph:
+            raise SystemExit(f"--cluster-bundle 모드에서 --phases {bad_ph} 는 클러스터 라벨이 "
+                             f"아니다 (가능: {','.join(names)})")
     n_s = sum(e["success"] for e in eps)
     used_cells = sorted((e["cell_si"], e["noise"]) for e in eps)   # provenance = 평탄 si
     print(f"[{args.slug}] episode {len(eps)} (succ {n_s} / fail {len(eps) - n_s}) "
@@ -774,6 +829,7 @@ def main() -> None:
         "sign_note": "margin 부호 고정(m 클수록 실패) — 역전 cell 은 게이트가 배제",
         "fit_cells": [[int(s), int(n)] for s, n in used_cells],
         "fit_cells_source": cells_mode,
+        "phase_label_source": phase_label_source,
         "input_sigs": [e["sig"] for e in eps],   # docs/04 — 경로 아닌 내용 지문
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "source": "docs/steering/44_cond_guidance_operator.md + "

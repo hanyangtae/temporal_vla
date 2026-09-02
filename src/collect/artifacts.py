@@ -76,6 +76,7 @@ def write_safe_triplet(
     include_hidden_states: bool = True,
     grid_dir: Path | None = None,   # 필수 — None 이면 RuntimeError
     arm_config: dict[str, Any] | None = None,   # steered 수집(arm)의 진실 — config.json
+    diag_unplanned: bool = False,   # 진단 캡처 — 수집 정본 불변식(export horizon) 완화
 ) -> None:
     """SAFE rollout 산출물을 쓴다.
 
@@ -101,6 +102,7 @@ def write_safe_triplet(
     # hidden_states 를 저장하지 않는 수집(--attn-only-records)에서는 무의미 — skip.
     if (
         include_hidden_states
+        and not diag_unplanned    # 진단 캡처: steering serve 는 전 토큰(16)을 내보냄 — 허용
         and _uses_action_token_horizon(policy)
         and policy.exported_action_token_count != n_action_steps
     ):

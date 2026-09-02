@@ -219,6 +219,15 @@ class N15LerobotHttpFeatureClient(VLAClient):
                 and calls_done >= self.reseed_from_call):
             seed_base += self.reseed_offset
         call_inference_seed = None if seed_base is None else seed_base + calls_done
+        # per-step 게이팅(docs/steering/47): serve 가 1차 무개입 pass 로 발화를 판정하고,
+        # 발화 시 이 record 만 DiT 재실행해 action 을 교체한다. 클라이언트는 seed 를
+        # 건드리지 않는다(재추첨은 serve 의 2차 pass 몫) — reseed arm 과 독립 경로.
+        extra_payload: dict[str, Any] = {}
+        perstep_gate = getattr(self, "perstep_gate", None)
+        if perstep_gate is not None:
+            extra_payload["perstep_gate"] = perstep_gate
+            if getattr(self, "perstep_debug_rerun", False):
+                extra_payload["perstep_debug_rerun"] = True
         if self.no_features:
             # /act 는 groot 16-큐 팝(16콜당 1추론)이라 캡처 경로와 실행 단위가 어긋남
             # (Gate 2 치명#1) — skip_features 로 /act_with_features 의 chunk 추론 경로를
@@ -228,7 +237,7 @@ class N15LerobotHttpFeatureClient(VLAClient):
                 states,
                 instruction,
                 inference_seed=call_inference_seed,
-                extra_payload={"skip_features": 1},
+                extra_payload={"skip_features": 1, **extra_payload},
             )
             self.n_calls += 1
             if features is not None:
@@ -248,6 +257,7 @@ class N15LerobotHttpFeatureClient(VLAClient):
             states,
             instruction,
             inference_seed=call_inference_seed,
+            extra_payload=(extra_payload or None),
         )
         self.n_calls += 1
         if not isinstance(actions, dict):
@@ -597,6 +607,9 @@ def parse_args() -> argparse.Namespace:
     from src.collect.plan import add_grid_args  # noqa: PLC0415
 
     add_grid_args(parser)
+    parser.add_argument("--diag-unplanned", action="store_true",
+                        help="진단 캡처: plan 좌표 검증 생략, <grid-root>/diag/ 하위에 저장 "
+                             "(정본 store 와 분리; v4 평탄 cell id 진단용)")
     parser.add_argument("--cell-id", default=None)
     parser.add_argument("--cell-index", type=int, default=None)
     parser.add_argument("--canonical-instruction", default=None)
@@ -648,13 +661,78 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--gated-steering-mode",
-        choices=("off", "online"),
+        choices=("off", "online", "perstep"),
         default="off",
         help=(
             "online: serve 의 failure detector 발화(features.failure_fired)로 개입을 "
             "latch — 발화 전엔 'off' POST(=identity), 최초 발화 이후 매 스텝 라벨러의 "
             "현재 phase 를 POST(phase-follow). serve 는 --failure-detector + "
-            "--steering-phase-npz-base 필요. --gated-steering/--steer-from-record 와 배타."
+            "--steering-phase-npz-base 필요. --gated-steering/--steer-from-record 와 배타. "
+            "| perstep: latch 없음(docs/steering/47) — 매 record 마다 serve 가 1차 무개입 "
+            "pass 로 발화를 판정하고, 발화한 그 record 만 DiT 재실행으로 action 교체. "
+            "연산자는 --perstep-op. 클라이언트는 phase 를 매 스텝 POST 하지만 그 값은 "
+            "'발화 시 적용할 phase' 정보로만 쓰인다."
+        ),
+    )
+    parser.add_argument(
+        "--perstep-op",
+        choices=("none", "reseed", "setm", "condg", "rsn_llr", "rsn_rand"),
+        default="none",
+        help=(
+            "--gated-steering-mode perstep 에서 발화 시 적용할 연산자 family. "
+            "none=발화만 기록하고 개입 없음(게이트 감지-only 대조). "
+            "rsn_llr=발화 step 만 best-of-N 재샘플 후 LLR 채점기로 후보 선택 "
+            "(serve 는 --llr-bundle 필요), rsn_rand=같은 N 후보 중 무작위 1개 "
+            "(재샘플 자체의 효과를 분리하는 위약 대조). 후보 수는 --perstep-n."
+        ),
+    )
+    parser.add_argument(
+        "--perstep-n",
+        type=int,
+        default=8,
+        help=(
+            "--perstep-op rsn_llr|rsn_rand 의 best-of-N 후보 수 (기본 8). "
+            "perstep_gate payload 의 'n' 으로 serve 에 전달된다."
+        ),
+    )
+    parser.add_argument(
+        "--perstep-fallback",
+        choices=("skip", "reseed"),
+        default="skip",
+        help=(
+            "발화했지만 연산자를 적용하지 못한 record 에서 serve 가 취할 대체 동작. "
+            "skip=1차 무개입 action 유지(기존 동작), reseed=denoise seed 재추첨으로 대체. "
+            "perstep_gate payload 의 'fallback' 으로 전달된다."
+        ),
+    )
+    parser.add_argument(
+        "--perstep-reseed-offset",
+        type=int,
+        default=900000,
+        help=(
+            "--perstep-op reseed 의 2차 pass denoise seed offset (serve 가 "
+            "seed+offset 으로 재추첨). --reseed-offset(클라이언트 latch arm)과 무관."
+        ),
+    )
+    parser.add_argument(
+        "--perstep-debug-rerun",
+        action="store_true",
+        help=(
+            "perstep 배관 동치 스모크: 발화 무관 매 record hook off·동일 seed 로 2차 "
+            "pass 를 돌려 max|action1-action2| 를 응답으로 받는다 (action 은 1차 유지)."
+        ),
+    )
+    parser.add_argument(
+        "--perstep-cluster-phase",
+        action="store_true",
+        help=(
+            "cluster-k8 라운드: serve(--cluster-phase-bundle)가 매 요청 활성에서 스스로 "
+            "판정한 cluster phase('c0'..'c7')를 record 의 phase 로 기록한다. "
+            "① /steering_phase POST 생략(serve 자체 판정이라 POST 값은 무시됨) "
+            "② feature_phases = 응답의 cluster 값 (응답에 cluster 키가 없으면 즉시 중단 "
+            "— serve 미배선 무음 방지) ③ GT 라벨러 값은 gt_phases 로 병행 기록. "
+            "phase POST 가 실제 개입을 결정하는 모드(--gated-steering/--steer-from-record/"
+            "--gated-steering-mode online)와는 배타."
         ),
     )
     parser.add_argument(
@@ -874,6 +952,52 @@ def run() -> dict[str, Any]:
     if reseed_from_record is not None:
         policy.reseed_from_call = int(reseed_from_record)
         policy.reseed_offset = int(getattr(args, "reseed_offset", 500000))
+    # per-step 게이팅(docs/steering/47): latch 계열(online/steer-from-record) 및 클라이언트
+    # seed 산술(reseed-from-record), 사전표 phase 게이트(--gated-steering) 전부와 배타 —
+    # 개입 시점의 출처가 둘일 수 없다.
+    perstep_gating = getattr(args, "gated_steering_mode", "off") == "perstep"
+    if perstep_gating:
+        conflicts = [
+            name
+            for name, active in (
+                ("--gated-steering", bool(getattr(args, "gated_steering", False))),
+                ("--steer-from-record", steer_from_record is not None),
+                ("--reseed-from-record", reseed_from_record is not None),
+            )
+            if active
+        ]
+        if conflicts:
+            raise ValueError(
+                "--gated-steering-mode perstep 은 " + "/".join(conflicts) + " 와 배타 "
+                "(개입 시점의 출처가 둘일 수 없다)")
+        policy.perstep_gate = {
+            "op": (None if getattr(args, "perstep_op", "none") == "none"
+                   else str(args.perstep_op)),
+            "reseed_offset": int(getattr(args, "perstep_reseed_offset", 900000)),
+            # best-of-N 재샘플 후보 수 (rsn_* op 전용 — 그 외 op 은 serve 가 무시).
+            "n": int(getattr(args, "perstep_n", 8)),
+            # 발화했으나 연산자 미적용 시 serve 의 대체 동작 (skip|reseed).
+            "fallback": str(getattr(args, "perstep_fallback", "skip")),
+        }
+        if getattr(args, "perstep_debug_rerun", False):
+            policy.perstep_debug_rerun = True
+    # cluster-k8: serve 가 활성에서 스스로 판정한 cluster phase 를 record phase 로 기록.
+    # POST 가 개입을 결정하는 모드와는 배타 (POST 를 생략하므로 조용히 무개입이 된다).
+    cluster_phase_mode = bool(getattr(args, "perstep_cluster_phase", False))
+    if cluster_phase_mode:
+        conflicts = [
+            name
+            for name, active in (
+                ("--gated-steering", bool(getattr(args, "gated_steering", False))),
+                ("--steer-from-record", steer_from_record is not None),
+                ("--gated-steering-mode online", online_gating),
+            )
+            if active
+        ]
+        if conflicts:
+            raise ValueError(
+                "--perstep-cluster-phase 는 " + "/".join(conflicts) + " 와 배타 "
+                "(/steering_phase POST 를 생략하므로 개입 시점이 사라진다)")
     if args.wait_ready:
         policy.wait_until_ready(max_wait=args.timeout)
     serve_identity = _get_serve_identity(args.vla_server)
@@ -883,9 +1007,17 @@ def run() -> dict[str, Any]:
         raise RuntimeError(
             "--gated-steering-mode online 인데 serve /health 에 failure_detector 가 없다 "
             "— serve 를 --failure-detector <ckpt.pt> 로 기동할 것")
+    if perstep_gating and not serve_identity.get("serve_failure_detector"):
+        # detector 없는 serve 면 게이트가 영영 미발화 = 전 판 무개입인데 산출물은
+        # "perstep arm" 으로 남는다 (무음 위약). 즉시 중단한다.
+        raise RuntimeError(
+            "--gated-steering-mode perstep 인데 serve /health 에 failure_detector 가 없다 "
+            "— serve 를 --failure-detector <ckpt.pt> 로 기동할 것")
     from src.collect.plan import resolve_grid  # noqa: PLC0415
 
-    grid_plan, grid_cell = resolve_grid(args)
+    # --diag-unplanned: 진단 캡처 — plan 대조를 생략한다 (grid_dir 은 diag/ 하위로).
+    grid_plan, grid_cell = ((None, None) if getattr(args, "diag_unplanned", False)
+                            else resolve_grid(args))
     # arm 결정 — steering 이 걸린 serve 로 돌면 자동으로 arm 디렉토리(armsig)가 된다.
     arm_name, arm_params = _resolve_arm(args, serve_identity)
     if arm_name is not None:
@@ -978,9 +1110,14 @@ def run() -> dict[str, Any]:
                 # /reset(=policy.reset, serve 의 detector 상태 리셋) **이후** 에 off 를
                 # 걸어야 이전 판의 개입이 이 판 첫 추론까지 새지 않는다.
                 _post_steering_phase(args.vla_server, "off", scene=getattr(args, "steering_scene", None))
-                if local_ep_idx == 0:
+                if local_ep_idx == 0 and not cluster_phase_mode:
                     _warn_phase_vocab_mismatch(
                         labeler, getattr(args, "proximity_phases", False), serve_identity)
+            elif perstep_gating and local_ep_idx == 0 and not cluster_phase_mode:
+                # perstep 은 episode 시작 'off' POST 가 필요 없다(latch 없음 — serve 가
+                # 매 record 스스로 게이팅). 다만 phase 어휘 대조는 동일하게 유용하다.
+                _warn_phase_vocab_mismatch(
+                    labeler, getattr(args, "proximity_phases", False), serve_identity)
             env_gt = None
             if getattr(args, "env_step_phases", True):
                 _probe = find_probe_wrapper(env)
@@ -1000,11 +1137,33 @@ def run() -> dict[str, Any]:
                 obs = perturber.on_episode_start(obs)
             feature_phases: list[str] = []
             phase_gated_flags: list[bool] = []
+            # cluster-k8: feature_phases 에 cluster 값을 넣는 모드에서 GT 라벨러 값을
+            # 병행 보관 (사후 GT↔cluster 대조용). cluster_dists = centroid 거리.
+            gt_phases: list[str] = []
+            cluster_dists: list = []
             # online gating: detector 발화로 latch. failure_scores 는 record 별 score.
             failure_scores: list = []
             failure_latched = False
             trigger_step: int | None = None
             phase_at_trigger: str | None = None
+            # per-step 게이팅(docs/steering/47): latch 변수 없음 — record 별 1회성 개입.
+            # y_t(1차 무개입 pass) / y_t'(발화 시 2차 pass) / 발화 flag / 2차 seed.
+            perstep_scores_post: list = []
+            perstep_fired_flags: list = []
+            perstep_seed2_list: list = []
+            perstep_gate_skipped_list: list = []   # 발화했지만 phase 미등록으로 실개입 0인 record
+            perstep_debug_diffs: list = []         # --perstep-debug-rerun 배관 동치 진단
+            # best-of-N 재샘플(rsn_llr/rsn_rand) 후보 감사 — 미발화 record 는 None.
+            perstep_cand_n_list: list = []          # 그 record 에서 생성된 후보 수
+            perstep_cand_llr_list: list = []        # 후보별 LLR 점수 (rsn_rand 는 None)
+            perstep_cand_sel_list: list = []        # 채택된 후보 index
+            perstep_cand_reject_list: list = []     # 기각 사유/flag 열
+            perstep_llr_fallback_list: list = []    # LLR 선별 불가 사유(개입은 후보 0으로 일어남)
+            perstep_cand_entry_list: list = []      # 후보별 배정 등록 entry (score_nearest)
+            perstep_cand_logs_list: list = []       # 후보별 [log_s, log_f] (외삽 깊이 사후분석)
+            perstep_rerun_ms_list: list = []       # 2차 pass(재실행) 소요 ms
+            perstep_cand_ms_list: list = []        # 후보 생성·채점 소요 ms
+            perstep_fallback_list: list = []       # 그 record 에서 실제로 탄 fallback
             success = False
             first_success_step = None
             step_i = 0
@@ -1028,7 +1187,11 @@ def run() -> dict[str, Any]:
                 # to switch the serve-side conceptor for this call.
                 phase = labeler.step()
                 gated_now = False
-                if getattr(args, "gated_steering", False):
+                if cluster_phase_mode:
+                    # serve 가 활성에서 스스로 phase 를 판정하므로 POST 는 무의미하다
+                    # (값이 무시됨) — 트래픽·혼동 제거를 위해 생략한다.
+                    pass
+                elif getattr(args, "gated_steering", False):
                     gated_now = _post_steering_phase(args.vla_server, phase, scene=getattr(args, "steering_scene", None))
                 elif steer_from_record is not None:
                     # exp4-1 latch: K번째 record 부터 끝까지 ON (record r ⇔ env-step
@@ -1046,7 +1209,27 @@ def run() -> dict[str, Any]:
                     # record r 에서 발화하면 개입은 r+1 부터. 발화 전엔 off = identity.
                     want = phase if failure_latched else "off"
                     gated_now = _post_steering_phase(args.vla_server, want, scene=getattr(args, "steering_scene", None))
+                elif perstep_gating:
+                    # latch 없음 — 매 record 현재 phase 를 POST 한다. serve 는 이 값을
+                    # "발화 시 적용할 phase" 정보로만 보관하고, 발화 판정은 1차 무개입
+                    # pass 점수로 자기가 한다(개입은 그 record 1회성).
+                    gated_now = _post_steering_phase(args.vla_server, phase, scene=getattr(args, "steering_scene", None))
                 official_action, _ = policy.get_action(obs)
+                record_phase = phase
+                cluster_dist_now = None
+                if cluster_phase_mode:
+                    # serve --cluster-phase-bundle 미배선이면 여기서 즉시 중단한다
+                    # (GT phase 로 조용히 되돌아가 "cluster arm" 산출물이 되는 것 방지).
+                    _c = getattr(policy, "last_cluster", None)
+                    if _c is None or _c.get("cluster") is None:
+                        raise RuntimeError(
+                            "--perstep-cluster-phase 인데 응답에 features.perstep_cluster "
+                            "가 없다 — ① serve 가 --cluster-phase-bundle 로 떴는지 "
+                            "② 클라이언트가 --gated-steering-mode perstep 인지 확인 "
+                            "(serve 는 per-step 게이트 경로에서 cluster 를 싣는다). "
+                            "무음 GT 폴백 방지 가드.")
+                    record_phase = str(_c["cluster"])
+                    cluster_dist_now = _c.get("cluster_dist")
                 if online_gating:
                     fail = getattr(policy, "last_failure", None)
                     if fail is None:
@@ -1057,15 +1240,51 @@ def run() -> dict[str, Any]:
                         failure_latched = True
                         trigger_step = progress_before
                         phase_at_trigger = phase
+                if perstep_gating:
+                    fail = getattr(policy, "last_failure", None)
+                    if fail is None:
+                        raise RuntimeError(
+                            "perstep gating 인데 응답에 features.failure_score 가 없다 — "
+                            "serve --failure-detector 배선 확인 (무음 미개입 방지)")
+                    fired_now = bool(fail.get("perstep_fired", fail.get("fired")))
+                    if fired_now and trigger_step is None:
+                        # 첫 발화만 기존 online arm 의 trigger_step 호환 필드로 남긴다
+                        # (latch 의미 아님 — 집계 스크립트 호환용 좌표).
+                        trigger_step = progress_before
+                        phase_at_trigger = phase
                 if perturber is not None:
                     official_action = perturber.maybe_apply(progress_before, official_action)
                 progress_after = policy.n_calls if no_features else len(policy.records)
                 if progress_after > progress_before:
-                    feature_phases.append(phase)
+                    feature_phases.append(record_phase)
                     phase_gated_flags.append(gated_now)
+                    if cluster_phase_mode:
+                        gt_phases.append(phase)
+                        cluster_dists.append(cluster_dist_now)
                     if online_gating:
                         # record 축과 1:1 (feature_phases 와 같은 길이)
                         failure_scores.append(policy.last_failure["score"])
+                    if perstep_gating:
+                        _f = policy.last_failure
+                        failure_scores.append(_f["score"])
+                        perstep_scores_post.append(_f.get("score_post"))
+                        perstep_fired_flags.append(
+                            bool(_f.get("perstep_fired", _f.get("fired")))
+                        )
+                        perstep_seed2_list.append(_f.get("perstep_seed2"))
+                        perstep_gate_skipped_list.append(_f.get("gate_skipped"))
+                        perstep_cand_n_list.append(_f.get("perstep_cand_n"))
+                        perstep_cand_llr_list.append(_f.get("perstep_cand_llr"))
+                        perstep_cand_sel_list.append(_f.get("perstep_cand_sel"))
+                        perstep_cand_reject_list.append(_f.get("perstep_cand_reject"))
+                        perstep_llr_fallback_list.append(_f.get("perstep_llr_fallback"))
+                        perstep_cand_entry_list.append(_f.get("perstep_cand_entry"))
+                        perstep_cand_logs_list.append(_f.get("perstep_cand_logs"))
+                        perstep_rerun_ms_list.append(_f.get("perstep_rerun_ms"))
+                        perstep_cand_ms_list.append(_f.get("perstep_cand_ms"))
+                        perstep_fallback_list.append(_f.get("perstep_fallback"))
+                        if _f.get("debug_max_action_diff") is not None:
+                            perstep_debug_diffs.append(float(_f["debug_max_action_diff"]))
                     # 떨림 진단: 이 record 의 명령 action 벡터(첫 실행 스텝)와 개입 활성 여부.
                     action_traj.append(_extract_groot_action_vector(official_action))
                     if no_features:
@@ -1090,11 +1309,42 @@ def run() -> dict[str, Any]:
                     "feature_phases/inference-count misaligned: "
                     f"{len(feature_phases)} != {n_inferences}"
                 )
+            if cluster_phase_mode:
+                for _name, _seq in (("gt_phases", gt_phases),
+                                    ("cluster_dists", cluster_dists)):
+                    if len(_seq) != n_inferences:
+                        raise RuntimeError(
+                            f"{_name}/inference-count misaligned: "
+                            f"{len(_seq)} != {n_inferences}"
+                        )
             if online_gating and len(failure_scores) != n_inferences:
                 raise RuntimeError(
                     "failure_scores/inference-count misaligned: "
                     f"{len(failure_scores)} != {n_inferences}"
                 )
+            if perstep_gating:
+                for _name, _seq in (
+                    ("failure_scores", failure_scores),
+                    ("failure_scores_post", perstep_scores_post),
+                    ("perstep_fired", perstep_fired_flags),
+                    ("perstep_seed2", perstep_seed2_list),
+                    ("perstep_gate_skipped", perstep_gate_skipped_list),
+                    ("cand_n", perstep_cand_n_list),
+                    ("cand_llr", perstep_cand_llr_list),
+                    ("cand_sel", perstep_cand_sel_list),
+                    ("cand_reject", perstep_cand_reject_list),
+                    ("llr_fallback", perstep_llr_fallback_list),
+                    ("cand_entry", perstep_cand_entry_list),
+                    ("cand_logs", perstep_cand_logs_list),
+                    ("rerun_ms", perstep_rerun_ms_list),
+                    ("cand_ms", perstep_cand_ms_list),
+                    ("gate_fallback", perstep_fallback_list),
+                ):
+                    if len(_seq) != n_inferences:
+                        raise RuntimeError(
+                            f"{_name}/inference-count misaligned: "
+                            f"{len(_seq)} != {n_inferences}"
+                        )
 
             # online gating 감사 필드 (그 모드일 때만 기록 — 기존 arm 산출물 스키마 불변).
             # trigger_step=None = 미발화(=전 판 무개입), failure_scores 는 record 축 1:1.
@@ -1110,6 +1360,50 @@ def run() -> dict[str, Any]:
                 if online_gating
                 else {}
             )
+            # per-step 게이팅 감사 필드 (docs/steering/47). latch 없음 — 전 열이 record 축
+            # 1:1. trigger_step/phase_at_trigger 는 첫 발화 좌표(호환 필드)일 뿐 개입 구간
+            # 을 뜻하지 않는다: 실제 개입 record 는 perstep_fired 가 정본.
+            if perstep_gating:
+                online_gate_meta = {
+                    "gated_steering_mode": "perstep",
+                    "perstep_op": (None if getattr(args, "perstep_op", "none") == "none"
+                                   else str(args.perstep_op)),
+                    "perstep_reseed_offset": int(
+                        getattr(args, "perstep_reseed_offset", 900000)
+                    ),
+                    "trigger_step": trigger_step,
+                    "phase_at_trigger": phase_at_trigger,
+                    "failure_scores": failure_scores,
+                    "failure_scores_post": perstep_scores_post,
+                    "perstep_fired": perstep_fired_flags,
+                    "perstep_seed2": perstep_seed2_list,
+                    "perstep_gate_skipped": perstep_gate_skipped_list,
+                    # best-of-N 재샘플 후보 감사 (record 축 1:1 — 미발화·비 rsn op 은 None).
+                    "perstep_n": int(getattr(args, "perstep_n", 8)),
+                    "cand_n": perstep_cand_n_list,
+                    "cand_llr": perstep_cand_llr_list,
+                    "cand_sel": perstep_cand_sel_list,
+                    "cand_reject": perstep_cand_reject_list,
+                    "llr_fallback": perstep_llr_fallback_list,
+                    "cand_entry": perstep_cand_entry_list,
+                    "cand_logs": perstep_cand_logs_list,
+                    # 게이트 비용(ms)·실제로 탄 fallback 감사 (record 축 1:1).
+                    "perstep_fallback_mode": str(getattr(args, "perstep_fallback", "skip")),
+                    "rerun_ms": perstep_rerun_ms_list,
+                    "cand_ms": perstep_cand_ms_list,
+                    "gate_fallback": perstep_fallback_list,
+                    "perstep_fire_count": int(sum(perstep_fired_flags)),
+                    "perstep_debug_max_action_diff": (
+                        max(perstep_debug_diffs) if perstep_debug_diffs else None
+                    ),
+                    # 실개입 = op 있음 ∧ 발화 ∧ ¬skipped (dose 감사 분모; ps_base=0)
+                    "perstep_applied_count": (0 if getattr(args, "perstep_op", "none") == "none"
+                        else int(sum(
+                            1 for f, sk in zip(perstep_fired_flags, perstep_gate_skipped_list)
+                            if f and not sk
+                        ))),
+                    "feature_phases": list(feature_phases),
+                }
 
             rendered_video = env.render()
             upstream_video_path = _find_latest_video(upstream_video_dir)
@@ -1131,7 +1425,10 @@ def run() -> dict[str, Any]:
                 "phase_scheme": "event_state",
                 "feature_phases": feature_phases,
                 "phase_timeline": labeler.phase_timeline,
-                **(env_gt.export(feature_phases, args.n_action_steps) if env_gt is not None else {}),
+                # env-step GT 대조는 라벨러 어휘끼리 해야 뜻이 있다 — cluster 모드에서는
+                # feature_phases 가 'c0'.. 라 GT 열(gt_phases)을 넘긴다.
+                **(env_gt.export(gt_phases if cluster_phase_mode else feature_phases,
+                                 args.n_action_steps) if env_gt is not None else {}),
                 "event_steps": labeler.event_steps,
                 "event_order": labeler.event_order_keys,
                 # drop-aware fields (per-step grasp signal for offline drop analysis)
@@ -1141,6 +1438,14 @@ def run() -> dict[str, Any]:
                 "grasp_timeline": list(getattr(labeler, "grasp_timeline", []) or []),
                 "wrong_grasp_steps": list(getattr(labeler, "wrong_grasp_steps", []) or []),
                 "wrong_grasp_timeline": list(getattr(labeler, "wrong_grasp_timeline", []) or []),
+                # cluster-k8: feature_phases = serve 자체판정 cluster('c0'..), GT 라벨러
+                # 값은 gt_phases 로 병행 (둘 다 record 축 1:1). 이 모드일 때만 실린다.
+                **({
+                    "perstep_cluster_phase": True,
+                    "phase_scheme_records": "serve_cluster",
+                    "gt_phases": list(gt_phases),
+                    "cluster_dists": list(cluster_dists),
+                } if cluster_phase_mode else {}),
                 **online_gate_meta,
             }
             # 떨림(jitter) 진단 — 개입이 액션 궤적에 준 speed/jerk (record 해상도, 판정 무영향).
@@ -1173,6 +1478,18 @@ def run() -> dict[str, Any]:
                     **grid_cell.as_metadata(),
                     "plan_id": grid_plan.plan_id,
                     "armsig": grid_dir.name.split("__")[0],
+                })
+            elif getattr(args, "diag_unplanned", False) and getattr(args, "grid_root", None):
+                # 진단 캡처 전용 — plan 대조 없이 diag/ 하위 좌표에 쓴다 (docs/04 정본
+                # store 와 절대 섞이지 않게 diag 접두). v4 평탄 cell id 는 plan 좌표
+                # 검증과 어긋나므로(base 슬롯 부재·명칭 불일치) 이 경로만 허용한다.
+                grid_dir = (Path(args.grid_root) / "diag"
+                            / (cell_id or args.task)
+                            / f"s{args.scene_idx}" / f"n{args.noise_idx}"
+                            / (getattr(args, "arm_dir", None) or "arm"))
+                extra_metadata.update({
+                    "diag_unplanned": True,
+                    "scene_idx": args.scene_idx, "noise_idx": args.noise_idx,
                 })
             if getattr(args, "jitter_reset_idx", None) is not None:
                 extra_metadata["jitter_reset_idx"] = args.jitter_reset_idx
@@ -1272,6 +1589,7 @@ def run() -> dict[str, Any]:
                     task_suite_name="lerobot_groot_n15_robocasa",
                     extra_metadata=extra_metadata,
                     grid_dir=grid_dir,
+                    diag_unplanned=bool(getattr(args, "diag_unplanned", False)),
                     # steered 수집(arm)일 때만 개입의 진실 기록 — base 는 None
                     arm_config=(
                         None if (arm_params is None or grid_dir is None) else {
@@ -1283,6 +1601,24 @@ def run() -> dict[str, Any]:
                 )
                 # write_safe_triplet 이 grid_dir=None 이면 raise 하므로 여기 도달 = 좌표 확정
                 out_path = grid_dir / "rollout.pkl"
+                # 캡처 수집도 판정 원천(raw_rollouts sidecar json)을 함께 남긴다 —
+                # collect_results 가 per_episode 를 여기서 만들므로 없으면 INCOMPLETE 오판.
+                _mini = {
+                    "scenario_seed": scenario_seed,
+                    "seed": scenario_seed,
+                    "inference_seed": args.inference_seed,
+                    "episode_success": int(success),
+                    "first_success_step": first_success_step,
+                    "steps": step_i,
+                    "n_inferences": n_inferences,
+                    "phase_gated_flags": phase_gated_flags,
+                    **online_gate_meta,
+                    **serve_identity,
+                    **extra_metadata,
+                }
+                (output_dir / f"{stem}.json").write_text(
+                    json.dumps(json_safe(_mini), indent=2, ensure_ascii=False)
+                )
             _append_summary(summary_path, effective_task_id, args.task, episode_idx, scenario_seed, out_path)
             results.append(
                 {

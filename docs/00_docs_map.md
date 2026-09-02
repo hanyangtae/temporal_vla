@@ -14,7 +14,9 @@
    단위(`sig`/`opsig`)와 저장 레이아웃·인덱스 스키마 단일 출처. **rollout activation 이나
    steering 연산자를 저장·이관·삭제하는 모든 작업의 출발점.** 캡처 밀도 판정 규칙
    (`[L,K,T,D]` 축 구성), 절대경로 기록 금지, 수집/평가 rollout 분리.
-5. [CONTRIBUTING](CONTRIBUTING.md) — git/PR 워크플로우.
+5. **[05 GPU Server Rules](05_gpu_server_rules.md)** — kanu·srv48·srv50 serve/eval 운영 규칙과
+   세션 간 GPU 예약(`scripts/utils/gpu_lease.sh`) 단일 출처. **서버에 모델 올리기 전 출발점.**
+6. [CONTRIBUTING](CONTRIBUTING.md) — git/PR 워크플로우.
 
 부가 runbook:
 
@@ -34,10 +36,9 @@
 - **표현 분석**: [01 seen18 Latent Analysis](steering/01_seen18_latent_analysis.md) (길이 confound 통제 전제),
   [08 Pathway Separation](steering/08_pathway_separation_analysis.md) ⚠ 분리 시점 주장 반증됨,
   [22 wrong-grasp VL](steering/22_wrong_grasp_vl_separation.md)
-- **SAE (scene 분리)**: [31 G1](steering/31_sae_g1_results.md) · [32 G2](steering/32_g2_scene_residual_results.md)
-- **섭동 계열**: [35 exp5-2](steering/35_exp5-2_results.md) — 유도된 실패의 회복
-- **방법론 후보**: [07 Steering Methods Survey](steering/07_steering_methods_survey.md)
-- **라운드 종합**: [33 exp5 round summary](steering/33_exp5_round_summary.md)
+- **현행 설계**: [45 hotfix 시나리오](steering/45_hotfix_scenario_spec.md) · [47 per-step 게이팅](steering/47_perstep_gating_pipeline.md)
+- **archive된 라인**(SAE 31·32, 섭동 35, 연산자 서베이 07 등): 요지는 RESULTS·DIRECTION, 원본은 git 이력([`review/LEDGER.tsv`](review/LEDGER.tsv))
+- **라운드 종합**: [RESULTS.md](steering/RESULTS.md) 원장 (exp2~v4r). 최신 라운드 서사 = [collab_within_claude/](collab_within_claude/)
 
 상시 규약 (라운드 무관):
 
@@ -78,7 +79,8 @@ N1.5와 N1.6의 DiT token layout은 대칭이 아니다. feature shape 비교 �
 | [`related_work/`](related_work/) | 우리 방법과의 차이 정리 (reviewer 대응용) |
 | [`Activation_steering_basic/`](Activation_steering_basic/00_activation_steering_survey.md) | activation steering 서베이 52편 + 노트 |
 | [`adr/`](adr/) | 장기 결정 기록 |
-| [`collab/`](collab/) | Codex 협업·Gate 리뷰 기록 |
+| [`collab_codex/`](collab_codex/) | Codex 협업·Gate 리뷰 기록 (Codex 원장 전용) |
+| [`collab_within_claude/`](collab_within_claude/) | Claude 세션 간 핸드오프·파트 발주 요청서 (현행 = `handoff_20260902_v4r_round.md`) |
 | [`onboarding/`](onboarding/00_intern_curriculum.md) | 인턴 커리큘럼 |
 | [`insight/`](insight/) | INSIGHT VLM primitive-segmentation 파일럿 |
 | [`ttt/`](ttt/README.md) | 구 TTA/progress predictor (메인 아님, 보존) |

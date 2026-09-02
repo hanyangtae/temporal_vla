@@ -3,7 +3,7 @@
 
 Panel (a): median accuracy per method with per-instruction points overlaid.
            Methods: majority / time (clock) / [Event-SAE, if results exist]
-                    / activation cluster / activation probe.
+                    / activation cluster.
            (policy-action baselines were dropped from the paper; the external
            observer role is played by the published Event-SAE pipeline.)
 Panel (b): per-instruction scatter — external baseline (x) vs activation
@@ -79,9 +79,7 @@ def main() -> None:
                         np.array([esae.get(r["instruction"], np.nan)
                                   for r in rows])))
     methods += [("cluster_acc", "activation\ncluster", "#4C72B0",
-                 np.array([float(r["cluster_acc"]) for r in rows])),
-                ("probe_acc", "activation\nprobe", "#1F4E79",
-                 np.array([float(r["probe_acc"]) for r in rows]))]
+                 np.array([float(r["cluster_acc"]) for r in rows]))]
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(17.0 * CM, 5.8 * CM),
                                gridspec_kw={"width_ratios": [1.35, 1.0]})

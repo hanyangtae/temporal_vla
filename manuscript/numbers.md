@@ -17,6 +17,22 @@ ref = `outputs/analysis/grid_phase/paper_ref/*.json`, supp = `outputs/analysis/g
 | 데이터 (grid 930판) | N1.5 grid 930 에피소드 (9 instruction × scene10 × noise10 + apple30), 89,766 record | 41 상단, ref(k24) n |
 | margin 정의 | I(상태열;GT) − I(clock;GT), clock은 상태 수를 발견 상태열에 맞춘 진행도 분위 | 40 §2 |
 
+
+## ★ 누수 제거판 (최종 게재 수치, 08-24) — Codex 리뷰 ⑤ 대응
+
+`ae_split_readout.py`: split(seed 0/1/2)마다 표준화·AE·KMeans·매핑을 **train scene만으로**
+재적합. 원자료 `manuscript/ref/split_ae_readout.json` (구 누수판 백업: readout_leakyAE.tsv).
+
+| 지표 | 구(전체 AE) | 신(무누수) |
+|---|---|---|
+| 정확도 중앙값 | 0.856 | **0.822** |
+| macro-F1 중앙값 | 0.570 | **0.574** |
+| vs 행동 이벤트 우위 | 10/10 | **9/10** (예외 DishwasherRack 0.489<0.516) |
+
+- Δacc instruction별 −0.05~+0.08 양방향(OvenRack +0.084 상승) → 체계적 누수 이득 없음.
+- 일부 변화는 AE seed 차이(구 seed0 고정, 신 1000+split) 잡음 포함.
+- k sweep도 무누수 재실행 (split_ae_ksweep.json, 완료 후 3.2·그림 갱신).
+
 ## ★ 주장 1(메인) — activation으로 현재 phase를 읽을 수 있다 (held-out)
 
 프로토콜: scene 단위 train/test 분리(test 2 scene, split seed 0/1/2 평균), 군집·최빈 phase
@@ -60,21 +76,24 @@ waypoint는 train centroid 최근접, record 예측 = 시간상 최근접 waypoi
 | PPCC_apple | 0.721 | 0.760 | 0.861 |
 | PPCC_bread | 0.780 | 0.739 | 0.906 |
 | PPCC_candle | 0.685 | 0.550 | 0.852 |
+| OvenRack_out | 0.402 | 0.510 | 0.487 |
 | PPCC_jug | 0.849 | 0.850 | 0.916 |
 | PPCC_marshmallow | 0.612 | 0.720 | 0.875 |
-| **중앙값 (9/10)** | **0.685** | 0.675 (10/10 기준) | 0.856 (10/10 기준) |
+| **중앙값 (10/10)** | **0.648** | 0.675 | 0.856 |
 
-- activation 군집 > 행동 이벤트: **9/9 전부** (그림 3b)
-- OvenRack_out은 caption 오염 영상 재수집분 도착(08-21) 후 추가 예정; marshmallow는
-  오염 11판(전부 train scene 쪽) 포함 상태의 잠정치 — 교체 후 재산출
+- activation 군집 > 행동 이벤트: **10/10 전부** (그림 3b)
+- OvenRack·marshmallow는 재수집 클린 영상 기준 최종치(08-21). marshmallow는 오염
+  11판 교체 전후 acc 0.612로 동일(오염분이 전부 train scene 쪽이었음).
 - 원자료 `outputs/analysis/grid_phase/phase_readout/esae.json` (n_seed=3 검증 완료)
 
 ### k 강건성 (판독 정확도 중앙값, 비지도 군집)
 
-| k | 4 | 6 | **8** | 12 | 16 | 24 | 32 |
+| k (무누수, 08-24) | 4 | 6 | **8** | 12 | 16 | 24 | 32 |
 |---|---|---|---|---|---|---|---|
-| 정확도 | 0.621 | 0.798 | **0.856** | 0.876 | 0.878 | 0.879 | 0.888 |
-| macro-F1 | 0.294 | 0.471 | **0.570** | 0.581 | 0.621 | 0.675 | 0.664 |
+| 정확도 | 0.628 | 0.782 | **0.822** | 0.848 | 0.864 | 0.871 | 0.878 |
+| macro-F1 | 0.289 | 0.525 | **0.574** | 0.574 | 0.606 | 0.607 | 0.687 |
+
+(구 누수판: acc 0.621/0.798/0.856/0.876/0.878/0.879/0.888 — split_ae_ksweep.json으로 대체)
 
 사람 phase 수(3~6)를 넘는 k≥8에서 평평 → **특정 k 선택에 기대지 않음**.
 원자료 `outputs/analysis/grid_phase/phase_readout/k_sweep.json`.
