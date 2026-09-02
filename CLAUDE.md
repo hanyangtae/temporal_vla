@@ -26,8 +26,10 @@ confound 통제 없는 분리 주장 금지** (실패=항상 timeout이라 time-
 
 정본: `.claude/skills/robocasa-steer-eval/SKILL.md` (launcher·pre-flight 게이트 포함).
 핵심 고정값: **EVAL_SEED=100000**, N_ENVS=2·N_EP=20 per condition, per-episode tsv 필수,
-fit-seed와 eval-seed 분리(held-out) 필수. GPU: 빈 GPU만·최대 3장·GPU당 serve≤2
-(타인 사용 중 GPU 발사 금지). SR eval은 로컬 전용(robocasa Docker).
+fit-seed와 eval-seed 분리(held-out) 필수. **GPU 서버(kanu·srv48·srv50) 운영·세션 간 예약
+규약 정본: [`docs/05_gpu_server_rules.md`](docs/05_gpu_server_rules.md)** — 발사 전
+`scripts/utils/gpu_lease.sh claim` 필수, 타 세션이 잡고 있으면 대기 또는 사용자 보고.
+요지: 빈 GPU만(타인 프로세스 있으면 금지)·kanu 최대 3장·kanu serve 2/GPU·srv 6/GPU.
 
 ## 핵심 아키텍처
 
@@ -70,6 +72,7 @@ sub-key 네임스페이스, `/act_with_features`, 모델×벤치마크 매트릭
 [`docs/04_data_storage_convention.md`](docs/04_data_storage_convention.md)를 먼저 읽고 따른다.**
 요지: 식별자는 내용 지문 `sig`/`opsig` (경로 아님), 산출물 안 절대경로 기록 금지, 수집
 rollout(pkl 有)과 평가 rollout(pkl 無) 저장 위치 분리, 캡처 밀도 5열은 문서 §4·§6.
+grid 좌표는 scene·noise 2축 + **지터 축 k(reset_idx, v3 계열)** — k-grid 규약은 문서 §3.1.1.
 
 ## 체크포인트·데이터셋 경로 (cache)
 

@@ -23,6 +23,8 @@ exp5-2의 섭동-유도 실패 회복(ppcc P1, setM DiT L10 β0.3, 위약 .25 �
 | **patchceil** (07-16) | 오라클: donor activation 통째 이식(상한 측정) | 77 target × 5 arm | **null** (2.6%, p=0.50). 단 action-replay 대조는 15.6% |
 | **exp5-3** (07-27~28) | within-scene setpoint mean-diff · drawer | 160판 + A0 40셀 paired | **해악**. β=1.0 permanent −51판(구제 1 / 해악 52) |
 | **exp5-2** (07-28) | 섭동으로 실패를 **유도**한 뒤 회복 | 24판/arm locked | **★유일 위약-분리 양성** (ppcc P1). 탐색 지위 |
+| **per-step v4 정렬** (08-28~31) | per-step 게이팅(47) · cluster k8 phase · detector를 eval 분포(v4)로 재학습 · base-replay 재정박 paired · α=0.1 | 51케이스/118판 (pair 68) | reseed 구제 5/29·파손 5/37(유일 순효과 균형), setM 6/29·9/34, condg 1/26·4/20. ⚠ 구제 셀은 세 arm 5/5 공통 = **경계셀 속성**. ⚠ noise-0 판 결손 가능(awk 함정) |
+| **v4r β sweep** (09-01~02) | 대상 scene 25판 **재수집**(캡처 ON replay, 라벨 반전 정리) → 실패 60판 × 12 arm (setm_gt/ck8 β0.6~1.0 · reseed · rsn_llr N8) | 60판 (jug 22·oven 17) | 구제율 최고 12%: rsn_llr 5/43(candle 3/8) · setm_ck8 β1.0 5/43 · reseed 3/60. jug·oven 전 arm 0~2. β 비단조. 파손 축 없음. **fit pool 타 scene은 구 세계(혼합) — 미결** |
 
 ## 2. 반복 확인된 사실 (라운드를 넘어 재현된 것)
 
@@ -74,6 +76,10 @@ arm별 경로는 `results.tsv`의 `데이터` 열. 루트는 `outputs/eval/roboc
 | patchceil | `patchceil/<cell>/rollouts/<arm>/` + `donors/`(1.4GB) | `passB/`(~16GB, 정리 검토) |
 | exp5-3 | 승준 `~/sm_*{drawer,mixer}*.json` · `~/exp53_npz/fit_report.json` | 승준 아카이브 |
 | exp5-2 | `exp42_induced/` (전부 로컬) | 로컬 |
+| per-step v4 정렬 | `og_ck8v4_expand{,_srv50}/<arm>/<case>/` · 매니페스트 `outputs/steer/online_pipe/manifests/v4_expand_eval.tsv` | eval 캡처 OFF |
+| v4r β sweep | `og_v4r_expand/<arm>/<case>/`(kanu·srv50·srv48 분산, 회수본 `outputs/tmp/v4r_results/`) · 정본 `manifests/v4r_labels.tsv`(160)·`v4r_eval.tsv`(60) | 재수집 `og_v4r_collect/`(pkl, 승준 `v4r_collect/` 복제) · eval은 7-layer hook ON·미저장 |
+
+> 두 라운드의 좌표·함정·판정 서사는 [`../collab_within_claude/handoff_20260902_v4r_round.md`](../collab_within_claude/handoff_20260902_v4r_round.md).
 
 > ⚠ 2026-07-14 eval activation pkl/zst 전 호스트 삭제(~172GB). 판정 sidecar·fit·conceptor는 보존.
 > exp3부터 eval 캡처를 끈다. 데이터 소실의 재발 방지 규약은 [`docs/04_data_storage_convention.md`](../04_data_storage_convention.md) §7.5–7.6.
@@ -91,5 +97,5 @@ arm별 경로는 `results.tsv`의 `데이터` 열. 루트는 `outputs/eval/roboc
 | `36_exp5-3_within_scene_steer.md` | drawer setM · β sweep (mixer 수집분은 별도) |
 | `28_exp4-2_p0_report.md` | 섭동 메뉴 확정 · 유도 실패율 게이트 (SR 개입 아님 — 전제 기록) |
 
-`35_exp5-2_results.md`는 **섭동 계열로 분리 유지**한다(무대가 다름 — clean 실패가 아니라
-유도된 실패). `31_`·`32_`는 SAE 표현 분석이라 이 원장에 넣지 않는다.
+`35_exp5-2_results.md`(섭동-유도 실패 회복, 2026-09-02 archive)의 요지는 §1·§3 행에 있다 —
+무대가 다름(clean 실패가 아니라 유도된 실패)을 잊지 말 것. 상세는 git 이력. `31_`·`32_`는 SAE 표현 분석이라 이 원장에 넣지 않는다.

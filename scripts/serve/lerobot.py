@@ -22,11 +22,13 @@ lerobot 컨테이너에서 실행:
 """
 
 import argparse
+import contextlib
 import logging
 import os
 import random
 import sys
 import time
+import types
 import uuid
 from pathlib import Path
 from typing import Any, Optional
@@ -114,6 +116,7 @@ _gated_registry: dict = {}
 # {"hook","family","per_step"}. 4모드 전부 여기 등록되고, /steer_arm 이 재기동 없이
 # 같은 family(conceptor↔conceptor, setpoint↔setpoint) 안에서 연산자를 교체한다 —
 # 동적 큐의 슬롯 가동률 전제. family 교체는 hook 클래스가 달라 재기동 필요(명시 에러).
+_condg_hooks: list = []  # condg(상태-조건부 대조 guidance) hook — /act 마다 상태 주입 필요
 _arm_registry: dict = {}  # oracle phase-gated steering: {"hooks":{layer:hook},"matrices":{layer:{phase:M|M_seq}},"identity":{layer:I|[I]*K}}
 # 프로세스 지문: 러너가 "포트의 기존 서버"를 새 serve 로 오인하는 사고 방지 (Gate 2 치명#3)
 # — 로그의 [serve-boot] id 와 /health 의 boot_id 가 일치해야 같은 프로세스.
@@ -218,20 +221,261 @@ def _load_phase_readouts_if_requested(args) -> None:
     )
 
 
-def _reset_steering_step_counters() -> None:
+# ---------------------------------------------------------------- online failure detector
+# SAFE 식 causal failure detector(`scripts/analysis/grid_phase/failure_detector_sim.py` 산출
+# `detector_<arm>_<model>_<slug|all>.pt`)를 추론 경로에 얹어, 매 record 마다 score 와
+# CP 밴드 발화(score > δ_t)를 응답에 실어 보낸다 — 클라이언트의 online gating 신호.
+# phase readout 과 같은 자리(같은 hidden [L,K,T,D])에서 계산하며 좌표는 ckpt 가 정한다.
+_failure_detector = None         # OnlineFailureDetector | None
+_failure_layer_idx: int | None = None
+_failure_spec: dict = {}         # /health 노출용
+
+
+# ---------------------------------------------------------------- cluster phase assigner
+# per-step 게이트의 phase 를 GT POST 값 대신 serve 자체 activation cluster 로 정한다
+# (docs/steering/47 후속, cluster-k8 라운드). 번들 = ae_cluster.py --export-bundle 산출 NPZ.
+_cluster_assigner = None         # ClusterPhaseAssigner | None
+_cluster_layer_idx: int | None = None
+_cluster_spec: dict = {}         # /health 노출용
+
+
+def _cluster_phase_from_hidden(hidden_np) -> dict | None:
+    """features.hidden_states [L,K,T,D] → {"name":"c3","idx":3,"dist":float}.
+
+    detector 와 달리 상태가 없다 (per-record 독립) — /reset 에서 할 일도 없다.
+    좌표(L12·마지막 denoise·49토큰 mean)는 detector 와 동일해야 한다.
+    """
+    if _cluster_assigner is None:
+        return None
+    feat = _cluster_assigner.feature_from_hidden(
+        np.asarray(hidden_np), _cluster_layer_idx)
+    return _cluster_assigner.assign(feat)
+
+
+def _load_cluster_phase_if_requested(args) -> None:
+    """--cluster-phase-bundle 시 판정기를 로드하고 캡처 설정 정합을 검증한다.
+
+    detector 와 **같은 좌표 전제**(groot + all_token_full + 번들 layer 가 capture layers
+    에 포함)를 fail-loud 로 건다 — 조용히 틀린 좌표로 phase 를 붙이는 것 방지.
+    """
+    global _cluster_assigner, _cluster_layer_idx, _cluster_spec
+    path = getattr(args, "cluster_phase_bundle", None)
+    if not path:
+        return
+    if _policy_type != "groot":
+        raise ValueError("--cluster-phase-bundle 는 policy_type='groot' 전용")
+    if _groot_dit_capture_layers is None:
+        raise ValueError(
+            "--cluster-phase-bundle 는 --groot-dit-capture-layers 필요 "
+            "(DiT residual 캡처가 켜져야 cluster feature 를 만든다)"
+        )
+    if _groot_dit_token_pool != "all_token_full":
+        raise ValueError(
+            "--cluster-phase-bundle 는 --groot-dit-token-pool all_token_full 필요 "
+            f"(현재 {_groot_dit_token_pool!r}) — 번들은 49토큰 mean 으로 학습됨"
+        )
+    from src.failure_online.cluster_phase import ClusterPhaseAssigner
+
+    bundle_path = Path(path)
+    if not bundle_path.is_absolute():
+        bundle_path = Path(__file__).resolve().parents[2] / bundle_path
+    _cluster_assigner = ClusterPhaseAssigner.from_bundle(
+        bundle_path,
+        task=getattr(args, "cluster_phase_task", None) or None,
+        device=str(getattr(args, "cluster_phase_device", "cpu")),
+    )
+    _cluster_layer_idx = _cluster_assigner.resolve_layer_index(
+        list(_groot_dit_capture_layers)
+    )  # preflight (capture layers 에 번들 layer 존재)
+    _cluster_spec = {"enabled": True, **_cluster_assigner.spec()}
+    logger.info(
+        "cluster phase assigner ON: bundle=%s slug=%s k=%s latent=%s layer=%s "
+        "denoise_index=%s seg=%s",
+        _cluster_spec["bundle"], _cluster_spec["slug"], _cluster_spec["k"],
+        _cluster_spec["latent"], _cluster_spec["layer"],
+        _cluster_spec["denoise_index"], _cluster_spec["seg"],
+    )
+
+
+# ---------------------------------------------------------------- LLR 재샘플 채점기
+# best-of-N 재샘플(op=rsn_llr)에서 후보 활성화를 phase 조건부 성공/실패 가우시안
+# 로그우도비로 채점한다. NPZ 계약의 단일 출처 = src/failure_online/llr_scorer.py docstring.
+_llr_scorer = None               # LLRScorer | None
+_llr_scene: str | None = None    # 기동 시 고정하는 scene ("s3") — 등록 단위가 (scene, phase)
+_llr_spec: dict = {}             # /health 노출용
+
+
+def _raw_feature_from_hidden(hidden_np) -> np.ndarray:
+    """features.hidden_states [L,K,T,D] → LLR 입력 raw feature [1536] (표준화 전).
+
+    좌표 추출은 **기존 헬퍼만** 쓴다 (새 추출 경로를 만들면 학습 좌표와 조용히 어긋난다):
+    cluster 번들이 있으면 그 좌표, 없으면 detector 좌표 — 둘은 같은 좌표 전제다.
+    """
+    if _cluster_assigner is not None:
+        return _cluster_assigner.feature_from_hidden(np.asarray(hidden_np), _cluster_layer_idx)
+    if _failure_detector is not None:
+        return _failure_detector.feature_from_hidden(np.asarray(hidden_np), _failure_layer_idx)
+    raise HTTPException(
+        status_code=409,
+        detail="LLR 재샘플: raw feature 좌표를 정할 판정기가 없음 "
+        "(--cluster-phase-bundle 또는 --failure-detector 필요)",
+    )
+
+
+def _load_llr_scorer_if_requested(args) -> None:
+    """--llr-bundle 시 채점기를 로드한다 (미지정이면 None — rsn_llr 요청 시 409).
+
+    연산자 등록 단위가 **(scene, phase)** 라 번들은 task 당 1개이고 scene 은 기동
+    인자(--llr-scene)로 고정한다 — 없으면 기동 실패(어느 scene 의 가우시안으로 채점하는지
+    불명인 채 도는 것 방지).
+    """
+    global _llr_scorer, _llr_scene, _llr_spec
+    path = getattr(args, "llr_bundle", None)
+    if not path:
+        return
+    if _policy_type != "groot":
+        raise ValueError("--llr-bundle 는 policy_type='groot' 전용")
+    if _groot_dit_capture_layers is None or _groot_dit_token_pool != "all_token_full":
+        raise ValueError(
+            "--llr-bundle 는 --groot-dit-capture-layers + "
+            "--groot-dit-token-pool all_token_full 필요 (후보 활성화 캡처 좌표)"
+        )
+    from src.failure_online.llr_scorer import LLRScorer, normalize_scene
+
+    scene_arg = getattr(args, "llr_scene", None)
+    if scene_arg in (None, ""):
+        raise ValueError(
+            "--llr-bundle 는 --llr-scene 필요 (등록 단위가 (scene, phase) — "
+            "어느 scene 의 가우시안으로 채점할지 명시할 것)"
+        )
+    _llr_scene = normalize_scene(scene_arg)
+
+    bundle_path = Path(path)
+    if not bundle_path.is_absolute():
+        bundle_path = Path(__file__).resolve().parents[2] / bundle_path
+    _llr_scorer = LLRScorer.from_bundle(bundle_path)
+    if _llr_scene not in _llr_scorer.scenes():
+        raise ValueError(
+            f"--llr-scene {_llr_scene} 이 번들에 없음 (있는 scene: {_llr_scorer.scenes()})"
+        )
+    # basename 만 기록 (docs/04 §8 — 산출물 안 절대경로 금지)
+    _llr_spec = {"enabled": True, "bundle": bundle_path.name, "scene": _llr_scene,
+                 **_llr_scorer.spec()}
+    logger.info("LLR resample scorer ON: bundle=%s scene=%s registered=%s",
+                _llr_spec["bundle"], _llr_scene, _llr_spec["registered"])
+
+
+def _failure_from_hidden(hidden_np) -> dict | None:
+    """features.hidden_states [L,K,T,D] → {"score","fired","delta","t"} (1 step 전진).
+
+    detector 는 **episode 안에서 상태를 이어간다** (LSTM (h,c) / MLP 누적평균 / step
+    카운터) — /reset 이 리셋한다. 요청 1개 = record 1개 규약을 전제로 한 step 씩 전진.
+    """
+    if _failure_detector is None:
+        return None
+    feat = _failure_detector.feature_from_hidden(np.asarray(hidden_np), _failure_layer_idx)
+    return _failure_detector.step(feat)
+
+
+def _load_failure_detector_if_requested(args) -> None:
+    """--failure-detector 시 detector 를 로드하고 캡처 설정 정합을 검증한다.
+
+    phase readout 과 같은 fail-loud 기준: groot + all_token_full 캡처 + ckpt 가 지정한
+    물리 layer 가 capture layers 에 있어야 한다 (조용히 틀린 좌표로 점수 내는 것 방지).
+    """
+    global _failure_detector, _failure_layer_idx, _failure_spec
+    path = getattr(args, "failure_detector", None)
+    if not path:
+        return
+    if _policy_type != "groot":
+        raise ValueError("--failure-detector 는 policy_type='groot' 전용")
+    if _groot_dit_capture_layers is None:
+        raise ValueError(
+            "--failure-detector 는 --groot-dit-capture-layers 필요 "
+            "(DiT residual 캡처가 켜져야 detector feature 를 만든다)"
+        )
+    if _groot_dit_token_pool != "all_token_full":
+        raise ValueError(
+            "--failure-detector 는 --groot-dit-token-pool all_token_full 필요 "
+            f"(현재 {_groot_dit_token_pool!r}) — detector 는 토큰 세그먼트 mean 으로 학습됨"
+        )
+    from src.failure_online import OnlineFailureDetector
+
+    ckpt_path = Path(path)
+    if not ckpt_path.is_absolute():
+        ckpt_path = Path(__file__).resolve().parents[2] / ckpt_path
+    _failure_detector = OnlineFailureDetector.from_checkpoint(
+        ckpt_path,
+        alpha=float(args.failure_alpha),
+        task=getattr(args, "failure_task", None) or None,
+        device=str(getattr(args, "failure_device", "cpu")),
+    )
+    _failure_layer_idx = _failure_detector.resolve_layer_index(
+        list(_groot_dit_capture_layers)
+    )  # preflight (capture layers 에 ckpt layer 존재)
+    _failure_detector.reset()
+    _failure_spec = {"enabled": True, **_failure_detector.spec()}
+    logger.info(
+        "online failure detector ON: ckpt=%s model=%s layer=%s denoise=%s seg=%s "
+        "task=%s alpha=%s band_L=%s",
+        _failure_spec["ckpt"], _failure_spec["model"], _failure_spec["layer"],
+        _failure_spec["denoise"], _failure_spec["seg"], _failure_spec["task"],
+        _failure_spec["alpha"], _failure_spec["band_L"],
+    )
+
+
+def _reset_steering_step_counters(*, include_patch: bool = True) -> None:
     """Per-Step steering 의 denoise call 카운터를 요청 시작 시 리셋.
 
     phase 는 요청 단위(/steering_phase), step 은 요청 내 denoise call 단위라 직교 —
     /act·/act_with_features 진입부에서 매 요청 호출한다 (global M 단일 hook 은 no-op).
+
+    ``include_patch=False``: per-step 게이트의 2차 pass(같은 record 재실행)용 —
+    patch hook 의 reset 은 record cursor 전진을 겸하므로 요청당 1회만 불러야 한다.
     """
     for hook in _steering:
         reset = getattr(hook, "reset_step_counter", None)
         if reset is not None:
             reset()
+    if not include_patch:
+        return
     # patch hook 은 같은 호출이 k 리셋 + record cursor 전진을 겸한다
     # (요청 1개 = record 1개 규약, patching_hooks.PatchSteering docstring)
     for hook in _patch_hooks.values():
         hook.reset_step_counter()
+
+
+CONDG_STATE_KEYS = (
+    "observation.state.eef_pos_rel",     # 3
+    "observation.state.eef_quat_rel",    # 4
+    "observation.state.gripper_qpos",    # 2
+)
+
+
+def _inject_condg_state(payload: dict) -> None:
+    """condg hook 에 raw proprio 9차원을 주입 (요청 1개 = record 1개 규약).
+
+    속도는 hook 내부 버퍼의 직전 record 차분이라 **요청마다 정확히 1회** 불러야 한다
+    (docs/steering/44 §1). 키가 없으면 조용히 0 을 넣지 않고 즉시 실패 — 상태가
+    비면 setpoint 가 통째로 틀어진다.
+    """
+    if not _condg_hooks:
+        return
+    parts = []
+    for key in CONDG_STATE_KEYS:
+        raw = payload.get(key)
+        if raw is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"condg steering: payload 에 {key} 없음 "
+                    f"(필요 키 {list(CONDG_STATE_KEYS)}) — GR00T RoboCasa io 경로 필요"
+                ),
+            )
+        parts.append(np.asarray(raw, dtype=np.float64).reshape(-1))
+    p9 = np.concatenate(parts)
+    for hook in _condg_hooks:
+        hook.set_state(p9)
 
 
 def _has_per_step_steering() -> bool:
@@ -485,18 +729,20 @@ def parse_payload(payload: dict) -> dict:
 # ─── FastAPI 엔드포인트 ───────────────────────────────────────────────────────
 
 
-@app.post("/steering_phase")
-def steering_phase(payload: dict):
-    """Oracle phase-gated steering: 현재 phase 의 conceptor 로 hook M 을 스위칭.
+def _apply_steering_phase_state(phase: str | None, scene: int | None) -> None:
+    """등록된 gated hook 을 (phase, scene) 상태로 스위칭 — 실제 배선 본문.
 
-    수집 client 가 매 get_action 전에 POST {"phase": "<reach-to-object|transport|...>"}.
-    등록된 phase 가 없으면 identity(=no steer). --steering-phase-npz-base 로 활성화.
+    ``/steering_phase`` 핸들러와 per-step 게이트의 2차 pass 가 공유한다
+    (docs/steering/47 §3-3). ``phase`` 가 None/빈 문자열이거나 미등록 phase 면
+    무개입(identity / set_vector(None) / set_phase(None)) — 즉 off 와 같은 경로다.
+    ``_gated_registry["current"]`` 는 여기서 건드리지 않는다 (핸들러 책임).
     """
-    if not _gated_registry:
-        raise HTTPException(status_code=409, detail="gated steering not enabled")
-    phase = str(payload.get("phase", ""))
     for layer, hook in _gated_registry["hooks"].items():
-        M = _gated_registry["matrices"][layer].get(phase)
+        if hasattr(hook, "set_phase"):
+            # condg: hook 이 전 phase 파라미터를 들고 있어 이름·scene 만 스위칭.
+            hook.set_phase(phase or None, scene)
+            continue
+        M = _gated_registry["matrices"][layer].get(phase) if phase else None
         if hasattr(hook, "set_vector"):
             # setpoint hook: 등록 phase → 활성, 미등록 → 비활성(no-op).
             # 4-튜플=세그먼트 연산자(v_seg,s_tok,bounds,mask), 2-튜플=구 pooled (r̂,s)
@@ -511,8 +757,41 @@ def steering_phase(payload: dict):
             # set_matrices 가 M(단일) / M_seq(per-step 리스트) 모두 수용, 텐서 캐시·step
             # 카운터도 함께 리셋한다 (구 ``hook.M=...; hook._Mt=None`` 배선 대체).
             hook.set_matrices(M if M is not None else _gated_registry["identity"][layer])
+
+
+def _steering_phase_off() -> None:
+    """전 gated hook 무개입 전환 (미등록 phase 폴백과 동일 경로). 등록 없으면 no-op.
+
+    per-step 게이트 규약: 요청 시작 시 무조건 off → 1차 pass 는 자연 활성화,
+    발화한 record 만 2차 pass 에서 잠깐 on 했다가 다시 off (latch 없음).
+    """
+    if not _gated_registry:
+        return
+    _apply_steering_phase_state(None, None)
+
+
+@app.post("/steering_phase")
+def steering_phase(payload: dict):
+    """Oracle phase-gated steering: 현재 phase 의 conceptor 로 hook M 을 스위칭.
+
+    수집 client 가 매 get_action 전에 POST {"phase": "<reach-to-object|transport|...>"}.
+    등록된 phase 가 없으면 identity(=no steer). --steering-phase-npz-base 로 활성화.
+
+    condg(op=condg)는 phase 에 더해 optional ``"scene": int`` 를 받아 scene별 중심화
+    파라미터를 고른다 (미지 scene = global fallback). 기존 호출자는 scene 없이 그대로.
+    """
+    if not _gated_registry:
+        raise HTTPException(status_code=409, detail="gated steering not enabled")
+    phase = str(payload.get("phase", ""))
+    scene = payload.get("scene")
+    scene = None if scene is None else int(scene)
+    # 비-perstep 경로는 현행 그대로: POST 즉시 적용 (per-step 게이트는 /act 진입부에서
+    # off 시킨 뒤 발화한 record 의 2차 pass 에서만 이 상태를 다시 적용한다).
+    _apply_steering_phase_state(phase, scene)
     _gated_registry["current"] = phase
-    return {"ok": True, "phase": phase, "gated": phase in next(iter(_gated_registry["matrices"].values()))}
+    _gated_registry["current_scene"] = scene
+    return {"ok": True, "phase": phase, "scene": scene,
+            "gated": phase in next(iter(_gated_registry["matrices"].values()))}
 
 
 @app.post("/steer_arm")
@@ -734,6 +1013,14 @@ async def reset():
     # (러너의 /patch_arm → collector 기동(내부 /reset) 순서 때문).
     for hook in _patch_hooks.values():
         hook.reset_episode()
+    # online failure detector: episode 경계에서 (h,c)·누적평균·step 카운터 리셋.
+    # 리셋을 빠뜨리면 이전 판의 상태가 이어져 발화 시점이 오염된다.
+    if _failure_detector is not None:
+        _failure_detector.reset()
+    # condg: 속도 차분 버퍼(직전 record 상태) 초기화 — 판 경계를 넘겨 이으면 첫 record
+    # 속도가 이전 판의 잔재가 된다.
+    for hook in _condg_hooks:
+        hook.reset_state()
     return reset_policy(policy)
 
 
@@ -777,6 +1064,436 @@ def _action_to_emit_array(action: torch.Tensor) -> np.ndarray:
     raise ValueError(f"Unsupported action tensor shape: {action_np.shape}")
 
 
+# ─── per-step 게이트 (docs/steering/47) ────────────────────────────────────────
+# 규약: 1차 pass 는 **hook 전부 off** 로 돌려 자연 활성화 x_t 를 얻고(detector 순환
+# 차단, §1-2), detector 가 발화한 record 에서만 **DiT-only 2차 pass** 로 개입한다.
+# 개입은 그 record 1회성 — 다음 record 는 다시 무개입이 기본값(latch 폐기).
+_PERSTEP_OPS = ("setm", "condg", "reseed", "rsn_llr", "rsn_rand")
+# rsn_* = best-of-N 재샘플: 후보 n 개를 DiT-only 로 뽑아 하나만 실행(순수 재샘플 —
+# setm/condg 훅은 적용하지 않는다). 선택 규칙만 다르다 (llr argmin vs 무작위).
+_PERSTEP_RESAMPLE_OPS = ("rsn_llr", "rsn_rand")
+_PERSTEP_DEFAULT_RESEED_OFFSET = 900000
+# setm/condg 가 발화했는데 phase 미등록일 때: skip=무개입 | reseed=reseed 로 대체 개입
+_PERSTEP_FALLBACKS = ("skip", "reseed")
+_PERSTEP_DEFAULT_N = 8
+_PERSTEP_MAX_N = 32
+# action_head.get_action 호출 인자 캐시 — backbone(VL) 재실행 없이 DiT 만 다시 돌린다.
+_dit_call_cache: dict = {}
+
+
+def _shallow_copy_model_inputs(obj):
+    """``BatchFeature`` (또는 dict) 얕은 복사 — 키 in-place 교체로부터 캐시 보호.
+
+    값(텐서)은 공유하고 매핑만 새로 만든다. ``process_backbone_output`` 이 하는 건
+    ``backbone_output["backbone_features"] = ...`` (키 재바인딩)이라 이걸로 충분하다.
+    """
+    if type(obj) is dict:
+        return dict(obj)
+    return type(obj)(data=dict(obj))  # BatchFeature(data=...) — 속성 접근 보존
+
+
+def _parse_perstep_gate(payload: dict) -> dict | None:
+    """payload 의 ``perstep_gate`` / ``perstep_debug_rerun`` 파싱 + 사전 배선 검증.
+
+    payload 계약:
+      ``perstep_gate``: {"op": "setm"|"condg"|"reseed"|"rsn_llr"|"rsn_rand"|null,
+                         "reseed_offset": int (기본 900000),
+                         "n": int (rsn_* 후보 수, 기본 8, 1≤n≤32),
+                         "fallback": "skip"(기본)|"reseed" — setm/condg 가 발화했는데
+                           현재 phase 에 연산자가 없을 때의 처리. skip=무개입,
+                           reseed=reseed 2차 pass 로 대체 개입. rsn_*/reseed 는 무관}
+      ``perstep_debug_rerun``: bool — 발화 무관하게 hook off·같은 seed 로 2차 실행해
+      배관 동치(max|Δaction|)만 재는 스모크 모드 (응답 action 은 1차 것 유지).
+
+    없으면 None (기존 경로 그대로). 오배선은 전부 명시 에러 — 조용히 개입 없는
+    "개입 arm" 이 도는 사고 방지.
+    """
+    raw = payload.get("perstep_gate")
+    debug = bool(payload.get("perstep_debug_rerun"))
+    if raw is None and not debug:
+        return None
+    if raw is not None and not isinstance(raw, dict):
+        raise HTTPException(status_code=422, detail="perstep_gate 는 dict 여야 한다")
+    cfg = dict(raw or {})
+
+    op = cfg.get("op")
+    if op is not None:
+        op = str(op).strip().lower()
+        if op in ("", "none", "null"):
+            op = None
+    if op is not None and op not in _PERSTEP_OPS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"perstep_gate.op 불명: {op!r} (허용 {list(_PERSTEP_OPS)} 또는 null)",
+        )
+
+    if _policy_type != "groot":
+        # DiT-only 재실행은 GR00T action_head 구조 전용 (fail-loud, 무음 no-op 금지)
+        raise HTTPException(
+            status_code=409,
+            detail=f"per-step 게이트는 policy_type='groot' 전용 (현재 {_policy_type!r})",
+        )
+    if _failure_detector is None and not debug:
+        raise HTTPException(
+            status_code=409,
+            detail="per-step 게이트는 --failure-detector 필요 (게이트 신호 없음)",
+        )
+    if _patch_hooks:
+        # patch hook 은 "요청 1개 = record 1개" 커서 규약 — 2차 pass 재실행이 발화
+        # 횟수를 2배로 만들어 over-fire 가드를 터뜨린다 (동시 사용 금지).
+        raise HTTPException(
+            status_code=409,
+            detail="per-step 게이트는 patch serve(--patch-layers)와 동시 사용 불가",
+        )
+    if payload.get("skip_features") and _failure_detector is None:
+        # detector 없는 skip_features 는 hook 없는 chunk 경로로 빠져 인자 캐시가 안 찬다
+        raise HTTPException(
+            status_code=409,
+            detail="per-step 게이트 + skip_features 는 detector 켜진 serve 에서만 가능",
+        )
+    if op in ("setm", "condg"):
+        if not _gated_registry:
+            raise HTTPException(
+                status_code=409,
+                detail=f"perstep op={op} 인데 gated steering 미등록 (serve 재기동 필요)",
+            )
+        want_family = "condg" if op == "condg" else "setpoint"
+        fams = {ent["family"] for ent in _arm_registry.values()}
+        if want_family not in fams:
+            raise HTTPException(
+                status_code=409,
+                detail=f"perstep op={op}(family={want_family}) != 등록 family {sorted(fams)}",
+            )
+
+    if op == "rsn_llr" and _llr_scorer is None:
+        # 채점기 없이 rsn_llr 를 돌리면 조용히 "후보 0 고정"=reseed 1회 arm 이 된다.
+        raise HTTPException(
+            status_code=409,
+            detail="perstep op=rsn_llr 인데 LLR 채점기 미로드 — serve 를 --llr-bundle 로 재기동",
+        )
+
+    try:
+        offset = int(cfg.get("reseed_offset", _PERSTEP_DEFAULT_RESEED_OFFSET))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="perstep_gate.reseed_offset 은 int") from exc
+
+    fallback = cfg.get("fallback", "skip")
+    fallback = str(fallback).strip().lower() if fallback is not None else "skip"
+    if fallback not in _PERSTEP_FALLBACKS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"perstep_gate.fallback 불명: {fallback!r} (허용 {list(_PERSTEP_FALLBACKS)})",
+        )
+
+    try:
+        n_cand = int(cfg.get("n", _PERSTEP_DEFAULT_N))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="perstep_gate.n 은 int") from exc
+    if not (1 <= n_cand <= _PERSTEP_MAX_N):
+        raise HTTPException(
+            status_code=422,
+            detail=f"perstep_gate.n={n_cand} 범위 밖 (1≤n≤{_PERSTEP_MAX_N})",
+        )
+
+    return {"op": op, "reseed_offset": offset, "n": n_cand, "fallback": fallback,
+            "debug_rerun": debug}
+
+
+def _ensure_dit_rerun_wrap() -> None:
+    """``action_head.get_action`` 을 감싸 호출 인자를 캐시 (2차 pass 재실행용).
+
+    ``flow_matching_action_head.process_backbone_output`` 이
+    ``backbone_output["backbone_features"]`` 를 **in-place 로 덮어쓴다** — 그래서
+    원함수 호출 **전에** 얕은 복사를 떠 둔다. 아니면 2차 pass 가 vlln·vl_self_attention
+    을 두 번 먹인 값을 받아 조용히 다른 조건이 된다.
+    """
+    if _dit_call_cache.get("installed"):
+        return
+    groot_model = getattr(policy, "_groot_model", None)
+    if groot_model is None:
+        raise HTTPException(status_code=500, detail="per-step 게이트: policy._groot_model 없음")
+    head = groot_model.action_head
+    orig = head.get_action  # 클래스 구현에 바인딩된 원함수 (래핑 전에 확보 — 재귀 방지)
+
+    def _capturing_get_action(self, backbone_output, action_input):  # noqa: ARG001
+        _dit_call_cache["backbone_output"] = _shallow_copy_model_inputs(backbone_output)
+        _dit_call_cache["action_input"] = _shallow_copy_model_inputs(action_input)
+        return orig(backbone_output, action_input)
+
+    head.get_action = types.MethodType(_capturing_get_action, head)
+    _dit_call_cache["orig"] = orig
+    _dit_call_cache["installed"] = True
+    logger.info("per-step 게이트: action_head.get_action 인자 캐시 wrap 설치")
+
+
+def _rerun_dit_only(*, capture: bool) -> tuple[torch.Tensor, np.ndarray | None]:
+    """캐시된 (backbone_output, action_input) 으로 action_head 만 재실행 (2차 pass).
+
+    backbone(VL)은 다시 돌지 않는다 — 같은 관측·같은 VL 조건 위에서 denoise 만 다시
+    한다. 반환 action 은 ``predict_action_chunk`` 와 같은 [B,H,D] raw 텐서(원 action_dim
+    슬라이스 완료). ``capture=True`` 면 별도 ``SafeFeatureCapture`` 로 2차 활성화
+    ([L,K,T,D])를 함께 반환한다 (1차 캡처 컨텍스트 밖 — [K]→[2K] 오염 방지).
+    """
+    if "backbone_output" not in _dit_call_cache:
+        raise HTTPException(
+            status_code=500,
+            detail="per-step 게이트: 1차 pass 의 action_head 인자 캐시가 비었다 (wrap 미발화)",
+        )
+    bo_cached = _dit_call_cache["backbone_output"]
+    ai_cached = _dit_call_cache["action_input"]
+    # 2차 호출도 복사본으로 — get_action 이 backbone_features 를 다시 in-place 덮어쓴다
+    bo = _shallow_copy_model_inputs(bo_cached)
+    ai = _shallow_copy_model_inputs(ai_cached)
+    orig = _dit_call_cache["orig"]
+
+    device = next(policy.parameters()).device
+    use_bf16 = bool(getattr(policy.config, "use_bf16", False))
+    # per-step hook 의 denoise 카운터·condg call 카운터를 2차 pass 용으로 리셋
+    # (안 하면 over-fire 가드가 터지거나 apply_call 지점이 어긋난다).
+    # patch hook 은 제외 — 그 reset 은 record cursor 전진을 겸한다(요청당 1회).
+    _reset_steering_step_counters(include_patch=False)
+
+    cap = None
+    if capture:
+        cap = safe_hooks.SafeFeatureCapture(
+            policy,
+            _policy_type,
+            capture_vl=_capture_vl_features,
+            groot_dit_layers=_groot_dit_capture_layers,
+            pi05_expert_layers=_pi05_expert_capture_layers,
+            groot_dit_token_pool=_groot_dit_token_pool,
+            vl_capture_point=_groot_vl_capture_point,
+        )
+    with torch.inference_mode():
+        with (cap if cap is not None else contextlib.nullcontext()):
+            with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16):
+                out = orig(bo, ai)
+    _assert_per_step_hook_counts()
+
+    actions = out["action_pred"]
+    from lerobot.utils.constants import ACTION as _ACTION  # noqa: PLC0415
+
+    original_action_dim = int(policy.config.output_features[_ACTION].shape[0])
+    actions = actions[:, :, :original_action_dim]
+
+    hidden2 = None
+    if cap is not None:
+        hidden2 = cap.assemble_blocks()
+        if hidden2 is None:
+            raise HTTPException(
+                status_code=500, detail="per-step 게이트: 2차 pass 활성화 캡처 실패(무발화)"
+            )
+    return actions, hidden2
+
+
+def _gated_phase_registered(phase: str | None) -> bool:
+    """해당 phase 에 실제 연산자가 등록돼 있는지 (미등록이면 적용해도 identity)."""
+    if not phase or not _gated_registry:
+        return False
+    return any(phase in table for table in _gated_registry["matrices"].values())
+
+
+def _run_resample_gate(
+    cfg: dict, op: str, seed1: int, extras: dict
+) -> tuple[torch.Tensor, Any, int]:
+    """best-of-N 재샘플 2차 pass: 후보 n 개 → 1개 선택. 반환 (action, hidden, seed).
+
+    후보 i 의 seed = seed1 + reseed_offset + i (n=1 이면 기존 reseed 와 동일한 후보).
+    **선택된 후보 = 실제로 실행된 세계** — detector 재step·응답 action 모두 그 후보 것을
+    쓴다. setm/condg 훅은 얹지 않는다 (순수 재샘플 arm).
+
+    발동 조건은 detector 발화뿐 — phase 조건은 없다. 채점 entry 는 후보 latent 의
+    최근접 비-OOD 등록 entry (`LLRScorer.score_nearest`).
+    """
+    n_cand = int(cfg["n"])
+    base = seed1 + int(cfg["reseed_offset"])
+    cands: list[tuple[int, torch.Tensor, Any]] = []
+    cand_ms: list[float] = []      # 후보별 DiT-only rerun 소요 (제어 주기 영향 정량화용)
+    for i in range(n_cand):
+        seed_i = base + i
+        # 후보마다 전역 RNG 를 다시 심는다 (앞 후보가 소모한 상태를 물려받지 않도록).
+        torch.manual_seed(seed_i)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed_i)
+        # step counter reset 은 _rerun_dit_only 내부에서 수행 — 여기서 중복 호출 금지.
+        _t_cand = time.perf_counter()
+        act_i, hid_i = _rerun_dit_only(capture=True)
+        cand_ms.append((time.perf_counter() - _t_cand) * 1e3)
+        cands.append((seed_i, act_i, hid_i))
+
+    cand_logs: list | None = None
+    llrs: list[float | None] | None = None
+    rejects: list[str | None] | None = None
+    cand_entries: list[str | None] | None = None
+    skipped: str | None = None
+    scored = None
+    # 채점은 **후보 자신의 latent 위치**로 entry 를 정한다 (score_nearest) — "현재 cluster
+    # phase" 로 entry 를 조회하지 않는다. 발화 시점 online cluster 가 등록 entry 와 전면
+    # 불일치해 (scene, phase) 조회는 전 케이스 fallback 으로 퇴화했다(설계 세션 실측).
+    # scene 에 entry 가 없는 경우는 기동 시 --llr-scene 검증에서 이미 걸러진다.
+    if _llr_scorer is not None:
+        scored = [_llr_scorer.score_nearest(_raw_feature_from_hidden(h), _llr_scene)
+                  for _, _, h in cands]
+        llrs = [None if s["llr"] is None else float(s["llr"]) for s in scored]
+        rejects = ["ood" if s["ood_reject"] else None for s in scored]
+        cand_entries = [s["entry"] for s in scored]
+        # 외삽 깊이 사후분석용 (연산자 설계 요청): 후보별 [log_s, log_f]
+        cand_logs = [[float(s["log_s"]), float(s["log_f"])] for s in scored]
+
+    if op == "rsn_rand":
+        # 위약 arm: 같은 후보 풀에서 무작위 선택 (seed1 고정 → 재현 가능).
+        # 채점기가 있으면 llr/entry 는 **기록만** 한다 (선택에는 쓰지 않는다).
+        sel = int(np.random.RandomState(seed1).randint(n_cand))
+    else:
+        if scored is None:  # _parse_perstep_gate 가 이미 막지만 무음 퇴화 방지
+            raise HTTPException(
+                status_code=409, detail="perstep op=rsn_llr 인데 LLR 채점기 미로드")
+        keep = [i for i, s in enumerate(scored) if not s["ood_reject"]]
+        if not keep:
+            # 전 후보 기각 → 후보 0 으로 **개입은 한다**(=reseed 1회). 선택이 LLR 이
+            # 아니었음을 별도 필드로 남긴다 (무음 no-op 금지).
+            sel = 0
+            skipped = "llr_all_ood"
+        else:
+            sel = min(keep, key=lambda i: llrs[i])
+
+    extras["features.perstep_cand_n"] = n_cand
+    extras["features.perstep_cand_ms"] = [float(v) for v in cand_ms]
+    extras["features.perstep_cand_llr"] = llrs
+    extras["features.perstep_cand_entry"] = cand_entries
+    extras["features.perstep_cand_logs"] = cand_logs
+    extras["features.perstep_cand_sel"] = int(sel)
+    extras["features.perstep_cand_reject"] = rejects
+    if skipped is not None:
+        # 주의: gate_skipped 가 아니다 — fallback 도 후보 0 으로 **개입은 일어난다**.
+        # gate_skipped 는 "무개입" 전용(집계 applied_count 가 ¬skipped 로 세므로),
+        # LLR 선별 불가 사유는 별도 필드로 남긴다.
+        extras["features.perstep_llr_fallback"] = skipped
+    seed_sel, action_sel, hidden_sel = cands[sel]
+    return action_sel, hidden_sel, seed_sel
+
+
+def _run_perstep_gate(
+    cfg: dict, action1: torch.Tensor, hidden1, inference_seed: int | None
+) -> tuple[torch.Tensor, Any, dict, dict | None]:
+    """1차 pass 결과 → detector → (발화 시) 2차 pass. 반환 (action, hidden, extras, y_t).
+
+    - detector 입력은 **항상 1차 pass(pre-hook)** 활성화 (docs/steering/47 §1-2).
+    - 2차 pass 후 detector 상태를 1차 step 직전으로 되돌린 뒤 x_t' 로 다시 step —
+      즉 상태 커밋은 실제로 실행된 활성화 쪽(h_t = h′).
+    """
+    extras: dict[str, Any] = {
+        "features.perstep_fired": False,
+        "features.perstep_op": None,
+        "features.perstep_seed2": None,
+    }
+    snap = None
+    fail1 = None
+    if _failure_detector is not None:
+        if hidden1 is None:
+            raise HTTPException(status_code=500, detail="per-step 게이트: 1차 pass hidden 없음")
+        snap = _failure_detector.snapshot()
+        fail1 = _failure_from_hidden(np.asarray(hidden1))
+        extras["features.perstep_fired"] = bool(fail1["fired"])
+
+    # cluster phase 판정: **발화 여부와 무관하게 매 요청** 1차 pass(pre-hook) 활성화로
+    # 계산해 응답에 싣는다 (클라이언트가 feature_phases 에 기록해야 하므로).
+    cluster1 = None
+    if _cluster_assigner is not None:
+        if hidden1 is None:
+            raise HTTPException(
+                status_code=500, detail="per-step 게이트: cluster phase 용 1차 pass hidden 없음")
+        cluster1 = _cluster_phase_from_hidden(np.asarray(hidden1))
+        extras["features.perstep_cluster"] = cluster1["name"]
+        extras["features.perstep_cluster_dist"] = cluster1["dist"]
+
+    if cfg["debug_rerun"]:
+        # 배관 동치 스모크: hook off·seed1 로 2차 실행 → raw action 동치 확인만.
+        # 응답 action 은 1차 것 유지(개입 아님), detector 도 1차 step 만 커밋.
+        if inference_seed is not None:
+            torch.manual_seed(int(inference_seed))
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(int(inference_seed))
+        action2, _ = _rerun_dit_only(capture=False)
+        diff = float((action2.detach().float() - action1.detach().float()).abs().max().item())
+        extras["features.perstep_debug_max_action_diff"] = diff
+        return action1, hidden1, extras, fail1
+
+    op = cfg["op"]
+    if op is None or not extras["features.perstep_fired"]:
+        return action1, hidden1, extras, fail1
+
+    if inference_seed is None:
+        raise HTTPException(
+            status_code=422,
+            detail="per-step 게이트 2차 pass 는 payload.inference_seed 필요 "
+            "(noise 재현/재추첨의 기준 seed)",
+        )
+    seed1 = int(inference_seed)
+    if cluster1 is not None:
+        # 번들이 있으면 phase 는 serve 자체 판정("c0".."c{k-1}") — 클라이언트가 POST 한
+        # GT phase 값은 **무시**한다 (online 자립 조건). 번들이 없으면 현행 POST current.
+        cur_phase = cluster1["name"]
+    else:
+        cur_phase = _gated_registry.get("current") if _gated_registry else None
+
+    # 2차 pass 전체 소요 (rsn 후보 루프+채점 포함, detector 재step 직전까지) — 제어
+    # 주기 영향 정량화용. 무발화 record 는 여기 오지 않으므로 필드 자체가 없다.
+    _t_rerun = time.perf_counter()
+    if op in _PERSTEP_RESAMPLE_OPS:
+        # 발동 조건 = SAFE 발화뿐 (phase 분기 없음). cur_phase 는 채점에 쓰지 않는다 —
+        # 응답의 perstep_cluster 기록은 위에서 이미 실었다.
+        action2, hidden2, seed2 = _run_resample_gate(cfg, op, seed1, extras)
+    else:
+        # 1차 pass 가 전역 RNG 를 소모했으므로 2차 직전 반드시 재설정:
+        #   setm/condg → seed1 (1차와 같은 noise, 차이는 개입뿐)
+        #   reseed     → seed1+offset (denoise noise 재추첨 자체가 개입)
+        seed2 = seed1 + int(cfg["reseed_offset"]) if op == "reseed" else seed1
+        torch.manual_seed(seed2)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed2)
+
+        if op in ("setm", "condg") and not _gated_phase_registered(cur_phase):
+            # 현재 phase 에 연산자가 없으면 setm/condg 2차 pass 는 identity.
+            if cfg["fallback"] != "reseed":
+                # 개입 없음으로 커밋하고 사유를 데이터에 남긴다 (무음 no-op 금지).
+                extras["features.perstep_gate_skipped"] = f"phase_unregistered:{cur_phase!r}"
+                return action1, hidden1, extras, fail1
+            # fallback=reseed: 연산자 대신 **reseed 2차 pass 로 대체 개입**(후보 1개).
+            # 개입이 실제로 일어나므로 gate_skipped 가 아니라 별도 필드에 남긴다
+            # (llr_fallback 규약과 동일 논리 — 집계 applied_count 가 ¬skipped 로 센다).
+            seed2 = seed1 + int(cfg["reseed_offset"])
+            torch.manual_seed(seed2)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed2)
+            extras["features.perstep_fallback"] = f"reseed:phase_unregistered:{cur_phase}"
+            # 아래 공통 2차 pass 로 내려간다 — 연산자 적용만 건너뛴다(=reseed 와 동일).
+            op_apply = None
+        else:
+            op_apply = op
+
+        applied = False
+        try:
+            if op_apply in ("setm", "condg"):
+                # 마지막으로 POST 된 phase/scene 상태를 그 record 에만 적용
+                _apply_steering_phase_state(cur_phase, _gated_registry.get("current_scene"))
+                applied = True
+            action2, hidden2 = _rerun_dit_only(capture=True)
+        finally:
+            if applied:
+                _steering_phase_off()
+
+    extras["features.perstep_rerun_ms"] = (time.perf_counter() - _t_rerun) * 1e3
+
+    if _failure_detector is not None:
+        _failure_detector.restore(snap)
+        fail2 = _failure_from_hidden(np.asarray(hidden2))
+        extras["features.failure_score_post"] = fail2["score"]
+    extras["features.perstep_op"] = op
+    extras["features.perstep_seed2"] = seed2
+    return action2, hidden2, extras, fail1
+
+
 @app.post("/act")
 async def predict_action(payload: dict):
     """통일 API: observation → action sub-keys."""
@@ -812,8 +1529,15 @@ async def predict_action(payload: dict):
             detail="patch serve 는 /act(큐 팝) 미지원 — "
             "/act_with_features (skip_features=1) 를 사용하라",
         )
+    if payload.get("perstep_gate") is not None or payload.get("perstep_debug_rerun"):
+        # per-step 게이트는 활성화(detector 입력)가 필요 — /act 는 16-큐 팝이라 불가
+        raise HTTPException(
+            status_code=409,
+            detail="per-step 게이트는 /act 미지원 — /act_with_features 를 사용하라",
+        )
     inference_seed = _apply_inference_seed(payload)
     _reset_steering_step_counters()
+    _inject_condg_state(payload)
     batch = parse_payload(payload)
     batch = _apply_input_remap(batch)
 
@@ -853,13 +1577,25 @@ async def predict_action_with_features(payload: dict):
     t0 = time.time()
     inference_seed = _apply_inference_seed(payload)
     _reset_steering_step_counters()
+    _inject_condg_state(payload)
     batch = parse_payload(payload)
     batch = _apply_input_remap(batch)
 
     if preprocessor is not None:
         batch = preprocessor(batch)
 
-    if payload.get("skip_features"):
+    # per-step 게이트 (docs/steering/47): 1차 pass 는 반드시 무개입이어야 하므로
+    # 요청 시작에 hook 을 전부 off 하고, action_head 인자 캐시 wrap 을 보장한다.
+    perstep_cfg = _parse_perstep_gate(payload)
+    if perstep_cfg is not None:
+        _ensure_dit_rerun_wrap()
+        _steering_phase_off()
+
+    # detector 가 켜져 있으면 skip_features 는 "hook 없이 돌라"가 아니라 **"blob 만 빼라"**
+    # 로 해석한다 — detector 는 hidden 이 있어야 점수를 낸다. 아래 hook 경로가 hidden 을
+    # 만들고 응답에서 blob 만 억제하므로 --no-features eval 의 응답 크기 이점은 유지된다
+    # (chunk 추론 경로도 동일: run_with_features 도 predict_action_chunk 를 부른다).
+    if payload.get("skip_features") and _failure_detector is None:
         if _collect_mode:
             # 수집 serve 에서 hook 없는 첫 compile 이 캐시되면 이후 캡처가 무음 미발화
             # (/act 거부와 같은 이유 — Gate 2 R2 중간#4)
@@ -899,13 +1635,49 @@ async def predict_action_with_features(payload: dict):
     )
     if _policy_type == "groot":
         _assert_per_step_hook_counts()
+
+    perstep_extras: dict = {}
+    fail_precomputed: dict | None = None
+    if perstep_cfg is not None:
+        # 발화 시 action·hidden 이 2차 pass 것으로 교체된다 (응답 action = 실행된 것).
+        action, hidden, perstep_extras, fail_precomputed = _run_perstep_gate(
+            perstep_cfg, action, hidden, inference_seed
+        )
+
     action = _postprocess_action_preserve_chunk(action)
     action_np = _action_to_emit_array(action)
 
     result = _emit_subkeys(action_np, profile)
+    # blob 억제 모드(detector ON + skip_features): 점수만 싣고 hidden 은 안 보낸다.
+    suppress_blob = bool(payload.get("skip_features")) and _failure_detector is not None
     if hidden is not None:
-        result["has_feature"] = True
         hidden_np = np.asarray(hidden)
+        # online failure detector — blob 억제 여부와 무관하게 매 record 1 step 전진.
+        if _failure_detector is not None:
+            # per-step 게이트에서는 1차 pass(pre-hook, y_t) 점수를 그대로 싣는다 —
+            # hidden_np 는 2차 pass 것이라 여기서 다시 step 하면 순환·이중 전진.
+            fail = (
+                fail_precomputed
+                if fail_precomputed is not None
+                else _failure_from_hidden(hidden_np)
+            )
+            result["features.failure_score"] = fail["score"]
+            result["features.failure_fired"] = fail["fired"]
+            result["features.failure_delta"] = fail["delta"]
+            result["features.failure_step"] = fail["t"]
+        # cluster phase — per-step 게이트 경로에서는 1차 pass 것을 perstep_extras 가
+        # 이미 싣는다 (여기 hidden_np 는 2차 pass 라 다시 재면 좌표가 어긋난다).
+        if _cluster_assigner is not None and perstep_cfg is None:
+            cl = _cluster_phase_from_hidden(hidden_np)
+            result["features.perstep_cluster"] = cl["name"]
+            result["features.perstep_cluster_dist"] = cl["dist"]
+    if suppress_blob and hidden is not None:
+        # 클라이언트(VLAClient)는 blob 이 없고 has_feature=False 면 features=None 을 받는다
+        # → --no-features 수집기의 "skip_features 인데 features 가 왔다" 가드와 양립.
+        result["has_feature"] = False
+        result["skip_features"] = True
+    elif hidden is not None:
+        result["has_feature"] = True
         # 통일 /act_with_features 계약(VLAClient·GR00T HTTP)만 발송. legacy
         # hidden_states_b64 이중 발송은 2026-08-10 제거 — 같은 배열을 두 번 실어
         # 응답이 2배였다 (VLAClient 는 통일 blob 우선이라 무영향, 폴백은 클라이언트에 잔존).
@@ -935,6 +1707,8 @@ async def predict_action_with_features(payload: dict):
             )
     else:
         result["has_feature"] = False
+    # per-step 게이트 보고 필드 (발화 여부·적용 연산자·2차 seed·post 점수·디버그 diff)
+    result.update(perstep_extras)
     if inference_seed is not None:
         result["inference_seed"] = inference_seed
     result["latency_ms"] = (time.time() - t0) * 1000
@@ -958,8 +1732,14 @@ async def health():
         # 러너 preflight: 로그의 [serve-boot] id 와 대조해 "포트의 남의 서버" 오인 방지
         boot_id=_BOOT_ID,
         steering=_steering_spec or None,
+        # condg 는 상태 의존이라 정적 지문만으론 부족 — 현재 arm/phase·게이트 통계 노출
+        condg=[h.status() for h in _condg_hooks] or None,
         patch=_patch_spec or None,
         phase_readout=_phase_spec or None,
+        failure_detector=_failure_spec or None,
+        cluster_phase=_cluster_spec or None,
+        # 러너 preflight: rsn_llr arm 발사 전 채점기 로드 여부를 /health 로 확인
+        llr_scorer=_llr_spec or None,
         # exp4-1: client 가 사이드카에 GPU 를 기록해 arm×GPU confound 를 사후 감사
         serve_gpu=os.environ.get("CUDA_VISIBLE_DEVICES"),
         # docs/04 규약 — rollout 인덱스의 machine·ckpt 열 원천 (헬퍼가 단일 출처)
@@ -1041,8 +1821,11 @@ def _health_feature_metadata() -> dict[str, Any]:
 
 
 def _update_steering_spec(*, mode, op, layers, beta, alpha, key,
-                          token_select, denoise, npz_shas, phases=None):
-    """/health 스티어링 지문 갱신 — 기동·재무장(/steer_arm) 공용 (armsig 의 원천)."""
+                          token_select, denoise, npz_shas, phases=None, extra=None):
+    """/health 스티어링 지문 갱신 — 기동·재무장(/steer_arm) 공용 (armsig 의 원천).
+
+    ``extra``: 연산자 고유 필드(예 condg 의 mode/gate)를 그대로 얹는다.
+    """
     global _steering_spec
     _steering_spec = {
         "mode": mode,
@@ -1056,6 +1839,8 @@ def _update_steering_spec(*, mode, op, layers, beta, alpha, key,
         "npz_shas": sorted(set(npz_shas)),
         "phases": sorted(phases) if phases else None,
     }
+    if extra:
+        _steering_spec.update(extra)
 
 
 def _register_steering_if_requested(loaded_policy, args):
@@ -1063,15 +1848,19 @@ def _register_steering_if_requested(loaded_policy, args):
     steering_npz = getattr(args, "steering_npz", None)
     steering_npz_dir = getattr(args, "steering_npz_dir", None)
     steering_layers = getattr(args, "steering_layers", None)
-    if not steering_npz and not steering_npz_dir and not getattr(args, "steering_phase_npz_base", None):
+    condg_npz = getattr(args, "condg_npz", None)
+    if (not steering_npz and not steering_npz_dir and not condg_npz
+            and not getattr(args, "steering_phase_npz_base", None)):
         return None
     if _policy_type not in ("groot", "pi05"):
         raise ValueError("Conceptor steering requires policy_type in {'groot', 'pi05'}")
 
     from steering_hooks import (
+        CondGuidanceSteering,
         ConceptorSteering,
         Pi05ConceptorSteering,
         SetpointSteering,
+        load_cond_guidance,
         load_steering_matrices_per_step,
         load_steering_matrix,
         load_steering_segment,
@@ -1083,6 +1872,7 @@ def _register_steering_if_requested(loaded_policy, args):
         _h.unregister()
     _steering = []
     _arm_registry.clear()
+    _condg_hooks.clear()
 
     beta = getattr(args, "steering_beta", 0.3)
     alpha = getattr(args, "steering_alpha", None)
@@ -1121,10 +1911,94 @@ def _register_steering_if_requested(loaded_policy, args):
                               key=key, token_select=token_select, denoise=denoise,
                               npz_shas=loaded_npz_shas, phases=phases)
 
+    # --- condg: 상태-조건부 대조 guidance (docs/steering/44) -----------------------
+    # 단일 NPZ 안에 phase 전부(W_s/W_f/τ) + scene별 중심화 파라미터가 들어 있어
+    # hook 1개가 /steering_phase 로 phase·scene 만 스위칭한다 (gated 계열과 동거하되
+    # NPZ 디렉토리 계약은 쓰지 않는다).
+    if condg_npz:
+        global _gated_registry
+        _want_op = getattr(args, "steering_op", "auto") or "auto"
+        if _want_op not in ("auto", "condg"):
+            raise ValueError(f"--condg-npz 는 --steering-op condg 전용 (got {_want_op})")
+        if _policy_type != "groot":
+            raise ValueError("--condg-npz 는 groot dit pathway 전용")
+        if steering_npz or steering_npz_dir or getattr(args, "steering_phase_npz_base", None):
+            raise ValueError("--condg-npz 는 다른 --steering-npz*/phase-base 와 상호 배타")
+        if per_step:
+            raise ValueError("condg 는 --steering-denoise global 전용 (마지막 denoise call 한정)")
+        groot_model = getattr(loaded_policy, "_groot_model", None)
+        if groot_model is None:
+            raise ValueError("GR00T LeRobot policy is missing _groot_model for steering")
+        import hashlib as _hashlib_cg
+
+        loaded_npz_shas.append(
+            _hashlib_cg.sha256(Path(condg_npz).read_bytes()).hexdigest()[:12]
+        )
+        params = load_cond_guidance(condg_npz)
+        # scene 목록은 phase별(중심화가 phase 단위) — 진단용으로 합집합만 노출.
+        _cg_scenes = sorted({sc for v in params["phases"].values()
+                             for sc in v["scenes"]})
+        # layer: --steering-layer 우선, 미지정이면 fit 표적 L12
+        _cg_layer = getattr(args, "steering_layer", None)
+        _cg_layer = 12 if _cg_layer is None else int(_cg_layer)
+        _cg_mode = getattr(args, "condg_mode", "condg") or "condg"
+        _cg_gate = bool(getattr(args, "condg_gate", True))
+        _cg_token = token_select or "all"
+        _cg_apply = getattr(args, "condg_apply_call", "last") or "last"
+        hook = CondGuidanceSteering(
+            groot_model, params, beta, layer=_cg_layer, mode=_cg_mode,
+            token_select=_cg_token, gate=_cg_gate, apply_call=_cg_apply,
+        ).register()
+        _steering.append(hook)
+        _condg_hooks.append(hook)
+        _arm_registry[("dit", _cg_layer)] = {
+            "hook": hook, "family": "condg", "per_step": False,
+        }
+        _registered_phases = sorted(p for p, v in params["phases"].items() if v["registered"])
+        # /steering_phase 가 hooks 를 순회하며 set_phase 로 스위칭한다. matrices 는
+        # 응답의 gated 플래그 계산용(등록 phase 집합)으로만 쓰인다.
+        _gated_registry = {
+            "hooks": {_cg_layer: hook},
+            "matrices": {_cg_layer: {ph: None for ph in _registered_phases}},
+            "identity": {_cg_layer: None},
+            "current": None,
+        }
+        _update_steering_spec(
+            mode="gated", op="condg", layers=[_cg_layer], beta=beta, alpha=alpha,
+            key=None, token_select=_cg_token, denoise="last_call",
+            npz_shas=loaded_npz_shas, phases=_registered_phases,
+            extra={"condg_mode": _cg_mode, "condg_gate": _cg_gate,
+                   "condg_apply_call": _cg_apply,
+                   "condg_state_dim": hook.state_dim,
+                   "condg_num_denoise": hook.num_denoise,
+                   "condg_scenes": _cg_scenes},
+        )
+        logger.info(
+            "condg steering registered: npz=%s layer=%s mode=%s gate=%s beta=%s "
+            "token_select=%s phases=%s scenes=%s",
+            condg_npz, _cg_layer, _cg_mode, _cg_gate, beta, _cg_token,
+            _registered_phases, _cg_scenes,
+        )
+        print(
+            f"[steer-registered] path=condg op=condg mode={_cg_mode} gate={_cg_gate} "
+            f"layer={_cg_layer} beta={beta:g} token_select={_cg_token} "
+            f"phases={','.join(_registered_phases)} "
+            f"unregistered={','.join(sorted(set(params['phases']) - set(_registered_phases)))} "
+            f"num_denoise={hook.num_denoise} dim={hook.expected_dim}",
+            flush=True,
+        )
+        for ph in sorted(params["phases"]):
+            ent = params["phases"][ph]
+            print(f"[steer-norms] op=condg phase={ph} registered={ent['registered']} "
+                  f"tau={ent['tau']:.6f} B={ent['B']} "
+                  f"‖W_s‖={float(np.linalg.norm(ent['W_s'])):.4f} "
+                  f"‖W_f‖={float(np.linalg.norm(ent['W_f'])):.4f}", flush=True)
+        return _steering
+
     # --- Oracle phase-gated multi-layer steering: /steering_phase 로 M 스위칭 ---
     phase_base = getattr(args, "steering_phase_npz_base", None)
     if phase_base and steering_layers:
-        global _gated_registry
+        # (_gated_registry 는 위 condg 분기에서 이미 global 선언됨)
         if _policy_type != "groot":
             raise ValueError("--steering-phase-npz-base 는 groot dit pathway 전용")
         groot_model = getattr(loaded_policy, "_groot_model", None)
@@ -1486,7 +2360,9 @@ def _load_model_impl():
     _register_steering_if_requested(policy, args)
     _register_patching_if_requested(policy, args)
     _load_phase_readouts_if_requested(args)
-
+    _load_failure_detector_if_requested(args)
+    _load_cluster_phase_if_requested(args)
+    _load_llr_scorer_if_requested(args)
 
     from lerobot.configs.types import FeatureType
     from lerobot.utils.constants import ACTION
@@ -1795,6 +2671,93 @@ def main():
         help="phase 분류기 device (cpu 권장 — 연산량 미미, GPU 경합 회피).",
     )
     parser.add_argument(
+        "--failure-detector",
+        type=str,
+        default=None,
+        metavar="CKPT.pt",
+        help=(
+            "online failure detector ON: failure_detector_sim.py 가 저장한 "
+            "detector_<arm>_<model>_<slug|all>.pt 를 얹어 /act_with_features 응답에 "
+            "features.failure_score / features.failure_fired 를 노출. "
+            "--groot-dit-capture-layers(ckpt 의 layer 포함) + "
+            "--groot-dit-token-pool all_token_full 필요."
+        ),
+    )
+    parser.add_argument(
+        "--failure-alpha",
+        type=float,
+        default=0.2,
+        help="발화 임계 δ_t 의 CP 유의수준(=FPR 목표). ckpt cp_bands 에 있는 값이어야 함.",
+    )
+    parser.add_argument(
+        "--failure-task",
+        type=str,
+        default=None,
+        help=(
+            "cp_bands 에서 쓸 task slug (mixed arm 은 밴드가 task 별 보정 — 필수). "
+            "밴드가 하나뿐이면 생략 가능."
+        ),
+    )
+    parser.add_argument(
+        "--cluster-phase-bundle",
+        type=str,
+        default=None,
+        metavar="BUNDLE.npz",
+        help=(
+            "per-step 게이트의 phase 를 GT POST 값 대신 serve 자체 activation cluster "
+            "판정으로 정한다: ae_cluster.py --export-bundle 산출 NPZ(표준화+encoder+"
+            "instruction 별 centers)를 얹어 phase 이름 'c0'..'c{k-1}' 을 낸다. "
+            "응답에 features.perstep_cluster / features.perstep_cluster_dist 노출. "
+            "--groot-dit-capture-layers(번들 layer=12 포함) + "
+            "--groot-dit-token-pool all_token_full 필요. 미지정 시 현행(POST current) 유지."
+        ),
+    )
+    parser.add_argument(
+        "--llr-bundle",
+        type=str,
+        default=None,
+        metavar="BUNDLE.npz",
+        help=(
+            "best-of-N 재샘플(perstep_gate.op=rsn_llr)의 후보 채점기 NPZ. phase 조건부 "
+            "성공/실패 가우시안 로그우도비로 후보를 고르고(llr argmin), OOD 후보는 기각. "
+            "NPZ 계약 = src/failure_online/llr_scorer.py docstring (단일 출처, "
+            "등록 단위 (scene, phase) — --llr-scene 동반 필수). "
+            "--groot-dit-capture-layers + --groot-dit-token-pool all_token_full 필요. "
+            "미지정 시 rsn_llr 요청은 409 (rsn_rand 는 채점 없이 동작)."
+        ),
+    )
+    parser.add_argument(
+        "--llr-scene",
+        type=str,
+        default=None,
+        metavar="SCENE",
+        help=(
+            "LLR 채점에 쓸 scene (int 또는 's3'). 번들 등록 단위가 (scene, phase) 라 "
+            "--llr-bundle 지정 시 **필수** — 없거나 번들에 없는 scene 이면 기동 실패."
+        ),
+    )
+    parser.add_argument(
+        "--cluster-phase-task",
+        type=str,
+        default=None,
+        help=(
+            "번들에서 쓸 instruction slug (centers 는 instruction 별로 따로 적합 — 필수). "
+            "번들에 slug 가 하나뿐이면 생략 가능."
+        ),
+    )
+    parser.add_argument(
+        "--cluster-phase-device",
+        type=str,
+        default="cpu",
+        help="cluster phase 판정기 device (cpu 권장 — 연산량 미미, GPU 경합 회피).",
+    )
+    parser.add_argument(
+        "--failure-device",
+        type=str,
+        default="cpu",
+        help="detector device (cpu 권장 — 연산량 미미, GPU 경합 회피).",
+    )
+    parser.add_argument(
         "--groot-vl-capture-point",
         choices=("vlln_mean", "post_vl_sa_full"),
         default="vlln_mean",
@@ -1805,11 +2768,13 @@ def main():
     )
     parser.add_argument(
         "--steering-token-select",
-        choices=("last_horizon", "all"),
+        choices=("last_horizon", "all", "future"),
         default=None,
         help=(
             "Steering hook 의 적용 토큰. 미지정(None)=pathway 기본 보존"
-            "(dit=last_horizon, vl=all). exp3 COAST 정렬은 dit 에 all 을 명시 주입."
+            "(dit=last_horizon, vl=all). exp3 COAST 정렬은 dit 에 all 을 명시 주입. "
+            "future=future 세그먼트만([1:T−horizon]) — setM future_only 와 정렬한 "
+            "conceptor 계열 future arm (hook 은 이미 지원, steering_hooks.TOKEN_SELECTS)."
         ),
     )
     parser.add_argument(
@@ -1832,15 +2797,58 @@ def main():
     )
     parser.add_argument(
         "--steering-op",
-        choices=("auto", "conceptor", "setpoint", "setpoint_seg", "setpoint_vl"),
+        choices=("auto", "conceptor", "setpoint", "setpoint_seg", "setpoint_vl", "condg"),
         default="auto",
         help=(
             "steering 연산자 (exp4-1). auto=NPZ 키로 감지(*_v_steer=setpoint). "
             "명시 시 감지 결과와 불일치하면 기동 abort — 러너가 arm 마다 명시해 "
             "NPZ 오배치를 잡는다. setpoint(setM)는 gated 경로 전용, h'=h−β[(h·r̂)−s]r̂. "
             "setpoint_vl(exp5-2)은 --steering-npz 단일 NPZ + --steering-pathway vl 전용 — "
-            "vlln 출력의 **토큰-평균**을 setpoint 로 이동."
+            "vlln 출력의 **토큰-평균**을 setpoint 로 이동. "
+            "condg(docs/steering/44)는 --condg-npz 전용 — 상태-조건부 대조 guidance."
         ),
+    )
+    parser.add_argument(
+        "--condg-npz",
+        default=None,
+        help=(
+            "상태-조건부 대조 guidance(condg) NPZ (docs/steering/44 §4). phase별 "
+            "W_s/W_f/tau/registered + scene별 mh/mp/sp + global fallback 을 담은 단일 "
+            "파일. /steering_phase {\"phase\":…, \"scene\": int} 로 스위칭하고, /act 요청의 "
+            "observation.state.{eef_pos_rel,eef_quat_rel,gripper_qpos} 로 상태를 주입한다. "
+            "layer 는 --steering-layer(기본 12), β 는 --steering-beta."
+        ),
+    )
+    parser.add_argument(
+        "--condg-mode",
+        choices=("condg", "hs"),
+        default="condg",
+        help=(
+            "condg 적용식. condg=대조 투영(Δ=β⟨h̃−ĥ_s,d̂⟩d̂, d̂=normalize(ĥ_f−ĥ_s)) | "
+            "hs=성공-모방 단독 ablation((1−β)h̃+β·ĥ_s)."
+        ),
+    )
+    parser.add_argument(
+        "--condg-apply-call",
+        choices=("last", "first"),
+        default="last",
+        help=(
+            "condg 개입 denoise call. last=k==K−1 (fit denoise_step 3 표적, 기본) | "
+            "first=k==0 — fit --denoise-step 0 NPZ 전용 (τ·W 가 step-0 공간이어야 함)."
+        ),
+    )
+    parser.add_argument(
+        "--condg-gate",
+        dest="condg_gate",
+        action="store_true",
+        default=True,
+        help="condg margin 게이트 ON (기본) — m>τ 인 record 에서만 개입.",
+    )
+    parser.add_argument(
+        "--no-condg-gate",
+        dest="condg_gate",
+        action="store_false",
+        help="무게이트 ablation: 발화 후 전 record 상시 개입 (g≡1, 44 §3).",
     )
     parser.add_argument(
         "--patch-layers",

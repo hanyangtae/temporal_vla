@@ -35,7 +35,7 @@ docs/ 전체 md 165개 · 도달 가능 94개 · 도달 불가 71개 (43%)
 |---|---|---|
 | 32 | `docs/steering/` | **exp2~exp5 전 라운드 문서 — 이번 정리의 핵심 문제** |
 | 11 | `Activation_steering_basic/_handoff/research_raw/` | 서베이 원자료. 의도된 미인덱싱으로 보임 |
-| 8 | `docs/collab/` | Codex 협업 기록 |
+| 8 | `docs/collab_codex/` | Codex 협업 기록 |
 | 7 | `references/reading_notes/` | 논문 정독 노트 |
 | 3+1 | `docs/superpowers/` | specs·plans (본 설계 문서 포함) |
 | 나머지 | `insight/`, `onboarding/`, `steering/etc/` 등 | |
@@ -55,7 +55,7 @@ docs/ 전체 md 165개 · 도달 가능 94개 · 도달 불가 71개 (43%)
 | `docs/steering/README.md` | 0 | 0 | 0 | 0 | 1 |
 | `docs/HANDOFF_current.md` | 1 | 0 | 0 | 0 | 3 |
 
-`docs/README.md`가 인덱싱하지 않는 하위 디렉토리: `collab/`(13), `insight/`(2),
+`docs/README.md`가 인덱싱하지 않는 하위 디렉토리: `collab_codex/`(13), `insight/`(2),
 `onboarding/`(1), `superpowers/`(2).
 
 ## 3. 발견된 함정

@@ -281,7 +281,7 @@ scripts/utils/codex_ask.sh review "$SCRATCH/review1" base origin/dev "$SCRATCH/r
 ## 토론 기록 (원장)
 
 필수: Gate 1(사용자 결정 포함)·Gate 3(위임·채택). Gate 2는 커밋/PR 설명으로 대체 가능.
-포맷: `docs/collab/YYYY-MM-DD-<topic>.md` — 게이트, thread_id, (Gate 3) base_sha·
+포맷: `docs/collab_codex/YYYY-MM-DD-<topic>.md` — 게이트, thread_id, (Gate 3) base_sha·
 delegate_sha, 라운드별 요지/핵심 발췌, 합의·이견·사용자 결정. raw 응답은 커밋 금지.
 
 ## codex 업그레이드 후 재검증 (필수)
@@ -311,7 +311,7 @@ git commit -m "docs: codex-collab 스킬 추가 — Codex 협업 실행 규약 �
 
 **Files:**
 - Create: `.claude/settings.json`
-- Create: `docs/collab/README.md`
+- Create: `docs/collab_codex/README.md`
 - Modify: `CLAUDE.md` ("## Agent 운영 규칙" 섹션 끝)
 
 **Interfaces:**
@@ -335,7 +335,7 @@ git commit -m "docs: codex-collab 스킬 추가 — Codex 협업 실행 규약 �
 Run: `python3 -m json.tool .claude/settings.json > /dev/null && echo OK` → Expected: `OK`
 Run: `git check-ignore .claude/settings.json; echo rc=$?` → Expected: `rc=1`
 
-- [ ] **Step 3: `docs/collab/README.md` 작성**
+- [ ] **Step 3: `docs/collab_codex/README.md` 작성**
 
 ```markdown
 # docs/collab — Claude×Codex 토론 원장
@@ -358,7 +358,7 @@ Claude와 Codex의 협업 기록(원장). 실행 규약: `.claude/skills/codex-c
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add .claude/settings.json docs/collab/README.md CLAUDE.md
+git add .claude/settings.json docs/collab_codex/README.md CLAUDE.md
 git commit -m "config: codex wrapper allow 규칙 + collab 원장 README + CLAUDE.md 포인터"
 ```
 

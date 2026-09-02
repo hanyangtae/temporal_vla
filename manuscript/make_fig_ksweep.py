@@ -63,12 +63,11 @@ def main() -> None:
     ax.set_xticks(ks)
     ax.set_xticklabels([str(k) for k in ks])
     ax.set_xlabel("number of clusters $k$")
-    ax.set_ylabel("readout on unseen scenes")
+    ax.set_ylabel("accuracy on unseen scenes")
     ax.set_ylim(0, 1.02)
     ax.grid(lw=0.4, alpha=0.35, zorder=0)
     ax.set_axisbelow(True)
     ax.legend(loc="lower right", frameon=False)
-    ax.set_title("readout is robust once $k$ exceeds the phase count", pad=4)
 
     out = HERE / "figs" / "fig_k_sweep"
     out.parent.mkdir(parents=True, exist_ok=True)
