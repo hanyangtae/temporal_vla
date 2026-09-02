@@ -443,3 +443,17 @@ scripts/train/{gr00t_n15_finetune_subset.py,groot_robocasa_finetune.sh,groot_rob
 scripts/utils 핵심(path_setup·cache_env·remote_compute·checkpoint_profile·codex_ask·notion·smoke_test_serve 등)	S9	keep	공용 인프라	해당없음(keep)	
 docker/ + docker-compose*	S9	keep	컨테이너 정의	해당없음(keep)	
 scripts/train/xvla.sh	S9	미정	타모델 — 범위제외	보류(범위제외)	
+docs/steering/13_lab_meeting_ppt_notes.md	S10	archive	2026-06 랩미팅 발표노트, 흐름은 RESEARCH_DIRECTION	적용(archive)	811793f
+docs/steering/16_mechinterp_reproduction.md	S10	archive	Häon 재현 Phase A 종결(RESULTS·DIRECTION 언급)	적용(archive)	811793f
+docs/steering/24_exp4_shared_plan.md	S10	archive	exp4 종결, RESULTS 흡수	적용(archive)	811793f
+docs/steering/24a_exp4-1_oracle_rescue_plan.md	S10	archive	exp4-1 계획, RESULTS 흡수	적용(archive)	811793f
+docs/steering/24b_exp4-2_perturb_conceptor_plan.md	S10	archive	exp4-2 계획, exp5로 흡수	적용(archive)	811793f
+docs/steering/25_exp4-3_separation_atlas_handoff.md	S10	archive	cross-model 지도 미완, 종결	적용(archive)	811793f
+docs/steering/27_standmixer_phase_labeler.md	S10	archive	StandMixer task 폐기(7 instruction 밖)	적용(archive)	811793f
+docs/steering/33_exp5_round_summary.md	S10	archive	exp5 종합, RESULTS·DIRECTION 대체	적용(archive)	811793f
+docs/steering/37_exp5-4_noise_selection.md	S10	archive	noise 선별 종결(seed 암기), RESULTS·memory	적용(archive)	811793f
+docs/steering/38_rl2_simpler_repro.md	S10	archive	경쟁 재현 기록 종결	적용(archive)	811793f
+docs/steering/38_collection_round_handoff.md	S10	archive	v2 수집 라운드 완결, 규약은 docs/04	적용(archive)	811793f
+docs/steering/39_steer_eval_usage.md	S10	archive	robocasa-steer-eval 스킬이 정본(중복)	적용(archive)	811793f
+docs/steering/45_grid_v2_collection.md	S10	archive	v2 수집 완결 기록, 데이터 전면 재수집 예정	적용(archive)	811793f
+docs/collab/{handoff_20260831_perstep_cluster,handoff_20260902_v4r_round,collect_request_v3_jitter}.md	S10	이동	collab는 Codex 원장 전용 → docs/handoff/ 신설	적용(이동)	811793f
