@@ -26,8 +26,10 @@ confound 통제 없는 분리 주장 금지** (실패=항상 timeout이라 time-
 
 정본: `.claude/skills/robocasa-steer-eval/SKILL.md` (launcher·pre-flight 게이트 포함).
 핵심 고정값: **EVAL_SEED=100000**, N_ENVS=2·N_EP=20 per condition, per-episode tsv 필수,
-fit-seed와 eval-seed 분리(held-out) 필수. GPU: 빈 GPU만·최대 3장·GPU당 serve≤2
-(타인 사용 중 GPU 발사 금지). SR eval은 로컬 전용(robocasa Docker).
+fit-seed와 eval-seed 분리(held-out) 필수. **GPU 서버(kanu·srv48·srv50) 운영·세션 간 예약
+규약 정본: [`docs/05_gpu_server_rules.md`](docs/05_gpu_server_rules.md)** — 발사 전
+`scripts/utils/gpu_lease.sh claim` 필수, 타 세션이 잡고 있으면 대기 또는 사용자 보고.
+요지: 빈 GPU만(타인 프로세스 있으면 금지)·kanu 최대 3장·kanu serve 2/GPU·srv 6/GPU.
 
 ## 핵심 아키텍처
 

@@ -14,7 +14,9 @@
    단위(`sig`/`opsig`)와 저장 레이아웃·인덱스 스키마 단일 출처. **rollout activation 이나
    steering 연산자를 저장·이관·삭제하는 모든 작업의 출발점.** 캡처 밀도 판정 규칙
    (`[L,K,T,D]` 축 구성), 절대경로 기록 금지, 수집/평가 rollout 분리.
-5. [CONTRIBUTING](CONTRIBUTING.md) — git/PR 워크플로우.
+5. **[05 GPU Server Rules](05_gpu_server_rules.md)** — kanu·srv48·srv50 serve/eval 운영 규칙과
+   세션 간 GPU 예약(`scripts/utils/gpu_lease.sh`) 단일 출처. **서버에 모델 올리기 전 출발점.**
+6. [CONTRIBUTING](CONTRIBUTING.md) — git/PR 워크플로우.
 
 부가 runbook:
 
