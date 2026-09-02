@@ -12,7 +12,12 @@ import numpy as np
 from .loader import LoadedGrootModel, load_groot_policy
 from .preprocess import FINAL_IMAGE_RESOLUTION, decode_b64_image, process_img
 from .rng import temporary_inference_seed
-from ..safe.features import SafeFeatureExtractor, encode_feature_tensor_blob, feature_metadata
+from ..safe.features import (
+    MultilayerFeatureExtractor,
+    SafeFeatureExtractor,
+    encode_feature_tensor_blob,
+    feature_metadata,
+)
 from .schema import (
     GROOT_ENV_LANGUAGE_KEYS,
     GROOT_TO_UNIFIED_ACTION,
@@ -40,6 +45,10 @@ class GrootFeatureConfig:
     feature_slice: str = "valid"
     feature_dtype: str = "float16"
     feature_action_horizon: int | None = None
+    # 다층 residual 캡처 (None 이면 기존 SAFE pre-velocity 슬라이스 경로).
+    capture_token_mode: str | None = None
+    capture_layers: list[int] | None = None
+    capture_vl: bool = False
 
     @classmethod
     def from_args(cls, args: Any | None) -> "GrootFeatureConfig":
@@ -49,6 +58,9 @@ class GrootFeatureConfig:
             feature_slice=getattr(args, "feature_slice", "valid"),
             feature_dtype=getattr(args, "feature_dtype", "float16"),
             feature_action_horizon=getattr(args, "feature_action_horizon", None),
+            capture_token_mode=getattr(args, "capture_token_mode", None),
+            capture_layers=getattr(args, "capture_layers", None),
+            capture_vl=getattr(args, "capture_vl", False),
         )
 
 
@@ -286,6 +298,8 @@ class GrootPolicyService:
             raise GrootModelNotLoadedError("model not loaded")
 
         cfg = self.feature_config
+        if cfg.capture_token_mode is not None:
+            return self._act_with_multilayer_features(payload)
         t0 = time.time()
         groot_obs = self.build_groot_obs(payload)
         with temporary_inference_seed(payload.get("inference_seed")):
@@ -313,6 +327,57 @@ class GrootPolicyService:
         out["features.model_action_horizon"] = metadata.model_action_horizon
         out["features.num_inference_timesteps"] = metadata.num_inference_timesteps
 
+        self._log_debug_call(out, payload)
+        return out
+
+    def _act_with_multilayer_features(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """다층 DiT residual 캡처 응답 (ZMQ get_action_with_multilayer_features 대응).
+
+        서버 플래그(--capture-token-mode/--capture-layers)로 켜지며, 클라이언트는
+        기존 /act_with_features 계약(sub-key action + features.*)을 그대로 쓴다
+        — N1.5 lerobot.py 의 --groot-dit-token-pool 관례와 같은 방식.
+        """
+        cfg = self.feature_config
+        t0 = time.time()
+        groot_obs = self.build_groot_obs(payload)
+        with temporary_inference_seed(payload.get("inference_seed")):
+            captured = MultilayerFeatureExtractor(
+                self.policy,
+                feature_dtype=cfg.feature_dtype,
+                feature_slice=cfg.feature_slice,
+                capture_token_mode=cfg.capture_token_mode,
+                capture_layers=cfg.capture_layers,
+                capture_vl=cfg.capture_vl,
+            ).capture(groot_obs)
+        latency_ms = (time.time() - t0) * 1000
+
+        out = self.convert_native_action_to_subkeys(captured.action, latency_ms)
+        out["features.hidden_states"] = encode_feature_tensor_blob(
+            captured.hidden_states, cfg.feature_dtype
+        )
+        out["features.kind"] = captured.feature_kind
+        out["features.axes"] = captured.feature_axes
+        out["features.slice"] = cfg.feature_slice
+        out["features.capture_token_mode"] = captured.capture_token_mode
+        out["features.layer_indices"] = captured.layer_indices
+        out["features.token_count"] = captured.token_count
+        # VLAClient(scripts/utils/vla_client.py)는 다층 메타를 **접두사 없는** 키로
+        # 읽는다 (capture_layers/layer_indices/token_count/capture_token_mode…).
+        # 둘 다 실어 보내 docs/04 캡처밀도 5열이 meta.json 까지 도달하게 한다.
+        out["capture_token_mode"] = captured.capture_token_mode
+        out["capture_layers"] = captured.layer_indices
+        out["layer_indices"] = captured.layer_indices
+        out["layer_count"] = len(captured.layer_indices)
+        out["token_count"] = captured.token_count
+        out["feature_dim"] = int(captured.hidden_states.shape[-1])
+        out["features.valid_action_horizon"] = captured.valid_action_horizon
+        out["features.model_action_horizon"] = captured.model_action_horizon
+        out["features.num_inference_timesteps"] = captured.num_inference_timesteps
+        out["features.exported_action_token_count"] = captured.token_count
+        if captured.vl_hidden_states is not None:
+            out["features.vl_hidden_states"] = encode_feature_tensor_blob(
+                captured.vl_hidden_states, cfg.feature_dtype
+            )
         self._log_debug_call(out, payload)
         return out
 

@@ -43,6 +43,17 @@ SAFE_FEATURE_AXES_ALL = GROOT_N16_ALL_FEATURE_AXES
 FEATURE_SLICES: tuple[str, ...] = ("valid", "all")
 FEATURE_DTYPES: tuple[str, ...] = ("float16", "float32")
 
+# ── 다층 residual 캡처 (COAST Stage1 layer sweep · grid all_token_full 대응) ──
+# ZMQ feature_server 의 get_action_with_multilayer_features 와 **동일 수식**을
+# HTTP /act_with_features 에서도 쓰기 위한 공유 구현 (2026-09-01 이식).
+#   valid/all : action token 만 → K·H mean → [L, D]
+#   full      : block 출력 시퀀스 T 전체 보존 → K mean → [L, T, D]
+MULTILAYER_FEATURE_KIND = "groot_n16_dit_block_residual_pooled_multilayer"
+MULTILAYER_FEATURE_AXES = ["layer", "feature_dim"]
+MULTILAYER_FEATURE_KIND_PERT = "groot_n16_dit_block_residual_kmean_perT_multilayer"
+MULTILAYER_FEATURE_AXES_PERT = ["layer", "token_pos", "feature_dim"]
+CAPTURE_TOKEN_MODES: tuple[str, ...] = ("valid", "all", "full")
+
 
 @dataclass(frozen=True)
 class SafeFeatureCaptureResult:
@@ -107,6 +118,155 @@ class SafeFeatureExtractor:
             action=captured["action"],
             hidden_states=hidden_states,
             metadata=metadata,
+        )
+
+
+@dataclass(frozen=True)
+class MultilayerCaptureResult:
+    """다층 DiT residual 캡처 결과 (transport 무관)."""
+
+    action: dict[str, Any]
+    hidden_states: torch.Tensor          # [L, D] 또는 [L, T, D]
+    feature_kind: str
+    feature_axes: list[str]
+    capture_token_mode: str
+    layer_indices: list[int]
+    token_count: int | None
+    valid_action_horizon: int
+    model_action_horizon: int
+    num_inference_timesteps: int | None
+    vl_hidden_states: torch.Tensor | None = None
+
+
+class MultilayerFeatureExtractor:
+    """DiT transformer_blocks residual stream 을 layer 별로 캡처한다.
+
+    `scripts/safe/groot_n16/robocasa/serve/feature_server.py` 의
+    `_get_action_and_multilayer_features` 와 같은 수식을 쓰며, HTTP·ZMQ 어느
+    transport 에서도 동일 텐서가 나오도록 이 모듈이 단일 출처다.
+    """
+
+    def __init__(
+        self,
+        sim_policy: Any,
+        *,
+        feature_dtype: str = "float16",
+        feature_slice: str = "valid",
+        capture_token_mode: str = "full",
+        capture_layers: list[int] | None = None,
+        capture_vl: bool = False,
+    ):
+        if feature_dtype not in FEATURE_DTYPES:
+            raise ValueError(f"Unsupported feature dtype: {feature_dtype}")
+        if capture_token_mode not in CAPTURE_TOKEN_MODES:
+            raise ValueError(f"Unsupported capture_token_mode: {capture_token_mode}")
+        feature_metadata(feature_slice)
+        self.sim_policy = sim_policy
+        self.feature_dtype = feature_dtype
+        self.feature_slice = feature_slice
+        self.capture_token_mode = capture_token_mode
+        self.capture_layers = capture_layers
+        self.capture_vl = capture_vl
+
+    def _action_head(self) -> Any:
+        """transport 별 policy 래핑 차이를 흡수한다.
+
+        ZMQ feature_server 는 raw ``Gr00tPolicy`` 를, HTTP service 는
+        ``Gr00tSimPolicyWrapper`` (``.policy`` 로 내부 정책 노출) 를 넘긴다.
+        """
+        node = self.sim_policy
+        for _ in range(3):
+            model = getattr(node, "model", None)
+            if model is not None and hasattr(model, "action_head"):
+                return model.action_head
+            node = getattr(node, "policy", None)
+            if node is None:
+                break
+        raise RuntimeError("action_head 를 찾을 수 없다 (policy 래핑 확인 필요)")
+
+    def _resolve_layers(self) -> list[int]:
+        blocks = self._action_head().model.transformer_blocks
+        if self.capture_layers is None:
+            return list(range(len(blocks)))
+        return [int(i) for i in self.capture_layers]
+
+    def capture(
+        self,
+        observation: dict[str, Any],
+        *,
+        options: dict[str, Any] | None = None,
+    ) -> MultilayerCaptureResult:
+        mode = self.capture_token_mode
+        action_head = self._action_head()
+        blocks = action_head.model.transformer_blocks
+        model_action_horizon = int(action_head.action_horizon)
+        valid_action_horizon = len(
+            self.sim_policy.get_modality_config()["action"].delta_indices
+        )
+        layers = self._resolve_layers()
+        captured: dict[int, list[torch.Tensor]] = {ell: [] for ell in layers}
+
+        def make_hook(ell: int):
+            def hook(_module: Any, _inputs: tuple[Any, ...], output: Any) -> None:
+                out = output[0] if isinstance(output, tuple) else output
+                if mode == "full":
+                    act = out                                   # [B, T, D] 전체 보존
+                else:
+                    act = out[:, -model_action_horizon:]
+                    if mode == "valid":
+                        act = act[:, :valid_action_horizon]
+                captured[ell].append(act.detach())
+            return hook
+
+        handles = [blocks[ell].register_forward_hook(make_hook(ell)) for ell in layers]
+        vl_captured: list[torch.Tensor] = []
+        if self.capture_vl:
+            def vl_hook(_module: Any, _inputs: tuple[Any, ...], output: Any) -> None:
+                out = output[0] if isinstance(output, tuple) else output
+                vl_captured.append(out.detach().mean(dim=1))
+            handles.append(action_head.vlln.register_forward_hook(vl_hook))
+        try:
+            with torch.inference_mode():
+                action, _ = self.sim_policy.get_action(observation, options)
+        finally:
+            for h in handles:
+                h.remove()
+
+        num_inference = None
+        token_count = None
+        pooled_layers: list[torch.Tensor] = []
+        for ell in layers:
+            feats = captured[ell]
+            if not feats:
+                raise RuntimeError(f"Failed to capture DiT block {ell} residual stream")
+            stack = torch.stack(feats, dim=0)          # [K, B, H_or_T, D]
+            num_inference = int(stack.shape[0])
+            token_count = int(stack.shape[2])
+            if mode == "full":
+                pooled_layers.append(stack.mean(dim=0))       # → [B, T, D]
+            else:
+                pooled_layers.append(stack.mean(dim=(0, 2)))  # → [B, D]
+        pooled = torch.stack(pooled_layers, dim=1)     # [B, L, (T,) D]
+        hidden = cast_feature_tensor(pooled, self.feature_dtype)[0]
+        if mode == "full":
+            kind, axes = MULTILAYER_FEATURE_KIND_PERT, list(MULTILAYER_FEATURE_AXES_PERT)
+        else:
+            kind, axes = MULTILAYER_FEATURE_KIND, list(MULTILAYER_FEATURE_AXES)
+        vl_hidden = None
+        if vl_captured:
+            vl_hidden = cast_feature_tensor(vl_captured[0], self.feature_dtype)[0]
+        return MultilayerCaptureResult(
+            action=action,
+            hidden_states=hidden,
+            feature_kind=kind,
+            feature_axes=axes,
+            capture_token_mode=mode,
+            layer_indices=list(layers),
+            token_count=token_count,
+            valid_action_horizon=valid_action_horizon,
+            model_action_horizon=model_action_horizon,
+            num_inference_timesteps=num_inference,
+            vl_hidden_states=vl_hidden,
         )
 
 

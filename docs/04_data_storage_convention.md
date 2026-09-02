@@ -524,6 +524,37 @@ record 당 비용이 층 수에 선형이다 — **층 하나당 0.66MB/record**
 
 ---
 
+## 5.2 수집 실행 규약 (머신 매칭·자원 상한·러너)
+
+좌표(§3·§5.1)가 "무엇을 모으나"라면 이 절은 "어디서 어떻게 돌리나"다.
+
+**머신 매칭 — replay 는 수집 머신에서만 bit 재현된다.** task 별 홈 머신을 바꾸면 그
+task 의 셀-paired eval(구제/파손 판정)이 성립하지 않는다. 홈이 바뀌어야 하면 그 task 의
+base 를 새 머신에서 재수집한다. **데스크탑(pdk)은 수집·replay 영구 배제**
+(단일 GPU 에서 EGL 렌더×serve 동시부하 시 렌더 비결정 — `docs/steering/42` §7).
+
+**자원 상한·예약 — 정본은 [`docs/05_gpu_server_rules.md`](05_gpu_server_rules.md)**
+(GPU 서버 운영·세션 간 lease). 수집도 예외 없이 **발사 전 `scripts/utils/gpu_lease.sh
+claim`**, 종료 시 `release`. 상한 요지: 빈 GPU만·kanu 최대 3장·kanu serve 2/GPU·srv 6/GPU.
+
+수집 고유 주의:
+- serve 는 **순차 기동**한다 — 로드 중 VRAM 피크가 안정 상태의 2배라 동시 기동은 OOM.
+- srv48/50 에 `junhyeong` 계정 프로세스가 이미 있으면 이 연구 작업인지 확인하고 조율한다
+  (lease 는 우리 세션 간 예약일 뿐 타 계정 점유를 판정하지 않는다).
+- 종료 보고 전 `pgrep` + `nvidia-smi` 로 잔존 serve 0 을 확인한다.
+
+**러너 규약** (`scripts/safe/groot_n15/robocasa/collect/collect_grid.sh`)
+
+- 결손 판정 = DONE_LIST(이관 완료 키) + 로컬 `meta.json`. 로그가 아니라 이 둘이 정본.
+- **신규 plan 은 전용 staging** 을 쓴다 — 평탄 si(§3.1.1)가 기존 plan 셀 키와 문자열
+  충돌해 DONE_LIST 가 오판한다.
+- `STAGING_WAIT_GB` **backpressure** 필수: 이관이 수집을 못 따라가면 staging 이 폭주해
+  디스크가 차고 수집이 전멸한다(2026-08-18 3머신 274GB 사고).
+- `SERVE_OMP_THREADS` 로 CPU 를 cap 한다(공유 서버 load 폭주 방지).
+- 이관은 `ship_to_archive.sh`, `PARALLEL=8` 권장(링크가 스트림당 ~1MB/s 셰이핑).
+- srv48/50 은 lerobot 컨테이너가 없다 → `SERVE_MODE=host` + `SERVE_PY` +
+  `SERVE_PYTHONPATH` 3종을 반드시 넘긴다(누락 시 serve 기동 실패로 전멸).
+
 ## 6. 신규 생성 시 지켜야 할 것
 
 수집기·fit 스크립트가 새로 산출물을 만들 때:
