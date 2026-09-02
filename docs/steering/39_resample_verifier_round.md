@@ -4,7 +4,7 @@
 남기면 어디에 서는가. 우리 차기 연산자(재샘플 + 내부 read 선별)의 기준선이자, RL² 이득
 귀속(합성 vs 선별)의 마지막 분해 조각.
 
-재현 라운드 본문 = `38_rl2_simpler_repro.md` (인프라·함정·baseline 단일 출처).
+재현 라운드 본문 = `38_rl2_simpler_repro.md` (인프라·함정·baseline 단일 출처 — 2026-09-02 archive, git 이력에서 복원).
 
 ## 설계
 

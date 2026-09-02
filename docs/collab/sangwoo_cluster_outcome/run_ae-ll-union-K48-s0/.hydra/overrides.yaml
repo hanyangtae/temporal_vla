@@ -1,0 +1,6 @@
+- experiment=ae
+- seed=0
+- cluster.K=48
+- run_name=ae-log_likelihood-union-K48-s0
+- data.split_file=cell_union.json
+- wandb.mode=disabled

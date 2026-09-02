@@ -37,7 +37,7 @@
 - **SAE (scene 분리)**: [31 G1](steering/31_sae_g1_results.md) · [32 G2](steering/32_g2_scene_residual_results.md)
 - **섭동 계열**: [35 exp5-2](steering/35_exp5-2_results.md) — 유도된 실패의 회복
 - **방법론 후보**: [07 Steering Methods Survey](steering/07_steering_methods_survey.md)
-- **라운드 종합**: [33 exp5 round summary](steering/33_exp5_round_summary.md)
+- **라운드 종합**: [RESULTS.md](steering/RESULTS.md) 원장 (exp2~v4r). 최신 라운드 서사 = [handoff/](handoff/)
 
 상시 규약 (라운드 무관):
 
@@ -78,7 +78,8 @@ N1.5와 N1.6의 DiT token layout은 대칭이 아니다. feature shape 비교 �
 | [`related_work/`](related_work/) | 우리 방법과의 차이 정리 (reviewer 대응용) |
 | [`Activation_steering_basic/`](Activation_steering_basic/00_activation_steering_survey.md) | activation steering 서베이 52편 + 노트 |
 | [`adr/`](adr/) | 장기 결정 기록 |
-| [`collab/`](collab/) | Codex 협업·Gate 리뷰 기록 |
+| [`collab/`](collab/) | Codex 협업·Gate 리뷰 기록 (Codex 원장 전용) |
+| [`handoff/`](handoff/) | Claude 세션 간 핸드오프·파트 발주 요청서 (현행 = `handoff_20260902_v4r_round.md`) |
 | [`onboarding/`](onboarding/00_intern_curriculum.md) | 인턴 커리큘럼 |
 | [`insight/`](insight/) | INSIGHT VLM primitive-segmentation 파일럿 |
 | [`ttt/`](ttt/README.md) | 구 TTA/progress predictor (메인 아님, 보존) |

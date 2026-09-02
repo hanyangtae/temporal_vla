@@ -26,11 +26,23 @@ hotfix 시나리오(사용자 로그로 무학습 패치, 다음 모델 업데�
   3. 위약(라벨 순열)보다 명확히 나을 것 — 궤적은 아무 개입에도 바뀌므로 "내용"의 증명은
      위약 대조뿐.
   4. 데이터 부족 시 스스로 identity로 빠질 것 (자동 등록 게이트).
-- **현재 위치**: 1·4 충족, **2·3 미달** — 선형 활성화 개입 전 계열(setM·수축 3종·condg
-  × β·시점·layer)이 구제 0·처치=위약 (42·44; 설계 세션 최종 확정 08-20). 실개입 ~100+판
-  구제 0 = 95% 상한 구제율 ~3%로 기준 2(20–30%)를 **검정력 있게 기각** — "검출 불가"가
-  아니라 "효과 없음". 기전(44 §7.3): 개입은 궤적을 바꾸지만 방향을 못 정함 → 방향 무주장
-  개입(재샘플)이 차기 1순위.
+- **시나리오 한 줄** (2026-09 Notion 정본): 작업장이 조금 바뀌어 SR 떨어짐 → finetune 대신
+  activation 기반 감지 → steering으로 개선. **전제 데이터** = ① finetune에 쓴 expert ② 그
+  작업장 과거 rollout(같은 scene, 물건 배치 약간 다름) ③ 현재 scene 실패 rollout(성공 가능한
+  case만). unseen scene은 일단 대상 외.
+- **실험 무대**: GR00T N1.5 × RoboCasa v4 grid(scene 5 × noise 5 × 지터 5 = 125판/instruction).
+  instruction 7종 = drawer-L·oven rack·dishwasher rack·PPCC 4종(bread·candle·jug·marsh).
+  ~~apple~~(전승) ~~coffee~~(전패) ~~drawer-R~~(전승). **구제 대상** = 성공/실패 balance 있는
+  scene 1개/instruction. **학습 데이터** = 타 4 scene 전체 + 구제 대상 scene 실패 rollout —
+  failure detector·phase detector·연산자 전부 이걸로.
+- **파이프 한 줄**: activation 기반 phase 감시 → fail detector 발화 → 그 phase 연산자로
+  activation 교체 또는 denoise 다시 밟기(per-step, 1회성). 설계 = 47.
+- **현재 위치 (09-02)**: 1·4 충족, **2·3 미달 유지**. 선형 write-in 계열(conceptor·setM·
+  condg)은 구제 0·처치=위약(08-20 종결). per-step 재설계 후 재샘플(reseed)·rsN_llr(후보 8
+  + 내부 LLR 선별)에서 구제가 나오기 시작 — 재수집 정본 60판에서 최고 12%(rsn_llr 5/43,
+  candle 집중). 단 jug·oven 같은 깊은 실패는 전 arm 0~2. **수집 라벨은 replay와 다른
+  세계**(반전 59%)라 데이터 전부 재수집 후 재판정 예정. 상세 = `docs/handoff/
+  handoff_20260902_v4r_round.md`, 수치 = RESULTS §1.
 
 ## 1. 연구 질문
 
@@ -238,8 +250,9 @@ EVAL_SEED=100000 · N_ENVS=2 · N_EP=20 · per-episode TSV. **fit-seed와 eval-s
 
 ## 7. 리스크 · Falsification
 
-- **C2 falsify(진행 중)**: 연산자·시점·scene 분리를 다 바꿔도 위약을 못 넘으면 → latent write-in
-  계열 종결, 방향 재설정.
+- **C2 falsify — latent write-in 계열은 종결(08-20)**. 남은 축 = 방향 무주장 개입(재샘플·
+  best-of-N + 내부 채점기). 이것도 재수집 정본에서 위약(reseed)을 못 넘으면 → 활성화
+  개입 자체를 접고 감지(triage)만 남긴다.
 - **RQ3 falsify**: 창 보정·downstream 잔차 후에도 DiT-only 칸이 ~0 → "VL/DiT 종류" 프레임 폐기,
   "VL-OOD 심각도" 단일 축으로 후퇴.
 - **RQ4 falsify**: VL/DiT steer가 양 유형을 동등하게 구제 → 유형론이 real이어도 라우팅 무용.

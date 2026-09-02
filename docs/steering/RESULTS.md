@@ -79,7 +79,7 @@ arm별 경로는 `results.tsv`의 `데이터` 열. 루트는 `outputs/eval/roboc
 | per-step v4 정렬 | `og_ck8v4_expand{,_srv50}/<arm>/<case>/` · 매니페스트 `outputs/steer/online_pipe/manifests/v4_expand_eval.tsv` | eval 캡처 OFF |
 | v4r β sweep | `og_v4r_expand/<arm>/<case>/`(kanu·srv50·srv48 분산, 회수본 `outputs/tmp/v4r_results/`) · 정본 `manifests/v4r_labels.tsv`(160)·`v4r_eval.tsv`(60) | 재수집 `og_v4r_collect/`(pkl, 승준 `v4r_collect/` 복제) · eval은 7-layer hook ON·미저장 |
 
-> 두 라운드의 좌표·함정·판정 서사는 [`../collab/handoff_20260902_v4r_round.md`](../collab/handoff_20260902_v4r_round.md).
+> 두 라운드의 좌표·함정·판정 서사는 [`../handoff/handoff_20260902_v4r_round.md`](../handoff/handoff_20260902_v4r_round.md).
 
 > ⚠ 2026-07-14 eval activation pkl/zst 전 호스트 삭제(~172GB). 판정 sidecar·fit·conceptor는 보존.
 > exp3부터 eval 캡처를 끈다. 데이터 소실의 재발 방지 규약은 [`docs/04_data_storage_convention.md`](../04_data_storage_convention.md) §7.5–7.6.

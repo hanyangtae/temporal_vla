@@ -1,0 +1,41 @@
+seed: 0
+device: cuda
+run_name: ae-log_likelihood-union-K48-s0
+wandb:
+  project: phase-posthoc-v1
+  entity: null
+  group: null
+  mode: disabled
+data:
+  root: datasets_local/phase_cls_pq3
+  split_file: cell_union.json
+  layer: 12
+  denoise: 3
+  n_comp: 64
+  whiten: true
+  success_only: false
+train:
+  epochs: 800
+  patience: 60
+  min_epochs: 60
+  batch_size: null
+  grad_clip: 5.0
+  optimizer:
+    name: adamw
+    lr: 0.001
+    weight_decay: 0.0001
+cluster:
+  K: 48
+  backend: gpu
+  drop_inactive: false
+model:
+  name: ae
+  input_dim: 64
+  latent_dim: 16
+  loss: log_likelihood
+  encoder:
+    type: mlp
+    hidden: 256
+  decoder:
+    type: mlp
+    hidden: 256
