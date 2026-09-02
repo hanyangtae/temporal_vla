@@ -1,0 +1,631 @@
+{
+  "env_name": "robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env",
+  "ep_meta": {
+    "cam_configs": {
+      "robot0_agentview_center": {
+        "parent_body": "mobilebase0_support",
+        "pos": [
+          -0.6,
+          0.0,
+          1.15
+        ],
+        "quat": [
+          0.636945903301239,
+          0.3325185477733612,
+          -0.3199238181114197,
+          -0.6175596117973328
+        ]
+      },
+      "robot0_agentview_left": {
+        "camera_attribs": {
+          "fovy": "60"
+        },
+        "parent_body": "mobilebase0_support",
+        "pos": [
+          -0.5,
+          0.35,
+          1.05
+        ],
+        "quat": [
+          0.55623853,
+          0.29935253,
+          -0.37678665,
+          -0.6775092
+        ]
+      },
+      "robot0_agentview_right": {
+        "camera_attribs": {
+          "fovy": "60"
+        },
+        "parent_body": "mobilebase0_support",
+        "pos": [
+          -0.5,
+          -0.35,
+          1.05
+        ],
+        "quat": [
+          0.6775091886520386,
+          0.3767866790294647,
+          -0.2993525564670563,
+          -0.55623859167099
+        ]
+      },
+      "robot0_eye_in_hand": {
+        "parent_body": "robot0_right_hand",
+        "pos": [
+          0.05,
+          0,
+          0
+        ],
+        "quat": [
+          0,
+          0.707107,
+          0.707107,
+          0
+        ]
+      },
+      "robot0_frontview": {
+        "camera_attribs": {
+          "fovy": "60"
+        },
+        "parent_body": "mobilebase0_support",
+        "pos": [
+          -0.5,
+          0,
+          0.95
+        ],
+        "quat": [
+          0.6088936924934387,
+          0.3814677894115448,
+          -0.3673907518386841,
+          -0.5905545353889465
+        ]
+      }
+    },
+    "fixture_refs": {
+      "cab": "cab_main_main_group",
+      "counter": "counter_main_main_group"
+    },
+    "fixtures": {
+      "bottom_left_group_1": {
+        "cls": "Drawer"
+      },
+      "bottom_left_group_2": {
+        "cls": "Drawer"
+      },
+      "bottom_left_group_base": {
+        "cls": "Box"
+      },
+      "cab_1_main_group": {
+        "cls": "SingleCabinet"
+      },
+      "cab_1_right_group": {
+        "cls": "HingeCabinet"
+      },
+      "cab_2_left_group": {
+        "cls": "SingleCabinet"
+      },
+      "cab_2_right_group": {
+        "cls": "HingeCabinet"
+      },
+      "cab_corner_2_main_group": {
+        "cls": "Box"
+      },
+      "cab_corner_3_main_group": {
+        "cls": "Box"
+      },
+      "cab_corner_4_main_group": {
+        "cls": "Box"
+      },
+      "cab_corner_main_group": {
+        "cls": "Box"
+      },
+      "cab_main_main_group": {
+        "cls": "SingleCabinet"
+      },
+      "coffee_machine_right_group": {
+        "cls": "CoffeeMachine"
+      },
+      "counter_1_left_group": {
+        "cls": "Counter"
+      },
+      "counter_1_main_group": {
+        "cls": "Counter"
+      },
+      "counter_1_right_group": {
+        "cls": "Counter"
+      },
+      "counter_corner_2_main_group": {
+        "cls": "Counter"
+      },
+      "counter_corner_left_group": {
+        "cls": "Counter"
+      },
+      "counter_corner_main_group": {
+        "cls": "Counter"
+      },
+      "counter_corner_right_group": {
+        "cls": "Counter"
+      },
+      "counter_main_main_group": {
+        "cls": "Counter"
+      },
+      "dishwasher_island_group": {
+        "cls": "Dishwasher"
+      },
+      "floor_backing_room": {
+        "cls": "Floor"
+      },
+      "floor_room": {
+        "cls": "Floor"
+      },
+      "fridge_cab_right_group": {
+        "cls": "HingeCabinet"
+      },
+      "fridge_housing_right_group": {
+        "cls": "HousingCabinet"
+      },
+      "fridge_right_group": {
+        "cls": "FridgeSideBySide"
+      },
+      "hood_main_group": {
+        "cls": "Hood"
+      },
+      "island_base_box_island_group": {
+        "cls": "Box"
+      },
+      "island_cab_right_island_group_1": {
+        "cls": "Drawer"
+      },
+      "island_cab_right_island_group_2": {
+        "cls": "Drawer"
+      },
+      "island_cab_right_island_group_3": {
+        "cls": "Drawer"
+      },
+      "island_cab_right_island_group_4": {
+        "cls": "Drawer"
+      },
+      "island_cab_right_island_group_base": {
+        "cls": "Box"
+      },
+      "island_island_group": {
+        "cls": "Counter"
+      },
+      "island_panel_cab_left_island_group_1": {
+        "cls": "PanelCabinet"
+      },
+      "island_panel_cab_left_island_group_base": {
+        "cls": "Box"
+      },
+      "island_panel_cab_right_island_group_1": {
+        "cls": "PanelCabinet"
+      },
+      "island_panel_cab_right_island_group_base": {
+        "cls": "Box"
+      },
+      "island_stack_1_island_group_1": {
+        "cls": "HingeCabinet"
+      },
+      "island_stack_1_island_group_2": {
+        "cls": "PanelCabinet"
+      },
+      "island_stack_1_island_group_base": {
+        "cls": "Box"
+      },
+      "knife_block_main_group": {
+        "cls": "Accessory"
+      },
+      "light_switch_2_room": {
+        "cls": "WallAccessory"
+      },
+      "light_switch_room": {
+        "cls": "WallAccessory"
+      },
+      "micro_housing_left_group": {
+        "cls": "HousingCabinet"
+      },
+      "microwave_left_group": {
+        "cls": "Microwave"
+      },
+      "outlet_2_room": {
+        "cls": "WallAccessory"
+      },
+      "outlet_3_room": {
+        "cls": "WallAccessory"
+      },
+      "outlet_room": {
+        "cls": "WallAccessory"
+      },
+      "oven_housing_left_group": {
+        "cls": "HousingCabinet"
+      },
+      "oven_left_group": {
+        "cls": "Oven"
+      },
+      "paper_towel_main_group": {
+        "cls": "Accessory"
+      },
+      "plant_island_group": {
+        "cls": "Accessory"
+      },
+      "shelves_left_group": {
+        "cls": "OpenCabinet"
+      },
+      "shelves_main_group": {
+        "cls": "OpenCabinet"
+      },
+      "sink_island_group": {
+        "cls": "Sink"
+      },
+      "stack_1_left_group_1": {
+        "cls": "SingleCabinet"
+      },
+      "stack_1_left_group_2": {
+        "cls": "Drawer"
+      },
+      "stack_1_left_group_base": {
+        "cls": "Box"
+      },
+      "stack_1_main_group_1": {
+        "cls": "HingeCabinet"
+      },
+      "stack_1_main_group_2": {
+        "cls": "Drawer"
+      },
+      "stack_1_main_group_3": {
+        "cls": "Drawer"
+      },
+      "stack_1_main_group_base": {
+        "cls": "Box"
+      },
+      "stack_1_right_group_1": {
+        "cls": "HingeCabinet"
+      },
+      "stack_1_right_group_2": {
+        "cls": "Drawer"
+      },
+      "stack_1_right_group_3": {
+        "cls": "Drawer"
+      },
+      "stack_1_right_group_base": {
+        "cls": "Box"
+      },
+      "stack_2_left_group_1": {
+        "cls": "HingeCabinet"
+      },
+      "stack_2_left_group_2": {
+        "cls": "Drawer"
+      },
+      "stack_2_left_group_3": {
+        "cls": "Drawer"
+      },
+      "stack_2_left_group_base": {
+        "cls": "Box"
+      },
+      "stack_2_main_group_1": {
+        "cls": "HingeCabinet"
+      },
+      "stack_2_main_group_2": {
+        "cls": "Drawer"
+      },
+      "stack_2_main_group_3": {
+        "cls": "Drawer"
+      },
+      "stack_2_main_group_base": {
+        "cls": "Box"
+      },
+      "stack_2_right_group_1": {
+        "cls": "SingleCabinet"
+      },
+      "stack_2_right_group_2": {
+        "cls": "Drawer"
+      },
+      "stack_2_right_group_base": {
+        "cls": "Box"
+      },
+      "stack_3_left_group_1": {
+        "cls": "Drawer"
+      },
+      "stack_3_left_group_2": {
+        "cls": "Drawer"
+      },
+      "stack_3_left_group_3": {
+        "cls": "Drawer"
+      },
+      "stack_3_left_group_4": {
+        "cls": "Drawer"
+      },
+      "stack_3_left_group_base": {
+        "cls": "Box"
+      },
+      "stack_3_main_group_1": {
+        "cls": "Drawer"
+      },
+      "stack_3_main_group_2": {
+        "cls": "Drawer"
+      },
+      "stack_3_main_group_3": {
+        "cls": "Drawer"
+      },
+      "stack_3_main_group_4": {
+        "cls": "Drawer"
+      },
+      "stack_3_main_group_base": {
+        "cls": "Box"
+      },
+      "stack_3_right_group_1": {
+        "cls": "Drawer"
+      },
+      "stack_3_right_group_2": {
+        "cls": "Drawer"
+      },
+      "stack_3_right_group_3": {
+        "cls": "Drawer"
+      },
+      "stack_3_right_group_4": {
+        "cls": "Drawer"
+      },
+      "stack_3_right_group_base": {
+        "cls": "Box"
+      },
+      "stack_4_main_group_1": {
+        "cls": "HingeCabinet"
+      },
+      "stack_4_main_group_base": {
+        "cls": "Box"
+      },
+      "stack_5_main_group_1": {
+        "cls": "HingeCabinet"
+      },
+      "stack_5_main_group_2": {
+        "cls": "Drawer"
+      },
+      "stack_5_main_group_3": {
+        "cls": "Drawer"
+      },
+      "stack_5_main_group_base": {
+        "cls": "Box"
+      },
+      "stack_6_main_group_1": {
+        "cls": "SingleCabinet"
+      },
+      "stack_6_main_group_2": {
+        "cls": "Drawer"
+      },
+      "stack_6_main_group_base": {
+        "cls": "Box"
+      },
+      "stool_1_room": {
+        "cls": "Stool"
+      },
+      "stool_2_room": {
+        "cls": "Stool"
+      },
+      "stool_3_room": {
+        "cls": "Stool"
+      },
+      "stovetop_main_group": {
+        "cls": "Stovetop"
+      },
+      "toaster_oven_left_group": {
+        "cls": "ToasterOven"
+      },
+      "toaster_right_group": {
+        "cls": "Toaster"
+      },
+      "top_left_group": {
+        "cls": "HingeCabinet"
+      },
+      "utensil_rack_room": {
+        "cls": "WallAccessory"
+      },
+      "utensil_set_main_group": {
+        "cls": "Accessory"
+      },
+      "wall_backing_room": {
+        "cls": "Wall"
+      },
+      "wall_front_backing_room": {
+        "cls": "Wall"
+      },
+      "wall_front_room": {
+        "cls": "Wall"
+      },
+      "wall_left_backing_room": {
+        "cls": "Wall"
+      },
+      "wall_left_room": {
+        "cls": "Wall"
+      },
+      "wall_right_backing_room": {
+        "cls": "Wall"
+      },
+      "wall_right_room": {
+        "cls": "Wall"
+      },
+      "wall_room": {
+        "cls": "Wall"
+      },
+      "window_group_room": {
+        "cls": "Window"
+      }
+    },
+    "gen_textures": {},
+    "init_robot_base_ori": [
+      0.0,
+      0.0,
+      1.5707963267948966
+    ],
+    "init_robot_base_pos": [
+      5.396634674095613,
+      -0.8448671956380075,
+      0.0
+    ],
+    "lang": "Pick the jug from the counter and place it in the cabinet.",
+    "layout_id": 7,
+    "object_cfgs": [
+      {
+        "exclude_obj_groups": null,
+        "graspable": true,
+        "info": {
+          "cat": "jug_wide_opening",
+          "groups": [
+            "all"
+          ],
+          "groups_containing_sampled_obj": [
+            "all",
+            "jug_wide_opening",
+            "receptacle"
+          ],
+          "mjcf_path": "/temporal_vla/src/benchmarks/robocasa/robocasa/models/assets/objects/objaverse/jug/jug_6/model.xml",
+          "split": "target"
+        },
+        "name": "obj",
+        "obj_groups": "all",
+        "placement": {
+          "fixture": "counter_main_main_group",
+          "offset": [
+            0.0,
+            0.1
+          ],
+          "pos": [
+            "ref",
+            -1.0
+          ],
+          "sample_region_kwargs": {
+            "min_size": [
+              0.13921341449999994,
+              0.12763320299999995,
+              0.15149611799999993
+            ],
+            "ref": "cab_main_main_group"
+          },
+          "size": [
+            0.6,
+            0.3
+          ]
+        },
+        "reset_region": {
+          "name": "geom_0",
+          "offset": [
+            1.2249999999999996,
+            -3.469446951953614e-17,
+            0.46
+          ],
+          "size": [
+            0.5500000000000012,
+            0.65
+          ]
+        },
+        "type": "object"
+      },
+      {
+        "info": {
+          "cat": "kiwi",
+          "groups": [
+            "all"
+          ],
+          "groups_containing_sampled_obj": [
+            "all",
+            "kiwi",
+            "fruit",
+            "food",
+            "in_container"
+          ],
+          "mjcf_path": "/temporal_vla/src/benchmarks/robocasa/robocasa/models/assets/objects/objaverse/kiwi/kiwi_5/model.xml",
+          "split": "target"
+        },
+        "name": "distr_counter",
+        "obj_groups": "all",
+        "placement": {
+          "fixture": "counter_main_main_group",
+          "offset": [
+            0.0,
+            0.3
+          ],
+          "pos": [
+            "ref",
+            -1.0
+          ],
+          "sample_region_kwargs": {
+            "min_size": [
+              0.05841722687685845,
+              0.07815305910739945,
+              0.05496255648
+            ],
+            "ref": "cab_main_main_group"
+          },
+          "size": [
+            1.0,
+            0.3
+          ]
+        },
+        "reset_region": {
+          "name": "geom_0",
+          "offset": [
+            1.2249999999999996,
+            -3.469446951953614e-17,
+            0.46
+          ],
+          "size": [
+            0.5500000000000012,
+            0.65
+          ]
+        },
+        "type": "object"
+      },
+      {
+        "info": {
+          "cat": "glass_cup",
+          "groups": [
+            "all"
+          ],
+          "groups_containing_sampled_obj": [
+            "all",
+            "glass_cup",
+            "receptacle",
+            "stackable"
+          ],
+          "mjcf_path": "/temporal_vla/src/benchmarks/robocasa/robocasa/models/assets/objects/lightwheel/glass_cup/GlassCup023/model.xml",
+          "split": "target"
+        },
+        "name": "distr_cab",
+        "obj_groups": "all",
+        "placement": {
+          "fixture": "cab_main_main_group",
+          "offset": [
+            0.0,
+            0.0
+          ],
+          "pos": [
+            null,
+            1.0
+          ],
+          "size": [
+            1.0,
+            0.2
+          ]
+        },
+        "reset_region": {
+          "height": 0.2666666666666667,
+          "name": "level0",
+          "offset": [
+            0.0,
+            0.0,
+            -0.43
+          ],
+          "size": [
+            0.44,
+            0.34
+          ]
+        },
+        "type": "object"
+      }
+    ],
+    "style_id": 10
+  },
+  "format": "robocasa_ep_meta_manifest.v1",
+  "robocasa_env_source": "robocasa365",
+  "scenario_seed": 100095
+}
