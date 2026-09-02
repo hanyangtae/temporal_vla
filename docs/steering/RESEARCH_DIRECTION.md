@@ -41,7 +41,7 @@ hotfix 시나리오(사용자 로그로 무학습 패치, 다음 모델 업데�
   condg)은 구제 0·처치=위약(08-20 종결). per-step 재설계 후 재샘플(reseed)·rsN_llr(후보 8
   + 내부 LLR 선별)에서 구제가 나오기 시작 — 재수집 정본 60판에서 최고 12%(rsn_llr 5/43,
   candle 집중). 단 jug·oven 같은 깊은 실패는 전 arm 0~2. **수집 라벨은 replay와 다른
-  세계**(반전 59%)라 데이터 전부 재수집 후 재판정 예정. 상세 = `docs/handoff/
+  세계**(반전 59%)라 데이터 전부 재수집 후 재판정 예정. 상세 = `docs/collab_within_claude/
   handoff_20260902_v4r_round.md`, 수치 = RESULTS §1.
 
 ## 1. 연구 질문

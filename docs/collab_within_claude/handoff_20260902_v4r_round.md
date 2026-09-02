@@ -143,4 +143,4 @@ awk "0" 함정(§4-1)이 og_ck8v4·og_rsn 오케스트레이터에도 있었음 
 7. 집계 스크립트化. serve 즉사 시 부팅 루프 조기 중단.
 
 ## 7. 새 세션 프롬프트
-"main checkout ~/pkt_ws/temporal_vla (branch feat/rs-steer-v4)에서 중추(전체 파이프) 세션 이어받아줘. 정본 = docs/handoff/handoff_20260902_v4r_round.md. 게이팅 설계 = docs/steering/47. §1 판정 재론 x. §6-1(데이터 재수집)부터. 협업 세션은 ListAgents."
+"main checkout ~/pkt_ws/temporal_vla (branch feat/rs-steer-v4)에서 중추(전체 파이프) 세션 이어받아줘. 정본 = docs/collab_within_claude/handoff_20260902_v4r_round.md. 게이팅 설계 = docs/steering/47. §1 판정 재론 x. §6-1(데이터 재수집)부터. 협업 세션은 ListAgents."

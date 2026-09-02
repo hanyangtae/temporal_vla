@@ -40,9 +40,9 @@
 | [`45_hotfix_scenario_spec.md`](45_hotfix_scenario_spec.md) | **hotfix 시나리오 스펙**(시나리오 구체화 세션). 요지는 RESEARCH_DIRECTION §0.5 |
 | [`47_perstep_gating_pipeline.md`](47_perstep_gating_pipeline.md) | **per-step 게이팅 파이프 설계 정본** (latch 폐기, pre-hook detector 규칙) |
 
-## 세션 핸드오프 → [`../handoff/`](../handoff/)
+## 세션 핸드오프 → [`../collab_within_claude/`](../collab_within_claude/)
 
-현행 = [`handoff_20260902_v4r_round.md`](../handoff/handoff_20260902_v4r_round.md) (중추 세션). Codex 원장은 [`../collab/`](../collab/) — 별개.
+현행 = [`handoff_20260902_v4r_round.md`](../collab_within_claude/handoff_20260902_v4r_round.md) (중추 세션). Codex 원장은 [`../collab_codex/`](../collab_codex/) — 별개.
 
 ## 수집·운영
 

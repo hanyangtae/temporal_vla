@@ -3,7 +3,7 @@
 - 날짜: 2026-07-10 (R3 — Codex 2차 리뷰 반영)
 - 상태: **구현 완료 — 이 문서는 비규범 설계 기록** (결정 배경·개정 이력 보존용).
   실행 규약의 단일 출처는 `.claude/skills/codex-collab/SKILL.md`.
-- 토론 원장: [`docs/collab/2026-07-10-codex-collab-protocol.md`](../../collab/2026-07-10-codex-collab-protocol.md)
+- 토론 원장: [`docs/collab_codex/2026-07-10-codex-collab-protocol.md`](../../collab_codex/2026-07-10-codex-collab-protocol.md)
 - 대상 도구: Claude Code 2.1.206, codex-cli 0.144.1 (이 레포는 Codex 쪽 `trusted` 등록됨)
 
 ## 0. 이 머신 전제조건 (2026-07-10 검증)
@@ -50,7 +50,7 @@ codex 기본 sandbox 백엔드(bwrap)가 이 머신의 AppArmor 제한
               ├─ codex review ───────────── diff 기반 코드 리뷰 (read-only)
               └─ codex exec (workspace-write, 격리 worktree) ── Gate 3 위임
               ↓
-        docs/collab/*.md (토론 기록, git 추적)
+        docs/collab_codex/*.md (토론 기록, git 추적)
 ```
 
 - 프로토콜 단일 출처: `.claude/skills/codex-collab/SKILL.md` (구현 산출물, git 추적).
@@ -161,7 +161,7 @@ codex exec --sandbox read-only --json \
 
 ## 6. 토론 기록 포맷
 
-`docs/collab/YYYY-MM-DD-<topic>.md` (한글):
+`docs/collab_codex/YYYY-MM-DD-<topic>.md` (한글):
 
 ```markdown
 # <주제> — Claude×Codex 토론
@@ -213,7 +213,7 @@ raw 응답 파일은 스크래치에만 두고 커밋하지 않는다. 로그에
    **구현 완료 후 이 설계 문서는 결정 배경·개정 이력만 남는 비규범 기록으로 고정**하고,
    실행 규약 섹션은 SKILL.md 링크로 대체 (이중 규범 방지).
 2. `scripts/utils/codex_ask.sh` — read-only 고정 wrapper (인자 검증 포함)
-3. `docs/collab/` 디렉토리 + 짧은 README
+3. `docs/collab_codex/` 디렉토리 + 짧은 README
 4. `CLAUDE.md` 포인터 1–2줄
 5. `.claude/settings.json` allow 규칙 (wrapper 경로에만)
 6. 권한 매칭 스모크 테스트: wrapper 무승인 통과 + workspace-write 직접 호출 승인 요구 확인

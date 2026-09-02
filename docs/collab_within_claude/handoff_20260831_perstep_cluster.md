@@ -204,7 +204,7 @@ detector+연산자를 자동 fit해 per-step으로 감지·개입. 이 세션은
 ## 7. 새 세션 프롬프트 (복붙용)
 
 "main checkout ~/pkt_ws/temporal_vla (branch feat/rs-steer-v4)에서 **중추(전체 파이프)
-세션**을 이어받아줘. 역할·판정·좌표·함정의 정본 = docs/collab/
+세션**을 이어받아줘. 역할·판정·좌표·함정의 정본 = docs/collab_codex/
 handoff_20260831_perstep_cluster.md (+게이팅 설계는 docs/steering/47). §0 역할 그대로 —
 파이프 통합 측정이 본업이고 파트 개선은 담당 세션(action phase·시나리오 구체화·데이터
 추가 수집)에 발주한다. §1 판정 재론 금지, §6 잔여 중 사용자 지시부터. latch 시대

@@ -456,4 +456,4 @@ docs/steering/38_rl2_simpler_repro.md	S10	archive	경쟁 재현 기록 종결	�
 docs/steering/38_collection_round_handoff.md	S10	archive	v2 수집 라운드 완결, 규약은 docs/04	적용(archive)	811793f
 docs/steering/39_steer_eval_usage.md	S10	archive	robocasa-steer-eval 스킬이 정본(중복)	적용(archive)	811793f
 docs/steering/45_grid_v2_collection.md	S10	archive	v2 수집 완결 기록, 데이터 전면 재수집 예정	적용(archive)	811793f
-docs/collab/{handoff_20260831_perstep_cluster,handoff_20260902_v4r_round,collect_request_v3_jitter}.md	S10	이동	collab는 Codex 원장 전용 → docs/handoff/ 신설	적용(이동)	811793f
+docs/collab/{handoff_20260831_perstep_cluster,handoff_20260902_v4r_round,collect_request_v3_jitter}.md	S10	이동	collab는 Codex 원장 전용 → docs/handoff/ 신설(사용자 재명명: collab→collab_codex, handoff→collab_within_claude)	적용(이동)	811793f

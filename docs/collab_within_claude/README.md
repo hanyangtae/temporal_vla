@@ -1,6 +1,6 @@
-# docs/handoff — 세션 간 핸드오프·발주 요청서
+# docs/collab_within_claude — 세션 간 핸드오프·발주 요청서
 
-Claude 세션(중추·파트) 사이의 인수인계 문서와 파트 발주 요청서. **Codex 토론 원장은 `docs/collab/`**(별개).
+Claude 세션(중추·파트) 사이의 인수인계 문서와 파트 발주 요청서. **Codex 토론 원장은 `docs/collab_codex/`**(별개).
 
 - 파일명: `handoff_YYYYMMDD_<round>.md` / `<part>_request_<topic>.md`
 - 현행 정본: [`handoff_20260902_v4r_round.md`](handoff_20260902_v4r_round.md)
