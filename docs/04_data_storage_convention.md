@@ -530,7 +530,8 @@ record 당 비용이 층 수에 선형이다 — **층 하나당 0.66MB/record**
 
 **머신 매칭 — replay 는 수집 머신에서만 bit 재현된다.** task 별 홈 머신을 바꾸면 그
 task 의 셀-paired eval(구제/파손 판정)이 성립하지 않는다. 홈이 바뀌어야 하면 그 task 의
-base 를 새 머신에서 재수집한다. **데스크탑(pdk)은 수집·replay 영구 배제**
+base 를 새 머신에서 재수집한다. **task↔홈 머신의 정본은 해당 plan 의
+`extra.machine_assignment`** (v5: `configs/collect/n15_grid_v5_scenario/collection_plan.json`). **데스크탑(pdk)은 수집·replay 영구 배제**
 (단일 GPU 에서 EGL 렌더×serve 동시부하 시 렌더 비결정 — `docs/steering/42` §7).
 
 **자원 상한·예약 — 정본은 [`docs/05_gpu_server_rules.md`](05_gpu_server_rules.md)**

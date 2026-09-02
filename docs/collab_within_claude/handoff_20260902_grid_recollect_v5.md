@@ -42,24 +42,26 @@ VLA 는 작업장마다 finetune 이 필요한데, 작업장에 **약간의 변�
 - k 는 사전 스캔 채택분에서 **앞 5개** (drawer 계열은 left/right 재추첨 → 목표 instruction
   일치 k 만). 스캔 원본 `ledger_20260902_purge/kscan_v4/*.tsv` (N=12) 로 **50/50 scene 전부
   채택 k ≥ 5 확인됨** — 재스캔 불필요.
-- plan 은 `scripts/collect/build_v4_plan.py` 를 복제해 **N_K=5, base 병합 없음, 이름
-  n15_grid_v5_scenario** 로 굽는다(좌표 = 평탄 `s{scene*100+k}/n{noise}`, `adopted_cells` 만
-  수집). 새 plan 은 **전용 staging** 필수(§4-4 함정).
+- plan = `scripts/collect/build_v5_plan.py` → `configs/collect/n15_grid_v5_scenario/`
+  (**plan_id `8daefeabf020`**, adopted_cells 1,250, 좌표 = 평탄 `s{scene*100+k}/n{noise}`,
+  `extra.machine_assignment` 에 머신 배정 내장). 새 plan 은 **전용 staging**
+  (`outputs/collect/grid_staging_v5`) 필수(§4-4 함정).
 - 모델·캡처: **N1.5** (`lerobot_groot_n15__robocasa365_ckpt120000`), capture_layers
   0,2,4,8,10,12,15 · all_token_full · denoise_k 4 · n_action_steps 5 · max 720 — v4 와 동일.
   (N1.6 은 §3 절차로 가능하나 이번 계약은 N1.5.)
 - 용량: 판당 ~600MB × 1,250 ≈ **750GB**. 폐기 후 HDD 여유 ≈ 1.7TB → 수용.
 
-### 0.4 머신 배정 (= 향후 replay 홈, 고정)
+### 0.4 머신 배정 (= 향후 replay 홈, 고정) — **2026-09-02 사용자 재지정(v2~v4 홈과 다름)**
 
 | 머신 | instruction | 판수 |
 |---|---|---|
-| kanu | OpenDrawer/left · PPCC/apple · PPCC/marshmallow · **PPCC/bread** · OvenRack/out | 625 |
-| srv50 (worker2) | OpenDrawer/right · PPCC/candle · PPCC/jug | 375 |
-| srv48 (worker1) | CoffeeSetupMug · DishwasherRack/out | 250 |
+| srv50 (worker2) | PPCC/bread · PPCC/candle · PPCC/jug · PPCC/marshmallow | 500 |
+| srv48 (worker1) | OpenDrawer/left · OpenDrawer/right · CoffeeSetupMug | 375 |
+| kanu | DishwasherRack/out · OvenRack/out · PPCC/apple | 375 |
 
-bread 는 이번에 base 까지 새로 모으므로 **kanu 단일 홈**이 된다(구 v1 worker1 base 문제
-해소). 데스크탑(pdk) 금지. 발사 전 `docs/05_gpu_server_rules.md` 의 `gpu_lease.sh claim`.
+정본 = plan `extra.machine_assignment` (`configs/collect/n15_grid_v5_scenario/collection_plan.json`).
+구 데이터는 전량 폐기됐으므로 홈 변경에 따른 base 재수집 문제는 없다(전 셀 신규).
+데스크탑(pdk) 금지. 발사 전 `docs/05_gpu_server_rules.md` 의 `gpu_lease.sh claim`.
 
 ### 0.5 산출 계약
 
@@ -72,7 +74,11 @@ bread 는 이번에 base 까지 새로 모으므로 **kanu 단일 홈**이 된�
 ### 0.6 착수 순서
 
 1. `git pull` dev 최신 → v5 plan 생성 → DRY_RUN 으로 결손 1,250 확인.
-2. **첫 셀 1판 수집 → 같은 좌표 fresh replay → bit 재현 확인** (0.1). 불일치 시 중단·보고.
+2. **첫 셀 게이트** = `scripts/collect/v5_first_cell_gate.sh` (머신마다 1회, 첫 채택 셀):
+   A 수집 경로 / B 같은 경로 fresh 재실행 / C eval 경로(`run_online_gated_eval.sh` 관례:
+   `--no-features`·ep_meta JSON 로드) / D eval 경로에서 ep_meta JSON 로드만 제거 → 
+   `compare_cell_runs.py` 가 success·traj.csv bit 대조. **A=B=C 아니면 본수집 금지·보고**
+   (D 는 원인 국소화용). 결과 `<GATE_ROOT>/VERDICT.txt`.
 3. lease claim → 3머신 발사(kanu GPU 3장×2 / srv 1장×6, `SERVE_MODE=host` 3종, backpressure,
    PARALLEL 8 shipper) → 완료 후 index_v5 생성·ep_meta 동봉 → 3머신 staging 정리·GPU 반납.
 
@@ -101,14 +107,13 @@ bread 는 이번에 base 까지 새로 모으므로 **kanu 단일 홈**이 된�
 **머신 매칭 (강제)**: replay 는 **수집한 머신에서만** bit 재현된다. task 별 홈 머신을
 바꾸면 그 task 의 셀-paired eval 이 깨진다. 현재 홈:
 
-- kanu: OpenDrawer/left, PPCC/apple, PPCC/marshmallow, PPCC/bread(v2 이후), OvenRack/out
-- srv48(worker1): CoffeeSetupMug, DishwasherRack/out
-- srv50(worker2): OpenDrawer/right, PPCC/candle, PPCC/jug
+- **v5(2026-09-02~, 현행)**: srv50 = PPCC bread·candle·jug·marshmallow / srv48 = OpenDrawer
+  left·right·CoffeeSetupMug / kanu = DishwasherRack·OvenRack·PPCC apple (§0.4, plan
+  `extra.machine_assignment` 정본).
+- (구 v2~v4 홈, 데이터 폐기됨 — 참고만): kanu = drawer_left·apple·marshmallow·bread·oven /
+  srv48 = coffee·dish / srv50 = drawer_right·candle·jug.
 - **데스크탑(pdk) 영구 배제** — 단일 GPU 에서 EGL 렌더×serve 동시부하 시 렌더 비결정
   (42 §7). 수집·replay 금지.
-
-> 알려진 예외: **bread 만 base(worker1) ↔ 지터(kanu) 머신이 갈려 있다** — 그 조합의
-> paired replay 는 불가. 쓰려면 base 25판을 kanu 에서 재수집할 것.
 
 ---
 
