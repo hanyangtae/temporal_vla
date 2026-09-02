@@ -9,14 +9,14 @@ description: Use when running RoboCasa SR evaluation — baseline vs steering co
 
 Fast-path for running SR evals correctly. Every value below is a settled decision
 (2026-06-05+) — apply it, do not re-derive or "improve" it. Rationale lives in
-CLAUDE.md "평가 표준" and docs/steering/14.
+CLAUDE.md "평가 표준" and docs/steering/RESEARCH_DIRECTION.md.
 
 ## Fixed standards
 
 | Item | Value |
 |---|---|
 | EVAL_SEED | 100000 (launcher default; matches colleague collection seeds) |
-| GPUs | 4/5/6 only — **GPU 0-3 are reserved for colleagues**. n16 compare default: `GPUS="4 5 6 4 5 6"` |
+| GPUs | **정본 = `docs/05_gpu_server_rules.md`** (kanu 빈 GPU만·최대 3장·serve 2/GPU, srv48/50 serve 6/GPU, 타인 프로세스 GPU 금지). 발사 전 `scripts/utils/gpu_lease.sh claim <machine> <gpu> <세션> <용도>` — 타 세션 점유면 `wait` 또는 사용자 보고. launcher `GPUS` 리스트를 claim한 GPU로 명시 |
 | Episodes | n16 compare: `N_ENVS=2 N_EP=20` per condition. n15 held-out cell: `EP0=30 EP1=59` (defaults — keep; disjoint from fit ep0-14) |
 | Per-episode log | `per_episode.tsv` (episode_idx, success, language) must be produced |
 | Where | SR eval runs LOCAL-only (robocasa Docker). Never on the remote node. |

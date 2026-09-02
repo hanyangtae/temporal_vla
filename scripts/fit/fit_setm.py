@@ -59,7 +59,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # scripts/fit (fit_pha
 from fit_phase_conceptor import (  # noqa: E402
     FULLTOKEN_MODE,
     _write_config,
+    cluster_label_source,
+    load_cluster_bundle,
     load_rollout_fulltoken,
+    relabel_all_by_cluster,
 )
 
 # 토큰 세그먼트 (N1.5 DiT T=49: state 1 + future 32 + action 16) — fit_phase_conceptor 규약
@@ -77,6 +80,10 @@ PL_SCALE_MIN, PL_SCALE_MAX = 0.5, 3.0
 PL_COS_MAX = 0.3   # 위약-처치 |cos| 상한: 정렬(처치 희석)·반정렬(반처치) 모두 불공정
 N_BOOT = 200
 RNG_SEED = 424101  # exp4-1 고정 (재현)
+
+# phase 라벨 출처 — 기본 GT(pkl feature_phases), --cluster-bundle 지정 시
+# "cluster-k{K}:<bundle basename>" 로 바뀐다. save_*_npz 가 모든 metadata.json 에 싣는다.
+PHASE_LABEL_SOURCE = "gt:feature_phases"
 
 
 # ---------------------------------------------------------------------------- fit 원자
@@ -396,19 +403,30 @@ def episode_phase_records(roll, layer_idx: int, ph: str, dwell_cap: int) -> np.n
 
     길이 통제는 phase 별 dwell cap 으로 한다 (2026-07-23 사용자 지적): episode 전역 cap 을
     먼저 걸면 cap 밖의 후반 phase(place·pull 등) record 가 통째로 소실. dwell cap 은
-    성공 episode 들의 그 phase 체류 길이 스케일 — 실패의 timeout 체류 과대가중만 제어."""
+    성공 episode 들의 그 phase 체류 길이 스케일 — 실패의 timeout 체류 과대가중만 제어.
+
+    ph=='global' 은 phase 무구분 전 rollout 풀 (COAST Global variant) —
+    fit_phase_conceptor._roll_records 관례를 그대로 이식: 필터 없이 앞에서부터 cap 개."""
     X = roll["dit"][:, layer_idx, :]
+    if ph == "global":
+        return X[:dwell_cap]
     idx = [i for i, p in enumerate(roll["phases"]) if p == ph][:dwell_cap]
     return X[idx]
 
 
 def phase_dwell_caps(rolls, labels, phases) -> dict:
     """phase 별 dwell cap = 성공 episode 체류 길이(>0)의 ceil(μ+1σ). 성공 dwell 없는
-    phase 는 미포함 (대조 불가 — 호출부에서 skip)."""
+    phase 는 미포함 (대조 불가 — 호출부에서 skip).
+
+    'global'(전 rollout 풀)은 fit_phase_conceptor.compute_length_caps 와 **동일 규약** —
+    체류 길이 대신 성공 episode 의 **record 수** 로 ceil(μ+1σ)."""
     caps = {}
     for ph in phases:
-        dw = [sum(1 for p in r["phases"] if p == ph)
-              for r, y in zip(rolls, labels) if y == 1]
+        if ph == "global":
+            dw = [len(r["phases"]) for r, y in zip(rolls, labels) if y == 1]
+        else:
+            dw = [sum(1 for p in r["phases"] if p == ph)
+                  for r, y in zip(rolls, labels) if y == 1]
         dw = [d for d in dw if d > 0]
         if dw:
             caps[ph] = int(np.ceil(np.mean(dw) + np.std(dw)))
@@ -421,7 +439,10 @@ def gather_phase_tok(rolls, labels, layer_idx, cls, ph, dwell_cap):
     for r, y in zip(rolls, labels):
         if y != cls:
             continue
-        idx = [i for i, p in enumerate(r["phases"]) if p == ph][:dwell_cap]
+        if ph == "global":   # 전 rollout 풀 (phase 필터 없음)
+            idx = list(range(len(r["phases"])))[:dwell_cap]
+        else:
+            idx = [i for i, p in enumerate(r["phases"]) if p == ph][:dwell_cap]
         if idx:
             out.append(r["tok"][idx, layer_idx].astype(np.float32))  # fp16 저장 대응
             n_eps += 1
@@ -588,7 +609,8 @@ def save_segment_npz(out_dir: Path, layer_blk: int, v_seg: np.ndarray, s_tok: np
     )
     full = {**meta, "selected_alpha": 0, "op": "setpoint_seg",
             "token_pool": "all_token_full", "segments": [s[0] for s in SEGMENTS],
-            "seg_mask": [float(x) for x in seg_mask]}
+            "seg_mask": [float(x) for x in seg_mask],
+            "phase_label_source": PHASE_LABEL_SOURCE}
     (d / "metadata.json").write_text(json.dumps(full, indent=2, ensure_ascii=False))
     _write_config(d, full)
 
@@ -601,7 +623,7 @@ def save_setpoint_npz(out_dir: Path, layer_blk: int, v: np.ndarray, s: float, me
     d.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(d / "conceptors.npz",
                         alpha0_v_steer=v.astype(np.float32), alpha0_s=np.float32(s))
-    full = {**meta, "selected_alpha": 0}
+    full = {**meta, "selected_alpha": 0, "phase_label_source": PHASE_LABEL_SOURCE}
     (d / "metadata.json").write_text(json.dumps(full, indent=2, ensure_ascii=False))
     _write_config(d, full)
 
@@ -610,6 +632,7 @@ def save_setpoint_npz(out_dir: Path, layer_blk: int, v: np.ndarray, s: float, me
 GATED_MIN_REC = 50     # phase 등록 최소 record/클래스 — 미달 phase 는 무개
 GATED_MIN_EPS = 3
 TERMINAL_PHASES = {"open-done", "insert-settle-done"}  # terminal 동치 phase 제외
+# (cluster 라벨은 "c0".."c{k-1}" 이라 이 집합과 교집합이 공집합 — 제외 로직은 무해하게 no-op)
 
 
 def fit_gated(args, rolls, labels, out_cell: Path) -> None:
@@ -627,6 +650,8 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
     pairing 은 episode 단위(arm 간 동일 episode)라 phase 마다 순열이 달라도 유지. 위약 fit
     불가 phase 는 처치·위약 양쪽 제외(dose 대칭).
     """
+    # docs/04 규약 — gated 4종 저장도 입력 sig 동반 필수 (_write_config 가 없으면 거부).
+    input_sigs = [r["sig"] for r in rolls]
     meta_perm = json.loads(
         next((out_cell / "setM_permanent" / "steer").glob("dit_L*/metadata.json")).read_text())
     blk = int(meta_perm["layer"])
@@ -756,7 +781,7 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
         entry["cos_seg_vs_permanent"] = [float(v_seg_ph[i] @ v_g_seg[i])
                                          for i in range(len(SEGMENTS))]
         save_segment_npz(out_cell / "setM_gated" / ph, blk, v_seg_ph, s_tok_ph, subdir=None,
-                         meta={"operator": "setM_gated", "cell": args.cell, "phase": ph,
+                         meta={"operator": "setM_gated", "input_sigs": input_sigs, "cell": args.cell, "phase": ph,
                                "layer": blk, "dwell_cap": dcap,
                                **{k: entry[k] for k in entry if k != "phase"}})
         v_seg_pp, s_tok_pp = sel["v_seg"], sel["s_tok"]
@@ -772,17 +797,17 @@ def fit_gated(args, rolls, labels, out_cell: Path) -> None:
                       "scale_clipped": sel["scale_clipped"], "fallback": sel["fallback"]}
         save_segment_npz(out_cell / "setM_gated_placebo" / ph, blk, v_seg_pp, s_tok_pp,
                          subdir=None, seg_mask=pl_scale_ph,
-                         meta={"operator": "setM_gated_placebo", "cell": args.cell,
+                         meta={"operator": "setM_gated_placebo", "input_sigs": input_sigs, "cell": args.cell,
                                "phase": ph, "layer": blk, **pl_meta_ph, "seg_diag": sd_pp})
         fmask = np.asarray([0.0, 1.0, 0.0], dtype=np.float32)
         save_segment_npz(out_cell / "setM_gated_future_only" / ph, blk, v_seg_ph, s_tok_ph,
                          subdir=None, seg_mask=fmask,
-                         meta={"operator": "setM_gated_future_only", "cell": args.cell,
+                         meta={"operator": "setM_gated_future_only", "input_sigs": input_sigs, "cell": args.cell,
                                "phase": ph, "layer": blk, "seg_diag": sd_ph})
         save_segment_npz(out_cell / "setM_gated_future_only_placebo" / ph, blk,
                          v_seg_pp, s_tok_pp, subdir=None,
                          seg_mask=np.asarray([0.0, pl_scale_ph[1], 0.0]),
-                         meta={"operator": "setM_gated_future_only_placebo",
+                         meta={"operator": "setM_gated_future_only_placebo", "input_sigs": input_sigs,
                                "cell": args.cell, "phase": ph, "layer": blk,
                                **pl_meta_ph, "seg_diag": sd_pp})
         diag.append(entry)
@@ -809,7 +834,9 @@ def resolve_phase_groups(spec: str, rolls) -> tuple[list[str], list[str]]:
         excluded = [p for p in present if p in TERMINAL_PHASES]
     else:
         groups = [g.strip() for g in spec.split(",") if g.strip()]
-        missing = [g for g in groups if g not in present]
+        # 'global' = 전 rollout 풀 (COAST Global variant). phase 라벨이 아니므로 존재 검사에서
+        # 제외 — fit_phase_conceptor._roll_records 관례를 fit_setm 스택에 이식.
+        missing = [g for g in groups if g != "global" and g not in present]
         if missing:
             raise SystemExit(f"phase {missing} 이 데이터에 없음 (있는 phase: {present})")
         excluded = []
@@ -862,6 +889,7 @@ def fit_phase_groups(args, rolls, labels, out_root: Path) -> None:
     base_meta = {
         # docs/04 규약 — 연산자마다 입력 sig 동반 (경로 아님)
         "input_sigs": [r["sig"] for r in rolls],
+        "phase_label_source": PHASE_LABEL_SOURCE,
         "cell": args.cell, "token_pool": args.token_pool,
         "length_control": not args.no_length_control,
         "manifest_sha": manifest_sha, "rng_seed": RNG_SEED,
@@ -999,6 +1027,7 @@ def fit_phase_groups(args, rolls, labels, out_root: Path) -> None:
         "quota": {"min_rec": args.min_records, "min_eps": args.min_per_class},
         "n_npz_written": written, "phases": diag,
         "manifest_sha": manifest_sha, "rng_seed": RNG_SEED,
+        "phase_label_source": PHASE_LABEL_SOURCE,
         "input_sigs": [r["sig"] for r in rolls],
         "placebo_dir": out_pl.name,
         "note": "fit-표본 AUROC 는 탐색 지표(held-out 아님). quota 미달 phase 는 NPZ 미생성 "
@@ -1042,6 +1071,13 @@ def main() -> None:
                     help=f"phase 채택 최소 record 수/클래스 (기본 {GATED_MIN_REC})")
     ap.add_argument("--gated", action="store_true",
                     help="setM_gated/placebo 만 fit (permanent 산출물 전제 — 같은 layer·동결 순열)")
+    ap.add_argument("--cluster-bundle", type=Path, default=None,
+                    help="ae_cluster.py --export-bundle NPZ. 지정 시 phase 라벨을 GT "
+                         "feature_phases 대신 activation cluster 배정(\"c0\"..\"c{k-1}\")으로 "
+                         "치환한다 (판정 좌표 = DiT L12 · 마지막 denoise · 49토큰 mean). "
+                         "--token-pool mean · capture 에 layer 12 포함 필수.")
+    ap.add_argument("--cluster-task", default=None,
+                    help="--cluster-bundle 안의 slug (centers.<slug>) — task 별 KMeans center 선택")
     ap.add_argument("--no-length-control", action="store_true",
                     help="길이 confound 통제 해제 — truncation cap·phase dwell cap 없이 전체 "
                          "길이 사용 (COAST/WA-LQR 원 논문 정렬 변형, 2026-07-25 사용자 지시). "
@@ -1066,6 +1102,18 @@ def main() -> None:
                 if (args.phase_groups and args.layers) else None)
     rolls = load_cell_rolls(args.manifest, args.cell, args.token_pool,
                             tok_layer_blks=tok_blks)
+    if args.cluster_bundle is not None:
+        # phase 라벨 = activation cluster 배정 (GT feature_phases 대체). --phase-groups auto
+        # 는 그대로 동작한다 (치환 후 라벨 집합을 자동 수집).
+        if not args.cluster_task:
+            raise SystemExit("--cluster-bundle 에는 --cluster-task <slug> 가 필요하다")
+        if args.token_pool != "mean":
+            raise SystemExit(f"--cluster-bundle 은 --token-pool mean 전용 "
+                             f"(번들 좌표 = 49토큰 mean, 현재 {args.token_pool})")
+        bundle = load_cluster_bundle(args.cluster_bundle)
+        relabel_all_by_cluster(rolls, bundle, args.cluster_task, tag=f" {args.cell}")
+        global PHASE_LABEL_SOURCE
+        PHASE_LABEL_SOURCE = cluster_label_source(bundle)
     labels = [r["success"] for r in rolls]
     if args.phase_groups:
         fit_phase_groups(args, rolls, labels, args.out_root)

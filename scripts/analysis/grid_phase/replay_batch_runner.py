@@ -31,8 +31,15 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-CONTAINER_REPO = "/temporal_vla/.claude/worktrees/safe-length-ablation"
-HOST_REPO = "/home/dongkyu/pkt_ws/temporal_vla/.claude/worktrees/safe-length-ablation"
+import os
+
+CONTAINER_REPO = os.environ.get("REPLAY_CONTAINER_REPO",
+                                "/temporal_vla.claude-worktree-placeholder")
+HOST_REPO = os.environ.get("REPLAY_HOST_REPO", "")
+if not HOST_REPO:  # 기본: 이 파일이 속한 repo 루트 (main repo → /temporal_vla)
+    HOST_REPO = str(Path(__file__).resolve().parents[3])
+    CONTAINER_REPO = "/temporal_vla" if HOST_REPO.endswith("temporal_vla") \
+        else CONTAINER_REPO
 
 _lock = threading.Lock()
 
@@ -50,8 +57,9 @@ def run_one(bundle: Path, out_dir: Path, gpu: int, eef_tol: float,
     cmd = [
         "docker", "exec",
         "-e", "MUJOCO_GL=egl",
-        "-e", f"MUJOCO_EGL_DEVICE_ID={gpu}",
-        "-e", f"CUDA_VISIBLE_DEVICES={gpu}",
+        # robocasa 컨테이너 EGL 은 default 1대만 열거(2026-08-20 실측 — NVML 복구와
+        # 무관). v2 수집·exp6 replay 40/40 재현이 전부 이 default 디바이스에서 성립했으므로
+        # 동일 경로 사용. --gpu 는 EGL 에 강제되지 않는다 (eef 게이트가 정합을 보증).
         "-e", "OMP_NUM_THREADS=1", "-e", "OPENBLAS_NUM_THREADS=1", "-e", "MKL_NUM_THREADS=1",
         container, "python",
         f"{CONTAINER_REPO}/scripts/analysis/grid_phase/replay_clean_video.py",
@@ -63,11 +71,11 @@ def run_one(bundle: Path, out_dir: Path, gpu: int, eef_tol: float,
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
-        return {"stem": bundle.name.replace(".bundle.pkl", ""), "error": "timeout",
+        return {"stem": bundle.name.replace(".bundle.pkl", "").replace(".pkl", ""), "error": "timeout",
                 "sec": round(time.time() - t0, 1)}
     line = next((ln for ln in r.stdout.splitlines() if ln.startswith("REPLAY_JSON ")), None)
     if line is None:
-        return {"stem": bundle.name.replace(".bundle.pkl", ""),
+        return {"stem": bundle.name.replace(".bundle.pkl", "").replace(".pkl", ""),
                 "error": f"rc={r.returncode}",
                 "tail": (r.stdout[-800:] + "\n" + r.stderr[-800:]).strip(),
                 "sec": round(time.time() - t0, 1)}
@@ -93,7 +101,8 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     res_path = out_dir / "results.jsonl"
 
-    bundles = sorted(bdir.glob("*.bundle.pkl"))
+    # v2 번들(국내투고 추출)은 <machine>_<instr>_s<i>_n<j>.pkl 이름 — 두 규약 다 잡는다.
+    bundles = sorted(set(bdir.glob("*.bundle.pkl")) | set(bdir.glob("kanu_*.pkl")))
     done: set[str] = set()
     if res_path.exists():
         for ln in res_path.read_text(encoding="utf-8").splitlines():
@@ -105,7 +114,8 @@ def main() -> int:
                 continue
             if "error" not in d:                       # 실패분은 재시도
                 done.add(d.get("stem", ""))
-    todo = [b for b in bundles if b.name.replace(".bundle.pkl", "") not in done]
+    todo = [b for b in bundles
+            if b.name.replace(".bundle.pkl", "").replace(".pkl", "") not in done]
     total = len(bundles)
     print(f"[batch] 번들 {total}판 / 완료기록 {len(done)} / 이번 실행 {len(todo)}판 "
           f"workers={args.workers} gpu={args.gpu}", flush=True)

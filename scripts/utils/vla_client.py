@@ -73,6 +73,10 @@ class VLAClient:
         self.timeout = timeout
         # 마지막 /act_with_features 응답의 failure detector 신호 (serve 가 안 보내면 None)
         self.last_failure: dict | None = None
+        # 마지막 /act_with_features 응답의 cluster phase 자체판정
+        # (serve --cluster-phase-bundle 전용 — 안 보내면 None). detector 유무와 독립이라
+        # last_failure 와 별도 속성으로 둔다(detector 없는 순수 라벨링 수집도 읽을 수 있게).
+        self.last_cluster: dict | None = None
 
     def health_check(self, timeout: float = 5.0) -> dict | None:
         try:
@@ -107,6 +111,7 @@ class VLAClient:
         r.raise_for_status()
         # serve 의 detector 상태도 /reset 에서 초기화된다 — 클라이언트 캐시도 같이 비운다.
         self.last_failure = None
+        self.last_cluster = None
 
     def _build_payload(
         self,
@@ -242,16 +247,54 @@ class VLAClient:
         # online failure detector (serve --failure-detector): plain JSON 스칼라.
         # feature blob 유무와 무관하게 오므로(--no-features eval 은 blob 억제 + score 만)
         # features dict 가 아니라 클라이언트 속성으로 노출한다.
-        self.last_failure = (
-            {
+        # per-step 게이팅(docs/steering/47): serve 가 1차 무개입 pass 점수(y_t)로 발화를
+        # 판정하고 발화 시 DiT 만 2차 재실행한다. 그 감사 필드(post 점수·발화 flag·op·
+        # 2차 seed)는 있을 때만 실어 준다 — 기존 arm 응답 스키마는 불변(하위 호환).
+        if "features.failure_score" in result:
+            failure = {
                 "score": result.get("features.failure_score"),
                 "fired": bool(result.get("features.failure_fired")),
                 "delta": result.get("features.failure_delta"),
                 "step": result.get("features.failure_step"),
             }
-            if "features.failure_score" in result
-            else None
-        )
+            for src_key, dst_key in (
+                ("features.failure_score_post", "score_post"),
+                ("features.perstep_fired", "perstep_fired"),
+                ("features.perstep_op", "perstep_op"),
+                ("features.perstep_seed2", "perstep_seed2"),
+                ("features.perstep_gate_skipped", "gate_skipped"),
+                ("features.perstep_debug_max_action_diff", "debug_max_action_diff"),
+                # cluster phase 자체판정(serve --cluster-phase-bundle): "c0".."c7" + 거리.
+                ("features.perstep_cluster", "cluster"),
+                ("features.perstep_cluster_dist", "cluster_dist"),
+                # best-of-N 재샘플(rsn_*): 후보 수·LLR·선택 idx·기각 사유.
+                ("features.perstep_cand_n", "perstep_cand_n"),
+                ("features.perstep_cand_llr", "perstep_cand_llr"),
+                ("features.perstep_cand_sel", "perstep_cand_sel"),
+                ("features.perstep_cand_reject", "perstep_cand_reject"),
+                # LLR 선별 불가 사유(fallback=후보 0 개입 — gate_skipped 와 다름: 개입은 일어남)
+                ("features.perstep_cand_entry", "perstep_cand_entry"),
+                ("features.perstep_cand_logs", "perstep_cand_logs"),
+                ("features.perstep_llr_fallback", "perstep_llr_fallback"),
+                # 2차 pass 소요(ms)·후보별 소요·미등록 phase 대체개입 사유
+                ("features.perstep_rerun_ms", "perstep_rerun_ms"),
+                ("features.perstep_cand_ms", "perstep_cand_ms"),
+                ("features.perstep_fallback", "perstep_fallback"),
+            ):
+                if src_key in result:
+                    failure[dst_key] = result.get(src_key)
+            self.last_failure = failure
+        else:
+            self.last_failure = None
+
+        # cluster phase 는 detector 없이도 올 수 있으므로 별도 속성으로도 노출한다.
+        if "features.perstep_cluster" in result:
+            self.last_cluster = {
+                "cluster": result.get("features.perstep_cluster"),
+                "cluster_dist": result.get("features.perstep_cluster_dist"),
+            }
+        else:
+            self.last_cluster = None
 
         blob = result.get("features.hidden_states")
         if isinstance(blob, dict):

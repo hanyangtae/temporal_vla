@@ -88,6 +88,6 @@ docker exec -e MUJOCO_GL=egl \
 
 ## 7. 관련
 
-- `27_standmixer_phase_labeler.md` — mixer instruction/판정/라벨러/스모크
+- `27_standmixer_phase_labeler.md` — mixer instruction/판정/라벨러/스모크 (2026-09-02 archive → git 이력, `review/LEDGER.tsv`)
 - chunk 길이 함정: CloseFridge는 실행 5/예측 16에서 SR 0/14, 실행 16에서 10/14.
   StandMixer는 실행 5에서도 2/6으로 살아남는다 — mixer를 고른 이유 중 하나.

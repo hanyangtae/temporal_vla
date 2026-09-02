@@ -107,7 +107,7 @@ def replay_one(bundle_path: Path, out_dir: Path, eef_tol: float, ref_root: Path 
     fps = int(b.get("video_fps", 20))
     actions = b["actions"]
     states = b.get("states") or []
-    stem = bundle_path.name.replace(".bundle.pkl", "")
+    stem = bundle_path.name.replace(".bundle.pkl", "").replace(".pkl", "")
 
     env = gym.make(b["env_name"], enable_render=True, seed=int(b["scenario_seed"]))
     obs, _ = env.reset(seed=int(b["scenario_seed"]))

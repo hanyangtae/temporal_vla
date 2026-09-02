@@ -110,8 +110,11 @@ def derive_task(env: str) -> str:
     return leaf.split("_PandaOmron")[0].split("_Env")[0]
 
 
+adopted = set((extra.get("adopted_cells") or []))
 for cell in plan.cells():
     if cell.instruction not in wanted or cell.noise_idx >= limit:
+        continue
+    if adopted and cell.key not in adopted:   # v3 지터 plan: 채택 셀만 (dummy 제외)
         continue
     env = env_names[cell.instruction]
     print("\t".join([
@@ -203,7 +206,7 @@ start_serve() {  # gpu port
   if [ "$DRY_RUN" = "1" ]; then
     echo "[dry] docker exec -d -e CUDA_VISIBLE_DEVICES=${gpu} lerobot bash -lc \"${cmd}\""
   else
-    docker exec -d -e CUDA_VISIBLE_DEVICES="$gpu" lerobot bash -lc "$cmd"
+    docker exec -d -e CUDA_VISIBLE_DEVICES="$gpu" -e OMP_NUM_THREADS="${SERVE_OMP_THREADS:-4}" -e OPENBLAS_NUM_THREADS="${SERVE_OMP_THREADS:-4}" -e MKL_NUM_THREADS="${SERVE_OMP_THREADS:-4}" lerobot bash -lc "$cmd"
   fi
 }
 health_curl() {  # port
@@ -239,6 +242,15 @@ run_worker() {  # wid port
     if compgen -G "${GRID_ROOT}/${PLAN_ID}/*/${instr}/s${si}/n${ni}/*/meta.json" > /dev/null 2>&1; then
       echo "[w${wid}] skip(done) ${key}"; continue
     fi
+    # ★ backpressure: 이관(shipper)이 못 따라가 staging 이 cap 을 넘으면 수집을
+    # 멈추고 기다린다 — 08-18 실측: 이관 병목으로 staging 134GB 폭주 → 디스크
+    # 포화 → 수집 전체 사망. cap 은 STAGING_WAIT_GB(기본 25GB).
+    while :; do
+      local st_kb; st_kb=$(du -sk "$GRID_ROOT" 2>/dev/null | awk '{print $1}')
+      [ "$((st_kb / 1048576))" -lt "${STAGING_WAIT_GB:-25}" ] && break
+      echo "[w${wid}] staging $((st_kb / 1048576))GB ≥ ${STAGING_WAIT_GB:-25}GB — 이관 대기 120s"
+      sleep 120
+    done
     echo "[w${wid}] $(date '+%F %T') ${key} seed=${seed} inf=${inf}"
     local args=(
       python /temporal_vla/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py
@@ -255,6 +267,11 @@ run_worker() {  # wid port
       --n-action-steps 5 --max-episode-steps 720
       --video-fps 20 --steps-per-render 2 --wait-ready
     )
+    if [ "${JITTER_MODE:-0}" = "1" ]; then
+      # v3 지터 plan: si=scene*100+k 평탄 좌표 → 실제 reset_idx=si%100.
+      # ep_meta 는 GRID_ROOT/ep_meta 에 export (base seed 키) — 아카이브 동봉 대상.
+      args+=(--jitter-reset-idx "$((si % 100))" --ep-meta-dir "${GRID_ROOT_CONT}/ep_meta")
+    fi
     if [ "$DRY_RUN" = "1" ]; then
       echo "[dry] docker exec robocasa ${args[*]}"
     else

@@ -8,7 +8,7 @@ description: Use when running any stage of the conceptor steering workflow — a
 ## Overview
 
 Runbook connecting the five stages with their settled standards. Method single
-source: docs/steering/14. Per-directory READMEs hold the detailed commands —
+source: docs/steering/RESEARCH_DIRECTION.md. Per-directory READMEs hold the detailed commands —
 this skill tells you which stage owns what and which standards are load-bearing.
 
 **★ Before writing ANY activation or operator artifact, read

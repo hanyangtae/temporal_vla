@@ -1,0 +1,436 @@
+{
+ "per_instruction": {
+  "CoffeeSetupMug": {
+   "runs": [
+    {
+     "seed": 0,
+     "cluster_acc": 0.8861111111111111,
+     "cluster_f1": 0.5702376752511988,
+     "test_scenes": [
+      6,
+      7
+     ],
+     "n_train": 10978,
+     "n_test": 2880,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 1,
+     "cluster_acc": 0.8576388888888888,
+     "cluster_f1": 0.46357048184088256,
+     "test_scenes": [
+      4,
+      5
+     ],
+     "n_train": 10978,
+     "n_test": 2880,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 2,
+     "cluster_acc": 0.8611111111111112,
+     "cluster_f1": 0.5730106363293538,
+     "test_scenes": [
+      2,
+      7
+     ],
+     "n_train": 11266,
+     "n_test": 2592,
+     "ae_epochs": 198
+    }
+   ],
+   "cluster_acc": 0.868287037037037,
+   "cluster_f1": 0.5356062644738118
+  },
+  "DishwasherRack_out": {
+   "runs": [
+    {
+     "seed": 0,
+     "cluster_acc": 0.5015124016938899,
+     "cluster_f1": 0.17475167778848685,
+     "test_scenes": [
+      6,
+      7
+     ],
+     "n_train": 9083,
+     "n_test": 1653,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 1,
+     "cluster_acc": 0.5540631296171927,
+     "cluster_f1": 0.2300806632064795,
+     "test_scenes": [
+      4,
+      5
+     ],
+     "n_train": 9247,
+     "n_test": 1489,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 2,
+     "cluster_acc": 0.41095238095238096,
+     "cluster_f1": 0.22016904253528366,
+     "test_scenes": [
+      2,
+      7
+     ],
+     "n_train": 8636,
+     "n_test": 2100,
+     "ae_epochs": 199
+    }
+   ],
+   "cluster_acc": 0.4888426374211545,
+   "cluster_f1": 0.20833379451008335
+  },
+  "OpenDrawer_left": {
+   "runs": [
+    {
+     "seed": 0,
+     "cluster_acc": 0.6690679873930662,
+     "cluster_f1": 0.4100734103340901,
+     "test_scenes": [
+      6,
+      7
+     ],
+     "n_train": 6393,
+     "n_test": 2221,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 1,
+     "cluster_acc": 0.7488789237668162,
+     "cluster_f1": 0.4316242705562089,
+     "test_scenes": [
+      4,
+      5
+     ],
+     "n_train": 7722,
+     "n_test": 892,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 2,
+     "cluster_acc": 0.7297668038408779,
+     "cluster_f1": 0.38704958397452954,
+     "test_scenes": [
+      2,
+      7
+     ],
+     "n_train": 7156,
+     "n_test": 1458,
+     "ae_epochs": 199
+    }
+   ],
+   "cluster_acc": 0.7159045716669201,
+   "cluster_f1": 0.4095824216216095
+  },
+  "OpenDrawer_right": {
+   "runs": [
+    {
+     "seed": 0,
+     "cluster_acc": 0.669971671388102,
+     "cluster_f1": 0.45111919524407706,
+     "test_scenes": [
+      6,
+      7
+     ],
+     "n_train": 6896,
+     "n_test": 2118,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 1,
+     "cluster_acc": 0.7052260716382853,
+     "cluster_f1": 0.47751943946405556,
+     "test_scenes": [
+      4,
+      5
+     ],
+     "n_train": 7311,
+     "n_test": 1703,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 2,
+     "cluster_acc": 0.9124893797790994,
+     "cluster_f1": 0.5294920808588894,
+     "test_scenes": [
+      2,
+      7
+     ],
+     "n_train": 7837,
+     "n_test": 1177,
+     "ae_epochs": 199
+    }
+   ],
+   "cluster_acc": 0.7625623742684956,
+   "cluster_f1": 0.486043571855674
+  },
+  "OvenRack_out": {
+   "runs": [
+    {
+     "seed": 0,
+     "cluster_acc": 0.5317324185248714,
+     "cluster_f1": 0.2106351666010757,
+     "test_scenes": [
+      6,
+      7
+     ],
+     "n_train": 8659,
+     "n_test": 1166,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 1,
+     "cluster_acc": 0.5757922871324933,
+     "cluster_f1": 0.32503603780141604,
+     "test_scenes": [
+      4,
+      5
+     ],
+     "n_train": 7206,
+     "n_test": 2619,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 2,
+     "cluster_acc": 0.6062767475035663,
+     "cluster_f1": 0.28081820703524557,
+     "test_scenes": [
+      2,
+      7
+     ],
+     "n_train": 8423,
+     "n_test": 1402,
+     "ae_epochs": 199
+    }
+   ],
+   "cluster_acc": 0.5712671510536437,
+   "cluster_f1": 0.2721631371459124
+  },
+  "PPCC_apple": {
+   "runs": [
+    {
+     "seed": 0,
+     "cluster_acc": 0.8421052631578947,
+     "cluster_f1": 0.8257497191253997,
+     "test_scenes": [
+      6,
+      7
+     ],
+     "n_train": 1043,
+     "n_test": 228,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 1,
+     "cluster_acc": 0.696969696969697,
+     "cluster_f1": 0.6777310606060606,
+     "test_scenes": [
+      4,
+      5
+     ],
+     "n_train": 1007,
+     "n_test": 264,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 2,
+     "cluster_acc": 0.940959409594096,
+     "cluster_f1": 0.9333890281258702,
+     "test_scenes": [
+      2,
+      7
+     ],
+     "n_train": 1000,
+     "n_test": 271,
+     "ae_epochs": 198
+    }
+   ],
+   "cluster_acc": 0.8266781232405626,
+   "cluster_f1": 0.8122899359524435
+  },
+  "PPCC_bread": {
+   "runs": [
+    {
+     "seed": 0,
+     "cluster_acc": 0.9358836206896551,
+     "cluster_f1": 0.8373733600994308,
+     "test_scenes": [
+      6,
+      7
+     ],
+     "n_train": 5847,
+     "n_test": 1856,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 1,
+     "cluster_acc": 0.8588744588744589,
+     "cluster_f1": 0.8235094409520487,
+     "test_scenes": [
+      4,
+      5
+     ],
+     "n_train": 6548,
+     "n_test": 1155,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 2,
+     "cluster_acc": 0.9174690508940853,
+     "cluster_f1": 0.8810123037183061,
+     "test_scenes": [
+      2,
+      7
+     ],
+     "n_train": 6249,
+     "n_test": 1454,
+     "ae_epochs": 199
+    }
+   ],
+   "cluster_acc": 0.9040757101527331,
+   "cluster_f1": 0.8472983682565952
+  },
+  "PPCC_candle": {
+   "runs": [
+    {
+     "seed": 0,
+     "cluster_acc": 0.8242894056847545,
+     "cluster_f1": 0.7853107793157409,
+     "test_scenes": [
+      6,
+      7
+     ],
+     "n_train": 7558,
+     "n_test": 1161,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 1,
+     "cluster_acc": 0.8769230769230769,
+     "cluster_f1": 0.7816253653586122,
+     "test_scenes": [
+      4,
+      5
+     ],
+     "n_train": 6444,
+     "n_test": 2275,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 2,
+     "cluster_acc": 0.7493074792243767,
+     "cluster_f1": 0.7330936949994823,
+     "test_scenes": [
+      2,
+      7
+     ],
+     "n_train": 7275,
+     "n_test": 1444,
+     "ae_epochs": 199
+    }
+   ],
+   "cluster_acc": 0.8168399872774027,
+   "cluster_f1": 0.7666766132246118
+  },
+  "PPCC_jug": {
+   "runs": [
+    {
+     "seed": 0,
+     "cluster_acc": 0.9476628046344386,
+     "cluster_f1": 0.6151600516073868,
+     "test_scenes": [
+      6,
+      7
+     ],
+     "n_train": 10380,
+     "n_test": 2503,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 1,
+     "cluster_acc": 0.9349269588313412,
+     "cluster_f1": 0.6046495353263912,
+     "test_scenes": [
+      4,
+      5
+     ],
+     "n_train": 10624,
+     "n_test": 2259,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 2,
+     "cluster_acc": 0.906478102189781,
+     "cluster_f1": 0.6169313318706146,
+     "test_scenes": [
+      2,
+      7
+     ],
+     "n_train": 10691,
+     "n_test": 2192,
+     "ae_epochs": 199
+    }
+   ],
+   "cluster_acc": 0.9296892885518536,
+   "cluster_f1": 0.6122469729347976
+  },
+  "PPCC_marshmallow": {
+   "runs": [
+    {
+     "seed": 0,
+     "cluster_acc": 0.8654572940287226,
+     "cluster_f1": 0.8155483505567771,
+     "test_scenes": [
+      6,
+      7
+     ],
+     "n_train": 5820,
+     "n_test": 1323,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 1,
+     "cluster_acc": 0.89618138424821,
+     "cluster_f1": 0.8844770893209001,
+     "test_scenes": [
+      4,
+      5
+     ],
+     "n_train": 6305,
+     "n_test": 838,
+     "ae_epochs": 199
+    },
+    {
+     "seed": 2,
+     "cluster_acc": 0.8796208530805687,
+     "cluster_f1": 0.8435363642227088,
+     "test_scenes": [
+      2,
+      7
+     ],
+     "n_train": 6088,
+     "n_test": 1055,
+     "ae_epochs": 199
+    }
+   ],
+   "cluster_acc": 0.8804198437858338,
+   "cluster_f1": 0.8478539347001286
+  }
+ },
+ "meta": {
+  "script": "ae_split_readout.py",
+  "protocol": "scaler·AE·KMeans·매핑 전부 train scene 적합 (누수 제거판); split 규칙은 phase_readout 동일",
+  "k": 8,
+  "latent": 16,
+  "epochs": 200,
+  "seeds": [
+   0,
+   1,
+   2
+  ]
+ }
+}

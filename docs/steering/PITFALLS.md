@@ -83,6 +83,19 @@ fit 단계의 α 선택(overlap 밴드)은 **매 fit 실행되고 있었다**. �
   각주 필수(효과 크기 < n=60 검출 한계라 허용은 되지만 밝혀야 한다).
 - 에피소드당 **fresh 프로세스**. 한 프로세스에서 `gym.make`를 연속 호출하면 두 번째부터 scene이 오염된다.
 - CPU cap `OMP/OPENBLAS_NUM_THREADS ≤16`(공유 노드), GPU는 발사 직전 점유 확인.
+- **awk falsy-"0"** (2026-09-01, 2회 재발): 오케스트레이터 그룹핑 `ns[key]=ns[key]?…`가 noise "0"을
+  거짓으로 봐 n0 판을 무음 탈락시킨다 → `(key in ns)` 판정. **완주 후 매니페스트 대비 커버리지
+  감사**(행수 대조)를 표준 절차로.
+- **serve 즉사 ≠ 행업**: 기동 실패(NPZ op 불일치 등)여도 러너 부팅 루프가 `SERVE_BOOT_TRIES`까지
+  기다려 30분이 사라진다. 먼저 `serve_<port>.log`의 `startup failed`를 본다.
+- **캡처 모드 수집의 집계**: grid 좌표 저장만 하면 `raw_rollouts` sidecar가 없어 INCOMPLETE 오판 →
+  러너 재시도가 자기 pkl과 덮어쓰기 tripwire 충돌. 이중기록(7c1a11f) 필수, OUT_ROOT 겹침 금지.
+- **좌표 열 혼용**: v4 index의 `armsig`는 전 행 'base'(지터는 `jitter_reset_idx`), `cell_si`는
+  평탄 셀코드(scene×100+k), per_episode `scene_idx`는 base scene — 매니페스트 조인 키 확인.
+- **수집 라벨은 replay와 다른 세계**일 수 있다(반전 ~59%, GPU·머신·캡처 무관) — 라벨 정본은
+  eval 파이프 replay로 재수집한 것(v4r). drawer는 지터 k가 좌/우 방향을 재추첨한다.
+- 컨테이너 장기 가동 시 NVML 상실(`Failed to initialize NVML`) → serve CPU 부팅 위장사망 →
+  `docker restart lerobot`. pkill 자기매치(`[k]` 브래킷·kill과 발사 분리)·ssh setsid 붙들림(`ssh -f`).
 
 ## 7. 통계
 

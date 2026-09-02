@@ -209,6 +209,27 @@ opsig = sha256( 연산자 실체 파일 전체 )[:16]
 **`machine` 은 계획에 넣지 않는다** — 같은 계획을 여러 머신에 나눠 돌리는 것이 정상 운영이고,
 넣으면 머신마다 다른 계획이 되어 `plan.missing()` 이 깨진다.
 
+### 3.1.1 지터 축 (k-grid, 2026-08-21 정식 채택 — n15_grid_v3 계열)
+
+scene·noise 2축에 **셋째 축 reset_idx(k)** 가 추가됐다: 같은 (task, scene, instruction)
+에서 **ep_meta 고정 + 연속 `reset()`** 으로 물건 종류·target 은 고정한 채 **배치와 로봇
+초기 관절만 재추첨**한 상태. `(base_env_seed, ep_meta, k)` 는 bit 결정적이라 replay 재생이
+성립한다 (반증된 대안: reset(seed=jitter) 는 완전 무효, ep_meta 미고정 연속 reset 은
+물건·instruction 까지 재추첨 — `docs/collab_within_claude/collect_request_v3_jitter.md` §6–7 실측).
+
+- **디렉토리/pkl 좌표는 2축 유지** (기존 인프라 무수정): scene 자리 = **평탄
+  `si = base_scene*100 + k`**, noise 자리 = inference 축. 복원은 `si//100`, `si%100`.
+- **인덱스 정본은 명시 3축**: `index_rollouts_v3.tsv` 에 scene_idx(base)·
+  `jitter_reset_idx`(k)·noise_idx 열 분리 + env_seed=base. meta.json 에
+  `jitter_reset_idx` 필수 기록.
+- plan JSON: `extra["adopted_cells"]` 가 수집 대상의 전부다 — si 인코딩상 dummy 자리가
+  생기므로 **adopted_cells 밖 셀은 존재하지 않는 셀**이다 (`plan.missing()` 에 이 필터
+  적용). k 는 사전 스캔(`v3_k_scan.py`)으로 목표 instruction 일치분만 채택 (OpenDrawer
+  는 left/right 방향이 ep_meta 로 고정되지 않아 k-필터 필수, PPCC 는 target 까지 고정됨).
+- ep_meta JSON(`--ep-meta-dir` 규약, base seed 키)은 아카이브에 동봉한다 — replay 는
+  같은 (base_es, ep_meta, k) 시퀀스(주입+plain reset (k+1)회)를 재현해야 한다.
+  collector 배선: `--jitter-reset-idx`.
+
 ## 3.2 `<machine>` 이 왜 경로 층인가 — 실측
 
 **같은 머신 안에서는 GPU 가 달라도 bitwise 동일하고, 머신이 다르면 갈린다** (2026-08-05 실측,
@@ -336,6 +357,8 @@ views/by-cell/<model>/<task>/<cell>/env<seed>/ep<N>  ->  ../../../activations/<s
 
 복합키 **(plan_id, machine, grid_instruction, scene_idx, noise_idx, armsig)** = §3 좌표 + arm.
 `armsig="base"` 가 baseline 행이다. `sig` 는 키가 아니라 **무결성 검증 열**이다(§3.1).
+지터 plan(§3.1.1)은 여기에 `jitter_reset_idx` 열이 붙고 scene_idx 는 평탄 si 다 —
+3축 분리는 `index_rollouts_v3.tsv` 후처리 정본에서 한다.
 
 > 구 정의는 복합키 (sig, source_run) 이었다. 2026-08-05 좌표 레이아웃 개정으로 대체.
 > 옛 수집분(좌표 없음)은 `legacy_path_map` 으로만 해석한다.
