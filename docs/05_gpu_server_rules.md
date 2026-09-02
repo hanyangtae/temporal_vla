@@ -35,7 +35,12 @@ scripts/utils/gpu_lease.sh release kanu 4 "<세션명>"                   # 반�
 ```
 
 - claim은 원자적(mkdir). 이미 잡혀 있으면 실패 코드 3 + 소유자 출력 → **다른 세션 것이면 발사 금지**: `wait`로 기다리거나 사용자에게 보고.
-- stale 자동 해제: 기록된 PID가 죽었거나 ttl 초과. (죽은 세션이 잡아둔 채 사라지는 것 방지)
+- **lease 수명 = 오케스트레이터 프로세스 수명** (`LEASE_PID=$$`). job 사이에 serve가 내려가 GPU가 비어 보여도 lease는 유지된다 → 다른 세션은 nvidia-smi가 아니라 lease를 본다. pid가 죽으면(release 없이 세션 사망) stale로 자동 회수. pid를 안 적은 lease만 ttl(기본 12h)로 해제 — 장기 run이면 `renew`.
+- 검증(09-02, 실프로세스): ① A 생존·GPU 빈 상태에서 B claim → exit 3 차단, B `wait` → A release 즉시 획득 ② A pid 사망 → B claim이 stale 회수 ③ pid 생존이면 ttl 초과해도 유지 ④ pid 없는 lease는 ttl로 해제·renew 동작.
+- 오케스트레이터에 넣는 법 — 래퍼 한 줄(claim → 실행 → 어떤 종료든 release):
+  ```bash
+  scripts/utils/with_gpu_lease.sh kanu "4 5 6" "<세션명>" "v4r eval" -- bash outputs/tmp/og_v4r_expand_kanu.sh 4 5 6
+  ```
 - lease는 "GPU 1장" 단위. GPU당 serve 2/6는 같은 세션 안에서 나눠 쓴다(세션 둘이 한 GPU 공유 금지 — 포트·VRAM 충돌).
 - 사용자 직접 발사분도 세션이 `status`에서 못 보므로, 발사 전 `nvidia-smi` 소유자 확인은 lease와 별개로 항상 한다.
 

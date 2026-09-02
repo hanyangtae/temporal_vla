@@ -5,6 +5,7 @@
 #   gpu_lease.sh claim   <machine> <gpu> <session> <purpose> [ttl_h=12]
 #   gpu_lease.sh wait    <machine> <gpu> <session> <purpose> [ttl_h=12] [poll_s=60]
 #   gpu_lease.sh release <machine> <gpu> <session>
+#   gpu_lease.sh renew   <machine> <gpu> <session> [ttl_h=12]   # pid 없는 lease 의 ttl 연장
 # machine ∈ kanu|srv48|srv50 . 원장 = <repo>/outputs/gpu_leases/<machine>_gpu<N>/ (mkdir 원자성)
 # exit: 0 ok · 2 인자오류 · 3 타 세션 점유
 # LEASE_PID=<오케스트레이터 pid> 를 주면 그 pid 사망 시 stale 자동 해제, 없으면 ttl 로만 해제
@@ -18,11 +19,14 @@ lease_dir() { echo "$ROOT/${1}_gpu${2}"; }
 alive() {  # pid 살아있나 (pid 미기록이면 ttl 로만 판정)
   [ -z "${1:-}" ] || [ "$1" = none ] || kill -0 "$1" 2>/dev/null
 }
-is_stale() {  # dir → 0 이면 stale
+is_stale() {  # dir → 0 이면 stale. pid 기록 있으면 **pid 생존만** 본다(job 사이 GPU가 비어도 유지);
+               # pid 없으면 ttl 로 판정.
   local d=$1; [ -f "$d/meta" ] || return 0
   local pid ttl start; pid=$(sed -n 's/^pid=//p' "$d/meta"); ttl=$(sed -n 's/^ttl_s=//p' "$d/meta"); start=$(sed -n 's/^start=//p' "$d/meta")
+  if [ -n "$pid" ] && [ "$pid" != none ]; then
+    alive "$pid" && return 1 || return 0
+  fi
   local now; now=$(date +%s)
-  if ! alive "$pid"; then return 0; fi
   [ -n "$ttl" ] && [ -n "$start" ] && [ $((now - start)) -gt "$ttl" ] && return 0
   return 1
 }
@@ -58,6 +62,12 @@ case "$cmd" in
     until "$0" claim "$2" "$3" "$4" "$5" "${6:-12}" 2>/dev/null; do
       echo "[lease] ${2} gpu${3} 점유 중 — ${poll}s 후 재시도 ($(date '+%T'))"; sleep "$poll"
     done
+    ;;
+  renew)
+    [ $# -ge 4 ] || { echo "usage: renew <machine> <gpu> <session> [ttl_h]" >&2; exit 2; }
+    d=$(lease_dir "$2" "$3"); [ -f "$d/meta" ] || { echo "[lease] 없음: ${2} gpu${3}" >&2; exit 3; }
+    owner=$(sed -n 's/^session=//p' "$d/meta"); [ "$owner" = "$4" ] || { echo "[lease] 거부: 소유자=${owner}" >&2; exit 3; }
+    sed -i "s/^start=.*/start=$(date +%s)/; s/^ttl_s=.*/ttl_s=$(( ${5:-12} * 3600 ))/" "$d/meta"; echo "[lease] renewed ${2} gpu${3} (+${5:-12}h)"
     ;;
   release)
     [ $# -ge 4 ] || { echo "usage: release <machine> <gpu> <session>" >&2; exit 2; }
