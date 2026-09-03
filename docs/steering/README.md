@@ -19,7 +19,7 @@
 |---|---|
 | [`45_hotfix_scenario_spec.md`](45_hotfix_scenario_spec.md) | hotfix 시나리오 스펙 (시나리오 구체화 세션). 요지 = DIRECTION §0.5 |
 | [`47_perstep_gating_pipeline.md`](47_perstep_gating_pipeline.md) | per-step 게이팅 파이프 설계 (latch 폐기, pre-hook detector) |
-| [`../collab_within_claude/handoff_20260902_v4r_round.md`](../collab_within_claude/handoff_20260902_v4r_round.md) | 중추 세션 현행 핸드오프 (라운드 서사·좌표·잔여) |
+| [`../collab_within_claude/handoff_20260902_전체파이프라인.md`](../collab_within_claude/handoff_20260902_전체파이프라인.md) | 중추 세션 현행 핸드오프 (라운드 서사·좌표·잔여) |
 
 ## 표현 분석 (DIRECTION이 근거로 인용하는 것만)
 
