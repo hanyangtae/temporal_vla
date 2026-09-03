@@ -86,6 +86,7 @@ for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 
 import argparse
+import csv
 import json
 import tempfile
 import time
@@ -153,14 +154,15 @@ def build_detector(kind: str, input_dim: int, hidden: int) -> nn.Module:
 class Episode:
     """판 하나. X 는 표준화 **전** 원본 [T,D] (표준화는 arm 별로 다시 건다)."""
 
-    __slots__ = ("task", "ep_id", "scene", "noise", "succ", "X", "phase", "T")
+    __slots__ = ("task", "ep_id", "scene", "noise", "succ", "X", "phase", "T", "jitter")
 
-    def __init__(self, task, ep_id, scene, noise, succ, X, phase):
+    def __init__(self, task, ep_id, scene, noise, succ, X, phase, jitter=-1):
         self.task, self.ep_id, self.scene, self.noise = task, ep_id, scene, noise
         self.succ = int(succ)
         self.X = X
         self.phase = phase
         self.T = int(X.shape[0])
+        self.jitter = int(jitter)   # 지터 축 k (reset_idx); 2축 legacy shard 는 -1
 
     @property
     def y(self) -> int:
@@ -228,6 +230,8 @@ def load_shard_episodes(path: Path, layer: int, denoise: int, seg: str
             if k not in f.files:
                 raise ValueError(f"{path.name}: 필수 열 '{k}' 없음")
             cols[k] = np.asarray(f[k]).ravel().astype(np.int64)
+        if "jitter" in f.files:
+            cols["jitter"] = np.asarray(f["jitter"]).ravel().astype(np.int64)
     n = len(feat)
     for k, v in cols.items():
         if len(v) != n:
@@ -249,7 +253,8 @@ def load_shard_episodes(path: Path, layer: int, denoise: int, seg: str
                 raise ValueError(
                     f"{path.name}: ep{ep} ep_len={el} != record 수 {len(m)}")
         eps.append(Episode(task, int(ep), int(sc[0]), int(cols["noise"][m[0]]),
-                           int(su[0]), feat[m], cols["phase_code"][m]))
+                           int(su[0]), feat[m], cols["phase_code"][m],
+                           jitter=int(cols["jitter"][m[0]]) if "jitter" in cols else -1))
     if not eps:
         raise ValueError(f"{path.name}: episode 0")
     return eps, spec
@@ -369,7 +374,8 @@ def truncate_episode(e: Episode, mode: str, W: int | None,
     if len(idx) < MIN_TRUNC_LEN:
         return None
     return Episode(e.task, e.ep_id, e.scene, e.noise, e.succ,
-                   np.ascontiguousarray(e.X[idx]), np.ascontiguousarray(e.phase[idx]))
+                   np.ascontiguousarray(e.X[idx]), np.ascontiguousarray(e.phase[idx]),
+                   jitter=e.jitter)
 
 
 def apply_truncation(split: dict, mode: str, W: int | None,
@@ -1185,6 +1191,24 @@ def run(args) -> int:
     only = [s.strip() for s in args.shards.split(",") if s.strip()] if args.shards else None
     paths = discover_shards(shard_dir, only)
 
+    exclude_cells: set[tuple[str, int, int, int]] = set()
+    exclude_cells_by_slug: dict[str, set] = {}
+    if args.exclude_cells_tsv:
+        with open(args.exclude_cells_tsv, encoding="utf-8") as fh:
+            rd = csv.DictReader(fh, delimiter="\t")
+            need = ("slug", "scene_idx", "jitter_reset_idx", "noise_idx")
+            miss = [c for c in need if c not in (rd.fieldnames or [])]
+            if miss:
+                raise SystemExit(f"--exclude-cells-tsv 열 누락 {miss} (필요: {need})")
+            for r in rd:
+                key = (r["slug"], int(r["scene_idx"]), int(r["jitter_reset_idx"]),
+                       int(r["noise_idx"]))
+                exclude_cells.add(key)
+                exclude_cells_by_slug.setdefault(r["slug"], set()).add(key)
+        print(f"[exclude] 셀 {len(exclude_cells)}개 로드 "
+              f"({ {k: len(v) for k, v in sorted(exclude_cells_by_slug.items())} })",
+              flush=True)
+
     tasks: dict[str, dict] = {}
     splits: dict[str, dict] = {}
     t0 = time.time()
@@ -1194,7 +1218,24 @@ def run(args) -> int:
         sc_split = split_scenes(slug, [e.scene for e in eps], args.train_scenes,
                                 args.calib_scenes, args.test_scenes, args.seed)
         part = {k: [e for e in eps if e.scene in set(v)] for k, v in sc_split.items()}
+        # eval 대상 셀(slug, scene, jitter, noise)은 train/calib 에서 제외 — in-sample 방지.
+        # scene 자체는 남긴다(45 §3: scene 노출 허용, held-out 은 episode 축). test 에
+        # 떨어진 셀은 그대로 둔다(평가 자체가 목적).
+        n_excl = {"train": 0, "calib": 0}
+        if exclude_cells:
+            for k in ("train", "calib"):
+                before = len(part[k])
+                part[k] = [e for e in part[k]
+                           if (slug, e.scene, e.jitter, e.noise) not in exclude_cells]
+                n_excl[k] = before - len(part[k])
+            if exclude_cells_by_slug.get(slug) and sum(n_excl.values()) == 0 and \
+                    not any(e.jitter >= 0 for e in eps):
+                raise SystemExit(f"{slug}: --exclude-cells-tsv 지정됐으나 shard 에 jitter "
+                                 "열이 없어 셀 매칭 불가 (2축 legacy shard)")
+            print(f"[exclude] {slug}: eval 셀 {len(exclude_cells_by_slug.get(slug, ()))}개 "
+                  f"→ train −{n_excl['train']} / calib −{n_excl['calib']}", flush=True)
         tasks[slug] = {
+            "n_excluded": n_excl,
             "instruction": spec.instruction, "shard": p.name,
             "phase_names": spec.phase_names, "dim": spec.dim,
             "layer_idx": spec.layer_idx, "denoise_idx": spec.denoise_idx,
@@ -1288,6 +1329,10 @@ def run(args) -> int:
             "td_grid": list(TD_GRID),
             "split": {"train": args.train_scenes, "calib": args.calib_scenes,
                       "test": args.test_scenes, "unit": "scene"},
+            "exclude_cells": {
+                "tsv": Path(args.exclude_cells_tsv).name if args.exclude_cells_tsv else None,
+                "n_cells": len(exclude_cells),
+                "n_excluded": {t: tasks[t].get("n_excluded") for t in sorted(tasks)}},
             **({"loto": {"folds": {h: [t for t in sorted(tasks) if t != h]
                                    for h in sorted(tasks)},
                          "test": "held-out task 전 episode (full, zero-shot)",
@@ -1344,6 +1389,9 @@ def main() -> int:
     ap.add_argument("--train-scenes", type=int, default=6)
     ap.add_argument("--calib-scenes", type=int, default=2)
     ap.add_argument("--test-scenes", type=int, default=2)
+    ap.add_argument("--exclude-cells-tsv", default="",
+                    help="train/calib 에서 제외할 eval 셀 TSV "
+                         "(열: slug, scene_idx, jitter_reset_idx, noise_idx)")
     ap.add_argument("--truncate-train", default="none",
                     choices=("none", "rollout", "phase-gt"),
                     help="학습 데이터 길이 절제 (TRAIN·CALIB 만; TEST 는 항상 full). "
