@@ -68,7 +68,11 @@ PLAN_JSON_CONT="${PLAN_JSON_CONT:-$(to_container "$PLAN_JSON_ABS")}"
 LOGDIR="${LOGDIR:-${GRID_ROOT}/logs}"
 mkdir -p "$LOGDIR" "$GRID_ROOT"
 
-PYPATH="/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite:/temporal_vla"
+# 컨테이너 PYTHONPATH. PYPATH_PREFIX 를 주면 앞에 붙는다 — git worktree 의 코드(src/collect 등)로
+# 돌릴 때 메인 트리 대신 그 워크트리를 먼저 찾게 하는 용도(예 /temporal_vla/.claude/worktrees/grid-v6).
+PYPATH="${PYPATH_PREFIX:+${PYPATH_PREFIX}:}/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite:/temporal_vla"
+# 수집기 경로(컨테이너). 워크트리 수집기로 돌리려면 COLLECTOR_PY 로 지정.
+COLLECTOR_PY="${COLLECTOR_PY:-/temporal_vla/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py}"
 
 log() { echo "[grid] $(date '+%F %T') $*"; }
 
@@ -299,7 +303,7 @@ run_worker() {  # wid port
     done
     echo "[w${wid}] $(date '+%F %T') ${key} seed=${seed} inf=${inf}"
     local args=(
-      python /temporal_vla/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py
+      python "$COLLECTOR_PY"
       --vla-server "http://127.0.0.1:${port}"
       --task "$task" --env-name "$env"
       # 워커별 분리 필수: 모든 셀이 task0--ep0 라 공유 _work 면 .groot_video_tmp 가

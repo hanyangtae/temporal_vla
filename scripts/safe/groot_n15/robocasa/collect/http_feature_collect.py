@@ -580,6 +580,10 @@ def _v6_apply_jitter(
     from copy import deepcopy as _dc
 
     ep_meta = _dc(ep_meta)
+    # 0) 기준 접촉 — RoboCasa 가 만든 원래 스폰도 열린 문(식기세척기 등)과 닿아 있는 scene 이
+    #    있다(2026-09-03 실측: 배치 검사 뒤 문이 열려 base 에 닿음). 그래서 "접촉 有" 자체가
+    #    아니라 **오프셋이 새 접촉을 만들거나 기존 접촉을 1cm 이상 더 파고들 때**만 위반이다.
+    baseline = _robot_contacts(_find_kitchen_env(env))
 
     # 1) 문장 대조 — scene 의 lang 이 진실(주방·seed 가 바뀌면 문장 변형도 바뀐다).
     want = cell.lang or fallback_lang
@@ -626,16 +630,34 @@ def _v6_apply_jitter(
             f"env={got_pos} != 계산={pos} (cell={cell.key})"
         )
 
-    # 5) 충돌 검사
-    from robocasa.utils.env_utils import detect_robot_collision  # noqa: PLC0415
-
-    if detect_robot_collision(_find_kitchen_env(env)):
+    # 5) 충돌 검사 (기준 대비)
+    after = _robot_contacts(_find_kitchen_env(env))
+    new_pairs = {k: d for k, d in after.items() if k not in baseline}
+    deeper = {k: (baseline[k], d) for k, d in after.items() if k in baseline and d < baseline[k] - 0.01}
+    if new_pairs or deeper:
         raise RuntimeError(
-            "v6 base 오프셋 적용 후 로봇이 fixture/물체와 충돌한다 — 이 (scene, j) 는 "
+            "v6 base 오프셋 적용 후 로봇이 fixture/물체와 새로 충돌하거나 더 파고든다 — 이 (scene, j) 는 "
             f"수집 불가: cell={cell.key} side={cell.side} lat={lat} back={back} "
-            f"init_robot_base_pos={pos} (plan 의 jitter 표를 고칠 것)"
+            f"init_robot_base_pos={pos} 신규접촉={sorted(new_pairs)[:3]} 관입증가={ {k: v for k, v in list(deeper.items())[:3]} } "
+            "(plan 의 jitter 표를 고칠 것)"
         )
     return ep_meta, obs
+
+
+def _robot_contacts(k: Any) -> dict:
+    """로봇 geom ↔ 비로봇 geom 접촉쌍 → 최소 dist(음수 = 관입 깊이). robocasa
+    ``detect_robot_collision`` 과 같은 geom 집합을 쓰되 쌍·깊이를 남겨 기준 대비 판정에 쓴다."""
+    from robocasa.utils.env_utils import detect_robot_collision  # noqa: PLC0415
+    detect_robot_collision(k)  # robot_geom_ids 초기화 부수효과
+    out: dict = {}
+    for i in range(k.sim.data.ncon):
+        c = k.sim.data.contact[i]; g1, g2 = int(c.geom1), int(c.geom2)
+        r1, r2 = g1 in k.robot_geom_ids, g2 in k.robot_geom_ids
+        if r1 == r2:
+            continue
+        key = tuple(sorted((k.sim.model.geom_id2name(g1) or str(g1), k.sim.model.geom_id2name(g2) or str(g2))))
+        out[key] = min(out.get(key, 0.0), float(c.dist))
+    return out
 
 
 def make_env(

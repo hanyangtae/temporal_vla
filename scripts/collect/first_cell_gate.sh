@@ -32,12 +32,14 @@ PY_HOST="${PY_HOST:-python3}"
 GATE_ROOT="$(realpath -m -- "$GATE_ROOT")"; mkdir -p "$GATE_ROOT"
 PLAN_JSON_ABS="$(realpath -m -- "$PLAN_JSON")"
 RUNNER="${REPO_ROOT}/scripts/safe/groot_n15/robocasa/collect/collect_grid.sh"
-PYPATH="/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite:/temporal_vla"
+PYPATH="${PYPATH_PREFIX:+${PYPATH_PREFIX}:}/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite:/temporal_vla"
+COLLECTOR_PY="${COLLECTOR_PY:-/temporal_vla/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py}"
 log() { echo "[gate] $(date '+%F %T') $*"; }
 GIT_COMMON="$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "${REPO_ROOT}/.git")"
 MOUNT_ROOT="${MOUNT_ROOT:-$(dirname -- "$GIT_COMMON")}"   # 컨테이너 /temporal_vla = 메인 워크트리
 to_container() { case "$1" in "${MOUNT_ROOT}"/*) printf '/temporal_vla/%s\n' "${1#"${MOUNT_ROOT}"/}";; *) printf '%s\n' "$1";; esac; }
 
+export PYPATH_PREFIX COLLECTOR_PY
 export PLAN_JSON="$PLAN_JSON_ABS" INSTRUCTIONS="$INSTR" GPUS="$GPU" SERVES_PER_GPU=1 \
   NOISE_LIMIT=1 MAX_CELLS=1 DONE_LIST=/dev/null SERVE_MODE SERVE_PY SERVE_PYTHONPATH PY_HOST
 
@@ -104,7 +106,7 @@ run_eval_path() {  # tag load_epmeta(0|1)
   log "== $tag: eval 경로 (--no-features, ep_meta JSON 로드=$load)"
   local out="${GATE_ROOT}/${tag}"; mkdir -p "$out"
   local args=(
-    python /temporal_vla/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py
+    python "$COLLECTOR_PY"
     --vla-server "http://127.0.0.1:${EPORT}" --task "$task" --env-name "$env"
     --output-dir "$(to_container "$out")/raw_rollouts" --cell-id "$slug" --cell-index 0
     --canonical-instruction "$lang"
