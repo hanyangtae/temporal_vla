@@ -33,6 +33,13 @@ INSTRUCTIONS=(
   "CoffeeSetupMug" "DishwasherRack/out" "OpenDrawer/left" "OpenDrawer/right"
   "OvenRack/out" "PPCC/apple" "PPCC/bread" "PPCC/candle" "PPCC/jug" "PPCC/marshmallow"
 )
+# 부분 실행: INSTR_CSV="A,B,..." 로 대상 축소 (plan 셀 교체 등으로 일부 slug 만 준비된 경우).
+# 이때 AE 는 건너뛴다 — AE 는 반드시 10 shard 전체가 모인 뒤 (SKIP_AE=1 로도 강제 가능).
+SKIP_AE="${SKIP_AE:-0}"
+if [[ -n "${INSTR_CSV:-}" ]]; then
+  IFS=',' read -r -a INSTRUCTIONS <<< "$INSTR_CSV"
+  SKIP_AE=1
+fi
 
 slug_of() { local s="${1//\//_}"; echo "${s// /_}"; }
 
@@ -52,11 +59,16 @@ for instr in "${INSTRUCTIONS[@]}"; do
   mv "$OUT/segA_summary.json" "$OUT/segA_summary_${slug}.json"
 done
 
-n_shard=$(ls "$OUT"/segA/*.npz 2>/dev/null | wc -l)
-if [[ "$n_shard" -ne "${#INSTRUCTIONS[@]}" ]]; then
-  echo "[wrap] ERROR: shard ${n_shard}/${#INSTRUCTIONS[@]} — 결손" >&2
-  exit 13
-fi
+# 요청분 shard 존재 확인 (부분 실행이면 요청 slug 만)
+missing=0
+for instr in "${INSTRUCTIONS[@]}"; do
+  slug="$(slug_of "$instr")"
+  if [[ ! -s "$OUT/segA/${slug}.npz" ]]; then
+    echo "[wrap] ERROR: ${slug}.npz 없음 — 결손" >&2
+    missing=1
+  fi
+done
+[[ "$missing" -eq 0 ]] || exit 13
 
 # 판수 감사 — 기대개수 대조(무음 탈락 방지): 각 shard eps == 125 (v5 = instruction 당 125판)
 "$PY" - "$OUT/segA" <<'PYEOF'
@@ -81,6 +93,16 @@ print("[audit] OK — 10 shard x 125 eps")
 PYEOF
 
 BUNDLE="$OUT/ae_v5_k8/ae_bundle_v5_k8.npz"
+n_all=$(ls "$OUT"/segA/*.npz 2>/dev/null | wc -l)
+if [[ "$SKIP_AE" == "1" ]]; then
+  echo "[wrap] SKIP_AE — ae_cluster 생략 (segA shard ${n_all}/10)"
+  echo "[wrap] V5_ACTIONPHASE_PARTIAL_DONE $(date -Is)"
+  exit 0
+fi
+if [[ "$n_all" -ne 10 ]]; then
+  echo "[wrap] ERROR: ae_cluster 는 10 shard 전체 필요 — 현재 ${n_all}" >&2
+  exit 13
+fi
 if [[ -s "$BUNDLE" ]]; then
   echo "[wrap] skip ae_cluster — $BUNDLE 존재"
 else
