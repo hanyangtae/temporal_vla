@@ -147,6 +147,16 @@ def build(selection: dict[str, Any], *, name: str = "n15_grid_v6_scene_jitter") 
         scenes[key] = entries
         # jitter 표는 scene 마다 같은 정의를 복사한다(사본이라 scene 별 예외 수정이 가능).
         jitters[key] = [[dict(j) for j in JITTER_TABLES[kind]] for _ in entries]
+        # pull_drawer: 연속 reset 이 서랍 좌/우를 다시 뽑으므로(ep_meta 로 고정 안 됨) scene 별로
+        # 문장이 맞는 reset 인덱스만 채택한다 — 선택표 scene 의 reset_idx_list (v5 k-스캔과 동일 원리).
+        if kind == "pull_drawer":
+            for sid, e in enumerate(entries):
+                lst = e.get("reset_idx_list")
+                if not lst or len(lst) < len(jitters[key][sid]):
+                    raise SystemExit(f"keys[{key!r}] scene {sid}: reset_idx_list 가 없거나 {len(jitters[key][sid])} 개 미만 — "
+                                     "drawer 는 reset 마다 좌/우가 재추첨되므로 scene 별 채택 목록이 필수")
+                for jid, j in enumerate(jitters[key][sid]):
+                    j["reset_idx"] = int(lst[jid])
         if not spec.get("task_env"):
             raise ValueError(f"keys[{key!r}].task_env 가 없다")
         env_names[key] = spec["task_env"]

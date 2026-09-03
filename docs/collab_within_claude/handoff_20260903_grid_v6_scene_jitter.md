@@ -38,7 +38,7 @@
 | 키 | reset_idx(연속 reset 횟수) | base 오프셋 (lat = 로봇 좌우, 지정 방향; back = 뒤로) |
 |---|---|---|
 | ppcc 5종, coffee | j (0..4) | 없음 |
-| drawer-left/right | j (0..4) | back ∈ {0, 0.05, 0.10, 0.05, 0.10}[j], lat 0 |
+| drawer-left/right | scene 별 채택 reset 목록[j] (연속 reset 이 서랍 좌/우를 재추첨하므로 문장이 맞는 인덱스만 — 선택표 `reset_idx_list`, v5 k-스캔과 동일 원리) | back ∈ {0, 0.05, 0.10, 0.05, 0.10}[j], lat 0 |
 | oven-·washer-left/right | 0 | (lat, back) ∈ {(0,0), (0,0.05), (0,0.10), (0.05,0.10), (0.05,0.15)}[j]; **lat 은 항상 fixture 중심 쪽**(left 키 → 오른쪽으로, right 키 → 왼쪽으로). 안쪽 lat 만(back 0)은 열린 문과 접촉해 불가(전수 reset 검사 실측) |
 
 - 적용: `reset(seed)` → ep_meta 획득 → `init_robot_base_pos += (−f·back) + (±l·lat)` (f = (cos yaw, sin yaw),
