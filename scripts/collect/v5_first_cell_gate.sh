@@ -10,6 +10,10 @@
 #   D  C 에서 ep_meta JSON 로드만 제거(reset(seed) 재캡처)   → C 불일치 시 원인 국소화
 # 판정은 scripts/collect/compare_cell_runs.py 가 낸다 (A=B=C 가 아니면 본수집 금지·보고).
 #
+# 좌표는 3축(docs/04 §3.1.1): collect_grid.sh 의 cells_todo.tsv 열 =
+#   key instr si k seed ni inf env task text  (k = jitter_reset_idx, legacy plan 이면 빈 칸).
+# k 는 계획의 채택 값 그대로다 — 평탄 si 에서 유도하지 않는다.
+#
 # 필수 env: PLAN_JSON GATE_ROOT INSTR GPU  (+ srv: SERVE_MODE=host SERVE_PY SERVE_PYTHONPATH)
 # 선택: PORT_BASE(8700) PY_HOST(python3)
 set -uo pipefail
@@ -30,7 +34,7 @@ MOUNT_ROOT="${MOUNT_ROOT:-$(dirname -- "$GIT_COMMON")}"   # 컨테이너 /tempor
 to_container() { case "$1" in "${MOUNT_ROOT}"/*) printf '/temporal_vla/%s\n' "${1#"${MOUNT_ROOT}"/}";; *) printf '%s\n' "$1";; esac; }
 
 export PLAN_JSON="$PLAN_JSON_ABS" INSTRUCTIONS="$INSTR" GPUS="$GPU" SERVES_PER_GPU=1 \
-  NOISE_LIMIT=1 MAX_CELLS=1 JITTER_MODE=1 DONE_LIST=/dev/null SERVE_MODE SERVE_PY SERVE_PYTHONPATH PY_HOST
+  NOISE_LIMIT=1 MAX_CELLS=1 DONE_LIST=/dev/null SERVE_MODE SERVE_PY SERVE_PYTHONPATH PY_HOST
 
 run_collect_path() {  # tag port
   local tag="$1" port="$2"
@@ -45,9 +49,13 @@ run_collect_path A "$PORT_BASE" || { log "ABORT: A 실패"; exit 20; }
 run_collect_path B "$((PORT_BASE + 1))" || { log "ABORT: B 실패"; exit 21; }
 
 # ── 셀 정보 (A 의 todo 표) ──
-IFS=$'\t' read -r key instr si seed ni inf env task text < "${GATE_ROOT}/A/logs/cells_todo.tsv"
-k=$((si % 100)); slug="${instr//\//_}"; ep=$((si * 100 + ni))
-log "셀 ${key} seed=${seed} inf=${inf} k=${k} env=${env} task=${task}"
+# 탭 대신 US(0x1f)로 읽는다 — bash read 는 연속 탭을 하나로 접어 k 빈 칸이면 열이 밀린다.
+IFS=$'\037' read -r key instr si k seed ni inf env task text \
+  < <(head -n 1 "${GATE_ROOT}/A/logs/cells_todo.tsv" | tr '\t' '\037')
+slug="${instr//\//_}"
+# episode_idx 는 3축 좌표를 평탄화해 유일성만 확보 (k 없으면 0 자리).
+ep=$(( (si * 100 + ${k:-0}) * 100 + ni ))
+log "셀 ${key} seed=${seed} inf=${inf} si=${si} k=${k:-<none>} ni=${ni} env=${env} task=${task}"
 
 # ── plan 스칼라 ──
 eval "$("$PY_HOST" - "$REPO_ROOT" "$PLAN_JSON_ABS" <<'PY'
@@ -102,9 +110,9 @@ run_eval_path() {  # tag load_epmeta(0|1)
     --no-features --expect-chunk-len 16
     --grid-root "$(to_container "$out")" --plan-json "$(to_container "$PLAN_JSON_ABS")"
     --scene-idx "$si" --noise-idx "$ni" --grid-instruction "$instr" --arm-dir "gate_${tag}"
-    --jitter-reset-idx "$k"
     --run-tag "v5_gate_${tag}"
   )
+  [ -n "$k" ] && args+=(--jitter-reset-idx "$k")   # legacy 2축 plan 이면 생략
   [ "$load" = 1 ] && args+=(--ep-meta-dir "$(to_container "$EPM")" --ep-meta-load-env-name "$env")
   docker exec -e MUJOCO_GL=egl -e PYTHONPATH="$PYPATH" robocasa "${args[@]}" > "${GATE_ROOT}/${tag}.log" 2>&1
   local rc=$?

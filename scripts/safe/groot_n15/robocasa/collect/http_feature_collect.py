@@ -609,7 +609,7 @@ def parse_args() -> argparse.Namespace:
     add_grid_args(parser)
     parser.add_argument("--diag-unplanned", action="store_true",
                         help="진단 캡처: plan 좌표 검증 생략, <grid-root>/diag/ 하위에 저장 "
-                             "(정본 store 와 분리; v4 평탄 cell id 진단용)")
+                             "(정본 store 와 분리; 계획 밖 좌표 진단용)")
     parser.add_argument("--cell-id", default=None)
     parser.add_argument("--cell-index", type=int, default=None)
     parser.add_argument("--canonical-instruction", default=None)
@@ -1491,16 +1491,24 @@ def run() -> dict[str, Any]:
                 })
             elif getattr(args, "diag_unplanned", False) and getattr(args, "grid_root", None):
                 # 진단 캡처 전용 — plan 대조 없이 diag/ 하위 좌표에 쓴다 (docs/04 정본
-                # store 와 절대 섞이지 않게 diag 접두). v4 평탄 cell id 는 plan 좌표
-                # 검증과 어긋나므로(base 슬롯 부재·명칭 불일치) 이 경로만 허용한다.
+                # store 와 절대 섞이지 않게 diag 접두). 계획에 없는 좌표(신규 k 스캔·
+                # 명칭 불일치 등)는 resolve_grid 가 거부하므로 이 경로만 허용한다.
+                # 층 구조는 정본과 같다 — s<i>/k<r>/n<j> (k 는 지터 인자가 있을 때만).
+                _diag_k = getattr(args, "jitter_reset_idx", None)
                 grid_dir = (Path(args.grid_root) / "diag"
                             / (cell_id or args.task)
-                            / f"s{args.scene_idx}" / f"n{args.noise_idx}"
+                            / f"s{args.scene_idx}")
+                if _diag_k is not None:
+                    grid_dir = grid_dir / f"k{_diag_k}"
+                grid_dir = (grid_dir / f"n{args.noise_idx}"
                             / (getattr(args, "arm_dir", None) or "arm"))
                 extra_metadata.update({
                     "diag_unplanned": True,
                     "scene_idx": args.scene_idx, "noise_idx": args.noise_idx,
                 })
+            # 지터 축 k — 3축 plan 이면 grid_cell.as_metadata() 가 이미 같은 값을 실었고
+            # (resolve_grid 가 args 와 plan 을 대조해 통과시킨 값), diag/구 레이아웃에서는
+            # 이 줄이 유일한 기록 통로다.
             if getattr(args, "jitter_reset_idx", None) is not None:
                 extra_metadata["jitter_reset_idx"] = args.jitter_reset_idx
             if cell_id is not None:

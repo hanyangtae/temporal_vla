@@ -9,11 +9,17 @@ import sys
 ROOT, SLUG = sys.argv[1], sys.argv[2]
 ARMS = sys.argv[3].split(",")
 
+# 셀 표(replay_cells.py 9열) → {(평탄 cell id, noise): 수집 라벨}.
+# 아래 scan() 이 ep 를 (ep//100, ep%100) 로 되접으므로 키도 러너와 같은 평탄 좌표여야
+# 한다 (지터행 scene*100+k / legacy scene — docs/04 §3.1.1).
 cells = {}
 for ln in open(f"{ROOT}/logs/cells_{SLUG}.tsv"):
     p = ln.rstrip("\n").split("\t")
+    k = p[8].strip() if len(p) > 8 else ""
     try:
-        cells[(int(p[0]), int(p[1]))] = int(p[4])
+        si = int(p[0])
+        flat = si if k in ("", "base", "NA", "None") else si * 100 + int(k)
+        cells[(flat, int(p[1]))] = int(p[4])
     except ValueError:
         continue
 

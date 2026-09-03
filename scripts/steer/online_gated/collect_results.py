@@ -20,9 +20,11 @@ replay 모드(`--cells-tsv`)에서는 셀 좌표(scene_idx/noise_idx)와 **수�
   cell_key  jitter_reset_idx
 (새 열은 **뒤에** 붙인다 — 기존 소비자의 열 위치를 깨지 않기 위함.)
 
-v4 지터 축(docs/04 §3.1.1)에서는 한 scene 의 k 셀들이 env_seed 를 공유하므로
-셀 되찾기 키가 (env_seed, inference_seed) → `ep`(= cell_key*EP_IDX_STRIDE + noise)로
-바뀐다 (`--ep-idx-stride`). scene_idx 열은 base scene(0-4), 평탄 cell id 는 cell_key 열.
+셀 표(`replay_cells.py` 출력, 9열)의 `scene_idx` 는 **base scene**, `jitter_reset_idx` 는
+지터 축 k(또는 legacy `"base"`) 다 — 3축 좌표 규약 docs/04 §3.1.1. 한 scene 의 k 셀들이
+env_seed 를 공유하므로 셀 되찾기 키는 **`ep`** (= 평탄 cell_key*EP_IDX_STRIDE + noise,
+`--ep-idx-stride`) 다. `cell_key` 열은 그 평탄 파생값(지터 scene*100+k / legacy scene)으로,
+러너의 episode_idx·TRIGGER_TSV 조회 키와 같은 규약이다.
 
 사용:
     # replay
@@ -44,6 +46,7 @@ import re
 import sys
 from pathlib import Path
 
+V4_SCENE_STRIDE = 100   # 평탄 cell_key = scene*100 + k (판 번호 유일성 파생값)
 STEM_RE = re.compile(r"task(?P<tid>\d+)--ep(?P<ep>\d+)--succ(?P<succ>[01])$")
 COLUMNS = ("ep", "scene_idx", "env_seed", "inference_seed", "success", "steps",
            "n_inferences", "trigger_step", "phase_at_trigger", "n_gated", "gated_mode",
@@ -74,37 +77,40 @@ def load_scenes(path: Path | None) -> dict[int, int]:
 
 
 def load_cells(path: Path | None, ep_stride: int = 100) -> tuple[dict, bool]:
-    """셀 표(replay_cells.py 출력) → (조회표, v4 여부).
+    """셀 표(replay_cells.py 9열 출력) → (ep → 셀, 지터 축 유무).
 
-    v1/v2 (8열): 키 = (env_seed, inference_seed) — 기존 그대로.
-    v4 (9·10열, `jitter_reset_idx` 포함): 한 scene 의 모든 k 셀이 **같은 env_seed 를
-    공유**하므로 seed 쌍으로는 셀을 구분할 수 없다 → 키를 `ep`(= cell_key*stride + noise,
-    러너의 EP_IDX_STRIDE 산식)로 바꾼다. scene_idx 자리에는 base scene 을 넣는다
-    (사분면 태깅은 base scene 0-4 기준).
+    열 = `scene_idx(base) noise_idx env_seed inference_seed collection_success
+    task env_name instruction_text jitter_reset_idx` (docs/04 §3.1.1 3축 좌표).
+    한 scene 의 k 셀들이 **같은 env_seed 를 공유**하므로 seed 쌍으로는 셀을 구분할 수
+    없다 → 키는 러너와 동일한 `ep = 평탄 cell_key*stride + noise`
+    (평탄 cell_key = 지터행 `scene*100+k` / legacy행 `scene`).
+    지터 열이 없던 옛 8열 표도 legacy 로 그대로 읽힌다 (ep = scene*stride + noise).
     """
     if path is None:
         return {}, False
     out: dict = {}
-    is_v4 = False
+    has_jitter = False
     for ln in path.read_text(encoding="utf-8").splitlines():
         if not ln.strip():
             continue
         p = ln.split("\t")
-        si, ni, es, inf, cs = int(p[0]), int(p[1]), int(p[2]), int(p[3]), p[4]
+        if len(p) > 9:
+            raise SystemExit(
+                f"{path}: 10열 셀 표 = 구 v4(평탄 cell id + base_scene) 포맷이다 — "
+                "3축 replay_cells.py 로 다시 생성할 것 (docs/04 §3.1.1)")
+        si, ni, cs = int(p[0]), int(p[1]), p[4]
         jit = p[8].strip() if len(p) > 8 else ""
-        base_scene = int(p[9]) if len(p) > 9 and p[9].strip() else (
-            si // 100 if si >= 100 else si)
-        rec = {
-            "scene_idx": base_scene if jit else si, "noise_idx": ni,
-            "cell_key": si, "jitter_reset_idx": jit or "base",
+        if jit in ("", "base", "NA", "None"):
+            jit, cell_key = "base", si
+        else:
+            has_jitter = True
+            cell_key = si * V4_SCENE_STRIDE + int(jit)
+        out[cell_key * ep_stride + ni] = {
+            "scene_idx": si, "noise_idx": ni,          # 사분면 태깅은 base scene 기준
+            "cell_key": cell_key, "jitter_reset_idx": jit,
             "collection_success": None if cs in ("", "NA") else int(cs),
         }
-        if jit:
-            is_v4 = True
-            out[si * ep_stride + ni] = rec
-        else:
-            out[(es, inf)] = rec
-    return out, is_v4
+    return out, has_jitter
 
 
 def parse_int_list(spec: str) -> set[int]:
@@ -161,7 +167,7 @@ def main() -> int:
     args = ap.parse_args()
 
     seed2scene = load_scenes(args.scenes_tsv)
-    cells, cells_v4 = load_cells(args.cells_tsv, args.ep_idx_stride)
+    cells, _has_jitter = load_cells(args.cells_tsv, args.ep_idx_stride)
     fit_scenes = parse_int_list(args.fit_scenes)
     fit_noises = parse_int_list(args.fit_noises)
     rows = []
@@ -174,20 +180,15 @@ def main() -> int:
         flags = sc.get("phase_gated_flags") or []
         env_seed = sc.get("scenario_seed", sc.get("seed"))
         inf_seed = sc.get("inference_seed")
-        # replay: (env_seed, inference_seed) 로 셀을 되찾아 좌표·수집판정을 붙인다.
-        # v4(지터)는 seed 가 셀 간 공유라 ep(= cell_key*stride + noise)로 되찾는다.
+        # replay: ep(= 평탄 cell_key*stride + noise) 로 셀을 되찾아 좌표·수집판정을
+        # 붙인다 — 지터 축에서는 (env_seed, inference_seed) 가 셀 간 공유라 키가 안 된다.
         cellrec = None
-        if cells and cells_v4:
+        if cells:
             cellrec = cells.get(int(m.group("ep")))
             if cellrec is None:
                 raise SystemExit(
-                    f"{jp}: ep={m.group('ep')} 가 v4 셀 표에 없다 — 재생 좌표가 어긋났다")
-        elif cells and env_seed is not None and inf_seed is not None:
-            cellrec = cells.get((int(env_seed), int(inf_seed)))
-            if cellrec is None:
-                raise SystemExit(
-                    f"{jp}: (env_seed={env_seed}, inference_seed={inf_seed}) 가 셀 표에 없다 "
-                    "— 재생 좌표가 어긋났다")
+                    f"{jp}: ep={m.group('ep')} 가 셀 표에 없다 — 재생 좌표가 어긋났다 "
+                    f"(--ep-idx-stride={args.ep_idx_stride} 가 러너와 같은지 확인)")
         scene_idx = (cellrec["scene_idx"] if cellrec is not None else
                      (seed2scene.get(int(env_seed)) if env_seed is not None else None))
         noise_idx = cellrec["noise_idx"] if cellrec is not None else None
@@ -208,7 +209,7 @@ def main() -> int:
             "quadrant": quad,
             "collection_success": (cellrec["collection_success"]
                                    if cellrec is not None else None),
-            # v4 지터 축 (docs/04 §3.1.1): 평탄 cell id 와 k. v1/v2 는 NA.
+            # 지터 축 (docs/04 §3.1.1): 평탄 cell id 파생값과 k (legacy 는 "base").
             "cell_key": cellrec.get("cell_key") if cellrec is not None else None,
             "jitter_reset_idx": (cellrec.get("jitter_reset_idx")
                                  if cellrec is not None else None),

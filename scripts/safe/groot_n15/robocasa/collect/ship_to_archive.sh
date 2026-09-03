@@ -11,7 +11,8 @@
 #
 # 전송 완료 셀 키는 ${GRID_ROOT}/shipped_cells.txt 에 append 된다 —
 # collect_grid.sh 의 DONE_LIST 가 이 파일을 읽어 재개한다.
-# 셀 키 형식은 src/collect/plan.py GridCell.key ("instruction|s<i>|n<j>") 와 같다.
+# 셀 키 형식은 src/collect/plan.py GridCell.key 와 같다 —
+# 3축 "instruction|s<i>|k<r>|n<j>", legacy(2축) "instruction|s<i>|n<j>" (docs/04 §3.1.1).
 set -uo pipefail
 
 : "${GRID_ROOT:?GRID_ROOT 필요}"
@@ -43,20 +44,33 @@ run_ssh() {  # 원격 명령. DRY_RUN 이면 echo 만.
 }
 
 # 셀 디렉토리(= meta.json 을 가진 디렉토리)의 상대경로 → 셀 키.
-# 레이아웃: <plan_id>/<machine>/<instruction...>/s<i>/n<j>/<arm>
+# 레이아웃(docs/04 §3.1.1): <plan_id>/<machine>/<instruction...>/s<i>/k<r>/n<j>/<arm>
+#   legacy(지터 축 없는 v1·v2 plan): <plan_id>/<machine>/<instruction...>/s<i>/n<j>/<arm>
+# 뒤에서부터 <arm>/<n<j>>/[<k<r>>]/<s<i>> 를 읽어 k 층 유무를 자동 판별한다
+# (k 층은 ^k[0-9]+$ 일 때만 — instruction 층이 k 로 시작해도 s 층 위치로 구분된다).
 cell_key_of() {
   local rel="$1"
   local IFS='/'
   read -r -a c <<< "$rel"
   local n=${#c[@]}
   [ "$n" -ge 6 ] || return 1
-  local ni="${c[$((n - 2))]}" si="${c[$((n - 3))]}"
+  local ni="${c[$((n - 2))]}" kj="${c[$((n - 3))]}"
+  local si k_layer instr_end
+  if [[ "$kj" =~ ^k[0-9]+$ ]] && [ "$n" -ge 7 ]; then
+    k_layer="$kj"; si="${c[$((n - 4))]}"; instr_end=$((n - 4))
+  else
+    k_layer=""; si="$kj"; instr_end=$((n - 3))
+  fi
   local instr=""
   local i
-  for ((i = 2; i < n - 3; i++)); do
+  for ((i = 2; i < instr_end; i++)); do
     instr="${instr:+${instr}/}${c[$i]}"
   done
-  printf '%s|%s|%s\n' "$instr" "$si" "$ni"
+  if [ -n "$k_layer" ]; then
+    printf '%s|%s|%s|%s\n' "$instr" "$si" "$k_layer" "$ni"
+  else
+    printf '%s|%s|%s\n' "$instr" "$si" "$ni"
+  fi
 }
 
 local_stats() {  # dir → "count bytes" (실물 파일만, 심링크 제외)

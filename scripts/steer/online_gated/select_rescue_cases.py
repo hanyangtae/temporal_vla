@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""index_rollouts_v4.tsv → 구제 케이스 선정 (기준 ①~④) + 파일럿 1케이스/instruction 추출.
+"""grid 인덱스(index_rollouts_v5.tsv 등) → 구제 케이스 선정 (기준 ①~④) + 파일럿 1케이스/instruction 추출.
 
 기준 (사용자 확정, 2026-08-24):
   ① scene 단위 성공 > 5              — 정책이 아예 못 하는 배포지는 제외
@@ -20,10 +20,23 @@ import csv
 from pathlib import Path
 
 TRUE = ("1", "True", "true")
+BASE_K = "base"      # legacy(2축) 행의 k 표기 (index 에서는 빈 값)
+
+
+def norm_k(raw: str | None) -> str:
+    """index 의 `jitter_reset_idx` → 정규화 k ("base" 또는 정수 문자열)."""
+    v = (raw or "").strip()
+    return BASE_K if v == "" or v.lower() == BASE_K else v
 
 
 def ksort(k: str):
-    return (1, 0) if k == "base" else (0, int(k))
+    return (1, 0) if k == BASE_K else (0, int(k))
+
+
+def cell_si_of(scene: int, k: str) -> int:
+    """파생 평탄 cell id = scene*100 + k (legacy base = +99). docs/04 §3.1.1 —
+    저장 좌표가 아니라 fit 매니페스트 provenance 열용 값이다."""
+    return scene * 100 + (99 if k == BASE_K else int(k))
 
 
 def main() -> None:
@@ -43,7 +56,7 @@ def main() -> None:
     cell: dict[tuple, list[dict]] = {}
     for r in rows:
         cell.setdefault((r["grid_instruction"], int(r["scene_idx"]),
-                         r["jitter_reset_idx"]), []).append(r)
+                         norm_k(r.get("jitter_reset_idx"))), []).append(r)
     ks_by: dict[tuple, set] = {}
     for (ins, sc, k) in cell:
         ks_by.setdefault((ins, sc), set()).add(k)
@@ -93,11 +106,15 @@ def main() -> None:
         out = out_dir / f"{slug}_s{c['scene']}_k{c['target_k']}.tsv"
         out.parent.mkdir(parents=True, exist_ok=True)
         with out.open("w", encoding="utf-8") as fh:
-            fh.write("pkl_path\tlabel\tbase_scene\tcell_si\tnoise_idx\n")
-            for r in sorted(c["fit_rows"], key=lambda x: (int(x["cell_si"]), int(x["noise_idx"]))):
+            fh.write("pkl_path\tlabel\tbase_scene\tcell_si\tnoise_idx"
+                     "\tjitter_reset_idx\n")
+            for r in sorted(c["fit_rows"],
+                            key=lambda x: (ksort(norm_k(x.get("jitter_reset_idx"))),
+                                           int(x["noise_idx"]))):
                 lab = 1 if r["success"] in TRUE else 0
+                k = norm_k(r.get("jitter_reset_idx"))
                 fh.write(f"{r['rel_path'].rstrip('/')}/rollout.pkl\t{lab}\t{c['scene']}"
-                         f"\t{r['cell_si']}\t{r['noise_idx']}\n")
+                         f"\t{cell_si_of(int(r['scene_idx']), k)}\t{r['noise_idx']}\t{k}\n")
         return out
 
     # 파일럿: instruction 당 1케이스, 그 케이스의 대상 1판(가장 작은 noise_idx)
@@ -117,7 +134,8 @@ def main() -> None:
             for ins in sorted(best):
                 c = best[ins]
                 r = c["target_rows"][0]
-                w.writerow([ins, c["scene"], c["target_k"], r["noise_idx"], r["cell_si"],
+                w.writerow([ins, c["scene"], c["target_k"], r["noise_idx"],
+                            cell_si_of(int(r["scene_idx"]), c["target_k"]),
                             r["env_seed"], r["inference_seed"], r["machine"], r["rel_path"],
                             c["fit_succ"], c["fit_fail"],
                             f"{c['target_succ']}/{c['target_fail']}"])
