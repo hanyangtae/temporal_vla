@@ -27,7 +27,7 @@ def parse_seeds(spec: str) -> list[int]:
 
 
 def probe(args):
-    env_name, seed = args
+    env_name, seed, ls = args
     import gymnasium as gym
     import robocasa  # noqa: F401
     import robocasa.utils.gym_utils.gymnasium_groot  # noqa: F401
@@ -37,7 +37,8 @@ def probe(args):
         sys.path.insert(0, str(_repo))
     from src.collect.robocasa.event_labeler import find_robocasa_env
     try:
-        env = gym.make(env_name, enable_render=False, seed=seed)
+        kw = {"layout_and_style_ids": ls} if ls else {}
+        env = gym.make(env_name, enable_render=False, seed=seed, **kw)
         env.reset(seed=seed)
         em = find_robocasa_env(env).get_ep_meta() or {}
         fr = em.get("fixture_refs") or {}
@@ -58,13 +59,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--env", required=True); ap.add_argument("--seeds", required=True)
     ap.add_argument("--out", required=True, type=Path); ap.add_argument("--procs", type=int, default=4)
+    ap.add_argument("--layout-style", default="", help='주방 목록 "1:1,2:2,..." (기본: 래퍼 기본 5주방). target split 전체 = 1:1,...,10:10')
     a = ap.parse_args()
     seeds = parse_seeds(a.seeds)
+    ls = [[int(x), int(y)] for x, y in (t.split(":") for t in a.layout_style.split(",") if t.strip())] or None
+    print("layout_and_style_ids:", ls or "wrapper default", flush=True)
     cols = ["seed", "layout_id", "style_id", "fixture_key", "fixture_group", "should_pull", "rack_level", "lang", "base_x", "base_y", "base_yaw", "err"]
     a.out.parent.mkdir(parents=True, exist_ok=True)
     with Pool(a.procs, maxtasksperchild=50) as pool, a.out.open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols, delimiter="\t", extrasaction="ignore"); w.writeheader()
-        for i, r in enumerate(pool.imap_unordered(probe, [(a.env, s) for s in seeds], chunksize=2), 1):
+        for i, r in enumerate(pool.imap_unordered(probe, [(a.env, s, ls) for s in seeds], chunksize=2), 1):
             w.writerow(r); f.flush()
             if i % 50 == 0: print(f"  {i}/{len(seeds)}", flush=True)
     rows = list(csv.DictReader(a.out.open(), delimiter="\t"))
