@@ -15,9 +15,10 @@
       X   fp16 [n_rec, n_layers, 49, 1536]  — K 축 mean pool, 토큰 49 보존
 
 두 tier 모두 record 별 열(`ep_id/scene/noise/jitter/rec_idx/succ/phase_code/ep_len`)과
-`vl`, `meta_json` 을 함께 담는다. `jitter` 는 v3/v4 지터 축(k = reset_idx) 좌표로,
-**항상 존재하는 열**이다 — 인덱스에 `jitter_reset_idx` 열이 없는 v1/v2 추출에서는 전부
-`-1` 로 채운다("지터 축 없음"). base 판은 99. `meta_json.jitter_axis` 가 이 열이 실좌표
+`vl`, `meta_json` 을 함께 담는다. `jitter` 는 지터 축(k = reset_idx) 좌표로 —
+3축 좌표 `s<i>/k<r>/n<j>` 의 셋째 축, docs/04 §3.1.1 — **항상 존재하는 열**이다.
+인덱스에 `jitter_reset_idx` 열이 없는 legacy(2축) 추출에서는 전부 `-1` 로 채운다
+("지터 축 없음"). 지터 축 인덱스 안의 legacy(빈 값) 행은 99. `meta_json.jitter_axis` 가 이 열이 실좌표
 (true)인지 -1 채움(false)인지 알려 준다. `meta_json` 에는 **절대경로를 쓰지 않는다** (docs/04 §8) —
 출처는 `sigs`(meta.json 의 내용 지문)로만 남긴다.
 
@@ -255,11 +256,15 @@ def read_index(index_tsv: Path, grid_root: Path) -> tuple[list[Episode], bool]:
         instruction = get(parts, "grid_instruction").strip()
         plan_id = get(parts, "plan_id").strip()
         machine = get(parts, "machine").strip()
-        rel = get(parts, "rel_path").strip()
-        if not rel:
-            rel = f"{plan_id}/{machine}/{instruction}/s{scene}/n{noise}/{BASE_ARM}"
         jitter = _jitter_of(get(parts, "jitter_reset_idx")) if has_jitter \
             else JITTER_NONE
+        rel = get(parts, "rel_path").strip()
+        if not rel:
+            # 3축 폴더층 s<i>/k<r>/n<j> (docs/04 §3.1.1). 지터 축이 없거나 legacy 행이면
+            # k 층 없이 s<i>/n<j> (구 레이아웃).
+            k_seg = "" if jitter in (JITTER_NONE, JITTER_BASE) else f"k{jitter}/"
+            rel = (f"{plan_id}/{machine}/{instruction}/s{scene}/{k_seg}"
+                   f"n{noise}/{BASE_ARM}")
         eps.append(Episode(plan_id, machine, instruction, scene, noise,
                            _int_or_none(get(parts, "success")), rel,
                            get(parts, "sig").strip(), jitter))

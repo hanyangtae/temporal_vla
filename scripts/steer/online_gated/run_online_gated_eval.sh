@@ -43,10 +43,13 @@
 #     10 셀 = 40 판/arm.
 #   fresh — 구 방식. grid 와 같은 scene, inference_seed 만 새 대역(EVAL_INF_SEED_BASE).
 #
-#   v4 지터 축(docs/04 §3.1.1): index 에 `jitter_reset_idx` 열이 있으면 replay_cells.py 가
-#     평탄 cell id(base_scene*100+k) 표를 내고, 러너는 셀마다 collector 에
-#     `--jitter-reset-idx k` (+ EP_META_DIR 지정 시 `--ep-meta-dir`) 를 붙인다.
-#     EVAL_SCENES 는 그 평탄 cell id 위에서 고른다 (예 "0-3,100-103,...").
+#   지터 축 k (docs/04 §3.1.1 — 3축 좌표 s<i>/k<r>/n<j>): replay_cells.py 가
+#     `scene_idx(base) noise_idx env_seed inference_seed collection_success task
+#      env_name instruction_text jitter_reset_idx` 9열 표를 내고, 러너는 셀마다 collector 에
+#     `--scene-idx <base> --jitter-reset-idx k` (+ EP_META_DIR 지정 시 `--ep-meta-dir`) 를 붙인다.
+#     EVAL_SCENES 는 **base scene**(0-4), EVAL_JITTERS 가 k 축이다 (기본 all).
+#     episode_idx 만은 유일성을 위해 평탄값 `(scene*100+k)*EP_IDX_STRIDE + noise` 를 쓴다
+#     (legacy 2축 표는 `scene*EP_IDX_STRIDE + noise` — 구 판과 동일).
 #
 # 발사 (빈 GPU 확인 후, 반드시 setsid — agent 백그라운드 job 은 harness 가 중간에 kill):
 #
@@ -151,12 +154,14 @@ EVAL_INF_SEED_BASE="${EVAL_INF_SEED_BASE:-1400000}" # fresh 모드 전용 (fit n
 
 # ── replay 모드 셀 지정 ───────────────────────────────────────────────────────
 EP_MODE="${EP_MODE:-replay}"                        # replay | fresh
-EVAL_SCENES="${EVAL_SCENES:-0-9}"                   # eval 셀 scene 축 (10 scene 전체)
+EVAL_SCENES="${EVAL_SCENES:-0-9}"                   # eval 셀 base scene 축 (10 scene 전체)
+EVAL_JITTERS="${EVAL_JITTERS:-all}"                 # eval 셀 지터 k 축 ("all"|"1,4"|"base")
 EVAL_NOISES="${EVAL_NOISES:-0,1,5,6}"               # eval 셀 noise 축 (seen 2 + unseen 2)
 FIT_SCENES="${FIT_SCENES:-0,1,2,3,4}"               # 연산자·detector fit 셀 (사분면 태깅용)
 FIT_NOISES="${FIT_NOISES:-0,1,2,3,4}"
 REPLAY_MACHINE="${REPLAY_MACHINE:-}"                # 비우면 index 단일 machine / hostname
-EP_IDX_STRIDE="${EP_IDX_STRIDE:-100}"               # episode_idx = scene*STRIDE + noise
+# episode_idx = (scene*100+k)*STRIDE + noise (지터 축 있음) / scene*STRIDE + noise (legacy)
+EP_IDX_STRIDE="${EP_IDX_STRIDE:-100}"
 NAS="${NAS:-5}"                                     # GR00T 표준: 16 예측 / 5 실행
 MAXEP="${MAXEP:-720}"
 # PROX=1 이면 --proximity-phases (PPCC grasp/place 하위 phase). grid 수집·s5m5 fit 은
@@ -438,7 +443,7 @@ case "$EP_MODE" in
     for slug in "${SLUG_ARR[@]}"; do
       "$PY_HOST" "${REPO_ROOT}/scripts/steer/online_gated/replay_cells.py" \
         --slug "$slug" --index-tsv "$INDEX_TSV" --plan-json "$PLAN_JSON_ABS" \
-        --scenes "$EVAL_SCENES" --noises "$EVAL_NOISES" \
+        --scenes "$EVAL_SCENES" --jitters "$EVAL_JITTERS" --noises "$EVAL_NOISES" \
         ${REPLAY_MACHINE:+--machine "$REPLAY_MACHINE"} --out "$(ep_table_for "$slug")"
     done
     # 판 수 = 셀 수 (slug 마다 같아야 한다 — 다르면 fail-loud)
@@ -451,7 +456,7 @@ case "$EP_MODE" in
       fi
     done
     log "slugs=${SLUGS} arms=${ARMS} mode=replay cells=${N_EP_TOTAL}판/arm " \
-        "(scenes=${EVAL_SCENES} × noises=${EVAL_NOISES}; fit s=${FIT_SCENES} m=${FIT_NOISES})"
+        "(scenes=${EVAL_SCENES} × k=${EVAL_JITTERS} × noises=${EVAL_NOISES}; fit s=${FIT_SCENES} m=${FIT_NOISES})"
     ;;
   fresh)
     for slug in "${SLUG_ARR[@]}"; do
@@ -479,7 +484,7 @@ log "serve ${NW}개 (gpus=${GPUS} × ${SERVES_PER_GPU}) ports=${PORTS[*]} mode=$
   echo "perstep_fallback=${PERSTEP_FALLBACK} cluster_bundle=${CLUSTER_BUNDLE:-none}"
   echo "ep_mode=${EP_MODE} n_ep_total=${N_EP_TOTAL}"
   if [ "$EP_MODE" = replay ]; then
-    echo "eval_scenes=${EVAL_SCENES} eval_noises=${EVAL_NOISES}"
+    echo "eval_scenes=${EVAL_SCENES} eval_jitters=${EVAL_JITTERS} eval_noises=${EVAL_NOISES}"
     echo "fit_scenes=${FIT_SCENES} fit_noises=${FIT_NOISES} replay_machine=${REPLAY_MACHINE:-auto}"
     echo "ep_meta_dir=${EP_META_DIR:-none} ep_meta_load_env=${EP_META_LOAD_ENV_NAME:-none}"
   else
@@ -589,26 +594,29 @@ serve_preflight() {  # port arm  — 등록 지문 대조 (무음 identity·arm 
 }
 
 # ── 한 판 ─────────────────────────────────────────────────────────────────────
-run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_host [cell] [jit] [base_scene]
-  # cell = 평탄 cell id (v1/v2 에서는 그냥 scene_idx). jit = v4 지터 k ("base" 면 미적용).
-  # base_scene = condg per-scene 통계 키용 base scene 0-4 (미지정 시 cell 에서 유도).
+run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_host [base_scene] [jit] [noise]
+  # base_scene = 3축 좌표의 s<i>(0-4). jit = 지터 k ("base"/빈 값이면 legacy 2축 = 미적용).
+  # noise = n<j> (미지정 시 ep 에서 유도 — legacy 호출 호환).
   local port="$1" slug="$2" arm="$3" task="$4" envn="$5" instr="$6" ep="$7" inf="$8" seed="$9"
-  local out_host="${10}" scene="${11:-}" jit="${12:-base}" base_scene="${13:-}" mode=()
-  # --steering-scene 은 **base scene** 으로 준다 (v4 지터 셀도 scene 통계는 base 0-4 키).
-  if [ -z "$base_scene" ] && [ -n "$scene" ]; then
-    if [ "$scene" -ge 100 ]; then base_scene=$((scene / 100)); else base_scene="$scene"; fi
+  local out_host="${10}" base_scene="${11:-}" jit="${12:-base}" noise="${13:-}" mode=()
+  [ -n "$noise" ] || noise=$((ep % EP_IDX_STRIDE))
+  # 평탄 좌표 — episode_idx·TRIGGER_TSV 조회 키에만 쓰는 파생값 (저장 좌표 아님).
+  local flat="$base_scene"
+  if [ -n "$base_scene" ] && [ -n "$jit" ] && [ "$jit" != base ] && [ "$jit" != NA ]; then
+    flat=$((base_scene * 100 + jit))
   fi
   local CAP_GRID_ARGS=()
   # CAP_GRID=0: --diag-unplanned 진단 캡처 — plan 좌표 검증을 생략하고
-  # <grid-root>/diag/ 하위에 저장한다 (v4 평탄 cell id 는 plan 검증과 어긋남).
+  # <grid-root>/diag/ 하위에 저장한다.
   if [ "${CAPTURE_FEATURES:-0}" = 1 ]; then
-    # pkl 수집 규약(docs/04 §8) — 진단 캡처도 좌표 레이아웃으로 저장
+    # pkl 수집 규약(docs/04 §8) — 진단 캡처도 3축 좌표 레이아웃으로 저장
+    # (지터 k 는 아래 JIT_ARGS 의 --jitter-reset-idx 로 같이 전달된다).
     CAP_GRID_ARGS=(--grid-root "$(to_cont "$out_host")/diag_grid" --plan-json "$(to_cont "$PLAN_JSON_ABS")"
-                   --scene-idx "$((ep / EP_IDX_STRIDE))" --noise-idx "$((ep % EP_IDX_STRIDE))"
+                   --scene-idx "$base_scene" --noise-idx "$noise"
                    --arm-dir "$arm")
     [ "${CAP_GRID:-1}" = 1 ] || CAP_GRID_ARGS+=(--diag-unplanned)
   fi
-  # v4 지터 셀: (base_es, ep_meta, k) 시퀀스 재현 — collector 가 주입+plain reset 을
+  # 지터 셀: (base_es, ep_meta, k) 시퀀스 재현 — collector 가 주입+plain reset 을
   # (k+1)회 돌린다 (docs/04 §3.1.1). ep_meta 디렉토리는 지정됐을 때만 전달.
   local JIT_ARGS=()
   if [ -n "$jit" ] && [ "$jit" != base ] && [ "$jit" != NA ]; then
@@ -643,10 +651,11 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
   fi
   if [ "${#mode[@]}" -eq 0 ]; then
     local trig=""
-    # TRIGGER_TSV 는 $1==scene 으로 찾는다 — v4 에서는 이 자리가 **평탄 cell id** 다
-    # (trigger 표도 같은 평탄 좌표로 생성되어야 한다).
-    if [ -n "$TRIGGER_TSV" ] && [ -n "$scene" ]; then
-      trig=$(awk -F'\t' -v s="$scene" -v n="$((ep % EP_IDX_STRIDE))" '$1==s && $2==n {print $3; exit}' "$TRIGGER_TSV")
+    # TRIGGER_TSV 의 1열은 **평탄 좌표**(지터: scene*100+k, legacy: scene) 다 —
+    # make_triggers.py 가 per_episode.tsv 의 cell_key(평탄) 열로 만들기 때문에
+    # 구 표와의 호환을 위해 3축 전환 후에도 조회 키는 평탄값 그대로 둔다.
+    if [ -n "$TRIGGER_TSV" ] && [ -n "$flat" ]; then
+      trig=$(awk -F'\t' -v s="$flat" -v n="$noise" '$1==s && $2==n {print $3; exit}' "$TRIGGER_TSV")
     fi
     case "$arm" in
       online|online_fut|online_pl|online_fut_pl|online_hs) mode=(--gated-steering-mode online) ;;
@@ -726,23 +735,25 @@ run_job() {  # port gpu slug arm
   start_serve "$gpu" "$port" $flags || return 11
   if [ "$DRY_RUN" != "1" ]; then serve_preflight "$port" "$arm" || { kill_serve "$port"; return 11; }; fi
 
-  local rc_any=0 si ni seed task envn instr ep inf rep csucc jit bsc
+  local rc_any=0 si ni seed task envn instr ep inf rep csucc jit flat
   local tbl; tbl="$(ep_table_for "$slug")"
   if [ "$EP_MODE" = replay ]; then
     # 수집 셀 재생: env_seed·inference_seed 는 index 값 그대로 (새로 만들지 않는다).
-    # si 는 **평탄 cell id** (v4 지터: base_scene*100+k). 9·10열(jit·base scene)은
-    # v4 index 일 때만 채워지고, v1/v2 표에서는 비어 base 로 떨어진다.
-    while IFS=$'\t' read -r si ni seed inf csucc task envn instr jit bsc; do
+    # 셀 표 9열 = si(base scene) ni seed inf csucc task envn instr jit
+    # (jit = 정수 k 또는 "base" — replay_cells.py 계약, docs/04 §3.1.1).
+    while IFS=$'\t' read -r si ni seed inf csucc task envn instr jit; do
       [ -n "${si:-}" ] || continue
       jit="${jit:-base}"
-      ep=$((si * EP_IDX_STRIDE + ni))
+      # episode_idx 는 평탄 좌표로 만든다 (판 번호 유일성 — 저장 좌표는 3축 그대로).
+      if [ "$jit" != base ] && [ "$jit" != NA ]; then flat=$((si * 100 + jit)); else flat="$si"; fi
+      ep=$((flat * EP_IDX_STRIDE + ni))
       if [ "$DRY_RUN" != "1" ] && done_mark "$out_host" "$task" "$slug" "$ep"; then
-        echo "[${slug}/${arm}] skip ep${ep} (cell${si} n${ni})"
+        echo "[${slug}/${arm}] skip ep${ep} (s${si} k${jit} n${ni})"
         continue
       fi
-      echo "[${slug}/${arm}] $(date '+%F %T') ep${ep} cell${si} n${ni} k=${jit} seed=${seed} inf=${inf} csucc=${csucc}"
+      echo "[${slug}/${arm}] $(date '+%F %T') ep${ep} s${si} k${jit} n${ni} seed=${seed} inf=${inf} csucc=${csucc}"
       run_episode "$port" "$slug" "$arm" "$task" "$envn" "$instr" "$ep" "$inf" "$seed" "$out_host" \
-        "$si" "$jit" "${bsc:-}" || rc_any=1
+        "$si" "$jit" "$ni" || rc_any=1
     done < "$tbl"
   else
     while IFS=$'\t' read -r si seed task envn instr; do
@@ -756,8 +767,8 @@ run_job() {  # port gpu slug arm
           continue
         fi
         echo "[${slug}/${arm}] $(date '+%F %T') ep${ep} s${si} seed=${seed} inf=${inf}"
-        run_episode "$port" "$slug" "$arm" "$task" "$envn" "$instr" "$ep" "$inf" "$seed" "$out_host" "$si" \
-          || rc_any=1
+        run_episode "$port" "$slug" "$arm" "$task" "$envn" "$instr" "$ep" "$inf" "$seed" "$out_host" \
+          "$si" base "$rep" || rc_any=1
       done
     done < "$tbl"
   fi

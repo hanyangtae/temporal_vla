@@ -16,6 +16,13 @@
 둘 다 주면 env_seed 를 교차검증하고 불일치는 fail-loud (조용히 다른 scene 을 도는 사고 방지).
 instruction 은 slug (`OvenRack_out`) 로 지정한다 — `extract_grid_matrix.instr_slug` 규약.
 
+지터 축(3축 좌표 `s<i>/k<r>/n<j>`, docs/04 §3.1.1)은 **여기서 다루지 않는다** — fresh
+모드는 새 inference_seed 로 base scene 만 돌기 때문이다. 3축 plan 에서도
+`instructions[instr]` 는 **base scene env_seed 목록**(길이 = scene 수)이라 아래 `from_plan`
+이 그대로 성립하고, 3축 index 에서도 한 scene 의 모든 k 행이 같은 env_seed 를 공유하므로
+`from_index` 의 scene_idx→env_seed 접기가 그대로 성립한다. 셀 재생(replay)은
+`replay_cells.py` 소관.
+
 사용:
     python scripts/steer/online_gated/scene_table.py --slug OvenRack_out \
         --plan-json configs/collect/n15_grid_v1/collection_plan.json \
@@ -59,6 +66,7 @@ def from_plan(plan_json: Path, slug: str) -> tuple[str, dict[int, int], str, str
     if not env_name:
         raise SystemExit(f"{plan_json.name}: extra.env_names 에 {instr!r} 없음")
     text = (extra.get("instruction_text") or {}).get(instr, instr)
+    # 3축 plan 도 instructions[instr] = base scene env_seed 목록 (jitter 는 별도 키).
     seeds = {i: int(s) for i, s in enumerate(plan["instructions"][instr])}
     return instr, seeds, env_name, text
 

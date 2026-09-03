@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""index_rollouts_v4.tsv → (task, base scene) 별 fit episode 매니페스트.
+"""grid 인덱스(index_rollouts_v5.tsv 등) → (task, base scene) 별 fit episode 매니페스트.
 
-v4 격자는 plan_id 디렉토리가 여럿(v4 지터 + v2/v1 base 재사용)이라 (scene_idx, noise_idx)
-튜플로 셀을 고르면 **평탄 si 충돌**로 조용히 섞인다 (v2 base scene1 = s1, v4 scene0/k1 = s1).
-그래서 fit 입력은 index 의 rel_path(plan_id 포함 → 유일)로 명시 나열한다.
-출력 = fit_cond_guidance --episode-manifest 계약: pkl_path·label·base_scene·cell_si·noise_idx.
+셀 좌표는 3축 `scene_idx(base)`·`jitter_reset_idx(k)`·`noise_idx` 다 (docs/04 §3.1.1 —
+평탄 `cell_si` 열은 폐지). plan_id 디렉토리가 여럿 섞인 격자(지터 + base 재사용)에서
+좌표 튜플만으로는 판을 특정할 수 없으므로, fit 입력은 index 의 rel_path(plan_id 포함
+→ 유일)로 명시 나열한다.
+출력 = fit_cond_guidance --episode-manifest 계약:
+pkl_path·label·base_scene·cell_si·noise_idx (+ jitter_reset_idx).
+`cell_si` 는 **저장 좌표가 아니라 파생 평탄값** (`scene*100 + k`, legacy base = `+99`)
+으로, 구 매니페스트와 값이 같도록 유지한다 (fit_cond_guidance 의 provenance 열).
 
 사용:
-    python3 make_fit_manifest.py --index outputs/.../index_rollouts_v4.tsv \
+    python3 make_fit_manifest.py --index outputs/.../index_rollouts_v5.tsv \
         --instruction OpenDrawer/left --out-dir outputs/steer/online_pipe/manifests/v4 \
         [--min-per-class 8] [--scenes 3,4]
 """
@@ -17,9 +21,21 @@ import argparse
 import csv
 from pathlib import Path
 
-NEED = ("grid_instruction", "scene_idx", "noise_idx", "cell_si", "jitter_reset_idx",
+NEED = ("grid_instruction", "scene_idx", "noise_idx", "jitter_reset_idx",
         "success", "rel_path", "machine", "plan_id")
 TRUE = ("1", "True", "true")
+BASE_K = 99          # legacy(2축) 행의 k 자리 — 파생 평탄값 규약 (docs/04 §3.1.1)
+
+
+def k_of(row: dict) -> int:
+    """index 행 → 지터 k 정수 (legacy `"base"`/빈 값은 99)."""
+    raw = (row.get("jitter_reset_idx") or "").strip()
+    return BASE_K if raw == "" or raw.lower() == "base" else int(raw)
+
+
+def cell_si_of(row: dict) -> int:
+    """파생 평탄 cell id = scene*100 + k (legacy base = scene*100 + 99)."""
+    return int(row["scene_idx"]) * 100 + k_of(row)
 
 
 def main() -> None:
@@ -60,11 +76,12 @@ def main() -> None:
             continue
         out = args.out_dir / f"{slug}_s{sc}.tsv"
         with out.open("w", encoding="utf-8") as fh:
-            fh.write("pkl_path\tlabel\tbase_scene\tcell_si\tnoise_idx\n")
-            for r in sorted(eps, key=lambda x: (int(x["cell_si"]), int(x["noise_idx"]))):
+            fh.write("pkl_path\tlabel\tbase_scene\tcell_si\tnoise_idx"
+                     "\tjitter_reset_idx\n")
+            for r in sorted(eps, key=lambda x: (k_of(x), int(x["noise_idx"]))):
                 lab = 1 if r["success"] in TRUE else 0
                 fh.write(f"{r['rel_path'].rstrip('/')}/rollout.pkl\t{lab}\t{sc}"
-                         f"\t{r['cell_si']}\t{r['noise_idx']}\n")
+                         f"\t{cell_si_of(r)}\t{r['noise_idx']}\t{k_of(r)}\n")
         kept.append((sc, len(eps), succ, fail, out))
         print(f"[ok] {slug} s{sc}: {len(eps)}판 (succ={succ} fail={fail}) → {out}")
     if not kept:
