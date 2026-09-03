@@ -147,5 +147,11 @@ awk "0" 함정(§4-1)이 og_ck8v4·og_rsn 오케스트레이터에도 있었음 
 6. 정리: og_capture_probe·og_v4r_smoke pkl 삭제. `*_b15_invalid`·v4sb 산출물 둘지.
 7. 집계 스크립트化. serve 즉사 시 부팅 루프 조기 중단.
 
+## 6b. 09-02~03 추가 (핸드오프 작성 후 바뀐 것)
+- **GPU 서버 규약 정본 = `docs/05_gpu_server_rules.md`** (§3 내용을 흡수·대체). 발사 전 `scripts/utils/gpu_lease.sh claim` 또는 `with_gpu_lease.sh` 래퍼 필수 — lease 수명 = 오케스트레이터 pid, 실프로세스 8시나리오 검증됨. srv 타 계정 점유는 lease로 못 잡음(nvidia-smi 소유자 확인 별개).
+- 문서: steering 10편 체제(README 지도), `docs/collab_codex/`=Codex 원장, `docs/collab_within_claude/`=세션 핸드오프. RESEARCH_DIRECTION §0.5에 시나리오 전체·현재 위치 반영.
+- 브랜치: feat/rs-steer-v4 → dev 머지(PR #92, 이후 #93~#97). **kanu·srv50·srv48·승준 전부 dev @ ccc49d0 정렬(09-02).** 다음 라운드는 dev에서 새 브랜치.
+- 데이터: 전부 재수집 예정(데이터 수집 세션 플랜 확정 전, 승준 아카이브 여유 ~369G). v4/v4sb/v4r 산출물은 참고용.
+
 ## 7. 새 세션 프롬프트
 "main checkout ~/pkt_ws/temporal_vla (branch feat/rs-steer-v4)에서 중추(전체 파이프) 세션 이어받아줘. 정본 = docs/collab_within_claude/handoff_20260902_v4r_round.md. 게이팅 설계 = docs/steering/47. §1 판정 재론 x. §6-1(데이터 재수집)부터. 협업 세션은 ListAgents."
