@@ -188,7 +188,7 @@ opsig = sha256( 연산자 실체 파일 전체 )[:16]
 > 아래 §3.1~§3.3 이 그 개정 근거다. 구 activation 은 machine 미기록이라 전량 폐기하므로
 > 이관 부담이 없다. `_hostcopies/` 는 `<machine>` 층이 그 역할을 흡수해 없앤다.
 
-## 3.1 세팅 = 좌표 (`<plan_id>/<machine>/<instruction>/s<i>/n<j>`)
+## 3.1 세팅 = 좌표 (`<plan_id>/<machine>/<instruction>/s<i>[/k<r>]/n<j>`)
 
 한 rollout 의 세팅은 **실행 전에 정해진다** — 모델·체크포인트·캡처 설정(`plan_id`),
 머신, instruction, scene, noise. 그래서 식별자도 실행 전에 정해질 수 있어야 한다.
@@ -209,26 +209,50 @@ opsig = sha256( 연산자 실체 파일 전체 )[:16]
 **`machine` 은 계획에 넣지 않는다** — 같은 계획을 여러 머신에 나눠 돌리는 것이 정상 운영이고,
 넣으면 머신마다 다른 계획이 되어 `plan.missing()` 이 깨진다.
 
-### 3.1.1 지터 축 (k-grid, 2026-08-21 정식 채택 — n15_grid_v3 계열)
+### 3.1.1 지터 축 k — 셋째 폴더층 (2026-09-03 개정; 구 평탄 si 규약 폐지)
 
-scene·noise 2축에 **셋째 축 reset_idx(k)** 가 추가됐다: 같은 (task, scene, instruction)
-에서 **ep_meta 고정 + 연속 `reset()`** 으로 물건 종류·target 은 고정한 채 **배치와 로봇
-초기 관절만 재추첨**한 상태. `(base_env_seed, ep_meta, k)` 는 bit 결정적이라 replay 재생이
-성립한다 (반증된 대안: reset(seed=jitter) 는 완전 무효, ep_meta 미고정 연속 reset 은
-물건·instruction 까지 재추첨 — `docs/collab_within_claude/collect_request_v3_jitter.md` §6–7 실측).
+scene·noise 에 **셋째 축 reset_idx(k)** 가 있다: 같은 (task, scene, instruction) 에서
+**ep_meta 고정 + 연속 `reset()`** 으로 물건 종류·target 은 고정한 채 **배치와 로봇 초기
+관절만 재추첨**한 상태. `(base_env_seed, ep_meta, k)` 는 bit 결정적이라 replay 가 성립한다
+(반증된 대안: reset(seed=jitter) 는 무효, ep_meta 미고정 연속 reset 은 물건·instruction 까지
+재추첨 — `docs/collab_within_claude/collect_request_v3_jitter.md` §6–7 실측).
 
-- **디렉토리/pkl 좌표는 2축 유지** (기존 인프라 무수정): scene 자리 = **평탄
-  `si = base_scene*100 + k`**, noise 자리 = inference 축. 복원은 `si//100`, `si%100`.
-- **인덱스 정본은 명시 3축**: `index_rollouts_v3.tsv` 에 scene_idx(base)·
-  `jitter_reset_idx`(k)·noise_idx 열 분리 + env_seed=base. meta.json 에
-  `jitter_reset_idx` 필수 기록.
-- plan JSON: `extra["adopted_cells"]` 가 수집 대상의 전부다 — si 인코딩상 dummy 자리가
-  생기므로 **adopted_cells 밖 셀은 존재하지 않는 셀**이다 (`plan.missing()` 에 이 필터
-  적용). k 는 사전 스캔(`v3_k_scan.py`)으로 목표 instruction 일치분만 채택 (OpenDrawer
-  는 left/right 방향이 ep_meta 로 고정되지 않아 k-필터 필수, PPCC 는 target 까지 고정됨).
-- ep_meta JSON(`--ep-meta-dir` 규약, base seed 키)은 아카이브에 동봉한다 — replay 는
-  같은 (base_es, ep_meta, k) 시퀀스(주입+plain reset (k+1)회)를 재현해야 한다.
-  collector 배선: `--jitter-reset-idx`.
+**좌표 = 3축 폴더층 (정본)**
+
+```
+<plan_id>/<machine>/<instruction>/s<i>/k<r>/n<j>/<arm>/
+```
+
+- `s<i>` = **base scene index**(plan `instructions[instr][i]` 가 env_seed). 평탄 인코딩 금지.
+- `k<r>` = `jitter_reset_idx` r(정수). **채택 k 값 그대로** 쓴다(연속 0..4 가 아닐 수 있음 —
+  OpenDrawer 는 연속 reset 마다 좌/우가 재추첨되어 목표 방향인 k 만 채택). 지터 축이 없는
+  구 plan(v1·v2)은 이 층이 없다(`s<i>/n<j>/<arm>` — legacy, 인덱서가 양쪽을 읽는다).
+- `n<j>` = noise(inference_seed) index. `<arm>` = 개입 이름(`base` = 무개입 수집, §3.3 —
+  지터 "base 상태" 와 무관한 용어).
+- **셀 키** = `instr|s<i>|k<r>|n<j>` (legacy 는 `instr|s<i>|n<j>`). 경로 생성·키·해석은
+  `src/collect/plan.py`(`GridCell.rel_path/key`, `resolve_grid`) 단일 출처.
+
+**plan JSON (3축)**: `instructions[instr]` = base scene env_seed 목록(길이 = scene 수),
+**`jitter[instr][scene_idx]` = 채택 k 목록**. `jitter` 가 없으면 2축 legacy plan.
+`plan_id` 는 legacy plan 에서 값이 바뀌지 않도록 `jitter=None` 일 때 해시에서 제외한다
+(3134e339de4c 등 구 plan_id 보존). `extra["adopted_cells"]` 는 legacy 전용(3축 plan 은
+`jitter` 가 곧 수집 대상 전부).
+
+**meta.json / 인덱스**: `scene_idx` = base scene, `jitter_reset_idx` = k(legacy 는 빈 값),
+`noise_idx`. 인덱스 정본(`rollouts.tsv` → `index_rollouts_v5.tsv`)도 같은 3열. 평탄
+`cell_si` 열은 폐지(필요하면 `scene_idx*100+jitter_reset_idx` 로 파생).
+`ep_meta/<task>/<env>--seed<es>.json` 은 base seed 키로 아카이브에 동봉한다.
+
+**collector 배선**: `--scene-idx <i> --jitter-reset-idx <r> --noise-idx <j>`. 지터 셀에서
+**ep_meta JSON 사전 주입(`--ep-meta-load-env-name`)은 금지**(collector 가 거부) — reset(seed) 전에
+주입하면 k 번째 상태가 수집과 어긋난다(2026-09-02 v5 게이트: 수집 실패→replay 성공 59%
+반전의 원인). replay/eval 은 seed reset 재획득 경로만 쓴다(3머신 bit 동일 실증).
+
+**v5 데이터의 잔재**: v5(계약 plan 8daefeabf020)는 평탄 si 로 수집된 뒤 이 층 구조로
+**재배치(migrate)** 되었다. meta.json·인덱스는 3축으로 갱신됐지만 **pkl 내부
+`extra_metadata.scene_idx` 는 수집 당시 평탄값(예 204)** 그대로다 — pkl 안 좌표를 쓰지 말고
+meta.json/인덱스를 볼 것(§8 "pkl 안 좌표는 사후 기록용"). 재배치 이력은 각 meta.json 의
+`layout_migrated_from` 과 plan `extra["supersedes_plan_id"]` 에 남긴다.
 
 ## 3.2 `<machine>` 이 왜 경로 층인가 — 실측
 
