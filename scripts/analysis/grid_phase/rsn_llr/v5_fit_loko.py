@@ -17,12 +17,23 @@ usage (승준, ~/anaconda3/bin/python — torch 필요, scipy 불요):
   B. instr_setm_v5_ck8/<slug>/s<i>/k<r>/c<j>/dit_L12/conceptors.npz — phase = ck8 cluster
   C. rsn_llr_reg_v5/<slug>/s<i>/k<r>.npz — LLR 번들, 계약 = src/failure_online/llr_scorer.py
      docstring(단일 출처). entry "s<i>__c<j>", 앵커 = pool record cluster 평균,
-     게이트 = pool ep CV 절대 기준(5-seed 중앙값 ≥0.70 + 과반 ≥0.65; 길이 AUROC 병기),
-     ood_lo = 대상 k 실패 후반절반 max(logN) 5pct (scorer 스케일 — 2π 상수 포함 필수).
+     게이트 = **k-matched** ep-LOO AUROC(아래), ood_lo = 대상 k 실패 후반절반
+     max(logN) 5pct (scorer 스케일 — 2π 상수 포함 필수).
 
-주의: 게이트의 succ/fail episode 구분은 k와 상관된다(성공은 타 k에서만 옴) — 순수
-k-정체성 판독 위험은 aux_gate_k(양 클래스가 공존하는 타 k 내부 AUROC 중앙값)로 병기만
-하고 등록 기준으론 쓰지 않는다(표본 희박). 최종 심판은 eval(rsn_llr vs reseed).
+★ 게이트가 k-matched 인 이유 (2026-09-03 실측으로 설계 변경)
+  이 pool 은 성공이 **타 k 에서만** 오므로 succ/fail 라벨이 지터 k 와 강하게 상관된다.
+  index_v5 만으로 잰 "k 정체성 단독" ep-AUROC 가 대상 26 셀에서 **중앙값 0.835**
+  (PPCC/marshmallow s3 = 0.99~1.00, PPCC/jug s4 = 0.95~0.98) — 즉 pool 전체 AUROC 로
+  등록하면 **활성화에서 outcome 이 아니라 k 를 읽는 판별기가 그대로 통과한다.**
+  그런데 이 채점기의 용도는 *같은 episode·같은 시점*에서 갈라진 best-of-N 후보의 순위
+  매기기라 후보들의 k 는 전부 동일 — k 를 읽는 성분은 후보 순위에 원리적으로 기여할 수
+  없다(길이가 후보를 순위 매길 수 없는 것과 같은 범주). 따라서 등록 기준은
+  **succ·fail 이 공존하는 k 안의 (실패, 성공) 쌍만 센 concordance**(k-계층화 AUROC)이고,
+  pool 전체·길이·k단독 기준선은 aux 로 병기만 한다. k 마다 AUROC 를 따로 내는 방식은
+  한 클래스가 1 ep 인 k(marsh s3 k4 = 1승 4패)에서 정의되지 않아 검정력이 0이 됐다
+  (합성 양성 대조가 기각됨) — 쌍 단위 합산으로 교정하고 쌍 수 하한을 둔다.
+  채점은 ep 단위 leave-one-out(자기 episode 제외 fit) — 셀당 성공 6~15 ep 규모라
+  5-seed 60% 분할보다 표본 효율이 높다.
 """
 import argparse
 import hashlib
@@ -40,7 +51,8 @@ MIN_REC_SETM = 20
 MIN_REC_LLR = 60
 GATE_SEEDS = 5
 GATE_MED = 0.70
-GATE_EACH = 0.65
+GATE_EACH = 0.65     # (per-k 참고 표기용, 등록 판정엔 미사용)
+GATE_MIN_PAIRS = 6   # k-계층화 쌍 수 하한
 
 
 def parse_args():
@@ -59,7 +71,22 @@ def parse_args():
     ap.add_argument("--min-rec-llr", type=int, default=MIN_REC_LLR)
     ap.add_argument("--gate-med", type=float, default=GATE_MED)
     ap.add_argument("--gate-each", type=float, default=GATE_EACH)
+    ap.add_argument("--phase-mode", choices=("ck8", "all"), default="ck8",
+                    help="채점 entry 단위. ck8=cluster 별(기본) / all=phase 조건화 없이 "
+                         "scene 전체 1 entry. cluster 조건화가 outcome 대조를 흡수하는지 "
+                         "실측 비교용 arm (합성 대조에서 흡수 확인: 전체 0.93 → 클러스터별 "
+                         "0.50~0.63). 산출 루트가 갈린다(rsn_llr_reg_v5_all).")
+    ap.add_argument("--n-perm", type=int, default=2000, help="게이트 순열검정 반복")
+    ap.add_argument("--gate-p", type=float, default=0.05, help="순열 p 상한")
+    ap.add_argument("--gate-min-pairs", type=int, default=GATE_MIN_PAIRS,
+                    help="k-계층화 쌍 수 하한 (기본 6 — 4쌍이면 우연 통과 확률 0.2)")
     return ap.parse_args()
+
+
+def fmt_summary(row):
+    c_, ns_, nf_, mk, ma, ml, bk, dg, npair, pp, _p = row
+    return (f"{c_:<4} rec s/f {ns_}/{nf_}  k계층 {mk:.2f}({npair}쌍, p={pp:.3f})  "
+            f"pool {ma:.2f} len {ml:.2f} k단독 {bk:.2f}  진단(tgt) {dg:.2f}")
 
 
 def auroc(pos, neg):
@@ -204,72 +231,178 @@ def main():
         if args.only_gt:
             continue
         arts, summary = {}, []
-        for c in range(centers.shape[0]):
-            m_c = allow & (ck == c)
+        groups = ([(f"c{c}", ck == c) for c in range(centers.shape[0])]
+                  if args.phase_mode == "ck8"
+                  else [("call", np.ones(len(Z), bool))])
+        for gname, gmask in groups:
+            m_c = allow & gmask
             if m_c.sum() < 10:
                 continue
-            anchor = Z[m_c].mean(0)
-            ms = np.where(m_c & (su == 1))[0]
-            mf = np.where(m_c & (su == 0))[0]
-            if len(ms) < args.min_rec_llr or len(mf) < args.min_rec_llr:
-                summary.append((f"c{c}", len(ms), len(mf), float("nan"), float("nan"),
-                                float("nan"), float("nan"), False))
+            # ★ 앵커는 **k-local**: 그 cluster 안에서 k 별 평균을 각각 빼서 fit 한다.
+            # pool 전체 평균 하나로 중심화하면 가우시안이 k 오프셋을 학습해, 소수 클래스
+            # episode(예: 실패 k 안의 유일한 성공)를 **체계적으로 역순** 매긴다 — 합성
+            # 양성 대조에서 k계층 concordance 0.00 으로 실측됨(2026-09-03).
+            # serve 는 succ_mean.<entry> 하나를 빼므로, 번들에는 **대상 k 의 앵커**를 싣는다
+            # (대상 k 는 실패 record 로만 앵커가 잡힌다 — success-blind 계약과 일치).
+            anchors_k = {}
+            for kk in ks_all:
+                mk_ = m_c & (jit == kk)
+                if mk_.sum() >= 5:
+                    anchors_k[kk] = Z[mk_].mean(0)
+            if k_tgt not in anchors_k:
+                summary.append((gname, 0, 0, float("nan"), float("nan"), float("nan"),
+                                float("nan"), float("nan"), 0, float("nan"), False))
                 continue
-            # 게이트: pool ep CV (5-seed) — ep 단위 mean LLR AUROC (양성 = 실패)
-            o_eps = [e for e in eps_s
-                     if (em[e][0] == 0 or em[e][1] != k_tgt)
-                     and ((ep == e) & (ck == c) & allow).sum() >= 4]
-            ga, gl_, gk = [], [], []
-            for seed in range(GATE_SEEDS):
-                rng = np.random.default_rng(seed)
-                order = rng.permutation(o_eps)
-                tr = set(order[: int(len(o_eps) * 0.6)].tolist())
-                te = [e for e in o_eps if e not in tr]
+            anchor = anchors_k[k_tgt]
 
-                def cls_recs(u, eps_):
-                    out = [Z[np.where((ep == e) & (ck == c) & allow)[0]] - anchor
-                           for e in eps_ if em[e][0] == u]
-                    out = [o for o in out if len(o)]
-                    return np.concatenate(out) if out else np.zeros((0, 16))
-                Xs_t, Xf_t = cls_recs(1, tr), cls_recs(0, tr)
-                if len(Xs_t) < 40 or len(Xf_t) < 40:
+            def zc(idx):
+                """record 인덱스 → k-local 중심화 latent (해당 k 앵커 감산)."""
+                out = Z[idx].copy()
+                for kk, a_ in anchors_k.items():
+                    sel = jit[idx] == kk
+                    if sel.any():
+                        out[sel] -= a_
+                return out
+            ms = np.where(m_c & (su == 1) & np.isin(jit, list(anchors_k)))[0]
+            mf = np.where(m_c & (su == 0) & np.isin(jit, list(anchors_k)))[0]
+            if len(ms) < args.min_rec_llr or len(mf) < args.min_rec_llr:
+                summary.append((gname, len(ms), len(mf), float("nan"), float("nan"),
+                                float("nan"), float("nan"), float("nan"), 0,
+                                float("nan"), False))
+                continue
+            # ── 게이트: ep 단위 leave-one-out LLR 을 **k 안에서** 채점 ──
+            # ⚠ pool 은 성공이 타 k 에서만 오므로 succ/fail 이 k 와 상관된다. index 만으로
+            # 재는 "k 정체성 단독" AUROC 가 이 셀들에서 중앙값 0.835(marsh 0.99~1.00)라,
+            # pool 전체 AUROC 로 등록하면 **k 판독기가 통과한다**. 채점기는 같은 episode
+            # 같은 시점의 후보들(=같은 k)을 순위 매기는 물건이라 k 를 읽는 성분은 무용 —
+            # 그래서 등록 기준은 **succ·fail 이 공존하는 k 안에서만 잰 AUROC 의 중앙값**.
+            # pool 전체·길이·k단독은 aux 로 병기만 한다(길이 규칙과 같은 취지).
+            o_eps = [e for e in eps_s
+                     if (em[e][0] == 0 or em[e][1] != k_tgt) and em[e][1] in anchors_k
+                     and ((ep == e) & gmask & allow).sum() >= 4]
+            rec_of = {e: np.where((ep == e) & gmask & allow)[0] for e in o_eps}
+            n_s_ep = sum(1 for e in o_eps if em[e][0] == 1)
+            n_f_ep = sum(1 for e in o_eps if em[e][0] == 0)
+            loo = {}                       # ep -> mean LLR (자기 제외 fit)
+            if n_s_ep >= 3 and n_f_ep >= 3:
+                for e in o_eps:
+                    tr = [x for x in o_eps if x != e]
+                    # ⚠ 앵커(k-중심화)도 **held-out 을 빼고** 다시 잡아야 한다. 전체 record
+                    # 로 잡은 앵커를 쓰면 held-out 이 자기 k 중심에 기여해 클래스와 상관된
+                    # 누수가 생긴다 — 순수 노이즈 합성에서 concordance 0.73(AE-LLR)·
+                    # 0.97(raw mean-diff)로 실측됨(2026-09-03). 반드시 LOO 안에서 계산.
+                    anc_tr = {}
+                    for kk in ks_all:
+                        idxs = [rec_of[x] for x in tr if em[x][1] == kk]
+                        if idxs:
+                            cat = np.concatenate(idxs)
+                            if len(cat) >= 5:
+                                anc_tr[kk] = Z[cat].mean(0)
+                    if em[e][1] not in anc_tr:
+                        continue
+
+                    def zc_tr(idx, _a=anc_tr):
+                        out = Z[idx].copy()
+                        for kk_, a_ in _a.items():
+                            sel = jit[idx] == kk_
+                            if sel.any():
+                                out[sel] -= a_
+                        return out
+                    Xs_t = [zc_tr(rec_of[x]) for x in tr
+                            if em[x][0] == 1 and em[x][1] in anc_tr]
+                    Xf_t = [zc_tr(rec_of[x]) for x in tr
+                            if em[x][0] == 0 and em[x][1] in anc_tr]
+                    if len(Xs_t) < 2 or len(Xf_t) < 2:
+                        continue
+                    Xs_t, Xf_t = np.concatenate(Xs_t), np.concatenate(Xf_t)
+                    if len(Xs_t) < 40 or len(Xf_t) < 40:
+                        continue
+                    gs_, gf_ = gfit(Xs_t), gfit(Xf_t)
+                    Zb = zc_tr(rec_of[e])
+                    loo[e] = float((gll(Zb, gf_) - gll(Zb, gs_)).mean())
+            # 등록 기준 = k-계층화 AUROC: **같은 k 안의 (실패, 성공) 쌍만** 세어 일치율을
+            # 낸다(= 조건부 concordance). k 마다 따로 AUROC 를 내면 한 클래스가 1 ep 인
+            # k(marsh k4 = 1승4패)에서 추정이 정의되지 않아 검정력이 0이 된다 — 쌍 단위로
+            # 합치면 그 4 쌍도 증거로 쓰인다. 쌍 수(n_pairs)를 함께 남겨 얇은 근거를 표시.
+            by_k = {}
+            for e, v_ in loo.items():
+                by_k.setdefault(em[e][1], {0: [], 1: []})[em[e][0]].append((v_, em[e][2]))
+            conc, n_pairs, ks_used = 0.0, 0, 0
+            per_k = []
+            for vv in by_k.values():
+                if not vv[0] or not vv[1]:
                     continue
-                gs_, gf_ = gfit(Xs_t), gfit(Xf_t)
-                vals = {0: [], 1: []}
-                by_k = {}
-                for e in te:
-                    m = np.where((ep == e) & (ck == c) & allow)[0]
-                    Zb = Z[m] - anchor
-                    v_ = float((gll(Zb, gf_) - gll(Zb, gs_)).mean())
-                    vals[em[e][0]].append((v_, em[e][2]))
-                    by_k.setdefault(em[e][1], {0: [], 1: []})[em[e][0]].append(v_)
-                if len(vals[0]) >= 2 and len(vals[1]) >= 2:
-                    ga.append(auroc(np.array([x[0] for x in vals[0]]),
-                                    np.array([x[0] for x in vals[1]])))
-                    gl_.append(auroc(np.array([x[1] for x in vals[0]]),
-                                     np.array([x[1] for x in vals[1]])))
-                pk = [auroc(np.array(v[0]), np.array(v[1])) for v in by_k.values()
-                      if len(v[0]) >= 2 and len(v[1]) >= 2]
-                if pk:
-                    gk.append(float(np.nanmedian(pk)))
-            ok = [a >= args.gate_each for a in ga if not np.isnan(a)]
-            med_a = float(np.nanmedian(ga)) if ga else float("nan")
-            med_l = float(np.nanmedian(gl_)) if gl_ else float("nan")
-            med_k = float(np.nanmedian(gk)) if gk else float("nan")
-            passed = bool(ok) and med_a >= args.gate_med and sum(ok) * 2 > len(ok)
+                hit = 0.0
+                for vf, _ in vv[0]:
+                    for vs, _ in vv[1]:
+                        hit += 1.0 if vf > vs else (0.5 if vf == vs else 0.0)
+                np_k = len(vv[0]) * len(vv[1])
+                conc += hit
+                n_pairs += np_k
+                ks_used += 1
+                per_k.append(hit / np_k)
+            med_k = conc / n_pairs if n_pairs else float("nan")
+            pooled = {0: [], 1: []}
+            for e, v_ in loo.items():
+                pooled[em[e][0]].append((v_, em[e][2]))
+            med_a = auroc(np.array([x[0] for x in pooled[0]]),
+                          np.array([x[0] for x in pooled[1]])) if loo else float("nan")
+            med_l = auroc(np.array([x[1] for x in pooled[0]]),
+                          np.array([x[1] for x in pooled[1]])) if loo else float("nan")
+            # k 단독 기준선 (라벨 구성만으로 얻어지는 AUROC — 위약 하한)
+            frate = {}
+            for e in o_eps:
+                frate.setdefault(em[e][1], []).append(em[e][0] == 0)
+            frate = {kk: sum(v) / len(v) for kk, v in frate.items()}
+            base_k = auroc(np.array([frate[em[e][1]] for e in o_eps if em[e][0] == 0]),
+                           np.array([frate[em[e][1]] for e in o_eps if em[e][0] == 1]))
+            # ── 순열검정(k 안 라벨 셔플) ──
+            # 쌍 수는 24여도 실제 표본은 episode 10개 수준이라 쌍 단위 임계(0.70)는
+            # 느슨하다 — 순수 노이즈 합성에서 5 셀 중 3 셀이 0.71~0.75 로 오등록됐다.
+            # 그래서 절대 임계에 더해, **각 k 안에서 succ/fail 라벨만 섞은** 귀무분포
+            # 대비 상위 5% 를 요구한다(라벨 구성·k 구조·표본 수를 그대로 보존하는 정확
+            # 순열). 점수는 LOO 로 이미 고정돼 있어 재적합 없이 셔플만으로 계산한다.
+            p_perm = float("nan")
+            if n_pairs >= args.gate_min_pairs and not np.isnan(med_k):
+                items = [(em[e][1], em[e][0], v_) for e, v_ in loo.items()]
+                ks_list = sorted({it[0] for it in items})
+                grouped = {kk: [(lab, v) for k2, lab, v in items if k2 == kk]
+                           for kk in ks_list}
+                rng_p = np.random.default_rng(0)
+                ge = 0
+                for _ in range(args.n_perm):
+                    hit_p = n_p = 0.0
+                    for kk, lst in grouped.items():
+                        labs = np.array([x[0] for x in lst])
+                        vals = np.array([x[1] for x in lst])
+                        labs = rng_p.permutation(labs)
+                        vf_ = vals[labs == 0]
+                        vs_ = vals[labs == 1]
+                        if not len(vf_) or not len(vs_):
+                            continue
+                        diff = vf_[:, None] - vs_[None, :]
+                        hit_p += float((diff > 0).sum() + 0.5 * (diff == 0).sum())
+                        n_p += diff.size
+                    if n_p and hit_p / n_p >= med_k - 1e-12:
+                        ge += 1
+                p_perm = (ge + 1) / (args.n_perm + 1)
+            # 등록 = 절대 임계 + 쌍 수 하한 + 순열 p ≤ 0.05
+            passed = (n_pairs >= args.gate_min_pairs and not np.isnan(med_k)
+                      and med_k >= args.gate_med and p_perm <= args.gate_p)
             # 전체 fit + 대상 진단 (대상 k 실패 ep vs pool 성공 ep)
-            gs, gf = gfit(Z[ms] - anchor), gfit(Z[mf] - anchor)
+            gs, gf = gfit(zc(ms)), gfit(zc(mf))
 
             def ep_llr(e):
-                m = np.where((ep == e) & (ck == c) & allow)[0]
+                m = np.where((ep == e) & gmask & allow)[0]
                 if not len(m):
                     return None
-                Zb = Z[m] - anchor
+                Zb = zc(m)
                 return float((gll(Zb, gf) - gll(Zb, gs)).mean())
             dvals_f = [v for v in (ep_llr(e) for e in ep_tgt_f) if v is not None]
             dvals_s = [v for v in (ep_llr(e) for e in ep_pool_s) if v is not None]
             diag = auroc(np.array(dvals_f), np.array(dvals_s))
-            summary.append((f"c{c}", len(ms), len(mf), med_a, med_l, med_k, diag, passed))
+            summary.append((gname, len(ms), len(mf), med_k, med_a, med_l, base_k,
+                            diag, n_pairs, p_perm, passed))
             if not passed:
                 continue
             # ood_lo: 대상 k 실패 후반절반 (전 record — cluster 무관, v4 규약 유지)
@@ -277,9 +410,9 @@ def main():
             for e in ep_tgt_f:
                 i0 = em[e][3]
                 for i in i0[len(i0) // 2:]:
-                    z = Z[i] - anchor
+                    z = Z[i] - anchors_k[k_tgt]
                     mx.append(max(float(gll(z[None], gs)[0]), float(gll(z[None], gf)[0])))
-            key = f"s{S}__c{c}"
+            key = f"s{S}__{gname}"
             arts[f"succ_mean.{key}"] = anchor.astype(np.float32)
             arts[f"mu_s.{key}"] = gs[0].astype(np.float32)
             arts[f"cov_s.{key}"] = gs[3].astype(np.float32)
@@ -287,7 +420,10 @@ def main():
             arts[f"cov_f.{key}"] = gf[3].astype(np.float32)
             arts[f"ood_lo.{key}"] = np.array(float(np.percentile(mx, 5)) if mx else -1e9,
                                              np.float32)
-            arts[f"aux_gate.{key}"] = np.array([med_a, med_l, med_k], np.float32)
+            # [등록기준 k내 AUROC, pool 전체, 길이, k단독 기준선, 채점된 k 수]
+            # [k계층 AUROC, pool 전체, 길이, k단독 기준선, 쌍 수, 기여 k 수, 순열 p]
+            arts[f"aux_gate.{key}"] = np.array(
+                [med_k, med_a, med_l, base_k, n_pairs, ks_used, p_perm], np.float32)
             arts[f"aux_diag_tgt.{key}"] = np.array(diag, np.float32)
 
         reg = sorted(set(k.split(".", 1)[1] for k in arts if k.startswith("mu_s.")))
@@ -297,9 +433,8 @@ def main():
             # 등록 0건 = 게이트 전면 탈락 → 번들 미생성 (오케스트레이터가 파일 부재로
             # identity/reseed 처리 — v4r oven 관례). 판수·게이트 수치는 아래 로그로 남김.
             print(f"[llr] {SLUG} s{S} k{k_tgt}: 등록 0 — 번들 미생성")
-            for c_, ns_, nf_, a, l, kk, dg, p in summary:
-                print(f"   {c_:<3} rec s/f {ns_}/{nf_}  CV {a:.2f} len {l:.2f} k내부 {kk:.2f} "
-                      f" 진단(tgt) {dg:.2f}  -")
+            for row in summary:
+                print("   " + fmt_summary(row) + "  -")
             continue
         arts["scaler_mu"] = muA.astype(np.float32)
         arts["scaler_std"] = np.array(sdA, np.float32)
@@ -309,24 +444,31 @@ def main():
         arts["registered"] = np.array(reg)
         arts["meta"] = json.dumps({
             "task": SLUG, "ae_ref": f"ae_bundle_v5_k8 sig={ae_sig}",
+            "phase_mode": args.phase_mode,
             "target_scene": S, "target_k": k_tgt,
             "scenes": [f"s{S}"], "phases": sorted(set(r.split("__")[1] for r in reg)),
             **pool_note,
-            "anchor": "pool record cluster 평균 (허용 record — 대상 k 성공 제외)",
-            "gate": "pool ep CV 절대 기준(중앙값>=0.70, 과반>=0.65); 길이·타k내부 AUROC는 "
-                    "aux 병기(aux_gate=[llr,len,k내부]); 대상 진단은 aux_diag_tgt(등록 미사용)",
+            "anchor": "★k-local: cluster×k 평균으로 중심화해 fit; 번들 succ_mean 은 "
+                      "대상 k 앵커(대상 k 실패 record 평균) — serve 가 빼는 값과 동일",
+            "gate": "★k-계층화: succ·fail 공존 k 안의 (실패,성공) 쌍만 센 ep-LOO "
+                    f"concordance >={args.gate_med}, 쌍 수 >={args.gate_min_pairs}, "
+                    f"k 안 라벨 순열 p<={args.gate_p}({args.n_perm}회). pool 전체·길이·"
+                    "k단독 기준선은 aux 병기(aux_gate=[k내, pool, len, k단독, n_k]) — pool "
+                    "전체로 등록하면 k 정체성 판독기가 통과한다(index 실측 k단독 중앙값 0.835). "
+                    "대상 진단은 aux_diag_tgt(등록 미사용)",
             "ood": "대상 k 실패 후반절반 max(logN) 5pct (scorer 스케일, 2π 상수 포함)"})
-        out_d = os.path.join(root, "rsn_llr_reg_v5", SLUG, f"s{S}")
+        reg_root = "rsn_llr_reg_v5" if args.phase_mode == "ck8" else "rsn_llr_reg_v5_all"
+        out_d = os.path.join(root, reg_root, SLUG, f"s{S}")
         os.makedirs(out_d, exist_ok=True)
         np.savez_compressed(os.path.join(out_d, f"k{k_tgt}.npz"), **arts)
-        print(f"[llr] {SLUG} s{S} k{k_tgt}: 등록 {len(reg)} → rsn_llr_reg_v5/{SLUG}/s{S}/k{k_tgt}.npz")
-        for c_, ns_, nf_, a, l, kk, dg, p in summary:
-            print(f"   {c_:<3} rec s/f {ns_}/{nf_}  CV {a:.2f} len {l:.2f} k내부 {kk:.2f} "
-                  f" 진단(tgt) {dg:.2f}  {'REG' if p else '-'}")
+        print(f"[llr] {SLUG} s{S} k{k_tgt}: 등록 {len(reg)} → {reg_root}/{SLUG}/s{S}/k{k_tgt}.npz")
+        for row in summary:
+            print("   " + fmt_summary(row) + ("  REG" if row[-1] else "  -"))
 
     # 등록표 (중추 rsn_llr 분모 고정용 — 한 invocation = 한 (slug, scene) 전체라 멱등 rewrite)
     if not args.only_gt:
-        reg_d = os.path.join(root, "rsn_llr_reg_v5", SLUG, f"s{S}")
+        reg_d = os.path.join(root, "rsn_llr_reg_v5" if args.phase_mode == "ck8"
+                             else "rsn_llr_reg_v5_all", SLUG, f"s{S}")
         os.makedirs(reg_d, exist_ok=True)
         with open(os.path.join(reg_d, "registry.tsv"), "w") as f:
             f.write("slug\tscene\tk\tn_registered\tentries\tn_ep_pool_succ\tn_ep_pool_fail"
