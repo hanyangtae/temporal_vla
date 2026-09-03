@@ -158,13 +158,13 @@
       ]
     },
     "machine_assignment": {
-      "kanu": [
+      "srv48": [
         "OvenRack/out-left",
         "OvenRack/out-right",
         "DishwasherRack/out-left",
         "DishwasherRack/out-right"
       ],
-      "srv48": [
+      "kanu": [
         "OpenDrawer/left",
         "OpenDrawer/right",
         "CoffeeSetupMug"
@@ -1667,7 +1667,7 @@
       ]
     ]
   },
-  "plan_id": "ce65b17f5e74",
+  "plan_id": "b3dbe412d190",
   "n_cells": 900,
   "estimated_bytes": 409838026752
 }

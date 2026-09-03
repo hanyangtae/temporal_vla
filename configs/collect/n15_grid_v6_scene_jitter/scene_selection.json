@@ -46,13 +46,13 @@
     ]
   },
   "machine_assignment": {
-    "kanu": [
+    "srv48": [
       "OvenRack/out-left",
       "OvenRack/out-right",
       "DishwasherRack/out-left",
       "DishwasherRack/out-right"
     ],
-    "srv48": [
+    "kanu": [
       "OpenDrawer/left",
       "OpenDrawer/right",
       "CoffeeSetupMug"

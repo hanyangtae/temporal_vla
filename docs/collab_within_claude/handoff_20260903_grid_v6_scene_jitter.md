@@ -69,8 +69,8 @@
 
 | 머신 | 키 | 판수 |
 |---|---|---|
-| kanu (GPU ≤3장 × serve 2) | oven-left, oven-right, washer-left, washer-right | 300 |
-| srv48 (1장 × serve 6) | drawer-left, drawer-right, coffee | 225 |
+| srv48 (1장 × serve 6) | oven-left, oven-right, washer-left, washer-right | 300 |
+| kanu (GPU ≤3장 × serve 2) | drawer-left, drawer-right, coffee | 225 |
 | srv50 (1장 × serve 6) | ppcc apple·jug·candle·bread·marshmallow | 375 |
 
 발사 전 `docs/05_gpu_server_rules.md`(lease) + 첫 셀 게이트(A 수집 / B 재실행 / D eval 경로) 통과.
