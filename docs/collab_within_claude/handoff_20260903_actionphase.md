@@ -88,7 +88,7 @@ x[1536] → (x − mu)/scalar_std → encoder → z[16] → argmin_c ‖z − ce
   우연 수준(boundary z≈0), 반면 MI·purity 는 높음 = GT 보다 **세밀한 하위 구조**.
   (40 archive — 요지 RESULTS.md, 복원해시 docs/review/LEDGER.tsv)
 - **succ/fail 층화에서 intrinsic k8 > GT 가 4/9 task** (41 archive — k8 채택의 실질
-  근거) + 수집 라벨 비신뢰·재수집 라운드 판정(handoff_20260902_v4r_round).
+  근거) + 수집 라벨 비신뢰·재수집 라운드 판정(handoff_20260902_전체파이프라인).
 - 단위·k 선택의 실측 (docs/steering/46 부록, v2 기반):
   - **instruction 단위 ≈ task(family) 단위 동률, global 만 열세** — 현행은
     instruction 별 centers (번들 구조도 slug 별).
