@@ -32,3 +32,17 @@
 주의: `fix_oodlo.py`(상수항 −8·log2π 보정)는 일회성 패치라 미수록 — 그 보정은
 `v4_fit_pool3.py` 이후 세대의 `gll`(2π 상수 포함)에 흡수됨. ood_lo 스케일은 반드시
 serve `llr_scorer.py`의 logpdf(상수항 포함)와 같은 정의로 산출할 것.
+
+## v5 라운드 (scene-local LOKO, 2026-09-03~)
+
+| 파일 | 내용 |
+|---|---|
+| `v5_fit_loko.py` | (instr, scene, 대상 k)당 연산자 fit — setm gt/ck8 + rsn_llr 번들. pool = 타 k 전판 + 대상 k 실패만(success-blind). 게이트 = k-계층화 concordance + 순열검정(§ 아래) |
+| `v5_loko_feasibility.py` | activation 없이 index_v5 만으로 (instr,scene,k)별 pool 성공 ep 수 → 성립 가능성 사전 판정 |
+
+**게이트 설계 근거(반드시 읽을 것)**: LOKO pool 은 성공이 타 k 에서만 오므로 라벨이
+지터 k 와 상관된다(k 단독 AUROC 중앙값 0.835). pool 전체 AUROC 로 등록하면 outcome 이
+아니라 k 를 읽는 판별기가 통과한다. 등록 기준은 succ·fail 공존 k 안의 쌍만 센
+concordance + k 안 라벨 순열검정 p≤0.05 이고, 앵커(k-중심화)는 **LOO 안에서** 잡아야
+한다(전체로 잡으면 순수 노이즈에서 0.73~0.97 오검출). 상세·합성 대조 수치 =
+`docs/collab_within_claude/handoff_20260903_연산자설계.md` §11.
