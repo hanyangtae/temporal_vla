@@ -23,13 +23,22 @@ export OMP_NUM_THREADS=16 OPENBLAS_NUM_THREADS=16 MKL_NUM_THREADS=16 NUMEXPR_NUM
 
 ts() { date +%F' '%T; }
 
-# ── 0. action phase 완료 대기 (마커 + 번들 + 라벨 10개) ─────────────────────────
+# ── 0. action phase 산출 대기 ────────────────────────────────────────────────
+# 게이트 = 번들 + **내가 쓰는 slug 의 라벨**. action phase 세션이 instruction 집합을
+# 바꾸거나 재시작해도(09-03 13:16 실제 발생) 내 7 slug 라벨만 갖춰지면 진행한다.
+# V5_ACTIONPHASE_DONE 마커는 참고 로그로만 남긴다.
+IFS=',' read -r -a SLUG_ARR <<< "$SLUGS"
 t0=$(date +%s)
 while :; do
   # set -e + pipefail 에서 ls 실패가 대입문을 통해 스크립트를 죽인다 → || true 필수
   n_lab=$(ls "$OUT"/ae_v5_k8/labels_*_k8.npz 2>/dev/null | wc -l || true)
-  if grep -q "V5_ACTIONPHASE_DONE" "$AP_LOG" 2>/dev/null && [[ -s "$BUNDLE" ]] && [[ "$n_lab" -ge 10 ]]; then
-    echo "[det] action phase 완료 확인 ($(ts)) labels=$n_lab"; break
+  need_ok=1
+  for s in "${SLUG_ARR[@]}"; do
+    [[ -s "$OUT/ae_v5_k8/labels_${s}_k8.npz" ]] || need_ok=0
+  done
+  if [[ -s "$BUNDLE" && "$need_ok" -eq 1 ]]; then
+    marker=$(grep -c "V5_ACTIONPHASE_DONE" "$AP_LOG" 2>/dev/null || true)
+    echo "[det] action phase 산출 확인 ($(ts)) labels=$n_lab 내slug=OK 마커=$marker"; break
   fi
   if (( $(date +%s) - t0 > WAIT_MAX_S )); then
     echo "[det] ERROR: action phase 대기 초과 (labels=$n_lab, bundle=$([[ -s "$BUNDLE" ]] && echo y || echo n))" >&2
@@ -39,7 +48,6 @@ while :; do
 done
 
 # ── 1. segA → segA_ck8 ───────────────────────────────────────────────────────
-IFS=',' read -r -a SLUG_ARR <<< "$SLUGS"
 n_have=0
 for s in "${SLUG_ARR[@]}"; do [[ -s "$OUT/segA_ck8/$s.npz" ]] && n_have=$((n_have+1)); done
 if [[ "$n_have" -eq "${#SLUG_ARR[@]}" ]]; then
