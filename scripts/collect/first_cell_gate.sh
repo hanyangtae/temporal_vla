@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# v5 첫 셀 게이트 — handoff_20260902_grid_recollect_v5 §0.1 / §0.6-2.
+# 첫 셀 게이트 — handoff_20260903_grid_v6_scene_jitter §5 (구 v5_first_cell_gate.sh).
 #
 # 같은 좌표(첫 채택 셀)를 4번 돌려 success·traj.csv(추론당 action 행) bit 재현을 대조한다.
 #   A  수집 경로: collect_grid.sh (serve --collect --capture-vl, 캡처 ON, ep_meta 메모리)
@@ -9,10 +9,15 @@
 #      **ep_meta JSON 로드**(--ep-meta-dir + --ep-meta-load-env-name))  → 수집=eval 판정
 #   D  C 에서 ep_meta JSON 로드만 제거(reset(seed) 재캡처)   → C 불일치 시 원인 국소화
 # 판정은 scripts/collect/compare_cell_runs.py 가 낸다 (A=B=C 가 아니면 본수집 금지·보고).
+# pull 키(base 오프셋이 있는 오븐·식기세척기·서랍)는 여기에 **base 재계산 일치** 항목이
+# 더해진다 — A/B/D 의 meta.json 에 기록된 init_robot_base_pos 가 셋 다 같아야 한다
+# (C 는 ep_meta JSON 사전 주입 경로라 base 대조 대상에서 뺀다).
 #
-# 좌표는 3축(docs/04 §3.1.1): collect_grid.sh 의 cells_todo.tsv 열 =
-#   key instr si k seed ni inf env task text  (k = jitter_reset_idx, legacy plan 이면 빈 칸).
-# k 는 계획의 채택 값 그대로다 — 평탄 si 에서 유도하지 않는다.
+# 좌표(docs/04 §3.1.1): collect_grid.sh 의 cells_todo.tsv 열 =
+#   key instr sid jid k seed nid inf env task lang   (11열)
+#   jid = v6 지터 인덱스(경로 j<jid>), k = jitter_reset_idx.
+#   legacy v5 plan 이면 jid 가 빈 칸이고 k 만 있다. 2축 plan 이면 둘 다 빈 칸.
+# jid·k 는 계획 값 그대로다 — 평탄 sid 에서 유도하지 않는다.
 #
 # 필수 env: PLAN_JSON GATE_ROOT INSTR GPU  (+ srv: SERVE_MODE=host SERVE_PY SERVE_PYTHONPATH)
 # 선택: PORT_BASE(8700) PY_HOST(python3)
@@ -49,13 +54,13 @@ run_collect_path A "$PORT_BASE" || { log "ABORT: A 실패"; exit 20; }
 run_collect_path B "$((PORT_BASE + 1))" || { log "ABORT: B 실패"; exit 21; }
 
 # ── 셀 정보 (A 의 todo 표) ──
-# 탭 대신 US(0x1f)로 읽는다 — bash read 는 연속 탭을 하나로 접어 k 빈 칸이면 열이 밀린다.
-IFS=$'\037' read -r key instr si k seed ni inf env task text \
+# 탭 대신 US(0x1f)로 읽는다 — bash read 는 연속 탭을 하나로 접어 빈 칸이 있으면 열이 밀린다.
+IFS=$'\037' read -r key instr sid jid k seed nid inf env task lang \
   < <(head -n 1 "${GATE_ROOT}/A/logs/cells_todo.tsv" | tr '\t' '\037')
 slug="${instr//\//_}"
-# episode_idx 는 3축 좌표를 평탄화해 유일성만 확보 (k 없으면 0 자리).
-ep=$(( (si * 100 + ${k:-0}) * 100 + ni ))
-log "셀 ${key} seed=${seed} inf=${inf} si=${si} k=${k:-<none>} ni=${ni} env=${env} task=${task}"
+# episode_idx 는 3축 좌표를 평탄화해 유일성만 확보 (v6=jid, legacy v5=k, 2축=0 자리).
+ep=$(( (sid * 100 + ${jid:-${k:-0}}) * 100 + nid ))
+log "셀 ${key} seed=${seed} inf=${inf} sid=${sid} jid=${jid:-<none>} k=${k:-<none>} nid=${nid} env=${env} task=${task}"
 
 # ── plan 스칼라 ──
 eval "$("$PY_HOST" - "$REPO_ROOT" "$PLAN_JSON_ABS" <<'PY'
@@ -102,17 +107,23 @@ run_eval_path() {  # tag load_epmeta(0|1)
     python /temporal_vla/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py
     --vla-server "http://127.0.0.1:${EPORT}" --task "$task" --env-name "$env"
     --output-dir "$(to_container "$out")/raw_rollouts" --cell-id "$slug" --cell-index 0
-    --canonical-instruction "$text"
+    --canonical-instruction "$lang"
     --episode-start-idx "$ep" --n-episodes 1
     --seed "$seed" --inference-seed "$inf"
     --n-action-steps 5 --max-episode-steps 720
     --video-fps 20 --steps-per-render 2 --wait-ready
     --no-features --expect-chunk-len 16
     --grid-root "$(to_container "$out")" --plan-json "$(to_container "$PLAN_JSON_ABS")"
-    --scene-idx "$si" --noise-idx "$ni" --grid-instruction "$instr" --arm-dir "gate_${tag}"
-    --run-tag "v5_gate_${tag}"
+    --scene-idx "$sid" --noise-idx "$nid" --grid-instruction "$instr" --arm-dir "gate_${tag}"
+    --run-tag "gate_${tag}"
   )
-  [ -n "$k" ] && args+=(--jitter-reset-idx "$k")   # legacy 2축 plan 이면 생략
+  # v6 는 지터 인덱스만 넘긴다(reset 횟수·base 오프셋은 plan 이 단일 출처).
+  # legacy v5 는 채택 k 를, 2축 plan 은 아무것도 넘기지 않는다.
+  if [ -n "$jid" ]; then
+    args+=(--jitter-idx "$jid")
+  elif [ -n "$k" ]; then
+    args+=(--jitter-reset-idx "$k")
+  fi
   [ "$load" = 1 ] && args+=(--ep-meta-dir "$(to_container "$EPM")" --ep-meta-load-env-name "$env")
   docker exec -e MUJOCO_GL=egl -e PYTHONPATH="$PYPATH" robocasa "${args[@]}" > "${GATE_ROOT}/${tag}.log" 2>&1
   local rc=$?
@@ -123,6 +134,10 @@ run_eval_path C 1 || log "WARN: C 실패 (로그 ${GATE_ROOT}/C.log)"
 run_eval_path D 0 || log "WARN: D 실패 (로그 ${GATE_ROOT}/D.log)"
 ks; trap - EXIT
 
-"$PY_HOST" "${REPO_ROOT}/scripts/collect/compare_cell_runs.py" "${GATE_ROOT}/A" "${GATE_ROOT}/B" "${GATE_ROOT}/C" "${GATE_ROOT}/D" \
+# 판정: traj.csv bit 재현(A~D) + base 재계산 일치(A/B/D — pull 키의 base 오프셋 항목).
+# C 는 ep_meta JSON 사전 주입 경로라 base 대조에서 제외한다(v6 계약 §3).
+"$PY_HOST" "${REPO_ROOT}/scripts/collect/compare_cell_runs.py" \
+  --check-base --base-runs A,B,D \
+  "${GATE_ROOT}/A" "${GATE_ROOT}/B" "${GATE_ROOT}/C" "${GATE_ROOT}/D" \
   | tee "${GATE_ROOT}/VERDICT.txt"
 log "DONE"

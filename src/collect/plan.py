@@ -11,11 +11,16 @@
   구분할 수 없다. 2026-08 정리에서 activation 526 판의 머신을 사후 복원하려다
   실패한 것과 같은 종류의 손실이다 — 사후에는 채울 수 없다.
 
-**축은 셋이다 (docs/04 §3.1.1, 2026-09-03 개정)**: base scene `s<i>` · 지터
-`k<r>`(=`jitter_reset_idx`, ep_meta 고정 후 연속 reset 횟수) · noise `n<j>`.
-지터 축이 없는 구 plan(v1·v2 계열)은 `jitter=None` 인 **legacy 2축** plan 이며
-경로·키에서 `k` 층이 통째로 빠진다. 구 v3·v4 가 쓰던 "평탄 si = scene*100+k"
-인코딩은 폐지됐다 — k 는 폴더층이지 scene 인덱스에 섞어 넣는 값이 아니다.
+**축은 셋이다 (docs/04 §3.1.1)**. v6(2026-09-03, handoff_20260903_grid_v6_scene_jitter)
+부터 층 정의가 바뀌었다:
+
+- **v6**: scene `s<sid>` = **주방(layout, style)** · jitter `j<jid>` = 같은 scene 의 세계
+  변형 하나(연속 reset 횟수 + base 오프셋 lat/back, 정의는 plan 의 `jitters`) · noise `n<nid>`.
+- **v5(legacy)**: scene `s<i>` = base seed · `k<r>`(=`jitter_reset_idx`) · noise `n<j>`.
+- **legacy 2축**(v1·v2 계열): `jitter=None` — 경로·키에서 지터 층이 통째로 빠진다.
+
+구 v3·v4 가 쓰던 "평탄 si = scene*100+k" 인코딩은 폐지됐다. legacy·v5 plan 은 읽기
+호환을 유지하며 plan_id 도 불변이다(신규 필드가 None 이면 해시 payload 에서 제거).
 
 사용:
 
@@ -47,7 +52,13 @@ PLAN_NAME = "collection_plan.json"
 class GridCell:
     """그리드의 한 칸 = rollout 하나.
 
-    ``jitter_reset_idx`` 가 ``None`` 이면 legacy 2축 셀(구 v1·v2 plan)이다.
+    좌표 형태가 셋이다 (docs/04 §3.1.1):
+
+    - **v6** (``jitter_idx`` 있음): scene = 주방(layout, style), jitter j = 세계 변형
+      하나(연속 reset 횟수 + base 오프셋). 경로·키에 ``j<jid>`` 층이 온다.
+    - **v5** (``jitter_reset_idx`` 만 있음): scene = base seed, k = 연속 reset 횟수.
+      경로·키에 ``k<r>`` 층.
+    - **legacy 2축** (둘 다 ``None``): 지터 축 없음.
     """
 
     instruction: str
@@ -55,14 +66,27 @@ class GridCell:
     env_seed: int
     noise_idx: int
     inference_seed: int
+    # 연속 reset 횟수. legacy k 층에서는 k 값 자체, v6 에서는 jitters[..].reset_idx.
     jitter_reset_idx: int | None = None
+    # v6 j 인덱스 = 경로 j<jid>. None 이면 v6 셀이 아니다.
+    jitter_idx: int | None = None
+    base_lat: float = 0.0     # v6 base 오프셋 (m) — fixture 중심 쪽이 양수
+    base_back: float = 0.0    # v6 base 오프셋 (m) — 뒤쪽이 양수
+    lang: str | None = None   # v6 scene 문장 (canonical instruction 대조용)
+    side: str | None = None   # "left" | "right" | None
+    layout_id: int | None = None
+    style_id: int | None = None
+
+    @property
+    def is_v6(self) -> bool:
+        """v6 (scene·jitter·noise) 셀인가."""
+        return self.jitter_idx is not None
 
     def as_metadata(self) -> dict[str, Any]:
         """pkl `extra_metadata` 로 실을 좌표. 인덱스의 동명 열이 된다.
 
-        ``scene_idx`` 는 **base scene 인덱스**다(평탄 인코딩 금지). 지터 축이 있는
-        3축 plan 에서만 ``jitter_reset_idx`` 가 추가로 실린다 — legacy 셀에서는
-        키 자체가 없어야 인덱스가 빈 값으로 구분할 수 있다.
+        ``scene_idx`` 는 **scene 인덱스**다(평탄 인코딩 금지). 축이 없는 셀에서는
+        해당 키가 **아예 없어야** 인덱스가 빈 값으로 구분할 수 있다.
         """
         meta: dict[str, Any] = {
             "grid_instruction": self.instruction,
@@ -71,27 +95,43 @@ class GridCell:
         }
         if self.jitter_reset_idx is not None:
             meta["jitter_reset_idx"] = self.jitter_reset_idx
+        if self.is_v6:
+            meta.update({
+                "jitter_idx": self.jitter_idx,
+                "base_lat": float(self.base_lat),
+                "base_back": float(self.base_back),
+                "side": self.side,
+                "layout_id": self.layout_id,
+                "style_id": self.style_id,
+                "lang": self.lang,
+            })
         return meta
 
     @property
     def key(self) -> str:
-        """셀 키 — 3축 ``instr|s<i>|k<r>|n<j>`` / legacy ``instr|s<i>|n<j>``."""
+        """셀 키 — v6 ``instr|s<sid>|j<jid>|n<nid>`` / v5 ``instr|s<i>|k<r>|n<j>`` /
+        legacy ``instr|s<i>|n<j>``."""
+        if self.is_v6:
+            return (f"{self.instruction}|s{self.scene_idx}"
+                    f"|j{self.jitter_idx}|n{self.noise_idx}")
         if self.jitter_reset_idx is None:
             return f"{self.instruction}|s{self.scene_idx}|n{self.noise_idx}"
         return (f"{self.instruction}|s{self.scene_idx}"
                 f"|k{self.jitter_reset_idx}|n{self.noise_idx}")
 
     def rel_path(self, plan_id: str, machine: str) -> Path:
-        """docs/04 §3.1.1 좌표 경로 — ``<plan_id>/<machine>/<instruction>/s<i>/k<r>/n<j>``.
+        """docs/04 §3.1.1 좌표 경로.
 
-        지터 축이 없는 legacy 셀은 ``k`` 층을 생략한다(``s<i>/n<j>``) — 인덱서·shipper
-        는 양쪽을 다 읽는다.
+        - v6: ``<plan_id>/<machine>/<instruction>/s<sid>/j<jid>/n<nid>``
+        - v5: ``.../s<i>/k<r>/n<j>`` · legacy 2축: ``.../s<i>/n<j>``
 
         instruction 은 ``OpenDrawer/left`` 처럼 ``/`` 를 포함할 수 있어 그대로 하위 경로가
         된다. 경로 생성은 여기 하나뿐이다 — 수집기가 문자열을 조립하면 규약과 어긋난다.
         """
         p = Path(plan_id) / machine / self.instruction / f"s{self.scene_idx}"
-        if self.jitter_reset_idx is not None:
+        if self.is_v6:
+            p = p / f"j{self.jitter_idx}"
+        elif self.jitter_reset_idx is not None:
             p = p / f"k{self.jitter_reset_idx}"
         return p / f"n{self.noise_idx}"
 
@@ -103,6 +143,10 @@ GRID_ARG_NAMES = ("grid_root", "plan_json", "scene_idx", "noise_idx")
 # 중복 정의하면 argparse 충돌).
 JITTER_ARG_NAME = "jitter_reset_idx"
 
+# v6 지터 좌표 인자(`--jitter-idx`). reset_idx·오프셋은 plan 이 갖고, 수집기는 j 인덱스만
+# 넘긴다. add_grid_args 가 정의하지 않는 이유는 JITTER_ARG_NAME 과 같다(수집기 소유).
+JITTER_IDX_ARG_NAME = "jitter_idx"
+
 
 def resolve_grid(args: Any) -> "tuple[CollectionPlan, GridCell] | tuple[None, None]":
     """CLI 인자 → (plan, cell). 좌표 인자가 온전할 때만 좌표 레이아웃을 쓴다.
@@ -113,39 +157,74 @@ def resolve_grid(args: Any) -> "tuple[CollectionPlan, GridCell] | tuple[None, No
 
     지터 축(docs/04 §3.1.1)도 여기서 대조한다:
 
-    - 3축 plan(``jitter`` 있음)인데 ``--jitter-reset-idx`` 가 없으면 **거부**한다.
+    - **v6 plan**(``scenes``·``jitters`` 있음)인데 ``--jitter-idx`` 가 없으면 거부.
+      ``--jitter-reset-idx`` 를 함께 주면 plan 이 정한 셀 값과 **같아야** 한다
+      (수집기가 계획과 다른 지터를 돌면 좌표와 내용이 어긋난다).
+    - v5 3축 plan(``jitter`` 있음)인데 ``--jitter-reset-idx`` 가 없으면 **거부**한다.
       k 없이 수집하면 같은 (scene, noise) 셀에 서로 다른 상태가 겹쳐 쌓인다.
-    - legacy 2축 plan 인데 ``--jitter-reset-idx`` 가 오면 **거부**한다. 계획에 없는
-      축으로 수집된 판은 계획 대비 결손 계산에서 사라진다.
+    - legacy 2축 plan 인데 지터 인자가 오면 **거부**한다. 계획에 없는 축으로 수집된
+      판은 계획 대비 결손 계산에서 사라진다.
 
     계획에 없는 좌표는 거부한다(docs/04 §5.1 — 계획에 없는 셀은 수집하지 않는다).
     """
     vals = [getattr(args, n, None) for n in GRID_ARG_NAMES]
-    if any(v is None for v in vals):
-        return None, None
     grid_root, plan_json, scene_idx, noise_idx = vals
+    # grid_root 는 **쓰기 위치**일 뿐 셀 해석에는 불필요 — 캡처 OFF eval(좌표 트리에 안 씀)도
+    # plan+좌표만으로 셀(지터 정의 포함)을 해석해야 한다(2026-09-03 v6: 아니면 지터가 무음 무시됨).
+    if plan_json is None or scene_idx is None or noise_idx is None:
+        return None, None
     del grid_root  # 경로 조립은 호출자가 rel_path 로 한다
-    jitter_idx = getattr(args, JITTER_ARG_NAME, None)
+    reset_idx = getattr(args, JITTER_ARG_NAME, None)      # --jitter-reset-idx
+    j_idx = getattr(args, JITTER_IDX_ARG_NAME, None)      # --jitter-idx (v6)
     plan = CollectionPlan.load(plan_json)
     instr = getattr(args, "grid_instruction", None) or getattr(args, "canonical_instruction", None)
-    if plan.jitter is not None and jitter_idx is None:
+
+    if plan.is_v6:
+        if j_idx is None:
+            raise ValueError(
+                f"v6 plan 인데 --jitter-idx 가 없다: {plan_json} — v6 좌표는 "
+                "s<sid>/j<jid>/n<nid> 3층이며 j 는 plan 의 jitters 인덱스다 "
+                "(reset 횟수·base 오프셋은 plan 이 갖는다)."
+            )
+        for cell in plan.cells():
+            if (cell.scene_idx == scene_idx and cell.noise_idx == noise_idx
+                    and cell.jitter_idx == j_idx
+                    and (instr is None or cell.instruction == instr)):
+                if reset_idx is not None and reset_idx != cell.jitter_reset_idx:
+                    raise ValueError(
+                        f"--jitter-reset-idx={reset_idx} 가 plan 의 셀 값 "
+                        f"{cell.jitter_reset_idx} 와 다르다 ({cell.key}) — v6 는 plan 이 "
+                        "reset 횟수의 단일 출처다. 인자를 빼거나 plan 값과 맞출 것."
+                    )
+                return plan, cell
+        raise ValueError(
+            f"계획에 없는 좌표: instruction={instr!r} s{scene_idx} j{j_idx} n{noise_idx} "
+            f"— {plan_json} 확인 (docs/04 §5.1: 계획에 없는 셀은 수집하지 않는다)"
+        )
+
+    if j_idx is not None:
+        raise ValueError(
+            f"v6 plan 이 아닌데 --jitter-idx={j_idx} 가 주어졌다: {plan_json} — "
+            "j 층은 scenes/jitters 를 가진 v6 plan 에서만 뜻이 있다."
+        )
+    if plan.jitter is not None and reset_idx is None:
         raise ValueError(
             f"3축(지터) plan 인데 --jitter-reset-idx 가 없다: {plan_json} "
             "— docs/04 §3.1.1 은 k 를 좌표 폴더층으로 요구한다(k 없이 수집하면 같은 "
             "(scene, noise) 칸에 서로 다른 지터 상태가 겹쳐 쌓인다)."
         )
-    if plan.jitter is None and jitter_idx is not None:
+    if plan.jitter is None and reset_idx is not None:
         raise ValueError(
-            f"legacy 2축 plan 인데 --jitter-reset-idx={jitter_idx} 가 주어졌다: {plan_json} "
+            f"legacy 2축 plan 인데 --jitter-reset-idx={reset_idx} 가 주어졌다: {plan_json} "
             "— 계획에 없는 축으로 수집하면 계획 대비 결손 계산에서 사라진다. "
             "지터를 쓰려면 jitter 를 가진 plan 을 쓸 것."
         )
     for cell in plan.cells():
         if (cell.scene_idx == scene_idx and cell.noise_idx == noise_idx
-                and cell.jitter_reset_idx == jitter_idx
+                and cell.jitter_reset_idx == reset_idx
                 and (instr is None or cell.instruction == instr)):
             return plan, cell
-    kdesc = "" if jitter_idx is None else f"k{jitter_idx} "
+    kdesc = "" if reset_idx is None else f"k{reset_idx} "
     raise ValueError(
         f"계획에 없는 좌표: instruction={instr!r} s{scene_idx} {kdesc}n{noise_idx} "
         f"— {plan_json} 확인 (docs/04 §5.1: 계획에 없는 셀은 수집하지 않는다)"
@@ -229,9 +308,68 @@ class CollectionPlan:
     # 지터 축 (docs/04 §3.1.1). jitter[instruction][scene_idx] = 채택 k 목록.
     # None 이면 legacy 2축 plan — plan_id 해시에서도 통째로 빠진다(구 plan_id 보존).
     jitter: dict[str, list[list[int]]] | None = None
+    # ── v6 (2026-09-03, handoff_20260903_grid_v6_scene_jitter) ──────────────
+    # scenes[key][sid] = {layout, style, side, lang, fixture_group, spawn_lat, ...}
+    #   — sid 순서는 instructions[key] 의 env_seed 순서와 1:1 이다.
+    # jitters[key][sid][jid] = {reset_idx, lat, back} — j 는 인덱스(값이 아니다).
+    # 둘 다 None 이면 v6 plan 이 아니며, plan_id 해시·JSON 에서 키가 통째로 빠진다
+    # (legacy·v5 plan_id 불변).
+    scenes: dict[str, list[dict[str, Any]]] | None = None
+    jitters: dict[str, list[list[dict[str, Any]]]] | None = None
+
+    @property
+    def is_v6(self) -> bool:
+        """v6 plan 인가 (scene 주방 + jitter j 층)."""
+        return self.scenes is not None and self.jitters is not None
+
+    @property
+    def env_kwargs(self) -> dict[str, Any]:
+        """env 생성 인자 (``layout_and_style_ids`` 등). 수집기가 gym.make 에 전달한다.
+
+        주방 목록이 바뀌면 seed→주방 추첨이 바뀌므로 **plan 이 단일 출처**여야 한다
+        (legacy 5주방 목록으로 만든 v5 이하 좌표는 v6 과 호환되지 않는다).
+        """
+        return dict((self.extra or {}).get("env_kwargs") or {})
+
+    def _v6_scene(self, instr: str, sid: int) -> dict[str, Any]:
+        """v6 scenes[instr][sid] — 없으면 계약 위반이라 즉시 중단."""
+        assert self.scenes is not None
+        if instr not in self.scenes:
+            raise ValueError(
+                f"scenes 에 instruction 이 없다: {instr!r} — v6 plan 은 전 instruction 에 "
+                "scene 목록을 가져야 한다"
+            )
+        scenes = self.scenes[instr]
+        if not 0 <= sid < len(scenes):
+            raise ValueError(f"scenes[{instr!r}] 범위 밖 sid={sid} (len={len(scenes)})")
+        return scenes[sid]
+
+    def _v6_jitters(self, instr: str, sid: int) -> list[dict[str, Any]]:
+        """v6 jitters[instr][sid] — scene 수와 길이가 어긋나면 즉시 중단."""
+        assert self.jitters is not None
+        if instr not in self.jitters:
+            raise ValueError(
+                f"jitters 에 instruction 이 없다: {instr!r} — v6 plan 은 전 instruction 에 "
+                "scene 별 jitter 목록을 가져야 한다"
+            )
+        per_scene = self.jitters[instr]
+        n_scene = len(self.instructions[instr])
+        if len(per_scene) != n_scene:
+            raise ValueError(
+                f"jitters[{instr!r}] 길이 {len(per_scene)} != scene 수 {n_scene} — "
+                "jitters[instr][scene_idx] 는 instructions[instr] 와 같은 길이여야 한다"
+            )
+        return per_scene[sid]
 
     def cells(self) -> Iterator[GridCell]:
-        """계획된 셀 전량. 3축이면 (instruction, scene, k, noise) 순서로 순회한다."""
+        """계획된 셀 전량.
+
+        v6 = (instruction, scene, jitter j, noise), v5 = (instruction, scene, k, noise),
+        legacy = (instruction, scene, noise) 순서.
+        """
+        if self.is_v6:
+            yield from self._cells_v6()
+            return
         for instr, scenes in self.instructions.items():
             ks_per_scene = self._jitter_for(instr, len(scenes))
             for si, env_seed in enumerate(scenes):
@@ -240,6 +378,30 @@ class CollectionPlan:
                 for k in ks:
                     for ni, inf_seed in enumerate(self.noise_seeds):
                         yield GridCell(instr, si, int(env_seed), ni, int(inf_seed), k)
+
+    def _cells_v6(self) -> Iterator[GridCell]:
+        """v6 순회 — scene(주방) × jitter j × noise. env_seed 는 instructions[key][sid]."""
+        for instr, seeds in self.instructions.items():
+            for sid, env_seed in enumerate(seeds):
+                scene = self._v6_scene(instr, sid)
+                jits = self._v6_jitters(instr, sid)
+                for jid, jit in enumerate(jits):
+                    for ni, inf_seed in enumerate(self.noise_seeds):
+                        yield GridCell(
+                            instruction=instr,
+                            scene_idx=sid,
+                            env_seed=int(env_seed),
+                            noise_idx=ni,
+                            inference_seed=int(inf_seed),
+                            jitter_reset_idx=int(jit["reset_idx"]),
+                            jitter_idx=jid,
+                            base_lat=float(jit.get("lat", 0.0) or 0.0),
+                            base_back=float(jit.get("back", 0.0) or 0.0),
+                            lang=scene.get("lang"),
+                            side=scene.get("side"),
+                            layout_id=scene.get("layout"),
+                            style_id=scene.get("style"),
+                        )
 
     def _jitter_for(self, instr: str, n_scene: int) -> list[list[int]] | None:
         """instruction 의 scene 별 채택 k 목록. legacy plan 이면 None."""
@@ -260,6 +422,11 @@ class CollectionPlan:
 
     @property
     def n_cells(self) -> int:
+        if self.is_v6:
+            n = 0
+            for instr, seeds in self.instructions.items():
+                n += sum(len(self._v6_jitters(instr, sid)) for sid in range(len(seeds)))
+            return n * len(self.noise_seeds)
         if self.jitter is None:
             return sum(len(s) for s in self.instructions.values()) * len(self.noise_seeds)
         n = 0
@@ -273,12 +440,14 @@ class CollectionPlan:
     def plan_id(self) -> str:
         """계획의 지문 — 그리드가 바뀌면 값이 바뀐다.
 
-        ``jitter`` 가 없는 legacy plan 은 해시 payload 에서 그 키를 아예 뺀다 —
-        지터 축 도입 이전에 발급된 plan_id(3134e339de4c 등)가 그대로 유지된다.
+        ``None`` 인 신규 필드(``jitter``·``scenes``·``jitters``)는 해시 payload 에서
+        아예 뺀다 — 그 축 도입 이전에 발급된 plan_id(legacy 3134e339de4c, v5
+        e82e99cb666b 등)가 그대로 유지된다.
         """
         payload_obj = asdict(self)
-        if self.jitter is None:
-            payload_obj.pop("jitter", None)
+        for key in ("jitter", "scenes", "jitters"):
+            if getattr(self, key) is None:
+                payload_obj.pop(key, None)
         payload = json.dumps(payload_obj, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(payload.encode()).hexdigest()[:12]
 
@@ -293,8 +462,9 @@ class CollectionPlan:
         d.mkdir(parents=True, exist_ok=True)
         body = {**asdict(self), "plan_id": self.plan_id, "n_cells": self.n_cells,
                 "estimated_bytes": self.estimate_bytes()}
-        if self.jitter is None:
-            body.pop("jitter", None)   # legacy plan JSON 은 이 키를 갖지 않는다
+        for key in ("jitter", "scenes", "jitters"):
+            if getattr(self, key) is None:
+                body.pop(key, None)   # 그 축이 없는 plan JSON 은 키 자체를 갖지 않는다
         p = d / PLAN_NAME
         p.write_text(json.dumps(body, indent=2, ensure_ascii=False))
         return p
@@ -307,7 +477,8 @@ class CollectionPlan:
         raw = json.loads(p.read_text())
         for k in ("plan_id", "n_cells", "estimated_bytes"):
             raw.pop(k, None)
-        return CollectionPlan(**raw)   # jitter 키가 없으면 legacy(None)
+        # jitter/scenes/jitters 키가 없으면 각각 None (legacy·v5 읽기 호환)
+        return CollectionPlan(**raw)
 
     def missing(self, collected: set[str]) -> list[GridCell]:
         """계획 대비 결손 셀. `collected` 는 수집된 셀의 :attr:`GridCell.key` 집합."""

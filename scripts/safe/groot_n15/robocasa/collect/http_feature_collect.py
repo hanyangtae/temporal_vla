@@ -543,6 +543,101 @@ def _normalize_instruction(value: str) -> str:
     return " ".join(value.strip().split())
 
 
+def _find_kitchen_env(env: Any) -> Any:
+    """wrapper 사슬을 내려가 RoboCasa Kitchen env 객체를 찾는다.
+
+    ``set_robocasa_ep_meta``/``get_robocasa_ep_meta`` 가 쓰는 ``.env`` 사슬 하강과 같은
+    방식이다. ``detect_robot_collision`` 은 ``sim``·``robots``·``robot_geom_ids`` 를 직접
+    보므로 wrapper 가 아니라 이 객체를 넘겨야 한다.
+    """
+    current, seen = env, set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if hasattr(current, "sim") and hasattr(current, "robots"):
+            return current
+        current = getattr(current, "env", None)
+    raise RuntimeError(
+        "RoboCasa Kitchen env 객체를 찾지 못했다 (sim·robots 속성) — "
+        "wrapper 구성이 바뀌었는지 확인할 것"
+    )
+
+
+def _v6_apply_jitter(
+    env: Any, cell: Any, ep_meta: dict, fallback_lang: str | None
+) -> "tuple[dict, Any]":
+    """v6 셀의 세계 변형을 적용한다 (핸드오프 §3 · 부록 B).
+
+    절차: 문장 대조 → base 오프셋 계산·ep_meta 편집 → 주입 + plain reset (reset_idx+1)회
+    → 충돌 검사. 반환은 (적용된 ep_meta, 마지막 reset 의 obs). **무음 실패 금지** —
+    문장 불일치·충돌·base 재계산 불일치는 전부 RuntimeError 다.
+
+    좌표축: yaw = ``ep_meta["init_robot_base_ori"][2]``, f = (cos yaw, sin yaw)(정면),
+    l = (−sin yaw, cos yaw)(로봇 좌측). lat 은 **항상 fixture 중심 쪽**이라
+    side=="left"(로봇이 왼쪽으로 밀려남) → ``pos -= lat*l``, "right" → ``pos += lat*l``.
+    back 은 뒤로: ``pos -= back*f``. z 는 건드리지 않는다.
+    """
+    import math
+    from copy import deepcopy as _dc
+
+    ep_meta = _dc(ep_meta)
+
+    # 1) 문장 대조 — scene 의 lang 이 진실(주방·seed 가 바뀌면 문장 변형도 바뀐다).
+    want = cell.lang or fallback_lang
+    got = ep_meta.get("lang")
+    if want is not None and _normalize_instruction(str(got or "")) != _normalize_instruction(str(want)):
+        raise RuntimeError(
+            "v6 셀 문장 대조 실패 — env 가 낸 ep_meta.lang 이 plan 의 scene 문장과 다르다: "
+            f"env={got!r} != plan={want!r} (cell={cell.key}, env_seed={cell.env_seed}). "
+            "주방 목록(env_kwargs.layout_and_style_ids)이나 scene 선택표를 확인할 것."
+        )
+
+    # 2) base 오프셋
+    lat, back = float(cell.base_lat or 0.0), float(cell.base_back or 0.0)
+    pos = [float(v) for v in ep_meta["init_robot_base_pos"]]
+    if lat or back:
+        if lat and cell.side not in ("left", "right"):
+            raise RuntimeError(
+                f"lat 오프셋({lat})이 있는데 scene 의 side 가 없다: side={cell.side!r} "
+                f"(cell={cell.key}) — lat 방향(fixture 중심 쪽)을 정할 수 없다."
+            )
+        yaw = float(ep_meta["init_robot_base_ori"][2])
+        f = (math.cos(yaw), math.sin(yaw))
+        l = (-math.sin(yaw), math.cos(yaw))
+        sign = 1.0 if cell.side == "right" else -1.0   # left 키 → 오른쪽(−l)로 이동
+        pos[0] += sign * lat * l[0] - back * f[0]
+        pos[1] += sign * lat * l[1] - back * f[1]
+        ep_meta["init_robot_base_pos"] = pos
+        print(f"[collect][v6] base 오프셋 적용 side={cell.side} lat={lat} back={back} "
+              f"yaw={yaw:.4f} -> init_robot_base_pos={pos}", flush=True)
+
+    # 3) 주입 + plain reset (reset_idx+1)회
+    n_reset = int(cell.jitter_reset_idx or 0) + 1
+    obs = None
+    for _ in range(n_reset):
+        set_robocasa_ep_meta(env, _dc(ep_meta))
+        obs, _info = env.reset()
+
+    # 4) base 재계산 대조 — env 가 실제로 쓴 base 가 계산값과 다르면 좌표가 거짓이 된다.
+    applied = get_robocasa_ep_meta(env)
+    got_pos = [float(v) for v in applied.get("init_robot_base_pos", [])]
+    if len(got_pos) != len(pos) or any(abs(a - b) > 1e-9 for a, b in zip(got_pos, pos)):
+        raise RuntimeError(
+            "v6 base 재계산 불일치 — env 의 init_robot_base_pos 가 적용값과 다르다: "
+            f"env={got_pos} != 계산={pos} (cell={cell.key})"
+        )
+
+    # 5) 충돌 검사
+    from robocasa.utils.env_utils import detect_robot_collision  # noqa: PLC0415
+
+    if detect_robot_collision(_find_kitchen_env(env)):
+        raise RuntimeError(
+            "v6 base 오프셋 적용 후 로봇이 fixture/물체와 충돌한다 — 이 (scene, j) 는 "
+            f"수집 불가: cell={cell.key} side={cell.side} lat={lat} back={back} "
+            f"init_robot_base_pos={pos} (plan 의 jitter 표를 고칠 것)"
+        )
+    return ep_meta, obs
+
+
 def make_env(
     task: str,
     split: str,
@@ -555,7 +650,12 @@ def make_env(
     overlay_text: bool = False,  # 장면 덮어쓰기 caption 영구 금지 (2026-08-13 사용자 지시)
     n_action_steps: int = 16,
     max_episode_steps: int = 720,
+    env_kwargs: dict | None = None,
 ):
+    """env 생성. ``env_kwargs`` 는 plan 의 ``extra.env_kwargs``(예:
+    ``layout_and_style_ids``)를 그대로 gym.make 로 넘긴다 — 주방 목록이 바뀌면
+    seed→주방 추첨이 바뀌므로 plan 이 단일 출처여야 한다(v6 §2).
+    """
     del task, split
     import gymnasium as gym
     import robocasa  # noqa: F401
@@ -564,7 +664,7 @@ def make_env(
     from gr00t.eval.rollout_policy import MultiStepConfig, VideoConfig, WrapperConfigs
     from src.policies.groot.robocasa.env_wrappers import wrap_groot_robocasa_eval_env
 
-    env = gym.make(env_name, enable_render=True, seed=scenario_seed)
+    env = gym.make(env_name, enable_render=True, seed=scenario_seed, **(env_kwargs or {}))
     env = StepPhaseProbeWrapper(env)  # env-step GT probe (MultiStep 아래층)
     wrapper_configs = WrapperConfigs(
         video=VideoConfig(
@@ -835,6 +935,18 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--jitter-idx",
+        type=int,
+        default=None,
+        metavar="J",
+        help=(
+            "v6 지터 좌표 j (handoff_20260903_grid_v6_scene_jitter §3). plan 의 "
+            "jitters[key][scene_idx][j] = {reset_idx, lat, back} 를 가리키는 **인덱스**다 "
+            "— 연속 reset 횟수·base 오프셋은 plan 이 단일 출처이고 수집기는 j 만 받는다. "
+            "--jitter-reset-idx 를 함께 주면 plan 값과 대조한다(불일치 시 중단)."
+        ),
+    )
+    parser.add_argument(
         "--probe-seeds",
         default=None,
         metavar="S1,S2,...",
@@ -1018,6 +1130,15 @@ def run() -> dict[str, Any]:
     # --diag-unplanned: 진단 캡처 — plan 대조를 생략한다 (grid_dir 은 diag/ 하위로).
     grid_plan, grid_cell = ((None, None) if getattr(args, "diag_unplanned", False)
                             else resolve_grid(args))
+    if grid_cell is None and (getattr(args, "jitter_idx", None) is not None
+                              or getattr(args, "jitter_reset_idx", None) is not None) \
+            and not getattr(args, "diag_unplanned", False):
+        # 지터 인자가 왔는데 셀이 안 잡히면 지터가 무음으로 무시된다(eval 경로 실측 위험).
+        raise RuntimeError(
+            "--jitter-idx/--jitter-reset-idx 가 주어졌지만 plan 셀을 해석하지 못했다 — "
+            "--plan-json --scene-idx --noise-idx --grid-instruction 을 함께 줄 것 "
+            "(--grid-root 는 쓰기 위치라 없어도 됨)."
+        )
     # arm 결정 — steering 이 걸린 serve 로 돌면 자동으로 arm 디렉토리(armsig)가 된다.
     arm_name, arm_params = _resolve_arm(args, serve_identity)
     if arm_name is not None:
@@ -1033,6 +1154,19 @@ def run() -> dict[str, Any]:
         print(f"[collect] 좌표 레이아웃 — plan_id={grid_plan.plan_id} "
               f"cell={grid_cell.key} arm={arm_name or 'base'} "
               f"machine={serve_identity.get('machine')}", flush=True)
+
+    # env 생성 인자(주방 목록 등)는 plan 이 단일 출처다 (v6 §2 — 목록이 바뀌면 seed→주방
+    # 추첨이 바뀐다). --diag-unplanned 는 plan 대조를 건너뛰므로 plan_json 이 있으면
+    # 여기서 직접 읽어 같은 env 를 만든다.
+    env_make_kwargs: dict[str, Any] = {}
+    if grid_plan is not None:
+        env_make_kwargs = grid_plan.env_kwargs
+    elif getattr(args, "plan_json", None):
+        from src.collect.plan import CollectionPlan as _CP  # noqa: PLC0415
+
+        env_make_kwargs = _CP.load(args.plan_json).env_kwargs
+    if env_make_kwargs:
+        print(f"[collect] plan env_kwargs = {env_make_kwargs}", flush=True)
 
     max_steps = args.max_episode_steps
     results: list[dict[str, Any]] = []
@@ -1073,9 +1207,13 @@ def run() -> dict[str, Any]:
             overlay_text=False,  # 캡션 overlay 영구 금지 (장면 덮어쓰기 사고 재발 방지)
             n_action_steps=args.n_action_steps,
             max_episode_steps=max_steps,
+            env_kwargs=env_make_kwargs,
         )
         try:
-            if replay_ep_meta is not None and getattr(args, "jitter_reset_idx", None) is not None:
+            _v6_cell = grid_cell if (grid_cell is not None and grid_cell.is_v6) else None
+            if replay_ep_meta is not None and (
+                _v6_cell is not None or getattr(args, "jitter_reset_idx", None) is not None
+            ):
                 # 2026-09-02 v5 첫 셀 게이트 실측: 지터 셀에서 ep_meta JSON 을 reset(seed) 전에
                 # 주입하면 k 번째 지터 상태가 수집과 달라진다(k=1: 수집 'left' → replay 'right').
                 # 수집=eval 경로 동일성(docs/collab_within_claude/handoff_20260902_grid_recollect_v5
@@ -1089,8 +1227,19 @@ def run() -> dict[str, Any]:
                 set_robocasa_ep_meta(env, replay_ep_meta)
             obs, _info = env.reset(seed=scenario_seed)
             captured_ep_meta = replay_ep_meta or get_robocasa_ep_meta(env)
-            if getattr(args, "jitter_reset_idx", None) is not None:
-                # v3 지터 축 (요청서 §7 검증 시퀀스와 동일): 주입+plain reset (K+1)회.
+            v6_base_pos = None
+            if _v6_cell is not None:
+                # v6 셀 (부록 B): 문장 대조 → base 오프셋 → 주입+plain reset (reset_idx+1)회
+                # → 충돌 검사. reset 횟수는 plan(cell.jitter_reset_idx)이 단일 출처다
+                # (--jitter-reset-idx 를 함께 줬다면 resolve_grid 가 이미 대조했다).
+                captured_ep_meta, obs = _v6_apply_jitter(
+                    env, _v6_cell, captured_ep_meta,
+                    (grid_plan.extra.get("instruction_text") or {}).get(_v6_cell.instruction)
+                    if grid_plan is not None else None,
+                )
+                v6_base_pos = [float(v) for v in captured_ep_meta["init_robot_base_pos"]]
+            elif getattr(args, "jitter_reset_idx", None) is not None:
+                # v5(k 층) 지터 축 (요청서 §7 검증 시퀀스와 동일): 주입+plain reset (K+1)회.
                 # ep_meta 가 물건 종류·target 을 고정하고 배치·로봇 관절만 재추첨된다.
                 from copy import deepcopy as _dc  # noqa: PLC0415
                 for _ in range(args.jitter_reset_idx + 1):
@@ -1479,7 +1628,7 @@ def run() -> dict[str, Any]:
             # (2026-07-31 이전 수집분에는 이 필드가 없다 — 소급 불가.)
             extra_metadata.update(serve_identity)
             grid_dir = None
-            if grid_cell is not None:
+            if grid_cell is not None and getattr(args, "grid_root", None) is not None:
                 from src.collect.plan import grid_dir_for  # noqa: PLC0415
 
                 grid_dir = grid_dir_for(args, grid_plan, grid_cell,
@@ -1489,6 +1638,10 @@ def run() -> dict[str, Any]:
                     "plan_id": grid_plan.plan_id,
                     "armsig": grid_dir.name.split("__")[0],
                 })
+                # v6: base 오프셋 **적용 후** 실제 값. replay/eval 이 plan 에서 다시 계산한
+                # base 와 대조하는 기준이다 (핸드오프 §3 재현 계약).
+                if v6_base_pos is not None:
+                    extra_metadata["init_robot_base_pos"] = v6_base_pos
             elif getattr(args, "diag_unplanned", False) and getattr(args, "grid_root", None):
                 # 진단 캡처 전용 — plan 대조 없이 diag/ 하위 좌표에 쓴다 (docs/04 정본
                 # store 와 절대 섞이지 않게 diag 접두). 계획에 없는 좌표(신규 k 스캔·
