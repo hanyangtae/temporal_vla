@@ -211,16 +211,26 @@ def _jitter_of(raw: str) -> int:
             f"jitter_reset_idx={raw!r} — 정수 또는 {BASE_ARM!r} 이어야 한다") from None
 
 
-def read_index(index_tsv: Path, grid_root: Path) -> tuple[list[Episode], bool]:
-    """rollouts.tsv → (Episode 목록, 지터 축 유무).
+def read_index(index_tsv: Path,
+               grid_root: Path) -> tuple[list[Episode], bool, str]:
+    """rollouts.tsv → (Episode 목록, 지터 축 유무, 지터 좌표로 쓴 열 이름).
 
     열은 `scripts/collect/build_grid_index.py` 의 ROLLOUT_COLS 를 헤더로 읽는다
     (하드코딩 인덱스 금지 — 열이 늘어나도 깨지지 않게). base arm + pkl 보유 행만 남긴다.
     `rel_path` 가 없는 옛 인덱스면 좌표로 경로를 조립한다.
 
-    `jitter_reset_idx` 열이 있으면(v3/v4 지터 인덱스) 지터 축 k 를 **정식 좌표로**
-    싣는다 — 같은 `(scene, noise)` 셀에 지터 변형이 여러 판 있으므로 이게 없으면
-    중복 좌표로 오인된다. 열이 없으면(v1/v2) 전부 -1 이라 이전 동작과 완전히 같다.
+    지터 축 열이 있으면 그 좌표를 **정식 좌표로** 싣는다 — 같은 `(scene, noise)` 셀에
+    지터 변형이 여러 판 있으므로 이게 없으면 중복 좌표로 오인된다. 열이 없으면(v1/v2)
+    전부 -1 이라 이전 동작과 완전히 같다.
+
+    ⚠ **지터 열이 둘인 인덱스가 있다**: `jitter_idx`(폴더층 `j<r>` 의 축 좌표)와
+    `jitter_reset_idx`(그 셀을 만들 때 `reset()` 을 몇 번 돌렸나 = 추첨 회수). v4/v5 는
+    두 값이 같아 구분이 필요 없었지만, v6(scene-jitter) 의 oven·dishwasher 4키는 축이
+    scene 쪽으로 옮겨가 **j 5개가 전부 `jitter_reset_idx=0`** 이다. reset 회수를 좌표로
+    쓰면 (scene, noise) 당 5판이 같은 키가 돼 `좌표 중복` 으로 죽는다(v6 인덱스에서 15
+    셀 × 4키 = 60 그룹 실측). 그래서 **`jitter_idx` 가 있으면 그쪽이 좌표**이고,
+    `jitter_reset_idx` 는 없을 때의 fallback 이다 — `rel_path` 의 폴더층과 같은 축을
+    쓰는 게 규약(docs/04 §3.1.1)이기도 하다.
     """
     lines = index_tsv.read_text(encoding="utf-8").splitlines()
     if not lines:
@@ -233,7 +243,10 @@ def read_index(index_tsv: Path, grid_root: Path) -> tuple[list[Episode], bool]:
             f"{index_tsv}: 필수 열 없음 {sorted(missing)} — build_grid_index.py 로 "
             "만든 rollouts.tsv 인지 확인할 것 (헤더: {})".format(",".join(header[:8])))
     col = {c: i for i, c in enumerate(header)}
-    has_jitter = "jitter_reset_idx" in col
+    # 축 좌표 우선 (docstring ⚠ 참조). 둘 다 없으면 지터 축 없는 인덱스.
+    jitter_col = "jitter_idx" if "jitter_idx" in col else (
+        "jitter_reset_idx" if "jitter_reset_idx" in col else None)
+    has_jitter = jitter_col is not None
 
     def get(parts, name, default=""):
         i = col.get(name)
@@ -256,13 +269,15 @@ def read_index(index_tsv: Path, grid_root: Path) -> tuple[list[Episode], bool]:
         instruction = get(parts, "grid_instruction").strip()
         plan_id = get(parts, "plan_id").strip()
         machine = get(parts, "machine").strip()
-        jitter = _jitter_of(get(parts, "jitter_reset_idx")) if has_jitter \
+        jitter = _jitter_of(get(parts, jitter_col)) if has_jitter \
             else JITTER_NONE
         rel = get(parts, "rel_path").strip()
         if not rel:
-            # 3축 폴더층 s<i>/k<r>/n<j> (docs/04 §3.1.1). 지터 축이 없거나 legacy 행이면
-            # k 층 없이 s<i>/n<j> (구 레이아웃).
-            k_seg = "" if jitter in (JITTER_NONE, JITTER_BASE) else f"k{jitter}/"
+            # 3축 폴더층 (docs/04 §3.1.1) — 층 이름은 좌표 열을 따른다:
+            # `jitter_reset_idx` 축이면 s<i>/k<r>/n<j>, `jitter_idx` 축(v6)이면 s<i>/j<r>/n<j>.
+            # 지터 축이 없거나 legacy 행이면 층 없이 s<i>/n<j> (구 레이아웃).
+            layer = "j" if jitter_col == "jitter_idx" else "k"
+            k_seg = "" if jitter in (JITTER_NONE, JITTER_BASE) else f"{layer}{jitter}/"
             rel = (f"{plan_id}/{machine}/{instruction}/s{scene}/{k_seg}"
                    f"n{noise}/{BASE_ARM}")
         eps.append(Episode(plan_id, machine, instruction, scene, noise,
@@ -271,7 +286,7 @@ def read_index(index_tsv: Path, grid_root: Path) -> tuple[list[Episode], bool]:
     if not eps:
         raise ValueError(f"{index_tsv}: base+pkl 행이 하나도 없다")
     _ = grid_root  # 경로 검증은 워커에서 (인덱싱 시점엔 파일 접근하지 않는다)
-    return eps, has_jitter
+    return eps, has_jitter, (jitter_col or "")
 
 
 # ── 판 하나 처리 (워커) ────────────────────────────────────────────────────
@@ -519,10 +534,10 @@ def main() -> int:
     else:
         layers_sel = list(range(len(EXPECT_LAYERS)))
 
-    eps, jitter_axis = read_index(args.index_tsv, args.grid_root)
+    eps, jitter_axis, jitter_col = read_index(args.index_tsv, args.grid_root)
     if jitter_axis:
-        print("[extract] index 에 jitter_reset_idx 열 있음 — 지터 축 k 를 정식 좌표로 "
-              "쓴다 (base=99)", flush=True)
+        print(f"[extract] index 지터 축 열 = {jitter_col} — 이 값을 정식 좌표로 쓴다 "
+              "(base=99)", flush=True)
     if args.plan_ids != "all":
         want = {p.strip() for p in args.plan_ids.split(",") if p.strip()}
         eps = [e for e in eps if e.plan_id in want]
@@ -647,7 +662,9 @@ def main() -> int:
 
         arrays = build_shard(results, instruction, args.tier, layers_sel, layer_ids,
                              extra_meta={"machine_rule": pick["rule"],
-                                         "dropped_dup_cells": pick["dropped_dup_cells"]},
+                                         "dropped_dup_cells": pick["dropped_dup_cells"],
+                                         # jitter 열이 인덱스의 어느 축인지 (소비 측 조인 근거)
+                                         "jitter_column": jitter_col},
                              jitter_axis=jitter_axis)
         name = slug if args.tier == "segA" else \
             f"{slug}__L{'-'.join(str(l) for l in layer_ids)}"
