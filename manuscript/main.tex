@@ -1,7 +1,7 @@
 % 제7회 한국 인공지능 학술대회 (KICS 인공지능소사이어티) 투고 원고
 \documentclass[a4paper,twocolumn,9pt]{extarticle}
 \usepackage{kotex}
-\usepackage[margin=1.6cm,top=1.85cm,bottom=1.45cm]{geometry}
+\usepackage[margin=1.6cm,top=1.6cm,bottom=1.3cm]{geometry}
 \usepackage{graphicx}
 \usepackage{amsmath}
 \usepackage{setspace}
@@ -24,11 +24,11 @@
 
 \twocolumn[{
 \begin{center}
-{\large\bfseries Title}\\[1.2ex]
+{\large\bfseries VLA는 스스로 어떤 action을 수행 중이라고 판단하는가:\\ Auto Encoder 기반 activation clustering을 통한 action phase의 online 판독}\\[1.2ex]
 {박경태, 김상우, 오윤선$^{\dagger}$}\\
 {한양대학교}\\[0.6ex] 
 {\small rudxo1997@hanyang.ac.kr, kimz1121@hanyang.ac.kr, $^{\dagger}$yoh21@hanyang.ac.kr}\\[2.0ex] 
-{\large\bfseries Title}\\[1.2ex]
+{\large\bfseries What Action Does a VLA Judge Itself to Be Performing?\\ Online Action-Phase Readout via Auto-Encoder-Based Activation Clustering}\\[1.2ex]
 {Kyungtae Park, Sangwoo Kim, Yoonseon Oh$^{\dagger}$}\\ 
 {Hanyang University.}\\[2.0ex]
 {\bfseries 요 약}
@@ -72,7 +72,7 @@ Margin이 양수라는 것은 ``에피소드의 몇 \% 지점인가''라는 시�
 
 \begin{figure}[!t]
   \centering
-  \includegraphics[width=0.85\columnwidth]{figs/fig_readout_bar.pdf}
+  \includegraphics[width=0.80\columnwidth]{figs/fig_readout_bar.pdf}
   \caption{Unseen scene에서의 phase 판독 정확도. 막대는 instruction 10개의 중앙값, 흰 점은 instruction별 값이다. 회색은 외부 정보만 쓰는 대조군, 파랑은 내부 activation이다.}
   \label{fig:readout}
 \end{figure}
@@ -82,7 +82,7 @@ Margin이 양수라는 것은 ``에피소드의 몇 \% 지점인가''라는 시�
 
 \begin{figure}[!t]
   \centering
-  \includegraphics[width=0.84\columnwidth]{figs/fig_k_sweep.pdf}
+  \includegraphics[width=0.80\columnwidth]{figs/fig_k_sweep.pdf}
   \caption{판독 정확도의 $k$ 강건성. 사람 phase 수(3--6, 회색 대역)를 넘는 $k\ge8$에서 성능이 평탄하다(0.82--0.88). 옅은 선은 instruction 10개 각각이다.}
   \label{fig:ksweep}
 \end{figure}
