@@ -147,6 +147,7 @@ def main():
     n_s = sum(1 for v in em.values() if v[0] == 1)
     print(f"[scene] {SLUG} s{S}: ep {len(eps_s)} (succ {n_s} / fail {len(eps_s) - n_s}), "
           f"k = {ks_all}, 실패 있는 k = {ks_fail}")
+    registry = []   # (k, n_reg, entries, pool succ/fail ep, tgt fail ep, excl succ ep)
 
     for k_tgt in ks_fail:
         allow = m_sc & ((jit != k_tgt) | (su == 0))
@@ -278,6 +279,8 @@ def main():
             arts[f"aux_diag_tgt.{key}"] = np.array(diag, np.float32)
 
         reg = sorted(set(k.split(".", 1)[1] for k in arts if k.startswith("mu_s.")))
+        registry.append((k_tgt, len(reg), ";".join(reg) or "-", len(ep_pool_s),
+                         len(ep_pool_f), len(ep_tgt_f), n_excl))
         if not reg:
             # 등록 0건 = 게이트 전면 탈락 → 번들 미생성 (오케스트레이터가 파일 부재로
             # identity/reseed 처리 — v4r oven 관례). 판수·게이트 수치는 아래 로그로 남김.
@@ -308,6 +311,15 @@ def main():
         for c_, ns_, nf_, a, l, kk, dg, p in summary:
             print(f"   {c_:<3} rec s/f {ns_}/{nf_}  CV {a:.2f} len {l:.2f} k내부 {kk:.2f} "
                   f" 진단(tgt) {dg:.2f}  {'REG' if p else '-'}")
+
+    # 등록표 (중추 rsn_llr 분모 고정용 — 한 invocation = 한 (slug, scene) 전체라 멱등 rewrite)
+    reg_d = os.path.join(root, "rsn_llr_reg_v5", SLUG, f"s{S}")
+    os.makedirs(reg_d, exist_ok=True)
+    with open(os.path.join(reg_d, "registry.tsv"), "w") as f:
+        f.write("slug\tscene\tk\tn_registered\tentries\tn_ep_pool_succ\tn_ep_pool_fail"
+                "\tn_ep_tgt_fail\tn_ep_excluded_succ_tgt\n")
+        for row in registry:
+            f.write(f"{SLUG}\t{S}\t" + "\t".join(str(x) for x in row) + "\n")
     print(f"V5_LOKO_DONE {SLUG} s{S}")
 
 
