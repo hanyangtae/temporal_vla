@@ -93,6 +93,22 @@ runner 주석 갱신. **v5 replay/eval 은 EP_META_DIR 없이** 돌린다(ep_met
 **srv50 게이트(PPCC/bread s0 k0 n0, GPU2, 23:00 KST)**: A=B=D bit 동일(C 는 새 collector 가드가
 거부 — 설계된 실패). 산출물 srv50 `outputs/collect/v5_gate/VERDICT_ABD.txt`. **3머신 전부 통과.**
 
+### 0.5.2 k-층 리팩터링 (2026-09-03, 사용자 지시 "개혁")
+
+- 좌표를 **3축 폴더층** `s<i>/k<r>/n<j>/<arm>` 로 개정(docs/04 §3.1.1). plan 스키마
+  `instructions`+`jitter`, legacy plan_id 불변(check_plan_schema.py 로 5종 검증).
+- 코드: `src/collect/plan.py`·`artifacts.py`·collector, `collect_grid.sh`(k 열·빈칸 탭 접힘 방지)·
+  `ship_to_archive.sh`·`v5_first_cell_gate.sh`, `build_grid_index.py`(3축·결손 대조)·
+  `verify_grid.py`, eval 측 `replay_cells.py`(`--jitters`)·`run_online_gated_eval.sh`(`EVAL_JITTERS`,
+  `--grid-instruction` 전달 버그 수정)·`collect_results.py`·`final_agg_condg.py`·
+  `make_fit_manifest.py`·`select_rescue_cases.py`. `make_v5_index.py` 삭제(인덱서가 3축 직접 출력).
+- 아카이브: `migrate_grid_k_layer.py` 로 1,250셀을 `e6b316053d1c/…/s<i>/k<r>/n<j>/base` 로 재배치
+  (rename, pkl 불변; meta.json 에 `layout_migrated_from`), 옛 `8daefeabf020/` 은 README 만.
+  인덱서 위반 0, 새 인덱스 1,250행이 구 인덱스와 sig/success/machine 전부 일치.
+- 남은 미결(fit 경로 소유자 판단): `fit_cond_guidance.py` 의 `--cells-tsv`/`--v4-jitter` 는 평탄 si 와
+  pkl 내부 scene_idx 를 전제 — 3축 표를 넣으면 선택 키 의미가 바뀐다. `make_triggers.py` 의
+  TRIGGER 1열은 평탄값 유지(러너 조회 키도 평탄 유지).
+
 ### 0.6 착수 순서
 
 1. `git pull` dev 최신 → v5 plan 생성 → DRY_RUN 으로 결손 1,250 확인.
