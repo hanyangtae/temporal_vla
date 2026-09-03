@@ -492,6 +492,9 @@ def main() -> int:
     ap.add_argument("--tier", choices=("segA", "tokB"), default="segA")
     ap.add_argument("--layers", default="12",
                     help="tokB 용 capture_layers 값 콤마 목록 (예: 12 또는 2,12)")
+    # ⚠ 실사고(08-20, v2 추출): slug 당 200+판 데이터에서 workers 4 로 전 slug 일괄
+    # 실행 시 부모 프로세스 OOM(BrokenPipeError 로 워커 연쇄 사망). 31GB 노드에서는
+    # slug 1개씩 순차 + workers 3 이 안전 상한이었다 (셸 루프 래퍼로 우회).
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--limit-eps", type=int, default=0,
                     help="smoke: instruction 당 N 판만 (0 = 전부)")
