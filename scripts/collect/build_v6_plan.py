@@ -71,7 +71,9 @@ _J_DRAWER_BACK = [0.0, 0.05, 0.10, 0.05, 0.10]
 _J_DRAWER = [{"reset_idx": j, "lat": 0.0, "back": _J_DRAWER_BACK[j]} for j in range(N_JITTER)]
 # oven·washer(side 키): reset 재추첨 없음(reset_idx=0) — 변화는 base 오프셋 뿐.
 # lat 은 **항상 fixture 중심 쪽**(left 키 → 오른쪽, right 키 → 왼쪽); 부호는 수집기가 side 로 정한다.
-_J_SIDE_OFFSETS = [(0.0, 0.0), (0.05, 0.0), (0.10, 0.0), (0.0, 0.10), (0.05, 0.10)]
+# 2026-09-03 전수 reset 검사(12 pull scene × 후보 12종): 안쪽 lat 만 주는 오프셋(.03/.05/.10, back 0)은
+# 열린 문과 새 접촉을 만들어 대부분 scene 에서 불가. 뒤로 물러난 뒤 안쪽 5cm 는 전 scene 통과.
+_J_SIDE_OFFSETS = [(0.0, 0.0), (0.0, 0.05), (0.0, 0.10), (0.05, 0.10), (0.05, 0.15)]
 _J_PULL_SIDE = [{"reset_idx": 0, "lat": lat, "back": back} for lat, back in _J_SIDE_OFFSETS]
 
 JITTER_TABLES: dict[str, list[dict[str, Any]]] = {

@@ -39,11 +39,11 @@
 |---|---|---|
 | ppcc 5종, coffee | j (0..4) | 없음 |
 | drawer-left/right | j (0..4) | back ∈ {0, 0.05, 0.10, 0.05, 0.10}[j], lat 0 |
-| oven-·washer-left/right | 0 | (lat, back) ∈ {(0,0), (0.05,0), (0.10,0), (0,0.10), (0.05,0.10)}[j]; **lat 은 항상 fixture 중심 쪽**(left 키 → 오른쪽으로, right 키 → 왼쪽으로) |
+| oven-·washer-left/right | 0 | (lat, back) ∈ {(0,0), (0,0.05), (0,0.10), (0.05,0.10), (0.05,0.15)}[j]; **lat 은 항상 fixture 중심 쪽**(left 키 → 오른쪽으로, right 키 → 왼쪽으로). 안쪽 lat 만(back 0)은 열린 문과 접촉해 불가(전수 reset 검사 실측) |
 
 - 적용: `reset(seed)` → ep_meta 획득 → `init_robot_base_pos += (−f·back) + (±l·lat)` (f = (cos yaw, sin yaw),
   l = (−sin yaw, cos yaw), 부호 = side 규칙) → ep_meta 주입 → plain reset (reset_idx+1)회 →
-  **충돌 검사**(`EnvUtils.detect_robot_collision`) 실패 시 RuntimeError. 오프셋값·최종 base 를
+  **충돌 검사**(RoboCasa 원 스폰의 접촉 상태 대비 **새 접촉 또는 1cm 이상 관입 증가**면 RuntimeError — 원 스폰 자체가 열린 문에 닿아 있는 scene 이 있어 '접촉 有' 기준은 못 쓴다). 오프셋값·최종 base 를
   meta.json 과 셀 ep_meta 에 기록.
 - 재현: eval/replay 는 plan 의 같은 (scene, j) 정의에서 오프셋을 **다시 계산**해 같은 절차를 밟는다
   (JSON ep_meta 사전 주입 금지 — v5 게이트 실측). 기록된 base 와 재계산 base 가 다르면 fail-loud.
