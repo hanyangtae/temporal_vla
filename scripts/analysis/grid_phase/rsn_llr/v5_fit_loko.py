@@ -52,6 +52,9 @@ def parse_args():
     ap.add_argument("--labels", default=None,
                     help="기본 ROOT/ae_v5_k8/labels_<slug>_k8.npz (있으면 대조, 없으면 생략)")
     ap.add_argument("--out", default=None, help="기본 ROOT")
+    ap.add_argument("--only-gt", action="store_true",
+                    help="setm_gt 만 산출 (AE 번들 불요 — 번들 지연 시 선행용; "
+                         "번들 도착 후 전체 재실행하면 gt 는 동일 산출로 덮임)")
     # 아래 3개는 합성 스모크 전용 완화 옵션 — 본 fit 은 기본값 그대로 쓸 것
     ap.add_argument("--min-rec-llr", type=int, default=MIN_REC_LLR)
     ap.add_argument("--gate-med", type=float, default=GATE_MED)
@@ -101,37 +104,42 @@ def main():
     CB = {v: k for k, v in meta["phase_codebook"].items()}
 
     # ── AE 번들 → encode + ck8 라벨 파생 ──
-    b = np.load(bundle_p, allow_pickle=False)
-    arch = json.loads(str(b["arch"]))
-    assert arch["input_dim"] == 1536 and arch["latent"] == 16, arch
-    muA = b["mu"].astype(np.float32)
-    sdA = float(b["scalar_std"])
-    centers = np.asarray(b[f"centers.{SLUG}"], np.float64)
-    import torch
-    Ws = [(torch.from_numpy(np.asarray(b[f"enc.{k}.weight"], np.float32)),
-           torch.from_numpy(np.asarray(b[f"enc.{k}.bias"], np.float32)))
-          for k in ("net.0", "net.2", "head")]
-    zs = []
-    with torch.no_grad():
-        for i in range(0, len(X), 8192):
-            t = torch.from_numpy((X[i:i + 8192] - muA) / sdA)
-            t = torch.nn.functional.gelu(t @ Ws[0][0].T + Ws[0][1])   # exact erf GELU
-            t = torch.nn.functional.gelu(t @ Ws[1][0].T + Ws[1][1])
-            zs.append((t @ Ws[2][0].T + Ws[2][1]).numpy())
-    Z = np.concatenate(zs).astype(np.float64)
-    ck = np.concatenate([np.argmin(((Z[i:i + 8192, None, :] - centers[None]) ** 2).sum(-1), 1)
-                         for i in range(0, len(Z), 8192)]).astype(np.int64)
-    if os.path.exists(labels_p):
-        lab = np.load(labels_p, allow_pickle=True)["cluster"]
-        if len(lab) != len(ck):
-            raise SystemExit(f"{SLUG}: labels 행수 {len(lab)} != shard {len(ck)}")
-        mism = int((np.asarray(lab).astype(np.int64) != ck).sum())
-        if mism:
-            raise SystemExit(f"{SLUG}: 파생 ck8 라벨 불일치 {mism}행 — 번들과 labels 가 다른 세계")
-        print(f"[labels] {SLUG}: 파생 라벨 == labels npz 전행 일치 ({len(ck)})")
-    else:
-        print(f"[labels] {SLUG}: labels npz 없음 → 번들 파생 라벨만 사용 ({labels_p})")
-    ae_sig = hashlib.sha256(open(bundle_p, "rb").read()).hexdigest()[:16]
+    Z = ck = b = None
+    ae_sig = "(only-gt: 번들 미사용)"
+    if args.only_gt:
+        print("[mode] --only-gt: setm_gt 만 산출 (ck8·LLR 생략)")
+    if not args.only_gt:
+        b = np.load(bundle_p, allow_pickle=False)
+        arch = json.loads(str(b["arch"]))
+        assert arch["input_dim"] == 1536 and arch["latent"] == 16, arch
+        muA = b["mu"].astype(np.float32)
+        sdA = float(b["scalar_std"])
+        centers = np.asarray(b[f"centers.{SLUG}"], np.float64)
+        import torch
+        Ws = [(torch.from_numpy(np.asarray(b[f"enc.{k}.weight"], np.float32)),
+               torch.from_numpy(np.asarray(b[f"enc.{k}.bias"], np.float32)))
+              for k in ("net.0", "net.2", "head")]
+        zs = []
+        with torch.no_grad():
+            for i in range(0, len(X), 8192):
+                t = torch.from_numpy((X[i:i + 8192] - muA) / sdA)
+                t = torch.nn.functional.gelu(t @ Ws[0][0].T + Ws[0][1])   # exact erf GELU
+                t = torch.nn.functional.gelu(t @ Ws[1][0].T + Ws[1][1])
+                zs.append((t @ Ws[2][0].T + Ws[2][1]).numpy())
+        Z = np.concatenate(zs).astype(np.float64)
+        ck = np.concatenate([np.argmin(((Z[i:i + 8192, None, :] - centers[None]) ** 2).sum(-1), 1)
+                             for i in range(0, len(Z), 8192)]).astype(np.int64)
+        if os.path.exists(labels_p):
+            lab = np.load(labels_p, allow_pickle=True)["cluster"]
+            if len(lab) != len(ck):
+                raise SystemExit(f"{SLUG}: labels 행수 {len(lab)} != shard {len(ck)}")
+            mism = int((np.asarray(lab).astype(np.int64) != ck).sum())
+            if mism:
+                raise SystemExit(f"{SLUG}: 파생 ck8 라벨 불일치 {mism}행 — 번들과 labels 가 다른 세계")
+            print(f"[labels] {SLUG}: 파생 라벨 == labels npz 전행 일치 ({len(ck)})")
+        else:
+            print(f"[labels] {SLUG}: labels npz 없음 → 번들 파생 라벨만 사용 ({labels_p})")
+        ae_sig = hashlib.sha256(open(bundle_p, "rb").read()).hexdigest()[:16]
 
     # ── scene 인덱스 ──
     m_sc = sc == S
@@ -160,8 +168,10 @@ def main():
                      "pool": "scene-local LOKO: 타 k 전판 + 대상 k 실패판 (대상 k 성공 제외)"}
 
         # ── A/B. setM (gt / ck8) ──
-        for tag, la, name_of in (("gt", pc, lambda c: CB[int(c)]),
-                                 ("ck8", ck, lambda c: f"c{int(c)}")):
+        tags = [("gt", pc, lambda c: CB[int(c)])]
+        if not args.only_gt:
+            tags.append(("ck8", ck, lambda c: f"c{int(c)}"))
+        for tag, la, name_of in tags:
             outroot = os.path.join(root, f"instr_setm_v5_{tag}", SLUG, f"s{S}", f"k{k_tgt}")
             n_ph = 0
             for code in sorted(set(la[allow].tolist())):
@@ -191,6 +201,8 @@ def main():
             print(f"[setm_{tag}] {SLUG} s{S} k{k_tgt}: {n_ph} phase → {outroot}")
 
         # ── C. LLR 번들 ──
+        if args.only_gt:
+            continue
         arts, summary = {}, []
         for c in range(centers.shape[0]):
             m_c = allow & (ck == c)
@@ -313,14 +325,15 @@ def main():
                   f" 진단(tgt) {dg:.2f}  {'REG' if p else '-'}")
 
     # 등록표 (중추 rsn_llr 분모 고정용 — 한 invocation = 한 (slug, scene) 전체라 멱등 rewrite)
-    reg_d = os.path.join(root, "rsn_llr_reg_v5", SLUG, f"s{S}")
-    os.makedirs(reg_d, exist_ok=True)
-    with open(os.path.join(reg_d, "registry.tsv"), "w") as f:
-        f.write("slug\tscene\tk\tn_registered\tentries\tn_ep_pool_succ\tn_ep_pool_fail"
-                "\tn_ep_tgt_fail\tn_ep_excluded_succ_tgt\n")
-        for row in registry:
-            f.write(f"{SLUG}\t{S}\t" + "\t".join(str(x) for x in row) + "\n")
-    print(f"V5_LOKO_DONE {SLUG} s{S}")
+    if not args.only_gt:
+        reg_d = os.path.join(root, "rsn_llr_reg_v5", SLUG, f"s{S}")
+        os.makedirs(reg_d, exist_ok=True)
+        with open(os.path.join(reg_d, "registry.tsv"), "w") as f:
+            f.write("slug\tscene\tk\tn_registered\tentries\tn_ep_pool_succ\tn_ep_pool_fail"
+                    "\tn_ep_tgt_fail\tn_ep_excluded_succ_tgt\n")
+            for row in registry:
+                f.write(f"{SLUG}\t{S}\t" + "\t".join(str(x) for x in row) + "\n")
+    print(f"V5_LOKO_DONE {SLUG} s{S}" + (" (only-gt)" if args.only_gt else ""))
 
 
 if __name__ == "__main__":
