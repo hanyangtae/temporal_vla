@@ -594,6 +594,14 @@ serve_preflight() {  # port arm  — 등록 지문 대조 (무음 identity·arm 
 }
 
 # ── 한 판 ─────────────────────────────────────────────────────────────────────
+grid_instr_for_slug() {  # slug(OpenDrawer_left) → plan instruction 키(OpenDrawer/left); 없으면 slug 그대로
+  "$PY_HOST" - "$PLAN_JSON_ABS" "$1" <<'EOPY'
+import json, sys
+p = json.load(open(sys.argv[1])); s = sys.argv[2]
+print(next((i for i in p["instructions"] if i.replace("/", "_") == s), s))
+EOPY
+}
+
 run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_host [base_scene] [jit] [noise]
   # base_scene = 3축 좌표의 s<i>(0-4). jit = 지터 k ("base"/빈 값이면 legacy 2축 = 미적용).
   # noise = n<j> (미지정 시 ep 에서 유도 — legacy 호출 호환).
@@ -614,7 +622,13 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
     CAP_GRID_ARGS=(--grid-root "$(to_cont "$out_host")/diag_grid" --plan-json "$(to_cont "$PLAN_JSON_ABS")"
                    --scene-idx "$base_scene" --noise-idx "$noise"
                    --arm-dir "$arm")
-    [ "${CAP_GRID:-1}" = 1 ] || CAP_GRID_ARGS+=(--diag-unplanned)
+    if [ "${CAP_GRID:-1}" = 1 ]; then
+      # plan 좌표 검증(resolve_grid)은 plan 의 instruction **키**(OpenDrawer/left)로 대조한다 —
+      # --canonical-instruction 은 문장이라 못 쓴다. slug → 키는 plan 에서 역산(2026-09-03 실측 오류).
+      CAP_GRID_ARGS+=(--grid-instruction "$(grid_instr_for_slug "$slug")")
+    else
+      CAP_GRID_ARGS+=(--diag-unplanned)
+    fi
   fi
   # 지터 셀: (base_es, ep_meta, k) 시퀀스 재현 — collector 가 주입+plain reset 을
   # (k+1)회 돌린다 (docs/04 §3.1.1). ep_meta 디렉토리는 지정됐을 때만 전달.
