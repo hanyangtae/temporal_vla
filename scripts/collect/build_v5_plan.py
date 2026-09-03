@@ -37,6 +37,15 @@ MACHINE_ASSIGNMENT = {
 assigned = [i for v in MACHINE_ASSIGNMENT.values() for i in v]
 assert sorted(assigned) == sorted(V2["instructions"]), (assigned, list(V2["instructions"]))
 
+# 2026-09-03 셀 교체: 아래 (instr, scene) 의 채택 k 에서 렌더러가 특정 시점에 정지(관측 이미지 고정 →
+# VL hidden 두 값 교대, 영상 정지)해 데이터가 무효였다. srv48 컨테이너 재시작 후 재수집에서도 같은
+# 시점에 재현(scene 결정적) → 사용자 결정: 그 k 를 버리고 스캔 채택분의 다음 k 로 교체.
+K_REPLACEMENTS = {
+    ("CoffeeSetupMug", 0): {1: 5},      # 4.7s 정지 (env step ~190)
+    ("OpenDrawer/right", 2): {3: 5},    # 1.8~2.2s 정지 (env step ~75)
+}
+K_REPLACEMENT_REASON = "render freeze (obs image frozen → VL hidden 2-value alternation); reproduced after container restart"
+
 instructions: dict[str, list[int]] = {}
 jitter: dict[str, list[list[int]]] = {}
 adopted: dict[str, dict] = {}
@@ -54,6 +63,12 @@ for instr, seeds in V2["instructions"].items():
         if len(ok) < N_K:
             sys.exit(f"{instr} s{s_i} es{es}: 채택 k {len(ok)} < {N_K} — 스캔 확장 필요")
         use = ok[:N_K]
+        repl = K_REPLACEMENTS.get((instr, s_i), {})
+        if repl:
+            pool = [k for k in ok if k not in use]
+            for bad_k, new_k in repl.items():
+                assert bad_k in use and new_k in pool, (instr, s_i, bad_k, new_k, ok)
+                use = [new_k if k == bad_k else k for k in use]
         adopted[f"{instr}|s{s_i}|es{es}"] = {"adopted_k": use, "rejected_k": bad,
                                              "scanned": len(rows)}
         ks_per_scene.append(use)
@@ -70,6 +85,9 @@ extra = {
                     "k<r> = jitter[instr][i] 의 채택 k 값 그대로(연속 아님), n<j> = noise. "
                     "base 상태 재사용 없음(전 셀 k). 평탄 si=base*100+k 인코딩은 폐지.",
     "scene_seed_source_plan_id": V2["plan_id"],
+    "k_replacements": [{"instruction": i, "scene_idx": sc, "from_k": bk, "to_k": nk, "reason": K_REPLACEMENT_REASON}
+                       for (i, sc), m in K_REPLACEMENTS.items() for bk, nk in m.items()],
+    "plan_id_history": ["8daefeabf020", "e6b316053d1c"],
     "supersedes_plan_id": SUPERSEDES_PLAN_ID,
     "kscan_source": "configs/collect/ledger_20260902_purge/kscan_v4 (N=12 스캔, 목표 instruction 일치 k 앞 5개)",
     "scenario": "handoff_20260902_grid_recollect_v5 §0.2 — 같은 작업장 소변화(배치 k) 에서 "

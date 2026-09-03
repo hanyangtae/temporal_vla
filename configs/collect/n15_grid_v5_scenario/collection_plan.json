@@ -139,6 +139,26 @@
     },
     "jitter_coord": "docs/04 §3.1.1 (2026-09-03 개정) — 좌표는 3축 폴더층 s<i>/k<r>/n<j>. s<i> = base scene(= instructions[instr][i] 의 env_seed), k<r> = jitter[instr][i] 의 채택 k 값 그대로(연속 아님), n<j> = noise. base 상태 재사용 없음(전 셀 k). 평탄 si=base*100+k 인코딩은 폐지.",
     "scene_seed_source_plan_id": "3134e339de4c",
+    "k_replacements": [
+      {
+        "instruction": "CoffeeSetupMug",
+        "scene_idx": 0,
+        "from_k": 1,
+        "to_k": 5,
+        "reason": "render freeze (obs image frozen → VL hidden 2-value alternation); reproduced after container restart"
+      },
+      {
+        "instruction": "OpenDrawer/right",
+        "scene_idx": 2,
+        "from_k": 3,
+        "to_k": 5,
+        "reason": "render freeze (obs image frozen → VL hidden 2-value alternation); reproduced after container restart"
+      }
+    ],
+    "plan_id_history": [
+      "8daefeabf020",
+      "e6b316053d1c"
+    ],
     "supersedes_plan_id": "8daefeabf020",
     "kscan_source": "configs/collect/ledger_20260902_purge/kscan_v4 (N=12 스캔, 목표 instruction 일치 k 앞 5개)",
     "scenario": "handoff_20260902_grid_recollect_v5 §0.2 — 같은 작업장 소변화(배치 k) 에서 activation 감지→steering; 전제 데이터 ①expert ②과거 같은 scene rollout ③현재 scene 실패 rollout"
@@ -311,7 +331,7 @@
         0,
         1,
         2,
-        3,
+        5,
         4
       ],
       [
@@ -332,7 +352,7 @@
     "CoffeeSetupMug": [
       [
         0,
-        1,
+        5,
         2,
         3,
         4
@@ -515,7 +535,7 @@
       ]
     ]
   },
-  "plan_id": "e6b316053d1c",
+  "plan_id": "e82e99cb666b",
   "n_cells": 1250,
   "estimated_bytes": 569219481600
 }
