@@ -60,6 +60,10 @@ scene 잔차화 · 분할표 집계는 `paper_supplements.py` 를 그대로 impo
 KMeans centers(`centers.<slug>`) + arch/provenance json. 새 rollout 을 학습 때와 같은
 좌표계로 배정하는 데 필요한 전부다: standardize → encoder → 최근접 center.
 `--dump-labels` 와 같이 쓰면 라벨과 번들이 **같은 KMeans 결과** 인지 재배정으로 검증한다.
+⚠ **--export-bundle 없이 돌리면 AE encoder 가 어디에도 남지 않는다** — early-stopping
+best state 는 메모리 복원 후 폐기되고 dump-labels 도 라벨·latent·centers 만 저장한다.
+실사고: v1 930판 run(08-19, outputs/analysis/grid_phase/ae_raw)이 번들 없이 돌아
+온라인 이식 때 전체 재학습이 필요했다. 온라인 사용 목적이면 --export-bundle 필수.
 
 실행 환경: 승준 노드 `~/anaconda3/bin/python` (numpy + torch **CPU**). GPU 를 쓰지 않는다.
 scipy / sklearn 없음 — numpy + torch 만 쓴다.

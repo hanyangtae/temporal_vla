@@ -14,6 +14,8 @@
   S2. cluster 구조 전이 — A 에서 fit 한 PCA-64w+KMeans(k) 를 B 에 centroid 할당
       → B 에서의 margin(vs clock) 을 "B 자체 fit 대비 유지율"로. + 원공간
       centroid greedy cosine 매칭. (MI 는 과분할에 둔감하므로 margin 유지율로.)
+      ⚠ 그룹 source(예: PPCC4 합동)의 S1 은 이 도구가 못 낸다 — 46 라운드 분석은
+      멤버 평균 근사를 썼다(합동 fit 아님). 그룹 fit 필요 시 별도 구현할 것.
 
 길이·scene 통제 (docs/43 프로토콜 상속):
   - phase-gt dwell cap: TRAIN 성공 dwell(>0) ceil(μ+σ), ddof=0
@@ -310,6 +312,8 @@ def s2_transfer(A, B, mask_a, mask_b, K, seed):
     return {
         "s2_margin_transfer": round(m_trans, 4),
         "s2_margin_self": round(m_self, 4),
+        # ⚠ margin_self 가 0 근방이면 비율이 폭주한다 (v1 실측 −3~+9 요동) —
+        # 판정에는 keep 비율이 아니라 margin_transfer/self 원값을 병기해 쓸 것.
         "s2_margin_keep": round(m_trans / m_self, 3) if abs(m_self) > 1e-6 else None,
         "s2_centroid_cos_med": round(float(np.median(cos_matched)), 3)
                                if cos_matched else None,

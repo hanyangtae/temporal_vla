@@ -226,7 +226,12 @@ def _kmpp_init_np(X, K, rng):
 
 
 def kmeans_numpy(X, K, n_init=5, max_iter=300, seed=0):
-    """numpy fallback. 빈 클러스터는 이전 중심 유지 (동료 `_lloyd` 과 동일 처리)."""
+    """numpy fallback. 빈 클러스터는 이전 중심 유지 (동료 `_lloyd` 과 동일 처리).
+
+    ⚠ 반환은 **centroid 배열 하나뿐** (라벨 아님) — 라벨은 `_assign(X, C)` 로 얻고,
+    `_assign` 은 `(labels, inertia)` **튜플**을 돌려준다. 둘 다 라벨 단일 반환으로
+    착각하기 쉬움 (실사고: cluster_share_transfer.py 초판이 두 곳 모두 오호출,
+    3a457aa 에서 수정). 외부에서 쓸 때 이 시그니처를 그대로 따를 것."""
     X = np.ascontiguousarray(X, dtype=np.float32)
     best_C, best_I = None, None
     for r in range(n_init):
