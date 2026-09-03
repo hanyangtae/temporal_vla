@@ -87,7 +87,9 @@ runner 주석 갱신. **v5 replay/eval 은 EP_META_DIR 없이** 돌린다(ep_met
 게이트 산출물: srv48 `outputs/collect/v5_gate/{VERDICT_ABD.txt,A.log,C.log}`.
 **kanu 게이트(DishwasherRack/out s0 k0 n0, GPU2)도 동일 패턴**: A=B=D bit 동일, C 는 첫 행부터
 불일치(maxdiff 1.29; k=0 에서도 재현 → 지터 회수와 무관하게 JSON 사전 주입 자체가 상태를 바꾼다).
-산출물 kanu `outputs/collect/v5_gate_kanu/VERDICT_kanu.txt`. srv50 은 첫 발사 전 1회 실행.
+산출물 kanu `outputs/collect/v5_gate_kanu/VERDICT_kanu.txt`.
+**srv50 게이트(PPCC/bread s0 k0 n0, GPU2, 23:00 KST)**: A=B=D bit 동일(C 는 새 collector 가드가
+거부 — 설계된 실패). 산출물 srv50 `outputs/collect/v5_gate/VERDICT_ABD.txt`. **3머신 전부 통과.**
 
 ### 0.6 착수 순서
 
@@ -102,7 +104,19 @@ runner 주석 갱신. **v5 replay/eval 은 EP_META_DIR 없이** 돌린다(ep_met
    **kanu GPU 2·5·6 발사됨**(10:57 KST, dish/oven rack·apple 375, 게이트 셀 1 포함, lease 3장,
    `outputs/collect/logs/{grid_v5_kanu,shipper_v5}.log`, STAGING_WAIT 20GB). kanu 는 git worktree
    `.claude/worktrees/grid-phase-sep` 의 plan 경로로 발사(메인 트리에 PR #99 미머지 시점).
-   srv50(4장 전부 타인·finetune 점유)은 **발사 불가 대기** — 빈 GPU 감시 중.
+   **srv50 GPU2 발사됨**(23:22 KST, junhyeong finetune 종료로 GPU0/2 비움; PPCC bread/candle/jug/
+   marshmallow 500, 게이트 셀 1 포함, STAGING_WAIT 40GB, `outputs/collect/logs/{grid_v5_worker2,shipper_v5}.log`).
+   **3머신 전부 가동 중.** kanu 는 이관 병목(kanu→승준 ~5MB/s)으로 backpressure 대기가 생겨
+   14:10 KST(kanu 시계) 에 STAGING_WAIT 45GB·shipper PARALLEL 16 으로 재기동(진행 판 손실 0).
+   **kanu 수집 완료 375/375**(15:37 kanu 시계; serve 정리·lease 2/5/6 반납, 잔여 이관 151셀은
+   shipper 만 계속 — kanu→승준 링크 ~3MB/s, 승준 sshd MaxStartups 10 이라 3머신 합산 스트림
+   ≤ ~22 유지: kanu PARALLEL 6). 아카이브 완료 판정은 승준 `meta.json` 수 == 1,250.
+   **srv48 수집 완료 375/375**(09-03 04:5x KST; serve 정리·lease 반납, 잔여 이관 20셀).
+   srv50 은 staging 상한을 150GB 로 올려 재기동(02:24 KST, 워커 전원 대기 시점) — GPU 유휴 방지.
+   **srv50 수집 완료 500/500**(09-03 06:0x KST; lease 반납). **→ 1,250/1,250 수집 완료, 3머신 GPU 전부 반납.**
+   ep_meta 50 파일은 승준 `8daefeabf020/ep_meta/<task>/` 에 동봉 완료. 잔여 = 이관(srv50 234셀 등)·index_v5.
+   운영 메모: 총 완료 시각은 이관 속도가 정한다 — GPU util 0 은 정지가 아니라 이관 대기일 수 있다
+   (`worker_w*.log` 마지막 줄 "이관 대기" 확인).
    런처 = 각 머신 `outputs/collect/logs/launch_v5_{srv,kanu}.sh`.
    lease claim → 3머신 발사(kanu GPU 3장×2 / srv 1장×6, `SERVE_MODE=host` 3종, backpressure,
    PARALLEL 8 shipper) → 완료 후 index_v5 생성·ep_meta 동봉 → 3머신 staging 정리·GPU 반납.
@@ -258,7 +272,36 @@ n16 분기를 추가하거나 (b) n16 전용 러너를 두는 방식 중 택일�
 
 ---
 
-## 5. 데이터 상태 (2026-09-02 폐기 후)
+## 5. 데이터 상태 (2026-09-03 v5 재수집 완료)
+
+- **아카이브**: 승준 HDD `temporal_vla_store/groot/n15/grid/8daefeabf020/{kanu,worker1,worker2}/…`
+  **1,250 셀 = meta 1,250 · pkl 1,250, 450GB**, `8daefeabf020/ep_meta/<task>/` 50 파일 동봉.
+  인덱서 판정 위반 0(경로/meta 불일치 0·machine 결측 0·좌표중복 0·sig 중복 0), record_shape 전부 [7,4,49,1536].
+- **인덱스 정본**: `configs/collect/n15_grid_v5_scenario/index_rollouts_v5.tsv` (1,250행, 3축
+  `scene_idx`·`jitter_reset_idx`·`noise_idx` + `cell_si`; 승준 `n15/index_v5/` 에 원본 rollouts.tsv).
+  로컬 사본 `outputs/steer/online_pipe/manifests/index_rollouts_v5.tsv`.
+- **SR (702/1250 = 0.56)** — instruction × scene(s0..s4):
+
+| instruction | 전체 | s0 | s1 | s2 | s3 | s4 | 홈 |
+|---|---|---|---|---|---|---|---|
+| CoffeeSetupMug | 0.04 | .00 | .00 | .20 | .00 | .00 | worker1(srv48) |
+| DishwasherRack/out | 0.34 | .00 | .00 | .04 | .92 | .72 | kanu |
+| OpenDrawer/left | 0.44 | .24 | .04 | .92 | .52 | .48 | worker1 |
+| OpenDrawer/right | 0.74 | 1.0 | .96 | .84 | .00 | .92 | worker1 |
+| OvenRack/out | 0.78 | 1.0 | .92 | .96 | .96 | .04 | kanu |
+| PPCC/apple | **1.00** | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | kanu |
+| PPCC/bread | 0.73 | .48 | .52 | .88 | .76 | 1.0 | worker2(srv50) |
+| PPCC/candle | 0.68 | .88 | .72 | 1.0 | .48 | .32 | worker2 |
+| PPCC/jug | 0.13 | .04 | .00 | .04 | .20 | .36 | worker2 |
+| PPCC/marshmallow | 0.74 | .92 | .80 | .80 | .44 | .76 | worker2 |
+
+  주의: **PPCC/apple 은 실패 0 판**(구제 대상 없음), scene 단위로 SR 0 또는 1 인 셀 다수
+  (drawer_right s3=0, oven s4=.04, dish s0/s1=0 등) — 시나리오 ③(현재 scene 실패 rollout) 은
+  scene 별로 실패·성공이 공존하는 (instr, scene) 을 골라야 한다(양쪽 있는 조합: 위 표 참조).
+- 3머신 staging 비움(로그·shipped_cells 만 잔존), GPU lease 0, 고아 프로세스 0.
+- 승준 repo 는 `exp/grid-v5-recollect` 체크아웃 상태(PR 머지 후 dev 와 동일).
+
+### 5.0 (구) 데이터 상태 (2026-09-02 폐기 직후)
 
 - 아카이브 grid 는 **껍데기만** 남아 있다: 셀별 `meta.json` 3,282개 + `46ea62d53e09/ep_meta/`
   50개. pkl·mp4·csv 는 전부 삭제, `analysis/` 전부 삭제. 원장 `configs/collect/ledger_20260902_purge/`.
