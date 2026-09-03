@@ -14,7 +14,8 @@
   Tier B  `<out>/tokB/<instr_slug>__L<layers>.npz`
       X   fp16 [n_rec, n_layers, 49, 1536]  — K 축 mean pool, 토큰 49 보존
 
-두 tier 모두 record 별 열(`ep_id/scene/noise/jitter/rec_idx/succ/phase_code/ep_len`)과
+두 tier 모두 record 별 열(`ep_id/scene/noise/jitter/rec_idx/succ/phase_code/ep_len`
++ 지터 성분 `jitter_reset_idx/base_lat/base_back`)과
 `vl`, `meta_json` 을 함께 담는다. `jitter` 는 지터 축(k = reset_idx) 좌표로 —
 3축 좌표 `s<i>/k<r>/n<j>` 의 셋째 축, docs/04 §3.1.1 — **항상 존재하는 열**이다.
 인덱스에 `jitter_reset_idx` 열이 없는 legacy(2축) 추출에서는 전부 `-1` 로 채운다
@@ -89,10 +90,12 @@ class Episode:
     """index tsv 한 행 = base 셀 하나 (좌표 + 신원). pkl 은 아직 열지 않는다."""
 
     __slots__ = ("plan_id", "machine", "instruction", "scene", "noise",
-                 "jitter", "success", "rel_path", "sig")
+                 "jitter", "success", "rel_path", "sig",
+                 "reset_idx", "base_lat", "base_back")
 
     def __init__(self, plan_id, machine, instruction, scene, noise,
-                 success, rel_path, sig, jitter=JITTER_NONE):
+                 success, rel_path, sig, jitter=JITTER_NONE,
+                 reset_idx=JITTER_NONE, base_lat=0.0, base_back=0.0):
         self.plan_id = plan_id
         self.machine = machine
         self.instruction = instruction
@@ -103,6 +106,14 @@ class Episode:
         self.success = success
         self.rel_path = rel_path
         self.sig = sig
+        # 지터 좌표 j 의 **성분** (v6). j 는 단일 물리량이 아니라 "같은 scene 의 세계 변형
+        # index" 라, 계열마다 무엇이 변하는지가 다르다 (plan `extra.jitter_kinds`/
+        # `jitter_tables` 가 정본): PPCC·coffee = reset 재추첨만(base 0), oven·washer =
+        # base 오프셋만(reset 0), drawer = 둘 다(교락 — 요인 분해 불가).
+        # 층화·해석에 필요하므로 좌표와 함께 실어 둔다. 나중에 붙이려면 전량 재추출이다.
+        self.reset_idx = reset_idx
+        self.base_lat = base_lat
+        self.base_back = base_back
 
     def key(self):
         """정렬·중복 판정의 정본 키.
@@ -195,6 +206,17 @@ def _int_or_none(s: str):
         return None
 
 
+def _float_or(s: str, default: float) -> float:
+    """base 오프셋 열(v6) → float. 열이 없거나 빈 칸이면 기본값(오프셋 0)."""
+    s = (s or "").strip()
+    if s == "":
+        return default
+    try:
+        return float(s)
+    except ValueError:
+        return default
+
+
 def _jitter_of(raw: str) -> int:
     """index 의 `jitter_reset_idx` 문자열 → 정수 좌표.
 
@@ -280,9 +302,14 @@ def read_index(index_tsv: Path,
             k_seg = "" if jitter in (JITTER_NONE, JITTER_BASE) else f"{layer}{jitter}/"
             rel = (f"{plan_id}/{machine}/{instruction}/s{scene}/{k_seg}"
                    f"n{noise}/{BASE_ARM}")
-        eps.append(Episode(plan_id, machine, instruction, scene, noise,
-                           _int_or_none(get(parts, "success")), rel,
-                           get(parts, "sig").strip(), jitter))
+        eps.append(Episode(
+            plan_id, machine, instruction, scene, noise,
+            _int_or_none(get(parts, "success")), rel,
+            get(parts, "sig").strip(), jitter,
+            reset_idx=(_jitter_of(get(parts, "jitter_reset_idx"))
+                       if "jitter_reset_idx" in col else JITTER_NONE),
+            base_lat=_float_or(get(parts, "base_lat"), 0.0),
+            base_back=_float_or(get(parts, "base_back"), 0.0)))
     if not eps:
         raise ValueError(f"{index_tsv}: base+pkl 행이 하나도 없다")
     _ = grid_root  # 경로 검증은 워커에서 (인덱싱 시점엔 파일 접근하지 않는다)
@@ -392,6 +419,9 @@ def process_episode(job: dict) -> dict:
         "scene": job["scene"],
         "noise": job["noise"],
         "jitter": job.get("jitter", JITTER_NONE),
+        "reset_idx": job.get("reset_idx", JITTER_NONE),
+        "base_lat": job.get("base_lat", 0.0),
+        "base_back": job.get("base_back", 0.0),
         "succ": int(d["episode_success"]),
         "sig": job["sig"] or str(d.get("sig") or ""),
         "plan_id": job["plan_id"],
@@ -438,6 +468,9 @@ def build_shard(results: list[dict], instruction: str, tier: str,
     Xs, vls, has_vls = [], [], []
     ep_id, scene, noise, rec_idx, succ, phase_code, ep_len = [], [], [], [], [], [], []
     jitter: list[np.ndarray] = []
+    reset_idx: list[np.ndarray] = []
+    base_lat: list[np.ndarray] = []
+    base_back: list[np.ndarray] = []
     sigs = []
     for e, r in enumerate(results):
         n = r["n_rec"]
@@ -448,6 +481,9 @@ def build_shard(results: list[dict], instruction: str, tier: str,
         scene.append(np.full(n, r["scene"], dtype=np.int16))
         noise.append(np.full(n, r["noise"], dtype=np.int16))
         jitter.append(np.full(n, r.get("jitter", JITTER_NONE), dtype=np.int16))
+        reset_idx.append(np.full(n, r.get("reset_idx", JITTER_NONE), dtype=np.int16))
+        base_lat.append(np.full(n, r.get("base_lat", 0.0), dtype=np.float32))
+        base_back.append(np.full(n, r.get("base_back", 0.0), dtype=np.float32))
         rec_idx.append(np.arange(n, dtype=np.int16))
         succ.append(np.full(n, r["succ"], dtype=np.int8))
         phase_code.append(np.array([codebook[p] for p in r["phases"]], dtype=np.int16))
@@ -486,6 +522,10 @@ def build_shard(results: list[dict], instruction: str, tier: str,
         "scene": np.concatenate(scene),
         "noise": np.concatenate(noise),
         "jitter": np.concatenate(jitter),
+        # 지터 좌표의 성분 (Episode 주석 참조) — 계열별 층화·교락 진단용.
+        "jitter_reset_idx": np.concatenate(reset_idx),
+        "base_lat": np.concatenate(base_lat),
+        "base_back": np.concatenate(base_back),
         "rec_idx": np.concatenate(rec_idx),
         "succ": np.concatenate(succ),
         "phase_code": np.concatenate(phase_code),
@@ -613,6 +653,8 @@ def main() -> int:
             "grid_root": str(args.grid_root), "rel_path": e.rel_path,
             "index_success": e.success, "scene": e.scene, "noise": e.noise,
             "jitter": e.jitter,
+            "reset_idx": e.reset_idx,
+            "base_lat": e.base_lat, "base_back": e.base_back,
             "sig": e.sig, "plan_id": e.plan_id, "machine": e.machine,
             "tier": args.tier, "layers_sel": layers_sel,
         } for e in ep_list]
