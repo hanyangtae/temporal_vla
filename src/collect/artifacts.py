@@ -82,8 +82,9 @@ def write_safe_triplet(
 
     ``grid_dir`` 를 주면 **docs/04 §3 좌표 레이아웃**으로 쓴다 —
     ``<grid_dir>/{rollout.pkl, traj.csv, video.mp4, meta.json}``. ``grid_dir`` 는
-    ``<store>/grid/<plan_id>/<machine>/<instruction>/s<i>/n<j>/<arm>`` 이며 경로 조립은
-    ``src/collect/plan.py`` (``GridCell.rel_path`` · ``arm_dirname``)가 단일 출처다.
+    ``<store>/grid/<plan_id>/<machine>/<instruction>/s<i>/k<r>/n<j>/<arm>`` (지터 축이 없는
+    legacy plan 은 ``k<r>`` 층 없음) 이며 경로 조립은 ``src/collect/plan.py``
+    (``GridCell.rel_path`` · ``arm_dirname``)가 단일 출처다.
 
     **``grid_dir`` 은 필수다.** 없으면 RuntimeError — 규약 §8 이 좌표 없는 수집을 금지한다
     (좌표가 없으면 계획 대비 결손을 알 수 없다). ``output_dir``·``stem`` 은 구 호출부 호환과
@@ -235,8 +236,10 @@ def write_safe_triplet(
             "record_shape": (list(np.asarray(policy.records[0]["hidden_state"]).shape)
                              if include_hidden_states and policy.records else None),
         }
+        # 좌표 3축(docs/04 §3.1.1): scene_idx = base scene, jitter_reset_idx = k
+        # (legacy 2축 수집에는 없어 meta 에서도 빠진다), noise_idx.
         for key in ("machine", "ckpt", "plan_id", "grid_instruction", "scene_idx",
-                    "noise_idx", "armsig", "serve_gpu", "serve_boot_id"):
+                    "jitter_reset_idx", "noise_idx", "armsig", "serve_gpu", "serve_boot_id"):
             if extra_metadata and key in extra_metadata:
                 meta[key] = extra_metadata[key]
         meta_path.write_text(json.dumps(json_safe(meta), indent=2, ensure_ascii=False))

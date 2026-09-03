@@ -43,8 +43,10 @@ VLA 는 작업장마다 finetune 이 필요한데, 작업장에 **약간의 변�
   일치 k 만). 스캔 원본 `ledger_20260902_purge/kscan_v4/*.tsv` (N=12) 로 **50/50 scene 전부
   채택 k ≥ 5 확인됨** — 재스캔 불필요.
 - plan = `scripts/collect/build_v5_plan.py` → `configs/collect/n15_grid_v5_scenario/`
-  (**plan_id `8daefeabf020`**, adopted_cells 1,250, 좌표 = 평탄 `s{scene*100+k}/n{noise}`,
-  `extra.machine_assignment` 에 머신 배정 내장). 새 plan 은 **전용 staging**
+  (**plan_id `e6b316053d1c`** — 3축 스키마 `instructions`(base scene seed 5개)+`jitter[instr][scene]`
+  (채택 k 5개); 수집 당시 계약 plan 은 `8daefeabf020`(평탄 si 스키마)이었고 09-03 k-층 개정으로
+  아카이브를 새 plan_id 아래로 재배치했다 — `extra.supersedes_plan_id`). 좌표 =
+  `s<scene>/k<k>/n<noise>`, `extra.machine_assignment` 에 머신 배정 내장. 새 plan 은 **전용 staging**
   (`outputs/collect/grid_staging_v5`) 필수(§4-4 함정).
 - 모델·캡처: **N1.5** (`lerobot_groot_n15__robocasa365_ckpt120000`), capture_layers
   0,2,4,8,10,12,15 · all_token_full · denoise_k 4 · n_action_steps 5 · max 720 — v4 와 동일.
@@ -65,10 +67,10 @@ VLA 는 작업장마다 finetune 이 필요한데, 작업장에 **약간의 변�
 
 ### 0.5 산출 계약
 
-- 아카이브: 승준 HDD `temporal_vla_store/groot/n15/grid/<plan_id>/<machine>/...` +
-  `<plan_id>/ep_meta/<task>/<env>--seed<es>.json` 동봉.
-- 인덱스 정본: `index_rollouts_v5.tsv` — 명시 3축(scene_idx 0–4 · `jitter_reset_idx` k ·
-  noise_idx) + `cell_si`(평탄) + env_seed(base) + success. base 행 없음(전부 k).
+- 아카이브: 승준 HDD `temporal_vla_store/groot/n15/grid/<plan_id>/<machine>/<instr>/s<i>/k<r>/n<j>/base/`
+  + `<plan_id>/ep_meta/<task>/<env>--seed<es>.json` 동봉.
+- 인덱스 정본: `index_rollouts_v5.tsv` — 3축 열(scene_idx 0–4 · `jitter_reset_idx` k ·
+  noise_idx) + env_seed(base) + success. base 행 없음(전부 k). 평탄 `cell_si` 열은 폐지.
 - 완료 판정 = 아카이브 `meta.json` 수 == 1,250 (실패 셀은 재시도 2회 후 feasibility 로 기록).
 
 ### 0.5.1 첫 셀 게이트 결과 (2026-09-02, srv48 GPU2, OpenDrawer/left s1(=s0,k1) n0)
@@ -137,9 +139,9 @@ runner 주석 갱신. **v5 replay/eval 은 EP_META_DIR 없이** 돌린다(ep_met
 |---|---|---|
 | 좌표 = 식별자 | 04 §3.1 | `<plan_id>/<machine>/<instruction>/s<i>/n<j>/<arm>/` — 수집 **전에** 정해진다. `sig`(내용 지문)는 식별이 아니라 무결성 검증 열 |
 | 좌표 없는 수집 금지 | 04 §8 | collector 가 `grid_dir` 없으면 **RuntimeError**. `--grid-root/--plan-json/--scene-idx/--noise-idx/--grid-instruction` 5종 필수 |
-| 지터 축 k | 04 §3.1.1 | ep_meta 고정 + 연속 `reset()` = 물건·target 고정, 배치·로봇관절만 재추첨. pkl 좌표는 **평탄 `si = scene*100 + k`**, 인덱스 정본은 명시 3축 |
+| 지터 축 k | 04 §3.1.1 | ep_meta 고정 + 연속 `reset()` = 물건·target 고정, 배치·로봇관절만 재추첨. **좌표는 3축 폴더층 `s<i>/k<r>/n<j>`**(09-03 개정; 구 평탄 si 폐지), 인덱스도 3열 |
 | 캡처 밀도 5열 | 04 §4·§6 | `capture_token_mode`·`feature_kind`·`feature_axes`·`record_shape`·`capture_layers` 를 meta.json 에 기록. **판정은 ndim 이 아니라 토큰축 크기로** |
-| 계획 = 수집 대상의 전부 | 04 §5.1 | `plan.extra["adopted_cells"]` 밖 셀은 존재하지 않는 셀. 결손은 `plan.missing()` 으로만 판단 |
+| 계획 = 수집 대상의 전부 | 04 §5.1 | 3축 plan 은 `jitter[instr][scene]` 의 k 조합이 수집 대상 전부(`adopted_cells` 는 legacy). 결손은 `plan.missing()` 으로만 판단 |
 | 수집/평가 분리 | 04 §3.3 | 수집 rollout(pkl 有)과 평가 rollout(pkl 無)은 저장 위치를 나눈다 |
 | 이관 | 04 §7.5 | 승준 노드 HDD 로만(NVMe 금지), 종류 골라 include 금지, 대조 통과분만 로컬 삭제 |
 
@@ -260,7 +262,7 @@ n16 분기를 추가하거나 (b) n16 전용 러너를 두는 방식 중 택일�
    요구)가 잡혀 `AssertionError`. n16 collector 는 이 env 로 robocasa 소스를 고른다.
 3. **srv 런처에 `SERVE_MODE=host`·`SERVE_PY`·`SERVE_PYTHONPATH` 누락** → srv48/50 엔
    lerobot 컨테이너가 없어 `No such container: lerobot` → serve TIMEOUT → 전멸.
-4. **신규 plan 은 전용 staging** 을 쓴다. 평탄 si 가 기존 plan 셀 키와 문자열 충돌해
+4. **신규 plan 은 전용 staging** 을 쓴다. DONE_LIST 가 plan 을 구분하지 않아 다른 plan 의 같은 셀 키와 충돌하면
    DONE_LIST 가 오판한다(v3 에서 20셀 스킵 발생).
 5. **원격 `pkill -f` 자기-매칭** — ssh 원격 명령·harness 명령 문자열이 패턴에 걸려 자기가
    죽는다. 정지·재발사는 **스크립트 파일 + setsid** 로.

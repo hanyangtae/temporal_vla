@@ -39,6 +39,7 @@ from src.collect.plan import BASE_ARM, CollectionPlan  # noqa: E402
 
 # 좌표 꼬리: .../<instruction...>/s<i>/n<j>/<arm>/meta.json
 _COORD_RE = re.compile(r"^s(\d+)$"), re.compile(r"^n(\d+)$")
+_K_RE = re.compile(r"^k(\d+)$")   # 지터 축 k 층 (docs/04 §3.1.1, 2026-09-03) — 없으면 legacy 2축
 
 # base(수집, pkl 有) / arm-eval(pkl 無) 필수 파일 — docs/04 §3.1·§3.3
 BASE_FILES = ("rollout.pkl", "traj.csv", "video.mp4", "meta.json")
@@ -54,10 +55,11 @@ def sha256_file(path: Path) -> str:
 
 
 def parse_coords(meta_path: Path, plan_id: str):
-    """meta.json 경로 → (machine, instruction, scene_idx, noise_idx, arm). 실패 시 None.
+    """meta.json 경로 → (machine, instruction, scene_idx, jitter, noise_idx, arm). 실패 시 None.
 
-    경로 형태: <...>/<plan_id>/<machine>/<instruction...>/s<i>/n<j>/<arm>/meta.json
+    경로 형태: <...>/<plan_id>/<machine>/<instruction...>/s<i>[/k<r>]/n<j>/<arm>/meta.json
     instruction 은 '/' 를 포함할 수 있어 plan_id·machine 뒤부터 s<i> 앞까지 전부다.
+    k 층이 없으면 jitter=None(legacy 2축).
     """
     parts = meta_path.parts
     try:
@@ -68,16 +70,20 @@ def parse_coords(meta_path: Path, plan_id: str):
     if len(tail) < 4:
         return None
     machine, arm = tail[0], tail[-1]
-    m_s, m_n = _COORD_RE[0].match(tail[-3]), _COORD_RE[1].match(tail[-2])
+    m_n = _COORD_RE[1].match(tail[-2])
+    m_k = _K_RE.match(tail[-3]) if len(tail) >= 5 else None
+    s_pos = -4 if m_k else -3
+    m_s = _COORD_RE[0].match(tail[s_pos]) if len(tail) >= -s_pos + 1 else None
     if not (m_s and m_n):
         return None
-    instruction = "/".join(tail[1:-3])
-    return machine, instruction, int(m_s.group(1)), int(m_n.group(1)), arm
+    instruction = "/".join(tail[1:s_pos])
+    jitter = int(m_k.group(1)) if m_k else None
+    return machine, instruction, int(m_s.group(1)), jitter, int(m_n.group(1)), arm
 
 
 def check_cell_dir(dirpath: Path, meta: dict, coords, plan: CollectionPlan, cell,
                    errors: list[str]) -> None:
-    machine, instruction, s_idx, n_idx, arm = coords
+    machine, instruction, s_idx, jitter, n_idx, arm = coords
     loc = str(dirpath)
 
     # ── 파일 완결성 ──
@@ -89,7 +95,8 @@ def check_cell_dir(dirpath: Path, meta: dict, coords, plan: CollectionPlan, cell
 
     # ── 분류 정합: 경로 좌표 == meta 기록 ──
     for key, want in (("plan_id", plan.plan_id), ("grid_instruction", instruction),
-                      ("scene_idx", s_idx), ("noise_idx", n_idx)):
+                      ("scene_idx", s_idx), ("noise_idx", n_idx),
+                      ("jitter_reset_idx", jitter)):
         got = meta.get(key)
         if got is not None and got != want:
             errors.append(f"{loc}: meta.{key}={got!r} != 경로 {want!r}")
@@ -242,7 +249,8 @@ def main() -> int:
 
     plan = CollectionPlan.load(args.plan_json)
     cell_by_key = {c.key: c for c in plan.cells()}
-    cell_by_coord = {(c.instruction, c.scene_idx, c.noise_idx): c for c in plan.cells()}
+    cell_by_coord = {(c.instruction, c.scene_idx, c.jitter_reset_idx, c.noise_idx): c
+                     for c in plan.cells()}
 
     errors: list[str] = []
     base_machines: dict[str, set[str]] = defaultdict(set)   # cell.key -> machines (중복 검출)
@@ -256,15 +264,16 @@ def main() -> int:
         if coords is None:
             errors.append(f"{mp}: plan_id={plan.plan_id} 좌표 경로가 아님")
             continue
-        machine, instruction, s_idx, n_idx, arm = coords
+        machine, instruction, s_idx, jitter, n_idx, arm = coords
         try:
             meta = json.loads(mp.read_text())
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{mp}: meta.json 파싱 실패 — {exc}")
             continue
-        cell = cell_by_coord.get((instruction, s_idx, n_idx))
+        cell = cell_by_coord.get((instruction, s_idx, jitter, n_idx))
         check_cell_dir(mp.parent, meta, coords, plan, cell, errors)
-        key = f"{instruction}|s{s_idx}|n{n_idx}"
+        key = (f"{instruction}|s{s_idx}|k{jitter}|n{n_idx}" if jitter is not None
+               else f"{instruction}|s{s_idx}|n{n_idx}")
         if arm == BASE_ARM:
             base_machines[key].add(machine)
             base_dirs.append(mp.parent)

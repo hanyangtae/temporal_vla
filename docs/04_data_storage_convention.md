@@ -381,7 +381,7 @@ views/by-cell/<model>/<task>/<cell>/env<seed>/ep<N>  ->  ../../../activations/<s
 
 복합키 **(plan_id, machine, grid_instruction, scene_idx, noise_idx, armsig)** = §3 좌표 + arm.
 `armsig="base"` 가 baseline 행이다. `sig` 는 키가 아니라 **무결성 검증 열**이다(§3.1).
-지터 plan(§3.1.1)은 여기에 `jitter_reset_idx` 열이 붙고 scene_idx 는 평탄 si 다 —
+지터 plan(§3.1.1)은 `jitter_reset_idx` 열이 정수로 채워지고(legacy 는 빈 값) scene_idx 는 base scene 이다 —
 3축 분리는 `index_rollouts_v3.tsv` 후처리 정본에서 한다.
 
 > 구 정의는 복합키 (sig, source_run) 이었다. 2026-08-05 좌표 레이아웃 개정으로 대체.
@@ -571,8 +571,8 @@ claim`**, 종료 시 `release`. 상한 요지: 빈 GPU만·kanu 최대 3장·kan
 **러너 규약** (`scripts/safe/groot_n15/robocasa/collect/collect_grid.sh`)
 
 - 결손 판정 = DONE_LIST(이관 완료 키) + 로컬 `meta.json`. 로그가 아니라 이 둘이 정본.
-- **신규 plan 은 전용 staging** 을 쓴다 — 평탄 si(§3.1.1)가 기존 plan 셀 키와 문자열
-  충돌해 DONE_LIST 가 오판한다.
+- **신규 plan 은 전용 staging** 을 쓴다 — DONE_LIST(이관 완료 키)가 plan 을 구분하지 않아 다른
+  plan 의 같은 셀 키와 충돌하면 결손을 오판한다(2026-08 v3 실측).
 - `STAGING_WAIT_GB` **backpressure** 필수: 이관이 수집을 못 따라가면 staging 이 폭주해
   디스크가 차고 수집이 전멸한다(2026-08-18 3머신 274GB 사고).
 - `SERVE_OMP_THREADS` 로 CPU 를 cap 한다(공유 서버 load 폭주 방지).
