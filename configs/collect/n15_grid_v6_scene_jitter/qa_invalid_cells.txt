@@ -1,0 +1,6 @@
+# 2026-09-04 QA: 관측 이미지 고정(영상 FREEZE + VL hidden 상수화) — 분석 제외 대상
+kanu/CoffeeSetupMug/s0/j2/n0/base
+kanu/CoffeeSetupMug/s0/j2/n1/base
+kanu/CoffeeSetupMug/s0/j2/n2/base
+kanu/CoffeeSetupMug/s0/j2/n3/base
+kanu/CoffeeSetupMug/s0/j2/n4/base
