@@ -1020,66 +1020,66 @@
           "back": 0.1
         },
         {
-          "reset_idx": 3,
+          "reset_idx": 4,
           "lat": 0.0,
           "back": 0.05
         },
         {
-          "reset_idx": 4,
+          "reset_idx": 8,
           "lat": 0.0,
           "back": 0.1
         }
       ],
       [
         {
-          "reset_idx": 0,
+          "reset_idx": 1,
           "lat": 0.0,
           "back": 0.0
         },
         {
-          "reset_idx": 1,
+          "reset_idx": 2,
           "lat": 0.0,
           "back": 0.05
         },
         {
-          "reset_idx": 2,
+          "reset_idx": 7,
           "lat": 0.0,
           "back": 0.1
         },
         {
-          "reset_idx": 3,
+          "reset_idx": 8,
           "lat": 0.0,
           "back": 0.05
         },
         {
-          "reset_idx": 4,
+          "reset_idx": 11,
           "lat": 0.0,
           "back": 0.1
         }
       ],
       [
         {
-          "reset_idx": 0,
+          "reset_idx": 2,
           "lat": 0.0,
           "back": 0.0
         },
         {
-          "reset_idx": 1,
+          "reset_idx": 9,
           "lat": 0.0,
           "back": 0.05
         },
         {
-          "reset_idx": 2,
+          "reset_idx": 10,
           "lat": 0.0,
           "back": 0.1
         },
         {
-          "reset_idx": 3,
+          "reset_idx": 11,
           "lat": 0.0,
           "back": 0.05
         },
         {
-          "reset_idx": 4,
+          "reset_idx": 14,
           "lat": 0.0,
           "back": 0.1
         }
@@ -1093,22 +1093,49 @@
           "back": 0.0
         },
         {
-          "reset_idx": 1,
-          "lat": 0.0,
-          "back": 0.05
-        },
-        {
           "reset_idx": 2,
           "lat": 0.0,
-          "back": 0.1
+          "back": 0.05
         },
         {
           "reset_idx": 3,
           "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 6,
+          "lat": 0.0,
           "back": 0.05
         },
         {
+          "reset_idx": 10,
+          "lat": 0.0,
+          "back": 0.1
+        }
+      ],
+      [
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
           "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 9,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 10,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 11,
           "lat": 0.0,
           "back": 0.1
         }
@@ -1130,39 +1157,12 @@
           "back": 0.1
         },
         {
-          "reset_idx": 3,
+          "reset_idx": 5,
           "lat": 0.0,
           "back": 0.05
         },
         {
-          "reset_idx": 4,
-          "lat": 0.0,
-          "back": 0.1
-        }
-      ],
-      [
-        {
-          "reset_idx": 0,
-          "lat": 0.0,
-          "back": 0.0
-        },
-        {
-          "reset_idx": 1,
-          "lat": 0.0,
-          "back": 0.05
-        },
-        {
-          "reset_idx": 2,
-          "lat": 0.0,
-          "back": 0.1
-        },
-        {
-          "reset_idx": 3,
-          "lat": 0.0,
-          "back": 0.05
-        },
-        {
-          "reset_idx": 4,
+          "reset_idx": 6,
           "lat": 0.0,
           "back": 0.1
         }
@@ -1667,7 +1667,7 @@
       ]
     ]
   },
-  "plan_id": "b3dbe412d190",
+  "plan_id": "375e3c46c962",
   "n_cells": 900,
   "estimated_bytes": 409838026752
 }

@@ -151,7 +151,7 @@ def build(selection: dict[str, Any], *, name: str = "n15_grid_v6_scene_jitter") 
         # 문장이 맞는 reset 인덱스만 채택한다 — 선택표 scene 의 reset_idx_list (v5 k-스캔과 동일 원리).
         if kind == "pull_drawer":
             for sid, e in enumerate(entries):
-                lst = e.get("reset_idx_list")
+                lst = raw_scenes[sid].get("reset_idx_list")   # _scene_entry 가 정규화하며 버리는 키 → 원본에서
                 if not lst or len(lst) < len(jitters[key][sid]):
                     raise SystemExit(f"keys[{key!r}] scene {sid}: reset_idx_list 가 없거나 {len(jitters[key][sid])} 개 미만 — "
                                      "drawer 는 reset 마다 좌/우가 재추첨되므로 scene 별 채택 목록이 필수")
