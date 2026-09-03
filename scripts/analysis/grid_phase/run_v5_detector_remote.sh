@@ -26,7 +26,8 @@ ts() { date +%F' '%T; }
 # ── 0. action phase 완료 대기 (마커 + 번들 + 라벨 10개) ─────────────────────────
 t0=$(date +%s)
 while :; do
-  n_lab=$(ls "$OUT"/ae_v5_k8/labels_*_k8.npz 2>/dev/null | wc -l)
+  # set -e + pipefail 에서 ls 실패가 대입문을 통해 스크립트를 죽인다 → || true 필수
+  n_lab=$(ls "$OUT"/ae_v5_k8/labels_*_k8.npz 2>/dev/null | wc -l || true)
   if grep -q "V5_ACTIONPHASE_DONE" "$AP_LOG" 2>/dev/null && [[ -s "$BUNDLE" ]] && [[ "$n_lab" -ge 10 ]]; then
     echo "[det] action phase 완료 확인 ($(ts)) labels=$n_lab"; break
   fi
@@ -54,7 +55,7 @@ for s in "${SLUG_ARR[@]}"; do
 done
 
 # ── 2. detector 학습 ─────────────────────────────────────────────────────────
-n_pt=$(ls "$DET_OUT"/detector_pertask_lstm_*.pt 2>/dev/null | wc -l)
+n_pt=$(ls "$DET_OUT"/detector_pertask_lstm_*.pt 2>/dev/null | wc -l || true)
 if [[ "$n_pt" -eq "${#SLUG_ARR[@]}" && -s "$DET_OUT/sim_summary.tsv" ]]; then
   echo "[det] skip sim — detector ${n_pt}개 존재"
 else
@@ -68,7 +69,7 @@ else
 fi
 
 # ── 3. 감사 ──────────────────────────────────────────────────────────────────
-n_pt=$(ls "$DET_OUT"/detector_pertask_lstm_*.pt 2>/dev/null | wc -l)
+n_pt=$(ls "$DET_OUT"/detector_pertask_lstm_*.pt 2>/dev/null | wc -l || true)
 if [[ "$n_pt" -ne "${#SLUG_ARR[@]}" ]]; then
   echo "[det] ERROR: detector ${n_pt}/${#SLUG_ARR[@]}" >&2; exit 13
 fi
