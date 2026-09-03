@@ -39,6 +39,41 @@ export OMP_NUM_THREADS=16 OPENBLAS_NUM_THREADS=16 MKL_NUM_THREADS=16 NUMEXPR_NUM
 
 [[ -s "$INDEX" ]] || { echo "[wrap] ERROR: INDEX 없음/빈 파일: $INDEX" >&2; exit 2; }
 
+# QA 무효 셀 제외 — EXCLUDE_CELLS = 한 줄에 셀 rel_path 하나(`#` 주석·빈 줄 허용).
+# 예: v6 QA 의 configs/collect/n15_grid_v6_scene_jitter/qa_invalid_cells.txt
+#     (영상 정지 + VL hidden 상수화 5셀). 제외분을 뺀 인덱스를 만들어 **추출과 감사가
+#     같은 모수**를 보게 한다 — 인덱스를 안 거르고 추출만 거르면 감사가 결손으로 오판한다.
+mkdir -p "$OUT"
+if [[ -n "${EXCLUDE_CELLS:-}" ]]; then
+  [[ -s "$EXCLUDE_CELLS" ]] || { echo "[wrap] ERROR: EXCLUDE_CELLS 없음: $EXCLUDE_CELLS" >&2; exit 2; }
+  filtered="$OUT/index_filtered.tsv"
+  awk -F'\t' -v exf="$EXCLUDE_CELLS" '
+    BEGIN {
+      while ((getline line < exf) > 0) {
+        sub(/\r$/, "", line); sub(/^[ \t]+/, "", line); sub(/[ \t]+$/, "", line)
+        if (line == "" || line ~ /^#/) continue
+        ex[line] = 1; nex++
+      }
+    }
+    NR==1 { for (i=1;i<=NF;i++) c[$i]=i; print; next }
+    {
+      rp = ("rel_path" in c) ? $c["rel_path"] : ""
+      # rel_path 는 plan_id 접두가 붙어 있고 제외 목록은 보통 machine/… 부터다 — 양쪽 다 맞춰 본다.
+      short = rp; sub(/^[^\/]+\//, "", short)
+      if ((rp in ex) || (short in ex)) { drop++; next }
+      print
+    }
+    END { printf "[wrap] 제외 목록 %d행 → 인덱스에서 %d행 제거\n", nex, drop+0 > "/dev/stderr" }
+  ' "$INDEX" > "$filtered"
+  n_before=$(( $(wc -l < "$INDEX") - 1 )); n_after=$(( $(wc -l < "$filtered") - 1 ))
+  if [[ "$n_after" -eq "$n_before" ]]; then
+    echo "[wrap] ERROR: 제외 목록이 인덱스와 한 행도 안 맞았다 — 경로 형식 확인" >&2
+    exit 2
+  fi
+  echo "[wrap] 무효 셀 제외: $n_before → $n_after 행 ($EXCLUDE_CELLS)"
+  INDEX="$filtered"
+fi
+
 # 인덱스 → (instruction, 기대 판수). 열 위치는 헤더에서 찾는다(하드코딩 금지).
 # base arm + has_pkl 인 행만 세어 추출기의 필터와 같은 모수를 본다.
 INDEX_COUNTS="$(awk -F'\t' '
