@@ -26,11 +26,10 @@ import collections
 import csv
 import math
 
-DEF_INDEX = "configs/collect/n15_grid_v6/index_rollouts_v6.tsv"
+DEF_INDEX = "configs/collect/n15_grid_v6_scene_jitter/index_v6_complete_cells.tsv"
 AXIS_CANDIDATES = ("jitter_idx", "jitter")     # jitter_reset_idx 는 v6 에서 출처 열
-# 중추('전체 파이프라인') v6 eval 대상 초안 (n10 재수집 후 확정 예정)
-DEF_CELLS = ("drawer-left:0,drawer-right:1,oven-left:1,oven-right:2,"
-             "washer-right:1,ppcc-bread:0,ppcc-candle:1,ppcc-jug:1")
+# --cells 를 안 주면 index 에서 **성공·실패가 공존하는 (키, scene) 을 자동 도출**한다.
+# (고정 기본값은 라운드마다 낡는다 — v5→v6 에서 키 이름이 통째로 바뀐 전례)
 
 
 def verdict(n_pool_succ, n_pairs, p_min, min_succ, min_pairs, p_cap) -> str:
@@ -65,7 +64,9 @@ def perm_p_floor(mixed) -> float:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--index", default=DEF_INDEX)
-    ap.add_argument("--cells", default=DEF_CELLS)
+    ap.add_argument("--cells", default=None,
+                    help='"키:scene,키:scene" 형식. 생략하면 index 에서 성공·실패가 '
+                         "공존하는 (키, scene) 을 전부 자동 도출한다")
     ap.add_argument("--tsv", default=None, help="지정 시 결과를 TSV 로도 저장")
     ap.add_argument("--axis-col", default=None,
                     help="좌표 열 명시. 기본 자동(jitter_idx→jitter). v6 에서 "
@@ -90,8 +91,18 @@ def main():
     if keyc is None:
         raise SystemExit(f"{args.index}: instruction 키 열 없음 (열 {sorted(cols)})")
     print(f"[cols] 키={keyc} 좌표={axis}")
-    cells = [(c.rsplit(":", 1)[0], int(c.rsplit(":", 1)[1]))
-             for c in args.cells.split(",") if c.strip()]
+    if args.cells:
+        cells = [(c.rsplit(":", 1)[0], int(c.rsplit(":", 1)[1]))
+                 for c in args.cells.split(",") if c.strip()]
+    else:
+        agg = collections.defaultdict(lambda: [0, 0])
+        for r in rows:
+            a = agg[(r[keyc], int(r["scene_idx"]))]
+            a[0] += r["success"] == "1"
+            a[1] += 1
+        cells = sorted(k for k, (s_, t_) in agg.items() if 0 < s_ < t_)
+        print(f"[cells] --cells 미지정 → index 에서 성공·실패 공존 (키, scene) "
+              f"{len(cells)}개 자동 도출")
 
     out = []
     for ins, s in cells:
