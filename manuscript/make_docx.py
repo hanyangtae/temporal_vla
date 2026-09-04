@@ -150,6 +150,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--template", type=Path, required=True)
     ap.add_argument("--out", type=Path, default=HERE / "main.docx")
+    ap.add_argument("--fig1-cm", type=float, default=15.0, help="그림1(전폭) 너비")
+    ap.add_argument("--fig-cm", type=float, default=6.8, help="그림2·3(단 내) 너비")
+    ap.add_argument("--line", type=int, default=0,
+                    help="본문 줄간격 exact(twip/20pt 단위, 예 220=11pt). 0=양식 기본")
+    ap.add_argument("--tight", action="store_true",
+                    help="머리 빈 문단 제거(제목 위·영문 제목 위·요약 위)")
     a = ap.parse_args()
 
     abstract, caps, sections, refs = parse_tex(TEX.read_text())
@@ -172,12 +178,15 @@ def main():
     for el in (P[15], P[16]):
         body.remove(el)
     # 그림 1(전폭)은 1단 영역인 요약 뒤에 둔다 (Word 2단에서 figure* 대응)
-    fig1 = picture_para(doc, P[17], FIGS / "fig1_purity_residual_300.png", 15.0)
+    fig1 = picture_para(doc, P[17], FIGS / "fig1_purity_residual_300.png", a.fig1_cm)
     cap1 = clone_para(P[14], "Figure 1: " + detex(caps["purity"]), size_pt=8)
     cap1.find(W("w:pPr")).find(W("w:jc")).set(W("w:val"), "both")
     P[17].addprevious(fig1)
     P[17].addprevious(cap1)
     body.remove(P[18])
+    if a.tight:
+        for el in (P[0], P[6], P[11], P[13]):
+            body.remove(el)
 
     # ---- 2단 본문 -------------------------------------------------------
     head_proto, para_proto, ref_proto = P[20], P[21], P[33]
@@ -210,7 +219,7 @@ def main():
                 continue
             add(clone_para(para_proto, detex(para)))
         if title == "방법":
-            add_figure("readout", FIGS / "fig_readout_bar_300.png", 6.8)
+            add_figure("readout", FIGS / "fig_readout_bar_300.png", a.fig_cm)
         if title == "결과":
             pass
     # 그림 3은 결과 첫 문단 뒤에 넣는 편이 자연스럽지만 Word 흐름상 절 끝에 둔다
@@ -219,7 +228,7 @@ def main():
                  if "".join(t.text or "" for t in el.iter(W("w:t"))).startswith("Ⅲ.")]
     first_res_para = res_heads[0].getnext()
     after = first_res_para.getnext()
-    figp = picture_para(doc, center_proto, FIGS / "fig_k_sweep_300.png", 6.8)
+    figp = picture_para(doc, center_proto, FIGS / "fig_k_sweep_300.png", a.fig_cm)
     capp = clone_para(para_proto, "Figure 3: " + detex(caps["ksweep"]), size_pt=8)
     ind = capp.find(W("w:pPr")).find(W("w:ind"))
     if ind is not None:
@@ -237,6 +246,17 @@ def main():
         sp.set(W("w:after"), "0"); sp.set(W("w:before"), "0")
         add(rp)
 
+    if a.line:                                    # 본문 줄간격 고정
+        for el in body.iter(W("w:p")):
+            if el.find(W("w:pPr")) is None or not any(True for _ in el.iter(W("w:drawing"))) and \
+               el.find(W("w:pPr")).find(W("w:pStyle")) is not None:
+                ppr = el.find(W("w:pPr"))
+                if ppr is None:
+                    continue
+                sp = ppr.find(W("w:spacing"))
+                if sp is None:
+                    sp = ppr.makeelement(W("w:spacing"), {}); ppr.insert(1, sp)
+                sp.set(W("w:line"), str(a.line)); sp.set(W("w:lineRule"), "exact")
     # 2단 섹션을 같은 쪽에서 이어지게(continuous) — 양식 원본은 nextPage
     for s in doc.sections[1:]:
         ty = s._sectPr.find(W("w:type"))
