@@ -20,7 +20,7 @@
 #     > ~/workspace/logs/actionphase_v6.log 2>&1 < /dev/null &
 #
 # 완료 판정은 sentinel 문자열이 아니라 산출물로 한다:
-#   $OUT/segA/*.npz (인덱스의 instruction 전부, 감사 통과) + $OUT/ae_<TAG>_k8/ae_bundle_<TAG>_k8.npz
+#   $OUT/segA/*.npz (인덱스의 instruction 전부, 감사 통과) + $OUT/ae_k8/ae_bundle_k8.npz
 set -euo pipefail
 
 TAG="${TAG:?TAG 를 지정할 것 (예: v5, v6) — 산출 디렉토리·번들 이름에 쓰인다}"
@@ -170,7 +170,10 @@ if bad:
 print(f"[audit] OK — shard {len(list(seg.glob('*.npz')))}개 전부 기대 판수 일치")
 PYEOF
 
-BUNDLE="$OUT/ae_${TAG}_k${K}/ae_bundle_${TAG}_k${K}.npz"
+# 번들 경로 = `<OUT>/ae_k<K>/ae_bundle_k<K>.npz`. OUT 이 이미 라운드를 담고 있으므로
+# (기본 `analysis/grid_phase_<TAG>`) 안쪽 이름에 TAG 를 또 넣지 않는다 — 소비 측
+# (연산자 fit) 기본 경로와 맞춘 규약이다.
+BUNDLE="$OUT/ae_k${K}/ae_bundle_k${K}.npz"
 n_all=$(ls "$OUT"/segA/*.npz 2>/dev/null | wc -l)
 n_want="${#ALL_INSTRUCTIONS[@]}"
 if [[ "$SKIP_AE" == "1" ]]; then
