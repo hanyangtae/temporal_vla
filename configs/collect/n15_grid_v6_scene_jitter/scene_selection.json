@@ -776,7 +776,15 @@
           "base_x": 0.76,
           "base_y": -3.424,
           "base_yaw": 3.142,
-          "feasible": null
+          "feasible": null,
+          "reset_idx_list": [
+            0,
+            1,
+            5,
+            3,
+            4
+          ],
+          "note": "j2: reset 2 는 관측 고정(영상 FREEZE 4.75s, v6 QA 09-04) → reset 5 로 교체"
         },
         {
           "env_seed": 100078,

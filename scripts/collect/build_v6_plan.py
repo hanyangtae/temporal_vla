@@ -149,6 +149,13 @@ def build(selection: dict[str, Any], *, name: str = "n15_grid_v6_scene_jitter") 
         jitters[key] = [[dict(j) for j in JITTER_TABLES[kind]] for _ in entries]
         # pull_drawer: 연속 reset 이 서랍 좌/우를 다시 뽑으므로(ep_meta 로 고정 안 됨) scene 별로
         # 문장이 맞는 reset 인덱스만 채택한다 — 선택표 scene 의 reset_idx_list (v5 k-스캔과 동일 원리).
+        # 모든 kind 에서 선택표 scene 의 reset_idx_list 가 있으면 우선(coffee s0 j2 관측 정지 → 교체 등).
+        for sid, e in enumerate(entries):
+            lst = raw_scenes[sid].get("reset_idx_list")
+            if lst and kind != "pull_drawer":
+                for jid, j in enumerate(jitters[key][sid]):
+                    if jid < len(lst):
+                        j["reset_idx"] = int(lst[jid])
         if kind == "pull_drawer":
             for sid, e in enumerate(entries):
                 lst = raw_scenes[sid].get("reset_idx_list")   # _scene_entry 가 정규화하며 버리는 키 → 원본에서
