@@ -6,32 +6,28 @@ v6 **설계 계약**의 정본은 `handoff_20260903_grid_v6_scene_jitter.md`(포
 
 ---
 
-## 1. 지금 당장 남은 일 (미결)
+## 1. 현재 상태 — v6 라운드 완결 (2026-09-05 02:15 KST)
 
-0. **n 5→10 확대 수집 (2026-09-04 사용자 결정: "두배 늘려도 별 문제 없겠네, n10으로 늘려서 전부 추가 수집해")**
-   - plan `77e745c37b0f` = a81f07b86371 에 noise seed 1300005~1300009 추가(다른 필드 동일, `build_v6_plan.py` NOISE_SEEDS). 1,800셀, 추가 900판 ≈ 325GB(실측 판당 0.36G). **2026-09-04 키 의미 개정으로 최종 plan 은 `08f1c9df8207`**(§3-9) — rebase 는 `--rename-key`/`--flip-side` 와 한 번에 처리한다.
-   - 절차: coffee 5셀(항목 1) 완료·이관 → 승준 `rebase_plan_id.py --old a81f07b86371 --new 77e745c37b0f`(사전 공지 필수, §3-2) → 인덱스 재생성(900행, n0~4) → DONE_LIST 로 3머신 발사(홈 배정 동일: srv48 oven/washer 300, srv50 PPCC 375, kanu drawer+coffee 225).
-   - 첫 셀 게이트는 재실행 불필요(머신·파이프라인·plan 내용 동일, noise seed 만 추가).
+- **아카이브 정본**: 승준 `temporal_vla_store/groot/n15/grid/08f1c9df8207/` — 1,800/1,800 셀(12키 × scene 3 × j 5 × noise 10), pkl 1,800, 결손 0. 인덱스 `configs/collect/n15_grid_v6_scene_jitter/index_rollouts_v6.tsv`(1,800행, `--strict` 통과). 구 루트 `77e745c37b0f/`·`a81f07b86371/`·`375e3c46c962/` 는 README.txt 만 남은 껍데기.
+- **QA 완료**: VL 상수화 1,800/1,800 OK(`qa_vl_check.tsv`), 영상 FREEZE 0 / NOISE 50(`qa_video_scan.tsv`) — NOISE 는 전부 `PPCC/marshmallow s1`(흑백 타일 바닥 오탐). 그 scene 은 75/75 전패지만 관측·VL·활성화(action phase 3중 확인) 정상 = **초기조건형 전패 scene**(스폰이 캐비닛 벽을 향해 목표가 시야 밖). 인덱스에서 빼지 않는다; 성공 0 이라 연산자·detector 셀로는 못 쓴다.
+- **키 개정 적용됨(2026-09-05 rebase)**: oven/washer left/right = 로봇 기준 target fixture 쪽. 매핑(구 plan 77e745c37b0f → 신 08f1c9df8207; pkl·sig·s/j/n 불변, meta `grid_instruction`·`side` 패치 + `key_renamed_from`):
 
-1. **v6 coffee s0/j2 5셀 재수집 (kanu, 사용자 결정 = 교체)**
-   - 원인: CoffeeSetupMug 는 특정 j 에서 env step ~190(영상 4.75s) 부터 **관측 이미지가 고정**(VL hidden 두 값 교대)되는 scene 결정적 현상이 있다(v5 k1·v6 j2 모두, seed·머신 무관). 데이터 무효.
-   - 포크 세션이 plan 을 갱신함: **plan_id `a81f07b86371`**(coffee s0 reset_idx_list [0,1,**5**,3,4], PR #107 → dev 372a271), 승준 아카이브 `grid/375e3c46c962` → `grid/a81f07b86371` rebase 완료(895셀, 무효 5셀 삭제, 결손 5).
-   - 준비 완료: DONE_LIST `/tmp/done_v6_895.txt`(kanu, index_rollouts_v6 895행에서 생성, 키 `instr|s<sid>|j<jid>|n<nid>`), 워크트리 `.claude/worktrees/grid-v6` 가 dev(372a271) 내용.
-   - **막힌 이유**: kanu 8장 전부 junhyeong 프로세스(<1GB) 상주 → 규약상 발사 불가. 사용자 예외 승인 또는 빈 GPU 대기.
-   - 발사 명령(예외 승인 시, GPU 1장):
-     ```bash
-     cd /home/dongkyu/pkt_ws/temporal_vla/.claude/worktrees/grid-v6
-     bash scripts/utils/gpu_lease.sh claim kanu 7 "grid-v6-main" "coffee s0/j2 재수집 5셀"
-     # launch_v6_kanu.sh 와 같은 env 에 INSTRUCTIONS=CoffeeSetupMug DONE_LIST=/tmp/done_v6_895.txt GPUS=7 로 collect_grid.sh 실행
-     ```
-   - 끝나면 **QA 필수**: `scan_video_integrity.py`(영상 freeze/noise) + VL Δnorm 상수화 검사(§4) → 5셀 정상이면 이관(`ship_to_archive.sh` ONESHOT) → 승준 인덱서 재생성(900행) → `configs/collect/n15_grid_v6_scene_jitter/index_rollouts_v6.tsv` 갱신 커밋 → action phase 세션에 해시 통지. **재발하면** 포크 세션에 알려 reset 6 으로 재교체.
-2. (선택) v5 아카이브 `e82e99cb666b` 는 legacy — 포크 전언으로 "주방 목록이 바뀌어 다른 세계"라 분석 정본은 v6. 삭제 여부는 사용자 판단(현재 450GB 보존).
+  | 구 키 (77e745c37b0f) | 신 키 (08f1c9df8207) |
+  |---|---|
+  | OvenRack/out-left | OvenRack/out-right |
+  | OvenRack/out-right | OvenRack/out-left |
+  | DishwasherRack/out-left | DishwasherRack/out-right |
+  | DishwasherRack/out-right | DishwasherRack/out-left |
+
+  drawer/PPCC/coffee 불변. 지문 동결본(action phase): 승준 `~/workspace/temporal_vla/outputs/analysis/grid_phase_v6_frozen/prerebase_{ovenwasher,ALL}_FINAL.tsv`.
+- **SR(1,800)**: 전체 0.537 — apple 1.00 / bread .81 / oven-right(신) .77 / candle .72 / drawer-right .68 / marshmallow .63 / oven-left(신) .60 / drawer-left .55 / dish-left(신) .49 / jug .15 / dish-right(신) .03 / coffee .01.
+- 남은 일: 없음(GPU lease 0, 3머신 staging 비움). 재수집이 필요해지면 §3·§5 절차 그대로.
 
 ## 2. 데이터 상태 (2026-09-04 기준)
 
 | 데이터 | plan_id | 셀 | 위치(승준 HDD `temporal_vla_store/groot/n15/grid/`) | 상태 |
 |---|---|---|---|---|
-| **v6** (정본) | `08f1c9df8207` (← 77e745c37b0f ← a81f07b86371 ← 375e3c46c962 ← b3dbe412d190; n10 확대 → out-left/right 키 의미 개정) | 895/1,800 (n0~4 중 coffee s0/j2 결손 5, n5~9 미수집) | `a81f07b86371/{kanu,worker1,worker2}/<key>/s<sid>/j<jid>/n<nid>/base/` + `ep_meta/` 36 | QA 완료(무효 5 삭제), 인덱스 `index_rollouts_v6.tsv`(900행 시점, 갱신 필요) |
+| **v6** (정본) | `08f1c9df8207` (← 77e745c37b0f ← a81f07b86371 ← 375e3c46c962 ← b3dbe412d190; n10 확대 → out-left/right 키 의미 개정) | 1,800/1,800 | `08f1c9df8207/{kanu,worker1,worker2}/<key>/s<sid>/j<jid>/n<nid>/base/` + `ep_meta/` | QA 완료, 인덱스 1,800행 |
 | v5 (legacy) | `e82e99cb666b` (← e6b316053d1c ← 8daefeabf020) | 1,250 | `e82e99cb666b/…/s<i>/k<r>/n<j>/base/` | QA 완료(무효 10 교체됨), 인덱스 `configs/collect/n15_grid_v5_scenario/index_rollouts_v5.tsv` |
 | v1~v4 껍데기 | 3134…, 46ea…, 8ae7…, 979d…, b805… | meta.json 만 | 동일 루트 | 원장 `configs/collect/ledger_20260902_purge/` |
 
