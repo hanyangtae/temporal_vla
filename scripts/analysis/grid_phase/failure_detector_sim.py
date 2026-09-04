@@ -1228,9 +1228,28 @@ def scene_beat_scan(scene_scored: list[tuple[Episode, np.ndarray]],
         reason = "no_jonly"
     else:
         reason = "never"
-    return {"auroc_scene_best": None if best_a is None else round(best_a, 4),
-            "t_scene_best": best_t, "t_beats_jonly": beat_t,
-            "t_beats_jonly_reason": reason, "n_t_skipped": n_skip}
+    # 생존 판 편향 표기 (2026-09-04, action phase 지적): 고정시각 t 는 그 시각 전에
+    # 끝난 판을 뺀다 — 짧은 판이 대개 성공이라 t 가 커질수록 성공 쪽이 먼저 빠진다.
+    # 그래서 지표 옆에 각 t 의 **생존 succ/fail 수**를 함께 남긴다(수치 해석 필수 문맥).
+    def _surv(t: int) -> tuple[int, int]:
+        alive = [e for e, _ in scene_scored if e.T > t]
+        return sum(1 for e in alive if e.y == 0), sum(1 for e in alive if e.y == 1)
+
+    prof = []
+    for t in TD_GRID:
+        ns, nf = _surv(t)
+        prof.append(f"t{t}:s{ns}/f{nf}")
+    out = {"auroc_scene_best": None if best_a is None else round(best_a, 4),
+           "t_scene_best": best_t, "t_beats_jonly": beat_t,
+           "t_beats_jonly_reason": reason, "n_t_skipped": n_skip,
+           "surv_profile": "|".join(prof)}
+    for key, t in (("surv_at_t_best", best_t), ("surv_at_t_beats", beat_t)):
+        if t is None:
+            out[key] = ""
+        else:
+            ns, nf = _surv(int(t))
+            out[key] = f"s{ns}/f{nf}"
+    return out
 
 
 def scene_td_metrics(scene_scored: list[tuple[Episode, np.ndarray]]) -> dict:
@@ -1624,7 +1643,7 @@ TSV_COLS = (["task", "instruction", "arm", "model", "alpha", "truncate", "n_test
             # j-only 대조군 진단 (loko-cell 전용, 셀 단위 상수)
             + ["auroc_jonly_scene"] + [f"auroc_scene_td{t}" for t in TD_GRID]
             + ["auroc_scene_best", "t_scene_best", "t_beats_jonly",
-               "t_beats_jonly_reason", "n_t_skipped", "auroc_target_j",
+               "t_beats_jonly_reason", "n_t_skipped", "surv_profile", "surv_at_t_best", "surv_at_t_beats", "auroc_target_j",
                f"auroc_target_j_td{JSTRAT_TD}", "target_j_reason"]
             # 무편향 대상-j 진단 (--loko-holdout-diag 를 켠 run 에만 값이 찬다)
             + list(HOLDOUT_DIAG_KEYS))

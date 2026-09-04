@@ -28,6 +28,9 @@ CP_FOLDS="${CP_FOLDS:-0}"           # 0 = episode LOO
 POLL_S="${POLL_S:-600}"
 ONCE="${ONCE:-0}"
 THREADS="${THREADS:-8}"             # 승준 CPU cap 8 (사용자 규약)
+# 무편향 진단(타 j 만으로 학습한 2차 모델로 대상 j 채점) — 셀당 학습이 1회 더 는다.
+HOLDOUT="${HOLDOUT:-1}"
+HOLDOUT_FLAG=""; [[ "$HOLDOUT" == "1" ]] && HOLDOUT_FLAG="--loko-holdout-diag"
 
 export OMP_NUM_THREADS="$THREADS" OPENBLAS_NUM_THREADS="$THREADS" \
        MKL_NUM_THREADS="$THREADS" NUMEXPR_NUM_THREADS="$THREADS"
@@ -63,7 +66,7 @@ run_one() {   # <slug> <shard-stems(csv)> <shard-dir>
     --models lstm --alphas "$ALPHAS" \
     --truncate-train "$TRUNC" \
     --min-pool-fail "$MIN_POOL_FAIL" --min-calib-succ "$MIN_CALIB_SUCC" \
-    --cp-folds "$CP_FOLDS" --seed 0 --threads "$THREADS" --quiet || rc=$?
+    --cp-folds "$CP_FOLDS" --seed 0 --threads "$THREADS" ${HOLDOUT_FLAG} --quiet || rc=$?
   if [[ "$rc" -ne 0 ]]; then
     echo "[v6det] ERROR: $slug sim 실패 rc=$rc — 완료 마커 쓰지 않음 ($(ts))" >&2
     return "$rc"
