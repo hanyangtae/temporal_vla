@@ -164,6 +164,10 @@ def compute_cells(
     cells: list[dict] = []
     for (instr, scene), scene_rows in sorted(by_scene.items()):
         excluded = False
+        pkl_missing = [r for r in scene_rows if str(r.get("has_pkl", "1")).strip() not in ("1", "True", "true")]
+        if pkl_missing:  # 이관 미완(meta 는 있으나 pkl 없음) — 셀표에 넣으면 shard 결손으로 이어진다
+            print(f"[warn] {instr} s{scene}: has_pkl!=1 {len(pkl_missing)}행 → scene 전체 제외(pkl_missing)", file=sys.stderr)
+            excluded = True
         if keep and instr not in keep:
             excluded = True
         if instr in drop:
@@ -185,7 +189,7 @@ def compute_cells(
             machine = machines.most_common(1)[0][0] if machines else ""
 
             if excluded:
-                reason, selected = "excluded", 0
+                reason, selected = ("pkl_missing" if pkl_missing else "excluded"), 0
             elif pool_fail < min_pool_fail:
                 reason, selected = f"pool_fail<{min_pool_fail}", 0
             elif tgt_fail < min_tgt_fail:
