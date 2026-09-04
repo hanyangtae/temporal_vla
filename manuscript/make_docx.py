@@ -61,7 +61,7 @@ CITE = {"groot": 1, "robocasa": 2, "saevla": 3, "observing": 4, "egsae": 5, "awe
 
 def parse_tex(src: str):
     """main.tex 에서 요약·절·문단·그림 캡션·참고문헌을 뽑는다."""
-    abstract = re.search(r"\\begin\{quote\}\\small\n(.*?)\n\\end\{quote\}", src, re.S).group(1)
+    abstract = re.search(r"\\begin\{quote\}\\small[^\n]*\n(.*?)\n\\end\{quote\}", src, re.S).group(1)
     caps = {m.group(1): m.group(2) for m in re.finditer(
         r"\\caption\{(.*?)\}\n\s*\\label\{fig:(\w+)\}", src, re.S)}
     caps = {v: k for k, v in caps.items()}          # label → caption
@@ -158,11 +158,14 @@ def main():
                     help="머리 빈 문단 제거(제목 위·영문 제목 위·요약 위)")
     ap.add_argument("--keep-blank", action="store_true", help="요약 위 빈 문단 유지")
     ap.add_argument("--ref-pt", type=float, default=8.0, help="참고문헌 글자 크기")
+    ap.add_argument("--tex", type=Path, default=TEX, help="원고 tex (기본 main.tex)")
+    ap.add_argument("--hwp-style", action="store_true",
+                    help="한글 양식 수치 적용: 여백 1.5/상단 2.5, 단 간격 0.5cm, 본문 장평 90%%·자간 -7%%, 줄간격 158%% (요약 130%%)")
     ap.add_argument("--preview-font", default=None,
                     help="미리보기용: 모든 rFonts 를 이 글꼴로 치환(제출본에는 쓰지 말 것)")
     a = ap.parse_args()
 
-    abstract, caps, sections, refs = parse_tex(TEX.read_text())
+    abstract, caps, sections, refs = parse_tex(a.tex.read_text())
     doc = Document(str(a.template))
     body = doc.element.body
     P = [el for el in body if el.tag == W("w:p")]
@@ -271,6 +274,35 @@ def main():
             ty = s._sectPr.makeelement(W("w:type"), {})
             s._sectPr.insert(0, ty)
         ty.set(W("w:val"), "continuous")
+    if a.hwp_style:
+        from docx.shared import Cm as _Cm
+        for s_ in doc.sections:
+            s_.left_margin = s_.right_margin = s_.bottom_margin = _Cm(1.5)
+            s_.top_margin = _Cm(2.5)
+            for c in s_._sectPr.iter(W("w:cols")):
+                c.set(W("w:space"), "283")            # 0.5cm
+        title_ps = set(id(x) for x in body.iter(W("w:p")))
+        for p_ in body.iter(W("w:p")):
+            ppr = p_.find(W("w:pPr"))
+            szs = [int(x.get(W("w:val"))) for x in p_.iter(W("w:sz"))]
+            body9 = szs and max(szs) <= 18 and not any(True for _ in p_.iter(W("w:drawing")))
+            if not body9:
+                continue
+            # 글자: 장평 90%, 자간 -7% (9pt 기준 -0.63pt = -13 twip)
+            for rpr in p_.iter(W("w:rPr")):
+                for tag, val in (("w:w", "90"), ("w:spacing", "-13")):
+                    e = rpr.find(W(tag))
+                    if e is None:
+                        e = rpr.makeelement(W(tag), {}); rpr.append(e)
+                    e.set(W("w:val"), val)
+            # 줄간격 158% (요약=130%): w:line 240=100%
+            if ppr is None:
+                continue
+            sp = ppr.find(W("w:spacing"))
+            if sp is None:
+                sp = ppr.makeelement(W("w:spacing"), {}); ppr.insert(1, sp)
+            is_abs = p_ is P[14]
+            sp.set(W("w:line"), "312" if is_abs else "379"); sp.set(W("w:lineRule"), "auto")
     if a.preview_font:
         for rf in body.iter(W("w:rFonts")):
             for attr in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
