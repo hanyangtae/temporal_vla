@@ -31,11 +31,20 @@ REPO="${REPO:-$HOME/workspace/temporal_vla}"
 STORE="${STORE:-$HOME/datasets/temporal_vla_store/groot/n15}"
 OUT="${OUT:-$STORE/analysis/grid_phase_${TAG}}"
 GRID="${GRID:-$STORE/grid}"
-WORKERS="${WORKERS:-3}"    # OOM 상한 — 3 초과 금지
 K="${K:-8}"
 
-# 공유 노드 CPU cap (메모리 규약 OMP ≤16)
-export OMP_NUM_THREADS=16 OPENBLAS_NUM_THREADS=16 MKL_NUM_THREADS=16 NUMEXPR_NUM_THREADS=16
+# ── CPU 예산 (docs/05 §1: 승준은 8코어 공유 — 내 프로세스 **합산 스레드 ≤ 8**) ─────
+# 추출은 워커 프로세스가 WORKERS 개 뜨고 각자 BLAS 를 쓰므로 WORKERS × OMP_THREADS 가
+# 실제 점유다. 기본 2×4=8. 이관·수집이 같이 돌면 WORKERS=1 로 낮출 것.
+# (구 기본값은 workers 3 × OMP 16 = 48 스레드로 이 규약을 훨씬 넘겼다.)
+WORKERS="${WORKERS:-2}"          # OOM 상한 3 이하 · CPU 예산상 보통 2
+OMP_THREADS="${OMP_THREADS:-4}"
+if (( WORKERS * OMP_THREADS > 8 )); then
+  echo "[wrap] ERROR: WORKERS($WORKERS) × OMP_THREADS($OMP_THREADS) > 8 — 승준 CPU 규약 위반" >&2
+  exit 2
+fi
+export OMP_NUM_THREADS="$OMP_THREADS" OPENBLAS_NUM_THREADS="$OMP_THREADS" \
+       MKL_NUM_THREADS="$OMP_THREADS" NUMEXPR_NUM_THREADS="$OMP_THREADS"
 
 [[ -s "$INDEX" ]] || { echo "[wrap] ERROR: INDEX 없음/빈 파일: $INDEX" >&2; exit 2; }
 
@@ -74,16 +83,21 @@ if [[ -n "${EXCLUDE_CELLS:-}" ]]; then
   INDEX="$filtered"
 fi
 
-# 인덱스 → (instruction, 기대 판수). 열 위치는 헤더에서 찾는다(하드코딩 금지).
-# base arm + has_pkl 인 행만 세어 추출기의 필터와 같은 모수를 본다.
-INDEX_COUNTS="$(awk -F'\t' '
+# 인덱스 → 셀 단위 기대표 (instruction, scene, j, 판수). 열 위치는 헤더에서 찾는다.
+# base arm + has_pkl 인 행만 세어 추출기의 필터와 같은 모수를 본다. **(instruction, scene, j)
+# 단위**로 세는 이유: 소비 측(연산자 fit)의 pool 계산이 그 단위라, instruction 총계만
+# 맞고 셀 분포가 어긋나는 결손을 놓치지 않으려는 것.
+CELL_COUNTS="$(awk -F'\t' '
   NR==1 { for (i=1;i<=NF;i++) c[$i]=i; next }
   {
     if ((("armsig" in c) && $c["armsig"] != "base")) next;
     if ((("has_pkl" in c) && ($c["has_pkl"]=="0" || $c["has_pkl"]=="false"))) next;
-    n[$c["grid_instruction"]]++
+    j = ("jitter_idx" in c) ? $c["jitter_idx"] : (("jitter_reset_idx" in c) ? $c["jitter_reset_idx"] : "-1")
+    n[$c["grid_instruction"] "\t" $c["scene_idx"] "\t" j]++
   }
   END { for (k in n) printf "%s\t%d\n", k, n[k] }' "$INDEX" | sort)"
+INDEX_COUNTS="$(awk -F'\t' '{n[$1]+=$4} END {for (k in n) printf "%s\t%d\n", k, n[k]}' \
+  <<< "$CELL_COUNTS" | sort)"
 [[ -n "$INDEX_COUNTS" ]] || { echo "[wrap] ERROR: $INDEX 에서 instruction 을 못 읽었다" >&2; exit 2; }
 
 mapfile -t ALL_INSTRUCTIONS < <(cut -f1 <<< "$INDEX_COUNTS")
@@ -91,12 +105,22 @@ echo "[wrap] TAG=$TAG index=$INDEX instruction=${#ALL_INSTRUCTIONS[@]}"
 while IFS=$'\t' read -r _i _n; do echo "[wrap]   $_i: $_n 판(기대)"; done <<< "$INDEX_COUNTS"
 
 INSTRUCTIONS=("${ALL_INSTRUCTIONS[@]}")
-# 부분 실행: INSTR_CSV="A,B,..." 로 대상 축소. 이때 AE 는 건너뛴다 —
-# AE 는 인덱스의 instruction 전체가 모인 뒤에만 (SKIP_AE=1 로도 강제 가능).
+# 부분 실행: INSTR_CSV="A,B,..." 로 대상 축소.
 SKIP_AE="${SKIP_AE:-0}"
 if [[ -n "${INSTR_CSV:-}" ]]; then
   IFS=',' read -r -a INSTRUCTIONS <<< "$INSTR_CSV"
-  SKIP_AE=1
+  [[ -n "${PARTIAL_AE:-}" ]] || SKIP_AE=1   # 부분 실행 기본은 AE 생략
+fi
+
+# PARTIAL_AE=1 : **수집 완주 전 임시 번들**. 그때까지 모인 shard 만으로 AE·KMeans 를 돌려
+# 소비 세션이 먼저 붙어 볼 수 있게 한다. 정식 번들과 **섞이면 안 되므로** 산출을
+# `ae_k<K>_partial/` 로 분리하고, 어느 shard 로 학습했는지 provenance(번들 안)와
+# `PARTIAL_SHARDS.txt` 에 남긴다. 최종 번들(전 instruction)은 PARTIAL_AE 없이 돌려
+# `ae_k<K>/` 에 만든다 — AE 는 전 shard 공용 1개 규약이라 임시본과 수치가 다르다.
+AE_SUBDIR="ae_k${K}"
+if [[ -n "${PARTIAL_AE:-}" ]]; then
+  AE_SUBDIR="ae_k${K}_partial"
+  SKIP_AE=0
 fi
 
 slug_of() { local s="${1//\//_}"; echo "${s// /_}"; }
@@ -129,13 +153,17 @@ done
 [[ "$missing" -eq 0 ]] || exit 13
 
 # 판수 감사 — shard 실판수 vs 인덱스 기대 판수 대조(무음 탈락 방지).
-printf '%s\n' "$INDEX_COUNTS" > "$OUT/.expected_counts.tsv"
-"$PY" - "$OUT/segA" "$OUT/.expected_counts.tsv" <<'PYEOF'
+# 셀 단위 `<instruction>\t<scene>\t<j>\t<판수>` 표를 넘겨 (키, scene, j) 분포까지 대조하고
+# 소비 세션에 그대로 통지할 수 있게 요약 TSV(`audit_cells.tsv`)로도 남긴다.
+printf '%s\n' "$CELL_COUNTS" > "$OUT/.expected_cells.tsv"
+"$PY" - "$OUT/segA" "$OUT/.expected_cells.tsv" "$OUT/audit_cells.tsv" <<'PYEOF'
 import sys
-import numpy as np
+from collections import defaultdict
 from pathlib import Path
 
-seg, exp_tsv = Path(sys.argv[1]), Path(sys.argv[2])
+import numpy as np
+
+seg, exp_tsv, out_tsv = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
 
 
 def slug_of(s):
@@ -144,36 +172,66 @@ def slug_of(s):
     return s
 
 
-expected = {}
+# 기대: slug → {(scene, j): 판수}
+expected = defaultdict(dict)
 for line in exp_tsv.read_text(encoding="utf-8").splitlines():
     if not line.strip():
         continue
-    instr, n = line.split("\t")
-    expected[slug_of(instr)] = int(n)
+    instr, scene, j, n = line.split("\t")
+    expected[slug_of(instr)][(int(scene), int(j))] = int(n)
 
-bad = []
+bad, rows = [], ["slug\tscene\tjitter\teps\texpected\tsucc_eps\trecords"]
 for p in sorted(seg.glob("*.npz")):
     with np.load(p, allow_pickle=False) as z:
-        ep, succ = z["ep_id"], z["succ"]
-        n_ep = len(np.unique(ep))
-        n_rec = int(z["X"].shape[0])
-        n_succ_ep = len({int(e) for e, s in zip(ep, succ) if s == 1})
-    want = expected.get(p.stem)
-    print(f"[audit] {p.stem}: eps={n_ep}/{want} rec={n_rec} succ_eps={n_succ_ep}",
-          flush=True)
-    if want is None:
+        ep, succ, scene, jit = z["ep_id"], z["succ"], z["scene"], z["jitter"]
+        n_rec_total = int(z["X"].shape[0])
+    # record 축 → 판 단위로 접어서 센다 (ep_id 가 판의 고유 키)
+    seen, cells = {}, defaultdict(lambda: [0, 0, 0])   # (scene,j) → [eps, succ_eps, recs]
+    for e, s, sc, jj in zip(ep, succ, scene, jit):
+        key = (int(sc), int(jj))
+        cells[key][2] += 1
+        if int(e) not in seen:
+            seen[int(e)] = key
+            cells[key][0] += 1
+            if int(s) == 1:
+                cells[key][1] += 1
+    want_cells = expected.get(p.stem)
+    n_ep = len(seen)
+    n_succ = sum(v[1] for v in cells.values())
+    if want_cells is None:
+        print(f"[audit] {p.stem}: eps={n_ep} rec={n_rec_total} — 인덱스에 없는 shard",
+              flush=True)
         bad.append((p.stem, "인덱스에 없는 shard"))
-    elif n_ep != want:
-        bad.append((p.stem, f"{n_ep} != {want}"))
+        continue
+    want_total = sum(want_cells.values())
+    print(f"[audit] {p.stem}: eps={n_ep}/{want_total} rec={n_rec_total} "
+          f"succ_eps={n_succ} cells={len(cells)}/{len(want_cells)}", flush=True)
+    for key in sorted(set(cells) | set(want_cells)):
+        got = cells.get(key, [0, 0, 0])
+        want = want_cells.get(key)
+        rows.append(f"{p.stem}\t{key[0]}\t{key[1]}\t{got[0]}\t"
+                    f"{'' if want is None else want}\t{got[1]}\t{got[2]}")
+        if want is None:
+            bad.append((p.stem, f"s{key[0]}j{key[1]} 인덱스에 없는 셀"))
+        elif got[0] != want:
+            bad.append((p.stem, f"s{key[0]}j{key[1]} {got[0]} != {want}"))
+    # 셀별 판수를 한 줄로 (통지용): s0[j0..j4] s1[...] ...
+    for sc in sorted({k[0] for k in want_cells}):
+        line = " ".join(f"j{j}:{cells.get((sc, j), [0])[0]}"
+                        for j in sorted(k[1] for k in want_cells if k[0] == sc))
+        print(f"[audit]   s{sc}  {line}", flush=True)
+
+out_tsv.write_text("\n".join(rows) + "\n", encoding="utf-8")
 if bad:
-    sys.exit(f"[audit] 판수 불일치: {bad}")
-print(f"[audit] OK — shard {len(list(seg.glob('*.npz')))}개 전부 기대 판수 일치")
+    sys.exit(f"[audit] 판수 불일치: {bad[:10]}{' …' if len(bad) > 10 else ''}")
+print(f"[audit] OK — shard {len(list(seg.glob('*.npz')))}개 전부 셀 단위 일치 "
+      f"({out_tsv.name})")
 PYEOF
 
 # 번들 경로 = `<OUT>/ae_k<K>/ae_bundle_k<K>.npz`. OUT 이 이미 라운드를 담고 있으므로
 # (기본 `analysis/grid_phase_<TAG>`) 안쪽 이름에 TAG 를 또 넣지 않는다 — 소비 측
 # (연산자 fit) 기본 경로와 맞춘 규약이다.
-BUNDLE="$OUT/ae_k${K}/ae_bundle_k${K}.npz"
+BUNDLE="$OUT/$AE_SUBDIR/ae_bundle_k${K}.npz"
 n_all=$(ls "$OUT"/segA/*.npz 2>/dev/null | wc -l)
 n_want="${#ALL_INSTRUCTIONS[@]}"
 if [[ "$SKIP_AE" == "1" ]]; then
@@ -181,15 +239,22 @@ if [[ "$SKIP_AE" == "1" ]]; then
   echo "[wrap] ACTIONPHASE_${TAG}_PARTIAL_DONE $(date -Is)"
   exit 0
 fi
-if [[ "$n_all" -ne "$n_want" ]]; then
-  echo "[wrap] ERROR: ae_cluster 는 인덱스의 instruction 전체(${n_want}) 필요 — 현재 ${n_all}" >&2
+if [[ -z "${PARTIAL_AE:-}" && "$n_all" -ne "$n_want" ]]; then
+  echo "[wrap] ERROR: 정식 ae_cluster 는 인덱스의 instruction 전체(${n_want}) 필요 — 현재 ${n_all}" >&2
+  echo "[wrap]        완주 전 임시 번들이 필요하면 PARTIAL_AE=1 (산출 ae_k${K}_partial/)" >&2
   exit 13
 fi
-if [[ -s "$BUNDLE" ]]; then
+if [[ -n "${PARTIAL_AE:-}" && "$n_all" -lt 2 ]]; then
+  echo "[wrap] ERROR: 임시 AE 도 shard 2개 이상 필요 — 현재 ${n_all}" >&2
+  exit 13
+fi
+# 임시 번들은 shard 가 늘 때마다 다시 만들어야 하므로 존재해도 덮어쓴다(멱등 skip 안 함).
+if [[ -z "${PARTIAL_AE:-}" && -s "$BUNDLE" ]]; then
   echo "[wrap] skip ae_cluster — $BUNDLE 존재"
 else
   mkdir -p "$(dirname "$BUNDLE")"
-  echo "[wrap] ae_cluster 시작 ($(date +%F' '%T))"
+  echo "[wrap] ae_cluster 시작 (${PARTIAL_AE:+임시·}shard ${n_all}/${n_want}, $(date +%F' '%T))"
+  ls "$OUT"/segA/*.npz | xargs -n1 basename > "$(dirname "$BUNDLE")/PARTIAL_SHARDS.txt"
   "$PY" "$REPO/scripts/analysis/grid_phase/ae_cluster.py" \
     --shard-dir "$OUT/segA" --mode all --dump-labels --k "$K" \
     --out-dir "$(dirname "$BUNDLE")" --export-bundle "$BUNDLE"
