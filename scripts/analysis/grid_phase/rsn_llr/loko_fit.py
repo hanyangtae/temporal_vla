@@ -70,6 +70,10 @@ def parse_args():
     ap.add_argument("--bundle", default=None, help="기본 ROOT/ae_k8/ae_bundle_k8.npz")
     ap.add_argument("--labels", default=None,
                     help="기본 ROOT/ae_k8/labels_<slug>_k8.npz (있으면 대조, 없으면 생략)")
+    ap.add_argument("--setm-form", choices=("jfair", "plain"), default="jfair",
+                    help="setM 방향 산출. jfair(기본)=지터 안 대조 평균+대상 지터 앵커 "
+                         "하이브리드 setpoint / plain=pool 전체 mean-diff(지터 혼입 미보정, "
+                         "비교용). 지터가 물리 오프셋인 키(oven·washer)에서 특히 중요")
     ap.add_argument("--tag", default="v6", help="산출 루트 태그 (instr_setm_<tag>_*, rsn_llr_reg_<tag>)")
     ap.add_argument("--coord", default="j", help="좌표 폴더·registry 열 이름 (v6=j, v5=k)")
     ap.add_argument("--axis-col", default=None,
@@ -231,7 +235,7 @@ def main():
         for tag, la, name_of in tags:
             outroot = os.path.join(root, f"instr_setm_{args.tag}_{tag}", SLUG, f"s{S}",
                                    f"{args.coord}{k_tgt}")
-            n_ph = 0
+            n_ph = n_skip = 0
             for code in sorted(set(la[allow].tolist())):
                 ms = np.where(allow & (la == code) & (su == 1))[0]
                 mf = np.where(allow & (la == code) & (su == 0))[0]
@@ -239,9 +243,38 @@ def main():
                     continue
                 mu_s = X[ms].mean(0).astype(np.float64)
                 mu_f = X[mf].mean(0).astype(np.float64)
-                delta = mu_s - mu_f
-                v = delta / (np.linalg.norm(delta) + 1e-12)
-                s_val = float(mu_s @ v)
+                mtf = np.where(allow & (la == code) & (su == 0) & (jit == k_tgt))[0]
+                # ── 방향 v ──
+                # ★ jfair(기본): **같은 지터 안의** 클래스 평균차를 지터마다 구해 평균한다.
+                # pool 성공은 타 지터에서만 오므로 pool 전체 mean-diff 는 지터 정체성을
+                # 그대로 먹는다 — v6 의 oven·washer 는 지터가 로봇 base 오프셋(5~15cm)
+                # 이라, 그 방향으로 밀면 "성공 쪽"이 아니라 "로봇을 다른 위치로" 미는 셈이
+                # 된다(물리 거울 판정과 같은 함정). 지터 안 대조는 그 성분이 상쇄된다.
+                # setpoint 는 대상 지터 실패 평균 좌표 + 지터 안 평균 이동량(하이브리드) —
+                # 절대 좌표가 지터마다 다르므로 pool 성공 좌표를 그대로 쓰면 안 된다.
+                per_j, n_mix = [], 0
+                for jj in ks_all:
+                    mjs = np.where(allow & (la == code) & (su == 1) & (jit == jj))[0]
+                    mjf = np.where(allow & (la == code) & (su == 0) & (jit == jj))[0]
+                    if len(mjs) >= MIN_REC_SETM and len(mjf) >= MIN_REC_SETM:
+                        per_j.append(X[mjs].mean(0).astype(np.float64)
+                                     - X[mjf].mean(0).astype(np.float64))
+                        n_mix += 1
+                if args.setm_form == "jfair":
+                    if n_mix < 2 or len(mtf) < MIN_REC_SETM:
+                        n_skip += 1
+                        continue
+                    delta = np.mean(per_j, 0)
+                    v = delta / (np.linalg.norm(delta) + 1e-12)
+                    s_val = (float(X[mtf].mean(0).astype(np.float64) @ v)
+                             + float(np.mean([d_ @ v for d_ in per_j])))
+                    note = ("v=normalize(mean_j(mu_s,j − mu_f,j)) — 지터 안 대조 평균; "
+                            "s=mu_f,tgt·v + mean_j(delta_j·v) (대상 지터 앵커 하이브리드)")
+                else:
+                    delta = mu_s - mu_f
+                    v = delta / (np.linalg.norm(delta) + 1e-12)
+                    s_val = float(mu_s @ v)
+                    note = "v=normalize(mu_s−mu_f) (pool 전체 — 지터 혼입 미보정); s=mu_s·v"
                 d_out = os.path.join(outroot, name_of(code), "dit_L12")
                 os.makedirs(d_out, exist_ok=True)
                 np.savez_compressed(os.path.join(d_out, "conceptors.npz"),
@@ -251,13 +284,18 @@ def main():
                     json.dump({"op": "setpoint", "variant": f"instr_setm_{args.tag}_{tag}",
                                "phase": name_of(code), "target_scene": S,
                                "target_jitter": k_tgt, "axis_col": axis_col,
+                               "setm_form": args.setm_form, "n_mixed_jitter": n_mix,
                                "n_rec_s": int(len(ms)), "n_rec_f": int(len(mf)),
+                               "n_rec_tgt_fail": int(len(mtf)),
+                               "cos_jfair_vs_pool": float(
+                                   (mu_s - mu_f) @ v
+                                   / (np.linalg.norm(mu_s - mu_f) + 1e-12)),
                                **pool_note, "phase_label_source": tag, "layer": LAYER,
-                               "note": "v=normalize(mu_s−mu_f) (scene-local pool); "
-                                       "s=mu_s·v (기본형 — 하이브리드 불요)"},
+                               "note": note},
                               f, ensure_ascii=False, indent=1)
                 n_ph += 1
-            print(f"[setm_{tag}] {SLUG} s{S} {args.coord}{k_tgt}: {n_ph} phase → {outroot}")
+            print(f"[setm_{tag}] {SLUG} s{S} {args.coord}{k_tgt}: {n_ph} phase 산출"
+                  f"{f' (혼합 지터<2 로 {n_skip} phase 건너뜀)' if n_skip else ''} → {outroot}")
 
         # ── C. LLR 번들 ──
         if args.only_gt:
