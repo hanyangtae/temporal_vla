@@ -137,6 +137,41 @@ def succ_auroc_from_j(y, j, folds, rng):
     return auroc(np.concatenate(sc), np.concatenate(lb))
 
 
+def succ_auroc_within_j(F, y, j, folds, rng):
+    """**j 잔차화** 후 succ/fail AUROC — "같은 j 안에서" 결과가 갈리는가.
+
+    배포 단위가 (instruction, scene, 대상 j) 하나면 j 는 그 안에서 상수라 j-only 대조군이
+    무력하다(fail detector 세션 지적, 2026-09-04). 그 경우의 정직한 질문은 "j 를 지운 뒤에도
+    성공/실패가 갈리나" 이다. 각 판의 feature 에서 **학습 fold 로 구한 그 j 의 평균**을 빼
+    j 성분을 제거한 뒤 평균차 방향을 fit 한다(테스트 판의 j 평균도 학습 fold 에서 온
+    것이라 누수 없음). 셀 하나로는 표본이 10판이라, j 를 지우고 scene 전체를 모아
+    검정력을 확보하는 효과도 있다.
+    """
+    idx = rng.permutation(len(F))
+    parts = np.array_split(idx, folds)
+    sc, lb = [], []
+    for f in range(folds):
+        te = parts[f]
+        tr = np.concatenate([parts[g] for g in range(folds) if g != f])
+        if len(np.unique(y[tr])) < 2:
+            continue
+        mu = {int(v): F[tr][j[tr] == v].mean(axis=0) for v in np.unique(j[tr])}
+        gmu = F[tr].mean(axis=0)
+        Rtr = F[tr] - np.stack([mu.get(int(v), gmu) for v in j[tr]])
+        Rte = F[te] - np.stack([mu.get(int(v), gmu) for v in j[te]])
+        if len(np.unique(y[tr])) < 2:
+            continue
+        w = Rtr[y[tr] == 1].mean(axis=0) - Rtr[y[tr] == 0].mean(axis=0)
+        n = np.linalg.norm(w)
+        if n == 0:
+            continue
+        sc.append(Rte @ (w / n))
+        lb.append(y[te])
+    if not sc:
+        return float("nan")
+    return auroc(np.concatenate(sc), np.concatenate(lb))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -159,7 +194,7 @@ def main() -> int:
         rows = []
         print(f"\n=== {shard.stem} ===", flush=True)
         print(f"{'창':>10} {'판':>5} {'j정확도':>9} {'(chance)':>9} "
-              f"{'succAUROC':>10} {'j만':>7}", flush=True)
+              f"{'succAUROC':>10} {'j만':>7} {'j잔차화':>8}", flush=True)
         for lo, hi in wins:
             F, y, j, _ = episode_features(shard, lo, hi)
             rng = np.random.default_rng(a.seed)
@@ -169,13 +204,16 @@ def main() -> int:
             au = succ_auroc_holdout(F, y, a.folds, rng)
             rng = np.random.default_rng(a.seed)
             au_j = succ_auroc_from_j(y, j, a.folds, rng)
+            rng = np.random.default_rng(a.seed)
+            au_r = succ_auroc_within_j(F, y, j, a.folds, rng)
             chance = 1.0 / n_j if n_j else float("nan")
             print(f"{f'{lo}:{hi}':>10} {len(F):>5} {acc:>9.3f} {chance:>9.3f} "
-                  f"{au:>10.3f} {au_j:>7.3f}", flush=True)
+                  f"{au:>10.3f} {au_j:>7.3f} {au_r:>8.3f}", flush=True)
             rows.append({"window": [lo, hi], "n_episodes": int(len(F)),
                          "n_jitters": int(n_j), "j_acc": float(acc),
                          "j_chance": float(chance), "succ_auroc": float(au),
-                         "succ_auroc_from_j_only": float(au_j)})
+                         "succ_auroc_from_j_only": float(au_j),
+                         "succ_auroc_j_residualized": float(au_r)})
         report[shard.stem] = rows
 
     if a.out_json:
