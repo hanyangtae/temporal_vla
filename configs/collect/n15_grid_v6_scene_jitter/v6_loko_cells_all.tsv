@@ -9,6 +9,11 @@ CoffeeSetupMug	CoffeeSetupMug	kanu	1	1	10	0	10	0	40	50	0	excluded
 CoffeeSetupMug	CoffeeSetupMug	kanu	1	2	10	0	10	0	40	50	0	excluded
 CoffeeSetupMug	CoffeeSetupMug	kanu	1	3	10	0	10	0	40	50	0	excluded
 CoffeeSetupMug	CoffeeSetupMug	kanu	1	4	10	0	10	0	40	50	0	excluded
+CoffeeSetupMug	CoffeeSetupMug	kanu	2	0	10	0	10	0	40	50	0	excluded
+CoffeeSetupMug	CoffeeSetupMug	kanu	2	1	10	0	10	0	40	50	0	excluded
+CoffeeSetupMug	CoffeeSetupMug	kanu	2	2	10	0	10	0	40	50	0	excluded
+CoffeeSetupMug	CoffeeSetupMug	kanu	2	3	10	0	10	0	40	50	0	excluded
+CoffeeSetupMug	CoffeeSetupMug	kanu	2	4	10	0	10	0	40	50	0	excluded
 DishwasherRack/out-left	DishwasherRack_out-left	worker1	0	0	10	0	10	0	40	50	0	pool_succ<1
 DishwasherRack/out-left	DishwasherRack_out-left	worker1	0	1	10	0	10	0	40	50	0	pool_succ<1
 DishwasherRack/out-left	DishwasherRack_out-left	worker1	0	2	10	0	10	0	40	50	0	pool_succ<1
@@ -24,11 +29,21 @@ DishwasherRack/out-left	DishwasherRack_out-left	worker1	2	1	10	0	10	0	40	50	0	po
 DishwasherRack/out-left	DishwasherRack_out-left	worker1	2	2	10	0	10	0	40	50	0	pool_succ<1
 DishwasherRack/out-left	DishwasherRack_out-left	worker1	2	3	10	0	10	0	40	50	0	pool_succ<1
 DishwasherRack/out-left	DishwasherRack_out-left	worker1	2	4	10	0	10	0	40	50	0	pool_succ<1
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	0	0	10	0	10	0	40	50	0	pool_succ<1
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	0	1	10	0	10	0	40	50	0	pool_succ<1
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	0	2	10	0	10	0	40	50	0	pool_succ<1
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	0	3	10	0	10	0	40	50	0	pool_succ<1
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	0	4	10	0	10	0	40	50	0	pool_succ<1
 DishwasherRack/out-right	DishwasherRack_out-right	worker1	1	0	10	10	0	23	17	40	0	tgt_fail<1
 DishwasherRack/out-right	DishwasherRack_out-right	worker1	1	1	10	10	0	23	17	40	0	tgt_fail<1
 DishwasherRack/out-right	DishwasherRack_out-right	worker1	1	2	10	5	5	28	12	45	1	
 DishwasherRack/out-right	DishwasherRack_out-right	worker1	1	3	10	7	3	26	14	43	1	
 DishwasherRack/out-right	DishwasherRack_out-right	worker1	1	4	10	1	9	32	8	49	1	
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	2	0	10	10	0	31	9	40	0	tgt_fail<1
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	2	1	10	10	0	31	9	40	0	tgt_fail<1
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	2	2	10	9	1	32	8	41	1	
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	2	3	10	6	4	35	5	44	1	
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	2	4	10	6	4	35	5	44	1	
 OpenDrawer/left	OpenDrawer_left	kanu	0	0	10	6	4	30	10	44	1	
 OpenDrawer/left	OpenDrawer_left	kanu	0	1	10	9	1	27	13	41	1	
 OpenDrawer/left	OpenDrawer_left	kanu	0	2	10	6	4	30	10	44	1	
@@ -54,6 +69,11 @@ OpenDrawer/right	OpenDrawer_right	kanu	1	1	10	0	10	9	31	50	1
 OpenDrawer/right	OpenDrawer_right	kanu	1	2	10	0	10	9	31	50	1	
 OpenDrawer/right	OpenDrawer_right	kanu	1	3	10	0	10	9	31	50	1	
 OpenDrawer/right	OpenDrawer_right	kanu	1	4	10	2	8	7	33	48	1	
+OpenDrawer/right	OpenDrawer_right	kanu	2	0	10	6	4	40	0	44	0	pool_fail<3
+OpenDrawer/right	OpenDrawer_right	kanu	2	1	10	10	0	36	4	40	0	tgt_fail<1
+OpenDrawer/right	OpenDrawer_right	kanu	2	2	10	10	0	36	4	40	0	tgt_fail<1
+OpenDrawer/right	OpenDrawer_right	kanu	2	3	10	10	0	36	4	40	0	tgt_fail<1
+OpenDrawer/right	OpenDrawer_right	kanu	2	4	10	10	0	36	4	40	0	tgt_fail<1
 OvenRack/out-left	OvenRack_out-left	worker1	0	0	10	6	4	38	2	44	0	pool_fail<3
 OvenRack/out-left	OvenRack_out-left	worker1	0	1	10	10	0	34	6	40	0	tgt_fail<1
 OvenRack/out-left	OvenRack_out-left	worker1	0	2	10	10	0	34	6	40	0	tgt_fail<1

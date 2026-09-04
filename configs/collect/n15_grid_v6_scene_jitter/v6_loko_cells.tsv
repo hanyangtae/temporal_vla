@@ -124,6 +124,15 @@ DishwasherRack/out-right	DishwasherRack_out-right	worker1	1	4	6	0	0.05	0.15	1004
 DishwasherRack/out-right	DishwasherRack_out-right	worker1	1	4	7	0	0.05	0.15	100448	1300007	4e5b5aaf927b9057	77e745c37b0f/worker1/DishwasherRack/out-right/s1/j4/n7/base	32	8	9	1	0
 DishwasherRack/out-right	DishwasherRack_out-right	worker1	1	4	8	0	0.05	0.15	100448	1300008	156d5c9fca70a50c	77e745c37b0f/worker1/DishwasherRack/out-right/s1/j4/n8/base	32	8	9	1	0
 DishwasherRack/out-right	DishwasherRack_out-right	worker1	1	4	9	0	0.05	0.15	100448	1300009	525846f3a8e63f47	77e745c37b0f/worker1/DishwasherRack/out-right/s1/j4/n9/base	32	8	9	1	0
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	2	2	9	0	0.0	0.1	100081	1300009	caca49e76f94b6eb	77e745c37b0f/worker1/DishwasherRack/out-right/s2/j2/n9/base	32	8	1	9	0
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	2	3	0	0	0.05	0.1	100081	1300000	4c9404f42932c042	77e745c37b0f/worker1/DishwasherRack/out-right/s2/j3/n0/base	35	5	4	6	0
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	2	3	4	0	0.05	0.1	100081	1300004	2142a0183de21b99	77e745c37b0f/worker1/DishwasherRack/out-right/s2/j3/n4/base	35	5	4	6	0
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	2	3	5	0	0.05	0.1	100081	1300005	fd1c15d664bbba39	77e745c37b0f/worker1/DishwasherRack/out-right/s2/j3/n5/base	35	5	4	6	0
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	2	3	8	0	0.05	0.1	100081	1300008	7e4370ea73d0865d	77e745c37b0f/worker1/DishwasherRack/out-right/s2/j3/n8/base	35	5	4	6	0
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	2	4	3	0	0.05	0.15	100081	1300003	85904f5ca162c39b	77e745c37b0f/worker1/DishwasherRack/out-right/s2/j4/n3/base	35	5	4	6	0
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	2	4	6	0	0.05	0.15	100081	1300006	21ed40ab87ec9d08	77e745c37b0f/worker1/DishwasherRack/out-right/s2/j4/n6/base	35	5	4	6	0
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	2	4	7	0	0.05	0.15	100081	1300007	0ed71073db3e5c3a	77e745c37b0f/worker1/DishwasherRack/out-right/s2/j4/n7/base	35	5	4	6	0
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	2	4	8	0	0.05	0.15	100081	1300008	ba75376ebba4cfc6	77e745c37b0f/worker1/DishwasherRack/out-right/s2/j4/n8/base	35	5	4	6	0
 OvenRack/out-left	OvenRack_out-left	worker1	0	3	8	0	0.05	0.1	100017	1300008	8ffee478c7153545	77e745c37b0f/worker1/OvenRack/out-left/s0/j3/n8/base	35	5	1	9	0
 OvenRack/out-left	OvenRack_out-left	worker1	0	4	3	0	0.05	0.15	100017	1300003	a8825220fac1e45b	77e745c37b0f/worker1/OvenRack/out-left/s0/j4/n3/base	35	5	1	9	0
 OvenRack/out-left	OvenRack_out-left	worker1	1	0	0	0	0.0	0.0	100754	1300000	2343f12e55ba5836	77e745c37b0f/worker1/OvenRack/out-left/s1/j0/n0/base	22	18	7	3	0
