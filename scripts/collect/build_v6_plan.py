@@ -60,7 +60,7 @@ CKPT = "lerobot_groot_n15__robocasa365_ckpt120000"
 CAPTURE_LAYERS = [0, 2, 4, 8, 10, 12, 15]
 DENOISE_K = 4
 TOKEN_MODE = "all_token_full"
-NOISE_SEEDS = [1300000, 1300001, 1300002, 1300003, 1300004]
+NOISE_SEEDS = [1300000 + i for i in range(10)]   # 2026-09-04 n 5→10 (사용자 결정, plan a81f07b86371→77e745c37b0f)
 N_JITTER = 5
 
 # ── §3 jitter 표 (재현 계약의 단일 출처) ────────────────────────────────────
