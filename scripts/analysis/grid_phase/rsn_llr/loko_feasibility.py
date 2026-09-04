@@ -24,6 +24,7 @@ usage:
 import argparse
 import collections
 import csv
+import math
 
 DEF_INDEX = "configs/collect/n15_grid_v6/index_rollouts_v6.tsv"
 AXIS_CANDIDATES = ("jitter_idx", "jitter")     # jitter_reset_idx 는 v6 에서 출처 열
@@ -32,14 +33,33 @@ DEF_CELLS = ("drawer-left:0,drawer-right:1,oven-left:1,oven-right:2,"
              "washer-right:1,ppcc-bread:0,ppcc-candle:1,ppcc-jug:1")
 
 
-def verdict(n_pool_succ: int) -> str:
+def verdict(n_pool_succ, n_pairs, p_min, min_succ, min_pairs, p_cap) -> str:
+    """등록이 **원리적으로** 가능한지 — 표본 구성만으로 갈리는 필요조건."""
     if n_pool_succ == 0:
         return "불가(pool 성공 0)"
     if n_pool_succ == 1:
-        return "불가(pool 성공 1ep — 공분산·게이트 불성립)"
-    if n_pool_succ < 5:
-        return "위험(pool 성공 <5ep — 게이트 CV 표본 부족)"
+        return "불가(pool 성공 1ep — 공분산 추정 불가)"
+    if n_pairs < min_pairs:
+        return f"불가(혼합 지터 쌍 {n_pairs} < {min_pairs})"
+    if p_min > p_cap:
+        return f"불가(순열 p 하한 {p_min:.3f} > {p_cap})"
+    if n_pool_succ < min_succ:
+        return f"위험(pool 성공 {n_pool_succ} < {min_succ})"
     return "가능"
+
+
+def perm_p_floor(mixed) -> float:
+    """지터 안 라벨 순열검정이 **달성할 수 있는 최소 p**.
+
+    혼합 지터 j 마다 라벨 배치는 C(n_j, s_j) 가지이고 완벽 분리는 그중 1 가지다.
+    지터끼리 독립이므로 완벽 분리 확률 = Π 1/C(n_j, s_j). 이 값이 0.05 를 넘으면
+    **활성화가 아무리 잘 갈라도 게이트를 통과할 수 없다** — 수집·fit 전에 index 만으로
+    판정되는 구조적 검정력 상한이다.
+    """
+    tot = 1
+    for n_s, n_f in mixed:
+        tot *= math.comb(n_s + n_f, n_s)
+    return 1.0 / tot if tot else 1.0
 
 
 def main():
@@ -50,6 +70,10 @@ def main():
     ap.add_argument("--axis-col", default=None,
                     help="좌표 열 명시. 기본 자동(jitter_idx→jitter). v6 에서 "
                          "jitter_reset_idx 는 출처 열이라 자동 선택하지 않는다")
+    ap.add_argument("--min-pool-succ", type=int, default=9,
+                    help="pool 성공 ep 하한 (중추 detector α=0.1 기준 9)")
+    ap.add_argument("--min-pairs", type=int, default=6, help="혼합 지터 쌍 수 하한(게이트와 동일)")
+    ap.add_argument("--p-cap", type=float, default=0.05, help="순열 p 상한(게이트와 동일)")
     ap.add_argument("--key-col", default=None,
                     help="instruction 키 열 명시. 기본 자동(grid_instruction→instruction_key)")
     args = ap.parse_args()
@@ -81,26 +105,53 @@ def main():
             pool_s = [r for r in sub if r[axis] != k and r["success"] == "1"]
             pool_f = [r for r in sub if r["success"] != "1"]
             excl = [r for r in sub if r[axis] == k and r["success"] == "1"]
+            mixed = []
+            for kk in {r[axis] for r in sub}:
+                ns = sum(1 for r in sub if r[axis] == kk and r["success"] == "1" and kk != k)
+                nf = sum(1 for r in sub if r[axis] == kk and r["success"] != "1")
+                if ns and nf:
+                    mixed.append((ns, nf))
+            n_pairs = sum(ns * nf for ns, nf in mixed)
+            p_min = perm_p_floor(mixed)
             out.append((ins, s, int(k), len(pool_s), len(pool_f), len(tgt_f), len(excl),
-                        verdict(len(pool_s))))
+                        len(mixed), n_pairs, p_min,
+                        verdict(len(pool_s), n_pairs, p_min,
+                                args.min_pool_succ, args.min_pairs, args.p_cap)))
 
     w = max(len(r[0]) for r in out)
     print(f"{'instruction':<{w}} {'s':>2} {'j':>3} {'poolS':>6}{'poolF':>6}{'tgtF':>5}"
-          f"{'exclS':>6}  판정")
-    print("-" * (w + 40))
+          f"{'exclS':>6}{'혼합j':>6}{'쌍':>5}{'p하한':>8}  판정")
+    print("-" * (w + 62))
     agg = collections.Counter()
-    for ins, s, k, ps, pf, tf, ex, v in out:
+    for ins, s, k, ps, pf, tf, ex, nm, npair, pmin, v in out:
         agg[v.split("(")[0]] += 1
-        print(f"{ins:<{w}} {s:>2} {k:>3} {ps:>6}{pf:>6}{tf:>5}{ex:>6}  {v}")
-    print("-" * (w + 40))
+        print(f"{ins:<{w}} {s:>2} {k:>3} {ps:>6}{pf:>6}{tf:>5}{ex:>6}{nm:>6}{npair:>5}"
+              f"{pmin:>8.4f}  {v}")
+    print("-" * (w + 62))
     print(f"대상 지터-셀 {len(out)} | " + " ".join(f"{k} {v}" for k, v in sorted(agg.items())))
     print(f"eval 판수(대상 지터 실패 합) {sum(r[5] for r in out)} | "
-          f"그중 '불가' 셀 판수 {sum(r[5] for r in out if r[7].startswith('불가'))}")
+          f"그중 '불가' 셀 판수 {sum(r[5] for r in out if r[10].startswith('불가'))}")
+
+    by_cell = collections.defaultdict(list)
+    for r in out:
+        by_cell[(r[0], r[1])].append(r)
+    rank = []
+    for (ins_, s_), rs in by_cell.items():
+        ok = [r for r in rs if r[10] == "가능"]
+        rank.append((len(ok), sum(r[5] for r in ok), ins_, s_, len(rs),
+                     sum(r[5] for r in rs), sorted(r[9] for r in rs)[len(rs) // 2]))
+    rank.sort(reverse=True)
+    print("\n[후보 순위] 등록 가능 지터 수 → 그 지터들의 eval 판수")
+    print(f"{'instruction':<{w}} {'s':>2} {'가능j':>6}{'가능판':>7}{'전체j':>6}{'전체판':>7}"
+          f"{'p하한중앙':>10}")
+    for nok, nokf, ins_, s_, nall, nallf, pmed in rank:
+        print(f"{ins_:<{w}} {s_:>2} {nok:>6}{nokf:>7}{nall:>6}{nallf:>7}{pmed:>10.4f}")
 
     if args.tsv:
         with open(args.tsv, "w") as f:
             f.write("instruction_key\tscene\tjitter\tn_ep_pool_succ\tn_ep_pool_fail"
-                    "\tn_ep_tgt_fail\tn_ep_excluded_succ_tgt\tverdict\n")
+                    "\tn_ep_tgt_fail\tn_ep_excluded_succ_tgt\tn_mixed_jitter\tn_pairs"
+                    "\tperm_p_floor\tverdict\n")
             for r in out:
                 f.write("\t".join(str(x) for x in r) + "\n")
         print(f"[tsv] {args.tsv}")
