@@ -42,6 +42,7 @@ def detex(s: str) -> str:
     s = s.replace("\n", " ")
     for k, v in MATH.items():
         s = s.replace(k, v)
+    s = re.sub(r"\\textcolor\{blue\}\{((?:[^{}]|\{[^{}]*\})*)\}", r"@@B@@\1@@/B@@", s)
     s = re.sub(r"\\textbf\{([^{}]*)\}", r"**\1**", s)
     s = re.sub(r"\\textit\{([^{}]*)\}", r"\1", s)
     s = re.sub(r"Figure~\\ref\{fig:(\w+)\}", lambda m: "Figure " + FIGNUM[m.group(1)], s)
@@ -54,7 +55,7 @@ def detex(s: str) -> str:
     return s
 
 
-FIGNUM = {"purity": "1", "readout": "2", "ksweep": "3"}
+FIGNUM = {"readout": "1", "purity": "2", "ksweep": "3"}
 CITE = {"groot": 1, "robocasa": 2, "saevla": 3, "observing": 4, "egsae": 5, "awe": 6,
         "siglip": 7, "mechinterp": 8, "safe": 9, "lotus": 10, "options": 11}
 
@@ -98,10 +99,13 @@ def set_text(p, text: str, bold_all=False, size_pt=None):
         p.remove(r)
     for h in p.findall(W("w:hyperlink")):
         p.remove(h)
-    parts = re.split(r"(\*\*.*?\*\*)", text)
+    parts = re.split(r"(\*\*.*?\*\*|@@B@@.*?@@/B@@)", text)
     for part in parts:
         if not part:
             continue
+        blue = part.startswith("@@B@@")
+        if blue:
+            part = part[5:-7]
         bold = part.startswith("**")
         part = part.strip("*") if bold else part
         r = p.makeelement(W("w:r"), {})
@@ -113,6 +117,11 @@ def set_text(p, text: str, bold_all=False, size_pt=None):
                     rp.remove(e)
             if bold or bold_all:
                 rp.insert(0, rp.makeelement(W("w:b"), {}))
+            if blue:
+                c = rp.find(W("w:color"))
+                if c is None:
+                    c = rp.makeelement(W("w:color"), {}); rp.append(c)
+                c.set(W("w:val"), "0000FF")
             if size_pt is not None:
                 for tag in ("w:sz", "w:szCs"):
                     e = rp.find(W(tag))
@@ -171,25 +180,26 @@ def main():
     P = [el for el in body if el.tag == W("w:p")]
 
     # ---- 1단 머리 -------------------------------------------------------
-    set_text(P[1], "VLA 모델은 스스로 어떤 action을 수행 중이라고 인지하는가:")
-    set_text(P[2], "Auto Encoder 기반 activation clustering을 통한 online action phase 감지")
+    set_text(P[1], "VLA 모델이 스스로 인지하는 작업 단계의 실시간 감지")
+    set_text(P[2], "")
     set_text(P[3], "박경태, 김상우, 오윤선†")
     set_text(P[4], "한양대학교")
     set_text(P[5], "rudxo1997@hanyang.ac.kr, kimz1121@hanyang.ac.kr, †yoh21@hanyang.ac.kr")
-    set_text(P[7], "What Action Does a VLA Model Think It Is Performing?")
-    set_text(P[8], "Online Action-Phase Detection via Auto-Encoder-Based Activation Clustering")
+    set_text(P[7], "Real-Time Detection of a VLA Model's Self-Perceived Action Phase")
+    set_text(P[8], "")
     set_text(P[9], "Kyungtae Park, Sangwoo Kim, Yoonseon Oh†")
     set_text(P[10], "Hanyang University")
     set_text(P[14], detex(abstract))
     P[14].find(W("w:pPr")).find(W("w:jc")).set(W("w:val"), "both")
     for el in (P[15], P[16]):
         body.remove(el)
-    # 그림 1(전폭)은 1단 영역인 요약 뒤에 둔다 (Word 2단에서 figure* 대응)
-    fig1 = picture_para(doc, P[17], FIGS / "fig1_purity_residual_300.png", a.fig1_cm)
-    cap1 = clone_para(P[14], "Figure 1: " + detex(caps["purity"]), size_pt=8)
-    cap1.find(W("w:pPr")).find(W("w:jc")).set(W("w:val"), "both")
-    P[17].addprevious(fig1)
-    P[17].addprevious(cap1)
+    # 그림은 1단 영역(요약 뒤)에 번호 순서대로 둔다 — Word 에는 float 이 없다
+    for lab, png, wcm in (("readout", "fig_readout_bar_300.png", a.fig_cm * 1.4),
+                          ("purity", "fig1_purity_residual_300.png", a.fig1_cm)):
+        P[17].addprevious(picture_para(doc, P[17], FIGS / png, wcm))
+        cp = clone_para(P[14], f"Figure {FIGNUM[lab]}: " + detex(caps[lab]), size_pt=8)
+        cp.find(W("w:pPr")).find(W("w:jc")).set(W("w:val"), "both")
+        P[17].addprevious(cp)
     body.remove(P[18])
     if not a.keep_blank:                          # 영문 소속과 요약 사이 빈 줄 2개
         for el in (P[11], P[13]):
@@ -228,10 +238,7 @@ def main():
                 add(eq)
                 continue
             add(clone_para(para_proto, detex(para)))
-        if title == "방법":
-            add_figure("readout", FIGS / "fig_readout_bar_300.png", a.fig_cm)
-        if title == "결과":
-            pass
+
     # 그림 3은 결과 첫 문단 뒤에 넣는 편이 자연스럽지만 Word 흐름상 절 끝에 둔다
     # → 결과 절 안 삽입: 위 루프에서 결과 절 처리 후 위치를 찾아 끼운다
     res_heads = [el for el in body.iter(W("w:p"))
