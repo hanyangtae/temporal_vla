@@ -14,7 +14,8 @@
   Tier B  `<out>/tokB/<instr_slug>__L<layers>.npz`
       X   fp16 [n_rec, n_layers, 49, 1536]  — K 축 mean pool, 토큰 49 보존
 
-두 tier 모두 record 별 열(`ep_id/scene/noise/jitter/rec_idx/succ/phase_code/ep_len`)과
+두 tier 모두 record 별 열(`ep_id/scene/noise/jitter/rec_idx/succ/phase_code/ep_len`
++ 지터 성분 `jitter_reset_idx/base_lat/base_back`)과
 `vl`, `meta_json` 을 함께 담는다. `jitter` 는 지터 축(k = reset_idx) 좌표로 —
 3축 좌표 `s<i>/k<r>/n<j>` 의 셋째 축, docs/04 §3.1.1 — **항상 존재하는 열**이다.
 인덱스에 `jitter_reset_idx` 열이 없는 legacy(2축) 추출에서는 전부 `-1` 로 채운다
@@ -89,10 +90,12 @@ class Episode:
     """index tsv 한 행 = base 셀 하나 (좌표 + 신원). pkl 은 아직 열지 않는다."""
 
     __slots__ = ("plan_id", "machine", "instruction", "scene", "noise",
-                 "jitter", "success", "rel_path", "sig")
+                 "jitter", "success", "rel_path", "sig",
+                 "reset_idx", "base_lat", "base_back")
 
     def __init__(self, plan_id, machine, instruction, scene, noise,
-                 success, rel_path, sig, jitter=JITTER_NONE):
+                 success, rel_path, sig, jitter=JITTER_NONE,
+                 reset_idx=JITTER_NONE, base_lat=0.0, base_back=0.0):
         self.plan_id = plan_id
         self.machine = machine
         self.instruction = instruction
@@ -103,6 +106,14 @@ class Episode:
         self.success = success
         self.rel_path = rel_path
         self.sig = sig
+        # 지터 좌표 j 의 **성분** (v6). j 는 단일 물리량이 아니라 "같은 scene 의 세계 변형
+        # index" 라, 계열마다 무엇이 변하는지가 다르다 (plan `extra.jitter_kinds`/
+        # `jitter_tables` 가 정본): PPCC·coffee = reset 재추첨만(base 0), oven·washer =
+        # base 오프셋만(reset 0), drawer = 둘 다(교락 — 요인 분해 불가).
+        # 층화·해석에 필요하므로 좌표와 함께 실어 둔다. 나중에 붙이려면 전량 재추출이다.
+        self.reset_idx = reset_idx
+        self.base_lat = base_lat
+        self.base_back = base_back
 
     def key(self):
         """정렬·중복 판정의 정본 키.
@@ -195,6 +206,17 @@ def _int_or_none(s: str):
         return None
 
 
+def _float_or(s: str, default: float) -> float:
+    """base 오프셋 열(v6) → float. 열이 없거나 빈 칸이면 기본값(오프셋 0)."""
+    s = (s or "").strip()
+    if s == "":
+        return default
+    try:
+        return float(s)
+    except ValueError:
+        return default
+
+
 def _jitter_of(raw: str) -> int:
     """index 의 `jitter_reset_idx` 문자열 → 정수 좌표.
 
@@ -211,16 +233,26 @@ def _jitter_of(raw: str) -> int:
             f"jitter_reset_idx={raw!r} — 정수 또는 {BASE_ARM!r} 이어야 한다") from None
 
 
-def read_index(index_tsv: Path, grid_root: Path) -> tuple[list[Episode], bool]:
-    """rollouts.tsv → (Episode 목록, 지터 축 유무).
+def read_index(index_tsv: Path,
+               grid_root: Path) -> tuple[list[Episode], bool, str]:
+    """rollouts.tsv → (Episode 목록, 지터 축 유무, 지터 좌표로 쓴 열 이름).
 
     열은 `scripts/collect/build_grid_index.py` 의 ROLLOUT_COLS 를 헤더로 읽는다
     (하드코딩 인덱스 금지 — 열이 늘어나도 깨지지 않게). base arm + pkl 보유 행만 남긴다.
     `rel_path` 가 없는 옛 인덱스면 좌표로 경로를 조립한다.
 
-    `jitter_reset_idx` 열이 있으면(v3/v4 지터 인덱스) 지터 축 k 를 **정식 좌표로**
-    싣는다 — 같은 `(scene, noise)` 셀에 지터 변형이 여러 판 있으므로 이게 없으면
-    중복 좌표로 오인된다. 열이 없으면(v1/v2) 전부 -1 이라 이전 동작과 완전히 같다.
+    지터 축 열이 있으면 그 좌표를 **정식 좌표로** 싣는다 — 같은 `(scene, noise)` 셀에
+    지터 변형이 여러 판 있으므로 이게 없으면 중복 좌표로 오인된다. 열이 없으면(v1/v2)
+    전부 -1 이라 이전 동작과 완전히 같다.
+
+    ⚠ **지터 열이 둘인 인덱스가 있다**: `jitter_idx`(폴더층 `j<r>` 의 축 좌표)와
+    `jitter_reset_idx`(그 셀을 만들 때 `reset()` 을 몇 번 돌렸나 = 추첨 회수). v4/v5 는
+    두 값이 같아 구분이 필요 없었지만, v6(scene-jitter) 의 oven·dishwasher 4키는 축이
+    scene 쪽으로 옮겨가 **j 5개가 전부 `jitter_reset_idx=0`** 이다. reset 회수를 좌표로
+    쓰면 (scene, noise) 당 5판이 같은 키가 돼 `좌표 중복` 으로 죽는다(v6 인덱스에서 15
+    셀 × 4키 = 60 그룹 실측). 그래서 **`jitter_idx` 가 있으면 그쪽이 좌표**이고,
+    `jitter_reset_idx` 는 없을 때의 fallback 이다 — `rel_path` 의 폴더층과 같은 축을
+    쓰는 게 규약(docs/04 §3.1.1)이기도 하다.
     """
     lines = index_tsv.read_text(encoding="utf-8").splitlines()
     if not lines:
@@ -233,7 +265,10 @@ def read_index(index_tsv: Path, grid_root: Path) -> tuple[list[Episode], bool]:
             f"{index_tsv}: 필수 열 없음 {sorted(missing)} — build_grid_index.py 로 "
             "만든 rollouts.tsv 인지 확인할 것 (헤더: {})".format(",".join(header[:8])))
     col = {c: i for i, c in enumerate(header)}
-    has_jitter = "jitter_reset_idx" in col
+    # 축 좌표 우선 (docstring ⚠ 참조). 둘 다 없으면 지터 축 없는 인덱스.
+    jitter_col = "jitter_idx" if "jitter_idx" in col else (
+        "jitter_reset_idx" if "jitter_reset_idx" in col else None)
+    has_jitter = jitter_col is not None
 
     def get(parts, name, default=""):
         i = col.get(name)
@@ -256,22 +291,29 @@ def read_index(index_tsv: Path, grid_root: Path) -> tuple[list[Episode], bool]:
         instruction = get(parts, "grid_instruction").strip()
         plan_id = get(parts, "plan_id").strip()
         machine = get(parts, "machine").strip()
-        jitter = _jitter_of(get(parts, "jitter_reset_idx")) if has_jitter \
+        jitter = _jitter_of(get(parts, jitter_col)) if has_jitter \
             else JITTER_NONE
         rel = get(parts, "rel_path").strip()
         if not rel:
-            # 3축 폴더층 s<i>/k<r>/n<j> (docs/04 §3.1.1). 지터 축이 없거나 legacy 행이면
-            # k 층 없이 s<i>/n<j> (구 레이아웃).
-            k_seg = "" if jitter in (JITTER_NONE, JITTER_BASE) else f"k{jitter}/"
+            # 3축 폴더층 (docs/04 §3.1.1) — 층 이름은 좌표 열을 따른다:
+            # `jitter_reset_idx` 축이면 s<i>/k<r>/n<j>, `jitter_idx` 축(v6)이면 s<i>/j<r>/n<j>.
+            # 지터 축이 없거나 legacy 행이면 층 없이 s<i>/n<j> (구 레이아웃).
+            layer = "j" if jitter_col == "jitter_idx" else "k"
+            k_seg = "" if jitter in (JITTER_NONE, JITTER_BASE) else f"{layer}{jitter}/"
             rel = (f"{plan_id}/{machine}/{instruction}/s{scene}/{k_seg}"
                    f"n{noise}/{BASE_ARM}")
-        eps.append(Episode(plan_id, machine, instruction, scene, noise,
-                           _int_or_none(get(parts, "success")), rel,
-                           get(parts, "sig").strip(), jitter))
+        eps.append(Episode(
+            plan_id, machine, instruction, scene, noise,
+            _int_or_none(get(parts, "success")), rel,
+            get(parts, "sig").strip(), jitter,
+            reset_idx=(_jitter_of(get(parts, "jitter_reset_idx"))
+                       if "jitter_reset_idx" in col else JITTER_NONE),
+            base_lat=_float_or(get(parts, "base_lat"), 0.0),
+            base_back=_float_or(get(parts, "base_back"), 0.0)))
     if not eps:
         raise ValueError(f"{index_tsv}: base+pkl 행이 하나도 없다")
     _ = grid_root  # 경로 검증은 워커에서 (인덱싱 시점엔 파일 접근하지 않는다)
-    return eps, has_jitter
+    return eps, has_jitter, (jitter_col or "")
 
 
 # ── 판 하나 처리 (워커) ────────────────────────────────────────────────────
@@ -377,6 +419,9 @@ def process_episode(job: dict) -> dict:
         "scene": job["scene"],
         "noise": job["noise"],
         "jitter": job.get("jitter", JITTER_NONE),
+        "reset_idx": job.get("reset_idx", JITTER_NONE),
+        "base_lat": job.get("base_lat", 0.0),
+        "base_back": job.get("base_back", 0.0),
         "succ": int(d["episode_success"]),
         "sig": job["sig"] or str(d.get("sig") or ""),
         "plan_id": job["plan_id"],
@@ -423,6 +468,9 @@ def build_shard(results: list[dict], instruction: str, tier: str,
     Xs, vls, has_vls = [], [], []
     ep_id, scene, noise, rec_idx, succ, phase_code, ep_len = [], [], [], [], [], [], []
     jitter: list[np.ndarray] = []
+    reset_idx: list[np.ndarray] = []
+    base_lat: list[np.ndarray] = []
+    base_back: list[np.ndarray] = []
     sigs = []
     for e, r in enumerate(results):
         n = r["n_rec"]
@@ -433,6 +481,9 @@ def build_shard(results: list[dict], instruction: str, tier: str,
         scene.append(np.full(n, r["scene"], dtype=np.int16))
         noise.append(np.full(n, r["noise"], dtype=np.int16))
         jitter.append(np.full(n, r.get("jitter", JITTER_NONE), dtype=np.int16))
+        reset_idx.append(np.full(n, r.get("reset_idx", JITTER_NONE), dtype=np.int16))
+        base_lat.append(np.full(n, r.get("base_lat", 0.0), dtype=np.float32))
+        base_back.append(np.full(n, r.get("base_back", 0.0), dtype=np.float32))
         rec_idx.append(np.arange(n, dtype=np.int16))
         succ.append(np.full(n, r["succ"], dtype=np.int8))
         phase_code.append(np.array([codebook[p] for p in r["phases"]], dtype=np.int16))
@@ -471,6 +522,10 @@ def build_shard(results: list[dict], instruction: str, tier: str,
         "scene": np.concatenate(scene),
         "noise": np.concatenate(noise),
         "jitter": np.concatenate(jitter),
+        # 지터 좌표의 성분 (Episode 주석 참조) — 계열별 층화·교락 진단용.
+        "jitter_reset_idx": np.concatenate(reset_idx),
+        "base_lat": np.concatenate(base_lat),
+        "base_back": np.concatenate(base_back),
         "rec_idx": np.concatenate(rec_idx),
         "succ": np.concatenate(succ),
         "phase_code": np.concatenate(phase_code),
@@ -519,10 +574,10 @@ def main() -> int:
     else:
         layers_sel = list(range(len(EXPECT_LAYERS)))
 
-    eps, jitter_axis = read_index(args.index_tsv, args.grid_root)
+    eps, jitter_axis, jitter_col = read_index(args.index_tsv, args.grid_root)
     if jitter_axis:
-        print("[extract] index 에 jitter_reset_idx 열 있음 — 지터 축 k 를 정식 좌표로 "
-              "쓴다 (base=99)", flush=True)
+        print(f"[extract] index 지터 축 열 = {jitter_col} — 이 값을 정식 좌표로 쓴다 "
+              "(base=99)", flush=True)
     if args.plan_ids != "all":
         want = {p.strip() for p in args.plan_ids.split(",") if p.strip()}
         eps = [e for e in eps if e.plan_id in want]
@@ -598,6 +653,8 @@ def main() -> int:
             "grid_root": str(args.grid_root), "rel_path": e.rel_path,
             "index_success": e.success, "scene": e.scene, "noise": e.noise,
             "jitter": e.jitter,
+            "reset_idx": e.reset_idx,
+            "base_lat": e.base_lat, "base_back": e.base_back,
             "sig": e.sig, "plan_id": e.plan_id, "machine": e.machine,
             "tier": args.tier, "layers_sel": layers_sel,
         } for e in ep_list]
@@ -647,7 +704,9 @@ def main() -> int:
 
         arrays = build_shard(results, instruction, args.tier, layers_sel, layer_ids,
                              extra_meta={"machine_rule": pick["rule"],
-                                         "dropped_dup_cells": pick["dropped_dup_cells"]},
+                                         "dropped_dup_cells": pick["dropped_dup_cells"],
+                                         # jitter 열이 인덱스의 어느 축인지 (소비 측 조인 근거)
+                                         "jitter_column": jitter_col},
                              jitter_axis=jitter_axis)
         name = slug if args.tier == "segA" else \
             f"{slug}__L{'-'.join(str(l) for l in layer_ids)}"

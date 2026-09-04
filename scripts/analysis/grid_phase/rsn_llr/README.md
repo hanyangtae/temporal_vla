@@ -32,3 +32,22 @@
 주의: `fix_oodlo.py`(상수항 −8·log2π 보정)는 일회성 패치라 미수록 — 그 보정은
 `v4_fit_pool3.py` 이후 세대의 `gll`(2π 상수 포함)에 흡수됨. ood_lo 스케일은 반드시
 serve `llr_scorer.py`의 logpdf(상수항 포함)와 같은 정의로 산출할 것.
+
+## LOKO 라운드 (scene-local, v5 설계 → v6 정본)
+
+| 파일 | 내용 |
+|---|---|
+| `loko_fit.py` | (instruction 키, scene, 대상 지터)당 연산자 fit — setm gt/ck8 + rsn_llr 번들. pool = 타 지터 전판 + 대상 지터 실패만(success-blind). 게이트 = 지터-계층화 concordance + 순열검정(§ 아래) |
+| `loko_feasibility.py` | activation 없이 index TSV 만으로 (키,scene,지터)별 pool 성공 ep 수 → 성립 가능성 사전 판정 |
+
+버전 중립: `--tag`(산출 루트, 기본 v6)·`--coord`(폴더·열 이름, 기본 j)·`--axis-col`.
+⚠ **v6 좌표는 `jitter_idx`** 이고 `jitter_reset_idx` 는 출처 열이다(oven/washer 전부 0) —
+그걸 좌표로 읽으면 지터 5개가 한 값으로 뭉갠다. 자동 선택은 `jitter_idx`→`jitter` 순이고
+없으면 fail-loud, 고유값 1개면 LOKO 불가로 즉시 중단한다.
+
+**게이트 설계 근거(반드시 읽을 것)**: LOKO pool 은 성공이 타 k 에서만 오므로 라벨이
+지터 k 와 상관된다(k 단독 AUROC 중앙값 0.835). pool 전체 AUROC 로 등록하면 outcome 이
+아니라 k 를 읽는 판별기가 통과한다. 등록 기준은 succ·fail 공존 k 안의 쌍만 센
+concordance + k 안 라벨 순열검정 p≤0.05 이고, 앵커(k-중심화)는 **LOO 안에서** 잡아야
+한다(전체로 잡으면 순수 노이즈에서 0.73~0.97 오검출). 상세·합성 대조 수치 =
+`docs/collab_within_claude/handoff_20260903_연산자설계.md` §11.
