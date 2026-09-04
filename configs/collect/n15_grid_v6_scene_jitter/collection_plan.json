@@ -1596,7 +1596,7 @@
           "back": 0.0
         },
         {
-          "reset_idx": 2,
+          "reset_idx": 5,
           "lat": 0.0,
           "back": 0.0
         },
@@ -1667,7 +1667,7 @@
       ]
     ]
   },
-  "plan_id": "375e3c46c962",
+  "plan_id": "a81f07b86371",
   "n_cells": 900,
   "estimated_bytes": 409838026752
 }
