@@ -369,14 +369,26 @@ def read_cell_tsv(path, slug_instr: dict[str, str], what: str = "--cells-tsv"
             raise SystemExit(f"{what}: 지터 축 없음 (jitter_reset_idx 값 {sorted(vals)}) "
                              "— v6 jitter_idx 열 필요")
 
-    # 매칭 키 → slug (충돌은 fail-loud)
-    keymap: dict[str, str] = {}
+    # 매칭 키 → slug 후보들. **같은 instruction 이 scene 별 shard 로 여러 개** 올 수 있다
+    # (v6 scene 단위 shard: OvenRack_out-left__s0 / __s1). 그래서 모호를 fail-loud 로
+    # 막지 않고 후보를 모아 두었다가, 아래에서 행의 scene_idx 로 가린다
+    # (stem 이 `…__s<scene>` 규칙이면 그 숫자로, 아니면 유일 후보로).
+    keymap: dict[str, list[str]] = {}
     for slug, instr in sorted(slug_instr.items()):
         for k in _instr_variants(slug) | _instr_variants(instr):
-            if k in keymap and keymap[k] != slug:
-                raise SystemExit(f"{what}: instruction 키 '{k}' 가 shard "
-                                 f"{keymap[k]} / {slug} 둘에 걸린다 (모호)")
-            keymap[k] = slug
+            keymap.setdefault(k, [])
+            if slug not in keymap[k]:
+                keymap[k].append(slug)
+
+    def _pick(cands_slugs: list[str], scene_v: str) -> str | None:
+        """후보 shard 중 그 행의 scene 에 해당하는 것 하나. 판별 불가면 None."""
+        if len(cands_slugs) == 1:
+            return cands_slugs[0]
+        want = f"__s{str(scene_v).strip()}"
+        hit = [c for c in cands_slugs if c.endswith(want)]
+        if len(hit) == 1:
+            return hit[0]
+        return None
 
     rows: list[dict] = []
     by_slug: dict[str, list[dict]] = {}
@@ -385,7 +397,17 @@ def read_cell_tsv(path, slug_instr: dict[str, str], what: str = "--cells-tsv"
         cands: list[str] = []
         for c in CELL_INSTR_COLS:                 # slug → grid_instruction → instruction
             cands += list(_instr_variants(r.get(c)))
-        slug = next((keymap[c] for c in cands if c in keymap), None)
+        cand_slugs: list[str] = []
+        for c in cands:
+            for sl in keymap.get(c, []):
+                if sl not in cand_slugs:
+                    cand_slugs.append(sl)
+        slug = _pick(cand_slugs, r.get("scene_idx", "")) if cand_slugs else None
+        if slug is None and cand_slugs:
+            raise SystemExit(
+                f"{what}: line{i} 의 instruction 이 shard {cand_slugs} 여러 개에 걸리는데 "
+                f"scene_idx={r.get('scene_idx')} 로 가릴 수 없다 "
+                "(shard 이름이 `<slug>__s<scene>` 규칙인지 확인)")
         if slug is None:
             unmatched.append("line{}: {}".format(
                 i, {c: r.get(c, "") for c in CELL_INSTR_COLS if c in cols}))
