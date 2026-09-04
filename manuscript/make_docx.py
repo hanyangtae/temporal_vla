@@ -156,6 +156,10 @@ def main():
                     help="본문 줄간격 exact(twip/20pt 단위, 예 220=11pt). 0=양식 기본")
     ap.add_argument("--tight", action="store_true",
                     help="머리 빈 문단 제거(제목 위·영문 제목 위·요약 위)")
+    ap.add_argument("--keep-blank", action="store_true", help="요약 위 빈 문단 유지")
+    ap.add_argument("--ref-pt", type=float, default=8.0, help="참고문헌 글자 크기")
+    ap.add_argument("--preview-font", default=None,
+                    help="미리보기용: 모든 rFonts 를 이 글꼴로 치환(제출본에는 쓰지 말 것)")
     a = ap.parse_args()
 
     abstract, caps, sections, refs = parse_tex(TEX.read_text())
@@ -184,6 +188,9 @@ def main():
     P[17].addprevious(fig1)
     P[17].addprevious(cap1)
     body.remove(P[18])
+    if not a.keep_blank:                          # 영문 소속과 요약 사이 빈 줄 2개
+        for el in (P[11], P[13]):
+            body.remove(el)
     if a.tight:
         for el in (P[0], P[6], P[11], P[13]):
             body.remove(el)
@@ -227,7 +234,7 @@ def main():
     res_heads = [el for el in body.iter(W("w:p"))
                  if "".join(t.text or "" for t in el.iter(W("w:t"))).startswith("Ⅲ.")]
     first_res_para = res_heads[0].getnext()
-    after = first_res_para.getnext()
+    after = first_res_para.getnext().getnext()      # 결과 둘째 문단 뒤
     figp = picture_para(doc, center_proto, FIGS / "fig_k_sweep_300.png", a.fig_cm)
     capp = clone_para(para_proto, "Figure 3: " + detex(caps["ksweep"]), size_pt=8)
     ind = capp.find(W("w:pPr")).find(W("w:ind"))
@@ -238,7 +245,7 @@ def main():
 
     add(clone_para(center_proto, "참 고 문 헌"))
     for i, r in enumerate(refs, 1):
-        rp = clone_para(ref_proto, f"[{i}] " + detex(r), size_pt=8)
+        rp = clone_para(ref_proto, f"[{i}] " + detex(r), size_pt=a.ref_pt)
         sp = rp.find(W("w:pPr")).find(W("w:spacing"))
         if sp is None:
             sp = rp.find(W("w:pPr")).makeelement(W("w:spacing"), {})
@@ -264,6 +271,11 @@ def main():
             ty = s._sectPr.makeelement(W("w:type"), {})
             s._sectPr.insert(0, ty)
         ty.set(W("w:val"), "continuous")
+    if a.preview_font:
+        for rf in body.iter(W("w:rFonts")):
+            for attr in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
+                if rf.get(W(attr)) is not None:
+                    rf.set(W(attr), a.preview_font)
     doc.save(str(a.out))
     print("wrote", a.out)
 
