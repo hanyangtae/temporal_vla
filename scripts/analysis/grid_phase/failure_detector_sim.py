@@ -1124,7 +1124,9 @@ def run_loto(kind: str, tasks: dict, splits: dict, args,
 
 REGISTRY_COLS = ("instruction", "slug", "scene", "jitter", "registered",
                  "n_pool_other", "n_pool_fail", "n_target_fail", "n_target_succ",
-                 "n_succ_calib", "reason", "ckpt_rel")
+                 "n_succ_calib", "reason", "ckpt_rel",
+                 # j-only 대조군 진단 (미등록 셀은 빈 값 — 모델이 없어 채울 수 없다)
+                 "auroc_jonly_scene", "auroc_target_j", "t_beats_jonly")
 
 LOKO_EVAL_SETS = (
     # (이름, in_train) — in_train=1 은 그 집합이 학습에 들어갔다는 뜻(=상한 지표).
@@ -1153,6 +1155,129 @@ def _jstrat_auroc(scene_scored: list[tuple[Episode, np.ndarray]]) -> dict:
         "n_j_scored": len(vals), "n_j_unscored": unscored,
         "jstrat_detail": "|".join(f"j{j2}:{v:.2f}" for j2, v in sorted(vals.items())),
     }
+
+
+# --- j-only 대조군 · scene 전수 시각 스캔 · 대상 j 내부 판별력 --------------
+# 배경: loko-cell detector 가 "실패"가 아니라 "어느 j 인가"(초기조건)를 읽고 있을
+# 가능성이 실측으로 제기됐다 (record 0~10 창에서 j 5-class 정확도 .92~.98). 그래서
+# **활성화를 전혀 보지 않고 j 별 성공률만 쓰는 대조군**을 정면 지표로 둔다.
+BEAT_SCAN_TMAX = 60       # t_beats_jonly 전수 스캔 상한 (record)
+BEAT_SCAN_NMIN = 6        # 그 t 를 채점하려면 필요한 최소 쌍 수
+TARGET_TD_NMIN = 4        # 대상 j 고정시각 AUROC 최소 쌍 수
+
+
+def jonly_scene_auroc(scene_eps: list[Episode]) -> float | None:
+    """j-only 대조군 AUROC. 점수 = 1 − SR(j), SR(j) 는 **그 scene 안의 j 별 성공률**.
+
+    이건 배포 가능한 예측기가 아니라 **진단용 대조군**이다 (대상 j 성공을 포함한 그
+    scene 전수로 SR 을 추정한다 — 즉 정답을 일부 보고 만든 상한). detector 의 고정시각
+    AUROC 가 이 값을 못 넘으면 그 detector 는 "실패"가 아니라 "j" 를 읽고 있는 것.
+    한 scene 에서 상수이므로 그 scene 의 모든 셀 행에 같은 값이 들어간다.
+    j 가 1종뿐이거나 라벨이 한 클래스뿐이면 None.
+    """
+    by_j: dict[int, list[Episode]] = {}
+    for e in scene_eps:
+        by_j.setdefault(int(e.jitter), []).append(e)
+    if len(by_j) < 2:
+        return None
+    sr = {j: float(np.mean([e.succ for e in v])) for j, v in by_j.items()}
+    sc = np.array([1.0 - sr[int(e.jitter)] for e in scene_eps], dtype=np.float64)
+    y = np.array([e.y for e in scene_eps], dtype=np.int64)
+    a = auroc(sc, y)
+    return None if a is None else round(float(a), 4)
+
+
+def scene_beat_scan(scene_scored: list[tuple[Episode, np.ndarray]],
+                    jonly: float | None) -> dict:
+    """scene 전판 위에서 t = 0,1,…,min(BEAT_SCAN_TMAX, maxT−1) 전수 고정시각 AUROC.
+
+    `td_pairs` 와 같은 규약(그 시각 전에 끝난 판 제외). 반환:
+      auroc_scene_best / t_scene_best  = 격자 위 최댓값과 그 t
+      t_beats_jonly                    = jonly 대조군을 처음 넘는 최소 t (없으면 None)
+      t_beats_jonly_reason             = "" | "never" | "no_jonly" | "no_valid_t"
+      n_t_skipped                      = 단일 클래스이거나 n < NMIN 이라 건너뛴 t 수
+    """
+    best_a: float | None = None
+    best_t: int | None = None
+    beat_t: int | None = None
+    n_skip = 0
+    n_scored = 0
+    if scene_scored:
+        t_hi = min(BEAT_SCAN_TMAX, max(e.T for e, _ in scene_scored) - 1)
+        for t in range(0, max(t_hi, -1) + 1):
+            pairs = td_pairs(scene_scored, t)
+            if len(pairs) < BEAT_SCAN_NMIN:
+                n_skip += 1
+                continue
+            a, _n = td_auroc(pairs)
+            if a is None:
+                n_skip += 1
+                continue
+            n_scored += 1
+            if best_a is None or a > best_a:
+                best_a, best_t = float(a), t
+            if beat_t is None and jonly is not None and a > jonly:
+                beat_t = t
+    if beat_t is not None:
+        reason = ""
+    elif n_scored == 0:
+        reason = "no_valid_t"
+    elif jonly is None:
+        reason = "no_jonly"
+    else:
+        reason = "never"
+    return {"auroc_scene_best": None if best_a is None else round(best_a, 4),
+            "t_scene_best": best_t, "t_beats_jonly": beat_t,
+            "t_beats_jonly_reason": reason, "n_t_skipped": n_skip}
+
+
+def scene_td_metrics(scene_scored: list[tuple[Episode, np.ndarray]]) -> dict:
+    """scene 전판(= jonly 와 **같은 episode 집합**) 위 TD_GRID 고정시각 AUROC."""
+    out: dict = {}
+    for t_d in TD_GRID:
+        a, _n = td_auroc(td_pairs(scene_scored, t_d))
+        out[f"auroc_scene_td{t_d}"] = a
+    return out
+
+
+def target_j_auroc(target_scored: list[tuple[Episode, np.ndarray]]) -> dict:
+    """**대상 j 안에서만** 실패 vs 성공 (우리 배포 형태의 정직한 판별력).
+
+    j 를 고정했으므로 "어느 j 인가" 로는 절대 못 맞힌다. max-score AUROC 를 정면
+    지표로 두고, 같은 집합의 고정시각(JSTRAT_TD) AUROC 를 함께 낸다.
+    """
+    out: dict = {"auroc_target_j": None,
+                 f"auroc_target_j_td{JSTRAT_TD}": None, "target_j_reason": ""}
+    if not target_scored:
+        out["target_j_reason"] = "no_target_eps"
+        return out
+    ys = {int(e.y) for e, _ in target_scored}
+    if 0 not in ys:
+        out["target_j_reason"] = "no_target_succ"
+        return out
+    if 1 not in ys:
+        out["target_j_reason"] = "no_target_fail"
+        return out
+    sc = np.array([float(s.max()) for _, s in target_scored], dtype=np.float64)
+    y = np.array([int(e.y) for e, _ in target_scored], dtype=np.int64)
+    a = auroc(sc, y)
+    out["auroc_target_j"] = None if a is None else round(float(a), 4)
+    pairs = td_pairs(target_scored, JSTRAT_TD)
+    if len(pairs) >= TARGET_TD_NMIN:
+        a2, _n = td_auroc(pairs)
+        out[f"auroc_target_j_td{JSTRAT_TD}"] = a2
+    return out
+
+
+def cell_jonly_diag(scene_scored: list[tuple[Episode, np.ndarray]],
+                    target_scored: list[tuple[Episode, np.ndarray]]) -> dict:
+    """셀 하나의 j-only 진단 묶음 (그 셀의 모든 행에 같은 값으로 들어간다)."""
+    jonly = jonly_scene_auroc([e for e, _ in scene_scored])
+    out: dict = {"auroc_jonly_scene": jonly}
+    out.update(scene_td_metrics(scene_scored))
+    out.update(scene_beat_scan(scene_scored, jonly))
+    out.update(target_j_auroc(target_scored))
+    return out
 
 
 def run_loko_cells(kind: str, tasks: dict, args, out_dir: Path,
@@ -1272,7 +1397,18 @@ def run_loko_cells(kind: str, tasks: dict, args, out_dir: Path,
 
         # ---- 평가 (full 시퀀스) ---------------------------------------------
         sc_map = {int(e.ep_id): score_seq(model, apply_std(e, mu, sd)) for e in scene_eps}
-        jstrat = _jstrat_auroc([(e, sc_map[int(e.ep_id)]) for e in scene_eps])
+        scene_scored = [(e, sc_map[int(e.ep_id)]) for e in scene_eps]
+        jstrat = _jstrat_auroc(scene_scored)
+        # j-only 대조군 묶음 — 셀 단위 값이라 이 셀의 **모든 행(timer 포함)**에 같이 붙는다.
+        cell_diag = cell_jonly_diag(scene_scored,
+                                    [(e, sc_map[int(e.ep_id)]) for e in cell_eps])
+        def _d(k, nd=2):                       # 없으면 em-dash
+            v = cell_diag.get(k)
+            return "\u2014" if v is None else (f"{v:.{nd}f}" if nd else str(v))
+        print(f"[loko] {slug} s{s} j{j}: j-only {_d('auroc_jonly_scene')} "
+              f"| scene best {_d('auroc_scene_best')}@t{_d('t_scene_best', 0)} "
+              f"| target-j AUROC {_d('auroc_target_j')} "
+              f"| beats@t{_d('t_beats_jonly', 0)}", flush=True)
         groups = {"target_j_fail": t_fail, "target_j_succ": t_succ,
                   "pool_other": pool_other}
 
@@ -1325,6 +1461,7 @@ def run_loko_cells(kind: str, tasks: dict, args, out_dir: Path,
                 row.update(summarize(recs))
                 row.update(td_metrics([(e, sc_map[int(e.ep_id)]) for e in group]))
                 row.update(jstrat)
+                row.update(cell_diag)
                 row.update(fire_percentiles(recs))
                 rows.append(row)
 
@@ -1342,6 +1479,7 @@ def run_loko_cells(kind: str, tasks: dict, args, out_dir: Path,
             trow = {**base_row, "alpha": None, "model": "timer", "eval_set": name,
                     "in_train": in_train, "skip_reason": ""}
             trow.update(summarize(trecs))
+            trow.update(cell_diag)
             trow.update(fire_percentiles(trecs))
             rows.append(trow)
 
@@ -1380,6 +1518,9 @@ def run_loko_cells(kind: str, tasks: dict, args, out_dir: Path,
         torch.save(payload, ck_path)
         base_reg.update({"registered": 1, "reason": "",
                          "n_succ_calib": len(calib_scores),
+                         "auroc_jonly_scene": cell_diag["auroc_jonly_scene"],
+                         "auroc_target_j": cell_diag["auroc_target_j"],
+                         "t_beats_jonly": cell_diag["t_beats_jonly"],
                          "ckpt_rel": ck_rel.as_posix()})
         registry.append(base_reg)
 
@@ -1410,7 +1551,12 @@ TSV_COLS = (["task", "instruction", "arm", "model", "alpha", "truncate", "n_test
             # loko-cell 전용 (다른 arm 은 빈 칸). 기존 열 순서는 건드리지 않는다.
             + ["scene", "jitter", "eval_set", "in_train",
                f"auroc_td{JSTRAT_TD}_jstrat_mean", "n_j_scored", "n_j_unscored",
-               "jstrat_detail", "t_fire_p25", "t_fire_p50", "t_fire_p75", "n_fired"])
+               "jstrat_detail", "t_fire_p25", "t_fire_p50", "t_fire_p75", "n_fired"]
+            # j-only 대조군 진단 (loko-cell 전용, 셀 단위 상수)
+            + ["auroc_jonly_scene"] + [f"auroc_scene_td{t}" for t in TD_GRID]
+            + ["auroc_scene_best", "t_scene_best", "t_beats_jonly",
+               "t_beats_jonly_reason", "n_t_skipped", "auroc_target_j",
+               f"auroc_target_j_td{JSTRAT_TD}", "target_j_reason"])
 
 
 def write_tsv(rows: list[dict], path: Path) -> None:
@@ -1428,7 +1574,8 @@ def write_tsv(rows: list[dict], path: Path) -> None:
 
 def _write_synth_shard(path: Path, n_scene=10, n_noise=6, dim=32, seed=0,
                        onset=0.4, signal=1.6, sig_off=0, sig_rand_sign=False,
-                       n_jitter=0, succ_jitter=None, instruction=None):
+                       n_jitter=0, succ_jitter=None, det_jitter=False,
+                       instruction=None):
     """shard 계약과 동일한 NPZ 를 합성한다. 실패 판은 onset 이후 일부 축이 이동.
 
     `sig_off` = 실패 신호가 실리는 축 offset. task 마다 다르게 주면 **공유 신호 없음**
@@ -1439,6 +1586,9 @@ def _write_synth_shard(path: Path, n_scene=10, n_noise=6, dim=32, seed=0,
     `n_jitter` = 0 이면 **jitter 열을 쓰지 않는다**(2축 legacy shard = 기존 케이스와
     바이트 단위로 같은 난수열). >0 이면 scene × jitter × noise 3축.
     `succ_jitter` = 그 j 는 항상 성공 (j-층화 채점에서 단일 클래스 j 를 만들기 위한 장치).
+    `det_jitter` = 성패를 **j 가 완전히 결정**한다 (홀수 j 는 전판 실패, 짝수 j 는 전판
+    성공). j-only 대조군 AUROC 가 1.0 이 되는 극단 케이스 — 활성화 신호를 끄면
+    (signal=0) 어떤 detector 도 이 대조군을 넘을 수 없어야 한다.
     """
     rng = np.random.default_rng(seed)
     layers = [0, 2, 4, 8, 10, 12, 15]
@@ -1452,6 +1602,8 @@ def _write_synth_shard(path: Path, n_scene=10, n_noise=6, dim=32, seed=0,
         for jt in jits:
             for nz in range(n_noise):
                 fail = bool(rng.random() < 0.45)
+                if det_jitter and jt is not None:
+                    fail = bool(int(jt) % 2 == 1)
                 if jt is not None and succ_jitter is not None and jt == int(succ_jitter):
                     fail = False
                 T = int(rng.integers(18, 26)) if fail else int(rng.integers(10, 18))
@@ -1493,7 +1645,7 @@ def _write_synth_shard(path: Path, n_scene=10, n_noise=6, dim=32, seed=0,
 def _synth_case(root: Path, tag: str, seed: int, signal: float, onset: float,
                 n_scene: int, n_noise: int, sig_offs=(0, 0),
                 sig_rand_sign: bool = False, n_jitter: int = 0,
-                succ_jitter=None) -> Path:
+                succ_jitter=None, det_jitter: bool = False) -> Path:
     """합성 shard 2개(=task 2개)를 담은 디렉터리. sig_offs 가 다르면 공유 신호 없음."""
     sd = root / f"segA_{tag}"
     sd.mkdir(parents=True, exist_ok=True)
@@ -1501,7 +1653,8 @@ def _synth_case(root: Path, tag: str, seed: int, signal: float, onset: float,
         _write_synth_shard(sd / f"{name}.npz", n_scene=n_scene, n_noise=n_noise,
                            seed=seed + i, onset=onset, signal=signal,
                            sig_off=sig_offs[i], sig_rand_sign=sig_rand_sign,
-                           n_jitter=n_jitter, succ_jitter=succ_jitter)
+                           n_jitter=n_jitter, succ_jitter=succ_jitter,
+                           det_jitter=det_jitter)
     return sd
 
 
@@ -1673,13 +1826,13 @@ def self_test(args) -> int:
         len_dir = _synth_case(root, "lenonly", args.seed + 100, signal=0.0, onset=0.4,
                               n_scene=14, n_noise=8)
 
-        print("\n=== [self-test 1/8] 신호 O · truncate=none (기존 게이트) ===")
+        print("\n=== [self-test 1/10] 신호 O · truncate=none (기존 게이트) ===")
         rows_a_none = _synth_run(args, sig_dir, root / "out_a_none", "none", epochs)
-        print("\n=== [self-test 2/8] 신호 O · truncate=rollout ===")
+        print("\n=== [self-test 2/10] 신호 O · truncate=rollout ===")
         rows_a_tr = _synth_run(args, sig_dir, root / "out_a_rollout", "rollout", epochs)
-        print("\n=== [self-test 3/8] 신호 X(길이만) · truncate=none ===")
+        print("\n=== [self-test 3/10] 신호 X(길이만) · truncate=none ===")
         rows_b_none = _synth_run(args, len_dir, root / "out_b_none", "none", epochs)
-        print("\n=== [self-test 4/8] 신호 X(길이만) · truncate=rollout ===")
+        print("\n=== [self-test 4/10] 신호 X(길이만) · truncate=rollout ===")
         rows_b_tr = _synth_run(args, len_dir, root / "out_b_rollout", "rollout", epochs)
 
         def _td(rows) -> float | None:
@@ -1756,10 +1909,10 @@ def self_test(args) -> int:
         nosh_dir = _synth_case(root, "loto_nosh", args.seed + 200, signal=2.0,
                                onset=0.25, n_scene=14, n_noise=8, sig_offs=(0, 8),
                                sig_rand_sign=True)
-        print("\n=== [self-test 5/8] loto · 공유 신호 O ===")
+        print("\n=== [self-test 5/10] loto · 공유 신호 O ===")
         rows_c_sh = _synth_run(args, sig_dir, root / "out_c_shared", "none", epochs,
                                arm="loto")
-        print("\n=== [self-test 6/8] loto · 공유 신호 X (다른 축) ===")
+        print("\n=== [self-test 6/10] loto · 공유 신호 X (다른 축) ===")
         rows_c_no = _synth_run(args, nosh_dir, root / "out_c_noshare", "none", epochs,
                                arm="loto")
         c_sh, c_no = _td(rows_c_sh), _td(rows_c_no)
@@ -1793,12 +1946,12 @@ def self_test(args) -> int:
         ]
         cells_tsv = _write_cells_tsv(root / "loko_cells.tsv", cells, cells_cols)
         lk_out = root / "out_loko"
-        print("\n=== [self-test 7/8] loko-cell · 셀별 detector ===")
+        print("\n=== [self-test 7/10] loko-cell · 셀별 detector ===")
         rows_lk = _synth_run(args, lk_dir, lk_out, "none", epochs, arm="loko-cell",
                              extra={"loko_cells_tsv": str(cells_tsv),
                                     "min_pool_fail": 3, "min_calib_succ": 6,
                                     "cp_folds": 0})
-        print("\n=== [self-test 8/8] loko-cell · 게이트 미달(min-calib-succ 999) ===")
+        print("\n=== [self-test 8/10] loko-cell · 게이트 미달(min-calib-succ 999) ===")
         lk_out2 = root / "out_loko_gate"
         _synth_run(args, lk_dir, lk_out2, "none", epochs, arm="loko-cell",
                    extra={"loko_cells_tsv": str(cells_tsv), "min_pool_fail": 3,
@@ -1880,6 +2033,89 @@ def self_test(args) -> int:
             if int(r["in_train"]) != want:
                 fails.append(f"(d) eval_set={r.get('eval_set')} 의 in_train="
                              f"{r['in_train']} (기대 {want})")
+
+        # ---- (h) j-only 대조군 게이트 --------------------------------------
+        # 배경: detector 가 "실패"가 아니라 "어느 j 인가"를 읽고 있을 수 있다. 두 극단
+        # 합성으로 대조군 지표의 방향성을 못 박는다.
+        #   (h1) 성패를 j 가 완전히 결정 + feature 신호 0 → j-only=1.0, 넘을 수 없음
+        #        (그리고 대상 j 가 전판 실패라 auroc_target_j 는 None/no_target_succ)
+        #   (h2) 성패가 j 와 무관 + 후반에만 feature 신호 → j-only≈0.5, 넘을 수 있고
+        #        최고점이 후반 t 에 온다
+        jd_dir = _synth_case(root, "jonly_det", args.seed + 400, signal=0.0, onset=0.4,
+                             n_scene=2, n_noise=8, n_jitter=4, det_jitter=True)
+        lt_dir = _synth_case(root, "jonly_late", args.seed + 500, signal=2.0, onset=0.6,
+                             n_scene=2, n_noise=10, n_jitter=4)
+        jd_cells = _write_cells_tsv(
+            root / "jonly_cells.tsv",
+            [{"instruction": "SynthTaskA", "scene_idx": 0, "jitter_idx": 1,
+              "noise_idx": 0}], cells_cols)
+        print("\n=== [self-test 9/10] j-only 대조군 · 성패를 j 가 결정(신호 0) ===")
+        rows_h1 = _synth_run(args, jd_dir, root / "out_jonly_det", "none", epochs,
+                             arm="loko-cell",
+                             extra={"loko_cells_tsv": str(jd_cells),
+                                    "min_pool_fail": 3, "min_calib_succ": 6,
+                                    "cp_folds": 0})
+        print("\n=== [self-test 10/10] j-only 대조군 · j 무관 후반 신호 ===")
+        rows_h2 = _synth_run(args, lt_dir, root / "out_jonly_late", "none", epochs,
+                             arm="loko-cell",
+                             extra={"loko_cells_tsv": str(jd_cells),
+                                    "min_pool_fail": 3, "min_calib_succ": 6,
+                                    "cp_folds": 0})
+
+        def _diag(rows) -> dict | None:
+            """loko-cell detector 행 하나(셀 단위 상수라 아무 행이나 같다)."""
+            v = [r for r in rows if r.get("arm") == "loko-cell"
+                 and r.get("model") != "timer"
+                 and r.get("auroc_jonly_scene") is not None]
+            return v[0] if v else None
+
+        d1, d2 = _diag(rows_h1), _diag(rows_h2)
+        print("\n[self-test] j-only 대조군 게이트")
+        if d1 is None:
+            fails.append("(h1) j-only 열이 붙은 loko-cell 행이 없다 (셀 미등록?)")
+        else:
+            print(f"  (h1) j 결정·신호0 : j-only={_fmt(d1['auroc_jonly_scene'])} "
+                  f"scene_best={_fmt(d1['auroc_scene_best'])}@t{d1['t_scene_best']} "
+                  f"beats@t={d1['t_beats_jonly']} ({d1['t_beats_jonly_reason']}) "
+                  f"skipped={d1['n_t_skipped']} | target_j={d1['auroc_target_j']} "
+                  f"({d1['target_j_reason']})")
+            if float(d1["auroc_jonly_scene"]) < 0.99:
+                fails.append(f"(h1) j-only AUROC {d1['auroc_jonly_scene']} < 0.99 — "
+                             "성패를 j 가 결정하는 합성인데 대조군이 안 올라간다")
+            if d1["t_beats_jonly"] is not None:
+                fails.append(f"(h1) t_beats_jonly={d1['t_beats_jonly']} — j-only=1.0 을 "
+                             "넘었다는 것은 스캔 비교가 잘못됐다는 뜻")
+            if d1["t_beats_jonly_reason"] != "never":
+                fails.append(f"(h1) t_beats_jonly_reason={d1['t_beats_jonly_reason']} "
+                             "(기대 'never')")
+            # (h1) 겸 대상 j 성공 0판 계약
+            if d1["auroc_target_j"] is not None:
+                fails.append(f"(h1) 대상 j 에 성공이 0판인데 auroc_target_j="
+                             f"{d1['auroc_target_j']} (None 기대)")
+            if d1["target_j_reason"] != "no_target_succ":
+                fails.append(f"(h1) target_j_reason={d1['target_j_reason']} "
+                             "(기대 'no_target_succ')")
+        if d2 is None:
+            fails.append("(h2) j-only 열이 붙은 loko-cell 행이 없다 (셀 미등록?)")
+        else:
+            print(f"  (h2) j 무관·후반신호: j-only={_fmt(d2['auroc_jonly_scene'])} "
+                  f"scene_best={_fmt(d2['auroc_scene_best'])}@t{d2['t_scene_best']} "
+                  f"beats@t={d2['t_beats_jonly']} ({d2['t_beats_jonly_reason']}) "
+                  f"skipped={d2['n_t_skipped']} | target_j={d2['auroc_target_j']}")
+            if d2["t_beats_jonly"] is None:
+                fails.append(f"(h2) t_beats_jonly=None ({d2['t_beats_jonly_reason']}) — "
+                             "j 무관 후반 신호 합성인데 대조군을 한 번도 못 넘었다")
+            if d2["auroc_scene_best"] is None:
+                fails.append("(h2) auroc_scene_best=None — 스캔이 아무 t 도 채점 못 했다")
+            elif float(d2["auroc_scene_best"]) <= float(d2["auroc_jonly_scene"]) + 0.15:
+                fails.append(f"(h2) scene_best {d2['auroc_scene_best']} 이 j-only "
+                             f"{d2['auroc_jonly_scene']} 대비 +0.15 도 못 넘었다")
+            elif d2["t_scene_best"] is None or int(d2["t_scene_best"]) < 5:
+                fails.append(f"(h2) t_scene_best={d2['t_scene_best']} — 후반(onset 0.6)에만 "
+                             "신호를 준 합성인데 최고점이 초반이다")
+            if d2["auroc_target_j"] is None:
+                fails.append(f"(h2) auroc_target_j=None ({d2['target_j_reason']}) — "
+                             "대상 j 에 성패가 섞여 있어야 한다")
 
         # ---- 셀 TSV 리더 · LOO 밴드 단위 점검 -------------------------------
         print("\n[self-test] 셀 TSV 리더 · LOO 밴드")
