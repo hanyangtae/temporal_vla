@@ -112,7 +112,10 @@ while :; do
     seg_hit=""; stems=""
     for d in $SEG_DIRS; do
       [[ -d "$d" ]] || continue
-      mapfile -t SH < <(find "$d" -maxdepth 1 -type f \( -name "${slug}.npz" -o -name "${slug}_*.npz" \) 2>/dev/null | sort || true)
+      # .partial* 격리본(이관 미완 shard)은 절대 집지 않는다 — 판수가 모자란 채로
+      # 학습하면 pool/게이트 수치가 조용히 틀어진다(2026-09-04 dish-R 46/50 사례).
+      mapfile -t SH < <(find "$d" -maxdepth 1 -type f \( -name "${slug}.npz" -o -name "${slug}_*.npz" \) \
+                        ! -name "*partial*" ! -name "*.tmp" 2>/dev/null | sort || true)
       [[ "${#SH[@]}" -eq 0 ]] && continue
       seg_hit="$d"
       for f in "${SH[@]}"; do
