@@ -26,6 +26,7 @@ FIT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "loko_fit.py")
 SSH = ["ssh", "-p", "11112", "kimseungjun@166.104.146.37"]
 SEG = "~/datasets/temporal_vla_store/groot/n15/analysis/grid_phase_v6/segA"
 SENTINEL = "V5_LOKO_DONE"        # loko_fit.py 가 (키, scene) 완주 시 찍는 문자열
+AUDIT = "~/datasets/temporal_vla_store/groot/n15/analysis/grid_phase_v6/audit_cells.tsv"
 
 
 def parse_args():
@@ -37,8 +38,58 @@ def parse_args():
     ap.add_argument("--bundle", default=None, help="AE 번들 경로 override(임시본 사용 시)")
     ap.add_argument("--tag", default="v6")
     ap.add_argument("--coord", default="j")
+    ap.add_argument("--audit", default=AUDIT,
+                    help="action phase 셀 감사표(승준 경로). 셀표(index 유래)와 교차대조")
+    ap.add_argument("--no-audit", action="store_true", help="교차대조 생략(권장하지 않음)")
     ap.add_argument("--dry-run", action="store_true")
     return ap.parse_args()
+
+
+def cross_check(rows, audit_text, cells):
+    """중추 셀표(index 유래) vs action phase 감사표(shard 유래) 대조.
+
+    두 표는 **출처가 다르다** — 하나는 수집 인덱스, 하나는 추출된 activation shard.
+    어긋나면 "라벨이 다른 세계" 계열 사고(v4r 반전 전례)이므로 fit 전에 멈춘다.
+    """
+    ad = {}
+    for r in csv.DictReader(audit_text.splitlines(), delimiter="\t"):
+        ad[(r["slug"], int(r["scene"]), int(r["jitter"]))] = (
+            int(r["eps"]), int(r["expected"]), int(r["succ_eps"]))
+    if not ad:
+        return ["감사표가 비었거나 형식이 다르다 — 대조 불가"]
+
+    # 셀표에서 (slug, scene) 별 지터 구성 재구성
+    tgt_fail = collections.Counter()
+    pool_succ = {}
+    for r in rows:
+        key = (r["slug"], int(r["scene_idx"]), int(r["jitter_idx"]))
+        tgt_fail[key] += 1
+        if "pool_succ" in r:
+            pool_succ[key] = int(r["pool_succ"])
+
+    bad = []
+    for (slug, scene), js in sorted(cells.items()):
+        scene_js = [k for k in ad if k[0] == slug and k[1] == scene]
+        if not scene_js:
+            continue                      # shard 미도착 — 대기로 처리됨
+        for j in sorted(js):
+            k = (slug, scene, j)
+            if k not in ad:
+                bad.append(f"{slug} s{scene} j{j}: 감사표에 없음")
+                continue
+            eps, exp, succ = ad[k]
+            if eps != exp:
+                bad.append(f"{slug} s{scene} j{j}: shard eps {eps} != 기대 {exp}")
+            n_fail_shard = eps - succ
+            if tgt_fail[k] != n_fail_shard:
+                bad.append(f"{slug} s{scene} j{j}: 대상 실패 셀표 {tgt_fail[k]} != "
+                           f"shard {n_fail_shard}")
+            if k in pool_succ:
+                ps = sum(ad[q][2] for q in scene_js if q[2] != j)
+                if pool_succ[k] != ps:
+                    bad.append(f"{slug} s{scene} j{j}: pool 성공 셀표 {pool_succ[k]} != "
+                               f"shard {ps}")
+    return bad
 
 
 def main():
@@ -72,6 +123,21 @@ def main():
     if not todo:
         print("[run] 돌릴 셀 없음")
         return 0
+
+    if not args.no_audit and not args.dry_run:
+        txt = subprocess.run(SSH + [f"cat {args.audit} 2>/dev/null"],
+                             capture_output=True, text=True).stdout
+        if not txt.strip():
+            print(f"[audit] 감사표 없음({args.audit}) — 대조 생략하고 진행")
+        else:
+            bad = cross_check(rows, txt, {k: v for k, v in cells.items()
+                                          if k[0] in have and (not only or k[0] in only)})
+            if bad:
+                print("[audit] ★불일치 — fit 중단 (셀표=index 유래, 감사표=shard 유래)")
+                for b in bad[:20]:
+                    print("   ", b)
+                return 2
+            print("[audit] 셀표 x shard 감사표 대조 통과")
 
     fail = 0
     for slug, scene, js in todo:
