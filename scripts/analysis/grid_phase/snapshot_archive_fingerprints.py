@@ -31,8 +31,17 @@ from pathlib import Path
 COLS = ["grid_instruction", "scene_idx", "jitter_idx", "noise_idx",
         "pkl_sha256", "sig", "success", "plan_id", "machine", "rel_dir"]
 
+# `--emit-index` 로 낼 추출기 호환 인덱스의 열. build_grid_index.py 산출과 같은 이름을
+# 쓰되, extract_grid_matrix.read_index 가 실제로 읽는 것만 담는다(그 함수는 헤더로
+# 열을 찾으므로 여분 열이 없어도 된다). 수집 측 부분 인덱스 생성이 막혔을 때
+# **아카이브 자체를 진실의 출처로** 삼아 추출을 진행하기 위한 우회로다.
+INDEX_COLS = ["plan_id", "machine", "grid_instruction", "scene_idx", "jitter_idx",
+              "noise_idx", "jitter_reset_idx", "base_lat", "base_back",
+              "armsig", "has_pkl", "sig", "pkl_sha256", "success", "rel_path"]
 
-def scan(grid_root: Path, filters: list[str]) -> list[dict]:
+
+def scan(grid_root: Path, filters: list[str],
+         scenes: set[int] | None = None) -> list[dict]:
     rows = []
     for meta in sorted(grid_root.rglob("meta.json")):
         try:
@@ -42,10 +51,43 @@ def scan(grid_root: Path, filters: list[str]) -> list[dict]:
         instr = str(d.get("grid_instruction", ""))
         if filters and not any(f in instr for f in filters):
             continue
+        if scenes is not None and int(d.get("scene_idx", -1)) not in scenes:
+            continue
         row = {c: d.get(c, "") for c in COLS if c != "rel_dir"}
-        row["rel_dir"] = str(meta.parent.relative_to(grid_root))
+        rel_dir = str(meta.parent.relative_to(grid_root))
+        row["rel_dir"] = rel_dir
+        row["_has_pkl"] = 1 if (meta.parent / "rollout.pkl").is_file() else 0
+        row["_armsig"] = d.get("armsig", "base")
+        row["_jitter_reset_idx"] = d.get("jitter_reset_idx", "")
+        row["_base_lat"] = d.get("base_lat", 0.0)
+        row["_base_back"] = d.get("base_back", 0.0)
         rows.append(row)
     return rows
+
+
+def write_index(rows: list[dict], out: Path, plan_id: str) -> None:
+    """추출기 호환 인덱스 TSV. `rel_path` 는 `<plan_id>/<셀 상대경로>` 규약."""
+    lines = ["\t".join(INDEX_COLS)]
+    for r in rows:
+        vals = {
+            "plan_id": r.get("plan_id", plan_id),
+            "machine": r.get("machine", ""),
+            "grid_instruction": r.get("grid_instruction", ""),
+            "scene_idx": r.get("scene_idx", ""),
+            "jitter_idx": r.get("jitter_idx", ""),
+            "noise_idx": r.get("noise_idx", ""),
+            "jitter_reset_idx": r.get("_jitter_reset_idx", ""),
+            "base_lat": r.get("_base_lat", 0.0),
+            "base_back": r.get("_base_back", 0.0),
+            "armsig": r.get("_armsig", "base"),
+            "has_pkl": r.get("_has_pkl", 1),
+            "sig": r.get("sig", ""),
+            "pkl_sha256": r.get("pkl_sha256", ""),
+            "success": r.get("success", ""),
+            "rel_path": f"{plan_id}/{r['rel_dir']}",
+        }
+        lines.append("\t".join(str(vals[c]) for c in INDEX_COLS))
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def write_tsv(rows: list[dict], out: Path) -> None:
@@ -105,6 +147,11 @@ def main() -> int:
     ap.add_argument("--compare", nargs=2, type=Path, metavar=("PRE", "POST"))
     ap.add_argument("--swap", action="append", default=[], metavar="A=B",
                     help="맞교환 매핑 (compare 전용)")
+    ap.add_argument("--scenes", default=None,
+                    help="scene_idx 필터, 쉼표 목록 (예: 0,1). 없으면 전부")
+    ap.add_argument("--emit-index", action="store_true",
+                    help="지문표 대신 **추출기 호환 인덱스**를 쓴다 (수집 측 인덱스 "
+                         "생성이 막혔을 때 아카이브를 출처로 삼는 우회로)")
     a = ap.parse_args()
 
     if a.compare:
@@ -114,12 +161,23 @@ def main() -> int:
         ap.error("--grid-root 와 --out 이 필요하다 (또는 --compare)")
     if not a.grid_root.is_dir():
         raise SystemExit(f"없음: {a.grid_root}")
-    rows = scan(a.grid_root, a.filter)
+    scenes = ({int(s) for s in a.scenes.split(",") if s.strip() != ""}
+              if a.scenes else None)
+    rows = scan(a.grid_root, a.filter, scenes)
     if not rows:
         raise SystemExit(f"{a.grid_root}: 조건에 맞는 meta.json 이 없다")
-    write_tsv(rows, a.out)
     n_instr = len({r["grid_instruction"] for r in rows})
     n_hash = len({r["pkl_sha256"] for r in rows})
+    if a.emit_index:
+        write_index(rows, a.out, a.grid_root.name)
+        n_nopkl = sum(1 for r in rows if not r["_has_pkl"])
+        print(f"[index] {len(rows)}행 / instruction {n_instr} / pkl 없음 {n_nopkl} "
+              f"→ {a.out}")
+        if n_nopkl:
+            print(f"[index] ⚠ pkl 없는 셀 {n_nopkl}건은 has_pkl=0 — 추출기가 건너뛴다",
+                  file=sys.stderr)
+        return 0
+    write_tsv(rows, a.out)
     print(f"[snapshot] {len(rows)}셀 / instruction {n_instr} / "
           f"고유 pkl_sha256 {n_hash} → {a.out}")
     if n_hash != len(rows):
