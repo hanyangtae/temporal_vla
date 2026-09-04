@@ -1,11 +1,21 @@
+% !TeX program = xelatex
 % 제7회 한국 인공지능 학술대회 (KICS 인공지능소사이어티) 투고 원고
+% 컴파일: XeLaTeX (Overleaf 는 Menu > Compiler 에서 XeLaTeX 선택)
 % 조판 수치 출처: 학회 한글 양식(양식-논문샘플한글.hwp) — 여백 1.5cm(머리말 1.0cm 포함 상단 2.5cm),
 %   단 간격 0.5cm, 본문 9pt·장평 90%·자간 -7%(영문 -5%), 제목 13pt·저자 11pt·요약 9pt.
 %   줄간격은 워드 양식(1줄)에 맞춘 11pt.
 \documentclass[a4paper,twocolumn,9pt]{extarticle}
+\usepackage{iftex}
 \usepackage{kotex}
-\setmainfont[FakeStretch=0.9,LetterSpace=-5]{lmroman10-regular.otf}[BoldFont=lmroman10-bold.otf,ItalicFont=lmroman10-italic.otf]
-\setmainhangulfont[FakeStretch=0.9,LetterSpace=-7]{UnBatang.ttf}[BoldFont=UnBatangBold.ttf]
+% 글꼴·장평·자간은 XeLaTeX 에서만 적용한다 (Overleaf: Menu > Compiler > XeLaTeX).
+% pdfLaTeX 로 돌리면 아래 블록을 건너뛰고 kotex 기본 글꼴로 조판된다.
+\ifXeTeX
+  \XeTeXlinebreaklocale ""
+  \setmainfont[FakeStretch=0.9,LetterSpace=-5]{lmroman10-regular.otf}%
+    [BoldFont=lmroman10-bold.otf,ItalicFont=lmroman10-italic.otf]
+  \setmainhangulfont[FakeStretch=0.9,LetterSpace=-7]{UnBatang.ttf}%
+    [BoldFont=UnBatangBold.ttf]
+\fi
 \usepackage[left=1.5cm,right=1.5cm,top=2.5cm,bottom=1.5cm]{geometry}
 \usepackage{graphicx}
 \usepackage{amsmath}
@@ -28,7 +38,7 @@
 
 
 \twocolumn[{
-\begin{center}\addfontfeatures{FakeStretch=1,LetterSpace=0}\addhangulfontfeatures{FakeStretch=1,LetterSpace=0}
+\begin{center}\ifXeTeX\addfontfeatures{FakeStretch=1,LetterSpace=0}\addhangulfontfeatures{FakeStretch=1,LetterSpace=0}\fi
 {\large\bfseries VLA 모델이 스스로 인지하는 작업 단계의 실시간 감지}\\[1.2ex]
 {박경태, 김상우, 오윤선$^{\dagger}$}\\
 {한양대학교}\\[0.6ex] 
@@ -44,7 +54,7 @@ Vision-Language-Action(VLA) 모델이 작업을 수행할 때 스스로 현재 �
 \vspace{0.3ex}
 }]
 
-\begin{figure}[!t]
+\begin{figure}[tb]
   \centering
   \includegraphics[width=0.86\columnwidth]{figs/fig_readout_bar.pdf}
   \caption{Unseen scene에서의 phase 감지 정확도. 막대는 instruction 10개의 중앙값, 흰 점은 instruction 별 값이다. 회색은 외부 정보만 쓰는 대조군, 파랑은 내부 activation이다.}
@@ -73,7 +83,7 @@ I(Z;Y)=\sum_{k}\sum_{c} p(k,c)\log_2\frac{p(k,c)}{p(k)p(c)}
 \end{equation}
 정확도는 감지한 cluster가 매핑된 phase와 GT phase가 일치하는 비율로 구한다.
 
-\begin{figure*}[!t]
+\begin{figure*}[tb]
   \centering
   \includegraphics[width=0.64\textwidth]{figs/fig1_purity_residual.pdf}
   \caption{(a) Cluster와 GT phase 출현 연관성 행렬. 세로축은 cluster에 임의로 부여한 index이다. 이는 특정 cluster는 특정 phase에 주로 국한되어 나타냄을 보여준다. (b) Activation에서 scene별 평균값을 뺀 후의 phase에 대한 margin. (c) activation이 scene에 대해서 얼마나 설명하는지를 나타내는 그래프.}
@@ -84,7 +94,7 @@ I(Z;Y)=\sum_{k}\sum_{c} p(k,c)\log_2\frac{p(k,c)}{p(k)p(c)}
 
 \textbf{각 cluster는 특정 phase에 국한된다.} 한 phase에서 나타난 cluster는 다른 phase에서 잘 나타나지 않는다. Cluster와 phase의 동시 출현 비율 $p(k,c)$를 나타낸 행렬에서는 특정 cluster는 특정 phase에 주로 나타남이 보인다(Figure 2a). 시간 대조군의 MI 중앙값은 0.279 bits이며, margin의 중앙값은 +0.343 bits이다. 모든 instruction에서 양수이므로 단순히 진행도만 가지고 판단하는 것보다 정보량이 풍부함을 알 수 있다(Figure 2b). $k$가 GT phase 수보다 커서 한 phase를 여러 cluster가 나눠 갖더라도 각 cluster는 특정 phase에 국한되므로 이 방식의 높은 정보량을 여전히 지지한다.
 
-\begin{figure}[!t]
+\begin{figure}[tb]
   \centering
   \includegraphics[width=0.86\columnwidth]{figs/fig_k_sweep.pdf}
   \caption{감지 정확도의 $k$에 대한 강건성. GT phase 수(3--6, 회색 대역)를 넘는 $k\ge8$에서 성능이 평탄해진다(0.82--0.88). 흐린 선은 각 instruction별 accuracy 그래프이다.}
