@@ -50,6 +50,7 @@ OUT_DIR = HERE / "figs"
 OUT_STEM = OUT_DIR / "fig1_purity_residual"
 
 FOCUS_TASK = "PPCC_candle"
+DISPLAY_TASK = "Pick and Place"   # 그림 표기용 이름 (내부 슬러그와 분리)
 DEGENERATE_TASK = None  # raw+AE 에서는 전 instruction margin 양수 → 특례 없음
 
 CM = 1.0 / 2.54
@@ -165,8 +166,7 @@ def panel_a(ax, cax, cont):
     ax.set_xlabel("annotated phase", labelpad=2)
     ax.set_ylabel("cluster (re-ordered)", labelpad=2)
     ax.set_title(
-        f"(a) Cluster-phase contingency\n{short_task(FOCUS_TASK)}, k={cont['k']}"
-        f"  |  purity {cont['purity']:.3f}",
+        f"(a) Cluster-phase contingency\n{DISPLAY_TASK}, k={cont['k']}",
         fontsize=8,
         pad=4,
     )
