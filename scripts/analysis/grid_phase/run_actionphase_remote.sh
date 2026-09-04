@@ -31,11 +31,20 @@ REPO="${REPO:-$HOME/workspace/temporal_vla}"
 STORE="${STORE:-$HOME/datasets/temporal_vla_store/groot/n15}"
 OUT="${OUT:-$STORE/analysis/grid_phase_${TAG}}"
 GRID="${GRID:-$STORE/grid}"
-WORKERS="${WORKERS:-3}"    # OOM 상한 — 3 초과 금지
 K="${K:-8}"
 
-# 공유 노드 CPU cap (메모리 규약 OMP ≤16)
-export OMP_NUM_THREADS=16 OPENBLAS_NUM_THREADS=16 MKL_NUM_THREADS=16 NUMEXPR_NUM_THREADS=16
+# ── CPU 예산 (docs/05 §1: 승준은 8코어 공유 — 내 프로세스 **합산 스레드 ≤ 8**) ─────
+# 추출은 워커 프로세스가 WORKERS 개 뜨고 각자 BLAS 를 쓰므로 WORKERS × OMP_THREADS 가
+# 실제 점유다. 기본 2×4=8. 이관·수집이 같이 돌면 WORKERS=1 로 낮출 것.
+# (구 기본값은 workers 3 × OMP 16 = 48 스레드로 이 규약을 훨씬 넘겼다.)
+WORKERS="${WORKERS:-2}"          # OOM 상한 3 이하 · CPU 예산상 보통 2
+OMP_THREADS="${OMP_THREADS:-4}"
+if (( WORKERS * OMP_THREADS > 8 )); then
+  echo "[wrap] ERROR: WORKERS($WORKERS) × OMP_THREADS($OMP_THREADS) > 8 — 승준 CPU 규약 위반" >&2
+  exit 2
+fi
+export OMP_NUM_THREADS="$OMP_THREADS" OPENBLAS_NUM_THREADS="$OMP_THREADS" \
+       MKL_NUM_THREADS="$OMP_THREADS" NUMEXPR_NUM_THREADS="$OMP_THREADS"
 
 [[ -s "$INDEX" ]] || { echo "[wrap] ERROR: INDEX 없음/빈 파일: $INDEX" >&2; exit 2; }
 
@@ -91,12 +100,22 @@ echo "[wrap] TAG=$TAG index=$INDEX instruction=${#ALL_INSTRUCTIONS[@]}"
 while IFS=$'\t' read -r _i _n; do echo "[wrap]   $_i: $_n 판(기대)"; done <<< "$INDEX_COUNTS"
 
 INSTRUCTIONS=("${ALL_INSTRUCTIONS[@]}")
-# 부분 실행: INSTR_CSV="A,B,..." 로 대상 축소. 이때 AE 는 건너뛴다 —
-# AE 는 인덱스의 instruction 전체가 모인 뒤에만 (SKIP_AE=1 로도 강제 가능).
+# 부분 실행: INSTR_CSV="A,B,..." 로 대상 축소.
 SKIP_AE="${SKIP_AE:-0}"
 if [[ -n "${INSTR_CSV:-}" ]]; then
   IFS=',' read -r -a INSTRUCTIONS <<< "$INSTR_CSV"
-  SKIP_AE=1
+  [[ -n "${PARTIAL_AE:-}" ]] || SKIP_AE=1   # 부분 실행 기본은 AE 생략
+fi
+
+# PARTIAL_AE=1 : **수집 완주 전 임시 번들**. 그때까지 모인 shard 만으로 AE·KMeans 를 돌려
+# 소비 세션이 먼저 붙어 볼 수 있게 한다. 정식 번들과 **섞이면 안 되므로** 산출을
+# `ae_k<K>_partial/` 로 분리하고, 어느 shard 로 학습했는지 provenance(번들 안)와
+# `PARTIAL_SHARDS.txt` 에 남긴다. 최종 번들(전 instruction)은 PARTIAL_AE 없이 돌려
+# `ae_k<K>/` 에 만든다 — AE 는 전 shard 공용 1개 규약이라 임시본과 수치가 다르다.
+AE_SUBDIR="ae_k${K}"
+if [[ -n "${PARTIAL_AE:-}" ]]; then
+  AE_SUBDIR="ae_k${K}_partial"
+  SKIP_AE=0
 fi
 
 slug_of() { local s="${1//\//_}"; echo "${s// /_}"; }
@@ -173,7 +192,7 @@ PYEOF
 # 번들 경로 = `<OUT>/ae_k<K>/ae_bundle_k<K>.npz`. OUT 이 이미 라운드를 담고 있으므로
 # (기본 `analysis/grid_phase_<TAG>`) 안쪽 이름에 TAG 를 또 넣지 않는다 — 소비 측
 # (연산자 fit) 기본 경로와 맞춘 규약이다.
-BUNDLE="$OUT/ae_k${K}/ae_bundle_k${K}.npz"
+BUNDLE="$OUT/$AE_SUBDIR/ae_bundle_k${K}.npz"
 n_all=$(ls "$OUT"/segA/*.npz 2>/dev/null | wc -l)
 n_want="${#ALL_INSTRUCTIONS[@]}"
 if [[ "$SKIP_AE" == "1" ]]; then
@@ -181,15 +200,22 @@ if [[ "$SKIP_AE" == "1" ]]; then
   echo "[wrap] ACTIONPHASE_${TAG}_PARTIAL_DONE $(date -Is)"
   exit 0
 fi
-if [[ "$n_all" -ne "$n_want" ]]; then
-  echo "[wrap] ERROR: ae_cluster 는 인덱스의 instruction 전체(${n_want}) 필요 — 현재 ${n_all}" >&2
+if [[ -z "${PARTIAL_AE:-}" && "$n_all" -ne "$n_want" ]]; then
+  echo "[wrap] ERROR: 정식 ae_cluster 는 인덱스의 instruction 전체(${n_want}) 필요 — 현재 ${n_all}" >&2
+  echo "[wrap]        완주 전 임시 번들이 필요하면 PARTIAL_AE=1 (산출 ae_k${K}_partial/)" >&2
   exit 13
 fi
-if [[ -s "$BUNDLE" ]]; then
+if [[ -n "${PARTIAL_AE:-}" && "$n_all" -lt 2 ]]; then
+  echo "[wrap] ERROR: 임시 AE 도 shard 2개 이상 필요 — 현재 ${n_all}" >&2
+  exit 13
+fi
+# 임시 번들은 shard 가 늘 때마다 다시 만들어야 하므로 존재해도 덮어쓴다(멱등 skip 안 함).
+if [[ -z "${PARTIAL_AE:-}" && -s "$BUNDLE" ]]; then
   echo "[wrap] skip ae_cluster — $BUNDLE 존재"
 else
   mkdir -p "$(dirname "$BUNDLE")"
-  echo "[wrap] ae_cluster 시작 ($(date +%F' '%T))"
+  echo "[wrap] ae_cluster 시작 (${PARTIAL_AE:+임시·}shard ${n_all}/${n_want}, $(date +%F' '%T))"
+  ls "$OUT"/segA/*.npz | xargs -n1 basename > "$(dirname "$BUNDLE")/PARTIAL_SHARDS.txt"
   "$PY" "$REPO/scripts/analysis/grid_phase/ae_cluster.py" \
     --shard-dir "$OUT/segA" --mode all --dump-labels --k "$K" \
     --out-dir "$(dirname "$BUNDLE")" --export-bundle "$BUNDLE"
