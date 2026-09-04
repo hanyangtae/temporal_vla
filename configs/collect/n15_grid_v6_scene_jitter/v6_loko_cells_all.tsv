@@ -34,6 +34,11 @@ OvenRack/out-left	OvenRack_out-left	worker1	2	1	10	7	3	40	0	43	0	pool_fail<3
 OvenRack/out-left	OvenRack_out-left	worker1	2	2	10	10	0	37	3	40	0	tgt_fail<1
 OvenRack/out-left	OvenRack_out-left	worker1	2	3	10	10	0	37	3	40	0	tgt_fail<1
 OvenRack/out-left	OvenRack_out-left	worker1	2	4	10	10	0	37	3	40	0	tgt_fail<1
+OvenRack/out-right	OvenRack_out-right	worker1	0	0	10	0	10	0	40	50	0	pool_succ<1
+OvenRack/out-right	OvenRack_out-right	worker1	0	1	10	0	10	0	40	50	0	pool_succ<1
+OvenRack/out-right	OvenRack_out-right	worker1	0	2	10	0	10	0	40	50	0	pool_succ<1
+OvenRack/out-right	OvenRack_out-right	worker1	0	3	10	0	10	0	40	50	0	pool_succ<1
+OvenRack/out-right	OvenRack_out-right	worker1	0	4	10	0	10	0	40	50	0	pool_succ<1
 OvenRack/out-right	OvenRack_out-right	worker1	2	0	10	10	0	30	10	40	0	tgt_fail<1
 OvenRack/out-right	OvenRack_out-right	worker1	2	1	10	10	0	30	10	40	0	tgt_fail<1
 OvenRack/out-right	OvenRack_out-right	worker1	2	2	10	10	0	30	10	40	0	tgt_fail<1
