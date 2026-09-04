@@ -148,6 +148,19 @@ if [[ -n "${INSTR_SCENES:-}" ]]; then
     if [[ "$n_sub" -le 0 ]]; then
       echo "[wrap] ERROR: 인덱스에 $instr s$sc 행이 없다" >&2; exit 2
     fi
+    # **이관 미완 검사** — 인덱스 행(=계획된 판)과 pkl 보유 행이 다르면 shard 가 조용히
+    # 짧아진다. 셀 감사는 기대치를 같은 인덱스에서 만들므로 이 결손을 못 잡는다
+    # (실사고 2026-09-04: dish-R s1 meta 50 / pkl 46 → 46판 shard 가 "일치"로 통과).
+    n_pkl=$(awk -F'\t' '
+      NR==1 { for (i=1;i<=NF;i++) c[$i]=i; next }
+      { if (("has_pkl" in c) && ($c["has_pkl"]=="0" || $c["has_pkl"]=="false")) next; n++ }
+      END { print n+0 }' "$sub_idx")
+    if [[ "$n_pkl" -ne "$n_sub" ]]; then
+      echo "[wrap] ERROR: $instr s$sc — 인덱스 $n_sub 행 중 pkl 보유 $n_pkl (이관 미완 $(( n_sub - n_pkl ))판)." >&2
+      echo "[wrap]        이관 완료 후 재실행할 것. 짧은 shard 를 그대로 내려면 ALLOW_PARTIAL_PKL=1." >&2
+      [[ -n "${ALLOW_PARTIAL_PKL:-}" ]] || exit 14
+      echo "[wrap] ALLOW_PARTIAL_PKL — 결손 $(( n_sub - n_pkl ))판을 뺀 채 진행한다" >&2
+    fi
     echo "[wrap] extract $instr s$sc ($n_sub 판) → ${slug}__s${sc} ($(date +%F' '%T))"
     tmp_out="$OUT/.tmp_${slug}__s${sc}"
     rm -rf "$tmp_out"; mkdir -p "$tmp_out"
