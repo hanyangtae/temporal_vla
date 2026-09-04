@@ -191,6 +191,15 @@ while IFS=$'\037' read -r key instr si jid k seed ni inf env task lang; do
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$key" "$instr" "$si" "$jid" "$k" "$seed" "$ni" "$inf" "$env" "$task" "$lang" >> "$TODO_TSV"
 done < <(tsv_us "$CELLS_TSV")
+# PRIORITY_CELLS: "instr|s<sid>[|j<jid>]" 접두 목록(쉼표) — 일치하는 결손 셀을 앞으로 (안정 정렬, 소비 세션의
+# eval 대상 (instr, scene) 을 먼저 채우기 위함, 2026-09-04). 미지정이면 plan 순서.
+if [ -n "${PRIORITY_CELLS:-}" ]; then
+  awk -v pri="$PRIORITY_CELLS" 'BEGIN{FS=OFS="\t"; n=split(pri,P,",")}
+    { hit=0; for(i=1;i<=n;i++){ if(P[i]!="" && index($1, P[i] "|")==1){hit=1;break} }
+      print (hit?0:1) "\t" NR "\t" $0 }' "$TODO_TSV" | sort -t$'\t' -k1,1n -k2,2n | cut -f3- > "${TODO_TSV}.pri" \
+    && mv "${TODO_TSV}.pri" "$TODO_TSV"
+  log "PRIORITY_CELLS 적용: 앞 $(awk -v pri="$PRIORITY_CELLS" 'BEGIN{n=split(pri,P,",")} {for(i=1;i<=n;i++) if(P[i]!="" && index($1,P[i] "|")==1){c++;break}} END{print c+0}' "$TODO_TSV") 셀 우선"
+fi
 # MAX_CELLS: 결손 중 앞 N 셀만 (스모크·첫 셀 게이트용). 미지정이면 전부.
 if [ -n "${MAX_CELLS:-}" ]; then
   head -n "$MAX_CELLS" "$TODO_TSV" > "${TODO_TSV}.lim" && mv "${TODO_TSV}.lim" "$TODO_TSV"
