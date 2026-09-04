@@ -56,13 +56,18 @@ run_one() {   # <slug> <shard-stems(csv)> <shard-dir>
   local out="$DET_OUT/$slug"
   mkdir -p "$out"
   echo "[v6det] $slug 학습 시작 ($(ts)) dir=$(basename "$segdir") shards=$stems"
+  local rc=0
   "$PY" "$REPO/scripts/analysis/grid_phase/failure_detector_sim.py" \
     --shard-dir "$segdir" --shards "$stems" --out "$out" \
     --arm loko-cell --loko-cells-tsv "$CELLS" \
     --models lstm --alphas "$ALPHAS" \
     --truncate-train "$TRUNC" \
     --min-pool-fail "$MIN_POOL_FAIL" --min-calib-succ "$MIN_CALIB_SUCC" \
-    --cp-folds "$CP_FOLDS" --seed 0 --threads "$THREADS" --quiet
+    --cp-folds "$CP_FOLDS" --seed 0 --threads "$THREADS" --quiet || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    echo "[v6det] ERROR: $slug sim 실패 rc=$rc — 완료 마커 쓰지 않음 ($(ts))" >&2
+    return "$rc"
+  fi
   # ckpt 는 sim 이 --out 아래 loko/<slug>/s*/j*/ 로 쓴다 → 공용 트리로 모은다
   if [[ -d "$out/loko" ]]; then
     mkdir -p "$DET_OUT/loko"
@@ -86,6 +91,10 @@ run_one() {   # <slug> <shard-stems(csv)> <shard-dir>
   find "$DET_OUT/loko" -name "detector_pertask_lstm_${slug}*.pt" 2>/dev/null | sed "s|^$DET_OUT/||" | sort || true
   local n_reg=0
   [[ -s "$out/cell_registry.tsv" ]] && n_reg=$(( $(wc -l < "$out/cell_registry.tsv") - 1 ))
+  if [[ "$n_reg" -eq 0 ]]; then
+    echo "[v6det] ERROR: $slug registry 0행 — 셀 매칭/게이트 확인 필요, 마커 안 씀 ($(ts))" >&2
+    return 13
+  fi
   echo "[v6det] $slug 완료 ($(ts)) — ckpt ${n_ck} / registry 행 ${n_reg}"
   date -Is > "$DET_OUT/.done_${slug}"
 }

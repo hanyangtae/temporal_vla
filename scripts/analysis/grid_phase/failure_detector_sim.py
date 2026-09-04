@@ -400,11 +400,17 @@ def read_cell_tsv(path, slug_instr: dict[str, str], what: str = "--cells-tsv"
                "noise": int(r["noise_idx"]), "raw": r}
         rows.append(row)
         by_slug.setdefault(slug, []).append(row)
+    # 이 실행에 로드된 shard 에 없는 instruction 행은 **정상적으로 있을 수 있다** —
+    # 셀 TSV 는 전 instruction 공용이고 러너는 준비된 instruction 만 골라 돌리기 때문
+    # (2026-09-04: 증분 학습에서 이걸 fail-loud 로 막아 첫 셀이 무음 실패했다).
+    # 따라서 미매칭은 건너뛰고 수만 로그로 남기되, **한 행도 안 맞으면** 잘못된 TSV·
+    # shard 조합이므로 그때는 멈춘다.
     if unmatched:
-        raise SystemExit(f"{what}: 어느 shard 와도 매칭 안 되는 행 {len(unmatched)}개 "
-                         f"(shard: {sorted(slug_instr)}) — {unmatched[:10]}")
+        print(f"[cells] {what}: 로드된 shard 밖 행 {len(unmatched)}개 건너뜀 "
+              f"(shard: {sorted(slug_instr)})", flush=True)
     if not rows:
-        raise SystemExit(f"{what}: 유효 행 0")
+        raise SystemExit(f"{what}: 유효 행 0 — 로드된 shard {sorted(slug_instr)} 와 "
+                         f"겹치는 셀이 없다 (미매칭 {len(unmatched)}: {unmatched[:5]})")
     return rows, by_slug
 
 
