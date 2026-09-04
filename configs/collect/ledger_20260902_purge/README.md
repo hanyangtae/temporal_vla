@@ -53,3 +53,15 @@ N1.5 러너 = `scripts/safe/groot_n15/robocasa/collect/collect_grid.sh`
 
 삭제 실행 원장: `DELETED_20260902.tsv` (경로·개수·바이트). 삭제 후 HDD 여유 **1.7TB**.
 재수집 계약·착수 순서: `docs/collab_within_claude/handoff_20260902_grid_recollect_v5.md` §0.
+
+## 2026-09-04 legacy 삭제 원장 (승준 `groot/n15/grid/`)
+
+사용자 지시("이전 데이터는 지워"). 분석 정본은 v6(plan a81f07b86371, 주방 목록이 달라 v5 와 섞이지 않음). 사전 공지 후 action phase·포크 세션 이의 없음 확인. 레포의 v5 기록(`n15_grid_v5_scenario/{collection_plan.json,index_rollouts_v5.tsv,kscan_adopted.json}`)과 이 원장은 유지.
+
+| 삭제 시각(KST) | 디렉토리 | 바이트 | meta.json | rollout.pkl | 비고 |
+|---|---|---|---|---|---|
+| 2026-09-04 13:46:57 | e82e99cb666b | 480,657,109,721 | 1,250 | 1,250 | v5 정본(k-층 재배치·coffee/drawer_right 교체 완료본) |
+| 2026-09-04 13:47:22 | 8daefeabf020, e6b316053d1c | 8,643 | 0 | 0 | v5 plan_id 이력 README 만 |
+| 2026-09-04 13:47:22 | 3134e339de4c, 46ea62d53e09, 8ae74723a29e, 979d4833a7db, b8054b5e7258 | 33,091,712 | 3,282 | 0 | v1~v4 meta 껍데기(내용은 이 디렉토리의 `grid_meta_json_3282.tgz` 에 보존) |
+
+삭제 후 잔여: `a81f07b86371/`(v6, 895셀+ep_meta) · `375e3c46c962/README.txt`(v6 plan_id 이력). 승준 여유 909G → 1.4T.

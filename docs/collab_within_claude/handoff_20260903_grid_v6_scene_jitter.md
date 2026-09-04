@@ -18,7 +18,7 @@
   `l = (−sin yaw, cos yaw)`, `lat = l·(base − fixture_pos)`, lat>0 → left, else right.
   서랍의 left/right 는 스폰이 아니라 **대상 서랍**(문장 변형)이다. PPCC·coffee·drawer 는 열린 문이
   없어 스폰이 단봉(±15cm)이라 side 축이 없다.
-- 규모: 12키 × scene 3 × j 5 × n 5 = **900판** (~540GB).
+- 규모: 12키 × scene 3 × j 5 × n **10** = **1,800판** (2026-09-04 n 5→10 확대, plan `77e745c37b0f`; 실측 900판 = 324GB 라 1,800판 ≈ 650GB). n0~4 는 plan `a81f07b86371` 수집분을 rebase 로 승계.
 
 ## 2. 주방 집합과 scene 선택
 

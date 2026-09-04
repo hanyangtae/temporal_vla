@@ -81,7 +81,12 @@
     1300001,
     1300002,
     1300003,
-    1300004
+    1300004,
+    1300005,
+    1300006,
+    1300007,
+    1300008,
+    1300009
   ],
   "note": "handoff_20260903_grid_v6_scene_jitter §1 — 층위 재정의: scene = 주방(layout, style), jitter j = 같은 scene 의 세계 변형(연속 reset + base 오프셋), noise = 정책 denoise seed. 12키 × scene 3 × j 5 × n 5 = 900판. 좌표 폴더층 s<sid>/j<jid>/n<nid> (docs/04 §3.1.1).",
   "extra": {
@@ -1667,7 +1672,7 @@
       ]
     ]
   },
-  "plan_id": "a81f07b86371",
-  "n_cells": 900,
-  "estimated_bytes": 409838026752
+  "plan_id": "77e745c37b0f",
+  "n_cells": 1800,
+  "estimated_bytes": 819676053504
 }

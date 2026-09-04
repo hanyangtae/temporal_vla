@@ -80,7 +80,7 @@ N1.5와 N1.6의 DiT token layout은 대칭이 아니다. feature shape 비교 �
 | [`Activation_steering_basic/`](Activation_steering_basic/00_activation_steering_survey.md) | activation steering 서베이 52편 + 노트 |
 | [`adr/`](adr/) | 장기 결정 기록 |
 | [`collab_codex/`](collab_codex/) | Codex 협업·Gate 리뷰 기록 (Codex 원장 전용) |
-| [`collab_within_claude/`](collab_within_claude/) | Claude 세션 간 핸드오프·파트 발주 요청서 (현행 = `handoff_20260902_v4r_round.md`) |
+| [`collab_within_claude/`](collab_within_claude/) | Claude 세션 간 핸드오프·파트 발주 요청서 (현행 = `handoff_20260902_전체파이프라인.md`) |
 | [`onboarding/`](onboarding/00_intern_curriculum.md) | 인턴 커리큘럼 |
 | [`insight/`](insight/) | INSIGHT VLM primitive-segmentation 파일럿 |
 | [`ttt/`](ttt/README.md) | 구 TTA/progress predictor (메인 아님, 보존) |

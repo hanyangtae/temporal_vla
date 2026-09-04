@@ -8,6 +8,11 @@ v6 **설계 계약**의 정본은 `handoff_20260903_grid_v6_scene_jitter.md`(포
 
 ## 1. 지금 당장 남은 일 (미결)
 
+0. **n 5→10 확대 수집 (2026-09-04 사용자 결정: "두배 늘려도 별 문제 없겠네, n10으로 늘려서 전부 추가 수집해")**
+   - plan `77e745c37b0f` = a81f07b86371 에 noise seed 1300005~1300009 추가(다른 필드 동일, `build_v6_plan.py` NOISE_SEEDS). 1,800셀, 추가 900판 ≈ 325GB(실측 판당 0.36G).
+   - 절차: coffee 5셀(항목 1) 완료·이관 → 승준 `rebase_plan_id.py --old a81f07b86371 --new 77e745c37b0f`(사전 공지 필수, §3-2) → 인덱스 재생성(900행, n0~4) → DONE_LIST 로 3머신 발사(홈 배정 동일: srv48 oven/washer 300, srv50 PPCC 375, kanu drawer+coffee 225).
+   - 첫 셀 게이트는 재실행 불필요(머신·파이프라인·plan 내용 동일, noise seed 만 추가).
+
 1. **v6 coffee s0/j2 5셀 재수집 (kanu, 사용자 결정 = 교체)**
    - 원인: CoffeeSetupMug 는 특정 j 에서 env step ~190(영상 4.75s) 부터 **관측 이미지가 고정**(VL hidden 두 값 교대)되는 scene 결정적 현상이 있다(v5 k1·v6 j2 모두, seed·머신 무관). 데이터 무효.
    - 포크 세션이 plan 을 갱신함: **plan_id `a81f07b86371`**(coffee s0 reset_idx_list [0,1,**5**,3,4], PR #107 → dev 372a271), 승준 아카이브 `grid/375e3c46c962` → `grid/a81f07b86371` rebase 완료(895셀, 무효 5셀 삭제, 결손 5).
@@ -26,11 +31,11 @@ v6 **설계 계약**의 정본은 `handoff_20260903_grid_v6_scene_jitter.md`(포
 
 | 데이터 | plan_id | 셀 | 위치(승준 HDD `temporal_vla_store/groot/n15/grid/`) | 상태 |
 |---|---|---|---|---|
-| **v6** (정본) | `a81f07b86371` (← 375e3c46c962 ← b3dbe412d190) | 895/900 (coffee s0/j2 결손 5) | `a81f07b86371/{kanu,worker1,worker2}/<key>/s<sid>/j<jid>/n<nid>/base/` + `ep_meta/` 36 | QA 완료(무효 5 삭제), 인덱스 `index_rollouts_v6.tsv`(900행 시점, 갱신 필요) |
+| **v6** (정본) | `77e745c37b0f` (← a81f07b86371 ← 375e3c46c962 ← b3dbe412d190; n10 확대) | 895/1,800 (n0~4 중 coffee s0/j2 결손 5, n5~9 미수집) | `a81f07b86371/{kanu,worker1,worker2}/<key>/s<sid>/j<jid>/n<nid>/base/` + `ep_meta/` 36 | QA 완료(무효 5 삭제), 인덱스 `index_rollouts_v6.tsv`(900행 시점, 갱신 필요) |
 | v5 (legacy) | `e82e99cb666b` (← e6b316053d1c ← 8daefeabf020) | 1,250 | `e82e99cb666b/…/s<i>/k<r>/n<j>/base/` | QA 완료(무효 10 교체됨), 인덱스 `configs/collect/n15_grid_v5_scenario/index_rollouts_v5.tsv` |
 | v1~v4 껍데기 | 3134…, 46ea…, 8ae7…, 979d…, b805… | meta.json 만 | 동일 루트 | 원장 `configs/collect/ledger_20260902_purge/` |
 
-- v6 격자: instruction 12키(OvenRack/out-left·right, DishwasherRack/out-left·right, OpenDrawer/left·right, PPCC 5종, CoffeeSetupMug) × scene 3 × j 5 × noise 5. 홈: srv48(worker1)=oven/washer 4키, kanu=drawer 2+coffee, srv50(worker2)=PPCC 5.
+- v6 격자(2026-09-04 n10 확대 후): noise 10(seed 1300000~1300009). instruction 12키(OvenRack/out-left·right, DishwasherRack/out-left·right, OpenDrawer/left·right, PPCC 5종, CoffeeSetupMug) × scene 3 × j 5 × noise 10. 홈: srv48(worker1)=oven/washer 4키, kanu=drawer 2+coffee, srv50(worker2)=PPCC 5.
 - v6 j 축의 물리량은 계열마다 다르다(핸드오프 0903 §3): PPCC·coffee = ep_meta 고정+연속 reset(reset_idx=j), oven·washer = base 오프셋(lat,back)만(reset 0), drawer = 채택 reset 목록[j] **+** back 오프셋 혼합(교차설계 아님 → 요인 분해 불가). 인덱스 좌표 열은 `jitter_idx`(j); `jitter_reset_idx`·`base_lat`·`base_back` 은 출처 기록.
 - v6 SR(900 시점) 0.556: apple 1.00 / bread .87 / oven-left .81 / drawer_right .71 / candle·marshmallow .67 / oven-right .60 / drawer_left .56 / washer-right .55 / jug .17 / washer-left .05 / coffee .01.
 - 캡처 규격(v5·v6 동일): N1.5 `lerobot_groot_n15__robocasa365_ckpt120000`, capture_layers 0,2,4,8,10,12,15, all_token_full, denoise_k 4, n_action_steps 5, record_shape [7,4,49,1536].

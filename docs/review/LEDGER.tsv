@@ -467,3 +467,4 @@ docs/steering/39_resample_verifier_round.md	S10	archive	rsN 배경, 핸드오프
 docs/steering/40_action_phase_readout_review.md	S10	archive	동료 phase readout 검증, 41 배경	적용(archive)	7dc0619
 docs/steering/41_grid_phase_separation.md	S10	archive	grid phase 분리 라운드, cluster k8 채택 근거는 memory·핸드오프	적용(archive)	7dc0619
 docs/steering/sae_g1_refs/	S10	archive	SAE G1 atlas 참조 tsv, 31과 함께	적용(archive)	7dc0619
+docs/collab_within_claude/handoff_20260902_v4r_round.md	S10	이동	사용자 재명명 → docs/collab_within_claude/handoff_20260902_전체파이프라인.md (중추 세션 핸드오프, 내용 사용자 수정 포함)	적용	
