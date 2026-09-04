@@ -83,16 +83,21 @@ if [[ -n "${EXCLUDE_CELLS:-}" ]]; then
   INDEX="$filtered"
 fi
 
-# 인덱스 → (instruction, 기대 판수). 열 위치는 헤더에서 찾는다(하드코딩 금지).
-# base arm + has_pkl 인 행만 세어 추출기의 필터와 같은 모수를 본다.
-INDEX_COUNTS="$(awk -F'\t' '
+# 인덱스 → 셀 단위 기대표 (instruction, scene, j, 판수). 열 위치는 헤더에서 찾는다.
+# base arm + has_pkl 인 행만 세어 추출기의 필터와 같은 모수를 본다. **(instruction, scene, j)
+# 단위**로 세는 이유: 소비 측(연산자 fit)의 pool 계산이 그 단위라, instruction 총계만
+# 맞고 셀 분포가 어긋나는 결손을 놓치지 않으려는 것.
+CELL_COUNTS="$(awk -F'\t' '
   NR==1 { for (i=1;i<=NF;i++) c[$i]=i; next }
   {
     if ((("armsig" in c) && $c["armsig"] != "base")) next;
     if ((("has_pkl" in c) && ($c["has_pkl"]=="0" || $c["has_pkl"]=="false"))) next;
-    n[$c["grid_instruction"]]++
+    j = ("jitter_idx" in c) ? $c["jitter_idx"] : (("jitter_reset_idx" in c) ? $c["jitter_reset_idx"] : "-1")
+    n[$c["grid_instruction"] "\t" $c["scene_idx"] "\t" j]++
   }
   END { for (k in n) printf "%s\t%d\n", k, n[k] }' "$INDEX" | sort)"
+INDEX_COUNTS="$(awk -F'\t' '{n[$1]+=$4} END {for (k in n) printf "%s\t%d\n", k, n[k]}' \
+  <<< "$CELL_COUNTS" | sort)"
 [[ -n "$INDEX_COUNTS" ]] || { echo "[wrap] ERROR: $INDEX 에서 instruction 을 못 읽었다" >&2; exit 2; }
 
 mapfile -t ALL_INSTRUCTIONS < <(cut -f1 <<< "$INDEX_COUNTS")
@@ -148,13 +153,17 @@ done
 [[ "$missing" -eq 0 ]] || exit 13
 
 # 판수 감사 — shard 실판수 vs 인덱스 기대 판수 대조(무음 탈락 방지).
-printf '%s\n' "$INDEX_COUNTS" > "$OUT/.expected_counts.tsv"
-"$PY" - "$OUT/segA" "$OUT/.expected_counts.tsv" <<'PYEOF'
+# 셀 단위 `<instruction>\t<scene>\t<j>\t<판수>` 표를 넘겨 (키, scene, j) 분포까지 대조하고
+# 소비 세션에 그대로 통지할 수 있게 요약 TSV(`audit_cells.tsv`)로도 남긴다.
+printf '%s\n' "$CELL_COUNTS" > "$OUT/.expected_cells.tsv"
+"$PY" - "$OUT/segA" "$OUT/.expected_cells.tsv" "$OUT/audit_cells.tsv" <<'PYEOF'
 import sys
-import numpy as np
+from collections import defaultdict
 from pathlib import Path
 
-seg, exp_tsv = Path(sys.argv[1]), Path(sys.argv[2])
+import numpy as np
+
+seg, exp_tsv, out_tsv = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
 
 
 def slug_of(s):
@@ -163,30 +172,60 @@ def slug_of(s):
     return s
 
 
-expected = {}
+# 기대: slug → {(scene, j): 판수}
+expected = defaultdict(dict)
 for line in exp_tsv.read_text(encoding="utf-8").splitlines():
     if not line.strip():
         continue
-    instr, n = line.split("\t")
-    expected[slug_of(instr)] = int(n)
+    instr, scene, j, n = line.split("\t")
+    expected[slug_of(instr)][(int(scene), int(j))] = int(n)
 
-bad = []
+bad, rows = [], ["slug\tscene\tjitter\teps\texpected\tsucc_eps\trecords"]
 for p in sorted(seg.glob("*.npz")):
     with np.load(p, allow_pickle=False) as z:
-        ep, succ = z["ep_id"], z["succ"]
-        n_ep = len(np.unique(ep))
-        n_rec = int(z["X"].shape[0])
-        n_succ_ep = len({int(e) for e, s in zip(ep, succ) if s == 1})
-    want = expected.get(p.stem)
-    print(f"[audit] {p.stem}: eps={n_ep}/{want} rec={n_rec} succ_eps={n_succ_ep}",
-          flush=True)
-    if want is None:
+        ep, succ, scene, jit = z["ep_id"], z["succ"], z["scene"], z["jitter"]
+        n_rec_total = int(z["X"].shape[0])
+    # record 축 → 판 단위로 접어서 센다 (ep_id 가 판의 고유 키)
+    seen, cells = {}, defaultdict(lambda: [0, 0, 0])   # (scene,j) → [eps, succ_eps, recs]
+    for e, s, sc, jj in zip(ep, succ, scene, jit):
+        key = (int(sc), int(jj))
+        cells[key][2] += 1
+        if int(e) not in seen:
+            seen[int(e)] = key
+            cells[key][0] += 1
+            if int(s) == 1:
+                cells[key][1] += 1
+    want_cells = expected.get(p.stem)
+    n_ep = len(seen)
+    n_succ = sum(v[1] for v in cells.values())
+    if want_cells is None:
+        print(f"[audit] {p.stem}: eps={n_ep} rec={n_rec_total} — 인덱스에 없는 shard",
+              flush=True)
         bad.append((p.stem, "인덱스에 없는 shard"))
-    elif n_ep != want:
-        bad.append((p.stem, f"{n_ep} != {want}"))
+        continue
+    want_total = sum(want_cells.values())
+    print(f"[audit] {p.stem}: eps={n_ep}/{want_total} rec={n_rec_total} "
+          f"succ_eps={n_succ} cells={len(cells)}/{len(want_cells)}", flush=True)
+    for key in sorted(set(cells) | set(want_cells)):
+        got = cells.get(key, [0, 0, 0])
+        want = want_cells.get(key)
+        rows.append(f"{p.stem}\t{key[0]}\t{key[1]}\t{got[0]}\t"
+                    f"{'' if want is None else want}\t{got[1]}\t{got[2]}")
+        if want is None:
+            bad.append((p.stem, f"s{key[0]}j{key[1]} 인덱스에 없는 셀"))
+        elif got[0] != want:
+            bad.append((p.stem, f"s{key[0]}j{key[1]} {got[0]} != {want}"))
+    # 셀별 판수를 한 줄로 (통지용): s0[j0..j4] s1[...] ...
+    for sc in sorted({k[0] for k in want_cells}):
+        line = " ".join(f"j{j}:{cells.get((sc, j), [0])[0]}"
+                        for j in sorted(k[1] for k in want_cells if k[0] == sc))
+        print(f"[audit]   s{sc}  {line}", flush=True)
+
+out_tsv.write_text("\n".join(rows) + "\n", encoding="utf-8")
 if bad:
-    sys.exit(f"[audit] 판수 불일치: {bad}")
-print(f"[audit] OK — shard {len(list(seg.glob('*.npz')))}개 전부 기대 판수 일치")
+    sys.exit(f"[audit] 판수 불일치: {bad[:10]}{' …' if len(bad) > 10 else ''}")
+print(f"[audit] OK — shard {len(list(seg.glob('*.npz')))}개 전부 셀 단위 일치 "
+      f"({out_tsv.name})")
 PYEOF
 
 # 번들 경로 = `<OUT>/ae_k<K>/ae_bundle_k<K>.npz`. OUT 이 이미 라운드를 담고 있으므로
