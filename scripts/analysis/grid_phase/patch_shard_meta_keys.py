@@ -61,7 +61,11 @@ def patch_npz_meta(path: Path, new_meta: dict, apply: bool) -> None:
         for item in src.infolist():
             if item.filename == META_MEMBER:
                 continue
-            with src.open(item) as fsrc, dst.open(item.filename, "w") as fdst:
+            # ⚠ `force_zip64` 없이 스트리밍 쓰기를 하면 2GB 넘는 멤버에서
+            # "File size unexpectedly exceeded ZIP64 limit" 로 죽는다. shard 의 X 는
+            # 판당 수 GB 라 항상 여기에 걸린다 (실사고 2026-09-05).
+            with src.open(item) as fsrc, \
+                    dst.open(item.filename, "w", force_zip64=True) as fdst:
                 shutil.copyfileobj(fsrc, fdst, length=8 << 20)
         dst.writestr(META_MEMBER, meta_bytes)
     tmp.replace(path)
