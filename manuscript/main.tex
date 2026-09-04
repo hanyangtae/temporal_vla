@@ -1,7 +1,7 @@
 % 제7회 한국 인공지능 학술대회 (KICS 인공지능소사이어티) 투고 원고
 \documentclass[a4paper,twocolumn,9pt]{extarticle}
 \usepackage{kotex}
-\usepackage[margin=1.6cm,top=1.6cm,bottom=1.3cm]{geometry}
+\usepackage[margin=1.6cm,top=1.6cm,bottom=1.2cm]{geometry}
 \usepackage{graphicx}
 \usepackage{amsmath}
 \usepackage{setspace}
@@ -54,7 +54,7 @@ Sparse Auto Encoder(SAE)로 residual stream에서 grasp, transport와 같은 pri
 
 Detector의 학습과 평가는 scene 단위로 분리한다. 10개 scene 중 8개를 학습용, 2개를 평가용으로 나누고, 이러한 분할을 무작위로 3가지 구성한다. 분할마다 표준화, AE, clustering, phase 매핑을 학습 scene만으로 새로 적합하며, 세 분할의 평가 결과를 평균해 보고한다.  사람이 주석한 phase 라벨은 AE와 KMeans 학습에는 쓰지 않으며, cluster를 최빈 phase에 대응시키는 매핑과 평가 시 채점에만 사용한다.
 
-\textbf{Clustering.} Raw activation 1{,}536차원을 AE를 통해 16차원 latent 벡터로 압축한 뒤 KMeans로 스텝 단위 clustering한다. Cluster 수는 $k=8$을 사용한다. 사람이 라벨링한 phase 수(3--6)를 넘는 $k$에서 \textcolor{blue}{감지} 성능이 평탄해 특정 $k$ 선택에 기대지 않음은 결과에서 보인다(Figure~\ref{fig:ksweep}). Cluster 중심은 학습 split에서만 만들고, 평가 split의 스텝은 가장 가까운 cluster 중심에 배정한다. \textcolor{blue}{감지는} 해당 스텝의 activation 하나와 고정된 중심만 쓰고 과거·미래 스텝이나 에피소드 길이를 쓰지 않으므로, 보고하는 정확도는 추론 중 매 스텝 online으로 읽을 때의 정확도와 같다. \textcolor{blue}{추론 시에는 매 스텝의 activation을 학습 split의 표준화 통계와 AE로 latent로 바꾸어 최근접 cluster 중심에 매핑된 phase를 출력하며, 추가 학습이나 다시 clustering은 없다.}
+\textbf{Clustering.} Raw activation 1{,}536차원을 AE를 통해 16차원 latent 벡터로 압축한 뒤 KMeans로 스텝 단위 clustering한다. Cluster 수는 $k=8$을 사용한다. 사람이 라벨링한 phase 수(3--6)를 넘는 $k$에서 \textcolor{blue}{감지} 성능이 평탄해 특정 $k$ 선택에 기대지 않음은 결과에서 보인다(Figure~\ref{fig:ksweep}). Cluster 중심은 학습 split에서만 만든다. \textcolor{blue}{추론 중에는 매 스텝 얻은 activation을 학습 split에서 구한 표준화 통계와 AE에 그대로 통과시켜 latent를 얻고, 이에 가장 가까운 cluster 중심에 매핑된 phase를 그 스텝의 감지 결과로 삼는다. 추가 학습이나 clustering 재수행은 없다. 감지는} 해당 스텝의 activation 하나와 고정된 중심만 쓰고 과거·미래 스텝이나 에피소드 길이를 쓰지 않으므로, 보고하는 정확도는 online 감지의 정확도와 같다.
 
 \textbf{Baseline.} Manipulation task의 phase는 대체로 순서대로 진행되므로, activation을 보지 않고 경과 시간만 보는 detector도 phase를 어느 정도 맞힌다. 이 몫을 빼기 위한 \textbf{시간 대조군}은 에피소드 내 상대 진행도 $t/T$를 발견된 cluster
 수와 같은 개수의 구간으로 등분위 분할해 얻은 상태열이다. 또한 외부 관찰만으로 phase를 나누는 기존 방법과 비교하기 위해, \textbf{행동 이벤트(behavioral event) 대조군}으로 기존 연구\cite{egsae}의 이벤트 발견 파이프라인을 채택한다. 저자가 공개한 구현을 수정 없이 사용하여, 에피소드의 end-effector 궤적에서 선형 보간으로 궤적을 복원할 수 있는 최소한의 점을 고르는 AWE\cite{awe}를 사용하여 waypoint를 추출하고, 각 waypoint 주변
@@ -78,7 +78,7 @@ Margin이 양수라는 것은 ``에피소드의 몇 \% 지점인가''라는 시�
 \end{figure}
 \section{결 과}
 \textbf{VLA 내부 activation 한 스텝만으로 해당 phase를 읽을 수 있다.} Unseen scene에서 측정한 정확도의 instruction 중앙값은 activation 비지도 clustering이 0.82이다(Figure~\ref{fig:readout}). 시간 대조군은 정확도 0.61--0.68에 그치고, 외부 관찰로 phase를 나누는 행동 이벤트 대조군\cite{egsae}은 정확도 0.65에 그친다.
-같은 프로토콜에서 activation cluster는 10개 instruction 중 9개에서 행동 이벤트 대조군을 앞서며, 유일한 예외는 모든 방법이 무작위 수준에 머무는 DishwasherRack이다. 즉 ``에피소드가 얼마나 진행됐는가''도, 밖에서 관찰한 이벤트 구조도 내부 표상만큼은 알려주지 못한다. 특히 비지도 cluster만으로 0.82가 나온다는 점이 중요하다. 구조 자체는 라벨 없이 activation에서 나왔고, 라벨은 각 cluster에 이름을 붙이는 데만 쓰였다. 이 값은 스텝 하나의 activation을 고정된 중심에 배정해 얻은 것이므로 곧 online \textcolor{blue}{감지의} 정확도다. \textcolor{blue}{감지} 성능은 $k$가 phase 수를 넘기만 하면 평탄하므로(Figure~\ref{fig:ksweep}), 이 결과는 특정 $k$ 선택에 기대지 않는다.
+같은 프로토콜에서 activation cluster는 10개 instruction 중 9개에서 행동 이벤트 대조군을 앞서며, 유일한 예외는 모든 방법이 무작위 수준에 머무는 DishwasherRack이다. 즉 ``에피소드가 얼마나 진행됐는가''도, 밖에서 관찰한 이벤트 구조도 내부 표상만큼은 알려주지 못한다. 특히 비지도 cluster만으로 0.82가 나온다는 점이 중요하다. 구조 자체는 라벨 없이 activation에서 나왔고, 라벨은 각 cluster에 이름을 붙이는 데만 쓰였다. \textcolor{blue}{감지} 성능은 $k$가 phase 수를 넘기만 하면 평탄하므로(Figure~\ref{fig:ksweep}), 이 결과는 특정 $k$ 선택에 기대지 않는다.
 
 \begin{figure}[!t]
   \centering
