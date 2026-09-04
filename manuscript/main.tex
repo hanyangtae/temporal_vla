@@ -71,7 +71,7 @@ Detector의 학습과 평가는 instruction별로 진행하며 dataset은 scene 
 \begin{figure*}[!t]
   \centering
   \includegraphics[width=0.64\textwidth]{figs/fig1_purity_residual.pdf}
-  \caption{(a) Cluster와 GT phase 출현 연관성 행렬. 세로축은 cluster에 임의로 부여한 index이다. 이는 특정 cluster는 특정 phase에 주로 국한되어 나타냄을 보여준다. (b) Activation에서 scene별 평균값을 뺀 후의 phase에 대한 margin은 유지된다. (c) 같은 방식으로 얻은 값으로 scene에 대한 MI를 측정하면 값이 급감한다. 즉, 해당 방식은 scene 정보를 빼주는 것이 맞음을 알 수 있다.}
+  \caption{(a) Cluster와 GT phase 출현 연관성 행렬. 세로축은 cluster에 임의로 부여한 index이다. 이는 특정 cluster는 특정 phase에 주로 국한되어 나타냄을 보여준다. (b) Activation에서 scene별 평균값을 뺀 후의 phase에 대한 margin. (c) Activation이 scene에 대해서 얼마나 설명하는지를 나타내는 그래프.}
   \label{fig:purity}
 \end{figure*}
 \section{결 과}

@@ -226,19 +226,33 @@ def _dumbbell(ax, rows, key_raw, key_res, color_res, title, xlabel, zero_line):
     return ypos
 
 
+def _scatter_only(ax, rows, key, color, title, xlabel):
+    """dumbbell 없이 값 하나만 점으로 (잔차화 전후 비교가 필요 없는 패널)."""
+    ypos = np.arange(len(rows))[::-1]
+    for y, r in zip(ypos, rows):
+        ax.plot(r[key], y, "o", color=color, markersize=3.8, zorder=3)
+    ax.set_yticks(ypos)
+    ax.set_ylim(ypos.min() - 0.6, ypos.max() + 0.6)
+    ax.set_xlabel(xlabel)
+    ax.set_title(title, fontsize=8, pad=4)
+    ax.grid(axis="x", lw=0.4, alpha=0.35, zorder=0)
+    ax.set_axisbelow(True)
+    ax.set_xlim(left=-0.02)
+    for side in ("top", "right", "left"):
+        ax.spines[side].set_visible(False)
+    return ypos
+
+
 def panel_b(ax_m, ax_s, rows):
     rows = sorted(rows, key=lambda r: r["raw_margin"])
     ypos = _dumbbell(
         ax_m, rows, "raw_margin", "resid_margin", C_MARGIN,
-        "(b) margin: survives", "phase margin (bits)", zero_line=True,
+        "(b) margin: scene removed vs raw", "phase margin (bits)", zero_line=True,
     )
     ax_m.set_yticklabels([short_task(r["task"]) for r in rows], fontsize=7)
-    _dumbbell(
-        ax_s, rows, "raw_mi_scene", "resid_mi_scene", C_SCENE,
-        "(c) scene MI: collapses", "MI with scene id (bits)", zero_line=False,
-    )
+    _scatter_only(ax_s, rows, "raw_mi_scene", C_SCENE,
+                  "(c) scene MI", "MI with scene id (bits)")
     ax_s.set_yticklabels([])
-    ax_s.set_xlim(left=-0.02)
 
     n_pos = sum(
         1 for r in rows if r["task"] != DEGENERATE_TASK and r["resid_margin"] > 0
@@ -267,7 +281,7 @@ def build_legend(fig, rows):
         Line2D([], [], marker="o", ls="none", color=C_MARGIN, markersize=3.8,
                label="residualised (margin)"),
         Line2D([], [], marker="o", ls="none", color=C_SCENE, markersize=3.8,
-               label="residualised (scene MI)"),
+               label="scene MI"),
     ]
     if DEGENERATE_TASK is not None:
         handles.append(Line2D([], [], marker="D", ls="none", color=C_DEGEN,
