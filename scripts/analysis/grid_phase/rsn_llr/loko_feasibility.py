@@ -32,7 +32,8 @@ AXIS_CANDIDATES = ("jitter_idx", "jitter")     # jitter_reset_idx 는 v6 에서 
 # (고정 기본값은 라운드마다 낡는다 — v5→v6 에서 키 이름이 통째로 바뀐 전례)
 
 
-def verdict(n_pool_succ, n_pairs, p_min, min_succ, min_pairs, p_cap) -> str:
+def verdict(n_pool_succ, n_pairs, p_min, min_succ, min_pairs, p_cap,
+            n_pool_fail_excl=None, min_pool_fail=0) -> str:
     """등록이 **원리적으로** 가능한지 — 표본 구성만으로 갈리는 필요조건."""
     if n_pool_succ == 0:
         return "불가(pool 성공 0)"
@@ -42,6 +43,10 @@ def verdict(n_pool_succ, n_pairs, p_min, min_succ, min_pairs, p_cap) -> str:
         return f"불가(혼합 지터 쌍 {n_pairs} < {min_pairs})"
     if p_min > p_cap:
         return f"불가(순열 p 하한 {p_min:.3f} > {p_cap})"
+    if n_pool_fail_excl is not None and n_pool_fail_excl < min_pool_fail:
+        # 대상 지터를 뺀 실패 판이 너무 적으면, 지터 안 대조의 실패 평균이 1~2 에피소드에
+        # 좌우된다(중추 셀 선정 규칙과 같은 취지 — 그쪽 pool_fail 은 대상 제외 정의다).
+        return f"위험(대상 제외 pool 실패 {n_pool_fail_excl} < {min_pool_fail})"
     if n_pool_succ < min_succ:
         return f"위험(pool 성공 {n_pool_succ} < {min_succ})"
     return "가능"
@@ -73,6 +78,8 @@ def main():
                          "jitter_reset_idx 는 출처 열이라 자동 선택하지 않는다")
     ap.add_argument("--min-pool-succ", type=int, default=9,
                     help="pool 성공 ep 하한 (중추 detector α=0.1 기준 9)")
+    ap.add_argument("--min-pool-fail", type=int, default=3,
+                    help="대상 지터를 **뺀** 실패 ep 하한(중추 셀 선정 규칙과 동일 정의)")
     ap.add_argument("--min-pairs", type=int, default=6, help="혼합 지터 쌍 수 하한(게이트와 동일)")
     ap.add_argument("--p-cap", type=float, default=0.05, help="순열 p 상한(게이트와 동일)")
     ap.add_argument("--key-col", default=None,
@@ -124,14 +131,17 @@ def main():
                     mixed.append((ns, nf))
             n_pairs = sum(ns * nf for ns, nf in mixed)
             p_min = perm_p_floor(mixed)
-            out.append((ins, s, int(k), len(pool_s), len(pool_f), len(tgt_f), len(excl),
+            pf_excl = [r for r in pool_f if r[axis] != k]
+            out.append((ins, s, int(k), len(pool_s), len(pf_excl), len(tgt_f), len(excl),
                         len(mixed), n_pairs, p_min,
                         verdict(len(pool_s), n_pairs, p_min,
-                                args.min_pool_succ, args.min_pairs, args.p_cap)))
+                                args.min_pool_succ, args.min_pairs, args.p_cap,
+                                len(pf_excl), args.min_pool_fail)))
 
     w = max(len(r[0]) for r in out)
     print(f"{'instruction':<{w}} {'s':>2} {'j':>3} {'poolS':>6}{'poolF':>6}{'tgtF':>5}"
           f"{'exclS':>6}{'혼합j':>6}{'쌍':>5}{'p하한':>8}  판정")
+    print("   (poolF = 대상 지터 제외 실패 ep — 중추 셀표 pool_fail 과 같은 정의)")
     print("-" * (w + 62))
     agg = collections.Counter()
     for ins, s, k, ps, pf, tf, ex, nm, npair, pmin, v in out:
