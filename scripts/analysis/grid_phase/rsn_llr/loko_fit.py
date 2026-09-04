@@ -75,6 +75,9 @@ def parse_args():
                          "하이브리드 setpoint / plain=pool 전체 mean-diff(지터 혼입 미보정, "
                          "비교용) / both(기본)=둘 다 산출, plain 은 루트 뒤에 _plain. "
                          "지터가 물리 오프셋인 키(oven·washer)에서 특히 중요")
+    ap.add_argument("--jitters", default=None,
+                    help="대상 지터를 쉼표로 한정 (예 0,2,3). 기본은 실패가 있는 지터 전부. "
+                         "중추 셀 tsv(v6_loko_cells.tsv)로 선정된 j 만 돌릴 때 쓴다")
     ap.add_argument("--tag", default="v6", help="산출 루트 태그 (instr_setm_<tag>_*, rsn_llr_reg_<tag>)")
     ap.add_argument("--coord", default="j", help="좌표 폴더·registry 열 이름 (v6=j, v5=k)")
     ap.add_argument("--axis-col", default=None,
@@ -217,6 +220,14 @@ def main():
         em[e] = (int(su[i0[0]]), int(jit[i0[0]]), float(eplen[i0[0]]), i0)
     ks_all = sorted(set(v[1] for v in em.values()))
     ks_fail = sorted(set(v[1] for v in em.values() if v[0] == 0))
+    if args.jitters:
+        want = [int(x) for x in args.jitters.split(",") if x.strip() != ""]
+        miss = [j for j in want if j not in ks_fail]
+        if miss:
+            raise SystemExit(
+                f"{SLUG} s{S}: --jitters 로 지정한 {miss} 는 실패 판이 없다"
+                f" (실패 있는 지터 {ks_fail}) — 셀표와 shard 가 어긋난다")
+        ks_fail = want
     if len(ks_all) < 2:
         raise SystemExit(
             f"{SLUG} s{S}: 좌표 열 {axis_col} 의 고유값이 {ks_all} 하나뿐 — LOKO 불가. "
