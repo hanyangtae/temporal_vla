@@ -26,6 +26,8 @@ exp5-2의 섭동-유도 실패 회복(ppcc P1, setM DiT L10 β0.3, 위약 .25 �
 | **per-step v4 정렬** (08-28~31) | per-step 게이팅(47) · cluster k8 phase · detector를 eval 분포(v4)로 재학습 · base-replay 재정박 paired · α=0.1 | 51케이스/118판 (pair 68) | reseed 구제 5/29·파손 5/37(유일 순효과 균형), setM 6/29·9/34, condg 1/26·4/20. ⚠ 구제 셀은 세 arm 5/5 공통 = **경계셀 속성**. ⚠ noise-0 판 결손 가능(awk 함정) |
 | **v4r β sweep** (09-01~02) | 대상 scene 25판 **재수집**(캡처 ON replay, 라벨 반전 정리) → 실패 60판 × 12 arm (setm_gt/ck8 β0.6~1.0 · reseed · rsn_llr N8) | 60판 (jug 22·oven 17) | 구제율 최고 12%: rsn_llr 5/43(candle 3/8) · setm_ck8 β1.0 5/43 · reseed 3/60. jug·oven 전 arm 0~2. β 비단조. 파손 축 없음. **fit pool 타 scene은 구 세계(혼합) — 미결** |
 
+| **v6 action phase** (09-04~05) | v6 재수집 1,800판 → 11키(apple 제외) 병합본 각 150판 = 162,874 record 로 AE(800ep)+instruction별 KMeans k8 재구축. instruction별 margin(vs clock)·scene 잔차화 대조·cluster×j MI | 11키 / 1,650판 | **margin 11키 전부 양수**(+0.175~+0.575) — cluster phase 유효성 재확인. ★ 단 **rack 계열은 그 구조가 상당 부분 scene**: 잔차화 후 drawer-R .499→.248 · oven-L .399→.217 · oven-R .266→.139 (절반 붕괴) vs drawer-L·candle·bread·jug·coffee 유지. marshmallow mi_scene **0.990**(cluster≈scene). **초기 창(0:10)은 11키 전부 조건화 없음**(GT phase 상수·cluster 한 덩어리 → gt arm ≡ ck8 arm). 오염 cluster 5개 제외(drawer-R c1·c5, oven-L c4, oven-R c4, candle c5). 검증: 온라인 왕복 162,874 record 불일치 0 |
+
 ## 2. 반복 확인된 사실 (라운드를 넘어 재현된 것)
 
 1. **위약이 처치와 같거나 그 이상 움직인다.** exp2 s300033 +8 = 위약 +8. exp3 fit30에서
