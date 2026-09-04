@@ -1126,7 +1126,9 @@ REGISTRY_COLS = ("instruction", "slug", "scene", "jitter", "registered",
                  "n_pool_other", "n_pool_fail", "n_target_fail", "n_target_succ",
                  "n_succ_calib", "reason", "ckpt_rel",
                  # j-only 대조군 진단 (미등록 셀은 빈 값 — 모델이 없어 채울 수 없다)
-                 "auroc_jonly_scene", "auroc_target_j", "t_beats_jonly")
+                 "auroc_jonly_scene", "auroc_target_j", "t_beats_jonly",
+                 # --loko-holdout-diag 를 켠 run 에만 값이 찬다
+                 "auroc_target_j_holdout")
 
 LOKO_EVAL_SETS = (
     # (이름, in_train) — in_train=1 은 그 집합이 학습에 들어갔다는 뜻(=상한 지표).
@@ -1269,6 +1271,62 @@ def target_j_auroc(target_scored: list[tuple[Episode, np.ndarray]]) -> dict:
     return out
 
 
+HOLDOUT_DIAG_KEYS = ("auroc_target_j_holdout",
+                     f"auroc_target_j_holdout_td{JSTRAT_TD}",
+                     "n_holdout_train", "n_holdout_fail", "target_j_holdout_reason")
+
+
+def target_j_holdout_diag(kind: str, args, pool_other: list[Episode],
+                          cell_eps: list[Episode]) -> dict:
+    """**무편향** 대상 j 판별력 — leave-one-jitter-out 로 두 번째 모델을 따로 학습.
+
+    배포용(1번) 모델의 학습 pool 은 pool_other + **대상 j 실패판**이라 대상 j 실패는
+    in-sample, 성공은 out-of-sample 이다 → `auroc_target_j` 는 낙관 편향이 있다.
+    여기서는 학습 집합을 **pool_other 만**(같은 scene 의 다른 j 전판)으로 두어 대상 j
+    를 실패·성공 모두 학습 밖에 둔다. 절제·표준화 규약은 배포 경로와 동일하되 이
+    집합 위에서 다시 잡는다. **순위 지표만** 내고 CP 밴드는 쓰지 않는다 (임계 보정 없음).
+    배포용 모델·체크포인트·밴드는 이 진단이 절대 건드리지 않는다.
+    """
+    out: dict = {k: None for k in HOLDOUT_DIAG_KEYS}
+    out["target_j_holdout_reason"] = ""
+    ys = {int(e.y) for e in cell_eps}
+    if 0 not in ys:
+        out["target_j_holdout_reason"] = "no_target_succ"
+        return out
+    if 1 not in ys:
+        out["target_j_holdout_reason"] = "no_target_fail"
+        return out
+
+    W = rollout_cap(pool_other)
+    caps = phase_dwell_caps(pool_other)
+    tr_eps = [te for te in (truncate_episode(e, args.truncate_train, W, caps)
+                            for e in pool_other) if te is not None]
+    out["n_holdout_train"] = len(tr_eps)
+    out["n_holdout_fail"] = sum(1 for e in tr_eps if e.y == 1)
+    if len(tr_eps) < MIN_BAND_EPS:
+        out["target_j_holdout_reason"] = "too_few_train"
+        return out
+    if len({e.y for e in tr_eps}) < 2:
+        out["target_j_holdout_reason"] = "single_class_train"
+        return out
+
+    mu, sd = standardizer(tr_eps)
+    seqs = [(apply_std(e, mu, sd), e.y) for e in tr_eps]
+    model = train_detector(kind, seqs, seqs[0][0].shape[1], args.epochs, args.lr,
+                           args.hidden, args.lambda_reg, args.grad_clip,
+                           args.batch_size, args.seed, verbose=False)
+    scored = [(e, score_seq(model, apply_std(e, mu, sd))) for e in cell_eps]
+    sc = np.array([float(s.max()) for _, s in scored], dtype=np.float64)
+    y = np.array([int(e.y) for e, _ in scored], dtype=np.int64)
+    a = auroc(sc, y)
+    out["auroc_target_j_holdout"] = None if a is None else round(float(a), 4)
+    pairs = td_pairs(scored, JSTRAT_TD)
+    if len(pairs) >= TARGET_TD_NMIN:
+        a2, _n = td_auroc(pairs)
+        out[f"auroc_target_j_holdout_td{JSTRAT_TD}"] = a2
+    return out
+
+
 def cell_jonly_diag(scene_scored: list[tuple[Episode, np.ndarray]],
                     target_scored: list[tuple[Episode, np.ndarray]]) -> dict:
     """셀 하나의 j-only 진단 묶음 (그 셀의 모든 행에 같은 값으로 들어간다)."""
@@ -1402,13 +1460,22 @@ def run_loko_cells(kind: str, tasks: dict, args, out_dir: Path,
         # j-only 대조군 묶음 — 셀 단위 값이라 이 셀의 **모든 행(timer 포함)**에 같이 붙는다.
         cell_diag = cell_jonly_diag(scene_scored,
                                     [(e, sc_map[int(e.ep_id)]) for e in cell_eps])
+        # 무편향 진단(옵션): 대상 j 를 통째로 뺀 두 번째 모델. 배포용 모델·밴드·체크
+        # 포인트는 위에서 이미 확정됐고 이 진단이 건드리지 않는다.
+        holdout_on = bool(getattr(args, "loko_holdout_diag", False))
+        if holdout_on:
+            cell_diag.update(target_j_holdout_diag(kind, args, pool_other, cell_eps))
         def _d(k, nd=2):                       # 없으면 em-dash
             v = cell_diag.get(k)
             return "\u2014" if v is None else (f"{v:.{nd}f}" if nd else str(v))
-        print(f"[loko] {slug} s{s} j{j}: j-only {_d('auroc_jonly_scene')} "
-              f"| scene best {_d('auroc_scene_best')}@t{_d('t_scene_best', 0)} "
-              f"| target-j AUROC {_d('auroc_target_j')} "
-              f"| beats@t{_d('t_beats_jonly', 0)}", flush=True)
+        _msg = (f"[loko] {slug} s{s} j{j}: j-only {_d('auroc_jonly_scene')} "
+                f"| scene best {_d('auroc_scene_best')}@t{_d('t_scene_best', 0)} "
+                f"| target-j AUROC {_d('auroc_target_j')} "
+                f"| beats@t{_d('t_beats_jonly', 0)}")
+        if holdout_on:
+            _msg += (f" | holdout {_d('auroc_target_j_holdout')} "
+                     f"(n_tr={_d('n_holdout_train', 0)})")
+        print(_msg, flush=True)
         groups = {"target_j_fail": t_fail, "target_j_succ": t_succ,
                   "pool_other": pool_other}
 
@@ -1521,6 +1588,8 @@ def run_loko_cells(kind: str, tasks: dict, args, out_dir: Path,
                          "auroc_jonly_scene": cell_diag["auroc_jonly_scene"],
                          "auroc_target_j": cell_diag["auroc_target_j"],
                          "t_beats_jonly": cell_diag["t_beats_jonly"],
+                         "auroc_target_j_holdout":
+                             cell_diag.get("auroc_target_j_holdout"),
                          "ckpt_rel": ck_rel.as_posix()})
         registry.append(base_reg)
 
@@ -1556,7 +1625,9 @@ TSV_COLS = (["task", "instruction", "arm", "model", "alpha", "truncate", "n_test
             + ["auroc_jonly_scene"] + [f"auroc_scene_td{t}" for t in TD_GRID]
             + ["auroc_scene_best", "t_scene_best", "t_beats_jonly",
                "t_beats_jonly_reason", "n_t_skipped", "auroc_target_j",
-               f"auroc_target_j_td{JSTRAT_TD}", "target_j_reason"])
+               f"auroc_target_j_td{JSTRAT_TD}", "target_j_reason"]
+            # 무편향 대상-j 진단 (--loko-holdout-diag 를 켠 run 에만 값이 찬다)
+            + list(HOLDOUT_DIAG_KEYS))
 
 
 def write_tsv(rows: list[dict], path: Path) -> None:
@@ -1826,13 +1897,13 @@ def self_test(args) -> int:
         len_dir = _synth_case(root, "lenonly", args.seed + 100, signal=0.0, onset=0.4,
                               n_scene=14, n_noise=8)
 
-        print("\n=== [self-test 1/10] 신호 O · truncate=none (기존 게이트) ===")
+        print("\n=== [self-test 1/11] 신호 O · truncate=none (기존 게이트) ===")
         rows_a_none = _synth_run(args, sig_dir, root / "out_a_none", "none", epochs)
-        print("\n=== [self-test 2/10] 신호 O · truncate=rollout ===")
+        print("\n=== [self-test 2/11] 신호 O · truncate=rollout ===")
         rows_a_tr = _synth_run(args, sig_dir, root / "out_a_rollout", "rollout", epochs)
-        print("\n=== [self-test 3/10] 신호 X(길이만) · truncate=none ===")
+        print("\n=== [self-test 3/11] 신호 X(길이만) · truncate=none ===")
         rows_b_none = _synth_run(args, len_dir, root / "out_b_none", "none", epochs)
-        print("\n=== [self-test 4/10] 신호 X(길이만) · truncate=rollout ===")
+        print("\n=== [self-test 4/11] 신호 X(길이만) · truncate=rollout ===")
         rows_b_tr = _synth_run(args, len_dir, root / "out_b_rollout", "rollout", epochs)
 
         def _td(rows) -> float | None:
@@ -1909,10 +1980,10 @@ def self_test(args) -> int:
         nosh_dir = _synth_case(root, "loto_nosh", args.seed + 200, signal=2.0,
                                onset=0.25, n_scene=14, n_noise=8, sig_offs=(0, 8),
                                sig_rand_sign=True)
-        print("\n=== [self-test 5/10] loto · 공유 신호 O ===")
+        print("\n=== [self-test 5/11] loto · 공유 신호 O ===")
         rows_c_sh = _synth_run(args, sig_dir, root / "out_c_shared", "none", epochs,
                                arm="loto")
-        print("\n=== [self-test 6/10] loto · 공유 신호 X (다른 축) ===")
+        print("\n=== [self-test 6/11] loto · 공유 신호 X (다른 축) ===")
         rows_c_no = _synth_run(args, nosh_dir, root / "out_c_noshare", "none", epochs,
                                arm="loto")
         c_sh, c_no = _td(rows_c_sh), _td(rows_c_no)
@@ -1946,12 +2017,12 @@ def self_test(args) -> int:
         ]
         cells_tsv = _write_cells_tsv(root / "loko_cells.tsv", cells, cells_cols)
         lk_out = root / "out_loko"
-        print("\n=== [self-test 7/10] loko-cell · 셀별 detector ===")
+        print("\n=== [self-test 7/11] loko-cell · 셀별 detector ===")
         rows_lk = _synth_run(args, lk_dir, lk_out, "none", epochs, arm="loko-cell",
                              extra={"loko_cells_tsv": str(cells_tsv),
                                     "min_pool_fail": 3, "min_calib_succ": 6,
                                     "cp_folds": 0})
-        print("\n=== [self-test 8/10] loko-cell · 게이트 미달(min-calib-succ 999) ===")
+        print("\n=== [self-test 8/11] loko-cell · 게이트 미달(min-calib-succ 999) ===")
         lk_out2 = root / "out_loko_gate"
         _synth_run(args, lk_dir, lk_out2, "none", epochs, arm="loko-cell",
                    extra={"loko_cells_tsv": str(cells_tsv), "min_pool_fail": 3,
@@ -2049,13 +2120,13 @@ def self_test(args) -> int:
             root / "jonly_cells.tsv",
             [{"instruction": "SynthTaskA", "scene_idx": 0, "jitter_idx": 1,
               "noise_idx": 0}], cells_cols)
-        print("\n=== [self-test 9/10] j-only 대조군 · 성패를 j 가 결정(신호 0) ===")
+        print("\n=== [self-test 9/11] j-only 대조군 · 성패를 j 가 결정(신호 0) ===")
         rows_h1 = _synth_run(args, jd_dir, root / "out_jonly_det", "none", epochs,
                              arm="loko-cell",
                              extra={"loko_cells_tsv": str(jd_cells),
                                     "min_pool_fail": 3, "min_calib_succ": 6,
                                     "cp_folds": 0})
-        print("\n=== [self-test 10/10] j-only 대조군 · j 무관 후반 신호 ===")
+        print("\n=== [self-test 10/11] j-only 대조군 · j 무관 후반 신호 ===")
         rows_h2 = _synth_run(args, lt_dir, root / "out_jonly_late", "none", epochs,
                              arm="loko-cell",
                              extra={"loko_cells_tsv": str(jd_cells),
@@ -2116,6 +2187,73 @@ def self_test(args) -> int:
             if d2["auroc_target_j"] is None:
                 fails.append(f"(h2) auroc_target_j=None ({d2['target_j_reason']}) — "
                              "대상 j 에 성패가 섞여 있어야 한다")
+
+        # ---- (i) 무편향 target-j 진단 (--loko-holdout-diag) ------------------
+        # 같은 두 합성을 flag on 으로 다시 태운다.
+        #   h2(j 무관·후반 신호) → 대상 j 를 학습에서 통째로 빼도 AUROC 가 0.5 위
+        #   h1(대상 j 전판 실패) → None + no_target_succ
+        # 그리고 flag off run 과 **기존 열 값이 한 글자도 다르지 않아야** 한다.
+        print("\n=== [self-test 11/11] 무편향 target-j 진단 (holdout) ===")
+        hd_extra = {"loko_cells_tsv": str(jd_cells), "min_pool_fail": 3,
+                    "min_calib_succ": 6, "cp_folds": 0, "loko_holdout_diag": True}
+        t_hd = time.time()
+        rows_h2b = _synth_run(args, lt_dir, root / "out_holdout_late", "none", epochs,
+                              arm="loko-cell", extra=hd_extra)
+        rows_h1b = _synth_run(args, jd_dir, root / "out_holdout_det", "none", epochs,
+                              arm="loko-cell", extra=hd_extra)
+        dt_hd = time.time() - t_hd
+
+        def _hd(rows) -> dict | None:
+            v = [r for r in rows if r.get("arm") == "loko-cell"
+                 and r.get("model") != "timer"
+                 and r.get("auroc_jonly_scene") is not None]
+            return v[0] if v else None
+
+        print("\n[self-test] holdout 진단")
+        h2b, h1b = _hd(rows_h2b), _hd(rows_h1b)
+        if h2b is None:
+            fails.append("(i) holdout run(h2)에 loko-cell 행이 없다")
+        else:
+            print(f"  (i) h2: target_j={h2b['auroc_target_j']} \u2192 "
+                  f"holdout={h2b['auroc_target_j_holdout']} "
+                  f"td{JSTRAT_TD}={h2b[f'auroc_target_j_holdout_td{JSTRAT_TD}']} "
+                  f"n_tr={h2b['n_holdout_train']}(fail {h2b['n_holdout_fail']}) "
+                  f"reason='{h2b['target_j_holdout_reason']}'")
+            if h2b["auroc_target_j_holdout"] is None:
+                fails.append(f"(i) h2 holdout AUROC=None "
+                             f"({h2b['target_j_holdout_reason']}) — 대상 j 에 성패가 "
+                             "섞여 있고 pool_other 도 충분한 합성이다")
+            elif float(h2b["auroc_target_j_holdout"]) <= 0.65:
+                fails.append(f"(i) h2 holdout AUROC {h2b['auroc_target_j_holdout']} "
+                             "\u2264 0.65 — j 와 무관한 실패 신호를 준 합성인데 타 j "
+                             "학습이 대상 j 로 전이되지 않는다")
+            if not h2b["n_holdout_train"] or int(h2b["n_holdout_train"]) < MIN_BAND_EPS:
+                fails.append(f"(i) h2 n_holdout_train={h2b['n_holdout_train']}")
+        if h1b is None:
+            fails.append("(i) holdout run(h1)에 loko-cell 행이 없다")
+        else:
+            print(f"  (i) h1: holdout={h1b['auroc_target_j_holdout']} "
+                  f"reason='{h1b['target_j_holdout_reason']}'")
+            if h1b["auroc_target_j_holdout"] is not None:
+                fails.append(f"(i) h1 대상 j 성공 0판인데 holdout AUROC="
+                             f"{h1b['auroc_target_j_holdout']} (None 기대)")
+            if h1b["target_j_holdout_reason"] != "no_target_succ":
+                fails.append(f"(i) h1 target_j_holdout_reason="
+                             f"{h1b['target_j_holdout_reason']} (기대 'no_target_succ')")
+
+        # (i-회귀) flag on/off 에서 기존 열 값이 동일한가
+        new_cols = set(HOLDOUT_DIAG_KEYS)
+        for tag, r_off, r_on in (("h2", rows_h2, rows_h2b), ("h1", rows_h1, rows_h1b)):
+            if len(r_off) != len(r_on):
+                fails.append(f"(i-회귀) {tag}: 행 수 {len(r_off)} \u2192 {len(r_on)}")
+                continue
+            diff = [(k, a.get(k), b.get(k)) for a, b in zip(r_off, r_on)
+                    for k in set(a) | set(b)
+                    if k not in new_cols and a.get(k) != b.get(k)]
+            if diff:
+                fails.append(f"(i-회귀) {tag}: holdout 플래그가 기존 열을 바꿨다 "
+                             f"{diff[:3]} (총 {len(diff)})")
+        print(f"  (i) 추가 학습 2 run 소요 {dt_hd:.0f}s")
 
         # ---- 셀 TSV 리더 · LOO 밴드 단위 점검 -------------------------------
         print("\n[self-test] 셀 TSV 리더 · LOO 밴드")
@@ -2329,6 +2467,7 @@ def run(args) -> int:
                 "cp": "loo" if int(args.cp_folds) <= 0 else f"kfold-{int(args.cp_folds)}",
                 "cp_folds": int(args.cp_folds),
                 "jstrat_td": JSTRAT_TD,
+                "loko_holdout_diag": bool(getattr(args, "loko_holdout_diag", False)),
                 "eval_sets": [n for n, _ in LOKO_EVAL_SETS],
                 "train": "pool_other(같은 scene 의 다른 j 전판) + 대상 j 실패판",
                 "excluded_from_train": "대상 j 성공판 (success-blind)",
@@ -2404,6 +2543,10 @@ def main() -> int:
     ap.add_argument("--min-calib-succ", type=int, default=9,
                     help="loko-cell 게이트: CP 밴드용 최소 성공 판 수 "
                          "(conformal (1−α) 분위 정의에 n ≥ 1/α − 1; α=0.1 → 9)")
+    ap.add_argument("--loko-holdout-diag", action="store_true",
+                    help="loko-cell 셀마다 **대상 j 를 통째로 뺀** 두 번째 모델을 추가 "
+                         "학습해 무편향 target-j AUROC 를 낸다 (진단 전용 — 배포용 "
+                         "모델·체크포인트·밴드는 그대로). 기본 off")
     ap.add_argument("--cp-folds", type=int, default=0,
                     help="loko-cell CP 밴드 fold 수 (0 = episode LOO, >0 = k-fold)")
     ap.add_argument("--truncate-train", default="none",
