@@ -11,11 +11,27 @@
 % pdfLaTeX 로 돌리면 아래 블록을 건너뛰고 kotex 기본 글꼴로 조판된다.
 \ifXeTeX
   \XeTeXlinebreaklocale ""
-  \setmainfont[FakeStretch=0.9,LetterSpace=-5]{lmroman10-regular.otf}%
-    [BoldFont=lmroman10-bold.otf,ItalicFont=lmroman10-italic.otf]
-  \setmainhangulfont[FakeStretch=0.9,LetterSpace=-7]{UnBatang.ttf}%
-    [BoldFont=UnBatangBold.ttf]
+  \IfFontExistsTF{lmroman10-regular.otf}{%
+    \setmainfont[FakeStretch=0.9,LetterSpace=-5]{lmroman10-regular.otf}%
+      [BoldFont=lmroman10-bold.otf,ItalicFont=lmroman10-italic.otf]}{%
+    \defaultfontfeatures{FakeStretch=0.9,LetterSpace=-5}}
+  \IfFontExistsTF{UnBatang.ttf}{%
+    \setmainhangulfont[FakeStretch=0.9,LetterSpace=-7]{UnBatang.ttf}%
+      [BoldFont=UnBatangBold.ttf]}{%
+    \defaulthangulfontfeatures{FakeStretch=0.9,LetterSpace=-7}}
 \fi
+
+% 그림이 뒤쪽 별도 쪽으로 밀리지 않도록 float 허용치를 넓힌다
+\renewcommand{\topfraction}{0.92}
+\renewcommand{\dbltopfraction}{0.92}
+\renewcommand{\bottomfraction}{0.6}
+\renewcommand{\textfraction}{0.06}
+\renewcommand{\floatpagefraction}{0.75}
+\renewcommand{\dblfloatpagefraction}{0.75}
+\setcounter{topnumber}{3}
+\setcounter{dbltopnumber}{2}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{5}
 \usepackage[left=1.5cm,right=1.5cm,top=2.5cm,bottom=1.5cm]{geometry}
 \usepackage{graphicx}
 \usepackage{amsmath}
