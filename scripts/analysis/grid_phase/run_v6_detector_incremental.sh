@@ -15,7 +15,9 @@ set -euo pipefail
 REPO="${REPO:-$HOME/workspace/temporal_vla_safeablate}"
 PY="${REMOTE_PYTHON:-$HOME/anaconda3/bin/python}"
 STORE="${STORE:-$HOME/datasets/temporal_vla_store/groot/n15}"
-SEG="${SEG:-$STORE/analysis/grid_phase_v6/segA}"
+# shard 소재지 — action phase 산출 규칙(2026-09-04): scene 단위 부분 shard 는
+# segA_scene/<slug>__s<i>.npz, instruction 완주분은 segA/<slug>.npz. 둘 다 뒤진다.
+SEG_DIRS="${SEG_DIRS:-$STORE/analysis/grid_phase_v6/segA_scene $STORE/analysis/grid_phase_v6/segA}"
 CELLS="${CELLS:-$REPO/configs/collect/n15_grid_v6_scene_jitter/v6_loko_cells.tsv}"
 DET_OUT="${DET_OUT:-$REPO/outputs/analysis/grid_phase/detector_v6}"
 TRUNC="${TRUNC:-phase-gt}"          # 1차 = GT phase 절제 (ck8 절제판은 AE 후 증분)
@@ -49,13 +51,13 @@ print("\n".join(out))
 PYEOF
 }
 
-run_one() {   # <slug> <shard-stems(csv)>
-  local slug="$1" stems="$2"
+run_one() {   # <slug> <shard-stems(csv)> <shard-dir>
+  local slug="$1" stems="$2" segdir="$3"
   local out="$DET_OUT/$slug"
   mkdir -p "$out"
-  echo "[v6det] $slug 학습 시작 ($(ts)) shards=$stems"
+  echo "[v6det] $slug 학습 시작 ($(ts)) dir=$(basename "$segdir") shards=$stems"
   "$PY" "$REPO/scripts/analysis/grid_phase/failure_detector_sim.py" \
-    --shard-dir "$SEG" --shards "$stems" --out "$out" \
+    --shard-dir "$segdir" --shards "$stems" --out "$out" \
     --arm loko-cell --loko-cells-tsv "$CELLS" \
     --models lstm --alphas "$ALPHAS" \
     --truncate-train "$TRUNC" \
@@ -98,17 +100,23 @@ while :; do
     [[ -f "$DET_OUT/.done_${slug}" ]] && continue
     # shard 파일명은 action phase 산출 규칙을 따른다 — instruction 전체(<slug>.npz)일 수도,
     # 완료 scene 만 담은 부분 shard(<slug>_s0.npz 등)일 수도 있어 둘 다 받는다.
-    mapfile -t SH < <(find "$SEG" -maxdepth 1 -type f \( -name "${slug}.npz" -o -name "${slug}_*.npz" \) 2>/dev/null | sort || true)
-    if [[ "${#SH[@]}" -eq 0 ]]; then
+    seg_hit=""; stems=""
+    for d in $SEG_DIRS; do
+      [[ -d "$d" ]] || continue
+      mapfile -t SH < <(find "$d" -maxdepth 1 -type f \( -name "${slug}.npz" -o -name "${slug}_*.npz" \) 2>/dev/null | sort || true)
+      [[ "${#SH[@]}" -eq 0 ]] && continue
+      seg_hit="$d"
+      for f in "${SH[@]}"; do
+        b="$(basename "$f" .npz)"
+        stems="${stems:+$stems,}$b"
+      done
+      break   # sim 은 shard-dir 하나만 받는다 — 먼저 찾은 디렉터리를 쓴다(scene 부분 shard 우선)
+    done
+    if [[ -z "$seg_hit" ]]; then
       echo "[v6det] shard 대기: $slug ($(ts))"
       pending=$((pending+1)); continue
     fi
-    stems=""
-    for f in "${SH[@]}"; do
-      b="$(basename "$f" .npz)"
-      stems="${stems:+$stems,}$b"
-    done
-    run_one "$slug" "$stems" || { echo "[v6det] ERROR: $slug 학습 실패 (rc=$?)" >&2; pending=$((pending+1)); }
+    run_one "$slug" "$stems" "$seg_hit" || { echo "[v6det] ERROR: $slug 학습 실패 (rc=$?)" >&2; pending=$((pending+1)); }
   done
   if [[ "$ONCE" == "1" ]]; then
     echo "[v6det] once 모드 종료 — 미처리 ${pending} ($(ts))"; break
