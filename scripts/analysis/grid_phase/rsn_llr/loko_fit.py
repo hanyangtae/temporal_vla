@@ -279,7 +279,7 @@ def main():
                 # 된다(물리 거울 판정과 같은 함정). 지터 안 대조는 그 성분이 상쇄된다.
                 # setpoint 는 대상 지터 실패 평균 좌표 + 지터 안 평균 이동량(하이브리드) —
                 # 절대 좌표가 지터마다 다르므로 pool 성공 좌표를 그대로 쓰면 안 된다.
-                per_j, n_mix = [], 0
+                per_j, n_mix, mix_ep = [], 0, []
                 for jj in ks_all:
                     mjs = np.where(allow & (la == code) & (su == 1) & (jit == jj))[0]
                     mjf = np.where(allow & (la == code) & (su == 0) & (jit == jj))[0]
@@ -287,6 +287,11 @@ def main():
                         per_j.append(X[mjs].mean(0).astype(np.float64)
                                      - X[mjf].mean(0).astype(np.float64))
                         n_mix += 1
+                        # 지터 안 대조에 실제로 들어간 **에피소드 수**. record 수만으로는
+                        # "실패 1판(≈100 record)으로 잡은 방향"을 사후에 못 거른다 —
+                        # 그 경우 방향이 그 rollout 하나의 우연한 특성을 담는다.
+                        mix_ep.append([int(jj), int(len(np.unique(ep[mjs]))),
+                                       int(len(np.unique(ep[mjf])))])
                 wrote = False
                 for form in forms:
                     if form == "jfair":
@@ -318,6 +323,11 @@ def main():
                           "phase": name_of(code), "target_scene": S,
                           "target_jitter": k_tgt, "axis_col": axis_col,
                           "setm_form": form, "n_mixed_jitter": n_mix,
+                          "mixed_jitter_ep": mix_ep,   # [[j, 성공 ep, 실패 ep], ...]
+                          "min_fail_ep_in_mixed": (min(x[2] for x in mix_ep)
+                                                   if mix_ep else 0),
+                          "min_succ_ep_in_mixed": (min(x[1] for x in mix_ep)
+                                                   if mix_ep else 0),
                           "n_rec_s": int(len(ms)), "n_rec_f": int(len(mf)),
                           "n_rec_tgt_fail": int(len(mtf)),
                           "cos_jfair_vs_pool": float(
