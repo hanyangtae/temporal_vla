@@ -25,7 +25,17 @@ echo "machine=$MC alpha=0.1 perstep_n=8 beta_sweep=0.6-1.0 v6 loko capture_hooks
 [ "${CK8:-0}" = 1 ] || BUNDLE=   # gt/plain/reseed 는 cluster 번들 불요(GT phase POST)
 if [ "$MC" = kanu ]; then SLOTS=("$G1" "$G2" "$G3" "$G1" "$G2" "$G3"); NSLOT=6
 else SLOTS=("$G1" "$G2" "$G1" "$G2" "$G1" "$G2" "$G1" "$G2" "$G1" "$G2" "$G1" "$G2"); NSLOT=$([ "$G1" = "$G2" ] && echo 6 || echo 12); fi
-gpu_of() { echo "${SLOTS[$(( ${1:-0} % NSLOT ))]}"; }
+# 슬롯 점유 추적 — 카운터(i%NSLOT) 배정은 먼저 끝난 슬롯과 무관하게 GPU 를 고르므로 한 GPU 에 serve 3개가 몰려
+# OOM 으로 부팅 실패한다(09-04 kanu 실측 rc=13). 살아있는 pid 로 빈 슬롯을 찾아 그 GPU 를 준다.
+declare -a SLOT_PID; for ((k=0;k<NSLOT;k++)); do SLOT_PID[$k]=0; done
+pick_slot() {  # 결과는 전역 SLOT 에; 빈 슬롯 없으면 하나 끝날 때까지 대기
+  # ★ 루프 변수는 반드시 local — bash 는 동적 스코프라 호출자 run() 의 local k(=지터)를 덮어쓴다(09-04 실측: EVAL_JITTERS 가 슬롯 번호로 바뀜)
+  local kk pid_; SLOT=-1
+  while [ "$SLOT" -lt 0 ]; do
+    for ((kk=0;kk<NSLOT;kk++)); do pid_=${SLOT_PID[$kk]}; if [ "$pid_" = 0 ] || ! kill -0 "$pid_" 2>/dev/null; then SLOT=$kk; break; fi; done
+    [ "$SLOT" -lt 0 ] && { wait -n 2>/dev/null || sleep 5; }
+  done
+}
 HOSTARGS=(); [ "$MC" != kanu ] && HOSTARGS=(SERVE_MODE=host SERVE_PY=${SERVE_PY:-$HOME/miniconda3/envs/lerobot_050_groot/bin/python} SERVE_PYTHONPATH=${SERVE_PYTHONPATH:-$W/lerobot/src})
 # 케이스 = (slug, s, k) → noises (awk falsy-0 함정: (key in ns) 판정)
 mapfile -t CASES < <(awk -F'\t' -v m="$MC" 'NR>1 && $3==m {key=$2"\t"$4"\t"$5; ns[key]=(key in ns)?ns[key]","$6:$6} END{for(k in ns) print k"\t"ns[k]}' "$EV" | sort)
@@ -46,17 +56,20 @@ run() {  # slug s k noises OUT [KEY=VAL...]
   ln -sfn "../../../instr_setm_v6_gt/$task/$sub"  "$root/$task/instr_setm_v6_gt"
   ln -sfn "../../../instr_setm_v6_gt_plain/$task/$sub" "$root/$task/instr_setm_v6_gt_plain"
   ln -sfn "../../../instr_setm_v6_ck8/$task/$sub" "$root/$task/instr_setm_v6_ck8"
-  ( env GPUS="$(gpu_of $i)" SERVES_PER_GPU=1 SLUGS="$task" "${HOSTARGS[@]}" \
+  pick_slot; local gpu=${SLOTS[$SLOT]}
+  # 포트 충돌 회피 — 타 프로세스가 잡은 포트(09-04 kanu 8898/8899 실측)는 건너뛴다
+  while ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${p}$"; do p=$((p+1)); done
+  ( env GPUS="$gpu" SERVES_PER_GPU=1 SLUGS="$task" "${HOSTARGS[@]}" \
       EP_MODE=replay EVAL_SCENES="$s" EVAL_JITTERS="$k" EVAL_NOISES="$ns" FIT_SCENES=0-4 FIT_NOISES=0-4 REPLAY_MACHINE="$MC" \
-      INDEX_TSV=$W/configs/collect/n15_grid_v6_scene_jitter/index_v6_complete_cells.tsv \
+      INDEX_TSV=${INDEX_TSV_OVERRIDE:-$W/configs/collect/n15_grid_v6_scene_jitter/index_v6_complete_cells.tsv} \
       PLAN_JSON=$W/configs/collect/n15_grid_v6_scene_jitter/collection_plan.json EP_META_DIR= EP_META_LOAD_ENV_NAME= \
       DETECTOR_CKPT="$det" FAILURE_TASK="$stem" \
       FAILURE_ALPHA=0.1 PERSTEP_N=8 DETECTOR_LAYERS=0,2,4,8,10,12,15 TOKEN_POOL=all_token_full \
       NPZ_ROOT="$root" OUT_ROOT="$B/$out/$cs" PORT_BASE=$p SERVE_BOOT_TRIES=360 ALLOW_BUSY_GPU=1 \
       "$@" bash $W/scripts/steer/online_gated/run_online_gated_eval.sh \
       >> "$L/run.log" 2>&1; echo "[v6-exp] $cs $out rc=$?" >> "$L/run.log" ) &
+  SLOT_PID[$SLOT]=$!; echo "[launch] $cs $out slot=$SLOT gpu=$gpu port=$p" >> "$L/run.log"
   p=$((p+1)); i=$((i+1))
-  [ "$(jobs -rp | wc -l)" -ge "$NSLOT" ] && wait -n
 }
 for c in "${CASES[@]}"; do
   IFS=$'\t' read -r task s k ns <<< "$c"
