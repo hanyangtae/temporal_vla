@@ -213,10 +213,12 @@ opsig = sha256( 연산자 실체 파일 전체 )[:16]
 
 정본 = `docs/collab_within_claude/handoff_20260903_grid_v6_scene_jitter.md` §1–§4. 요지만 적는다.
 
-- **scene s = 주방 (layout, style) 쌍.** style 만 따로 바꾸지 않는다. pull 계열(oven·washer)은 스폰
-  side(로봇 시점 좌/우) 가 instruction 키에 들어가 scene 이 갈린다.
+- **scene s = 주방 (layout, style) 쌍.** style 만 따로 바꾸지 않는다. pull 계열(oven·washer)은
+  side 가 instruction 키에 들어가 scene 이 갈린다. **side = 로봇 기준 target fixture 가 있는 쪽**
+  (2026-09-04 사용자 개정; 개정 전에는 로봇 스폰 쪽이었다 — 구 `out-left` ↔ `out-right` 키는
+  `rebase_plan_id.py --rename-key/--flip-side` 로 이관됐고 pkl 은 불변).
 - **jitter j = 같은 scene 의 세계 변형 하나.** PPCC·coffee·drawer 는 ep_meta 고정 + 연속 reset
-  (물체 위치·팔 관절), pull 계열은 **base 오프셋**(fixture 중심 쪽 lat + 뒤 back). 정의는 plan 의
+  (물체 위치·팔 관절), pull 계열은 **base 오프셋**(lat = side 방향 = fixture 쪽, + 뒤 back). 정의는 plan 의
   `jitters[key][sid][jid] = {reset_idx, lat, back}` 이 정본이고, 수집·replay 는 이를 **재계산**해 같은
   절차(reset(seed) → ep_meta 편집 → 주입 → plain reset (reset_idx+1)회 → 충돌 검사)를 밟는다.
   ep_meta JSON 사전 주입은 금지(v5 게이트 실측: 상태가 어긋난다).

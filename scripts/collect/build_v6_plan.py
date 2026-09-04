@@ -24,8 +24,10 @@
       "task": "SlideOvenRack",
       "kind": "pull_side",              // pull_side | pull_drawer | pickplace | coffee
       "instruction_text": "...",        // (선택) 없으면 첫 scene 의 lang
+      // side = fixture 가 로봇 기준 어느 쪽인가(2026-09-04 개정). spawn_lat 은 로봇
+      // 스폰의 lat 부호(>0 = 로봇이 fixture 왼쪽)라 side 와 반대다.
       "scenes": [
-        {"env_seed": 100001, "layout": 4, "style": 4, "side": "left",
+        {"env_seed": 100001, "layout": 4, "style": 4, "side": "right",
          "lang": "Fully slide the oven rack out.",
          "fixture_group": "oven", "spawn_lat": 0.45}
       ]
@@ -70,7 +72,8 @@ _J_RESET_ONLY = [{"reset_idx": j, "lat": 0.0, "back": 0.0} for j in range(N_JITT
 _J_DRAWER_BACK = [0.0, 0.05, 0.10, 0.05, 0.10]
 _J_DRAWER = [{"reset_idx": j, "lat": 0.0, "back": _J_DRAWER_BACK[j]} for j in range(N_JITTER)]
 # oven·washer(side 키): reset 재추첨 없음(reset_idx=0) — 변화는 base 오프셋 뿐.
-# lat 은 **항상 fixture 중심 쪽**(left 키 → 오른쪽, right 키 → 왼쪽); 부호는 수집기가 side 로 정한다.
+# side 는 **fixture 가 로봇 기준 어느 쪽인가**(2026-09-04 개정)이고, lat 은 **항상 side 방향
+# = fixture 쪽**이다(side=left → 왼쪽(+l), side=right → 오른쪽(−l)); 부호는 수집기가 side 로 정한다.
 # 2026-09-03 전수 reset 검사(12 pull scene × 후보 12종): 안쪽 lat 만 주는 오프셋(.03/.05/.10, back 0)은
 # 열린 문과 새 접촉을 만들어 대부분 scene 에서 불가. 뒤로 물러난 뒤 안쪽 5cm 는 전 scene 통과.
 _J_SIDE_OFFSETS = [(0.0, 0.0), (0.0, 0.05), (0.0, 0.10), (0.05, 0.10), (0.05, 0.15)]
@@ -141,7 +144,7 @@ def build(selection: dict[str, Any], *, name: str = "n15_grid_v6_scene_jitter") 
         if kind == "pull_side" and any(e["side"] is None for e in entries):
             raise ValueError(
                 f"keys[{key!r}] 는 pull_side 인데 side 없는 scene 이 있다 — lat 오프셋 방향"
-                "(fixture 중심 쪽)을 정할 수 없다"
+                "(= side = fixture 쪽)을 정할 수 없다"
             )
         instructions[key] = [e["env_seed"] for e in entries]
         scenes[key] = entries

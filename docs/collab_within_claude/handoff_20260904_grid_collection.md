@@ -9,7 +9,7 @@ v6 **설계 계약**의 정본은 `handoff_20260903_grid_v6_scene_jitter.md`(포
 ## 1. 지금 당장 남은 일 (미결)
 
 0. **n 5→10 확대 수집 (2026-09-04 사용자 결정: "두배 늘려도 별 문제 없겠네, n10으로 늘려서 전부 추가 수집해")**
-   - plan `77e745c37b0f` = a81f07b86371 에 noise seed 1300005~1300009 추가(다른 필드 동일, `build_v6_plan.py` NOISE_SEEDS). 1,800셀, 추가 900판 ≈ 325GB(실측 판당 0.36G).
+   - plan `77e745c37b0f` = a81f07b86371 에 noise seed 1300005~1300009 추가(다른 필드 동일, `build_v6_plan.py` NOISE_SEEDS). 1,800셀, 추가 900판 ≈ 325GB(실측 판당 0.36G). **2026-09-04 키 의미 개정으로 최종 plan 은 `08f1c9df8207`**(§3-9) — rebase 는 `--rename-key`/`--flip-side` 와 한 번에 처리한다.
    - 절차: coffee 5셀(항목 1) 완료·이관 → 승준 `rebase_plan_id.py --old a81f07b86371 --new 77e745c37b0f`(사전 공지 필수, §3-2) → 인덱스 재생성(900행, n0~4) → DONE_LIST 로 3머신 발사(홈 배정 동일: srv48 oven/washer 300, srv50 PPCC 375, kanu drawer+coffee 225).
    - 첫 셀 게이트는 재실행 불필요(머신·파이프라인·plan 내용 동일, noise seed 만 추가).
 
@@ -31,11 +31,12 @@ v6 **설계 계약**의 정본은 `handoff_20260903_grid_v6_scene_jitter.md`(포
 
 | 데이터 | plan_id | 셀 | 위치(승준 HDD `temporal_vla_store/groot/n15/grid/`) | 상태 |
 |---|---|---|---|---|
-| **v6** (정본) | `77e745c37b0f` (← a81f07b86371 ← 375e3c46c962 ← b3dbe412d190; n10 확대) | 895/1,800 (n0~4 중 coffee s0/j2 결손 5, n5~9 미수집) | `a81f07b86371/{kanu,worker1,worker2}/<key>/s<sid>/j<jid>/n<nid>/base/` + `ep_meta/` 36 | QA 완료(무효 5 삭제), 인덱스 `index_rollouts_v6.tsv`(900행 시점, 갱신 필요) |
+| **v6** (정본) | `08f1c9df8207` (← 77e745c37b0f ← a81f07b86371 ← 375e3c46c962 ← b3dbe412d190; n10 확대 → out-left/right 키 의미 개정) | 895/1,800 (n0~4 중 coffee s0/j2 결손 5, n5~9 미수집) | `a81f07b86371/{kanu,worker1,worker2}/<key>/s<sid>/j<jid>/n<nid>/base/` + `ep_meta/` 36 | QA 완료(무효 5 삭제), 인덱스 `index_rollouts_v6.tsv`(900행 시점, 갱신 필요) |
 | v5 (legacy) | `e82e99cb666b` (← e6b316053d1c ← 8daefeabf020) | 1,250 | `e82e99cb666b/…/s<i>/k<r>/n<j>/base/` | QA 완료(무효 10 교체됨), 인덱스 `configs/collect/n15_grid_v5_scenario/index_rollouts_v5.tsv` |
 | v1~v4 껍데기 | 3134…, 46ea…, 8ae7…, 979d…, b805… | meta.json 만 | 동일 루트 | 원장 `configs/collect/ledger_20260902_purge/` |
 
 - v6 격자(2026-09-04 n10 확대 후): noise 10(seed 1300000~1300009). instruction 12키(OvenRack/out-left·right, DishwasherRack/out-left·right, OpenDrawer/left·right, PPCC 5종, CoffeeSetupMug) × scene 3 × j 5 × noise 10. 홈: srv48(worker1)=oven/washer 4키, kanu=drawer 2+coffee, srv50(worker2)=PPCC 5.
+- **2026-09-04 키 의미 개정(사용자 결정)**: oven·washer 의 `out-left`/`out-right` 는 이제 **로봇 기준 target fixture 가 있는 쪽**이다(개정 전 = 로봇 스폰 쪽 → 뜻이 정반대였다. 영상 프레임 실측으로 구 `out-left` 셀에서 fixture 가 로봇 오른쪽에 보임을 확인). 두 키를 서로 맞바꾸고 `side` 를 전부 반전 → plan `77e745c37b0f` → **`08f1c9df8207`**. 물리 수집은 불변(같은 seed·같은 base 오프셋; 수집기 lat 부호 규칙도 함께 뒤집혀 상쇄). 아카이브는 `rebase_plan_id.py --rename-key/--flip-side` 로 폴더 rename + meta 패치(pkl 불변), QA TSV 도 같이 교체. drawer left/right·PPCC·coffee 는 무관.
 - v6 j 축의 물리량은 계열마다 다르다(핸드오프 0903 §3): PPCC·coffee = ep_meta 고정+연속 reset(reset_idx=j), oven·washer = base 오프셋(lat,back)만(reset 0), drawer = 채택 reset 목록[j] **+** back 오프셋 혼합(교차설계 아님 → 요인 분해 불가). 인덱스 좌표 열은 `jitter_idx`(j); `jitter_reset_idx`·`base_lat`·`base_back` 은 출처 기록.
 - v6 SR(900 시점) 0.556: apple 1.00 / bread .87 / oven-left .81 / drawer_right .71 / candle·marshmallow .67 / oven-right .60 / drawer_left .56 / washer-right .55 / jug .17 / washer-left .05 / coffee .01.
 - 캡처 규격(v5·v6 동일): N1.5 `lerobot_groot_n15__robocasa365_ckpt120000`, capture_layers 0,2,4,8,10,12,15, all_token_full, denoise_k 4, n_action_steps 5, record_shape [7,4,49,1536].
@@ -50,6 +51,7 @@ v6 **설계 계약**의 정본은 `handoff_20260903_grid_v6_scene_jitter.md`(포
 6. **오케스트레이터 재기동 규칙**: 워커 전원 "이관 대기" 시점에만; `docker exec` 클라이언트만 죽으면 컨테이너 안 `http_feature_collect` 가 고아로 남아 같은 셀을 두 번 써 pkl 지문 충돌(지문은 serve_boot_id 포함이라 재수집이면 항상 다름) — 컨테이너 안 프로세스도 확인. `pkill -f`/`pgrep -f` 패턴은 자기 ssh 명령줄에 자기-매칭(exit 144) — **PID/PGID 로 죽일 것**(setsid 이면 pgid=pid).
 7. **이관 병목**: 승준 sshd MaxStartups 10 → 3머신 shipper 스트림 합산 ~22 이하(kanu 6·srv 8~9). kanu→승준 ~3MB/s, srv ~8MB/s, 총 ~9MB/s 상한. `STAGING_WAIT_GB` backpressure 는 디스크 여유(srv48 ~20G!)에 맞춰(srv48 12~24, kanu 45, srv50 60~150). GPU util 0 은 대개 이관 대기.
 8. **GPU 규칙**(docs/05): 빈 GPU만·lease 필수. srv50 GPU0(kdw4537 공유)·kanu(junhyeong 공유)는 **사용자가 명시 예외를 준 경우에만** 발사 — 예외는 그때그때 다시 받는다.
+9. **side / 키의 left·right = 로봇 기준 target fixture 가 있는 쪽**(2026-09-04 개정, oven·washer 만 해당). 스폰 쪽이 아니다 — 선택표의 `spawn_lat`(>0 = 로봇이 fixture 왼쪽에 스폰)·키 항목 `spawn_side` 만 스폰 기준이며 `side` 의 반대다. 수집기 base 오프셋 규칙도 `sign = +1 if side=="left"`(= 항상 fixture 쪽으로 민다)로 함께 뒤집혔으므로 **개정 전후 base 위치는 동일**하다. 개정 시 아카이브 이관: `rebase_plan_id.py --rename-key OvenRack/out-left=OvenRack/out-right ... --flip-side` (키 rename 은 임시 이름을 거쳐 swap 을 지원, meta 의 `grid_instruction`·`side` 패치 + `key_renamed_from` 기록, pkl 불변). **rename 은 소비 세션 러너를 죽이므로 실행 전 사전 공지**(규칙 2 와 동일).
 
 ## 4. QA 명령 (승준, anaconda python)
 
