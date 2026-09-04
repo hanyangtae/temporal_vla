@@ -22,6 +22,7 @@ import argparse
 import io
 import json
 import shutil
+import time
 import zipfile
 from pathlib import Path
 
@@ -46,16 +47,7 @@ def read_meta(path: Path) -> dict:
         return json.loads(str(z["meta_json"]))
 
 
-def patch_npz_meta(path: Path, new_meta: dict, apply: bool) -> None:
-    """meta_json 멤버만 교체하고 나머지는 zip 스트림 복사 (메모리 상수)."""
-    if not apply:
-        return
-    buf = io.BytesIO()
-    np.lib.format.write_array(
-        buf, np.array(json.dumps(new_meta, ensure_ascii=False)), allow_pickle=False)
-    meta_bytes = buf.getvalue()
-
-    tmp = path.with_suffix(".npz.metatmp")
+def _copy_members(path: Path, tmp: Path, meta_bytes: bytes) -> None:
     with zipfile.ZipFile(path, "r") as src, \
             zipfile.ZipFile(tmp, "w", zipfile.ZIP_STORED, allowZip64=True) as dst:
         for item in src.infolist():
@@ -68,7 +60,38 @@ def patch_npz_meta(path: Path, new_meta: dict, apply: bool) -> None:
                     dst.open(item.filename, "w", force_zip64=True) as fdst:
                 shutil.copyfileobj(fsrc, fdst, length=8 << 20)
         dst.writestr(META_MEMBER, meta_bytes)
-    tmp.replace(path)
+
+
+def patch_npz_meta(path: Path, new_meta: dict, apply: bool, retries: int = 3) -> None:
+    """meta_json 멤버만 교체하고 나머지는 zip 스트림 복사 (메모리 상수).
+
+    ⚠ **일시적 CRC 오류 재시도**: 같은 디스크에서 AE 등이 대량 I/O 를 돌리는 중에
+    `BadZipFile: Bad CRC-32` 가 한 번 났는데, 직후 같은 파일을 다시 읽으면 정상이었다
+    (실사고 2026-09-05, 공유 HDD 경합). 원본은 손상되지 않았으므로 재시도로 넘긴다 —
+    다만 **읽기 오류를 조용히 삼키지는 않는다**: 재시도 횟수를 소진하면 실패로 끝낸다.
+    """
+    if not apply:
+        return
+    buf = io.BytesIO()
+    np.lib.format.write_array(
+        buf, np.array(json.dumps(new_meta, ensure_ascii=False)), allow_pickle=False)
+    meta_bytes = buf.getvalue()
+
+    tmp = path.with_suffix(".npz.metatmp")
+    last = None
+    for attempt in range(1, retries + 1):
+        try:
+            _copy_members(path, tmp, meta_bytes)
+            tmp.replace(path)
+            if attempt > 1:
+                print(f"    (재시도 {attempt}회째 성공)")
+            return
+        except zipfile.BadZipFile as e:
+            last = e
+            tmp.unlink(missing_ok=True)
+            print(f"    ⚠ 읽기 오류({e}) — 재시도 {attempt}/{retries}")
+            time.sleep(5)
+    raise SystemExit(f"{path.name}: {retries}회 재시도 실패 — {last}")
 
 
 def main() -> int:
