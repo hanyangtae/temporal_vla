@@ -2,7 +2,7 @@
 """Figure: unseen-scene phase readout accuracy — bar only (2-page version).
 
 Panel (a): median accuracy per method with per-instruction points overlaid.
-           Methods: majority / time (clock) / [Event-SAE, if results exist]
+           Methods: time (absolute-step bins) / [Event-SAE] / activation cluster (ours)
                     / activation cluster.
            (policy-action baselines were dropped from the paper; the external
            observer role is played by the published Event-SAE pipeline.)
@@ -72,13 +72,13 @@ def main() -> None:
         print(f"esae: {esae_path}  ({len(esae)} instructions)")
 
     # (키, 라벨, 색, 값 배열) — behavioral event 는 결과 파일이 있을 때만 들어간다
-    methods = [("causal_time_acc", "time\n(clock)", "#A8A8A8",
+    methods = [("causal_time_acc", "time", "#A8A8A8",
                 np.array([float(r["causal_time_acc"]) for r in rows]))]
     if esae:
         methods.append(("esae_acc", "behavioral\nevent", "#6E6E6E",
                         np.array([esae.get(r["instruction"], np.nan)
                                   for r in rows])))
-    methods += [("cluster_acc", "activation\ncluster", "#4C72B0",
+    methods += [("cluster_acc", "activation\ncluster (ours)", "#4C72B0",
                  np.array([float(r["cluster_acc"]) for r in rows]))]
 
     fig, ax1 = plt.subplots(figsize=(8.0 * CM, 5.4 * CM))
