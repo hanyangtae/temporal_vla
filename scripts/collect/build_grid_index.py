@@ -3,14 +3,17 @@
 
 구 인덱서는 `activations/<sig>/` 평면(= sig 가 식별자)을 전제했다. 2026-08-05 개정으로
 식별은 **좌표**가 하고 `sig` 는 무결성 검증 열이 되었으므로(§3.1) 이 스크립트가 그 자리를
-대신한다. 좌표 레이아웃은 두 가지이며 둘 다 읽는다 (§3.1.1, 2026-09-03 개정):
+대신한다. 좌표 레이아웃은 셋이며 전부 읽는다 (§3.1.1, 2026-09-03 v6 개정):
 
-  3축(정본)  `<plan_id>/<machine>/<instruction>/s<i>/k<r>/n<j>/<arm>/`
-  legacy 2축 `<plan_id>/<machine>/<instruction>/s<i>/n<j>/<arm>/`      (v1·v2 등 지터 없는 plan)
+  v6(정본)   `<plan_id>/<machine>/<instruction>/s<sid>/j<jid>/n<nid>/<arm>/`
+  legacy v5  `<plan_id>/<machine>/<instruction>/s<i>/k<r>/n<j>/<arm>/`   (평탄 scene + k 지터)
+  legacy 2축 `<plan_id>/<machine>/<instruction>/s<i>/n<j>/<arm>/`        (v1·v2 등 지터 없는 plan)
 
-`s<i>` = base scene index(평탄 인코딩 금지), `k<r>` = `jitter_reset_idx`(채택 k 값 그대로,
-연속 아님), `n<j>` = noise index. 표의 좌표 열도 같은 3열이고 legacy 행은
-`jitter_reset_idx` 가 빈 칸이다. 평탄 `cell_si` 열은 없다 — 필요하면 `s*100+k` 로 파생한다.
+v6 에서 `s<sid>` = scene(주방=layout·style 쌍) 인덱스, `j<jid>` = 지터 인덱스(= plan
+`jitters[key][sid]` 의 순서이지 reset 횟수가 아니다), `n<nid>` = noise index.
+legacy v5 의 `k<r>` 은 `jitter_reset_idx`(채택 k 값 그대로) 다.
+표의 좌표 열은 `scene_idx`/`jitter_idx`/`noise_idx` 3열이고, legacy 행은 `jitter_idx` 가
+빈 칸이며 `legacy=1` 로 표시된다. 평탄 `cell_si` 열은 없다.
 
 산출:
   rollouts.tsv       행 = base 셀 (좌표 + 신원 + 캡처 밀도 5열, §4)
@@ -48,7 +51,8 @@ BASE_ARM = "base"
 PLAN_NAME = "collection_plan.json"
 
 _S_RE = re.compile(r"^s(\d+)$")
-_K_RE = re.compile(r"^k(\d+)$")      # 지터 층. 이 패턴일 때만 k 층으로 본다 (§3.1.1)
+_J_RE = re.compile(r"^j(\d+)$")      # v6 지터 층 (jitter_idx). 이 패턴일 때만 j 층으로 본다
+_K_RE = re.compile(r"^k(\d+)$")      # legacy v5 지터 층 (jitter_reset_idx) (§3.1.1)
 _N_RE = re.compile(r"^n(\d+)$")
 
 # docs/04 §4 — kind=activation 행에 필수. 없으면 4MB/판 과 565MB/판 이 같은 질의에 섞인다.
@@ -57,9 +61,16 @@ CAPTURE_COLS = ("capture_token_mode", "feature_kind", "feature_axes",
 
 # 좌표 복합키 (§4). `armsig="base"` 가 baseline 행.
 COORD_COLS = ("plan_id", "machine", "grid_instruction",
-              "scene_idx",           # base scene (평탄 si 아님)
-              "jitter_reset_idx",    # 지터 축 k. legacy 2축 행은 빈 칸
+              "scene_idx",           # v6 scene(주방) 인덱스 / legacy base scene
+              "jitter_idx",          # v6 지터 인덱스 j. legacy 행은 빈 칸
               "noise_idx", "armsig")
+
+# 지터 출처 열 (좌표가 아니라 그 좌표가 무엇이었는지의 기록, §3.1.1 / v6 계약 §3·§4).
+# legacy v5 행에서는 `jitter_reset_idx` 가 경로 k 층의 값이고 나머지는 빈 칸이다.
+JITTER_COLS = ("jitter_reset_idx",   # 연속 reset 횟수 (v6=plan 값, v5=경로 k)
+               "base_lat", "base_back",   # v6 base 오프셋 (m)
+               "layout_id", "style_id", "side", "lang",
+               "legacy")             # 1 = legacy(v5 k층 / 2축) 행
 
 ROLLOUT_COLS = COORD_COLS + (
     "kind",                 # activation | eval — pkl 유무가 아니라 arm 여부로도 갈린다
@@ -71,14 +82,14 @@ ROLLOUT_COLS = COORD_COLS + (
     "success",
     "steps", "n_inferences", "n_action_steps", "chunk_len",
     "has_pkl",
-) + CAPTURE_COLS + (
+) + JITTER_COLS + CAPTURE_COLS + (
     "plan_name",
     "machine_source", "ckpt_source", "meta_source",
     "rel_path",             # grid-root 상대 — 절대경로 기록 금지 (§8)
 )
 
 # docs/04 §3.3 config.json 의 개입 파라미터 전량 + 좌표.
-ARM_COLS = COORD_COLS + (
+ARM_COLS = COORD_COLS + JITTER_COLS + (
     "op", "beta", "bindings", "token_select", "denoise",
     "steer_from_record", "gated_phases",
     "rel_path",
@@ -101,11 +112,19 @@ class PlanInfo:
         self.capture_layers: list[int] = list(body.get("capture_layers") or [])
         self.instructions: dict[str, list[int]] = dict(body.get("instructions") or {})
         self.noise_seeds: list[int] = list(body.get("noise_seeds") or [])
-        # 3축 plan 은 jitter[instr][scene_idx] = 채택 k 목록 (§3.1.1). 없으면 legacy 2축.
+        # legacy v5 plan 은 jitter[instr][scene_idx] = 채택 k 목록 (§3.1.1).
         jit = body.get("jitter")
         self.jitter: dict[str, list[list[int]]] | None = (
             {k: [list(ks) for ks in v] for k, v in jit.items()} if jit else None)
-        # legacy 전용 필터. 3축 plan 은 jitter 가 곧 수집 대상 전부라 쓰지 않는다.
+        # v6 plan: scenes[key][sid] = {layout, style, side, lang, ...},
+        #          jitters[key][sid][jid] = {reset_idx, lat, back}. 둘 다 있어야 v6 로 본다.
+        sc = body.get("scenes")
+        jts = body.get("jitters")
+        self.scenes: dict[str, list[dict]] | None = (
+            {k: [dict(x) for x in v] for k, v in sc.items()} if sc else None)
+        self.jitters: dict[str, list[list[dict]]] | None = (
+            {k: [[dict(x) for x in row] for row in v] for k, v in jts.items()} if jts else None)
+        # legacy 전용 필터. 지터 plan 은 지터 축이 곧 수집 대상 전부라 쓰지 않는다.
         extra = body.get("extra") or {}
         self.adopted_cells: set[str] | None = (
             set(extra["adopted_cells"]) if extra.get("adopted_cells") else None)
@@ -114,13 +133,28 @@ class PlanInfo:
                 f"{src}: plan_id 없음 — CollectionPlan.save 가 쓴 파일이 아니다. "
                 "plan_id 는 계획 내용의 지문이라 여기서 추측할 수 없다 (docs/04 §5.1)")
 
-    def cell_keys(self) -> Iterator[tuple[str, int, int | None, int]]:
-        """기대 셀 = (instruction, scene_idx, jitter_reset_idx|None, noise_idx).
+    @property
+    def is_v6(self) -> bool:
+        return self.scenes is not None and self.jitters is not None
 
-        3축 plan 이면 `jitter[instr][si]` 의 k 를 그대로 돈다 (채택 k 만이 수집 대상).
-        legacy 2축이면 scene×noise 전조합이되, `extra.adopted_cells` 가 있으면 그 필터를
-        유지한다 — 계획에 없던 셀을 결손으로 세지 않기 위함이다.
+    def cell_keys(self) -> Iterator[tuple[str, int, int | None, int | None, int]]:
+        """기대 셀 = (instruction, scene_idx, jitter_idx|None, k(경로 층)|None, noise_idx).
+
+        - v6 (`scenes`+`jitters`): key × sid × jid × nid 를 돈다. 경로 층은 j 이므로
+          네 번째 원소(k 층)는 항상 None 이다 — reset_idx 는 경로가 아니라 기록이다.
+        - legacy v5 (`jitter`): `jitter[instr][si]` 의 채택 k 를 그대로 돈다(경로 k 층).
+        - legacy 2축: scene×noise 전조합이되, `extra.adopted_cells` 가 있으면 그 필터를
+          유지한다 — 계획에 없던 셀을 결손으로 세지 않기 위함이다.
         """
+        if self.is_v6:
+            for instr, scenes in self.scenes.items():
+                rows = self.jitters.get(instr, [])
+                for sid in range(len(scenes)):
+                    n_j = len(rows[sid]) if sid < len(rows) else 0
+                    for jid in range(n_j):
+                        for ni in range(len(self.noise_seeds)):
+                            yield (instr, sid, jid, None, ni)
+            return
         for instr, scenes in self.instructions.items():
             for si in range(len(scenes)):
                 if self.jitter is not None:
@@ -133,7 +167,24 @@ class PlanInfo:
                         if (self.jitter is None and self.adopted_cells is not None
                                 and f"{instr}|s{si}|n{ni}" not in self.adopted_cells):
                             continue
-                        yield (instr, si, k, ni)
+                        yield (instr, si, None, k, ni)
+
+    def scene_info(self, instr: str, sid: int) -> dict[str, Any]:
+        """v6 scene 정의 (없으면 빈 dict)."""
+        if not self.scenes:
+            return {}
+        rows = self.scenes.get(instr) or []
+        return dict(rows[sid]) if 0 <= sid < len(rows) else {}
+
+    def jitter_info(self, instr: str, sid: int, jid: int) -> dict[str, Any]:
+        """v6 지터 정의 {reset_idx, lat, back} (없으면 빈 dict)."""
+        if not self.jitters:
+            return {}
+        rows = self.jitters.get(instr) or []
+        if not (0 <= sid < len(rows)):
+            return {}
+        row = rows[sid]
+        return dict(row[jid]) if 0 <= jid < len(row) else {}
 
     @property
     def n_cells(self) -> int:
@@ -147,13 +198,14 @@ def load_plan(path: Path) -> PlanInfo:
 
 # ─────────────────────────── 좌표 파싱 ───────────────────────────
 
-def parse_coords(rel: Path) -> tuple[str, str, str, int, int | None, int, str] | None:
-    r"""grid-root 상대 meta 경로 → (plan_id, machine, instruction, s, k|None, n, arm).
+def parse_coords(rel: Path) -> tuple[str, str, str, int, int | None, int | None, int, str] | None:
+    r"""grid-root 상대 meta 경로 → (plan_id, machine, instruction, s, j|None, k|None, n, arm).
 
-    형태(§3.1.1): ``<plan_id>/<machine>/<instruction...>/s<i>[/k<r>]/n<j>/<arm>/<file>``
-    **뒤에서부터** 판별한다 — arm, n<j>, 그다음 조각이 ``^k\d+$`` 면 지터 층이고 그 앞이
-    s<i>, 아니면 그 자리가 곧 s<i>(legacy 2축). instruction 은 ``PPCC/bread`` 처럼 '/' 를
-    포함할 수 있어 machine 뒤부터 s<i> 앞까지 전부다 (verify_grid.parse_coords 와 같은 규칙).
+    형태(§3.1.1): ``<plan_id>/<machine>/<instruction...>/s<i>[/j<jid>|/k<r>]/n<j>/<arm>/<file>``
+    **뒤에서부터** 판별한다 — arm, n<..>, 그다음 조각이 ``^j\d+$`` 면 v6 지터 층,
+    ``^k\d+$`` 면 legacy v5 지터 층이고 그 앞이 s<i>. 둘 다 아니면 그 자리가 곧
+    s<i>(legacy 2축). instruction 은 ``PPCC/bread`` 처럼 '/' 를 포함할 수 있어 machine
+    뒤부터 s<i> 앞까지 전부다 (verify_grid.parse_coords 와 같은 규칙).
     """
     parts = rel.parts[:-1]          # 파일명 제거
     if len(parts) < 6:              # plan machine instr s n arm (지터 있으면 7)
@@ -162,8 +214,9 @@ def parse_coords(rel: Path) -> tuple[str, str, str, int, int | None, int, str] |
     m_n = _N_RE.match(parts[-2])
     if not m_n:
         return None
-    m_k = _K_RE.match(parts[-3])
-    s_at = -4 if m_k else -3        # k 층 유무로 s<i> 위치가 한 칸 밀린다
+    m_j = _J_RE.match(parts[-3])
+    m_k = None if m_j else _K_RE.match(parts[-3])
+    s_at = -4 if (m_j or m_k) else -3   # 지터 층 유무로 s<i> 위치가 한 칸 밀린다
     m_s = _S_RE.match(parts[s_at])
     if not m_s:
         return None
@@ -171,6 +224,7 @@ def parse_coords(rel: Path) -> tuple[str, str, str, int, int | None, int, str] |
     if not instruction:
         return None
     return (plan_id, machine, instruction, int(m_s.group(1)),
+            int(m_j.group(1)) if m_j else None,
             int(m_k.group(1)) if m_k else None, int(m_n.group(1)), arm)
 
 
@@ -192,9 +246,17 @@ def cell(v: Any) -> str:
     return str(v).replace("\t", " ").replace("\n", " ").replace("\r", " ")
 
 
-def _cell_key(instr: str, si: int, k: int | None, ni: int) -> str:
-    """셀 키 (§3.1.1). `GridCell.key` 와 같은 문자열이어야 한다 — legacy 는 k 층이 없다."""
-    return f"{instr}|s{si}|k{k}|n{ni}" if k is not None else f"{instr}|s{si}|n{ni}"
+def _cell_key(instr: str, si: int, j: int | None, k: int | None, ni: int) -> str:
+    """셀 키 (§3.1.1). `GridCell.key` 와 같은 문자열이어야 한다.
+
+    v6 ``instr|s<sid>|j<jid>|n<nid>`` / legacy v5 ``instr|s<i>|k<r>|n<j>`` /
+    legacy 2축 ``instr|s<i>|n<j>``.
+    """
+    if j is not None:
+        return f"{instr}|s{si}|j{j}|n{ni}"
+    if k is not None:
+        return f"{instr}|s{si}|k{k}|n{ni}"
+    return f"{instr}|s{si}|n{ni}"
 
 
 def write_tsv(path: Path, header: tuple[str, ...], rows: list[dict[str, Any]]) -> None:
@@ -222,7 +284,7 @@ def build(grid_root: Path, plans: dict[str, PlanInfo]) -> tuple[list[dict], list
             problems.append(
                 f"{rel}: 좌표 경로가 아님 (<plan_id>/<machine>/<instr>/s<i>[/k<r>]/n<j>/<arm>)")
             continue
-        plan_id, machine, instruction, s_idx, k_idx, n_idx, arm = coords
+        plan_id, machine, instruction, s_idx, j_idx, k_idx, n_idx, arm = coords
         try:
             meta = json.loads(mp.read_text())
         except Exception as exc:  # noqa: BLE001
@@ -238,18 +300,30 @@ def build(grid_root: Path, plans: dict[str, PlanInfo]) -> tuple[list[dict], list
             if got is not None and str(got) != str(want):
                 problems.append(f"{rel}: meta.{key}={got!r} != 경로 {want!r}")
         # 지터 축은 "없음(legacy)" 도 값이라 위 루프(None 이면 통과)로 못 잡는다 — 따로 본다.
+        # v6 는 경로 j 층 ↔ meta.jitter_idx 를, legacy v5 는 경로 k 층 ↔ meta.jitter_reset_idx 를
+        # 대조한다 (v6 의 jitter_reset_idx 는 plan 이 정한 기록값이라 경로 대조 대상이 아니다).
+        got_j = meta.get("jitter_idx")
         got_k = meta.get("jitter_reset_idx")
-        if k_idx is None and got_k is not None:
-            problems.append(f"{rel}: meta.jitter_reset_idx={got_k!r} 인데 경로에 k 층 없음")
-        elif k_idx is not None and got_k is None:
-            problems.append(f"{rel}: 경로 k{k_idx} 인데 meta.jitter_reset_idx 없음 (§3.1.1)")
-        elif k_idx is not None and str(got_k) != str(k_idx):
-            problems.append(f"{rel}: meta.jitter_reset_idx={got_k!r} != 경로 {k_idx!r}")
+        if j_idx is not None:
+            if got_j is None:
+                problems.append(f"{rel}: 경로 j{j_idx} 인데 meta.jitter_idx 없음 (§3.1.1)")
+            elif str(got_j) != str(j_idx):
+                problems.append(f"{rel}: meta.jitter_idx={got_j!r} != 경로 {j_idx!r}")
+        elif got_j is not None:
+            problems.append(f"{rel}: meta.jitter_idx={got_j!r} 인데 경로에 j 층 없음")
+        if k_idx is not None:
+            if got_k is None:
+                problems.append(f"{rel}: 경로 k{k_idx} 인데 meta.jitter_reset_idx 없음 (§3.1.1)")
+            elif str(got_k) != str(k_idx):
+                problems.append(f"{rel}: meta.jitter_reset_idx={got_k!r} != 경로 {k_idx!r}")
+        elif j_idx is None and got_k is not None:
+            problems.append(f"{rel}: meta.jitter_reset_idx={got_k!r} 인데 경로에 지터 층 없음")
 
         row = {
             "plan_id": plan_id, "machine": machine, "grid_instruction": instruction,
-            "scene_idx": s_idx, "jitter_reset_idx": k_idx, "noise_idx": n_idx,
+            "scene_idx": s_idx, "jitter_idx": j_idx, "noise_idx": n_idx,
             "armsig": meta.get("armsig") or arm,
+            "legacy": 0 if j_idx is not None else 1,
             "kind": "activation" if (arm == BASE_ARM and has_pkl) else "eval",
             "has_pkl": 1 if has_pkl else 0,
             "version": (plan.version if plan else None),
@@ -264,6 +338,17 @@ def build(grid_root: Path, plans: dict[str, PlanInfo]) -> tuple[list[dict], list
                     "env_name", "env_seed", "inference_seed", "episode_idx", "success",
                     "steps", "n_inferences", "n_action_steps", "chunk_len") + CAPTURE_COLS:
             row.setdefault(col, meta.get(col))
+        # 지터 출처 열: meta 기록 우선, 없으면 계획(v6 scenes/jitters)에서 보강한다.
+        sc = plan.scene_info(instruction, s_idx) if (plan and j_idx is not None) else {}
+        jt = plan.jitter_info(instruction, s_idx, j_idx) if (plan and j_idx is not None) else {}
+        row["jitter_reset_idx"] = (got_k if got_k is not None
+                                   else (jt.get("reset_idx") if j_idx is not None else k_idx))
+        row["base_lat"] = meta.get("base_lat", jt.get("lat"))
+        row["base_back"] = meta.get("base_back", jt.get("back"))
+        row["layout_id"] = meta.get("layout_id", sc.get("layout"))
+        row["style_id"] = meta.get("style_id", sc.get("style"))
+        row["side"] = meta.get("side", sc.get("side"))
+        row["lang"] = meta.get("lang", sc.get("lang"))
         if arm == BASE_ARM:
             rollouts.append(row)
         # arm 행은 rollouts.tsv 에 넣지 않는다 — 이 표의 행은 base 셀이다.
@@ -275,7 +360,7 @@ def build(grid_root: Path, plans: dict[str, PlanInfo]) -> tuple[list[dict], list
         if coords is None:
             problems.append(f"{rel}: config.json 이 좌표 경로 밖")
             continue
-        plan_id, machine, instruction, s_idx, k_idx, n_idx, arm = coords
+        plan_id, machine, instruction, s_idx, j_idx, k_idx, n_idx, arm = coords
         if arm == BASE_ARM:
             problems.append(f"{rel}: base 에 config.json — base 는 개입 없는 arm 이다 (§3.3)")
             continue
@@ -287,10 +372,19 @@ def build(grid_root: Path, plans: dict[str, PlanInfo]) -> tuple[list[dict], list
         armsig = cfg.get("armsig")
         if armsig and not arm.startswith(armsig):
             problems.append(f"{rel}: 디렉토리 {arm!r} 이 config.armsig={armsig!r} 와 불일치")
+        cfg_plan = plans.get(plan_id)
+        cfg_sc = cfg_plan.scene_info(instruction, s_idx) if (cfg_plan and j_idx is not None) else {}
+        cfg_jt = (cfg_plan.jitter_info(instruction, s_idx, j_idx)
+                  if (cfg_plan and j_idx is not None) else {})
         arms.append({
             "plan_id": plan_id, "machine": machine, "grid_instruction": instruction,
-            "scene_idx": s_idx, "jitter_reset_idx": k_idx, "noise_idx": n_idx,
+            "scene_idx": s_idx, "jitter_idx": j_idx, "noise_idx": n_idx,
             "armsig": armsig or arm,
+            "legacy": 0 if j_idx is not None else 1,
+            "jitter_reset_idx": cfg_jt.get("reset_idx") if j_idx is not None else k_idx,
+            "base_lat": cfg_jt.get("lat"), "base_back": cfg_jt.get("back"),
+            "layout_id": cfg_sc.get("layout"), "style_id": cfg_sc.get("style"),
+            "side": cfg_sc.get("side"), "lang": cfg_sc.get("lang"),
             "op": cfg.get("op"), "beta": cfg.get("beta"),
             "bindings": cfg.get("bindings"),
             "token_select": cfg.get("token_select"), "denoise": cfg.get("denoise"),
@@ -325,18 +419,21 @@ def report(grid_root: Path, plans: dict[str, PlanInfo], rollouts: list[dict],
         expected = Counter()
         want_keys: set[tuple] = set()
         if plan:
-            for instr, si, k, ni in plan.cell_keys():
+            for instr, si, j, k, ni in plan.cell_keys():
                 expected[instr] += 1
-                want_keys.add((instr, si, k, ni))
+                want_keys.add((instr, si, j, k, ni))
         for instr in sorted(set(per_instr) | set(expected)):
             exp = expected.get(instr)
             mark = "✓" if exp is not None and per_instr.get(instr, 0) == exp else " "
             print(f"    {mark} {instr:<28s} {per_instr.get(instr, 0):>5d}"
                   f"{'/' + str(exp) if exp is not None else ''}")
         if plan:
-            # 계획 대비 결손·초과. 셀 키는 3축 instr|s<i>|k<r>|n<j> (legacy 는 k 없음).
-            have_keys = {(r["grid_instruction"], r["scene_idx"],
-                          r["jitter_reset_idx"], r["noise_idx"]) for r in rows}
+            # 계획 대비 결손·초과. 셀 키는 v6 instr|s<sid>|j<jid>|n<nid>
+            # (legacy v5 는 k, 2축은 지터 층 없음). 네 번째 원소는 경로 k 층뿐이다 —
+            # v6 행의 jitter_reset_idx 는 기록값이라 좌표 대조에 넣지 않는다.
+            have_keys = {(r["grid_instruction"], r["scene_idx"], r["jitter_idx"],
+                          None if r["jitter_idx"] is not None else r["jitter_reset_idx"],
+                          r["noise_idx"]) for r in rows}
             missing, stray = sorted(want_keys - have_keys), sorted(have_keys - want_keys)
             print(f"    결손 {len(missing)} · 계획 밖 {len(stray)}")
             for k in missing[:list_limit]:
@@ -384,15 +481,16 @@ def report(grid_root: Path, plans: dict[str, PlanInfo], rollouts: list[dict],
 
     # ── 중복 좌표 ──
     exact = Counter((r["plan_id"], r["machine"], r["grid_instruction"], r["scene_idx"],
-                     r["jitter_reset_idx"], r["noise_idx"]) for r in rollouts)
+                     r["jitter_idx"], r["jitter_reset_idx"], r["noise_idx"])
+                    for r in rollouts)
     dup_exact = [k for k, v in exact.items() if v > 1]
     cross: dict[tuple, set[str]] = defaultdict(set)
     for r in rollouts:
         cross[(r["plan_id"], r["grid_instruction"], r["scene_idx"],
-               r["jitter_reset_idx"], r["noise_idx"])].add(r["machine"])
+               r["jitter_idx"], r["jitter_reset_idx"], r["noise_idx"])].add(r["machine"])
     dup_cross = [k for k, v in cross.items() if len(v) > 1]
     print(f"\n## 중복 좌표")
-    print(f"    같은 (plan,machine,instr,s,k,n) 에 base 2개: {len(dup_exact)}")
+    print(f"    같은 (plan,machine,instr,s,j,k,n) 에 base 2개: {len(dup_exact)}")
     for k in dup_exact[:list_limit]:
         print(f"        ✗ {k}")
     print(f"    같은 좌표가 여러 machine 에 (§3.2 층화 위험): {len(dup_cross)}")

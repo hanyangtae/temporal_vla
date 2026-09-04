@@ -17,10 +17,16 @@
 # 완료 판정은 로그가 아니라 grid 디렉토리의 meta.json 존재로 한다.
 #
 # ── 계획 스키마 가정 ────────────────────────────────────────────────────────────
-#   instructions[instruction]            → base scene env_seed 목록 (s<i> 좌표)
-#   jitter[instruction][scene_idx]       → 채택 jitter_reset_idx(k) 목록 (선택).
-#         있으면 좌표가 3축(s<i>/k<r>/n<j>)이 되고 collector 에 --jitter-reset-idx 를 넘긴다.
-#         없으면 legacy 2축(s<i>/n<j>) — docs/04 §3.1.1.
+#   instructions[instruction]            → scene 별 env_seed 목록 (s<sid> 좌표, 순서 = sid)
+#   scenes[instruction][sid]             → v6 scene 정의 {layout, style, side, lang, ...} (선택)
+#   jitters[instruction][sid][jid]       → v6 지터 정의 {reset_idx, lat, back} (선택).
+#         scenes/jitters 가 있으면 v6 3축 좌표(s<sid>/j<jid>/n<nid>) 이고 collector 에는
+#         --scene-idx/--jitter-idx/--noise-idx 만 넘긴다 (reset_idx·오프셋·문장은 plan 에서 읽는다).
+#   jitter[instruction][scene_idx]       → legacy v5 채택 jitter_reset_idx(k) 목록 (선택).
+#         있으면 좌표가 s<i>/k<r>/n<j> 이고 collector 에 --jitter-reset-idx 를 넘긴다.
+#         둘 다 없으면 legacy 2축(s<i>/n<j>) — docs/04 §3.1.1.
+#   extra["env_kwargs"]                  → gym.make 에 넘길 env 인자(layout_and_style_ids 등).
+#         collector 가 plan 에서 직접 읽는다 — 이 스크립트는 넘기지 않는다.
 #   extra["env_names"][instruction]      → RoboCasa env id (필수)
 #         예: "robocasa_panda_omron/OpenDrawer_PandaOmron_Env"
 #   extra["task_names"][instruction]     → --task 값 (선택). 없으면 env id 에서 유도
@@ -62,7 +68,11 @@ PLAN_JSON_CONT="${PLAN_JSON_CONT:-$(to_container "$PLAN_JSON_ABS")}"
 LOGDIR="${LOGDIR:-${GRID_ROOT}/logs}"
 mkdir -p "$LOGDIR" "$GRID_ROOT"
 
-PYPATH="/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite:/temporal_vla"
+# 컨테이너 PYTHONPATH. PYPATH_PREFIX 를 주면 앞에 붙는다 — git worktree 의 코드(src/collect 등)로
+# 돌릴 때 메인 트리 대신 그 워크트리를 먼저 찾게 하는 용도(예 /temporal_vla/.claude/worktrees/grid-v6).
+PYPATH="${PYPATH_PREFIX:+${PYPATH_PREFIX}:}/temporal_vla/src/policies/Isaac-GR00T:/temporal_vla/src/benchmarks/robocasa:/temporal_vla/src/benchmarks/robosuite:/temporal_vla"
+# 수집기 경로(컨테이너). 워크트리 수집기로 돌리려면 COLLECTOR_PY 로 지정.
+COLLECTOR_PY="${COLLECTOR_PY:-/temporal_vla/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py}"
 
 log() { echo "[grid] $(date '+%F %T') $*"; }
 
@@ -118,19 +128,26 @@ def derive_task(env: str) -> str:
 
 
 adopted = set((extra.get("adopted_cells") or []))
+# 열: key instr sid jid k seed nid inf env task lang  (11열, 2026-09-03 v6)
+#   jid = v6 지터 인덱스(경로 j<jid>). legacy(v5 k층·2축)에서는 빈 칸.
+#   k   = jitter_reset_idx (v6 는 plan 이 정한 reset 횟수, v5 는 채택 k, 2축은 빈 칸).
+#         v6 에서 k 는 참고용 기록일 뿐 collector 로 넘기지 않는다 (plan 이 단일 출처).
 for cell in plan.cells():
     if cell.instruction not in wanted or cell.noise_idx >= limit:
         continue
     if adopted and cell.key not in adopted:   # v3 지터 plan: 채택 셀만 (dummy 제외)
         continue
     env = env_names[cell.instruction]
-    k = getattr(cell, "jitter_reset_idx", None)   # legacy 2축 plan 이면 None → 빈 칸
+    jid = getattr(cell, "jitter_idx", None)        # v6 만 값이 있다
+    k = getattr(cell, "jitter_reset_idx", None)    # legacy 2축 plan 이면 None → 빈 칸
+    lang = getattr(cell, "lang", None) or instr_text.get(cell.instruction, cell.instruction)
     print("\t".join([
         cell.key, cell.instruction, str(cell.scene_idx),
+        "" if jid is None else str(jid),
         "" if k is None else str(k), str(cell.env_seed),
         str(cell.noise_idx), str(cell.inference_seed), env,
         task_names.get(cell.instruction) or derive_task(env),
-        instr_text.get(cell.instruction, cell.instruction),
+        lang,
     ]))
 PY
 rc=$?
@@ -139,11 +156,16 @@ N_PLANNED=$(wc -l < "$CELLS_TSV")
 log "계획 셀(필터 후) ${N_PLANNED} 개 → ${CELLS_TSV}"
 
 # ── 3. 결손만 남기기 (DONE_LIST + 로컬 meta.json) ─────────────────────────────
-# 셀 완료 판정 (§3·§5·§6 공용) — k 가 있으면 3축 s<i>/k<r>/n<j>, 없으면 legacy s<i>/n<j>.
+# 셀 완료 판정 (§3·§5·§6 공용) — 좌표 층은 세 가지 (docs/04 §3.1.1):
+#   v6        jid 있음 → s<sid>/j<jid>/n<nid>
+#   legacy v5 jid 없고 k 있음 → s<i>/k<r>/n<j>
+#   legacy 2축 둘 다 없음 → s<i>/n<j>
 # machine 층은 serve 가 정한다 → 어느 머신이든 meta.json 이 있으면 수집됨으로 본다.
-cell_meta_exists() {  # instr si k ni
-  local instr="$1" si="$2" k="$3" ni="$4" pat
-  if [ -n "$k" ]; then
+cell_meta_exists() {  # instr si jid k ni
+  local instr="$1" si="$2" jid="$3" k="$4" ni="$5" pat
+  if [ -n "$jid" ]; then
+    pat="${GRID_ROOT}/${PLAN_ID}/*/${instr}/s${si}/j${jid}/n${ni}/*/meta.json"
+  elif [ -n "$k" ]; then
     pat="${GRID_ROOT}/${PLAN_ID}/*/${instr}/s${si}/k${k}/n${ni}/*/meta.json"
   else
     pat="${GRID_ROOT}/${PLAN_ID}/*/${instr}/s${si}/n${ni}/*/meta.json"
@@ -158,17 +180,26 @@ tsv_us() { tr '\t' '\037' < "$1"; }
 TODO_TSV="${LOGDIR}/cells_todo.tsv"
 : > "$TODO_TSV"
 n_done_list=0; n_done_local=0
-while IFS=$'\037' read -r key instr si k seed ni inf env task text; do
+while IFS=$'\037' read -r key instr si jid k seed ni inf env task lang; do
   [ -n "$key" ] || continue
   if [ -f "$DONE_LIST" ] && grep -Fxq -- "$key" "$DONE_LIST"; then
     n_done_list=$((n_done_list + 1)); continue
   fi
-  if cell_meta_exists "$instr" "$si" "$k" "$ni"; then
+  if cell_meta_exists "$instr" "$si" "$jid" "$k" "$ni"; then
     n_done_local=$((n_done_local + 1)); continue
   fi
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$key" "$instr" "$si" "$k" "$seed" "$ni" "$inf" "$env" "$task" "$text" >> "$TODO_TSV"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$key" "$instr" "$si" "$jid" "$k" "$seed" "$ni" "$inf" "$env" "$task" "$lang" >> "$TODO_TSV"
 done < <(tsv_us "$CELLS_TSV")
+# PRIORITY_CELLS: "instr|s<sid>[|j<jid>]" 접두 목록(쉼표) — 일치하는 결손 셀을 앞으로 (안정 정렬, 소비 세션의
+# eval 대상 (instr, scene) 을 먼저 채우기 위함, 2026-09-04). 미지정이면 plan 순서.
+if [ -n "${PRIORITY_CELLS:-}" ]; then
+  awk -v pri="$PRIORITY_CELLS" 'BEGIN{FS=OFS="\t"; n=split(pri,P,",")}
+    { hit=0; for(i=1;i<=n;i++){ if(P[i]!="" && index($1, P[i] "|")==1){hit=1;break} }
+      print (hit?0:1) "\t" NR "\t" $0 }' "$TODO_TSV" | sort -t$'\t' -k1,1n -k2,2n | cut -f3- > "${TODO_TSV}.pri" \
+    && mv "${TODO_TSV}.pri" "$TODO_TSV"
+  log "PRIORITY_CELLS 적용: 앞 $(awk -v pri="$PRIORITY_CELLS" 'BEGIN{n=split(pri,P,",")} {for(i=1;i<=n;i++) if(P[i]!="" && index($1,P[i] "|")==1){c++;break}} END{print c+0}' "$TODO_TSV") 셀 우선"
+fi
 # MAX_CELLS: 결손 중 앞 N 셀만 (스모크·첫 셀 게이트용). 미지정이면 전부.
 if [ -n "${MAX_CELLS:-}" ]; then
   head -n "$MAX_CELLS" "$TODO_TSV" > "${TODO_TSV}.lim" && mv "${TODO_TSV}.lim" "$TODO_TSV"
@@ -263,11 +294,11 @@ done
 # ── 5. 워커 fan-out (셀 인덱스 mod 워커수) ────────────────────────────────────
 run_worker() {  # wid port
   local wid="$1" port="$2" idx=-1
-  while IFS=$'\037' read -r key instr si k seed ni inf env task text; do
+  while IFS=$'\037' read -r key instr si jid k seed ni inf env task lang; do
     idx=$((idx + 1))
     [ $((idx % NWORKERS)) -eq "$wid" ] || continue
     # 재확인 — 다른 워커/이전 run 이 이미 채웠을 수 있다 (판정은 meta.json).
-    if cell_meta_exists "$instr" "$si" "$k" "$ni"; then
+    if cell_meta_exists "$instr" "$si" "$jid" "$k" "$ni"; then
       echo "[w${wid}] skip(done) ${key}"; continue
     fi
     # ★ backpressure: 이관(shipper)이 못 따라가 staging 이 cap 을 넘으면 수집을
@@ -281,7 +312,7 @@ run_worker() {  # wid port
     done
     echo "[w${wid}] $(date '+%F %T') ${key} seed=${seed} inf=${inf}"
     local args=(
-      python /temporal_vla/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py
+      python "$COLLECTOR_PY"
       --vla-server "http://127.0.0.1:${port}"
       --task "$task" --env-name "$env"
       # 워커별 분리 필수: 모든 셀이 task0--ep0 라 공유 _work 면 .groot_video_tmp 가
@@ -289,15 +320,19 @@ run_worker() {  # wid port
       --output-dir "${GRID_ROOT_CONT}/_work/w${wid}"
       --grid-root "$GRID_ROOT_CONT" --plan-json "$PLAN_JSON_CONT"
       --scene-idx "$si" --noise-idx "$ni" --grid-instruction "$instr"
-      --canonical-instruction "$text"
+      --canonical-instruction "$lang"
       --episode-start-idx 0 --n-episodes 1
       --seed "$seed" --inference-seed "$inf"
       --n-action-steps 5 --max-episode-steps 720
       --video-fps 20 --steps-per-render 2 --wait-ready
     )
-    if [ -n "$k" ]; then
-      # 3축 지터 plan: k = jitter_reset_idx (계획의 채택 값 그대로, 평탄 인코딩 없음).
-      # ep_meta 는 GRID_ROOT/ep_meta 에 export (base seed 키) — 아카이브 동봉 대상.
+    if [ -n "$jid" ]; then
+      # v6: 좌표는 (scene, jitter, noise) 인덱스뿐이다. reset 횟수·base 오프셋·문장은
+      # collector 가 plan(resolve_grid)에서 읽는다 — 여기서 --jitter-reset-idx 를 넘기면
+      # 좌표 해석 출처가 둘이 된다. ep_meta 는 GRID_ROOT/ep_meta 로 export (아카이브 동봉).
+      args+=(--jitter-idx "$jid" --ep-meta-dir "${GRID_ROOT_CONT}/ep_meta")
+    elif [ -n "$k" ]; then
+      # legacy v5 3축 지터 plan: k = jitter_reset_idx (계획의 채택 값 그대로, 평탄 인코딩 없음).
       args+=(--jitter-reset-idx "$k" --ep-meta-dir "${GRID_ROOT_CONT}/ep_meta")
     fi
     if [ "$DRY_RUN" = "1" ]; then
@@ -317,8 +352,8 @@ wait
 
 # ── 6. 결과 요약 (meta.json 기준) ─────────────────────────────────────────────
 n_have=0
-while IFS=$'\037' read -r key instr si k seed ni inf env task text; do
-  cell_meta_exists "$instr" "$si" "$k" "$ni" && n_have=$((n_have + 1))
+while IFS=$'\037' read -r key instr si jid k seed ni inf env task lang; do
+  cell_meta_exists "$instr" "$si" "$jid" "$k" "$ni" && n_have=$((n_have + 1))
 done < <(tsv_us "$TODO_TSV")
 log "수집 완료 ${n_have} / 목표 ${N_TODO}"
 touch "${LOGDIR}/GRID_ROUND_DONE"

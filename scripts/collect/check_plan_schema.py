@@ -10,6 +10,9 @@ docs/04 §3.1.1 이 요구하는 세 가지를 코드로 확인한다:
 (b) **v5 3축 plan** — cells() 1,250개·키 유일·instruction 당 125개, 경로가
     `<plan_id>/<machine>/<instr>/s<i>/k<r>/n<j>` 형태.
 (c) **resolve_grid 축 대조** — 3축/legacy plan × 지터 인자 유무 4조합의 통과·거부.
+(d) **v6 plan**(scene=주방 · jitter j · noise) — 모의 plan 을 임시 디렉토리에 만들어
+    cells()·key·rel_path·env_kwargs·resolve_grid 4케이스를 확인한다. v5 이하 plan_id
+    가 (a)(b) 에서 불변인 것과 함께, 신규 필드가 None 이면 해시에서 빠지는 규칙을 건다.
 
 실행: ``python3 scripts/collect/check_plan_schema.py`` (repo 루트 아무 데서나).
 """
@@ -156,6 +159,114 @@ except Exception as e:  # noqa: BLE001
 p, c = resolve_grid(argparse.Namespace(grid_root=None, plan_json=None,
                                        scene_idx=None, noise_idx=None))
 check("좌표 인자 불완전 → (None, None)", (p, c) == (None, None))
+
+# ── (d) v6 plan (scene 주방 · jitter j · noise) ────────────────────────────
+print("\n(d) v6 plan 모의 검증")
+import tempfile  # noqa: E402
+
+V6_JITTERS_PULL = [   # oven/washer 계열: reset 0 고정 + base 오프셋 5종 (핸드오프 §3)
+    {"reset_idx": 0, "lat": 0.0, "back": 0.0},
+    {"reset_idx": 0, "lat": 0.05, "back": 0.0},
+    {"reset_idx": 0, "lat": 0.10, "back": 0.0},
+    {"reset_idx": 0, "lat": 0.0, "back": 0.10},
+    {"reset_idx": 0, "lat": 0.05, "back": 0.10},
+]
+V6_JITTERS_PP = [{"reset_idx": j, "lat": 0.0, "back": 0.0} for j in range(5)]
+
+with tempfile.TemporaryDirectory() as _td:
+    v6 = CollectionPlan(
+        name="v6_mock", model="groot", version="n15", ckpt="ckpt",
+        capture_layers=[0, 2], denoise_k=4, token_mode="all_token_full",
+        instructions={"OvenRack/left": [100001, 100002, 100003],
+                      "PPCC/apple": [100010, 100011, 100012]},
+        noise_seeds=[1300000, 1300001, 1300002, 1300003, 1300004],
+        scenes={
+            "OvenRack/left": [
+                {"layout": ly, "style": ly, "side": "left", "lang": "Fully slide the oven rack out.",
+                 "fixture_group": "oven", "spawn_lat": 0.45} for ly in (4, 7, 9)],
+            "PPCC/apple": [
+                {"layout": ly, "style": ly, "side": None, "lang": "Pick the apple from the counter and place it in the cabinet.",
+                 "fixture_group": "counter", "spawn_lat": 0.0} for ly in (4, 5, 9)],
+        },
+        jitters={"OvenRack/left": [list(V6_JITTERS_PULL) for _ in range(3)],
+                 "PPCC/apple": [list(V6_JITTERS_PP) for _ in range(3)]},
+        extra={"env_kwargs": {"layout_and_style_ids": [[i, i] for i in range(1, 11)]},
+               "instruction_text": {"OvenRack/left": "Fully slide the oven rack out."}},
+    )
+    v6_path = v6.save(_td)
+    v6 = CollectionPlan.load(v6_path)      # save/load 왕복
+    v6_id = json.loads(v6_path.read_text())["plan_id"]
+    v6cells = list(v6.cells())
+    check("v6 save/load 왕복 plan_id 일치", v6.plan_id == v6_id, f"{v6_id}")
+    check("is_v6", v6.is_v6 and not v6.jitter)
+    check("cells() == 2*3*5*5 = 150", len(v6cells) == 150, f"실제 {len(v6cells)}")
+    check("n_cells == len(cells())", v6.n_cells == len(v6cells), f"n_cells {v6.n_cells}")
+    v6keys = [c.key for c in v6cells]
+    check("cell key 유일", len(set(v6keys)) == len(v6keys))
+    check("key 형식 instr|s<i>|j<j>|n<n>",
+          all(re.fullmatch(r".+\|s\d+\|j\d+\|n\d+", k) for k in v6keys))
+    pat6 = re.compile(rf"^{re.escape(v6_id)}/MACH/.+/s\d+/j\d+/n\d+$")
+    check("rel_path 형식 <plan_id>/<machine>/<instr>/s<sid>/j<jid>/n<nid>",
+          all(pat6.fullmatch(str(c.rel_path(v6_id, "MACH"))) for c in v6cells))
+    check("env_kwargs = layout_and_style_ids 10주방",
+          v6.env_kwargs == {"layout_and_style_ids": [[i, i] for i in range(1, 11)]},
+          json.dumps(v6.env_kwargs))
+    ov = [c for c in v6cells if c.instruction == "OvenRack/left"]
+    c_j4 = next(c for c in ov if c.scene_idx == 0 and c.jitter_idx == 4 and c.noise_idx == 0)
+    check("pull 키 j4 = (lat .05, back .10), reset 0, side/layout 전달",
+          (c_j4.base_lat, c_j4.base_back, c_j4.jitter_reset_idx, c_j4.side,
+           c_j4.layout_id, c_j4.style_id) == (0.05, 0.10, 0, "left", 4, 4),
+          c_j4.key)
+    pp = [c for c in v6cells if c.instruction == "PPCC/apple"]
+    check("pickplace 키 reset_idx == j", all(c.jitter_reset_idx == c.jitter_idx for c in pp))
+    check("env_seed = instructions[key][sid]",
+          all(c.env_seed == v6.instructions[c.instruction][c.scene_idx] for c in v6cells))
+    m6 = c_j4.as_metadata()
+    check("as_metadata v6 열 전량",
+          all(k in m6 for k in ("grid_instruction", "scene_idx", "noise_idx", "jitter_idx",
+                                "jitter_reset_idx", "base_lat", "base_back", "side",
+                                "layout_id", "style_id", "lang")),
+          json.dumps(m6, ensure_ascii=False))
+    check("missing() 동작 (1칸 결손)",
+          [c.key for c in v6.missing(set(v6keys[1:]))] == [v6keys[0]])
+
+    def ns6(cell, j, reset=None):
+        return argparse.Namespace(
+            grid_root="/tmp/grid", plan_json=str(v6_path),
+            scene_idx=cell.scene_idx, noise_idx=cell.noise_idx,
+            jitter_idx=j, jitter_reset_idx=reset, grid_instruction=cell.instruction)
+
+    # 1) v6 plan + --jitter-idx → 통과
+    try:
+        _p, _c = resolve_grid(ns6(c_j4, 4))
+        check("v6-1) --jitter-idx 만 → 통과", _c is not None and _c.key == c_j4.key, _c.key)
+    except Exception as e:  # noqa: BLE001
+        check("v6-1) --jitter-idx 만 → 통과", False, f"{type(e).__name__}: {e}")
+    # 2) v6 plan + --jitter-idx 없음 → ValueError
+    try:
+        resolve_grid(ns6(c_j4, None))
+        check("v6-2) --jitter-idx 없음 → ValueError", False, "예외가 안 났다")
+    except ValueError as e:
+        check("v6-2) --jitter-idx 없음 → ValueError", True, str(e).split(" —")[0])
+    # 3) v6 plan + --jitter-reset-idx 불일치 → ValueError
+    try:
+        resolve_grid(ns6(pp[0], 0, reset=3))   # pp s0 j0 의 reset_idx 는 0
+        check("v6-3) --jitter-reset-idx 불일치 → ValueError", False, "예외가 안 났다")
+    except ValueError as e:
+        check("v6-3) --jitter-reset-idx 불일치 → ValueError", True, str(e).split(" —")[0])
+    # 4) v5 plan + --jitter-idx → ValueError (계획에 없는 축)
+    try:
+        resolve_grid(argparse.Namespace(
+            grid_root="/tmp/grid", plan_json=str(v5_path),
+            scene_idx=cells[0].scene_idx, noise_idx=cells[0].noise_idx,
+            jitter_idx=0, jitter_reset_idx=cells[0].jitter_reset_idx,
+            grid_instruction=cells[0].instruction))
+        check("v6-4) v5 plan + --jitter-idx → ValueError", False, "예외가 안 났다")
+    except ValueError as e:
+        check("v6-4) v5 plan + --jitter-idx → ValueError", True, str(e).split(" —")[0])
+    print("  rel_path 샘플:")
+    for c in (ov[0], c_j4, pp[0]):
+        print(f"    {c.key:44s} -> {c.rel_path(v6_id, 'kanu')}")
 
 print("\n" + ("전부 PASS" if not failures else f"FAIL {len(failures)}건: {failures}"))
 sys.exit(1 if failures else 0)

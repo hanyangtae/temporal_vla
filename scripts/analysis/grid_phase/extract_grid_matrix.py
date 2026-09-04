@@ -16,9 +16,9 @@
 
 두 tier 모두 record 별 열(`ep_id/scene/noise/jitter/rec_idx/succ/phase_code/ep_len`
 + 지터 성분 `jitter_reset_idx/base_lat/base_back`)과
-`vl`, `meta_json` 을 함께 담는다. `jitter` 는 지터 축(k = reset_idx) 좌표로 —
-3축 좌표 `s<i>/k<r>/n<j>` 의 셋째 축, docs/04 §3.1.1 — **항상 존재하는 열**이다.
-인덱스에 `jitter_reset_idx` 열이 없는 legacy(2축) 추출에서는 전부 `-1` 로 채운다
+`vl`, `meta_json` 을 함께 담는다. `jitter` 는 지터 축 좌표로 — **v6 는 `jitter_idx`(j,
+폴더 `j<jid>`), legacy(v5) 는 `jitter_reset_idx`(k, 폴더 `k<r>`)** — docs/04 §3.1.1,
+**항상 존재하는 열**이다. 인덱스에 지터 열이 없는 legacy(2축) 추출에서는 전부 `-1` 로 채운다
 ("지터 축 없음"). 지터 축 인덱스 안의 legacy(빈 값) 행은 99. `meta_json.jitter_axis` 가 이 열이 실좌표
 (true)인지 -1 채움(false)인지 알려 준다. `meta_json` 에는 **절대경로를 쓰지 않는다** (docs/04 §8) —
 출처는 `sigs`(meta.json 의 내용 지문)로만 남긴다.
@@ -64,7 +64,7 @@ EXPECT_D = 1536
 N_FUTURE = 32                      # state 1 + future 32 + action 16 = 49
 SEGMENT_NAMES = ["state", "future", "action", "all"]
 BASE_ARM = "base"
-JITTER_BASE = 99          # index 의 jitter_reset_idx == "base" (지터 없는 원본 판)
+JITTER_BASE = 99          # index 의 지터 좌표가 "base" (지터 없는 원본 판)
 JITTER_NONE = -1          # 지터 축 자체가 없는 인덱스(v1/v2) 의 채움값
 
 
@@ -217,8 +217,8 @@ def _float_or(s: str, default: float) -> float:
         return default
 
 
-def _jitter_of(raw: str) -> int:
-    """index 의 `jitter_reset_idx` 문자열 → 정수 좌표.
+def _jitter_of(raw: str, col_name: str = "jitter_reset_idx") -> int:
+    """index 의 지터 좌표 문자열(v6 `jitter_idx` / legacy `jitter_reset_idx`) → 정수.
 
     `"base"`(지터 없는 원본 판) → 99, 그 외 정수 문자열 → 그 값. 빈 칸은 base 취급
     (지터 축 인덱스에서 값이 비면 base 재사용 행이다).
@@ -230,7 +230,7 @@ def _jitter_of(raw: str) -> int:
         return int(v)
     except ValueError:
         raise ValueError(
-            f"jitter_reset_idx={raw!r} — 정수 또는 {BASE_ARM!r} 이어야 한다") from None
+            f"{col_name}={raw!r} — 정수 또는 {BASE_ARM!r} 이어야 한다") from None
 
 
 def read_index(index_tsv: Path,
@@ -242,7 +242,8 @@ def read_index(index_tsv: Path,
     `rel_path` 가 없는 옛 인덱스면 좌표로 경로를 조립한다.
 
     지터 축 열이 있으면 그 좌표를 **정식 좌표로** 싣는다 — 같은 `(scene, noise)` 셀에
-    지터 변형이 여러 판 있으므로 이게 없으면 중복 좌표로 오인된다. 열이 없으면(v1/v2)
+    지터 변형이 여러 판 있으므로 이게 없으면 중복 좌표로 오인된다. 좌표 출처는
+    **v6 = `jitter_idx`(j), legacy = `jitter_reset_idx`(k)** 이고, 둘 다 없으면(v1/v2)
     전부 -1 이라 이전 동작과 완전히 같다.
 
     ⚠ **지터 열이 둘인 인덱스가 있다**: `jitter_idx`(폴더층 `j<r>` 의 축 좌표)와
@@ -266,7 +267,8 @@ def read_index(index_tsv: Path,
             "만든 rollouts.tsv 인지 확인할 것 (헤더: {})".format(",".join(header[:8])))
     col = {c: i for i, c in enumerate(header)}
     # 축 좌표 우선 (docstring ⚠ 참조). 둘 다 없으면 지터 축 없는 인덱스.
-    jitter_col = "jitter_idx" if "jitter_idx" in col else (
+    is_v6 = "jitter_idx" in col                       # v6 = j 좌표 (폴더 j<jid>)
+    jitter_col = "jitter_idx" if is_v6 else (
         "jitter_reset_idx" if "jitter_reset_idx" in col else None)
     has_jitter = jitter_col is not None
 
@@ -291,15 +293,21 @@ def read_index(index_tsv: Path,
         instruction = get(parts, "grid_instruction").strip()
         plan_id = get(parts, "plan_id").strip()
         machine = get(parts, "machine").strip()
-        jitter = _jitter_of(get(parts, jitter_col)) if has_jitter \
-            else JITTER_NONE
+        if is_v6:
+            jitter = _jitter_of(get(parts, "jitter_idx"), "jitter_idx")
+            # v6 인덱스 안의 legacy 행(j 없음)은 reset_idx 를 좌표로 되돌려 쓴다.
+            if jitter == JITTER_BASE:
+                jitter = _jitter_of(get(parts, "jitter_reset_idx"))
+        elif has_jitter:
+            jitter = _jitter_of(get(parts, "jitter_reset_idx"))
+        else:
+            jitter = JITTER_NONE
         rel = get(parts, "rel_path").strip()
         if not rel:
-            # 3축 폴더층 (docs/04 §3.1.1) — 층 이름은 좌표 열을 따른다:
-            # `jitter_reset_idx` 축이면 s<i>/k<r>/n<j>, `jitter_idx` 축(v6)이면 s<i>/j<r>/n<j>.
-            # 지터 축이 없거나 legacy 행이면 층 없이 s<i>/n<j> (구 레이아웃).
-            layer = "j" if jitter_col == "jitter_idx" else "k"
-            k_seg = "" if jitter in (JITTER_NONE, JITTER_BASE) else f"{layer}{jitter}/"
+            # 3축 폴더층 — v6 는 s<sid>/j<jid>/n<nid>, legacy 는 s<i>/k<r>/n<j>
+            # (docs/04 §3.1.1). 지터 축이 없거나 base 행이면 지터 층 없이 s/n (구 레이아웃).
+            j_pref = "j" if is_v6 else "k"
+            k_seg = "" if jitter in (JITTER_NONE, JITTER_BASE) else f"{j_pref}{jitter}/"
             rel = (f"{plan_id}/{machine}/{instruction}/s{scene}/{k_seg}"
                    f"n{noise}/{BASE_ARM}")
         eps.append(Episode(
@@ -577,7 +585,7 @@ def main() -> int:
     eps, jitter_axis, jitter_col = read_index(args.index_tsv, args.grid_root)
     if jitter_axis:
         print(f"[extract] index 지터 축 열 = {jitter_col} — 이 값을 정식 좌표로 쓴다 "
-              "(base=99)", flush=True)
+              "(v6=jitter_idx j / legacy=jitter_reset_idx k, base=99)", flush=True)
     if args.plan_ids != "all":
         want = {p.strip() for p in args.plan_ids.split(",") if p.strip()}
         eps = [e for e in eps if e.plan_id in want]

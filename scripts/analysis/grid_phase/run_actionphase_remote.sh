@@ -125,6 +125,102 @@ fi
 
 slug_of() { local s="${1//\//_}"; echo "${s// /_}"; }
 
+# ── (instruction, scene) 단위 추출 ────────────────────────────────────────────
+# 수집 완료 단위가 instruction 이 아니라 **(instruction, scene)** 인 경우(2026-09-04
+# 사용자 지시: "s0 drawer-left, s1 oven-out-left 부터"). 산출은 instruction shard 와
+# **다른 디렉토리** `segA_scene/<slug>__s<i>.npz` 에 둔다 — 같은 폴더에 두면 ae_cluster 가
+# scene shard 를 별개 instruction 으로 잡아 KMeans 단위가 조용히 바뀐다.
+# 나중에 그 instruction 의 scene 이 다 모이면 merge_scene_shards.py 로 합쳐
+# `segA/<slug>.npz` 를 만든다(재추출 불필요).
+if [[ -n "${INSTR_SCENES:-}" ]]; then
+  mkdir -p "$OUT/segA_scene"
+  IFS=',' read -r -a pairs <<< "$INSTR_SCENES"
+  for pair in "${pairs[@]}"; do
+    instr="${pair%:*}"; sc="${pair##*:}"
+    slug="$(slug_of "$instr")"
+    dst="$OUT/segA_scene/${slug}__s${sc}.npz"
+    if [[ -s "$dst" ]]; then echo "[wrap] skip $instr s$sc — $dst 존재"; continue; fi
+    sub_idx="$OUT/.index_${slug}__s${sc}.tsv"
+    awk -F'\t' -v I="$instr" -v S="$sc" '
+      NR==1 { for (i=1;i<=NF;i++) c[$i]=i; print; next }
+      $c["grid_instruction"]==I && $c["scene_idx"]==S { print }' "$INDEX" > "$sub_idx"
+    n_sub=$(( $(wc -l < "$sub_idx") - 1 ))
+    if [[ "$n_sub" -le 0 ]]; then
+      echo "[wrap] ERROR: 인덱스에 $instr s$sc 행이 없다" >&2; exit 2
+    fi
+    echo "[wrap] extract $instr s$sc ($n_sub 판) → ${slug}__s${sc} ($(date +%F' '%T))"
+    tmp_out="$OUT/.tmp_${slug}__s${sc}"
+    rm -rf "$tmp_out"; mkdir -p "$tmp_out"
+    "$PY" "$REPO/scripts/analysis/grid_phase/extract_grid_matrix.py" \
+      --grid-root "$GRID" --index-tsv "$sub_idx" --out-dir "$tmp_out" \
+      --instructions "$instr" --tier segA --workers "$WORKERS"
+    mv "$tmp_out/segA/${slug}.npz" "$dst"
+    mv "$tmp_out/segA_summary.json" "$OUT/segA_summary_${slug}__s${sc}.json"
+    rm -rf "$tmp_out"
+    # scene shard 감사 — 판수·(scene, j) 분포를 부분 인덱스와 대조 (fail-loud)
+    "$PY" - "$dst" "$sub_idx" "$OUT/audit_cells_scene.tsv" <<'PYEOF'
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+import numpy as np
+
+shard, idx_tsv, out_tsv = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+
+lines = idx_tsv.read_text(encoding="utf-8").splitlines()
+head = {c: i for i, c in enumerate(lines[0].split("\t"))}
+jcol = "jitter_idx" if "jitter_idx" in head else "jitter_reset_idx"
+want = defaultdict(int)
+for ln in lines[1:]:
+    if not ln.strip():
+        continue
+    p = ln.split("\t")
+    if head.get("armsig") is not None and p[head["armsig"]] != "base":
+        continue
+    if head.get("has_pkl") is not None and p[head["has_pkl"]] in ("0", "false", "False"):
+        continue
+    want[(int(p[head["scene_idx"]]), int(p[head[jcol]]))] += 1
+
+with np.load(shard, allow_pickle=False) as z:
+    ep, succ, scene, jit = z["ep_id"], z["succ"], z["scene"], z["jitter"]
+    n_rec = int(z["X"].shape[0])
+seen, cells = {}, defaultdict(lambda: [0, 0, 0])
+for e, s, sc_, jj in zip(ep, succ, scene, jit):
+    key = (int(sc_), int(jj))
+    cells[key][2] += 1
+    if int(e) not in seen:
+        seen[int(e)] = key
+        cells[key][0] += 1
+        if int(s) == 1:
+            cells[key][1] += 1
+
+bad = [f"s{k[0]}j{k[1]} {cells.get(k, [0])[0]} != {want[k]}"
+       for k in sorted(set(want) | set(cells))
+       if cells.get(k, [0, 0, 0])[0] != want.get(k, 0)]
+n_ep, n_succ = len(seen), sum(v[1] for v in cells.values())
+print(f"[audit] {shard.stem}: eps={n_ep}/{sum(want.values())} rec={n_rec} "
+      f"succ_eps={n_succ} cells={len(cells)}/{len(want)}", flush=True)
+for sc_ in sorted({k[0] for k in want}):
+    line = " ".join(f"j{j}:{cells.get((sc_, j), [0])[0]}"
+                    for j in sorted(k[1] for k in want if k[0] == sc_))
+    print(f"[audit]   s{sc_}  {line}", flush=True)
+rows = [] if out_tsv.exists() else ["slug\tscene\tjitter\teps\texpected\tsucc_eps\trecords"]
+for k in sorted(set(want) | set(cells)):
+    g = cells.get(k, [0, 0, 0])
+    rows.append(f"{shard.stem}\t{k[0]}\t{k[1]}\t{g[0]}\t{want.get(k, '')}\t{g[1]}\t{g[2]}")
+with out_tsv.open("a", encoding="utf-8") as f:
+    f.write("\n".join(rows) + "\n")
+if bad:
+    sys.exit(f"[audit] 판수 불일치: {bad}")
+print("[audit] OK — 셀 단위 일치")
+PYEOF
+    echo "[wrap] scene shard 완료: $dst ($(du -h "$dst" | cut -f1))"
+  done
+  # scene shard 는 instruction 이 다 안 모였으므로 AE 로 넘어가지 않는다.
+  echo "[wrap] ACTIONPHASE_${TAG}_SCENE_DONE $(date -Is)"
+  exit 0
+fi
+
 mkdir -p "$OUT/segA"
 for instr in "${INSTRUCTIONS[@]}"; do
   slug="$(slug_of "$instr")"

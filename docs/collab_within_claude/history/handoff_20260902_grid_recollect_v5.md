@@ -109,6 +109,30 @@ runner 주석 갱신. **v5 replay/eval 은 EP_META_DIR 없이** 돌린다(ep_met
   pkl 내부 scene_idx 를 전제 — 3축 표를 넣으면 선택 키 의미가 바뀐다. `make_triggers.py` 의
   TRIGGER 1열은 평탄값 유지(러너 조회 키도 평탄 유지).
 
+### 0.5.3 렌더 정지 무효 셀 교체 (2026-09-03)
+
+- 사용자 발견: CoffeeSetupMug s0/k1 영상 5개가 4.7s 뒤 정지/노이즈. 진단: 같은 셀 pkl 의 **VL hidden 이
+  record 38(=env step 190=4.75s)부터 두 값 교대(vl[t]==vl[t-2])** → 정책 관측 이미지 자체가 고정된 것.
+  영상만의 문제가 아니라 그 이후 action·activation 전부 무효. 전 1,250셀 영상 스캔
+  (`scripts/collect/scan_video_integrity.py`, freeze/noise 지표) 결과 **10셀만 해당**: coffee s0/k1 n0-4,
+  drawer_right s2/k3 n0-4 (전부 srv48). srv48 robocasa 컨테이너 재시작 후 재수집해도 **같은 시점에 재현**
+  (scene 결정적; noise 무관).
+- 사용자 결정: 그 (scene,k) 폐기 → 스캔 채택분 다음 k(=5) 로 교체. plan 재생성 → **plan_id `e82e99cb666b`**
+  (`extra.k_replacements`, `plan_id_history` = [8daefeabf020, e6b316053d1c]). 아카이브: 무효 10셀 삭제 →
+  `rebase_plan_id.py` 로 디렉토리·meta plan_id 재지정(1,240) → 교체 10셀 srv48 재수집(영상 OK 10/10·VL 정상)
+  → 이관. **QA 기준(신규 수집 후 필수)**: 영상 스캔 flag OK + VL Δnorm 상수화 없음.
+- 운영 교훈: 아카이브 단위 rename/삭제는 소비 세션(action phase 등) 러너를 죽인다 — **실행 전 사전 공지**.
+
+### 0.5.4 pull task 의 k 지터가 사실상 무변화인 이유 (실측, 2026-09-03)
+
+oven·dishwasher·drawer 모두 k 5개 사이 **로봇 base 위치 Δ=0.000m**, 팔 초기 관절만 1~4cm, 첫 프레임 픽셀
+Δ 8~17. 원인: 주입 ep_meta 에 `init_robot_base_pos/ori`·`object_cfgs` 가 들어 있어 base·물체가 함께 고정되고
+남는 무작위성이 팔 관절뿐. oven 은 object_cfgs 가 비어 있고 v5 scene 5개가 전부 layout 4·oven_left_group.
+후속 설계 후보(사용자 결정 대기): ① pull task 지터 = ep_meta 에서 base·object_cfgs 를 빼고 주입(fixture·
+layout·instruction 만 고정) ② 방향별 scene: dishwasher 는 island/main/left 3그룹(각 "out" seed 충분),
+oven 은 main 그룹이 "bottom/top oven rack out" 문구라 **별도 instruction 키** 필요. fixture 그룹 스캔
+`scripts/collect/scan_fixture_groups.py` → `outputs/analysis/seed_scan/fixture_groups/` (seed 100000-100999).
+
 ### 0.6 착수 순서
 
 1. `git pull` dev 최신 → v5 plan 생성 → DRY_RUN 으로 결손 1,250 확인.
@@ -292,10 +316,10 @@ n16 분기를 추가하거나 (b) n16 전용 러너를 두는 방식 중 택일�
 
 ## 5. 데이터 상태 (2026-09-03 v5 재수집 완료)
 
-- **아카이브**: 승준 HDD `temporal_vla_store/groot/n15/grid/8daefeabf020/{kanu,worker1,worker2}/…`
+- **아카이브**: 승준 HDD `temporal_vla_store/groot/n15/grid/e82e99cb666b/{kanu,worker1,worker2}/<instr>/s<i>/k<r>/n<j>/base/` (구 8daefeabf020·e6b316053d1c 은 README 만)
   **1,250 셀 = meta 1,250 · pkl 1,250, 450GB**, `8daefeabf020/ep_meta/<task>/` 50 파일 동봉.
   인덱서 판정 위반 0(경로/meta 불일치 0·machine 결측 0·좌표중복 0·sig 중복 0), record_shape 전부 [7,4,49,1536].
-- **인덱스 정본**: `configs/collect/n15_grid_v5_scenario/index_rollouts_v5.tsv` (1,250행, 3축
+- **인덱스 정본**: `configs/collect/n15_grid_v5_scenario/index_rollouts_v5.tsv` (1,250행, plan `e82e99cb666b`, 3축
   `scene_idx`·`jitter_reset_idx`·`noise_idx` + `cell_si`; 승준 `n15/index_v5/` 에 원본 rollouts.tsv).
   로컬 사본 `outputs/steer/online_pipe/manifests/index_rollouts_v5.tsv`.
 - **SR (702/1250 = 0.56)** — instruction × scene(s0..s4):
