@@ -70,10 +70,11 @@ def parse_args():
     ap.add_argument("--bundle", default=None, help="기본 ROOT/ae_k8/ae_bundle_k8.npz")
     ap.add_argument("--labels", default=None,
                     help="기본 ROOT/ae_k8/labels_<slug>_k8.npz (있으면 대조, 없으면 생략)")
-    ap.add_argument("--setm-form", choices=("jfair", "plain"), default="jfair",
+    ap.add_argument("--setm-form", choices=("jfair", "plain", "both"), default="both",
                     help="setM 방향 산출. jfair(기본)=지터 안 대조 평균+대상 지터 앵커 "
                          "하이브리드 setpoint / plain=pool 전체 mean-diff(지터 혼입 미보정, "
-                         "비교용). 지터가 물리 오프셋인 키(oven·washer)에서 특히 중요")
+                         "비교용) / both(기본)=둘 다 산출, plain 은 루트 뒤에 _plain. "
+                         "지터가 물리 오프셋인 키(oven·washer)에서 특히 중요")
     ap.add_argument("--tag", default="v6", help="산출 루트 태그 (instr_setm_<tag>_*, rsn_llr_reg_<tag>)")
     ap.add_argument("--coord", default="j", help="좌표 폴더·registry 열 이름 (v6=j, v5=k)")
     ap.add_argument("--axis-col", default=None,
@@ -162,7 +163,7 @@ def main():
 
     # ── AE 번들 → encode + ck8 라벨 파생 ──
     Z = ck = b = None
-    ae_sig = "(only-gt: 번들 미사용)"
+    ae_sig, ae_dir, partial_sig = "(only-gt: 번들 미사용)", "", ""
     if args.only_gt:
         print("[mode] --only-gt: setm_gt 만 산출 (ck8·LLR 생략)")
     if not args.only_gt:
@@ -197,6 +198,13 @@ def main():
         else:
             print(f"[labels] {SLUG}: labels npz 없음 → 번들 파생 라벨만 사용 ({labels_p})")
         ae_sig = hashlib.sha256(open(bundle_p, "rb").read()).hexdigest()[:16]
+        ae_dir = os.path.basename(os.path.dirname(bundle_p))
+        ps_path = os.path.join(os.path.dirname(bundle_p), "PARTIAL_SHARDS.txt")
+        partial_sig = (hashlib.sha256(open(ps_path, "rb").read()).hexdigest()[:16]
+                       if os.path.exists(ps_path) else "")
+        if partial_sig:
+            print(f"[ae] 임시 번들({ae_dir}) 사용 — 정식 번들 나오면 ck8 재fit 필요 "
+                  f"(sig {ae_sig}, shards {partial_sig})")
 
     # ── scene 인덱스 ──
     m_sc = sc == S
@@ -232,9 +240,8 @@ def main():
         tags = [("gt", pc, lambda c: CB[int(c)])]
         if not args.only_gt:
             tags.append(("ck8", ck, lambda c: f"c{int(c)}"))
+        forms = ["jfair", "plain"] if args.setm_form == "both" else [args.setm_form]
         for tag, la, name_of in tags:
-            outroot = os.path.join(root, f"instr_setm_{args.tag}_{tag}", SLUG, f"s{S}",
-                                   f"{args.coord}{k_tgt}")
             n_ph = n_skip = 0
             for code in sorted(set(la[allow].tolist())):
                 ms = np.where(allow & (la == code) & (su == 1))[0]
@@ -260,40 +267,57 @@ def main():
                         per_j.append(X[mjs].mean(0).astype(np.float64)
                                      - X[mjf].mean(0).astype(np.float64))
                         n_mix += 1
-                if args.setm_form == "jfair":
-                    if n_mix < 2 or len(mtf) < MIN_REC_SETM:
-                        n_skip += 1
-                        continue
-                    delta = np.mean(per_j, 0)
-                    v = delta / (np.linalg.norm(delta) + 1e-12)
-                    s_val = (float(X[mtf].mean(0).astype(np.float64) @ v)
-                             + float(np.mean([d_ @ v for d_ in per_j])))
-                    note = ("v=normalize(mean_j(mu_s,j − mu_f,j)) — 지터 안 대조 평균; "
-                            "s=mu_f,tgt·v + mean_j(delta_j·v) (대상 지터 앵커 하이브리드)")
+                wrote = False
+                for form in forms:
+                    if form == "jfair":
+                        if n_mix < 2 or len(mtf) < MIN_REC_SETM:
+                            continue
+                        delta = np.mean(per_j, 0)
+                        v = delta / (np.linalg.norm(delta) + 1e-12)
+                        s_val = (float(X[mtf].mean(0).astype(np.float64) @ v)
+                                 + float(np.mean([d_ @ v for d_ in per_j])))
+                        note = ("v=normalize(mean_j(mu_s,j − mu_f,j)) — 지터 안 대조 평균; "
+                                "s=mu_f,tgt·v + mean_j(delta_j·v) (대상 지터 앵커 하이브리드)")
+                    else:
+                        delta = mu_s - mu_f
+                        v = delta / (np.linalg.norm(delta) + 1e-12)
+                        s_val = float(mu_s @ v)
+                        note = ("v=normalize(mu_s−mu_f) (pool 전체 — 지터 혼입 미보정); "
+                                "s=mu_s·v")
+                    # 두 형태를 함께 낼 때만 부수 형태를 별도 루트로 분리한다
+                    sfx = "" if form == forms[0] else f"_{form}"
+                    d_out = os.path.join(root, f"instr_setm_{args.tag}_{tag}{sfx}", SLUG,
+                                         f"s{S}", f"{args.coord}{k_tgt}",
+                                         name_of(code), "dit_L12")
+                    os.makedirs(d_out, exist_ok=True)
+                    np.savez_compressed(os.path.join(d_out, "conceptors.npz"),
+                                        alpha0_v_steer=v.astype(np.float32),
+                                        alpha0_s=np.float32(s_val))
+                    md = {"op": "setpoint",
+                          "variant": f"instr_setm_{args.tag}_{tag}{sfx}",
+                          "phase": name_of(code), "target_scene": S,
+                          "target_jitter": k_tgt, "axis_col": axis_col,
+                          "setm_form": form, "n_mixed_jitter": n_mix,
+                          "n_rec_s": int(len(ms)), "n_rec_f": int(len(mf)),
+                          "n_rec_tgt_fail": int(len(mtf)),
+                          "cos_jfair_vs_pool": float(
+                              (mu_s - mu_f) @ v / (np.linalg.norm(mu_s - mu_f) + 1e-12)),
+                          **pool_note, "phase_label_source": tag, "layer": LAYER,
+                          "note": note}
+                    if tag == "ck8":
+                        # AE 번들 의존 — 임시 번들(ae_k8_partial)로 만든 산출물은 정식
+                        # 번들이 나오면 **재fit 대상**이다. 절대경로는 규약상 금지라
+                        # 디렉토리 basename + 내용 지문으로 식별자를 남긴다(docs/04).
+                        md.update({"ae_bundle_dir": ae_dir, "ae_bundle_sig": ae_sig,
+                                   "ae_partial_shards_sig": partial_sig,
+                                   "ae_is_partial": bool(partial_sig)})
+                    with open(os.path.join(d_out, "metadata.json"), "w") as f:
+                        json.dump(md, f, ensure_ascii=False, indent=1)
+                    wrote = True
+                if wrote:
+                    n_ph += 1
                 else:
-                    delta = mu_s - mu_f
-                    v = delta / (np.linalg.norm(delta) + 1e-12)
-                    s_val = float(mu_s @ v)
-                    note = "v=normalize(mu_s−mu_f) (pool 전체 — 지터 혼입 미보정); s=mu_s·v"
-                d_out = os.path.join(outroot, name_of(code), "dit_L12")
-                os.makedirs(d_out, exist_ok=True)
-                np.savez_compressed(os.path.join(d_out, "conceptors.npz"),
-                                    alpha0_v_steer=v.astype(np.float32),
-                                    alpha0_s=np.float32(s_val))
-                with open(os.path.join(d_out, "metadata.json"), "w") as f:
-                    json.dump({"op": "setpoint", "variant": f"instr_setm_{args.tag}_{tag}",
-                               "phase": name_of(code), "target_scene": S,
-                               "target_jitter": k_tgt, "axis_col": axis_col,
-                               "setm_form": args.setm_form, "n_mixed_jitter": n_mix,
-                               "n_rec_s": int(len(ms)), "n_rec_f": int(len(mf)),
-                               "n_rec_tgt_fail": int(len(mtf)),
-                               "cos_jfair_vs_pool": float(
-                                   (mu_s - mu_f) @ v
-                                   / (np.linalg.norm(mu_s - mu_f) + 1e-12)),
-                               **pool_note, "phase_label_source": tag, "layer": LAYER,
-                               "note": note},
-                              f, ensure_ascii=False, indent=1)
-                n_ph += 1
+                    n_skip += 1
             print(f"[setm_{tag}] {SLUG} s{S} {args.coord}{k_tgt}: {n_ph} phase 산출"
                   f"{f' (혼합 지터<2 로 {n_skip} phase 건너뜀)' if n_skip else ''} → {outroot}")
 
