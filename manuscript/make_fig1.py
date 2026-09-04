@@ -3,8 +3,8 @@
 
 Panel (a): cluster x GT-phase contingency (row-normalised occupancy) for
            PPCC_candle at k=8, rows re-ordered so the block-diagonal shows.
-Panel (b): paired raw -> residualised change of `margin` (survives) and
-           `mi_scene` (collapses) over the 10 grid tasks.
+Panel (b): paired raw -> residualised change of `margin` over the 10 grid tasks
+           (scene-MI 패널은 2026-09-04 제거 — 자명한 결과라 본문에서만 수치로 언급).
 
 All numbers are read from the canonical artefacts; nothing is hard-coded:
   outputs/analysis/grid_phase/paper_supp/contingency_pertask_k8.json
@@ -50,10 +50,11 @@ OUT_DIR = HERE / "figs"
 OUT_STEM = OUT_DIR / "fig1_purity_residual"
 
 FOCUS_TASK = "PPCC_candle"
+DISPLAY_TASK = "Pick and Place"   # 그림 표기용 이름 (내부 슬러그와 분리)
 DEGENERATE_TASK = None  # raw+AE 에서는 전 instruction margin 양수 → 특례 없음
 
 CM = 1.0 / 2.54
-FIG_W = 17.5 * CM
+FIG_W = 12.5 * CM
 FIG_H = 6.0 * CM
 
 C_RAW = "#7f8c8d"      # raw endpoint (grey)
@@ -165,8 +166,7 @@ def panel_a(ax, cax, cont):
     ax.set_xlabel("annotated phase", labelpad=2)
     ax.set_ylabel("cluster (re-ordered)", labelpad=2)
     ax.set_title(
-        f"(a) Cluster-phase contingency\n{short_task(FOCUS_TASK)}, k={cont['k']}"
-        f"  |  purity {cont['purity']:.3f}",
+        f"(a) Cluster-phase contingency\n{DISPLAY_TASK}, k={cont['k']}",
         fontsize=8,
         pad=4,
     )
@@ -226,20 +226,13 @@ def _dumbbell(ax, rows, key_raw, key_res, color_res, title, xlabel, zero_line):
     return ypos
 
 
-def panel_b(ax_m, ax_s, rows):
+def panel_b(ax_m, rows):
     rows = sorted(rows, key=lambda r: r["raw_margin"])
     ypos = _dumbbell(
         ax_m, rows, "raw_margin", "resid_margin", C_MARGIN,
         "(b) margin: survives", "phase margin (bits)", zero_line=True,
     )
     ax_m.set_yticklabels([short_task(r["task"]) for r in rows], fontsize=7)
-    _dumbbell(
-        ax_s, rows, "raw_mi_scene", "resid_mi_scene", C_SCENE,
-        "(c) scene MI: collapses", "MI with scene id (bits)", zero_line=False,
-    )
-    ax_s.set_yticklabels([])
-    ax_s.set_xlim(left=-0.02)
-
     n_pos = sum(
         1 for r in rows if r["task"] != DEGENERATE_TASK and r["resid_margin"] > 0
     )
@@ -266,8 +259,6 @@ def build_legend(fig, rows):
                label="raw"),
         Line2D([], [], marker="o", ls="none", color=C_MARGIN, markersize=3.8,
                label="residualised (margin)"),
-        Line2D([], [], marker="o", ls="none", color=C_SCENE, markersize=3.8,
-               label="residualised (scene MI)"),
     ]
     if DEGENERATE_TASK is not None:
         handles.append(Line2D([], [], marker="D", ls="none", color=C_DEGEN,
@@ -276,7 +267,7 @@ def build_legend(fig, rows):
     fig.legend(
         handles=handles,
         loc="lower center",
-        ncol=4 if DEGENERATE_TASK is not None else 3,
+        ncol=3 if DEGENERATE_TASK is not None else 2,
         frameon=False,
         fontsize=6.5,
         bbox_to_anchor=(0.55, -0.012),
@@ -294,14 +285,13 @@ def main():
     # explicit rectangles: the long task names in (b) need a wide gutter that a
     # uniform GridSpec wspace cannot give without squashing (a).
     bottom, height = 0.30, 0.545
-    ax_a = fig.add_axes([0.070, bottom, 0.185, height])
-    ax_m = fig.add_axes([0.445, bottom, 0.255, height])
-    ax_s = fig.add_axes([0.745, bottom, 0.235, height])
+    ax_a = fig.add_axes([0.085, bottom, 0.265, height])
+    ax_m = fig.add_axes([0.640, bottom, 0.340, height])
     divider = make_axes_locatable(ax_a)
     cax = divider.append_axes("right", size="5%", pad=0.09)
 
     panel_a(ax_a, cax, cont)
-    panel_b(ax_m, ax_s, rows)
+    panel_b(ax_m, rows)
     build_legend(fig, rows)
 
     for ext, kw in (("pdf", {}), ("png", {"dpi": 300})):

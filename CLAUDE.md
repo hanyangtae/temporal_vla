@@ -72,7 +72,7 @@ sub-key 네임스페이스, `/act_with_features`, 모델×벤치마크 매트릭
 [`docs/04_data_storage_convention.md`](docs/04_data_storage_convention.md)를 먼저 읽고 따른다.**
 요지: 식별자는 내용 지문 `sig`/`opsig` (경로 아님), 산출물 안 절대경로 기록 금지, 수집
 rollout(pkl 有)과 평가 rollout(pkl 無) 저장 위치 분리, 캡처 밀도 5열은 문서 §4·§6.
-grid 좌표는 **scene·k(지터)·noise 3축 폴더층** `s<i>/k<r>/n<j>` (2026-09-03 개정) — 규약은 문서 §3.1.1.
+grid 좌표는 **scene(주방)·jitter j·noise 3축 폴더층** `s<sid>/j<jid>/n<nid>` (2026-09-03 v6; 09-04 noise 10 확대 plan 77e745c37b0f) — 규약은 문서 §3.1.1, 격자·수집 계약은 `docs/collab_within_claude/handoff_20260903_grid_v6_scene_jitter.md`.
 
 ## 체크포인트·데이터셋 경로 (cache)
 

@@ -24,9 +24,15 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))))
 FIT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "loko_fit.py")
 SSH = ["ssh", "-p", "11112", "kimseungjun@166.104.146.37"]
-SEG = "~/datasets/temporal_vla_store/groot/n15/analysis/grid_phase_v6/segA"
+SEG_INSTR = "~/datasets/temporal_vla_store/groot/n15/analysis/grid_phase_v6/segA"
+# scene 단위 shard 는 별도 디렉토리다 — instruction shard 폴더에 섞으면 ae_cluster 가
+# scene shard 를 별개 instruction 으로 잡아 KMeans 단위가 조용히 바뀐다(action phase).
+SEG_SCENE = "~/datasets/temporal_vla_store/groot/n15/analysis/grid_phase_v6/segA_scene"
 SENTINEL = "V5_LOKO_DONE"        # loko_fit.py 가 (키, scene) 완주 시 찍는 문자열
-AUDIT = "~/datasets/temporal_vla_store/groot/n15/analysis/grid_phase_v6/audit_cells.tsv"
+AUDIT_INSTR = ("~/datasets/temporal_vla_store/groot/n15/analysis/grid_phase_v6/"
+               "audit_cells.tsv")
+AUDIT_SCENE = ("~/datasets/temporal_vla_store/groot/n15/analysis/grid_phase_v6/"
+               "audit_cells_scene.tsv")
 
 
 def parse_args():
@@ -38,8 +44,8 @@ def parse_args():
     ap.add_argument("--bundle", default=None, help="AE 번들 경로 override(임시본 사용 시)")
     ap.add_argument("--tag", default="v6")
     ap.add_argument("--coord", default="j")
-    ap.add_argument("--audit", default=AUDIT,
-                    help="action phase 셀 감사표(승준 경로). 셀표(index 유래)와 교차대조")
+    ap.add_argument("--audit", default=None,
+                    help="셀 감사표 경로. 기본은 scene·instruction 감사표를 둘 다 읽어 합침")
     ap.add_argument("--no-audit", action="store_true", help="교차대조 생략(권장하지 않음)")
     ap.add_argument("--dry-run", action="store_true")
     return ap.parse_args()
@@ -107,17 +113,32 @@ def main():
         cells[(r["slug"], int(r["scene_idx"]))].add(int(r["jitter_idx"]))
     only = set(args.only_slugs.split(",")) if args.only_slugs else None
 
-    # shard 가 올라온 것만
-    have = subprocess.run(SSH + [f"ls {SEG}/*.npz 2>/dev/null"],
-                          capture_output=True, text=True).stdout.split()
-    have = {os.path.basename(p)[:-4] for p in have}
-    print(f"[shard] 승준 segA 에 있는 slug {len(have)}개: {sorted(have)}")
+    # shard 가 올라온 것만. scene 단위(`<slug>__s<i>.npz`, segA_scene/) 를 우선 쓰고,
+    # instruction 단위(`<slug>.npz`, segA/) 는 그 instruction 이 다 모인 뒤의 병합본이다.
+    ls = subprocess.run(SSH + [f"ls {SEG_SCENE}/*.npz {SEG_INSTR}/*.npz 2>/dev/null"],
+                        capture_output=True, text=True).stdout.split()
+    have_scene, have_instr = {}, set()
+    for path in ls:
+        base = os.path.basename(path)[:-4]
+        if "__s" in base:
+            sl, sc = base.rsplit("__s", 1)
+            if sc.isdigit():
+                have_scene[(sl, int(sc))] = path
+        else:
+            have_instr.add(base)
+    print(f"[shard] scene 단위 {len(have_scene)}개 {sorted(have_scene)} | "
+          f"instruction 단위 {len(have_instr)}개 {sorted(have_instr)}")
 
     todo, skip = [], []
     for (slug, scene), js in sorted(cells.items()):
         if only and slug not in only:
             continue
-        (todo if slug in have else skip).append((slug, scene, sorted(js)))
+        if (slug, scene) in have_scene:
+            todo.append((slug, scene, sorted(js), os.path.dirname(have_scene[(slug, scene)])))
+        elif slug in have_instr:
+            todo.append((slug, scene, sorted(js), SEG_INSTR))
+        else:
+            skip.append((slug, scene, sorted(js)))
     for slug, scene, js in skip:
         print(f"[대기] {slug} s{scene} j{js} — shard 미도착")
     if not todo:
@@ -125,13 +146,20 @@ def main():
         return 0
 
     if not args.no_audit and not args.dry_run:
-        txt = subprocess.run(SSH + [f"cat {args.audit} 2>/dev/null"],
-                             capture_output=True, text=True).stdout
+        paths = [args.audit] if args.audit else [AUDIT_SCENE, AUDIT_INSTR]
+        txt = ""
+        for ap_ in paths:
+            t = subprocess.run(SSH + [f"cat {ap_} 2>/dev/null"],
+                               capture_output=True, text=True).stdout
+            if not t.strip():
+                continue
+            txt = t if not txt else txt + "\n".join(t.splitlines()[1:]) + "\n"
         if not txt.strip():
             print(f"[audit] 감사표 없음({args.audit}) — 대조 생략하고 진행")
         else:
+            done_keys = {(s_, c_) for s_, c_, _, _ in todo}
             bad = cross_check(rows, txt, {k: v for k, v in cells.items()
-                                          if k[0] in have and (not only or k[0] in only)})
+                                          if k in done_keys})
             if bad:
                 print("[audit] ★불일치 — fit 중단 (셀표=index 유래, 감사표=shard 유래)")
                 for b in bad[:20]:
@@ -140,15 +168,19 @@ def main():
             print("[audit] 셀표 x shard 감사표 대조 통과")
 
     fail = 0
-    for slug, scene, js in todo:
+    for slug, scene, js, segdir in todo:
+        # scene shard 는 파일명이 <slug>__s<i>.npz 라 fit 에 --shard 로 실경로를 준다
+        shard_arg = (f" --shard {segdir}/{slug}__s{scene}.npz"
+                     if segdir.endswith("segA_scene") else f" --seg-dir {segdir}")
         cmd = (f"export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8; "
                f"~/anaconda3/bin/python - {slug} {scene} --tag {args.tag} "
-               f"--coord {args.coord} --jitters {','.join(map(str, js))}")
+               f"--coord {args.coord} --jitters {','.join(map(str, js))}{shard_arg}")
         if not args.ck8:
             cmd += " --only-gt"
         elif args.bundle:
             cmd += f" --bundle {args.bundle}"
-        print(f"\n=== {slug} s{scene} j{js} ({'gt+ck8' if args.ck8 else 'gt'}) ===")
+        print(f"\n=== {slug} s{scene} j{js} ({'gt+ck8' if args.ck8 else 'gt'}) "
+              f"[{os.path.basename(segdir)}] ===")
         if args.dry_run:
             print("  [dry-run]", cmd)
             continue

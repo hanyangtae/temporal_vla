@@ -66,7 +66,10 @@ def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("slug")
     ap.add_argument("scene", type=int)
-    ap.add_argument("--seg-dir", default=None, help="기본 ROOT/segA")
+    ap.add_argument("--seg-dir", default=None, help="기본 ROOT/segA (파일명 <slug>.npz)")
+    ap.add_argument("--shard", default=None,
+                    help="shard 파일 실경로 직접 지정. scene 단위 shard "
+                         "(segA_scene/<slug>__s<i>.npz) 처럼 파일명이 다를 때 쓴다")
     ap.add_argument("--bundle", default=None, help="기본 ROOT/ae_k8/ae_bundle_k8.npz")
     ap.add_argument("--labels", default=None,
                     help="기본 ROOT/ae_k8/labels_<slug>_k8.npz (있으면 대조, 없으면 생략)")
@@ -139,7 +142,10 @@ def main():
     SLUG, S = args.slug, args.scene
 
     # ── shard ──
-    d = np.load(os.path.join(seg_dir, f"{SLUG}.npz"), allow_pickle=True)
+    shard_p = (os.path.expanduser(args.shard) if args.shard
+               else os.path.join(seg_dir, f"{SLUG}.npz"))
+    d = np.load(shard_p, allow_pickle=True)
+    print(f"[shard] {os.path.basename(shard_p)}")
     meta = json.loads(str(d["meta_json"]))
     if meta.get("jitter_axis") is False:
         raise SystemExit(f"{SLUG}: meta_json.jitter_axis=false — 지터 축 없는 shard")
@@ -212,7 +218,10 @@ def main():
     # ── scene 인덱스 ──
     m_sc = sc == S
     if not m_sc.any():
-        raise SystemExit(f"{SLUG}: scene s{S} record 0")
+        raise SystemExit(
+            f"{SLUG}: shard 에 scene s{S} record 0 (shard 안 scene 값 "
+            f"{sorted(set(sc.tolist()))[:5]}) — scene 단위 shard 를 엉뚱한 scene 으로 "
+            "돌렸는지 확인할 것")
     eps_s = np.unique(ep[m_sc])
     em = {}
     for e in eps_s:
@@ -330,7 +339,9 @@ def main():
                 else:
                     n_skip += 1
             print(f"[setm_{tag}] {SLUG} s{S} {args.coord}{k_tgt}: {n_ph} phase 산출"
-                  f"{f' (혼합 지터<2 로 {n_skip} phase 건너뜀)' if n_skip else ''} → {outroot}")
+                  f"{f' (혼합 지터<2 로 {n_skip} phase 건너뜀)' if n_skip else ''} → "
+                  f"instr_setm_{args.tag}_{tag}[{'/_plain' if len(forms) > 1 else ''}]"
+                  f"/{SLUG}/s{S}/{args.coord}{k_tgt}")
 
         # ── C. LLR 번들 ──
         if args.only_gt:

@@ -43,13 +43,18 @@
 #     10 셀 = 40 판/arm.
 #   fresh — 구 방식. grid 와 같은 scene, inference_seed 만 새 대역(EVAL_INF_SEED_BASE).
 #
-#   지터 축 k (docs/04 §3.1.1 — 3축 좌표 s<i>/k<r>/n<j>): replay_cells.py 가
-#     `scene_idx(base) noise_idx env_seed inference_seed collection_success task
-#      env_name instruction_text jitter_reset_idx` 9열 표를 내고, 러너는 셀마다 collector 에
-#     `--scene-idx <base> --jitter-reset-idx k` (+ EP_META_DIR 지정 시 `--ep-meta-dir`) 를 붙인다.
-#     EVAL_SCENES 는 **base scene**(0-4), EVAL_JITTERS 가 k 축이다 (기본 all).
-#     episode_idx 만은 유일성을 위해 평탄값 `(scene*100+k)*EP_IDX_STRIDE + noise` 를 쓴다
-#     (legacy 2축 표는 `scene*EP_IDX_STRIDE + noise` — 구 판과 동일).
+#   지터 축 j (v6 3축 좌표 s<sid>/j<jid>/n<nid> — docs/04 §3.1.1): replay_cells.py 가
+#     `scene_idx noise_idx env_seed inference_seed collection_success task
+#      env_name instruction_text jitter_idx jitter_reset_idx lang` **11열** 표를 내고,
+#     러너는 셀마다 collector 에 `--scene-idx <sid> --jitter-idx <jid> --noise-idx <nid>`
+#     (+ EP_META_DIR 지정 시 `--ep-meta-dir`) 를 붙인다. reset_idx·base 오프셋·문장은
+#     collector 가 plan 에서 다시 읽으므로 **`--jitter-reset-idx` 는 v6 에서 넘기지 않는다**.
+#     `--canonical-instruction` 은 표의 `lang`(scene 문장) 우선, 비면 instruction_text.
+#     EVAL_SCENES 는 scene 인덱스, EVAL_JITTERS 가 j 축이다 (기본 all).
+#     legacy(v5 k 층) 표는 `jitter_idx` 열이 `NA` 로 나오고, 그때만 기존대로
+#     `--jitter-reset-idx k` 를 넘긴다 (무음 오동작 방지).
+#     episode_idx 만은 유일성을 위해 평탄값 `(scene*100+j)*EP_IDX_STRIDE + noise` 를 쓴다
+#     (2축 legacy 표는 `scene*EP_IDX_STRIDE + noise` — 구 판과 동일).
 #
 # 발사 (빈 GPU 확인 후, 반드시 setsid — agent 백그라운드 job 은 harness 가 중간에 kill):
 #
@@ -142,8 +147,8 @@ PLAN_JSON="${PLAN_JSON:-configs/collect/n15_grid_v1/collection_plan.json}"
 # replay 모드에서는 index 가 **필수** (수집 당시 env_seed·inference_seed 의 유일한 출처).
 INDEX_TSV="${INDEX_TSV:-outputs/steer/online_pipe/manifests/index_rollouts.tsv}"
 # ep_meta JSON 디렉토리 — collector --ep-meta-dir 로 전달. 비우면 미전달.
-# ★ 지터 셀(jitter_reset_idx 有) replay 에는 **EP_META_DIR/EP_META_LOAD_ENV_NAME 을 주지 말 것**
-#   — JSON 사전 주입이 k 번째 지터 상태를 수집과 다르게 만든다(2026-09-02 v5 게이트 실측,
+# ★ 지터 셀(v6 jitter_idx / legacy k) replay 에는 **EP_META_DIR/EP_META_LOAD_ENV_NAME 을 주지 말 것**
+#   — JSON 사전 주입이 j 번째 지터 상태를 수집과 다르게 만든다(2026-09-02 v5 게이트 실측,
 #   v4r replay≠수집 59% 반전의 원인). collector 가 이 조합을 fail-loud 로 거부한다.
 #   seed reset 으로 재획득한 ep_meta 가 수집과 bit 동일하다(게이트 A=B=D).
 EP_META_DIR="${EP_META_DIR:-}"
@@ -154,13 +159,13 @@ EVAL_INF_SEED_BASE="${EVAL_INF_SEED_BASE:-1400000}" # fresh 모드 전용 (fit n
 
 # ── replay 모드 셀 지정 ───────────────────────────────────────────────────────
 EP_MODE="${EP_MODE:-replay}"                        # replay | fresh
-EVAL_SCENES="${EVAL_SCENES:-0-9}"                   # eval 셀 base scene 축 (10 scene 전체)
-EVAL_JITTERS="${EVAL_JITTERS:-all}"                 # eval 셀 지터 k 축 ("all"|"1,4"|"base")
+EVAL_SCENES="${EVAL_SCENES:-0-9}"                   # eval 셀 scene 축 (v6 = 키당 3 scene)
+EVAL_JITTERS="${EVAL_JITTERS:-all}"                 # eval 셀 지터 축 j ("all"|"1,4"|"base")
 EVAL_NOISES="${EVAL_NOISES:-0,1,5,6}"               # eval 셀 noise 축 (seen 2 + unseen 2)
 FIT_SCENES="${FIT_SCENES:-0,1,2,3,4}"               # 연산자·detector fit 셀 (사분면 태깅용)
 FIT_NOISES="${FIT_NOISES:-0,1,2,3,4}"
 REPLAY_MACHINE="${REPLAY_MACHINE:-}"                # 비우면 index 단일 machine / hostname
-# episode_idx = (scene*100+k)*STRIDE + noise (지터 축 있음) / scene*STRIDE + noise (legacy)
+# episode_idx = (scene*100+j)*STRIDE + noise (지터 축 있음) / scene*STRIDE + noise (2축 legacy)
 EP_IDX_STRIDE="${EP_IDX_STRIDE:-100}"
 NAS="${NAS:-5}"                                     # GR00T 표준: 16 예측 / 5 실행
 MAXEP="${MAXEP:-720}"
@@ -456,7 +461,7 @@ case "$EP_MODE" in
       fi
     done
     log "slugs=${SLUGS} arms=${ARMS} mode=replay cells=${N_EP_TOTAL}판/arm " \
-        "(scenes=${EVAL_SCENES} × k=${EVAL_JITTERS} × noises=${EVAL_NOISES}; fit s=${FIT_SCENES} m=${FIT_NOISES})"
+        "(scenes=${EVAL_SCENES} × j=${EVAL_JITTERS} × noises=${EVAL_NOISES}; fit s=${FIT_SCENES} m=${FIT_NOISES})"
     ;;
   fresh)
     for slug in "${SLUG_ARR[@]}"; do
@@ -602,11 +607,14 @@ print(next((i for i in p["instructions"] if i.replace("/", "_") == s), s))
 EOPY
 }
 
-run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_host [base_scene] [jit] [noise]
-  # base_scene = 3축 좌표의 s<i>(0-4). jit = 지터 k ("base"/빈 값이면 legacy 2축 = 미적용).
-  # noise = n<j> (미지정 시 ep 에서 유도 — legacy 호출 호환).
+run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_host [scene] [jit] [noise] [jmode]
+  # scene = 3축 좌표의 s<sid>. jit = 지터 좌표 (v6 = jitter_idx j, legacy = reset 횟수 k;
+  #   "base"/빈 값이면 2축 legacy = 지터 미적용). noise = n<nid> (미지정 시 ep 에서 유도).
+  # jmode = v6 | legacy — v6 면 collector 에 `--jitter-idx` 를 넘기고 reset_idx·오프셋은
+  #   collector 가 plan 에서 재계산한다. legacy 면 기존대로 `--jitter-reset-idx` 를 넘긴다.
   local port="$1" slug="$2" arm="$3" task="$4" envn="$5" instr="$6" ep="$7" inf="$8" seed="$9"
-  local out_host="${10}" base_scene="${11:-}" jit="${12:-base}" noise="${13:-}" mode=()
+  local out_host="${10}" base_scene="${11:-}" jit="${12:-base}" noise="${13:-}" jmode="${14:-legacy}"
+  local mode=()
   [ -n "$noise" ] || noise=$((ep % EP_IDX_STRIDE))
   # 평탄 좌표 — episode_idx·TRIGGER_TSV 조회 키에만 쓰는 파생값 (저장 좌표 아님).
   local flat="$base_scene"
@@ -618,7 +626,7 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
   # <grid-root>/diag/ 하위에 저장한다.
   if [ "${CAPTURE_FEATURES:-0}" = 1 ]; then
     # pkl 수집 규약(docs/04 §8) — 진단 캡처도 3축 좌표 레이아웃으로 저장
-    # (지터 k 는 아래 JIT_ARGS 의 --jitter-reset-idx 로 같이 전달된다).
+    # (지터 축은 아래 JIT_ARGS 의 --jitter-idx(v6) / --jitter-reset-idx(legacy) 로 전달).
     CAP_GRID_ARGS=(--grid-root "$(to_cont "$out_host")/diag_grid" --plan-json "$(to_cont "$PLAN_JSON_ABS")"
                    --scene-idx "$base_scene" --noise-idx "$noise"
                    --arm-dir "$arm")
@@ -630,11 +638,28 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
       CAP_GRID_ARGS+=(--diag-unplanned)
     fi
   fi
-  # 지터 셀: (base_es, ep_meta, k) 시퀀스 재현 — collector 가 주입+plain reset 을
-  # (k+1)회 돌린다 (docs/04 §3.1.1). ep_meta 디렉토리는 지정됐을 때만 전달.
+  # 지터 셀 재현 (docs/04 §3.1.1):
+  #  - v6: `--jitter-idx j` 만 넘긴다. reset_idx·base 오프셋(lat/back)·문장은 collector 가
+  #    plan 의 `jitters[key][sid][j]` 에서 **다시 계산**한다 (사전 주입 금지 계약).
+  #  - legacy(v5 k 층): 예전대로 `--jitter-reset-idx k` (연속 reset 횟수 직접 지정).
+  # ep_meta 디렉토리는 지정됐을 때만 전달.
   local JIT_ARGS=()
   if [ -n "$jit" ] && [ "$jit" != base ] && [ "$jit" != NA ]; then
-    JIT_ARGS=(--jitter-reset-idx "$jit")
+    if [ "$jmode" = v6 ]; then
+      JIT_ARGS=(--jitter-idx "$jit")
+      # 캡처 OFF(기본 eval)면 CAP_GRID_ARGS 가 비어 있어 좌표 인자가 하나도 안 간다.
+      # v6 는 j 만으로는 셀을 특정할 수 없으므로(plan jitters[key][sid][j]) scene·noise·
+      # plan·instruction 키를 여기서 같이 넘긴다. **--grid-root 는 넘기지 않는다** —
+      # grid_root 까지 주면 collector 가 사이드카를 좌표 트리(meta.json)로 쓰기 때문에
+      # 이 러너의 판정 원천(raw_rollouts/task*--ep*--succ*.json 스템)이 사라진다.
+      if [ "${#CAP_GRID_ARGS[@]}" -eq 0 ] && [ -n "$base_scene" ]; then
+        JIT_ARGS+=(--scene-idx "$base_scene" --noise-idx "$noise"
+                   --plan-json "$(to_cont "$PLAN_JSON_ABS")"
+                   --grid-instruction "$(grid_instr_for_slug "$slug")")
+      fi
+    else
+      JIT_ARGS=(--jitter-reset-idx "$jit")
+    fi
   fi
   if [ -n "$EP_META_DIR" ]; then
     JIT_ARGS+=(--ep-meta-dir "$(to_cont "$EP_META_DIR")")
@@ -749,25 +774,34 @@ run_job() {  # port gpu slug arm
   start_serve "$gpu" "$port" $flags || return 11
   if [ "$DRY_RUN" != "1" ]; then serve_preflight "$port" "$arm" || { kill_serve "$port"; return 11; }; fi
 
-  local rc_any=0 si ni seed task envn instr ep inf rep csucc jit flat
+  local rc_any=0 si ni seed task envn instr ep inf rep csucc jit jrst lang canon jmode flat
   local tbl; tbl="$(ep_table_for "$slug")"
   if [ "$EP_MODE" = replay ]; then
     # 수집 셀 재생: env_seed·inference_seed 는 index 값 그대로 (새로 만들지 않는다).
-    # 셀 표 9열 = si(base scene) ni seed inf csucc task envn instr jit
-    # (jit = 정수 k 또는 "base" — replay_cells.py 계약, docs/04 §3.1.1).
-    while IFS=$'\t' read -r si ni seed inf csucc task envn instr jit; do
+    # 셀 표 11열 = si ni seed inf csucc task envn instr jitter_idx jitter_reset_idx lang
+    # (replay_cells.py 계약). jitter_idx 가 정수면 v6, "NA"/빈 값이면 legacy —
+    # legacy 는 jitter_reset_idx(k) 를 지터 좌표로 쓴다.
+    while IFS=$'\t' read -r si ni seed inf csucc task envn instr jit jrst lang; do
       [ -n "${si:-}" ] || continue
-      jit="${jit:-base}"
+      jit="${jit:-NA}"; jrst="${jrst:-base}"; lang="${lang:-}"
+      if [ "$jit" != NA ] && [ "$jit" != base ] && [ -n "$jit" ]; then
+        jmode=v6                       # 지터 좌표 = jitter_idx (collector 는 --jitter-idx)
+      else
+        jmode=legacy; jit="$jrst"      # 지터 좌표 = k (collector 는 --jitter-reset-idx)
+      fi
+      # canonical instruction 은 scene 문장(lang) 우선 — 문장 변형이 scene 마다 다르다.
+      canon="$instr"
+      [ -n "$lang" ] && [ "$lang" != NA ] && canon="$lang"
       # episode_idx 는 평탄 좌표로 만든다 (판 번호 유일성 — 저장 좌표는 3축 그대로).
       if [ "$jit" != base ] && [ "$jit" != NA ]; then flat=$((si * 100 + jit)); else flat="$si"; fi
       ep=$((flat * EP_IDX_STRIDE + ni))
       if [ "$DRY_RUN" != "1" ] && done_mark "$out_host" "$task" "$slug" "$ep"; then
-        echo "[${slug}/${arm}] skip ep${ep} (s${si} k${jit} n${ni})"
+        echo "[${slug}/${arm}] skip ep${ep} (s${si} j${jit} n${ni})"
         continue
       fi
-      echo "[${slug}/${arm}] $(date '+%F %T') ep${ep} s${si} k${jit} n${ni} seed=${seed} inf=${inf} csucc=${csucc}"
-      run_episode "$port" "$slug" "$arm" "$task" "$envn" "$instr" "$ep" "$inf" "$seed" "$out_host" \
-        "$si" "$jit" "$ni" || rc_any=1
+      echo "[${slug}/${arm}] $(date '+%F %T') ep${ep} s${si} j${jit}(${jmode}) n${ni} seed=${seed} inf=${inf} csucc=${csucc}"
+      run_episode "$port" "$slug" "$arm" "$task" "$envn" "$canon" "$ep" "$inf" "$seed" "$out_host" \
+        "$si" "$jit" "$ni" "$jmode" || rc_any=1
     done < "$tbl"
   else
     while IFS=$'\t' read -r si seed task envn instr; do
