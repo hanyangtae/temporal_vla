@@ -39,7 +39,8 @@ from src.collect.plan import BASE_ARM, CollectionPlan  # noqa: E402
 
 # 좌표 꼬리: .../<instruction...>/s<i>/n<j>/<arm>/meta.json
 _COORD_RE = re.compile(r"^s(\d+)$"), re.compile(r"^n(\d+)$")
-_K_RE = re.compile(r"^k(\d+)$")   # 지터 축 k 층 (docs/04 §3.1.1, 2026-09-03) — 없으면 legacy 2축
+_J_RE = re.compile(r"^j(\d+)$")   # v6 지터 층 j (jitter_idx) — docs/04 §3.1.1, 2026-09-03 v6
+_K_RE = re.compile(r"^k(\d+)$")   # legacy v5 지터 층 k (jitter_reset_idx) — 둘 다 없으면 2축
 
 # base(수집, pkl 有) / arm-eval(pkl 無) 필수 파일 — docs/04 §3.1·§3.3
 BASE_FILES = ("rollout.pkl", "traj.csv", "video.mp4", "meta.json")
@@ -55,11 +56,11 @@ def sha256_file(path: Path) -> str:
 
 
 def parse_coords(meta_path: Path, plan_id: str):
-    """meta.json 경로 → (machine, instruction, scene_idx, jitter, noise_idx, arm). 실패 시 None.
+    """meta.json 경로 → (machine, instruction, scene_idx, j, k, noise_idx, arm). 실패 시 None.
 
-    경로 형태: <...>/<plan_id>/<machine>/<instruction...>/s<i>[/k<r>]/n<j>/<arm>/meta.json
+    경로 형태: <...>/<plan_id>/<machine>/<instruction...>/s<i>[/j<jid>|/k<r>]/n<j>/<arm>/meta.json
     instruction 은 '/' 를 포함할 수 있어 plan_id·machine 뒤부터 s<i> 앞까지 전부다.
-    k 층이 없으면 jitter=None(legacy 2축).
+    j 층이면 v6(k=None), k 층이면 legacy v5(j=None), 둘 다 없으면 legacy 2축(둘 다 None).
     """
     parts = meta_path.parts
     try:
@@ -71,19 +72,30 @@ def parse_coords(meta_path: Path, plan_id: str):
         return None
     machine, arm = tail[0], tail[-1]
     m_n = _COORD_RE[1].match(tail[-2])
-    m_k = _K_RE.match(tail[-3]) if len(tail) >= 5 else None
-    s_pos = -4 if m_k else -3
+    m_j = _J_RE.match(tail[-3]) if len(tail) >= 5 else None
+    m_k = None if m_j else (_K_RE.match(tail[-3]) if len(tail) >= 5 else None)
+    s_pos = -4 if (m_j or m_k) else -3
     m_s = _COORD_RE[0].match(tail[s_pos]) if len(tail) >= -s_pos + 1 else None
     if not (m_s and m_n):
         return None
     instruction = "/".join(tail[1:s_pos])
-    jitter = int(m_k.group(1)) if m_k else None
-    return machine, instruction, int(m_s.group(1)), jitter, int(m_n.group(1)), arm
+    return (machine, instruction, int(m_s.group(1)),
+            int(m_j.group(1)) if m_j else None,
+            int(m_k.group(1)) if m_k else None, int(m_n.group(1)), arm)
+
+
+def coord_key(instruction: str, s_idx: int, j_idx, k_idx, n_idx) -> str:
+    """경로 좌표 → 셀 키 (GridCell.key 와 같은 문자열이어야 한다)."""
+    if j_idx is not None:
+        return f"{instruction}|s{s_idx}|j{j_idx}|n{n_idx}"
+    if k_idx is not None:
+        return f"{instruction}|s{s_idx}|k{k_idx}|n{n_idx}"
+    return f"{instruction}|s{s_idx}|n{n_idx}"
 
 
 def check_cell_dir(dirpath: Path, meta: dict, coords, plan: CollectionPlan, cell,
                    errors: list[str]) -> None:
-    machine, instruction, s_idx, jitter, n_idx, arm = coords
+    machine, instruction, s_idx, j_idx, k_idx, n_idx, arm = coords
     loc = str(dirpath)
 
     # ── 파일 완결성 ──
@@ -94,9 +106,15 @@ def check_cell_dir(dirpath: Path, meta: dict, coords, plan: CollectionPlan, cell
             errors.append(f"{loc}: {name} 없음 또는 0바이트")
 
     # ── 분류 정합: 경로 좌표 == meta 기록 ──
-    for key, want in (("plan_id", plan.plan_id), ("grid_instruction", instruction),
-                      ("scene_idx", s_idx), ("noise_idx", n_idx),
-                      ("jitter_reset_idx", jitter)):
+    # v6 는 경로 j 층 ↔ meta.jitter_idx 를, legacy v5 는 경로 k 층 ↔ meta.jitter_reset_idx 를
+    # 대조한다 (v6 의 jitter_reset_idx 는 plan 이 정한 기록값이지 경로 좌표가 아니다).
+    pairs = [("plan_id", plan.plan_id), ("grid_instruction", instruction),
+             ("scene_idx", s_idx), ("noise_idx", n_idx)]
+    if j_idx is not None:
+        pairs.append(("jitter_idx", j_idx))
+    else:
+        pairs.append(("jitter_reset_idx", k_idx))
+    for key, want in pairs:
         got = meta.get(key)
         if got is not None and got != want:
             errors.append(f"{loc}: meta.{key}={got!r} != 경로 {want!r}")
@@ -107,7 +125,8 @@ def check_cell_dir(dirpath: Path, meta: dict, coords, plan: CollectionPlan, cell
 
     # ── 재현 조건: seed 가 계획의 그 칸인가 ──
     if cell is None:
-        errors.append(f"{loc}: 계획에 없는 좌표 (instruction={instruction!r} s{s_idx} n{n_idx})")
+        errors.append(f"{loc}: 계획에 없는 좌표 "
+                      f"({coord_key(instruction, s_idx, j_idx, k_idx, n_idx)})")
     else:
         if meta.get("env_seed") is not None and int(meta["env_seed"]) != cell.env_seed:
             errors.append(f"{loc}: env_seed={meta['env_seed']} != plan {cell.env_seed}")
@@ -248,9 +267,9 @@ def main() -> int:
     args = ap.parse_args()
 
     plan = CollectionPlan.load(args.plan_json)
+    # 셀 조회는 키 문자열 하나로 한다 — 좌표 층이 v6(j)/v5(k)/2축 셋이라 튜플 조회는
+    # 축 조합마다 갈린다. GridCell.key 와 coord_key 가 같은 규칙을 쓴다.
     cell_by_key = {c.key: c for c in plan.cells()}
-    cell_by_coord = {(c.instruction, c.scene_idx, c.jitter_reset_idx, c.noise_idx): c
-                     for c in plan.cells()}
 
     errors: list[str] = []
     base_machines: dict[str, set[str]] = defaultdict(set)   # cell.key -> machines (중복 검출)
@@ -264,16 +283,15 @@ def main() -> int:
         if coords is None:
             errors.append(f"{mp}: plan_id={plan.plan_id} 좌표 경로가 아님")
             continue
-        machine, instruction, s_idx, jitter, n_idx, arm = coords
+        machine, instruction, s_idx, j_idx, k_idx, n_idx, arm = coords
         try:
             meta = json.loads(mp.read_text())
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{mp}: meta.json 파싱 실패 — {exc}")
             continue
-        cell = cell_by_coord.get((instruction, s_idx, jitter, n_idx))
+        key = coord_key(instruction, s_idx, j_idx, k_idx, n_idx)
+        cell = cell_by_key.get(key)
         check_cell_dir(mp.parent, meta, coords, plan, cell, errors)
-        key = (f"{instruction}|s{s_idx}|k{jitter}|n{n_idx}" if jitter is not None
-               else f"{instruction}|s{s_idx}|n{n_idx}")
         if arm == BASE_ARM:
             base_machines[key].add(machine)
             base_dirs.append(mp.parent)

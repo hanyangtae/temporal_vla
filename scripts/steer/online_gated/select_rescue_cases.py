@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""grid 인덱스(index_rollouts_v5.tsv 등) → 구제 케이스 선정 (기준 ①~④) + 파일럿 1케이스/instruction 추출.
+"""grid 인덱스(index_rollouts_v6.tsv 등) → 구제 케이스 선정 (기준 ①~④) + 파일럿 1케이스/instruction 추출.
+
+지터 좌표(= 아래의 "k")는 인덱스 판마다 다르다 — **v6 는 `jitter_idx`(j), legacy(v5 k 층)
+는 `jitter_reset_idx`(k)**. 열 이름(target_k 등)과 산출 파일명은 구 라운드와의 대조를 위해
+그대로 두되, 값은 그 인덱스의 지터 좌표다 (docs/04 §3.1.1).
 
 기준 (사용자 확정, 2026-08-24):
   ① scene 단위 성공 > 5              — 정책이 아예 못 하는 배포지는 제외
@@ -20,13 +24,24 @@ import csv
 from pathlib import Path
 
 TRUE = ("1", "True", "true")
-BASE_K = "base"      # legacy(2축) 행의 k 표기 (index 에서는 빈 값)
+BASE_K = "base"      # 지터 축 없는 행의 좌표 표기 (index 에서는 빈 값)
 
 
 def norm_k(raw: str | None) -> str:
-    """index 의 `jitter_reset_idx` → 정규화 k ("base" 또는 정수 문자열)."""
+    """지터 좌표 문자열 → 정규화 ("base" 또는 정수 문자열)."""
     v = (raw or "").strip()
-    return BASE_K if v == "" or v.lower() == BASE_K else v
+    return BASE_K if v == "" or v.lower() in (BASE_K, "na", "none") else v
+
+
+def jit_of(row: dict, is_v6: bool) -> str:
+    """index 행 → 지터 좌표 (v6 = jitter_idx, legacy = jitter_reset_idx).
+
+    v6 인덱스 안의 legacy 행(j 없음)은 reset_idx 로 되돌린다.
+    """
+    if is_v6:
+        j = norm_k(row.get("jitter_idx"))
+        return j if j != BASE_K else norm_k(row.get("jitter_reset_idx"))
+    return norm_k(row.get("jitter_reset_idx"))
 
 
 def ksort(k: str):
@@ -34,7 +49,7 @@ def ksort(k: str):
 
 
 def cell_si_of(scene: int, k: str) -> int:
-    """파생 평탄 cell id = scene*100 + k (legacy base = +99). docs/04 §3.1.1 —
+    """파생 평탄 cell id = scene*100 + 지터좌표 (base = +99). docs/04 §3.1.1 —
     저장 좌표가 아니라 fit 매니페스트 provenance 열용 값이다."""
     return scene * 100 + (99 if k == BASE_K else int(k))
 
@@ -52,11 +67,15 @@ def main() -> None:
 
     with args.index.open(encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh, delimiter="\t"))
+    if not rows:
+        raise SystemExit(f"빈 인덱스: {args.index}")
+    is_v6 = "jitter_idx" in rows[0]
+    print(f"[index] {'v6 (jitter_idx=j 좌표)' if is_v6 else 'legacy (jitter_reset_idx=k 좌표)'}")
 
     cell: dict[tuple, list[dict]] = {}
     for r in rows:
         cell.setdefault((r["grid_instruction"], int(r["scene_idx"]),
-                         norm_k(r.get("jitter_reset_idx"))), []).append(r)
+                         jit_of(r, is_v6)), []).append(r)
     ks_by: dict[tuple, set] = {}
     for (ins, sc, k) in cell:
         ks_by.setdefault((ins, sc), set()).add(k)
@@ -107,14 +126,16 @@ def main() -> None:
         out.parent.mkdir(parents=True, exist_ok=True)
         with out.open("w", encoding="utf-8") as fh:
             fh.write("pkl_path\tlabel\tbase_scene\tcell_si\tnoise_idx"
-                     "\tjitter_reset_idx\n")
+                     "\tjitter_idx\tjitter_reset_idx\n")
             for r in sorted(c["fit_rows"],
-                            key=lambda x: (ksort(norm_k(x.get("jitter_reset_idx"))),
+                            key=lambda x: (ksort(jit_of(x, is_v6)),
                                            int(x["noise_idx"]))):
                 lab = 1 if r["success"] in TRUE else 0
-                k = norm_k(r.get("jitter_reset_idx"))
+                k = jit_of(r, is_v6)
+                reset = norm_k(r.get("jitter_reset_idx")) if is_v6 else k
                 fh.write(f"{r['rel_path'].rstrip('/')}/rollout.pkl\t{lab}\t{c['scene']}"
-                         f"\t{cell_si_of(int(r['scene_idx']), k)}\t{r['noise_idx']}\t{k}\n")
+                         f"\t{cell_si_of(int(r['scene_idx']), k)}\t{r['noise_idx']}"
+                         f"\t{k}\t{reset}\n")
         return out
 
     # 파일럿: instruction 당 1케이스, 그 케이스의 대상 1판(가장 작은 noise_idx)

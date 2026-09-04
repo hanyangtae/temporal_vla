@@ -17,14 +17,18 @@ replay 모드(`--cells-tsv`)에서는 셀 좌표(scene_idx/noise_idx)와 **수�
   ep  scene_idx  env_seed  inference_seed  success  steps  n_inferences
   trigger_step  phase_at_trigger  n_gated  gated_mode  arm  slug  beta  op  serve_gpu  run_tag
   noise_idx  seen_scene  seen_noise  quadrant  collection_success
-  cell_key  jitter_reset_idx
+  cell_key  jitter_reset_idx  jitter_idx
 (새 열은 **뒤에** 붙인다 — 기존 소비자의 열 위치를 깨지 않기 위함.)
 
-셀 표(`replay_cells.py` 출력, 9열)의 `scene_idx` 는 **base scene**, `jitter_reset_idx` 는
-지터 축 k(또는 legacy `"base"`) 다 — 3축 좌표 규약 docs/04 §3.1.1. 한 scene 의 k 셀들이
-env_seed 를 공유하므로 셀 되찾기 키는 **`ep`** (= 평탄 cell_key*EP_IDX_STRIDE + noise,
-`--ep-idx-stride`) 다. `cell_key` 열은 그 평탄 파생값(지터 scene*100+k / legacy scene)으로,
-러너의 episode_idx·TRIGGER_TSV 조회 키와 같은 규약이다.
+셀 표(`replay_cells.py` 출력, v6 11열)의 열은 `scene_idx noise_idx env_seed
+inference_seed collection_success task env_name instruction_text jitter_idx
+jitter_reset_idx lang` 이다 — 3축 좌표 규약 docs/04 §3.1.1(v6 = s/j/n).
+지터 좌표는 **v6 면 `jitter_idx`(j), legacy(v5 k 층) 면 `jitter_reset_idx`(k)** 이고,
+표에서 v6 여부는 `jitter_idx` 열이 정수인지로 판정한다(legacy 는 `"NA"`).
+한 scene 의 지터 셀들이 env_seed 를 공유하므로 셀 되찾기 키는 **`ep`**
+(= 평탄 cell_key*EP_IDX_STRIDE + noise, `--ep-idx-stride`) 다. `cell_key` 열은 그 평탄
+파생값(지터 scene*100+j / 2축 legacy scene)으로, 러너의 episode_idx·TRIGGER_TSV 조회
+키와 같은 규약이다. 옛 9열 표(jitter_reset_idx 만)도 그대로 읽힌다.
 
 사용:
     # replay
@@ -46,13 +50,13 @@ import re
 import sys
 from pathlib import Path
 
-V4_SCENE_STRIDE = 100   # 평탄 cell_key = scene*100 + k (판 번호 유일성 파생값)
+V4_SCENE_STRIDE = 100   # 평탄 cell_key = scene*100 + 지터좌표 (판 번호 유일성 파생값)
 STEM_RE = re.compile(r"task(?P<tid>\d+)--ep(?P<ep>\d+)--succ(?P<succ>[01])$")
 COLUMNS = ("ep", "scene_idx", "env_seed", "inference_seed", "success", "steps",
            "n_inferences", "trigger_step", "phase_at_trigger", "n_gated", "gated_mode",
            "arm", "slug", "beta", "op", "serve_gpu", "run_tag",
            "noise_idx", "seen_scene", "seen_noise", "quadrant", "collection_success",
-           "cell_key", "jitter_reset_idx")
+           "cell_key", "jitter_reset_idx", "jitter_idx")
 
 
 def cell(v) -> str:
@@ -76,14 +80,21 @@ def load_scenes(path: Path | None) -> dict[int, int]:
     return out
 
 
-def load_cells(path: Path | None, ep_stride: int = 100) -> tuple[dict, bool]:
-    """셀 표(replay_cells.py 9열 출력) → (ep → 셀, 지터 축 유무).
+EMPTY = ("", "base", "NA", "None")
 
-    열 = `scene_idx(base) noise_idx env_seed inference_seed collection_success
-    task env_name instruction_text jitter_reset_idx` (docs/04 §3.1.1 3축 좌표).
-    한 scene 의 k 셀들이 **같은 env_seed 를 공유**하므로 seed 쌍으로는 셀을 구분할 수
+
+def load_cells(path: Path | None, ep_stride: int = 100) -> tuple[dict, bool]:
+    """셀 표(replay_cells.py 출력) → (ep → 셀, 지터 축 유무).
+
+    v6 열(11) = `scene_idx noise_idx env_seed inference_seed collection_success
+    task env_name instruction_text jitter_idx jitter_reset_idx lang`.
+    legacy 열(9) = `... instruction_text jitter_reset_idx` (v5 k 층).
+    두 경우 모두 **9번째 열(p[8])이 지터 좌표**다 — v6 는 j, legacy 는 k. v6 표에서는
+    p[9] 에 plan 유래 reset_idx 가 따로 실린다 (좌표 아님).
+
+    한 scene 의 지터 셀들이 **같은 env_seed 를 공유**하므로 seed 쌍으로는 셀을 구분할 수
     없다 → 키는 러너와 동일한 `ep = 평탄 cell_key*stride + noise`
-    (평탄 cell_key = 지터행 `scene*100+k` / legacy행 `scene`).
+    (평탄 cell_key = 지터행 `scene*100+j` / 2축 legacy행 `scene`).
     지터 열이 없던 옛 8열 표도 legacy 로 그대로 읽힌다 (ep = scene*stride + noise).
     """
     if path is None:
@@ -94,20 +105,32 @@ def load_cells(path: Path | None, ep_stride: int = 100) -> tuple[dict, bool]:
         if not ln.strip():
             continue
         p = ln.split("\t")
-        if len(p) > 9:
+        if len(p) == 10:
             raise SystemExit(
                 f"{path}: 10열 셀 표 = 구 v4(평탄 cell id + base_scene) 포맷이다 — "
-                "3축 replay_cells.py 로 다시 생성할 것 (docs/04 §3.1.1)")
+                "replay_cells.py 로 다시 생성할 것 (docs/04 §3.1.1)")
+        if len(p) > 11:
+            raise SystemExit(f"{path}: {len(p)}열 셀 표 — 9(legacy)/11(v6) 열만 읽는다")
         si, ni, cs = int(p[0]), int(p[1]), p[4]
-        jit = p[8].strip() if len(p) > 8 else ""
-        if jit in ("", "base", "NA", "None"):
-            jit, cell_key = "base", si
+        raw_j = p[8].strip() if len(p) > 8 else ""          # v6 = jitter_idx, legacy = k
+        raw_reset = p[9].strip() if len(p) > 9 else ""      # v6 전용 출처 열
+        if raw_j in EMPTY:
+            # v6 표인데 jitter_idx 가 비면 legacy 행(k) 이거나 2축 base 행이다.
+            jit_coord = "base" if raw_reset in EMPTY else raw_reset
+        else:
+            jit_coord = raw_j
+        if jit_coord == "base":
+            cell_key = si
+            reset = raw_reset or "base"
         else:
             has_jitter = True
-            cell_key = si * V4_SCENE_STRIDE + int(jit)
+            cell_key = si * V4_SCENE_STRIDE + int(jit_coord)
+            reset = raw_reset or jit_coord     # legacy 표는 좌표 = reset 횟수
         out[cell_key * ep_stride + ni] = {
-            "scene_idx": si, "noise_idx": ni,          # 사분면 태깅은 base scene 기준
-            "cell_key": cell_key, "jitter_reset_idx": jit,
+            "scene_idx": si, "noise_idx": ni,          # 사분면 태깅은 scene 기준
+            "cell_key": cell_key,
+            "jitter_idx": jit_coord if raw_j not in EMPTY else "NA",
+            "jitter_reset_idx": reset,
             "collection_success": None if cs in ("", "NA") else int(cs),
         }
     return out, has_jitter
@@ -209,10 +232,11 @@ def main() -> int:
             "quadrant": quad,
             "collection_success": (cellrec["collection_success"]
                                    if cellrec is not None else None),
-            # 지터 축 (docs/04 §3.1.1): 평탄 cell id 파생값과 k (legacy 는 "base").
+            # 지터 축 (docs/04 §3.1.1): 평탄 cell id 파생값 + 좌표 j(v6)/k(legacy).
             "cell_key": cellrec.get("cell_key") if cellrec is not None else None,
             "jitter_reset_idx": (cellrec.get("jitter_reset_idx")
                                  if cellrec is not None else None),
+            "jitter_idx": (cellrec.get("jitter_idx") if cellrec is not None else None),
             # 스템의 succ 와 본문 판정이 어긋나면 사이드카가 손상된 것 → fail-loud
             "success": int(sc.get("episode_success", m.group("succ"))),
             "steps": sc.get("steps"),

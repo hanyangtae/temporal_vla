@@ -1,0 +1,818 @@
+{
+  "schema": "v6_scene_selection/1",
+  "n_scenes_per_key": 3,
+  "env_kwargs": {
+    "layout_and_style_ids": [
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        5
+      ],
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        7
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        9
+      ],
+      [
+        10,
+        10
+      ]
+    ]
+  },
+  "machine_assignment": {
+    "srv48": [
+      "OvenRack/out-left",
+      "OvenRack/out-right",
+      "DishwasherRack/out-left",
+      "DishwasherRack/out-right"
+    ],
+    "kanu": [
+      "OpenDrawer/left",
+      "OpenDrawer/right",
+      "CoffeeSetupMug"
+    ],
+    "srv50": [
+      "PPCC/apple",
+      "PPCC/jug",
+      "PPCC/candle",
+      "PPCC/bread",
+      "PPCC/marshmallow"
+    ]
+  },
+  "ppcc_shared_layouts": [
+    4,
+    9,
+    5
+  ],
+  "keys": {
+    "OvenRack/out-left": {
+      "task_env": "robocasa_panda_omron/SlideOvenRack_PandaOmron_Env",
+      "task": "SlideOvenRack",
+      "kind": "pull_side",
+      "scenes": [
+        {
+          "env_seed": 100017,
+          "layout": 4,
+          "style": 4,
+          "side": "left",
+          "lang": "Fully slide the oven rack out.",
+          "fixture_group": "oven_left_group",
+          "spawn_lat": 0.4557,
+          "base_x": 0.933,
+          "base_y": -4.562,
+          "base_yaw": 3.142,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "probe_lang": "Fully slide the oven rack out.",
+            "lang_match": true
+          }
+        },
+        {
+          "env_seed": 100754,
+          "layout": 9,
+          "style": 9,
+          "side": "left",
+          "lang": "Fully slide the bottom oven rack out.",
+          "fixture_group": "oven_right_group",
+          "spawn_lat": 0.4491,
+          "base_x": 4.812,
+          "base_y": -2.49,
+          "base_yaw": -0.0,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "probe_lang": "Fully slide the bottom oven rack out.",
+            "lang_match": true
+          }
+        },
+        {
+          "env_seed": 100166,
+          "layout": 7,
+          "style": 7,
+          "side": "left",
+          "lang": "Fully slide the bottom oven rack out.",
+          "fixture_group": "oven_left_group",
+          "spawn_lat": 0.4454,
+          "base_x": 0.924,
+          "base_y": -3.543,
+          "base_yaw": 3.142,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "probe_lang": "Fully slide the bottom oven rack out.",
+            "lang_match": true
+          }
+        }
+      ],
+      "spawn_side": "left"
+    },
+    "OvenRack/out-right": {
+      "task_env": "robocasa_panda_omron/SlideOvenRack_PandaOmron_Env",
+      "task": "SlideOvenRack",
+      "kind": "pull_side",
+      "scenes": [
+        {
+          "env_seed": 100690,
+          "layout": 4,
+          "style": 4,
+          "side": "right",
+          "lang": "Fully slide the oven rack out.",
+          "fixture_group": "oven_left_group",
+          "spawn_lat": -0.4512,
+          "base_x": 1.12,
+          "base_y": -3.655,
+          "base_yaw": 3.142,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "probe_lang": "Fully slide the oven rack out.",
+            "lang_match": true
+          }
+        },
+        {
+          "env_seed": 100188,
+          "layout": 9,
+          "style": 9,
+          "side": "right",
+          "lang": "Fully slide the bottom oven rack out.",
+          "fixture_group": "oven_right_group",
+          "spawn_lat": -0.4489,
+          "base_x": 4.987,
+          "base_y": -3.388,
+          "base_yaw": -0.0,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "probe_lang": "Fully slide the bottom oven rack out.",
+            "lang_match": true
+          }
+        },
+        {
+          "env_seed": 100458,
+          "layout": 7,
+          "style": 7,
+          "side": "right",
+          "lang": "Fully slide the bottom oven rack out.",
+          "fixture_group": "oven_left_group",
+          "spawn_lat": -0.4446,
+          "base_x": 0.882,
+          "base_y": -2.653,
+          "base_yaw": 3.142,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "probe_lang": "Fully slide the bottom oven rack out.",
+            "lang_match": true
+          }
+        }
+      ],
+      "spawn_side": "right"
+    },
+    "DishwasherRack/out-left": {
+      "task_env": "robocasa_panda_omron/SlideDishwasherRack_PandaOmron_Env",
+      "task": "SlideDishwasherRack",
+      "kind": "pull_side",
+      "scenes": [
+        {
+          "env_seed": 100774,
+          "layout": 4,
+          "style": 4,
+          "side": "left",
+          "lang": "Fully slide the top dishwasher rack out.",
+          "fixture_group": "dishwasher_left_group",
+          "spawn_lat": 0.4099,
+          "base_x": 0.969,
+          "base_y": -3.425,
+          "base_yaw": 3.142,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "probe_lang": "Fully slide the top dishwasher rack out.",
+            "lang_match": true
+          }
+        },
+        {
+          "env_seed": 100985,
+          "layout": 9,
+          "style": 9,
+          "side": "left",
+          "lang": "Fully slide the top dishwasher rack out.",
+          "fixture_group": "dishwasher_left_group",
+          "spawn_lat": 0.4852,
+          "base_x": 1.01,
+          "base_y": -1.889,
+          "base_yaw": 3.142,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "probe_lang": "Fully slide the top dishwasher rack out.",
+            "lang_match": true
+          }
+        },
+        {
+          "env_seed": 100162,
+          "layout": 5,
+          "style": 5,
+          "side": "left",
+          "lang": "Fully slide the top dishwasher rack out.",
+          "fixture_group": "dishwasher_left_group",
+          "spawn_lat": 0.4866,
+          "base_x": 1.039,
+          "base_y": -3.244,
+          "base_yaw": 3.142,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "probe_lang": "Fully slide the top dishwasher rack out.",
+            "lang_match": true
+          }
+        }
+      ],
+      "spawn_side": "left"
+    },
+    "DishwasherRack/out-right": {
+      "task_env": "robocasa_panda_omron/SlideDishwasherRack_PandaOmron_Env",
+      "task": "SlideDishwasherRack",
+      "kind": "pull_side",
+      "scenes": [
+        {
+          "env_seed": 100387,
+          "layout": 4,
+          "style": 4,
+          "side": "right",
+          "lang": "Fully slide the top dishwasher rack out.",
+          "fixture_group": "dishwasher_left_group",
+          "spawn_lat": -0.4081,
+          "base_x": 0.979,
+          "base_y": -2.607,
+          "base_yaw": 3.142,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "probe_lang": "Fully slide the top dishwasher rack out.",
+            "lang_match": true
+          }
+        },
+        {
+          "env_seed": 100448,
+          "layout": 9,
+          "style": 9,
+          "side": "right",
+          "lang": "Fully slide the top dishwasher rack out.",
+          "fixture_group": "dishwasher_left_group",
+          "spawn_lat": -0.4838,
+          "base_x": 1.03,
+          "base_y": -0.92,
+          "base_yaw": 3.142,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "probe_lang": "Fully slide the top dishwasher rack out.",
+            "lang_match": true
+          }
+        },
+        {
+          "env_seed": 100081,
+          "layout": 5,
+          "style": 5,
+          "side": "right",
+          "lang": "Fully slide the top dishwasher rack out.",
+          "fixture_group": "dishwasher_left_group",
+          "spawn_lat": -0.4754,
+          "base_x": 1.028,
+          "base_y": -2.282,
+          "base_yaw": 3.142,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "probe_lang": "Fully slide the top dishwasher rack out.",
+            "lang_match": true
+          }
+        }
+      ],
+      "spawn_side": "right"
+    },
+    "OpenDrawer/left": {
+      "task_env": "robocasa_panda_omron/OpenDrawer_PandaOmron_Env",
+      "task": "OpenDrawer",
+      "kind": "pull_drawer",
+      "scenes": [
+        {
+          "env_seed": 100245,
+          "layout": 4,
+          "style": 4,
+          "side": null,
+          "lang": "Open the left drawer.",
+          "fixture_group": "stack_3_main_group_2",
+          "spawn_lat": -0.0067,
+          "base_x": 3.422,
+          "base_y": -0.885,
+          "base_yaw": 1.571,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": null,
+            "blocker_geom": null,
+            "probe_lang": "Open the left drawer.",
+            "lang_match": true
+          },
+          "reset_idx_list": [
+            0,
+            1,
+            2,
+            4,
+            8
+          ],
+          "reset_scan_pattern": "LLLRLRRRLLRLRL"
+        },
+        {
+          "env_seed": 100410,
+          "layout": 9,
+          "style": 9,
+          "side": null,
+          "lang": "Open the left drawer.",
+          "fixture_group": "stack_3_main_group_3",
+          "spawn_lat": -0.0,
+          "base_x": 3.907,
+          "base_y": -0.865,
+          "base_yaw": 1.571,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": null,
+            "blocker_geom": null,
+            "probe_lang": "Open the left drawer.",
+            "lang_match": true
+          },
+          "reset_idx_list": [
+            1,
+            2,
+            7,
+            8,
+            11
+          ],
+          "reset_scan_pattern": "RLLRRRRLLRRLLL"
+        },
+        {
+          "env_seed": 100005,
+          "layout": 5,
+          "style": 5,
+          "side": null,
+          "lang": "Open the left drawer.",
+          "fixture_group": "stack_1_left_group_4",
+          "spawn_lat": 0.0,
+          "base_x": 0.854,
+          "base_y": -3.709,
+          "base_yaw": 3.142,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": null,
+            "blocker_geom": null,
+            "probe_lang": "Open the left drawer.",
+            "lang_match": true
+          },
+          "reset_idx_list": [
+            2,
+            9,
+            10,
+            11,
+            14
+          ],
+          "reset_scan_pattern": "RRLRRRRRRLLLRRLRRRLRRRLRLR"
+        }
+      ]
+    },
+    "OpenDrawer/right": {
+      "task_env": "robocasa_panda_omron/OpenDrawer_PandaOmron_Env",
+      "task": "OpenDrawer",
+      "kind": "pull_drawer",
+      "scenes": [
+        {
+          "env_seed": 100311,
+          "layout": 4,
+          "style": 4,
+          "side": null,
+          "lang": "Open the right drawer.",
+          "fixture_group": "stack_3_main_group_3",
+          "spawn_lat": 0.0042,
+          "base_x": 3.013,
+          "base_y": -0.864,
+          "base_yaw": 1.571,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": null,
+            "blocker_geom": null,
+            "probe_lang": "Open the right drawer.",
+            "lang_match": true
+          },
+          "reset_idx_list": [
+            0,
+            2,
+            3,
+            6,
+            10
+          ],
+          "reset_scan_pattern": "LRLLRRLRRRLRRL"
+        },
+        {
+          "env_seed": 100149,
+          "layout": 9,
+          "style": 9,
+          "side": null,
+          "lang": "Open the right drawer.",
+          "fixture_group": "stack_2_main_group_2",
+          "spawn_lat": 0.0,
+          "base_x": 1.487,
+          "base_y": -0.903,
+          "base_yaw": 1.571,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": null,
+            "blocker_geom": null,
+            "probe_lang": "Open the right drawer.",
+            "lang_match": true
+          },
+          "reset_idx_list": [
+            2,
+            4,
+            9,
+            10,
+            11
+          ],
+          "reset_scan_pattern": "RRLRLRRRRLLLLL"
+        },
+        {
+          "env_seed": 100162,
+          "layout": 5,
+          "style": 5,
+          "side": null,
+          "lang": "Open the right drawer.",
+          "fixture_group": "stack_1_left_group_4",
+          "spawn_lat": 0.0,
+          "base_x": 0.87,
+          "base_y": -4.922,
+          "base_yaw": 3.142,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": null,
+            "blocker_geom": null,
+            "probe_lang": "Open the right drawer.",
+            "lang_match": true
+          },
+          "reset_idx_list": [
+            0,
+            1,
+            2,
+            5,
+            6
+          ],
+          "reset_scan_pattern": "LLLRRLLLLRLLLR"
+        }
+      ]
+    },
+    "PPCC/apple": {
+      "task_env": "robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env",
+      "task": "PickPlaceCounterToCabinet",
+      "kind": "pickplace",
+      "scenes": [
+        {
+          "env_seed": 100521,
+          "layout": 4,
+          "style": 4,
+          "side": null,
+          "lang": "Pick the apple from the counter and place it in the cabinet.",
+          "fixture_group": "shelves_main_group",
+          "spawn_lat": -0.0,
+          "base_x": 3.307,
+          "base_y": -0.822,
+          "base_yaw": 1.571,
+          "feasible": null
+        },
+        {
+          "env_seed": 100401,
+          "layout": 9,
+          "style": 9,
+          "side": null,
+          "lang": "Pick the apple from the counter and place it in the cabinet.",
+          "fixture_group": "cab_1_left_group",
+          "spawn_lat": 0.0,
+          "base_x": 0.79,
+          "base_y": -1.72,
+          "base_yaw": 3.142,
+          "feasible": null
+        },
+        {
+          "env_seed": 100113,
+          "layout": 5,
+          "style": 5,
+          "side": null,
+          "lang": "Pick the apple from the counter and place it in the cabinet.",
+          "fixture_group": "cab_2_main_group",
+          "spawn_lat": 0.0,
+          "base_x": 2.424,
+          "base_y": -3.206,
+          "base_yaw": -0.0,
+          "feasible": null
+        }
+      ],
+      "object": "apple"
+    },
+    "PPCC/jug": {
+      "task_env": "robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env",
+      "task": "PickPlaceCounterToCabinet",
+      "kind": "pickplace",
+      "scenes": [
+        {
+          "env_seed": 101250,
+          "layout": 4,
+          "style": 4,
+          "side": null,
+          "lang": "Pick the jug from the counter and place it in the cabinet.",
+          "fixture_group": "shelves_main_group",
+          "spawn_lat": -0.0,
+          "base_x": 3.147,
+          "base_y": -0.841,
+          "base_yaw": 1.571,
+          "feasible": null
+        },
+        {
+          "env_seed": 100192,
+          "layout": 9,
+          "style": 9,
+          "side": null,
+          "lang": "Pick the jug from the counter and place it in the cabinet.",
+          "fixture_group": "shelves_2_main_group",
+          "spawn_lat": -0.0,
+          "base_x": 4.905,
+          "base_y": -0.805,
+          "base_yaw": 1.571,
+          "feasible": null
+        },
+        {
+          "env_seed": 101057,
+          "layout": 5,
+          "style": 5,
+          "side": null,
+          "lang": "Pick the jug from the counter and place it in the cabinet.",
+          "fixture_group": "cab_1_left_group",
+          "spawn_lat": 0.0,
+          "base_x": 0.79,
+          "base_y": -4.302,
+          "base_yaw": 3.142,
+          "feasible": null
+        }
+      ],
+      "object": "jug"
+    },
+    "PPCC/candle": {
+      "task_env": "robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env",
+      "task": "PickPlaceCounterToCabinet",
+      "kind": "pickplace",
+      "scenes": [
+        {
+          "env_seed": 100477,
+          "layout": 4,
+          "style": 4,
+          "side": null,
+          "lang": "Pick the candle from the counter and place it in the cabinet.",
+          "fixture_group": "cab_2_left_group",
+          "spawn_lat": 0.0,
+          "base_x": 0.764,
+          "base_y": -1.047,
+          "base_yaw": 3.142,
+          "feasible": null
+        },
+        {
+          "env_seed": 102074,
+          "layout": 9,
+          "style": 9,
+          "side": null,
+          "lang": "Pick the candle from the counter and place it in the cabinet.",
+          "fixture_group": "cab_1_left_group",
+          "spawn_lat": 0.0,
+          "base_x": 0.827,
+          "base_y": -1.656,
+          "base_yaw": 3.142,
+          "feasible": null
+        },
+        {
+          "env_seed": 100376,
+          "layout": 5,
+          "style": 5,
+          "side": null,
+          "lang": "Pick the candle from the counter and place it in the cabinet.",
+          "fixture_group": "cab_main_main_group",
+          "spawn_lat": 0.0,
+          "base_x": 2.394,
+          "base_y": -0.591,
+          "base_yaw": -0.0,
+          "feasible": null
+        }
+      ],
+      "object": "candle"
+    },
+    "PPCC/bread": {
+      "task_env": "robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env",
+      "task": "PickPlaceCounterToCabinet",
+      "kind": "pickplace",
+      "scenes": [
+        {
+          "env_seed": 100466,
+          "layout": 4,
+          "style": 4,
+          "side": null,
+          "lang": "Pick the bread from the counter and place it in the cabinet.",
+          "fixture_group": "cab_main_main_group",
+          "spawn_lat": -0.0,
+          "base_x": 1.24,
+          "base_y": -0.781,
+          "base_yaw": 1.571,
+          "feasible": null
+        },
+        {
+          "env_seed": 100200,
+          "layout": 9,
+          "style": 9,
+          "side": null,
+          "lang": "Pick the bread from the counter and place it in the cabinet.",
+          "fixture_group": "shelves_1_main_group",
+          "spawn_lat": -0.0,
+          "base_x": 3.422,
+          "base_y": -0.846,
+          "base_yaw": 1.571,
+          "feasible": null
+        },
+        {
+          "env_seed": 101048,
+          "layout": 5,
+          "style": 5,
+          "side": null,
+          "lang": "Pick the bread from the counter and place it in the cabinet.",
+          "fixture_group": "cab_3_main_group",
+          "spawn_lat": 0.0,
+          "base_x": 2.421,
+          "base_y": -4.408,
+          "base_yaw": -0.0,
+          "feasible": null
+        }
+      ],
+      "object": "bread"
+    },
+    "PPCC/marshmallow": {
+      "task_env": "robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env",
+      "task": "PickPlaceCounterToCabinet",
+      "kind": "pickplace",
+      "scenes": [
+        {
+          "env_seed": 100943,
+          "layout": 4,
+          "style": 4,
+          "side": null,
+          "lang": "Pick the marshmallow from the counter and place it in the cabinet.",
+          "fixture_group": "shelves_main_group",
+          "spawn_lat": -0.0,
+          "base_x": 3.062,
+          "base_y": -0.799,
+          "base_yaw": 1.571,
+          "feasible": null
+        },
+        {
+          "env_seed": 100204,
+          "layout": 9,
+          "style": 9,
+          "side": null,
+          "lang": "Pick the marshmallow from the counter and place it in the cabinet.",
+          "fixture_group": "side_bottom_right_group_3",
+          "spawn_lat": 0.0,
+          "base_x": 5.08,
+          "base_y": -3.719,
+          "base_yaw": -0.0,
+          "feasible": null
+        },
+        {
+          "env_seed": 100186,
+          "layout": 5,
+          "style": 5,
+          "side": null,
+          "lang": "Pick the marshmallow from the counter and place it in the cabinet.",
+          "fixture_group": "cab_2_main_group",
+          "spawn_lat": 0.0,
+          "base_x": 2.368,
+          "base_y": -3.436,
+          "base_yaw": -0.0,
+          "feasible": null
+        }
+      ],
+      "object": "marshmallow"
+    },
+    "CoffeeSetupMug": {
+      "task_env": "robocasa_panda_omron/CoffeeSetupMug_PandaOmron_Env",
+      "task": "CoffeeSetupMug",
+      "kind": "coffee",
+      "scenes": [
+        {
+          "env_seed": 100124,
+          "layout": 4,
+          "style": 4,
+          "side": null,
+          "lang": "Pick the mug from the counter and place it under the coffee machine dispenser.",
+          "fixture_group": "",
+          "spawn_lat": -0.0013,
+          "base_x": 0.76,
+          "base_y": -3.424,
+          "base_yaw": 3.142,
+          "feasible": null,
+          "reset_idx_list": [
+            0,
+            1,
+            5,
+            3,
+            4
+          ],
+          "note": "j2: reset 2 는 관측 고정(영상 FREEZE 4.75s, v6 QA 09-04) → reset 5 로 교체"
+        },
+        {
+          "env_seed": 100078,
+          "layout": 9,
+          "style": 9,
+          "side": null,
+          "lang": "Pick the mug from the counter and place it under the coffee machine dispenser.",
+          "fixture_group": "",
+          "spawn_lat": -0.0016,
+          "base_x": 1.199,
+          "base_y": -0.833,
+          "base_yaw": 1.571,
+          "feasible": null
+        },
+        {
+          "env_seed": 100475,
+          "layout": 5,
+          "style": 5,
+          "side": null,
+          "lang": "Pick the mug from the counter and place it under the coffee machine dispenser.",
+          "fixture_group": "",
+          "spawn_lat": -0.0313,
+          "base_x": 2.371,
+          "base_y": -1.532,
+          "base_yaw": -0.0,
+          "feasible": null
+        }
+      ]
+    }
+  }
+}
