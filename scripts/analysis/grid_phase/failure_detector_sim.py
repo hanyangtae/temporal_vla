@@ -320,6 +320,23 @@ def shard_slug_index(paths: list[Path]) -> dict[str, str]:
         except (OSError, ValueError, KeyError):
             instr = ""      # 깨진 shard 는 실제 로드(ShardSpec)에서 fail-loud 된다
         idx[p.stem] = instr
+    # 파일명과 meta 가 **서로 다른 키**를 가리키면 즉시 멈춘다.
+    # 2026-09-05 실사고: oven/washer left↔right 키 교환에서 scene shard 는 파일명만
+    # rename 되고 내부 meta_json.instruction 은 구 키로 남았다. 이 상태로 매칭하면
+    # 셀 TSV(신 키)의 행이 **반대쪽 물리 대상 shard** 에 걸린다 — 조용히 틀린 detector 가
+    # 나오는 최악의 경로라 fail-loud 로 막는다.
+    bad = []
+    for stem, instr in idx.items():
+        if not instr or "__s" not in stem:
+            continue
+        head = stem.rsplit("__s", 1)[0]
+        if head not in _instr_variants(instr):
+            bad.append(f"{stem}.npz (meta instruction={instr})")
+    if bad:
+        raise SystemExit(
+            "shard 파일명과 meta_json.instruction 이 어긋난다 — 키 교환 후 meta 미패치가 "
+            "의심된다(파일명 기준으로 학습하면 반대 대상 detector 가 나온다). "
+            f"불일치 {len(bad)}건: {bad[:6]}")
     return idx
 
 
