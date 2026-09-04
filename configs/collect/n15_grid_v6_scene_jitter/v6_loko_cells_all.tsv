@@ -9,6 +9,11 @@ OpenDrawer/left	OpenDrawer_left	kanu	0	1	10	9	1	27	13	41	1
 OpenDrawer/left	OpenDrawer_left	kanu	0	2	10	6	4	30	10	44	1	
 OpenDrawer/left	OpenDrawer_left	kanu	0	3	10	5	5	31	9	45	1	
 OpenDrawer/left	OpenDrawer_left	kanu	0	4	10	10	0	26	14	40	0	tgt_fail<1
+OpenDrawer/right	OpenDrawer_right	kanu	1	0	10	7	3	2	38	43	1	
+OpenDrawer/right	OpenDrawer_right	kanu	1	1	10	0	10	9	31	50	1	
+OpenDrawer/right	OpenDrawer_right	kanu	1	2	10	0	10	9	31	50	1	
+OpenDrawer/right	OpenDrawer_right	kanu	1	3	10	0	10	9	31	50	1	
+OpenDrawer/right	OpenDrawer_right	kanu	1	4	10	2	8	7	33	48	1	
 OvenRack/out-left	OvenRack_out-left	worker1	0	0	10	6	4	38	2	44	0	pool_fail<3
 OvenRack/out-left	OvenRack_out-left	worker1	0	1	10	10	0	34	6	40	0	tgt_fail<1
 OvenRack/out-left	OvenRack_out-left	worker1	0	2	10	10	0	34	6	40	0	tgt_fail<1
