@@ -44,18 +44,21 @@ p=${PORT_BASE:-8890}; i=0
 run() {  # slug s k noises OUT [KEY=VAL...]
   local task=$1 s=$2 k=$3 ns=$4 out=$5; shift 5
   local cs=${task}_s${s}_j${k} sub=s${s}/j${k}
-  if [[ "$out" == ps_setm_gtplain* ]] && [ ! -d "$NPZ/instr_setm_v6_gt_plain/$task/$sub" ]; then echo "[defer] $cs $out (plain NPZ 없음)" >> "$L/run.log"; return; fi
-  if [[ "$out" == ps_setm_gt_b* ]] && [ ! -d "$NPZ/instr_setm_v6_gt/$task/$sub" ]; then echo "[defer] $cs $out (gt NPZ 없음)" >> "$L/run.log"; return; fi
-  if [[ "$out" == ps_setm_ck8* ]] && [ ! -d "$NPZ/instr_setm_v6_ck8/$task/$sub" ]; then echo "[defer] $cs $out (ck8 NPZ 없음)" >> "$L/run.log"; return; fi
-  local stem=${task}__s${s}; local det=$DK/$stem/$sub/detector_pertask_lstm_$stem.pt   # fail detector 산출: scene shard stem = <slug>__s<i>, cp_bands 키 동일
+  # ART_SLUG_MAP="old1=new1,old2=new2": replay 는 셀표(구 키) slug 로, 산출물(detector·NPZ)은 매핑된 slug 로 찾는다
+  # (09-04 rebase 후 oven/washer 키 교환 — 구 plan 으로 replay 하면서 새 키 산출물을 쓰는 증분 pass 용)
+  local art=$task; local kv; for kv in ${ART_SLUG_MAP//,/ }; do [ "${kv%%=*}" = "$task" ] && art=${kv#*=}; done
+  if [[ "$out" == ps_setm_gtplain* ]] && [ ! -d "$NPZ/instr_setm_v6_gt_plain/$art/$sub" ]; then echo "[defer] $cs $out (plain NPZ 없음)" >> "$L/run.log"; return; fi
+  if [[ "$out" == ps_setm_gt_b* ]] && [ ! -d "$NPZ/instr_setm_v6_gt/$art/$sub" ]; then echo "[defer] $cs $out (gt NPZ 없음)" >> "$L/run.log"; return; fi
+  if [[ "$out" == ps_setm_ck8* ]] && [ ! -d "$NPZ/instr_setm_v6_ck8/$art/$sub" ]; then echo "[defer] $cs $out (ck8 NPZ 없음)" >> "$L/run.log"; return; fi
+  local stem=${art}__s${s}; local det=$DK/$stem/$sub/detector_pertask_lstm_$stem.pt   # fail detector 산출: scene shard stem = <slug>__s<i>, cp_bands 키 동일
   [ -f "$det" ] || { echo "[defer] $cs $out (detector 없음: $det)" >> "$L/run.log"; return; }
   local want; want=$(( $(echo "$ns" | tr -cd , | wc -c) + 1 ))
   local have; have=$(awk 'FNR>1' "$B/$out/$cs/$task"/*/per_episode.tsv 2>/dev/null | wc -l)
   [ "$have" -ge "$want" ] && { echo "[skip] $cs $out ($have/$want)" >> "$L/run.log"; return; }
   local root=$NPZ/instr_roots_v6/$cs; mkdir -p "$root/$task"
-  ln -sfn "../../../instr_setm_v6_gt/$task/$sub"  "$root/$task/instr_setm_v6_gt"
-  ln -sfn "../../../instr_setm_v6_gt_plain/$task/$sub" "$root/$task/instr_setm_v6_gt_plain"
-  ln -sfn "../../../instr_setm_v6_ck8/$task/$sub" "$root/$task/instr_setm_v6_ck8"
+  ln -sfn "../../../instr_setm_v6_gt/$art/$sub"  "$root/$task/instr_setm_v6_gt"
+  ln -sfn "../../../instr_setm_v6_gt_plain/$art/$sub" "$root/$task/instr_setm_v6_gt_plain"
+  ln -sfn "../../../instr_setm_v6_ck8/$art/$sub" "$root/$task/instr_setm_v6_ck8"
   pick_slot; local gpu=${SLOTS[$SLOT]}
   # 포트 충돌 회피 — 타 프로세스가 잡은 포트(09-04 kanu 8898/8899 실측)는 건너뛴다
   while ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${p}$"; do p=$((p+1)); done
