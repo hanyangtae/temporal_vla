@@ -1,28 +1,35 @@
-"""v5 LOKO fit — scene-local 계약: (instruction, scene, 대상 k)당 연산자 1개.
+"""LOKO fit — scene-local 계약: (instruction 키, scene, 대상 지터)당 연산자 1개.
 
-pool = 대상 scene의 타 k 전판(succ+fail) + 대상 k 실패판 (대상 k 성공판 제외 = success-blind).
-대상 k = 그 scene에서 실패 판이 있는 k 전부(자동 산출) — leave-one-k-out을 k마다 반복.
+pool = 대상 scene의 타 지터 전판(succ+fail) + 대상 지터 실패판 (대상 지터 성공판 제외
+= success-blind). 대상 = 그 scene에서 실패 판이 있는 지터 전부(자동 산출) —
+leave-one-jitter-out 을 지터마다 반복.
 
-데이터 = segA_v5 shard(slug별 NPZ, `jitter` 열 실좌표) + ae_bundle_v5_k8.npz(encoder+centers).
+⚠ **좌표 축 이름**: v6 부터 좌표는 `jitter_idx`(=j, plan `jitters` 순서)이고
+`jitter_reset_idx` 는 **출처 열**(연속 reset 횟수)이다 — oven/washer 키는 전부 0 이라
+그걸 좌표로 읽으면 5개 지터가 한 값으로 뭉개진다. 이 스크립트는 shard 에서 좌표 열을
+`jitter_idx` → `jitter` 순으로만 찾고, 없으면 fail-loud (`--axis-col` 로 명시 가능).
+v5 이하(k 층)는 `--axis-col jitter --coord k --tag v5`.
+
+데이터 = segA shard(slug별 NPZ) + ae_bundle_*_k8.npz(encoder+centers).
 ck8 라벨은 번들 centers 최근접으로 파생(assign 식 = 온라인 cluster_phase와 동일) —
 labels npz가 있으면 파생 라벨과 전행 일치를 검증한다(불일치 = 번들≠라벨 세계, fail-loud).
 
 usage (승준, ~/anaconda3/bin/python — torch 필요, scipy 불요):
   python v5_fit_loko.py <slug> <scene:int> [--seg-dir D] [--bundle F] [--labels F] [--out ROOT]
 
-산출 (ROOT 기본 = ~/datasets/temporal_vla_store/groot/n15/analysis/grid_phase_v5/):
-  A. instr_setm_v5_gt/<slug>/s<i>/k<r>/<phase>/dit_L12/conceptors.npz (+ metadata.json)
+산출 (ROOT 기본 = ~/datasets/temporal_vla_store/groot/n15/analysis/grid_phase_v6/):
+  A. instr_setm_<tag>_gt/<slug>/s<i>/<coord><r>/<phase>/dit_L12/conceptors.npz (+ metadata.json)
      — 기본형: v = normalize(μ_s − μ_f), s = μ_s·v (pool 성공이 같은 scene이라
        v4sb/v4r 하이브리드 setpoint 불요 — scene 도메인 offset 소거됨)
-  B. instr_setm_v5_ck8/<slug>/s<i>/k<r>/c<j>/dit_L12/conceptors.npz — phase = ck8 cluster
-  C. rsn_llr_reg_v5/<slug>/s<i>/k<r>.npz — LLR 번들, 계약 = src/failure_online/llr_scorer.py
+  B. instr_setm_<tag>_ck8/<slug>/s<i>/<coord><r>/c<j>/dit_L12/conceptors.npz — phase = ck8
+  C. rsn_llr_reg_<tag>[_all]/<slug>/s<i>/<coord><r>.npz — LLR 번들, 계약 = llr_scorer.py
      docstring(단일 출처). entry "s<i>__c<j>", 앵커 = pool record cluster 평균,
      게이트 = **k-matched** ep-LOO AUROC(아래), ood_lo = 대상 k 실패 후반절반
      max(logN) 5pct (scorer 스케일 — 2π 상수 포함 필수).
 
 ★ 게이트가 k-matched 인 이유 (2026-09-03 실측으로 설계 변경)
   이 pool 은 성공이 **타 k 에서만** 오므로 succ/fail 라벨이 지터 k 와 강하게 상관된다.
-  index_v5 만으로 잰 "k 정체성 단독" ep-AUROC 가 대상 26 셀에서 **중앙값 0.835**
+  index 만으로 잰 "지터 정체성 단독" ep-AUROC 가 v5 대상 26 셀에서 **중앙값 0.835**
   (PPCC/marshmallow s3 = 0.99~1.00, PPCC/jug s4 = 0.95~0.98) — 즉 pool 전체 AUROC 로
   등록하면 **활성화에서 outcome 이 아니라 k 를 읽는 판별기가 그대로 통과한다.**
   그런데 이 채점기의 용도는 *같은 episode·같은 시점*에서 갈라진 best-of-N 후보의 순위
@@ -43,7 +50,7 @@ import os
 
 import numpy as np
 
-DEF_ROOT = "~/datasets/temporal_vla_store/groot/n15/analysis/grid_phase_v5/"
+DEF_ROOT = "~/datasets/temporal_vla_store/groot/n15/analysis/grid_phase_v6/"
 CONST16 = 0.5 * 16 * math.log(2 * math.pi)
 LAYER = 12       # DiT block residual layer (capture index로 역산)
 DENOISE = 3      # 마지막 denoise call
@@ -60,9 +67,14 @@ def parse_args():
     ap.add_argument("slug")
     ap.add_argument("scene", type=int)
     ap.add_argument("--seg-dir", default=None, help="기본 ROOT/segA")
-    ap.add_argument("--bundle", default=None, help="기본 ROOT/ae_v5_k8/ae_bundle_v5_k8.npz")
+    ap.add_argument("--bundle", default=None, help="기본 ROOT/ae_k8/ae_bundle_k8.npz")
     ap.add_argument("--labels", default=None,
-                    help="기본 ROOT/ae_v5_k8/labels_<slug>_k8.npz (있으면 대조, 없으면 생략)")
+                    help="기본 ROOT/ae_k8/labels_<slug>_k8.npz (있으면 대조, 없으면 생략)")
+    ap.add_argument("--tag", default="v6", help="산출 루트 태그 (instr_setm_<tag>_*, rsn_llr_reg_<tag>)")
+    ap.add_argument("--coord", default="j", help="좌표 폴더·registry 열 이름 (v6=j, v5=k)")
+    ap.add_argument("--axis-col", default=None,
+                    help="shard 의 좌표 열 이름 명시. 기본 자동(jitter_idx→jitter). "
+                         "jitter_reset_idx 는 v6 에서 출처 열이라 자동 선택하지 않는다")
     ap.add_argument("--out", default=None, help="기본 ROOT")
     ap.add_argument("--only-gt", action="store_true",
                     help="setm_gt 만 산출 (AE 번들 불요 — 번들 지연 시 선행용; "
@@ -75,7 +87,7 @@ def parse_args():
                     help="채점 entry 단위. ck8=cluster 별(기본) / all=phase 조건화 없이 "
                          "scene 전체 1 entry. cluster 조건화가 outcome 대조를 흡수하는지 "
                          "실측 비교용 arm (합성 대조에서 흡수 확인: 전체 0.93 → 클러스터별 "
-                         "0.50~0.63). 산출 루트가 갈린다(rsn_llr_reg_v5_all).")
+                         "0.50~0.63). 산출 루트가 갈린다(rsn_llr_reg_<tag>_all).")
     ap.add_argument("--n-perm", type=int, default=2000, help="게이트 순열검정 반복")
     ap.add_argument("--gate-p", type=float, default=0.05, help="순열 p 상한")
     ap.add_argument("--gate-min-pairs", type=int, default=GATE_MIN_PAIRS,
@@ -113,21 +125,35 @@ def main():
     args = parse_args()
     root = os.path.expanduser(args.out or DEF_ROOT)
     seg_dir = os.path.expanduser(args.seg_dir or os.path.join(root, "segA"))
-    bundle_p = os.path.expanduser(args.bundle or os.path.join(root, "ae_v5_k8/ae_bundle_v5_k8.npz"))
+    bundle_p = os.path.expanduser(args.bundle or os.path.join(root, "ae_k8/ae_bundle_k8.npz"))
     labels_p = os.path.expanduser(args.labels or os.path.join(
-        root, f"ae_v5_k8/labels_{args.slug}_k8.npz"))
+        root, f"ae_k8/labels_{args.slug}_k8.npz"))
     SLUG, S = args.slug, args.scene
 
     # ── shard ──
     d = np.load(os.path.join(seg_dir, f"{SLUG}.npz"), allow_pickle=True)
     meta = json.loads(str(d["meta_json"]))
-    if not meta.get("jitter_axis"):
-        raise SystemExit(f"{SLUG}: meta_json.jitter_axis 가 false — v5 3축 shard 가 아님")
+    if meta.get("jitter_axis") is False:
+        raise SystemExit(f"{SLUG}: meta_json.jitter_axis=false — 지터 축 없는 shard")
+    if args.axis_col:
+        axis_col = args.axis_col
+    else:
+        cand = [c for c in ("jitter_idx", "jitter") if c in d.files]
+        if not cand:
+            raise SystemExit(
+                f"{SLUG}: shard 에 좌표 열이 없다 (찾은 열 {sorted(d.files)}). "
+                "v6 좌표는 jitter_idx — jitter_reset_idx 는 출처 열이라 자동 선택하지 "
+                "않는다(oven/washer 는 전부 0). 필요하면 --axis-col 로 명시할 것")
+        axis_col = cand[0]
+    if axis_col == "jitter_reset_idx":
+        print(f"[warn] 좌표 열로 jitter_reset_idx 를 쓴다 — v6 에서는 출처 열이며 "
+              f"pull 계열은 전부 0 이라 지터가 뭉갤 수 있다. 의도한 것인지 확인할 것")
     cap = [int(x) for x in meta["capture_layers"]]
     seg = meta["segment_names"].index("all")
     X = d["X"][:, cap.index(LAYER), DENOISE, seg, :].astype(np.float32)
     pc, ep, sc, su = d["phase_code"], d["ep_id"], d["scene"], d["succ"]
-    jit, eplen = d["jitter"], d["ep_len"]
+    jit, eplen = d[axis_col], d["ep_len"]
+    print(f"[axis] 좌표 열 = {axis_col} (고유값 {sorted(set(jit.tolist()))[:10]})")
     CB = {v: k for k, v in meta["phase_codebook"].items()}
 
     # ── AE 번들 → encode + ck8 라벨 파생 ──
@@ -179,9 +205,13 @@ def main():
         em[e] = (int(su[i0[0]]), int(jit[i0[0]]), float(eplen[i0[0]]), i0)
     ks_all = sorted(set(v[1] for v in em.values()))
     ks_fail = sorted(set(v[1] for v in em.values() if v[0] == 0))
+    if len(ks_all) < 2:
+        raise SystemExit(
+            f"{SLUG} s{S}: 좌표 열 {axis_col} 의 고유값이 {ks_all} 하나뿐 — LOKO 불가. "
+            "v6 에서 jitter_reset_idx 를 좌표로 읽으면(oven/washer 전부 0) 이렇게 된다")
     n_s = sum(1 for v in em.values() if v[0] == 1)
     print(f"[scene] {SLUG} s{S}: ep {len(eps_s)} (succ {n_s} / fail {len(eps_s) - n_s}), "
-          f"k = {ks_all}, 실패 있는 k = {ks_fail}")
+          f"{args.coord} = {ks_all}, 실패 있는 {args.coord} = {ks_fail}")
     registry = []   # (k, n_reg, entries, pool succ/fail ep, tgt fail ep, excl succ ep)
 
     for k_tgt in ks_fail:
@@ -199,7 +229,8 @@ def main():
         if not args.only_gt:
             tags.append(("ck8", ck, lambda c: f"c{int(c)}"))
         for tag, la, name_of in tags:
-            outroot = os.path.join(root, f"instr_setm_v5_{tag}", SLUG, f"s{S}", f"k{k_tgt}")
+            outroot = os.path.join(root, f"instr_setm_{args.tag}_{tag}", SLUG, f"s{S}",
+                                   f"{args.coord}{k_tgt}")
             n_ph = 0
             for code in sorted(set(la[allow].tolist())):
                 ms = np.where(allow & (la == code) & (su == 1))[0]
@@ -217,15 +248,16 @@ def main():
                                     alpha0_v_steer=v.astype(np.float32),
                                     alpha0_s=np.float32(s_val))
                 with open(os.path.join(d_out, "metadata.json"), "w") as f:
-                    json.dump({"op": "setpoint", "variant": f"instr_setm_v5_{tag}",
-                               "phase": name_of(code), "target_scene": S, "target_k": k_tgt,
+                    json.dump({"op": "setpoint", "variant": f"instr_setm_{args.tag}_{tag}",
+                               "phase": name_of(code), "target_scene": S,
+                               "target_jitter": k_tgt, "axis_col": axis_col,
                                "n_rec_s": int(len(ms)), "n_rec_f": int(len(mf)),
                                **pool_note, "phase_label_source": tag, "layer": LAYER,
                                "note": "v=normalize(mu_s−mu_f) (scene-local pool); "
                                        "s=mu_s·v (기본형 — 하이브리드 불요)"},
                               f, ensure_ascii=False, indent=1)
                 n_ph += 1
-            print(f"[setm_{tag}] {SLUG} s{S} k{k_tgt}: {n_ph} phase → {outroot}")
+            print(f"[setm_{tag}] {SLUG} s{S} {args.coord}{k_tgt}: {n_ph} phase → {outroot}")
 
         # ── C. LLR 번들 ──
         if args.only_gt:
@@ -432,7 +464,7 @@ def main():
         if not reg:
             # 등록 0건 = 게이트 전면 탈락 → 번들 미생성 (오케스트레이터가 파일 부재로
             # identity/reseed 처리 — v4r oven 관례). 판수·게이트 수치는 아래 로그로 남김.
-            print(f"[llr] {SLUG} s{S} k{k_tgt}: 등록 0 — 번들 미생성")
+            print(f"[llr] {SLUG} s{S} {args.coord}{k_tgt}: 등록 0 — 번들 미생성")
             for row in summary:
                 print("   " + fmt_summary(row) + "  -")
             continue
@@ -443,9 +475,9 @@ def main():
             arts[f"{a}.bias"] = np.asarray(b[f"enc.{bk}.bias"], np.float32)
         arts["registered"] = np.array(reg)
         arts["meta"] = json.dumps({
-            "task": SLUG, "ae_ref": f"ae_bundle_v5_k8 sig={ae_sig}",
+            "task": SLUG, "ae_ref": f"ae_bundle_k8 sig={ae_sig}",
             "phase_mode": args.phase_mode,
-            "target_scene": S, "target_k": k_tgt,
+            "target_scene": S, "target_jitter": k_tgt, "axis_col": axis_col,
             "scenes": [f"s{S}"], "phases": sorted(set(r.split("__")[1] for r in reg)),
             **pool_note,
             "anchor": "★k-local: cluster×k 평균으로 중심화해 fit; 번들 succ_mean 은 "
@@ -457,21 +489,24 @@ def main():
                     "전체로 등록하면 k 정체성 판독기가 통과한다(index 실측 k단독 중앙값 0.835). "
                     "대상 진단은 aux_diag_tgt(등록 미사용)",
             "ood": "대상 k 실패 후반절반 max(logN) 5pct (scorer 스케일, 2π 상수 포함)"})
-        reg_root = "rsn_llr_reg_v5" if args.phase_mode == "ck8" else "rsn_llr_reg_v5_all"
+        reg_root = (f"rsn_llr_reg_{args.tag}" if args.phase_mode == "ck8"
+                    else f"rsn_llr_reg_{args.tag}_all")
         out_d = os.path.join(root, reg_root, SLUG, f"s{S}")
         os.makedirs(out_d, exist_ok=True)
-        np.savez_compressed(os.path.join(out_d, f"k{k_tgt}.npz"), **arts)
-        print(f"[llr] {SLUG} s{S} k{k_tgt}: 등록 {len(reg)} → {reg_root}/{SLUG}/s{S}/k{k_tgt}.npz")
+        np.savez_compressed(os.path.join(out_d, f"{args.coord}{k_tgt}.npz"), **arts)
+        print(f"[llr] {SLUG} s{S} {args.coord}{k_tgt}: 등록 {len(reg)} → "
+              f"{reg_root}/{SLUG}/s{S}/{args.coord}{k_tgt}.npz")
         for row in summary:
             print("   " + fmt_summary(row) + ("  REG" if row[-1] else "  -"))
 
     # 등록표 (중추 rsn_llr 분모 고정용 — 한 invocation = 한 (slug, scene) 전체라 멱등 rewrite)
     if not args.only_gt:
-        reg_d = os.path.join(root, "rsn_llr_reg_v5" if args.phase_mode == "ck8"
-                             else "rsn_llr_reg_v5_all", SLUG, f"s{S}")
+        reg_d = os.path.join(root, f"rsn_llr_reg_{args.tag}" if args.phase_mode == "ck8"
+                             else f"rsn_llr_reg_{args.tag}_all", SLUG, f"s{S}")
         os.makedirs(reg_d, exist_ok=True)
         with open(os.path.join(reg_d, "registry.tsv"), "w") as f:
-            f.write("slug\tscene\tk\tn_registered\tentries\tn_ep_pool_succ\tn_ep_pool_fail"
+            f.write(f"slug\tscene\t{args.coord}\tn_registered\tentries\t"
+                "n_ep_pool_succ\tn_ep_pool_fail"
                     "\tn_ep_tgt_fail\tn_ep_excluded_succ_tgt\n")
             for row in registry:
                 f.write(f"{SLUG}\t{S}\t" + "\t".join(str(x) for x in row) + "\n")
