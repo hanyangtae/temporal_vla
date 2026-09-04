@@ -5,6 +5,10 @@
 
     scene_idx <TAB> env_seed <TAB> task <TAB> env_name <TAB> instruction_text
 
+v6 plan(`scenes`/`jitters` 보유)에서도 `instructions[key]` = **scene 별 env_seed 목록**
+(순서 = scene_idx) 이므로 아래 `from_plan` 이 그대로 성립한다. 다만 v6 는 scene 마다 문장
+변형이 다를 수 있어(`scenes[key][sid].lang`), 그 값이 있으면 instruction_text 대신 쓴다.
+
 출처
 ----
 - `--index-tsv` (grid 인덱스 rollouts.tsv): `grid_instruction`/`scene_idx`/`env_seed`
@@ -16,12 +20,10 @@
 둘 다 주면 env_seed 를 교차검증하고 불일치는 fail-loud (조용히 다른 scene 을 도는 사고 방지).
 instruction 은 slug (`OvenRack_out`) 로 지정한다 — `extract_grid_matrix.instr_slug` 규약.
 
-지터 축(3축 좌표 `s<i>/k<r>/n<j>`, docs/04 §3.1.1)은 **여기서 다루지 않는다** — fresh
-모드는 새 inference_seed 로 base scene 만 돌기 때문이다. 3축 plan 에서도
-`instructions[instr]` 는 **base scene env_seed 목록**(길이 = scene 수)이라 아래 `from_plan`
-이 그대로 성립하고, 3축 index 에서도 한 scene 의 모든 k 행이 같은 env_seed 를 공유하므로
-`from_index` 의 scene_idx→env_seed 접기가 그대로 성립한다. 셀 재생(replay)은
-`replay_cells.py` 소관.
+지터 축(v6 `s<sid>/j<jid>/n<nid>` · legacy `s<i>/k<r>/n<j>`, docs/04 §3.1.1)은 **여기서
+다루지 않는다** — fresh 모드는 새 inference_seed 로 scene 만 돌기 때문이다. 3축 index 에서도
+한 scene 의 모든 지터 행이 같은 env_seed 를 공유하므로 `from_index` 의 scene_idx→env_seed
+접기가 그대로 성립한다. 셀 재생(replay)은 `replay_cells.py` 소관.
 
 사용:
     python scripts/steer/online_gated/scene_table.py --slug OvenRack_out \
@@ -66,9 +68,21 @@ def from_plan(plan_json: Path, slug: str) -> tuple[str, dict[int, int], str, str
     if not env_name:
         raise SystemExit(f"{plan_json.name}: extra.env_names 에 {instr!r} 없음")
     text = (extra.get("instruction_text") or {}).get(instr, instr)
-    # 3축 plan 도 instructions[instr] = base scene env_seed 목록 (jitter 는 별도 키).
+    # v6/3축 plan 도 instructions[instr] = scene 별 env_seed 목록 (지터는 별도 키).
     seeds = {i: int(s) for i, s in enumerate(plan["instructions"][instr])}
     return instr, seeds, env_name, text
+
+
+def plan_scene_langs(plan_json: Path, instr: str) -> dict[int, str]:
+    """v6 plan → {scene_idx: scenes[instr][sid]["lang"]}. v6 가 아니거나 lang 이 없으면 {}.
+
+    v6 는 scene(주방)마다 문장 변형이 달라질 수 있어 instruction_text(키 기본 문장)보다
+    scene 의 `lang` 이 진실이다 (핸드오프 §2 — collector 도 lang 으로 대조한다).
+    """
+    plan = json.loads(plan_json.read_text(encoding="utf-8"))
+    scenes = (plan.get("scenes") or {}).get(instr) or []
+    return {i: sc["lang"] for i, sc in enumerate(scenes)
+            if isinstance(sc, dict) and sc.get("lang")}
 
 
 def from_index(index_tsv: Path, instr: str) -> dict[int, int]:
@@ -125,7 +139,10 @@ def main() -> int:
             f"scene {len(rows)}개 < 요청 {args.n_scenes} (source={source}, instr={instr}) "
             "— 수집이 덜 됐거나 --n-scenes 를 낮춰야 한다")
     task = derive_task(env_name)
-    body = "".join(f"{si}\t{es}\t{task}\t{env_name}\t{text}\n" for si, es in rows)
+    # v6: scene 별 문장(lang) 이 있으면 그걸 쓴다 (없으면 plan 기본 문장).
+    langs = plan_scene_langs(args.plan_json, instr)
+    body = "".join(f"{si}\t{es}\t{task}\t{env_name}\t{langs.get(si, text)}\n"
+                   for si, es in rows)
     if args.out is not None:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(body, encoding="utf-8")

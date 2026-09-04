@@ -1,0 +1,135 @@
+% 제7회 한국 인공지능 학술대회 (KICS 인공지능소사이어티) 투고 원고
+% 한글 양식(양식-논문샘플한글.hwp) 완전 준수판: 여백 1.5cm(상단 2.5cm)·단 간격 0.5cm·본문 9pt 장평 90% 자간 -7%(영문 -5%)·줄간격 158%(요약 130%).
+\documentclass[a4paper,twocolumn,9pt]{extarticle}
+\usepackage{kotex}
+\setmainfont[FakeStretch=0.9,LetterSpace=-5]{lmroman10-regular.otf}[BoldFont=lmroman10-bold.otf,ItalicFont=lmroman10-italic.otf]
+\setmainhangulfont[FakeStretch=0.9,LetterSpace=-7]{UnBatang.ttf}[BoldFont=UnBatangBold.ttf]
+\usepackage[left=1.5cm,right=1.5cm,top=2.5cm,bottom=1.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{setspace}
+\usepackage[font=small,skip=3pt]{caption}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}   % 인용·그림 번호 클릭 시 해당 위치로 점프
+
+\setlength{\columnsep}{0.5cm}
+\renewcommand{\baselinestretch}{1.29}
+\pagestyle{empty}
+
+
+\renewcommand{\thesection}{\Roman{section}.}
+\makeatletter
+\renewcommand\section{\@startsection{section}{1}{\z@}%
+  {1.2ex plus .5ex}{0.8ex plus .3ex}{\normalsize\bfseries}}
+\makeatother
+
+\begin{document}
+
+
+\twocolumn[{
+\begin{center}\addfontfeatures{FakeStretch=1,LetterSpace=0}\addhangulfontfeatures{FakeStretch=1,LetterSpace=0}
+{\large\bfseries VLA 모델은 스스로 어떤 action을 수행 중이라고 인지하는가:\\ Auto Encoder 기반 activation clustering을 통한 online action phase 감지}\\[1.2ex]
+{박경태, 김상우, 오윤선$^{\dagger}$}\\
+{한양대학교}\\[0.6ex] 
+{\small rudxo1997@hanyang.ac.kr, kimz1121@hanyang.ac.kr, $^{\dagger}$yoh21@hanyang.ac.kr}\\[2.0ex] 
+{\large\bfseries What Action Does a VLA Model Think It Is Performing?\\ Online Action-Phase Detection via Auto-Encoder-Based Activation Clustering}\\[1.2ex]
+{Kyungtae Park, Sangwoo Kim, Yoonseon Oh$^{\dagger}$}\\ 
+{Hanyang University.}\\[2.0ex]
+{\bfseries 요 약}
+\end{center}
+\begin{quote}\small\setstretch{1.06}
+Vision-Language-Action(VLA) 모델이 작업을 수행할 때 스스로 현재 어떤 작업 단계(action phase)를 진행 중인지를 우리가 알 수 있다면, 이는 VLA 모델에 대한 설명가능성과 추론 시 제어 및 개입의 출발점이 된다. 본 연구는 모델이 현재 수행 중인 phase를 내부 activation에서 감지할 수 있음을 보인다. GR00T N1.5 모델의 action head(diffusion transformer, DiT)의 residual stream activation을 라벨 없이 clustering하면, 각 cluster는 특정 primitive action phase에 국한되어 나타나고 다른 phase에서는 잘 나타나지 않는다. 이 대응을 이용하면 학습에 사용하지 않은 scene(unseen scene)에서도 activation 한 스텝만으로 현재 phase를 정확도 0.82로 읽을 수 있으며, 이는 진행 시간만 쓰는 시간 대조군과 외부 관찰 기반 행동 이벤트 대조군을 웃돈다. Cluster는 사람이 정의한 phase보다 더 잘게 나뉘지만, 각 조각이 phase에 대해 순수하기 때문에 감지가 성립한다. 이 구조는 압축 모델을 SAE로 바꾸거나 독립적으로 재수집한 데이터에서도 재현된다. 즉 VLA activation에는 phase와 정합적인 구조가 존재해 추론 중 online detection이 가능하다.
+\end{quote}
+\vspace{0.3ex}
+}]
+
+\begin{figure*}[!t]
+  \centering
+  \includegraphics[width=0.52\textwidth]{figs/fig1_purity_residual.pdf}
+  \caption{(a) Cluster$\times$GT phase 동시 출현 행렬(Pick and Place, k=8). 최빈 phase로 행을 정렬하면 블록-대각 구조가 나타난다. (b) scene별 평균을 제거한 잔차에서도 phase margin은 10개 instruction 전부에서 양수로 유지된다.}
+  \label{fig:purity}
+\end{figure*}
+\section{서 론}
+VLA 모델은 내부를 이해하기 힘든 블랙박스이지만 실제 로봇을 조작하므로, 모델이 지금 무슨 작업을 진행 중이라고 인지하는지 사람이 파악할 수 있어야 한다. 본 논문에서 action phase란 manipulation task를 의미 단위로 나누었을 때 로봇이 수행하고 있는 하위 작업(subtask)을 의미한다. 같은 subtask가 한 task 안에서 여러 번 다시 등장할 수도 있다. 예컨대 Pick \& Place task는 reach, grasp, transport, place의 phase로 구성된다\cite{options}. 현재 phase를 파악하는 방법으로는 카메라나 센서로 얻은 환경, 로봇의 상태정보를 통해 외부 관찰자 모델을 학습시켜서 얻는 방법이 있다.\cite{lotus}. 하지만 외부 관찰은 로봇이 겉보기에 무엇을 하는지 알려줄 뿐이며, 모델이 스스로 어떤 작업을 하고 있다고 인지하는지는 내부 activation을 직접 읽어야만 알 수 있고, 이는 겉보기 행동과 모델의 인지가 어긋났을 때 수정을 위한 전제 조건이다. VLA 내부 표현을 해석하려는 최근 시도들은 Sparse Auto Encoder(SAE)나 linear probe로 primitive action에 대응하는 feature를 찾고 그 방향으로 steering까지 보였으나\cite{saevla,egsae,observing,mechinterp}, feature의 이름은 사람이 rollout 영상과 대조해 수동으로 붙이며, 내부 표상이 사람이 정의한 phase를 얼마나 정확히, 어떤 단위로 담는지는 정량화하지 않는다. VLA의 내부 phase를 추론 중에 online으로 읽을 수 있으면 설명을 넘어 조건부 개입이나 실패 감지\cite{safe}의 조건 신호로 활용할 수 있다. 본 연구는 GR00T N1.5\cite{groot}가 RoboCasa\cite{robocasa} 주방 조작을 수행하는 동안의 activation을 Auto Encoder(AE)와 clustering으로 분석해, 모델 내부 phase가 사람이 정의한 phase와 갖는 관계를 감지 정확도와 Mutual Information(MI)로 정량화한다. 
+
+\section{방 법}
+\textbf{Data.} RoboCasa 주방 조작 환경에서 GR00T N1.5의 rollout을 수집한다. 대상은 5개 task(OpenDrawer, PnPCounterToCab, OvenRack, DishwasherRack, CoffeeSetupMug)에 속하는 10개 instruction이며, instruction마다 10개 scene에서 10회씩 총 100회의 rollout을 수집하였다. 모델이 1회 추론할 때마다 action head(DiT)의 residual stream activation을 캡처하며, 이 추론 1회를 한 \textbf{스텝}으로 삼는다. 이 activation은 12번째 layer의 마지막 denoising step에서 49개 토큰을 평균한 스텝당 1{,}536차원 벡터이고, GT phase 라벨도 같은 시점에서 읽는다.
+
+Detector의 학습과 평가는 scene 단위로 분리한다. 10개 scene 중 8개를 학습용, 2개를 평가용으로 나누고, 이러한 분할을 무작위로 3가지 구성한다. 분할마다 표준화, AE, clustering, phase 매핑을 학습 scene만으로 새로 적합하며, 세 분할의 평가 결과를 평균해 보고한다.  사람이 주석한 phase 라벨은 AE와 KMeans 학습에는 쓰지 않으며, cluster를 최빈 phase에 대응시키는 매핑과 평가 시 채점에만 사용한다.
+
+\textbf{Clustering.} Raw activation 1{,}536차원을 AE를 통해 16차원 latent 벡터로 압축한 뒤 KMeans로 스텝 단위 clustering한다. Cluster 수는 $k=8$을 사용한다. 사람이 라벨링한 phase 수(3--6)를 넘는 $k$에서 감지 성능이 평탄해 특정 $k$ 선택에 기대지 않음은 결과에서 보인다(Figure~\ref{fig:ksweep}). Cluster 중심은 학습 split에서만 만든다. 추론 중에는 매 스텝 얻은 activation을 학습 split에서 AE에 그대로 통과시켜 latent를 얻고, 이에 가장 가까운 cluster 중심에 매핑된 phase를 그 스텝의 감지 결과로 삼는다. 추론중 추가 학습이나 clustering 재수행은 없다. 감지는 해당 스텝의 activation 하나와 고정된 중심만 쓰고 과거·미래 스텝이나 에피소드 길이를 쓰지 않으므로, 보고하는 정확도는 online 감지의 정확도와 같다.
+
+\textbf{Baseline.} Phase는 대체로 순서대로 진행되므로 경과 시간만 보는 detector도 phase를 어느 정도 맞힌다. 이 몫을 빼기 위한 \textbf{시간 대조군}은 에피소드 내 상대 진행도 $t/T$를 발견된 cluster
+수와 같은 개수의 구간으로 등분위 분할해 얻은 상태열이다. 또한 외부 관찰만으로 phase를 나누는 기존 방법과 비교하기 위해, \textbf{행동 이벤트(behavioral event) 대조군}으로 기존 연구\cite{egsae}의 이벤트 발견 파이프라인을 채택한다. 저자가 공개한 구현을 수정 없이 사용하여, end-effector 궤적에서 AWE\cite{awe}로 waypoint를 추출하고 그 주변 프레임의 SigLIP\cite{siglip} 시각 임베딩에 로봇 상태와 진행도를 이어붙인 descriptor를 clustering해 행동 이벤트를 얻는다. 평가는 본 논문과 같은 scene 분할로 이벤트–최빈 phase 매핑을 학습 scene에서만 적합하고, 평가 스텝은 시간상 가장 가까운 waypoint의 phase로 예측한다.
+
+\textbf{Metric.} 스텝 $i$의 cluster 라벨을 $z_i \in \{1,\dots,k\}$, 사람이 붙인 GT phase를 $y_i$라 하자. Cluster 라벨을 알았을 때 phase에 대한 불확실성이 얼마나 줄어드는지를 \textbf{Mutual Information}(MI) $I(Z;Y)=\sum_{k}\sum_{c} p(k,c)\log_2\frac{p(k,c)}{p(k)p(c)}$ 로 측정한다. 여기서 $p(k,c)$는 전체 스텝 중 cluster가 $k$이면서 phase가 $c$인 비율이다. 다만 MI는 cluster 수가 늘면 자동으로 커지므로 해상도가 다른 방법끼리 절대값으로 비교할 수 없고, 같은 상태 수를 갖는 시간 대조군의 MI를 뺀 값을 판정 기준으로 사용한다:
+\begin{equation}
+\mathrm{margin} = I(Z;Y) - I(Z_{\mathrm{clock}};Y).
+\label{eq:margin}
+\end{equation}
+
+
+\begin{figure}[!t]
+  \centering
+  \includegraphics[width=0.64\columnwidth]{figs/fig_readout_bar.pdf}
+  \caption{Unseen scene에서의 phase 감지 정확도. 막대는 instruction 10개의 중앙값, 흰 점은 instruction별 값이다. 회색은 외부 정보만 쓰는 대조군, 파랑은 내부 activation이다.}
+  \label{fig:readout}
+\end{figure}
+\section{결 과}
+\textbf{VLA 내부 activation 한 스텝만으로 해당 phase를 읽을 수 있다.} Unseen scene에서 측정한 정확도의 instruction 중앙값은 activation 비지도 clustering이 0.82이다(Figure~\ref{fig:readout}). 시간 대조군은 정확도 0.61--0.68에 그치고, 외부 관찰로 phase를 나누는 행동 이벤트 대조군\cite{egsae}은 정확도 0.65에 그친다.
+같은 프로토콜에서 activation cluster는 10개 instruction 중 9개에서 행동 이벤트 대조군을 앞서며, 유일한 예외는 모든 방법이 무작위 수준에 머무는 DishwasherRack이다. 즉 경과 시간도 외부 관찰 이벤트도 내부 표상만큼은 알려주지 못한다. 구조 자체는 라벨 없이 activation에서 나왔고, 라벨은 각 cluster에 이름을 붙이는 데만 쓰였다.
+
+\begin{figure}[!t]
+  \centering
+  \includegraphics[width=0.64\columnwidth]{figs/fig_k_sweep.pdf}
+  \caption{감지 정확도의 $k$ 강건성. 사람 phase 수(3--6, 회색 대역)를 넘는 $k\ge8$에서 성능이 평탄하다(0.82--0.88). 옅은 선은 instruction 10개 각각이다.}
+  \label{fig:ksweep}
+\end{figure}
+\textbf{각 cluster는 특정 phase에 국한된다.} 한 phase에서 나타난 cluster는 다른 phase에서 잘 나타나지 않는다. Cluster와 phase의 동시 출현 비율 $p(k,c)$ 행렬을 최빈 phase 순으로 정렬하면 블록-대각 구조가 나타나며(Figure 1a), MI는 이 행렬에서 계산된다. Cluster를 각자의 최빈 phase로 읽었을 때 맞는 스텝의 비율(순도)은 중앙값 0.875, instruction별 0.56$\sim$0.96이다. MI 중앙값은 0.670 bits, 시간 대조군 margin의 중앙값은 +0.343 bits로 10개 instruction 전부에서 양수다. $k$가 phase 수보다 커서 한 phase를 여러 cluster가 나눠 갖더라도 각 cluster는 특정 phase에 국한되므로, 최빈 phase 매핑으로 현재 phase를 읽는 데 지장이 없다.
+
+\textbf{Phase 정보는 장면 암기로 환원되지 않는다.} Activation에는 scene 정보도 섞여 있다(instruction별 scene과의 MI 0.02$\sim$0.86 bits). 그러나 scene별 평균을 제거한 잔차에서 scene 정보는 중앙값 0.44에서 0.27 bits로 크게 줄어드는 반면, phase margin은 +0.34에서 +0.31로 10개 instruction 전부에서 양수로 유지된다(Figure 1b).
+
+\textbf{Cluster 전환은 압축 모델이나 학습 데이터에 관계없이 일관된다.} Cluster 전환이 특정 압축 모델의 산물이 아님을 보기 위해, 같은 activation을 AE와 SAE로 각각 압축·clustering하고 두 라벨 열에서 라벨이 바뀌는 스텝(전환)을 $\pm$1스텝 이내에서 짝지었다. 짝지어진 비율을 AE 전환 기준(precision)과 SAE 전환 기준(recall)으로 구해 조화평균한 값이 전환 일치 F1이며, 전환 개수는 두고 위치만 무작위로 흩은 상태열 300개의 F1 분포로 z를 구한다. 별도의 23-에피소드 분석셋에서 두 모델은 같은 스텝에서 전환하며(F1 0.66$\sim$0.75, z +8.8$\sim$+13.5), 독립적으로 재수집한 데이터에서 AE를 새로 학습해도 seed 간 전환이 일치한다(F1 0.55$\sim$0.58, z +4.3$\sim$+5.1). 즉 전환 시점은 압축 모델이나 학습 데이터가 아니라 activation 자체에 담긴 구조다.
+
+% \textbf{세밀 단위는 하류 분석에서도 유용하다.} % 성공/실패 분리도를 단계 조건부로 잴
+% 때, 발견 상태(instruction별 k=8)가 GT phase보다 높은 분리도를 주는 instruction이 9개 중
+% 4개였다(동급 1, 열세 1; 예: OpenDrawer AUROC 0.93/z4.5 vs GT 0.94/z2.3). 이는 탐색적
+% 관찰이나, 세밀 단위가 사람 정의 단계의 단순 잡음이 아님을 시사한다.
+
+
+\section{한계와 결론}
+\textbf{한계.} 평가는 단일 모델(GR00T N1.5)·단일 벤치마크(RoboCasa, 시뮬레이션)에 한정되어 다른 VLA나 실제 로봇으로의 일반화는 확인하지 않았다. GT phase 라벨은 한 명의 주석자가 부여한 것이나, 모든 방법을 같은 라벨로 채점하므로 비교에는 영향이 같다. 또한 본 연구는 표상을 읽는(read) 것이며, 개입해 행동을 바꾸는(write) 것은 별개의 검증을 요한다.
+
+\textbf{결론.} VLA의 action head activation에는 사람이 정의한 phase와 정합적인 구조가 라벨 없이도 드러나며, 이를 이용하면 unseen scene에서도 한 스텝의 activation만으로 현재 phase를 정확도 0.82로 읽을 수 있다. 이 감지는 추론 중 매 스텝 online으로 그대로 수행되므로, phase 조건부 개입·실패 감지의 조건 신호로 나아가는 출발점이 된다.
+
+% \section*{ACKNOWLEDGMENT}
+% TODO: 과제 사사 문구
+
+\renewcommand{\refname}{\centering 참 고 문 헌}
+\begin{thebibliography}{99}\scriptsize\setstretch{1.0}\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}
+\bibitem{groot} NVIDIA GEAR Team, ``GR00T N1: An Open Foundation Model for
+Generalist Humanoid Robots,'' arXiv:2503.14734, 2025.
+\bibitem{robocasa} S. Nasiriany et al., ``RoboCasa: Large-Scale Simulation of
+Everyday Tasks for Generalist Robots,'' \textit{RSS}, 2024.
+\bibitem{saevla} A. Swann et al., ``Sparse Autoencoders Reveal Interpretable and
+Steerable Features in VLA Models,'' arXiv:2603.19183, 2026.
+\bibitem{observing} H. Buurmeijer et al., ``Observing and Controlling Features in
+Vision-Language-Action Models,'' arXiv:2603.05487, 2026.
+\bibitem{egsae} X. Jin et al., ``Event-Grounded Sparse Autoencoders for
+Vision-Language-Action Policies,'' arXiv:2605.17204, 2026.
+\bibitem{awe} L. X. Shi, A. Sharma, T. Z. Zhao, and C. Finn, ``Waypoint-Based
+Imitation Learning for Robotic Manipulation,'' \textit{CoRL}, 2023.
+\bibitem{siglip} X. Zhai, B. Mustafa, A. Kolesnikov, and L. Beyer, ``Sigmoid Loss
+for Language Image Pre-Training,'' \textit{ICCV}, 2023.
+\bibitem{mechinterp} B. H\"aon et al., ``Mechanistic Interpretability for Steering
+Vision-Language-Action Models,'' \textit{CoRL}, 2025.
+\bibitem{safe} Q. Gu et al., ``SAFE: Multitask Failure Detection for
+Vision-Language-Action Models,'' \textit{NeurIPS}, 2025.
+\bibitem{lotus} W. Wan et al., ``LOTUS: Continual Imitation Learning for Robot
+Manipulation Through Unsupervised Skill Discovery,'' \textit{ICRA}, 2024.
+\bibitem{options} R. S. Sutton, D. Precup, and S. Singh, ``Between MDPs and
+Semi-MDPs: A Framework for Temporal Abstraction in Reinforcement Learning,''
+\textit{Artificial Intelligence}, 112:181--211, 1999.
+\end{thebibliography}
+
+\end{document}

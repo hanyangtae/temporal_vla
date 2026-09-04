@@ -9,16 +9,22 @@ import sys
 ROOT, SLUG = sys.argv[1], sys.argv[2]
 ARMS = sys.argv[3].split(",")
 
-# 셀 표(replay_cells.py 9열) → {(평탄 cell id, noise): 수집 라벨}.
+# 셀 표(replay_cells.py: v6 11열 / legacy 9열) → {(평탄 cell id, noise): 수집 라벨}.
+# 두 포맷 모두 **9번째 열(p[8])이 지터 좌표**다 — v6 는 jitter_idx(j), legacy 는
+# jitter_reset_idx(k). v6 표는 p[9] 에 plan 유래 reset_idx 가 따로 있는데 좌표가 아니라
+# 여기선 쓰지 않는다 (v6 표에서 p[8] 이 비면 legacy 행이라 p[9] 로 대체).
 # 아래 scan() 이 ep 를 (ep//100, ep%100) 로 되접으므로 키도 러너와 같은 평탄 좌표여야
-# 한다 (지터행 scene*100+k / legacy scene — docs/04 §3.1.1).
+# 한다 (지터행 scene*100+j / 2축 legacy scene — docs/04 §3.1.1).
+EMPTY = ("", "base", "NA", "None")
 cells = {}
 for ln in open(f"{ROOT}/logs/cells_{SLUG}.tsv"):
     p = ln.rstrip("\n").split("\t")
     k = p[8].strip() if len(p) > 8 else ""
+    if k in EMPTY and len(p) > 9:
+        k = p[9].strip()
     try:
         si = int(p[0])
-        flat = si if k in ("", "base", "NA", "None") else si * 100 + int(k)
+        flat = si if k in EMPTY else si * 100 + int(k)
         cells[(flat, int(p[1]))] = int(p[4])
     except ValueError:
         continue

@@ -236,10 +236,14 @@ def write_safe_triplet(
             "record_shape": (list(np.asarray(policy.records[0]["hidden_state"]).shape)
                              if include_hidden_states and policy.records else None),
         }
-        # 좌표 3축(docs/04 §3.1.1): scene_idx = base scene, jitter_reset_idx = k
-        # (legacy 2축 수집에는 없어 meta 에서도 빠진다), noise_idx.
+        # 좌표 3축(docs/04 §3.1.1). v6: scene_idx = 주방(layout, style), jitter_idx = j
+        # 층, jitter_reset_idx = 그 j 의 연속 reset 횟수, base_lat/base_back = base 오프셋,
+        # init_robot_base_pos = 오프셋 **적용 후** 실제 값(재계산 대조용). v5 는 jitter_idx
+        # 없이 jitter_reset_idx(k) 만, legacy 2축은 둘 다 없어 meta 에서도 빠진다.
         for key in ("machine", "ckpt", "plan_id", "grid_instruction", "scene_idx",
-                    "jitter_reset_idx", "noise_idx", "armsig", "serve_gpu", "serve_boot_id"):
+                    "jitter_reset_idx", "noise_idx", "armsig", "serve_gpu", "serve_boot_id",
+                    "jitter_idx", "base_lat", "base_back", "side",
+                    "layout_id", "style_id", "lang", "init_robot_base_pos"):
             if extra_metadata and key in extra_metadata:
                 meta[key] = extra_metadata[key]
         meta_path.write_text(json.dumps(json_safe(meta), indent=2, ensure_ascii=False))

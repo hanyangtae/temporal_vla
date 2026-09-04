@@ -1,0 +1,1678 @@
+{
+  "name": "n15_grid_v6_scene_jitter",
+  "model": "groot",
+  "version": "n15",
+  "ckpt": "lerobot_groot_n15__robocasa365_ckpt120000",
+  "capture_layers": [
+    0,
+    2,
+    4,
+    8,
+    10,
+    12,
+    15
+  ],
+  "denoise_k": 4,
+  "token_mode": "all_token_full",
+  "instructions": {
+    "OvenRack/out-left": [
+      100017,
+      100754,
+      100166
+    ],
+    "OvenRack/out-right": [
+      100690,
+      100188,
+      100458
+    ],
+    "DishwasherRack/out-left": [
+      100774,
+      100985,
+      100162
+    ],
+    "DishwasherRack/out-right": [
+      100387,
+      100448,
+      100081
+    ],
+    "OpenDrawer/left": [
+      100245,
+      100410,
+      100005
+    ],
+    "OpenDrawer/right": [
+      100311,
+      100149,
+      100162
+    ],
+    "PPCC/apple": [
+      100521,
+      100401,
+      100113
+    ],
+    "PPCC/jug": [
+      101250,
+      100192,
+      101057
+    ],
+    "PPCC/candle": [
+      100477,
+      102074,
+      100376
+    ],
+    "PPCC/bread": [
+      100466,
+      100200,
+      101048
+    ],
+    "PPCC/marshmallow": [
+      100943,
+      100204,
+      100186
+    ],
+    "CoffeeSetupMug": [
+      100124,
+      100078,
+      100475
+    ]
+  },
+  "noise_seeds": [
+    1300000,
+    1300001,
+    1300002,
+    1300003,
+    1300004,
+    1300005,
+    1300006,
+    1300007,
+    1300008,
+    1300009
+  ],
+  "note": "handoff_20260903_grid_v6_scene_jitter §1 — 층위 재정의: scene = 주방(layout, style), jitter j = 같은 scene 의 세계 변형(연속 reset + base 오프셋), noise = 정책 denoise seed. 12키 × scene 3 × j 5 × n 5 = 900판. 좌표 폴더층 s<sid>/j<jid>/n<nid> (docs/04 §3.1.1).",
+  "extra": {
+    "env_names": {
+      "OvenRack/out-left": "robocasa_panda_omron/SlideOvenRack_PandaOmron_Env",
+      "OvenRack/out-right": "robocasa_panda_omron/SlideOvenRack_PandaOmron_Env",
+      "DishwasherRack/out-left": "robocasa_panda_omron/SlideDishwasherRack_PandaOmron_Env",
+      "DishwasherRack/out-right": "robocasa_panda_omron/SlideDishwasherRack_PandaOmron_Env",
+      "OpenDrawer/left": "robocasa_panda_omron/OpenDrawer_PandaOmron_Env",
+      "OpenDrawer/right": "robocasa_panda_omron/OpenDrawer_PandaOmron_Env",
+      "PPCC/apple": "robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env",
+      "PPCC/jug": "robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env",
+      "PPCC/candle": "robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env",
+      "PPCC/bread": "robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env",
+      "PPCC/marshmallow": "robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env",
+      "CoffeeSetupMug": "robocasa_panda_omron/CoffeeSetupMug_PandaOmron_Env"
+    },
+    "instruction_text": {
+      "OvenRack/out-left": "Fully slide the oven rack out.",
+      "OvenRack/out-right": "Fully slide the oven rack out.",
+      "DishwasherRack/out-left": "Fully slide the top dishwasher rack out.",
+      "DishwasherRack/out-right": "Fully slide the top dishwasher rack out.",
+      "OpenDrawer/left": "Open the left drawer.",
+      "OpenDrawer/right": "Open the right drawer.",
+      "PPCC/apple": "Pick the apple from the counter and place it in the cabinet.",
+      "PPCC/jug": "Pick the jug from the counter and place it in the cabinet.",
+      "PPCC/candle": "Pick the candle from the counter and place it in the cabinet.",
+      "PPCC/bread": "Pick the bread from the counter and place it in the cabinet.",
+      "PPCC/marshmallow": "Pick the marshmallow from the counter and place it in the cabinet.",
+      "CoffeeSetupMug": "Pick the mug from the counter and place it under the coffee machine dispenser."
+    },
+    "env_kwargs": {
+      "layout_and_style_ids": [
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          7
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          9,
+          9
+        ],
+        [
+          10,
+          10
+        ]
+      ]
+    },
+    "machine_assignment": {
+      "srv48": [
+        "OvenRack/out-left",
+        "OvenRack/out-right",
+        "DishwasherRack/out-left",
+        "DishwasherRack/out-right"
+      ],
+      "kanu": [
+        "OpenDrawer/left",
+        "OpenDrawer/right",
+        "CoffeeSetupMug"
+      ],
+      "srv50": [
+        "PPCC/apple",
+        "PPCC/jug",
+        "PPCC/candle",
+        "PPCC/bread",
+        "PPCC/marshmallow"
+      ]
+    },
+    "jitter_kinds": {
+      "OvenRack/out-left": "pull_side",
+      "OvenRack/out-right": "pull_side",
+      "DishwasherRack/out-left": "pull_side",
+      "DishwasherRack/out-right": "pull_side",
+      "OpenDrawer/left": "pull_drawer",
+      "OpenDrawer/right": "pull_drawer",
+      "PPCC/apple": "pickplace",
+      "PPCC/jug": "pickplace",
+      "PPCC/candle": "pickplace",
+      "PPCC/bread": "pickplace",
+      "PPCC/marshmallow": "pickplace",
+      "CoffeeSetupMug": "coffee"
+    },
+    "jitter_tables": {
+      "pickplace": [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ],
+      "coffee": [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ],
+      "pull_drawer": [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.1
+        }
+      ],
+      "pull_side": [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.15
+        }
+      ]
+    },
+    "tasks": {
+      "OvenRack/out-left": "SlideOvenRack",
+      "OvenRack/out-right": "SlideOvenRack",
+      "DishwasherRack/out-left": "SlideDishwasherRack",
+      "DishwasherRack/out-right": "SlideDishwasherRack",
+      "OpenDrawer/left": "OpenDrawer",
+      "OpenDrawer/right": "OpenDrawer",
+      "PPCC/apple": "PickPlaceCounterToCabinet",
+      "PPCC/jug": "PickPlaceCounterToCabinet",
+      "PPCC/candle": "PickPlaceCounterToCabinet",
+      "PPCC/bread": "PickPlaceCounterToCabinet",
+      "PPCC/marshmallow": "PickPlaceCounterToCabinet",
+      "CoffeeSetupMug": "CoffeeSetupMug"
+    },
+    "scenario": "handoff_20260903_grid_v6_scene_jitter §1 — 층위 재정의: scene = 주방(layout, style), jitter j = 같은 scene 의 세계 변형(연속 reset + base 오프셋), noise = 정책 denoise seed. 12키 × scene 3 × j 5 × n 5 = 900판. 좌표 폴더층 s<sid>/j<jid>/n<nid> (docs/04 §3.1.1).",
+    "grid_coord": "docs/04 §3.1.1 (v6) — 좌표는 3축 폴더층 s<sid>/j<jid>/n<nid>. s = scenes[key] 순서(주방), j = jitters[key][sid] 인덱스(값이 아니다), n = noise 순서. reset 횟수·base 오프셋은 plan 이 단일 출처이며 수집기·replay 가 다시 계산한다.",
+    "selection_source": null
+  },
+  "scenes": {
+    "OvenRack/out-left": [
+      {
+        "layout": 4,
+        "style": 4,
+        "side": "left",
+        "lang": "Fully slide the oven rack out.",
+        "fixture_group": "oven_left_group",
+        "spawn_lat": 0.4557,
+        "env_seed": 100017
+      },
+      {
+        "layout": 9,
+        "style": 9,
+        "side": "left",
+        "lang": "Fully slide the bottom oven rack out.",
+        "fixture_group": "oven_right_group",
+        "spawn_lat": 0.4491,
+        "env_seed": 100754
+      },
+      {
+        "layout": 7,
+        "style": 7,
+        "side": "left",
+        "lang": "Fully slide the bottom oven rack out.",
+        "fixture_group": "oven_left_group",
+        "spawn_lat": 0.4454,
+        "env_seed": 100166
+      }
+    ],
+    "OvenRack/out-right": [
+      {
+        "layout": 4,
+        "style": 4,
+        "side": "right",
+        "lang": "Fully slide the oven rack out.",
+        "fixture_group": "oven_left_group",
+        "spawn_lat": -0.4512,
+        "env_seed": 100690
+      },
+      {
+        "layout": 9,
+        "style": 9,
+        "side": "right",
+        "lang": "Fully slide the bottom oven rack out.",
+        "fixture_group": "oven_right_group",
+        "spawn_lat": -0.4489,
+        "env_seed": 100188
+      },
+      {
+        "layout": 7,
+        "style": 7,
+        "side": "right",
+        "lang": "Fully slide the bottom oven rack out.",
+        "fixture_group": "oven_left_group",
+        "spawn_lat": -0.4446,
+        "env_seed": 100458
+      }
+    ],
+    "DishwasherRack/out-left": [
+      {
+        "layout": 4,
+        "style": 4,
+        "side": "left",
+        "lang": "Fully slide the top dishwasher rack out.",
+        "fixture_group": "dishwasher_left_group",
+        "spawn_lat": 0.4099,
+        "env_seed": 100774
+      },
+      {
+        "layout": 9,
+        "style": 9,
+        "side": "left",
+        "lang": "Fully slide the top dishwasher rack out.",
+        "fixture_group": "dishwasher_left_group",
+        "spawn_lat": 0.4852,
+        "env_seed": 100985
+      },
+      {
+        "layout": 5,
+        "style": 5,
+        "side": "left",
+        "lang": "Fully slide the top dishwasher rack out.",
+        "fixture_group": "dishwasher_left_group",
+        "spawn_lat": 0.4866,
+        "env_seed": 100162
+      }
+    ],
+    "DishwasherRack/out-right": [
+      {
+        "layout": 4,
+        "style": 4,
+        "side": "right",
+        "lang": "Fully slide the top dishwasher rack out.",
+        "fixture_group": "dishwasher_left_group",
+        "spawn_lat": -0.4081,
+        "env_seed": 100387
+      },
+      {
+        "layout": 9,
+        "style": 9,
+        "side": "right",
+        "lang": "Fully slide the top dishwasher rack out.",
+        "fixture_group": "dishwasher_left_group",
+        "spawn_lat": -0.4838,
+        "env_seed": 100448
+      },
+      {
+        "layout": 5,
+        "style": 5,
+        "side": "right",
+        "lang": "Fully slide the top dishwasher rack out.",
+        "fixture_group": "dishwasher_left_group",
+        "spawn_lat": -0.4754,
+        "env_seed": 100081
+      }
+    ],
+    "OpenDrawer/left": [
+      {
+        "layout": 4,
+        "style": 4,
+        "side": null,
+        "lang": "Open the left drawer.",
+        "fixture_group": "stack_3_main_group_2",
+        "spawn_lat": -0.0067,
+        "env_seed": 100245
+      },
+      {
+        "layout": 9,
+        "style": 9,
+        "side": null,
+        "lang": "Open the left drawer.",
+        "fixture_group": "stack_3_main_group_3",
+        "spawn_lat": -0.0,
+        "env_seed": 100410
+      },
+      {
+        "layout": 5,
+        "style": 5,
+        "side": null,
+        "lang": "Open the left drawer.",
+        "fixture_group": "stack_1_left_group_4",
+        "spawn_lat": 0.0,
+        "env_seed": 100005
+      }
+    ],
+    "OpenDrawer/right": [
+      {
+        "layout": 4,
+        "style": 4,
+        "side": null,
+        "lang": "Open the right drawer.",
+        "fixture_group": "stack_3_main_group_3",
+        "spawn_lat": 0.0042,
+        "env_seed": 100311
+      },
+      {
+        "layout": 9,
+        "style": 9,
+        "side": null,
+        "lang": "Open the right drawer.",
+        "fixture_group": "stack_2_main_group_2",
+        "spawn_lat": 0.0,
+        "env_seed": 100149
+      },
+      {
+        "layout": 5,
+        "style": 5,
+        "side": null,
+        "lang": "Open the right drawer.",
+        "fixture_group": "stack_1_left_group_4",
+        "spawn_lat": 0.0,
+        "env_seed": 100162
+      }
+    ],
+    "PPCC/apple": [
+      {
+        "layout": 4,
+        "style": 4,
+        "side": null,
+        "lang": "Pick the apple from the counter and place it in the cabinet.",
+        "fixture_group": "shelves_main_group",
+        "spawn_lat": -0.0,
+        "env_seed": 100521
+      },
+      {
+        "layout": 9,
+        "style": 9,
+        "side": null,
+        "lang": "Pick the apple from the counter and place it in the cabinet.",
+        "fixture_group": "cab_1_left_group",
+        "spawn_lat": 0.0,
+        "env_seed": 100401
+      },
+      {
+        "layout": 5,
+        "style": 5,
+        "side": null,
+        "lang": "Pick the apple from the counter and place it in the cabinet.",
+        "fixture_group": "cab_2_main_group",
+        "spawn_lat": 0.0,
+        "env_seed": 100113
+      }
+    ],
+    "PPCC/jug": [
+      {
+        "layout": 4,
+        "style": 4,
+        "side": null,
+        "lang": "Pick the jug from the counter and place it in the cabinet.",
+        "fixture_group": "shelves_main_group",
+        "spawn_lat": -0.0,
+        "env_seed": 101250
+      },
+      {
+        "layout": 9,
+        "style": 9,
+        "side": null,
+        "lang": "Pick the jug from the counter and place it in the cabinet.",
+        "fixture_group": "shelves_2_main_group",
+        "spawn_lat": -0.0,
+        "env_seed": 100192
+      },
+      {
+        "layout": 5,
+        "style": 5,
+        "side": null,
+        "lang": "Pick the jug from the counter and place it in the cabinet.",
+        "fixture_group": "cab_1_left_group",
+        "spawn_lat": 0.0,
+        "env_seed": 101057
+      }
+    ],
+    "PPCC/candle": [
+      {
+        "layout": 4,
+        "style": 4,
+        "side": null,
+        "lang": "Pick the candle from the counter and place it in the cabinet.",
+        "fixture_group": "cab_2_left_group",
+        "spawn_lat": 0.0,
+        "env_seed": 100477
+      },
+      {
+        "layout": 9,
+        "style": 9,
+        "side": null,
+        "lang": "Pick the candle from the counter and place it in the cabinet.",
+        "fixture_group": "cab_1_left_group",
+        "spawn_lat": 0.0,
+        "env_seed": 102074
+      },
+      {
+        "layout": 5,
+        "style": 5,
+        "side": null,
+        "lang": "Pick the candle from the counter and place it in the cabinet.",
+        "fixture_group": "cab_main_main_group",
+        "spawn_lat": 0.0,
+        "env_seed": 100376
+      }
+    ],
+    "PPCC/bread": [
+      {
+        "layout": 4,
+        "style": 4,
+        "side": null,
+        "lang": "Pick the bread from the counter and place it in the cabinet.",
+        "fixture_group": "cab_main_main_group",
+        "spawn_lat": -0.0,
+        "env_seed": 100466
+      },
+      {
+        "layout": 9,
+        "style": 9,
+        "side": null,
+        "lang": "Pick the bread from the counter and place it in the cabinet.",
+        "fixture_group": "shelves_1_main_group",
+        "spawn_lat": -0.0,
+        "env_seed": 100200
+      },
+      {
+        "layout": 5,
+        "style": 5,
+        "side": null,
+        "lang": "Pick the bread from the counter and place it in the cabinet.",
+        "fixture_group": "cab_3_main_group",
+        "spawn_lat": 0.0,
+        "env_seed": 101048
+      }
+    ],
+    "PPCC/marshmallow": [
+      {
+        "layout": 4,
+        "style": 4,
+        "side": null,
+        "lang": "Pick the marshmallow from the counter and place it in the cabinet.",
+        "fixture_group": "shelves_main_group",
+        "spawn_lat": -0.0,
+        "env_seed": 100943
+      },
+      {
+        "layout": 9,
+        "style": 9,
+        "side": null,
+        "lang": "Pick the marshmallow from the counter and place it in the cabinet.",
+        "fixture_group": "side_bottom_right_group_3",
+        "spawn_lat": 0.0,
+        "env_seed": 100204
+      },
+      {
+        "layout": 5,
+        "style": 5,
+        "side": null,
+        "lang": "Pick the marshmallow from the counter and place it in the cabinet.",
+        "fixture_group": "cab_2_main_group",
+        "spawn_lat": 0.0,
+        "env_seed": 100186
+      }
+    ],
+    "CoffeeSetupMug": [
+      {
+        "layout": 4,
+        "style": 4,
+        "side": null,
+        "lang": "Pick the mug from the counter and place it under the coffee machine dispenser.",
+        "fixture_group": "",
+        "spawn_lat": -0.0013,
+        "env_seed": 100124
+      },
+      {
+        "layout": 9,
+        "style": 9,
+        "side": null,
+        "lang": "Pick the mug from the counter and place it under the coffee machine dispenser.",
+        "fixture_group": "",
+        "spawn_lat": -0.0016,
+        "env_seed": 100078
+      },
+      {
+        "layout": 5,
+        "style": 5,
+        "side": null,
+        "lang": "Pick the mug from the counter and place it under the coffee machine dispenser.",
+        "fixture_group": "",
+        "spawn_lat": -0.0313,
+        "env_seed": 100475
+      }
+    ]
+  },
+  "jitters": {
+    "OvenRack/out-left": [
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.15
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.15
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.15
+        }
+      ]
+    ],
+    "OvenRack/out-right": [
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.15
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.15
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.15
+        }
+      ]
+    ],
+    "DishwasherRack/out-left": [
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.15
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.15
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.15
+        }
+      ]
+    ],
+    "DishwasherRack/out-right": [
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.15
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.15
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 0,
+          "lat": 0.05,
+          "back": 0.15
+        }
+      ]
+    ],
+    "OpenDrawer/left": [
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 8,
+          "lat": 0.0,
+          "back": 0.1
+        }
+      ],
+      [
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 7,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 8,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 11,
+          "lat": 0.0,
+          "back": 0.1
+        }
+      ],
+      [
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 9,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 10,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 11,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 14,
+          "lat": 0.0,
+          "back": 0.1
+        }
+      ]
+    ],
+    "OpenDrawer/right": [
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 6,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 10,
+          "lat": 0.0,
+          "back": 0.1
+        }
+      ],
+      [
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 9,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 10,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 11,
+          "lat": 0.0,
+          "back": 0.1
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.1
+        },
+        {
+          "reset_idx": 5,
+          "lat": 0.0,
+          "back": 0.05
+        },
+        {
+          "reset_idx": 6,
+          "lat": 0.0,
+          "back": 0.1
+        }
+      ]
+    ],
+    "PPCC/apple": [
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ]
+    ],
+    "PPCC/jug": [
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ]
+    ],
+    "PPCC/candle": [
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ]
+    ],
+    "PPCC/bread": [
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ]
+    ],
+    "PPCC/marshmallow": [
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ]
+    ],
+    "CoffeeSetupMug": [
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 5,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ],
+      [
+        {
+          "reset_idx": 0,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 1,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 2,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 3,
+          "lat": 0.0,
+          "back": 0.0
+        },
+        {
+          "reset_idx": 4,
+          "lat": 0.0,
+          "back": 0.0
+        }
+      ]
+    ]
+  },
+  "plan_id": "77e745c37b0f",
+  "n_cells": 1800,
+  "estimated_bytes": 819676053504
+}
