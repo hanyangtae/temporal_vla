@@ -49,13 +49,13 @@ print("\n".join(out))
 PYEOF
 }
 
-run_one() {   # <slug>
-  local slug="$1"
+run_one() {   # <slug> <shard-stems(csv)>
+  local slug="$1" stems="$2"
   local out="$DET_OUT/$slug"
   mkdir -p "$out"
-  echo "[v6det] $slug 학습 시작 ($(ts))"
+  echo "[v6det] $slug 학습 시작 ($(ts)) shards=$stems"
   "$PY" "$REPO/scripts/analysis/grid_phase/failure_detector_sim.py" \
-    --shard-dir "$SEG" --shards "$slug" --out "$out" \
+    --shard-dir "$SEG" --shards "$stems" --out "$out" \
     --arm loko-cell --loko-cells-tsv "$CELLS" \
     --models lstm --alphas "$ALPHAS" \
     --truncate-train "$TRUNC" \
@@ -79,7 +79,9 @@ run_one() {   # <slug>
     } > "$out/ae_bundle_provenance.txt"
   fi
   local n_ck
-  n_ck=$(find "$DET_OUT/loko" -name "detector_pertask_lstm_${slug}.pt" 2>/dev/null | wc -l || true)
+  n_ck=$(find "$DET_OUT/loko" -name "detector_pertask_lstm_${slug}*.pt" 2>/dev/null | wc -l || true)
+  # 오케스트레이터가 잡을 실제 경로를 그대로 찍어 둔다(부분 shard면 파일명에 _s<i> 가 붙는다)
+  find "$DET_OUT/loko" -name "detector_pertask_lstm_${slug}*.pt" 2>/dev/null | sed "s|^$DET_OUT/||" | sort || true
   local n_reg=0
   [[ -s "$out/cell_registry.tsv" ]] && n_reg=$(( $(wc -l < "$out/cell_registry.tsv") - 1 ))
   echo "[v6det] $slug 완료 ($(ts)) — ckpt ${n_ck} / registry 행 ${n_reg}"
@@ -94,11 +96,19 @@ while :; do
   pending=0
   for slug in "${SLUGS[@]}"; do
     [[ -f "$DET_OUT/.done_${slug}" ]] && continue
-    if [[ ! -s "$SEG/${slug}.npz" ]]; then
+    # shard 파일명은 action phase 산출 규칙을 따른다 — instruction 전체(<slug>.npz)일 수도,
+    # 완료 scene 만 담은 부분 shard(<slug>_s0.npz 등)일 수도 있어 둘 다 받는다.
+    mapfile -t SH < <(find "$SEG" -maxdepth 1 -type f \( -name "${slug}.npz" -o -name "${slug}_*.npz" \) 2>/dev/null | sort || true)
+    if [[ "${#SH[@]}" -eq 0 ]]; then
       echo "[v6det] shard 대기: $slug ($(ts))"
       pending=$((pending+1)); continue
     fi
-    run_one "$slug" || { echo "[v6det] ERROR: $slug 학습 실패 (rc=$?)" >&2; pending=$((pending+1)); }
+    stems=""
+    for f in "${SH[@]}"; do
+      b="$(basename "$f" .npz)"
+      stems="${stems:+$stems,}$b"
+    done
+    run_one "$slug" "$stems" || { echo "[v6det] ERROR: $slug 학습 실패 (rc=$?)" >&2; pending=$((pending+1)); }
   done
   if [[ "$ONCE" == "1" ]]; then
     echo "[v6det] once 모드 종료 — 미처리 ${pending} ($(ts))"; break
