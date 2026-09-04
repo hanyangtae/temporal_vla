@@ -656,6 +656,11 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
         JIT_ARGS+=(--scene-idx "$base_scene" --noise-idx "$noise"
                    --plan-json "$(to_cont "$PLAN_JSON_ABS")"
                    --grid-instruction "$(grid_instr_for_slug "$slug")")
+        # steering 지문이 없는 arm(무개입 base·reseed 계열)은 collector 가 arm 을 못 정해
+        # fail-loud 한다(2026-09-04 v6 스모크 실측) — arm 이름을 명시해 준다.
+        case "$arm" in
+          base|resample|rs_early|ps_base|ps_reseed) JIT_ARGS+=(--arm-dir "$arm") ;;
+        esac
       fi
     else
       JIT_ARGS=(--jitter-reset-idx "$jit")

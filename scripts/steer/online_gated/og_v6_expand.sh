@@ -26,7 +26,7 @@ echo "machine=$MC alpha=0.1 perstep_n=8 beta_sweep=0.6-1.0 v6 loko capture_hooks
 if [ "$MC" = kanu ]; then SLOTS=("$G1" "$G2" "$G3" "$G1" "$G2" "$G3"); NSLOT=6
 else SLOTS=("$G1" "$G2" "$G1" "$G2" "$G1" "$G2" "$G1" "$G2" "$G1" "$G2" "$G1" "$G2"); NSLOT=$([ "$G1" = "$G2" ] && echo 6 || echo 12); fi
 gpu_of() { echo "${SLOTS[$(( ${1:-0} % NSLOT ))]}"; }
-HOSTARGS=(); [ "$MC" != kanu ] && HOSTARGS=(SERVE_MODE=host SERVE_PY=$HOME/miniconda3/envs/lerobot_050_groot/bin/python SERVE_PYTHONPATH=$W/lerobot/src)
+HOSTARGS=(); [ "$MC" != kanu ] && HOSTARGS=(SERVE_MODE=host SERVE_PY=${SERVE_PY:-$HOME/miniconda3/envs/lerobot_050_groot/bin/python} SERVE_PYTHONPATH=${SERVE_PYTHONPATH:-$W/lerobot/src})
 # 케이스 = (slug, s, k) → noises (awk falsy-0 함정: (key in ns) 판정)
 mapfile -t CASES < <(awk -F'\t' -v m="$MC" 'NR>1 && $3==m {key=$2"\t"$4"\t"$5; ns[key]=(key in ns)?ns[key]","$6:$6} END{for(k in ns) print k"\t"ns[k]}' "$EV" | sort)
 echo "[v6-expand] $MC cases=${#CASES[@]} eps=$(awk -F'\t' -v m="$MC" 'NR>1&&$3==m' "$EV" | wc -l)" | tee -a "$L/run.log"
@@ -60,6 +60,8 @@ run() {  # slug s k noises OUT [KEY=VAL...]
 }
 for c in "${CASES[@]}"; do
   IFS=$'\t' read -r task s k ns <<< "$c"
+  # RUN_BASE=1: 무개입 replay(ps_base) — 결정성 대조용(수집 라벨과 일치해야 함). 본 eval 기본 0.
+  [ "${RUN_BASE:-0}" = 1 ] && run "$task" "$s" "$k" "$ns" ps_base ARMS=ps_base CLUSTER_BUNDLE=
   # setm_gt: jfair β 스윕(SETM_JFAIR_BETAS) + plain β 대조(SETM_PLAIN_BETAS, 기본 0.8 하나). ck8 은 정식 AE 번들 후(CK8=1).
   for b in ${SETM_JFAIR_BETAS:-0.6 0.7 0.8 0.9 1.0}; do bt=b${b/./}
     run "$task" "$s" "$k" "$ns" ps_setm_gt_$bt ARMS=ps_setm STEER_OP=setpoint NPZ_VARIANT=instr_setm_v6_gt STEER_BETA=$b PERSTEP_FALLBACK=reseed CLUSTER_BUNDLE=
