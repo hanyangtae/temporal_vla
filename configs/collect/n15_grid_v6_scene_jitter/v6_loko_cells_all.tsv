@@ -9,6 +9,11 @@ OpenDrawer/left	OpenDrawer_left	kanu	0	1	10	9	1	27	13	41	1
 OpenDrawer/left	OpenDrawer_left	kanu	0	2	10	6	4	30	10	44	1	
 OpenDrawer/left	OpenDrawer_left	kanu	0	3	10	5	5	31	9	45	1	
 OpenDrawer/left	OpenDrawer_left	kanu	0	4	10	10	0	26	14	40	0	tgt_fail<1
+OvenRack/out-left	OvenRack_out-left	worker1	0	0	10	6	4	38	2	44	0	pool_fail<3
+OvenRack/out-left	OvenRack_out-left	worker1	0	1	10	10	0	34	6	40	0	tgt_fail<1
+OvenRack/out-left	OvenRack_out-left	worker1	0	2	10	10	0	34	6	40	0	tgt_fail<1
+OvenRack/out-left	OvenRack_out-left	worker1	0	3	10	9	1	35	5	41	1	
+OvenRack/out-left	OvenRack_out-left	worker1	0	4	10	9	1	35	5	41	1	
 OvenRack/out-left	OvenRack_out-left	worker1	1	0	10	3	7	22	18	47	1	
 OvenRack/out-left	OvenRack_out-left	worker1	1	1	10	6	4	19	21	44	1	
 OvenRack/out-left	OvenRack_out-left	worker1	1	2	10	4	6	21	19	46	1	
@@ -24,6 +29,11 @@ PPCC/apple	PPCC_apple	worker2	0	1	10	10	0	40	0	40	0	excluded
 PPCC/apple	PPCC_apple	worker2	0	2	10	10	0	40	0	40	0	excluded
 PPCC/apple	PPCC_apple	worker2	0	3	10	10	0	40	0	40	0	excluded
 PPCC/apple	PPCC_apple	worker2	0	4	10	10	0	40	0	40	0	excluded
+PPCC/apple	PPCC_apple	worker2	1	0	10	10	0	40	0	40	0	excluded
+PPCC/apple	PPCC_apple	worker2	1	1	10	10	0	40	0	40	0	excluded
+PPCC/apple	PPCC_apple	worker2	1	2	10	10	0	40	0	40	0	excluded
+PPCC/apple	PPCC_apple	worker2	1	3	10	10	0	40	0	40	0	excluded
+PPCC/apple	PPCC_apple	worker2	1	4	10	10	0	40	0	40	0	excluded
 PPCC/bread	PPCC_bread	worker2	0	0	10	4	6	18	22	46	1	
 PPCC/bread	PPCC_bread	worker2	0	1	10	8	2	14	26	42	1	
 PPCC/bread	PPCC_bread	worker2	0	2	10	6	4	16	24	44	1	
