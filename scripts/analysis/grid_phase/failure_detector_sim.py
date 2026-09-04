@@ -404,10 +404,13 @@ def read_cell_tsv(path, slug_instr: dict[str, str], what: str = "--cells-tsv"
                     cand_slugs.append(sl)
         slug = _pick(cand_slugs, r.get("scene_idx", "")) if cand_slugs else None
         if slug is None and cand_slugs:
-            raise SystemExit(
-                f"{what}: line{i} 의 instruction 이 shard {cand_slugs} 여러 개에 걸리는데 "
-                f"scene_idx={r.get('scene_idx')} 로 가릴 수 없다 "
-                "(shard 이름이 `<slug>__s<scene>` 규칙인지 확인)")
+            # 그 instruction 의 shard 는 있는데 **그 scene 의 shard 가 아직 없는** 경우다
+            # (증분 추출 중). 아래 미매칭과 같이 건너뛴다 — 여기서 죽이면 셀 TSV 가
+            # 공용이라 **다른 instruction 실행까지 전부 죽는다**(2026-09-05 실사고).
+            unmatched.append(
+                "line{}: scene {} shard 없음 (후보 {})".format(
+                    i, r.get("scene_idx"), cand_slugs))
+            continue
         if slug is None:
             unmatched.append("line{}: {}".format(
                 i, {c: r.get(c, "") for c in CELL_INSTR_COLS if c in cols}))
