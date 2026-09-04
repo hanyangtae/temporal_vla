@@ -112,6 +112,31 @@ def succ_auroc_holdout(F, y, folds, rng):
     return auroc(np.concatenate(sc), np.concatenate(lb))
 
 
+def succ_auroc_from_j(y, j, folds, rng):
+    """**대조군**: 활성화를 안 보고 j 만으로 결과를 맞히면 얼마나 되나.
+
+    학습 fold 에서 j 별 성공률을 구해 테스트 판의 점수로 쓴다. 활성화 기반 AUROC 가 이
+    값과 비슷하면 그 신호는 "결과를 읽은 것"이 아니라 **j 정체성을 읽고 j→결과 상관을
+    타고 간 것**일 수 있다(초기 창에서 특히). 크게 높으면 j 로 설명되지 않는 성분이 있다.
+    """
+    idx = rng.permutation(len(y))
+    parts = np.array_split(idx, folds)
+    sc, lb = [], []
+    for f in range(folds):
+        te = parts[f]
+        tr = np.concatenate([parts[g] for g in range(folds) if g != f])
+        if len(np.unique(y[tr])) < 2:
+            continue
+        rate = {int(v): float(y[tr][j[tr] == v].mean())
+                for v in np.unique(j[tr]) if (j[tr] == v).any()}
+        base = float(y[tr].mean())
+        sc.append(np.array([rate.get(int(v), base) for v in j[te]]))
+        lb.append(y[te])
+    if not sc:
+        return float("nan")
+    return auroc(np.concatenate(sc), np.concatenate(lb))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -134,7 +159,7 @@ def main() -> int:
         rows = []
         print(f"\n=== {shard.stem} ===", flush=True)
         print(f"{'창':>10} {'판':>5} {'j정확도':>9} {'(chance)':>9} "
-              f"{'succAUROC':>10}", flush=True)
+              f"{'succAUROC':>10} {'j만':>7}", flush=True)
         for lo, hi in wins:
             F, y, j, _ = episode_features(shard, lo, hi)
             rng = np.random.default_rng(a.seed)
@@ -142,12 +167,15 @@ def main() -> int:
             acc = nearest_centroid_acc(F, j, a.folds, rng)
             rng = np.random.default_rng(a.seed)
             au = succ_auroc_holdout(F, y, a.folds, rng)
+            rng = np.random.default_rng(a.seed)
+            au_j = succ_auroc_from_j(y, j, a.folds, rng)
             chance = 1.0 / n_j if n_j else float("nan")
             print(f"{f'{lo}:{hi}':>10} {len(F):>5} {acc:>9.3f} {chance:>9.3f} "
-                  f"{au:>10.3f}", flush=True)
+                  f"{au:>10.3f} {au_j:>7.3f}", flush=True)
             rows.append({"window": [lo, hi], "n_episodes": int(len(F)),
                          "n_jitters": int(n_j), "j_acc": float(acc),
-                         "j_chance": float(chance), "succ_auroc": float(au)})
+                         "j_chance": float(chance), "succ_auroc": float(au),
+                         "succ_auroc_from_j_only": float(au_j)})
         report[shard.stem] = rows
 
     if a.out_json:
