@@ -339,7 +339,9 @@ def main():
                 else:
                     n_skip += 1
             print(f"[setm_{tag}] {SLUG} s{S} {args.coord}{k_tgt}: {n_ph} phase 산출"
-                  f"{f' (혼합 지터<2 로 {n_skip} phase 건너뜀)' if n_skip else ''} → {outroot}")
+                  f"{f' (혼합 지터<2 로 {n_skip} phase 건너뜀)' if n_skip else ''} → "
+                  f"instr_setm_{args.tag}_{tag}[{'/_plain' if len(forms) > 1 else ''}]"
+                  f"/{SLUG}/s{S}/{args.coord}{k_tgt}")
 
         # ── C. LLR 번들 ──
         if args.only_gt:
