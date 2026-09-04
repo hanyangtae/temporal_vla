@@ -1,7 +1,7 @@
 """grid v6 — instruction 키 12개 × scene 3개 선택표 생성기.
 
 정본 계약: handoff `v6_contract.md` §1~§3 (층위 = instruction 키 / scene(주방) / jitter j / noise n).
-이 스크립트는 **scene 층(주방 = (layout, style) 쌍 + pull 계열의 스폰 side)** 만 확정한다.
+이 스크립트는 **scene 층(주방 = (layout, style) 쌍 + pull 계열의 fixture side)** 만 확정한다.
 jitter/noise 층과 plan 생성은 별도(에이전트 A, `build_v6_plan.py`) 소관이며 여기 산출물
 `configs/collect/n15_grid_v6_scene_jitter/scene_selection.json` 을 입력으로 쓴다.
 
@@ -12,16 +12,24 @@ jitter/noise 층과 plan 생성은 별도(에이전트 A, `build_v6_plan.py`) �
 
 핵심 판정 두 가지
 -----------------
-1) **side (로봇 시점 좌/우)** — 오븐·식기세척기는 문을 연 채 시작해 정면 앵커가 막히고
-   로봇이 좌/우 약 0.45m 로 밀려난다 (seed 에 묶인 50/50). 같은 (task, layout, lang,
-   fixture_group) 의 base 좌표를 **앵커 축(범위가 큰 축)** 으로 두 무리로 가르고
-   (경계 = 그 축 범위의 중앙값 (min+max)/2), 두 무리 중심의 중점을 fixture 중심 근사로 삼아
+1) **side (로봇 기준 target fixture 가 있는 쪽)** — 오븐·식기세척기는 문을 연 채 시작해
+   정면 앵커가 막히고 로봇이 좌/우 약 0.45m 로 밀려난다 (seed 에 묶인 50/50). 같은
+   (task, layout, lang, fixture_group) 의 base 좌표를 **앵커 축(범위가 큰 축)** 으로 두
+   무리로 가르고 (경계 = 그 축 범위의 중앙값 (min+max)/2), 두 무리 중심의 중점을 fixture
+   중심 근사로 삼아
 
        l   = (−sin yaw, cos yaw)          # 로봇 좌측 단위벡터
-       lat = l · (base − 중점)             # >0 → left, ≤0 → right
+       lat = l · (base − 중점)             # spawn_lat: >0 = 로봇이 fixture 왼쪽에 스폰
+
+   **2026-09-04 사용자 개정**: side 는 스폰 쪽이 아니라 **fixture 쪽**이다(행동 의미 =
+   "내 왼쪽 것을 조작하라"). spawn_lat>0(로봇이 fixture 의 왼쪽) ⇒ fixture 는 로봇의
+   오른쪽 ⇒ `side="right"`. 키 이름 `out-left`/`out-right` 도 같은 뜻(fixture 쪽)이며
+   개정 전 수집분은 `rebase_plan_id.py --rename-key/--flip-side` 로 옮겼다.
+   `spawn_lat` 은 개정 후에도 **스폰 lat 부호 그대로**이고, 키 항목의 `spawn_side` 는
+   side 의 반대(= 실제 로봇 스폰 쪽)다.
 
    drawer/ppcc/coffee 는 스폰이 단봉(±15cm)이라 side 축이 없다 → 무리 하나, 중점 = 전체 평균,
-   side=None. (서랍의 left/right 는 스폰이 아니라 **대상 서랍** = 문장 변형이다.)
+   side=None. (서랍의 left/right 는 스폰도 fixture 쪽도 아니라 **대상 서랍** = 문장 변형이다.)
 
 2) **feasibility** — 정책 무관 관절 스윕. OpenDrawer 는 `drawer_scene_feasibility.py`,
    SlideOvenRack 은 `ovenrack_feasibility.py`, SlideDishwasherRack 은
@@ -37,7 +45,7 @@ jitter/noise 층과 plan 생성은 별도(에이전트 A, `build_v6_plan.py`) �
                 물체가 그 공통 layout 을 못 채우면 그 물체 고유 layout 으로 보충.
 
 scene 당 seed 1개 = 그 (키, layout) 무리에서 **앵커 중심에 가장 가까운** seed
-(= |spawn_lat − 무리 평균 lat| 최소; side 키는 해당 side 무리 안에서). feasibility 를
+(= |spawn_lat − 무리 평균 lat| 최소; side 키는 해당 side 무리 안에서 — side 는 fixture 쪽). feasibility 를
 통과하지 못하면 다음으로 가까운 seed 로 내려간다.
 
 사용 (호스트, 표준 라이브러리만 필요):
@@ -72,6 +80,15 @@ OVEN_LANGS = (
 )
 WASHER_LANG = "Fully slide the top dishwasher rack out."
 PPCC_OBJECTS = ("apple", "jug", "candle", "bread", "marshmallow")
+
+# 선택표 상단 주석 — side 의미 개정 기록(산출 JSON 의 "note").
+SELECTION_NOTE = (
+    "2026-09-04 사용자 개정 — side / 키의 left·right 는 이제 **로봇 기준 target fixture 가 "
+    "있는 쪽**이다(행동 의미: '내 왼쪽 것을 조작하라'). spawn_lat 은 여전히 로봇 스폰의 "
+    "lat 부호(>0 = 로봇이 fixture 왼쪽에 스폰)이므로 spawn_lat>0 인 scene 의 side 는 "
+    "\"right\", spawn_side 는 side 의 반대다. 개정 전 수집분(plan 77e745c37b0f)은 "
+    "rebase_plan_id.py --rename-key/--flip-side 로 폴더·meta 를 옮겼다(pkl 불변)."
+)
 
 # 키별 layout 우선순위 (공통 축)
 PRIORITY_OVEN = (4, 9, 7, 2)
@@ -147,6 +164,9 @@ def annotate_lat(rows: list[dict], bimodal: bool) -> None:
 
     bimodal=True (오븐·식기세척기): 앵커 축 범위 중앙값으로 두 무리를 갈라 중심의 중점을
     fixture 중심 근사로 쓴다. False: 무리 하나, 중점 = 전체 평균, side=None.
+
+    ``spawn_lat`` = 로봇 스폰의 lat(로봇 좌측이 +), ``side`` = **fixture 가 로봇 기준
+    어느 쪽인가**(2026-09-04 개정) — 둘은 서로 반대 부호다.
     """
     if not rows:
         return
@@ -178,7 +198,9 @@ def annotate_lat(rows: list[dict], bimodal: bool) -> None:
     for r in rows:
         lat = lx * (r["base_x"] - cx) + ly * (r["base_y"] - cy)
         r["spawn_lat"] = round(lat, 4)
-        r["side"] = ("left" if lat > 0 else "right") if bimodal else None
+        # 2026-09-04 개정: side = **fixture 가 로봇 기준 어느 쪽인가**.
+        # spawn_lat>0 = 로봇이 fixture 의 왼쪽에 스폰 ⇒ fixture 는 로봇의 오른쪽 ⇒ "right".
+        r["side"] = ("right" if lat > 0 else "left") if bimodal else None
 
 
 def annotate_all(tasks: dict[str, list[dict]]) -> None:
@@ -195,7 +217,11 @@ def annotate_all(tasks: dict[str, list[dict]]) -> None:
 # ── 키 정의 ──────────────────────────────────────────────────────────────────
 
 def key_defs() -> list[dict]:
-    """12개 instruction 키의 정의(필터 조건 포함). 순서 = 보고 표 순서."""
+    """12개 instruction 키의 정의(필터 조건 포함). 순서 = 보고 표 순서.
+
+    ``side`` 는 pull 계열에서 **fixture 가 로봇 기준 어느 쪽인가**이며 키 이름
+    ``out-left``/``out-right`` 와 같은 뜻이다 (2026-09-04 개정).
+    """
     defs: list[dict] = []
     for side in ("left", "right"):
         defs.append({
@@ -417,7 +443,8 @@ def select(tasks: dict[str, list[dict]], cache: dict, container: str,
             "scenes": scenes,
         }
         if kd["side"] is not None:
-            entry["spawn_side"] = kd["side"]
+            # side = fixture 쪽이므로 실제 **로봇 스폰 쪽은 그 반대**다 (2026-09-04 개정).
+            entry["spawn_side"] = "right" if kd["side"] == "left" else "left"
         if "ppcc_object" in kd:
             entry["object"] = kd["ppcc_object"]
         if len(scenes) < n_scenes:
@@ -426,6 +453,7 @@ def select(tasks: dict[str, list[dict]], cache: dict, container: str,
 
     return {
         "schema": "v6_scene_selection/1",
+        "note": SELECTION_NOTE,
         "n_scenes_per_key": n_scenes,
         "env_kwargs": {"layout_and_style_ids": LAYOUT_STYLE_IDS},
         "machine_assignment": MACHINE_ASSIGNMENT,

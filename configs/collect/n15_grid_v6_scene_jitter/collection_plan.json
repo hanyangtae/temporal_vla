@@ -16,24 +16,24 @@
   "token_mode": "all_token_full",
   "instructions": {
     "OvenRack/out-left": [
-      100017,
-      100754,
-      100166
-    ],
-    "OvenRack/out-right": [
       100690,
       100188,
       100458
     ],
-    "DishwasherRack/out-left": [
-      100774,
-      100985,
-      100162
+    "OvenRack/out-right": [
+      100017,
+      100754,
+      100166
     ],
-    "DishwasherRack/out-right": [
+    "DishwasherRack/out-left": [
       100387,
       100448,
       100081
+    ],
+    "DishwasherRack/out-right": [
+      100774,
+      100985,
+      100162
     ],
     "OpenDrawer/left": [
       100245,
@@ -332,8 +332,8 @@
         "side": "left",
         "lang": "Fully slide the oven rack out.",
         "fixture_group": "oven_left_group",
-        "spawn_lat": 0.4557,
-        "env_seed": 100017
+        "spawn_lat": -0.4512,
+        "env_seed": 100690
       },
       {
         "layout": 9,
@@ -341,8 +341,8 @@
         "side": "left",
         "lang": "Fully slide the bottom oven rack out.",
         "fixture_group": "oven_right_group",
-        "spawn_lat": 0.4491,
-        "env_seed": 100754
+        "spawn_lat": -0.4489,
+        "env_seed": 100188
       },
       {
         "layout": 7,
@@ -350,8 +350,8 @@
         "side": "left",
         "lang": "Fully slide the bottom oven rack out.",
         "fixture_group": "oven_left_group",
-        "spawn_lat": 0.4454,
-        "env_seed": 100166
+        "spawn_lat": -0.4446,
+        "env_seed": 100458
       }
     ],
     "OvenRack/out-right": [
@@ -361,8 +361,8 @@
         "side": "right",
         "lang": "Fully slide the oven rack out.",
         "fixture_group": "oven_left_group",
-        "spawn_lat": -0.4512,
-        "env_seed": 100690
+        "spawn_lat": 0.4557,
+        "env_seed": 100017
       },
       {
         "layout": 9,
@@ -370,8 +370,8 @@
         "side": "right",
         "lang": "Fully slide the bottom oven rack out.",
         "fixture_group": "oven_right_group",
-        "spawn_lat": -0.4489,
-        "env_seed": 100188
+        "spawn_lat": 0.4491,
+        "env_seed": 100754
       },
       {
         "layout": 7,
@@ -379,8 +379,8 @@
         "side": "right",
         "lang": "Fully slide the bottom oven rack out.",
         "fixture_group": "oven_left_group",
-        "spawn_lat": -0.4446,
-        "env_seed": 100458
+        "spawn_lat": 0.4454,
+        "env_seed": 100166
       }
     ],
     "DishwasherRack/out-left": [
@@ -390,8 +390,8 @@
         "side": "left",
         "lang": "Fully slide the top dishwasher rack out.",
         "fixture_group": "dishwasher_left_group",
-        "spawn_lat": 0.4099,
-        "env_seed": 100774
+        "spawn_lat": -0.4081,
+        "env_seed": 100387
       },
       {
         "layout": 9,
@@ -399,8 +399,8 @@
         "side": "left",
         "lang": "Fully slide the top dishwasher rack out.",
         "fixture_group": "dishwasher_left_group",
-        "spawn_lat": 0.4852,
-        "env_seed": 100985
+        "spawn_lat": -0.4838,
+        "env_seed": 100448
       },
       {
         "layout": 5,
@@ -408,8 +408,8 @@
         "side": "left",
         "lang": "Fully slide the top dishwasher rack out.",
         "fixture_group": "dishwasher_left_group",
-        "spawn_lat": 0.4866,
-        "env_seed": 100162
+        "spawn_lat": -0.4754,
+        "env_seed": 100081
       }
     ],
     "DishwasherRack/out-right": [
@@ -419,8 +419,8 @@
         "side": "right",
         "lang": "Fully slide the top dishwasher rack out.",
         "fixture_group": "dishwasher_left_group",
-        "spawn_lat": -0.4081,
-        "env_seed": 100387
+        "spawn_lat": 0.4099,
+        "env_seed": 100774
       },
       {
         "layout": 9,
@@ -428,8 +428,8 @@
         "side": "right",
         "lang": "Fully slide the top dishwasher rack out.",
         "fixture_group": "dishwasher_left_group",
-        "spawn_lat": -0.4838,
-        "env_seed": 100448
+        "spawn_lat": 0.4852,
+        "env_seed": 100985
       },
       {
         "layout": 5,
@@ -437,8 +437,8 @@
         "side": "right",
         "lang": "Fully slide the top dishwasher rack out.",
         "fixture_group": "dishwasher_left_group",
-        "spawn_lat": -0.4754,
-        "env_seed": 100081
+        "spawn_lat": 0.4866,
+        "env_seed": 100162
       }
     ],
     "OpenDrawer/left": [
@@ -1672,7 +1672,7 @@
       ]
     ]
   },
-  "plan_id": "77e745c37b0f",
+  "plan_id": "08f1c9df8207",
   "n_cells": 1800,
   "estimated_bytes": 819676053504
 }

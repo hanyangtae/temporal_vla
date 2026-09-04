@@ -572,9 +572,12 @@ def _v6_apply_jitter(
     문장 불일치·충돌·base 재계산 불일치는 전부 RuntimeError 다.
 
     좌표축: yaw = ``ep_meta["init_robot_base_ori"][2]``, f = (cos yaw, sin yaw)(정면),
-    l = (−sin yaw, cos yaw)(로봇 좌측). lat 은 **항상 fixture 중심 쪽**이라
-    side=="left"(로봇이 왼쪽으로 밀려남) → ``pos -= lat*l``, "right" → ``pos += lat*l``.
+    l = (−sin yaw, cos yaw)(로봇 좌측). ``side`` 는 **fixture 가 로봇 기준 어느 쪽인가**
+    (2026-09-04 개정)이고 lat 은 **항상 fixture 쪽 = side 방향**이라
+    side=="left" → ``pos += lat*l``, "right" → ``pos -= lat*l``.
     back 은 뒤로: ``pos -= back*f``. z 는 건드리지 않는다.
+    (개정 전에는 side 가 스폰 쪽이라 부호가 반대로 적혔다 — 두 반전이 상쇄돼
+    실제 base 위치는 개정 전후로 동일하다.)
     """
     import math
     from copy import deepcopy as _dc
@@ -602,12 +605,13 @@ def _v6_apply_jitter(
         if lat and cell.side not in ("left", "right"):
             raise RuntimeError(
                 f"lat 오프셋({lat})이 있는데 scene 의 side 가 없다: side={cell.side!r} "
-                f"(cell={cell.key}) — lat 방향(fixture 중심 쪽)을 정할 수 없다."
+                f"(cell={cell.key}) — lat 방향(= side = fixture 쪽)을 정할 수 없다."
             )
         yaw = float(ep_meta["init_robot_base_ori"][2])
         f = (math.cos(yaw), math.sin(yaw))
         l = (-math.sin(yaw), math.cos(yaw))
-        sign = 1.0 if cell.side == "right" else -1.0   # left 키 → 오른쪽(−l)로 이동
+        # side = fixture 가 로봇 기준 어느 쪽인가 → lat 은 항상 그 방향(fixture 쪽)으로 민다.
+        sign = 1.0 if cell.side == "left" else -1.0    # left 키 → 로봇 왼쪽(+l)로 이동
         pos[0] += sign * lat * l[0] - back * f[0]
         pos[1] += sign * lat * l[1] - back * f[1]
         ep_meta["init_robot_base_pos"] = pos
