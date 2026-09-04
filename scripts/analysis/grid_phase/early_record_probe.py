@@ -172,6 +172,38 @@ def succ_auroc_within_j(F, y, j, folds, rng):
     return auroc(np.concatenate(sc), np.concatenate(lb))
 
 
+def per_cell_auroc(F, y, j):
+    """셀(=대상 j) 별 succ/fail AUROC — **방향은 다른 j 들에서 학습**(누수 없음).
+
+    배포 단위와 같은 층위로 보되, 셀 하나는 10판(성공 2~9)이라 셀 안에서 방향까지 fit
+    하면 검정력이 없다. 그래서 leave-one-jitter-out: 대상 j 를 빼고 나머지 j 들을 각자
+    평균 제거(j 잔차화)한 뒤 평균차 방향을 구하고, 그 방향으로 **대상 j 판들만** 점수화해
+    AUROC 를 낸다. detector 세션의 `auroc_target_j`(셀 안 실패 vs 성공)와 같은 질문을
+    다른 추정기로 재는 것이라, 두 값이 같이 움직이면 상호 확증이 된다.
+    """
+    out = {}
+    for v in np.unique(j):
+        te = j == v
+        tr = ~te
+        if len(np.unique(y[te])) < 2 or len(np.unique(y[tr])) < 2:
+            out[int(v)] = {"auroc": float("nan"), "n": int(te.sum()),
+                           "n_succ": int((y[te] == 1).sum())}
+            continue
+        mu = {int(u): F[tr][j[tr] == u].mean(axis=0) for u in np.unique(j[tr])}
+        Rtr = F[tr] - np.stack([mu[int(u)] for u in j[tr]])
+        w = Rtr[y[tr] == 1].mean(axis=0) - Rtr[y[tr] == 0].mean(axis=0)
+        n = np.linalg.norm(w)
+        if n == 0:
+            out[int(v)] = {"auroc": float("nan"), "n": int(te.sum()),
+                           "n_succ": int((y[te] == 1).sum())}
+            continue
+        # 대상 j 는 자기 평균으로 중심화 (그 셀 안의 상대 순위만 본다 — 절대 임계 아님)
+        Rte = F[te] - F[te].mean(axis=0)
+        out[int(v)] = {"auroc": float(auroc(Rte @ (w / n), y[te])),
+                       "n": int(te.sum()), "n_succ": int((y[te] == 1).sum())}
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -181,6 +213,8 @@ def main() -> int:
                     help="record 창 목록 lo:hi (hi 배타)")
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--per-cell", action="store_true",
+                    help="셀(대상 j)별 AUROC 도 낸다 — detector 세션의 셀 지표와 대조용")
     ap.add_argument("--out-json", type=Path, default=None)
     a = ap.parse_args()
 
@@ -215,6 +249,19 @@ def main() -> int:
                          "succ_auroc_from_j_only": float(au_j),
                          "succ_auroc_j_residualized": float(au_r)})
         report[shard.stem] = rows
+
+        if a.per_cell:
+            print(f"  -- 셀별(대상 j) AUROC, 방향은 타 j 에서 학습 --", flush=True)
+            cells = {}
+            for lo, hi in wins:
+                F, y, j, _ = episode_features(shard, lo, hi)
+                res = per_cell_auroc(F, y, j)
+                cells[f"{lo}:{hi}"] = res
+                cols = " ".join(
+                    f"j{v}:{res[v]['auroc']:.2f}({res[v]['n_succ']}/{res[v]['n']})"
+                    for v in sorted(res))
+                print(f"{f'{lo}:{hi}':>10}  {cols}", flush=True)
+            report[f"{shard.stem}__per_cell"] = cells
 
     if a.out_json:
         a.out_json.write_text(json.dumps(report, indent=2), encoding="utf-8")
