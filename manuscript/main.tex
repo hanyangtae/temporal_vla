@@ -34,6 +34,7 @@
 \setcounter{totalnumber}{5}
 \usepackage[left=1.5cm,right=1.5cm,top=2.5cm,bottom=1.5cm]{geometry}
 \usepackage{graphicx}
+\usepackage{dblfloatfix}   % 두 단 걸침 그림(figure*)이 뒤쪽 별도 쪽으로 밀리는 문제 교정
 \usepackage{amsmath}
 \usepackage{setspace}
 \usepackage[font=small,skip=3pt]{caption}
@@ -99,23 +100,23 @@ I(Z;Y)=\sum_{k}\sum_{c} p(k,c)\log_2\frac{p(k,c)}{p(k)p(c)}
 \end{equation}
 정확도는 감지한 cluster가 매핑된 phase와 GT phase가 일치하는 비율로 구한다.
 
-\begin{figure*}[tb]
+\begin{figure*}[!t]
   \centering
   \includegraphics[width=0.64\textwidth]{figs/fig1_purity_residual.pdf}
   \caption{(a) Cluster와 GT phase 출현 연관성 행렬. 세로축은 cluster에 임의로 부여한 index이다. 이는 특정 cluster는 특정 phase에 주로 국한되어 나타냄을 보여준다. (b) Activation에서 scene별 평균값을 뺀 후의 phase에 대한 margin. (c) activation이 scene에 대해서 얼마나 설명하는지를 나타내는 그래프.}
   \label{fig:purity}
 \end{figure*}
-\section{결 과}
-\textbf{VLA 내부 activation 한 스텝만으로 phase를 감지 할 수 있다.} Instruction별 unseen scene 정확도의 중앙값은 0.82이다(Figure~\ref{fig:readout}). 시간 대조군은 정확도 0.67이며, 관찰 기반 외부 모델 대조군\cite{egsae}은 0.65이다. 같은 환경에서 activation cluster(ours)는 10개 instruction 중 9개에서 관찰 기반 외부 모델 대조군을 앞서며, 모든 방법이 약 0.5의 정확도를 보이는 ``Fully slide the top dishwasher rack out'' instruction에서는 예외이다. 즉 내부 activation이 가진 phase 정보가 가장 풍부하고 정확하다.
-
-\textbf{각 cluster는 특정 phase에 국한된다.} 한 phase에서 나타난 cluster는 다른 phase에서 잘 나타나지 않는다. Cluster와 phase의 동시 출현 비율 $p(k,c)$를 나타낸 행렬에서는 특정 cluster는 특정 phase에 주로 나타남이 보인다(Figure 2a). 시간 대조군의 MI 중앙값은 0.279 bits이며, margin의 중앙값은 +0.343 bits이다. 모든 instruction에서 양수이므로 단순히 진행도만 가지고 판단하는 것보다 정보량이 풍부함을 알 수 있다(Figure 2b). $k$가 GT phase 수보다 커서 한 phase를 여러 cluster가 나눠 갖더라도 각 cluster는 특정 phase에 국한되므로 이 방식의 높은 정보량을 여전히 지지한다.
-
 \begin{figure}[tb]
   \centering
   \includegraphics[width=0.86\columnwidth]{figs/fig_k_sweep.pdf}
   \caption{감지 정확도의 $k$에 대한 강건성. GT phase 수(3--6, 회색 대역)를 넘는 $k\ge8$에서 성능이 평탄해진다(0.82--0.88). 흐린 선은 각 instruction별 accuracy 그래프이다.}
   \label{fig:ksweep}
 \end{figure}
+\section{결 과}
+\textbf{VLA 내부 activation 한 스텝만으로 phase를 감지 할 수 있다.} Instruction별 unseen scene 정확도의 중앙값은 0.82이다(Figure~\ref{fig:readout}). 시간 대조군은 정확도 0.67이며, 관찰 기반 외부 모델 대조군\cite{egsae}은 0.65이다. 같은 환경에서 activation cluster(ours)는 10개 instruction 중 9개에서 관찰 기반 외부 모델 대조군을 앞서며, 모든 방법이 약 0.5의 정확도를 보이는 ``Fully slide the top dishwasher rack out'' instruction에서는 예외이다. 즉 내부 activation이 가진 phase 정보가 가장 풍부하고 정확하다.
+
+\textbf{각 cluster는 특정 phase에 국한된다.} 한 phase에서 나타난 cluster는 다른 phase에서 잘 나타나지 않는다. Cluster와 phase의 동시 출현 비율 $p(k,c)$를 나타낸 행렬에서는 특정 cluster는 특정 phase에 주로 나타남이 보인다(Figure 2a). 시간 대조군의 MI 중앙값은 0.279 bits이며, margin의 중앙값은 +0.343 bits이다. 모든 instruction에서 양수이므로 단순히 진행도만 가지고 판단하는 것보다 정보량이 풍부함을 알 수 있다(Figure 2b). $k$가 GT phase 수보다 커서 한 phase를 여러 cluster가 나눠 갖더라도 각 cluster는 특정 phase에 국한되므로 이 방식의 높은 정보량을 여전히 지지한다.
+
 \textbf{Phase 정보는 장면 암기로 환원되지 않는다.} Activation에는 scene 정보도 섞여 있다(instruction별 scene과의 MI 0.02$\sim$0.86 bits). 그러나 scene별 평균을 제거한 잔차에서 scene 정보는 중앙값 0.44에서 0.27 bits로 크게 줄어드는 반면, phase margin +0.34에서 +0.31로 10개 instruction 전부에서 양수로 유지된다(Figure 2b).
 
 \textbf{Cluster 전환은 압축 모델에 관계없이 일관된다.} Cluster 전환이 특정 압축 모델의 산물이 아님을 확인하기 위해, 같은 activation을 AE와 SAE로 각각 압축·clustering했다. 각 모델은 에피소드의 스텝마다 cluster를 하나씩 배정하므로 앞 step과 cluster가 달라지는 지점을 전환으로 정의할 수 있다. 두 모델이 낸 전환을 $\pm$1스텝 이내에서 짝지었다. 짝지어진 비율을 AE 전환 기준(precision)과 SAE 전환 기준(recall)으로 구해 조화평균한 값이 전환 일치 F1이며, 전환 개수는 두고 위치만 무작위로 흩은 상태열 300개의 F1 분포로 z를 구한다. 두 모델의 전환 일치율은 F1 0.66$\sim$0.75, z +8.8$\sim$+13.5을 보인다. 즉 activation에는 전환 시점 정보가 존재한다.
