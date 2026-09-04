@@ -149,6 +149,7 @@ def compute_cells(
     rows: list[dict],
     min_pool_fail: int,
     min_tgt_fail: int,
+    min_pool_succ: int,
     instructions: list[str],
     exclude_instructions: list[str],
     scenes_bare: set[int],
@@ -194,6 +195,8 @@ def compute_cells(
                 reason, selected = f"pool_fail<{min_pool_fail}", 0
             elif tgt_fail < min_tgt_fail:
                 reason, selected = f"tgt_fail<{min_tgt_fail}", 0
+            elif pool_succ < min_pool_succ:
+                reason, selected = f"pool_succ<{min_pool_succ}", 0
             else:
                 reason, selected = "", 1
 
@@ -309,6 +312,7 @@ def main() -> None:
     ap.add_argument("--min-pool-fail", type=int, default=3, help="LOKO 풀의 최소 실패 수 (기본 3)")
     ap.add_argument("--min-tgt-fail", type=int, default=1, help="대상 j 의 최소 실패 수 (기본 1)")
     ap.add_argument("--instructions", default="", help="쉼표 목록 — 이 grid_instruction 만 사용")
+    ap.add_argument("--min-pool-succ", type=int, default=0, help="pool(타 j) 성공 하한 — 성공 평균·detector calib 성립용 (사용자 규칙 미확정: 기본 0)")
     ap.add_argument("--exclude-instructions", default="", help="쉼표 목록 — 제외할 grid_instruction")
     ap.add_argument("--scenes", default="", help='쉼표 목록 — "instr:scene" 쌍 또는 맨 scene 정수')
     args = ap.parse_args()
@@ -320,6 +324,7 @@ def main() -> None:
         rows,
         min_pool_fail=args.min_pool_fail,
         min_tgt_fail=args.min_tgt_fail,
+        min_pool_succ=args.min_pool_succ,
         instructions=parse_list(args.instructions),
         exclude_instructions=parse_list(args.exclude_instructions),
         scenes_bare=scenes_bare,
