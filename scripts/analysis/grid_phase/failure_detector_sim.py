@@ -1943,9 +1943,17 @@ def run(args) -> int:
     for p in paths:
         eps, spec = load_shard_episodes(p, args.layer, args.denoise, args.seg)
         slug = p.stem
-        sc_split = split_scenes(slug, [e.scene for e in eps], args.train_scenes,
-                                args.calib_scenes, args.test_scenes, args.seed)
-        part = {k: [e for e in eps if e.scene in set(v)] for k, v in sc_split.items()}
+        if args.arm == "loko-cell":
+            # scene-local arm 은 scene 분할을 쓰지 않는다 (셀 = (instruction, scene, j)).
+            # v6 scene 단위 shard 는 scene 열이 상수라 split_scenes 가 애초에 불가능하다.
+            # W/dwell cap 은 아래에서 part["train"](=전 episode) 위에서 잡히고, 실제
+            # 학습 pool 기준 재계산은 run_loko_cells 가 셀마다 따로 한다.
+            sc_split = {"train": sorted({e.scene for e in eps}), "calib": [], "test": []}
+            part = {"train": list(eps), "calib": [], "test": []}
+        else:
+            sc_split = split_scenes(slug, [e.scene for e in eps], args.train_scenes,
+                                    args.calib_scenes, args.test_scenes, args.seed)
+            part = {k: [e for e in eps if e.scene in set(v)] for k, v in sc_split.items()}
         # eval 대상 셀(slug, scene, jitter, noise)은 train/calib 에서 제외 — in-sample 방지.
         # scene 자체는 남긴다(45 §3: scene 노출 허용, held-out 은 episode 축). test 에
         # 떨어진 셀은 그대로 둔다(평가 자체가 목적).
