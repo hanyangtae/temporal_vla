@@ -45,8 +45,8 @@ Vision-Language-Action(VLA) 모델이 작업을 수행할 때 스스로 현재 �
 
 \begin{figure*}[!t]
   \centering
-  \includegraphics[width=0.50\textwidth]{figs/fig1_purity_residual.pdf}
-  \caption{(a) Cluster$\times$GT phase 동시 출현 행렬(Pick and Place, k=8). 최빈 phase로 행을 정렬하면 블록-대각 구조가 나타난다. (b) scene 잔차화 후에도 phase margin은 유지되고, (c) scene MI는 급감한다.}
+  \includegraphics[width=0.52\textwidth]{figs/fig1_purity_residual.pdf}
+  \caption{(a) Cluster$\times$GT phase 동시 출현 행렬(Pick and Place, k=8). 최빈 phase로 행을 정렬하면 블록-대각 구조가 나타난다. (b) scene별 평균을 제거한 잔차에서도 phase margin은 10개 instruction 전부에서 양수로 유지된다.}
   \label{fig:purity}
 \end{figure*}
 \section{서 론}
@@ -71,7 +71,7 @@ Detector의 학습과 평가는 scene 단위로 분리한다. 10개 scene 중 8�
 
 \begin{figure}[!t]
   \centering
-  \includegraphics[width=0.70\columnwidth]{figs/fig_readout_bar.pdf}
+  \includegraphics[width=0.64\columnwidth]{figs/fig_readout_bar.pdf}
   \caption{Unseen scene에서의 phase 감지 정확도. 막대는 instruction 10개의 중앙값, 흰 점은 instruction별 값이다. 회색은 외부 정보만 쓰는 대조군, 파랑은 내부 activation이다.}
   \label{fig:readout}
 \end{figure}
@@ -81,11 +81,11 @@ Detector의 학습과 평가는 scene 단위로 분리한다. 10개 scene 중 8�
 
 \begin{figure}[!t]
   \centering
-  \includegraphics[width=0.70\columnwidth]{figs/fig_k_sweep.pdf}
+  \includegraphics[width=0.64\columnwidth]{figs/fig_k_sweep.pdf}
   \caption{감지 정확도의 $k$ 강건성. 사람 phase 수(3--6, 회색 대역)를 넘는 $k\ge8$에서 성능이 평탄하다(0.82--0.88). 옅은 선은 instruction 10개 각각이다.}
   \label{fig:ksweep}
 \end{figure}
-\textbf{각 cluster는 특정 phase에 국한된다.} 한 phase에서 나타난 cluster는 다른 phase에서 잘 나타나지 않는다. Cluster와 phase의 동시 출현 비율 $p(k,c)$를 나타낸 행렬을 최빈 phase 순으로 정렬하면 블록-대각 구조가 나타나며(Figure 1a), Metric의 MI는 이 행렬에서 계산된다. Cluster를 각자의 최빈 phase로 읽었을 때 맞는 스텝의 비율(순도)은 중앙값 0.875, instruction별 0.56$\sim$0.96이다. MI 중앙값은 0.670 bits, 시간 대조군 margin의 중앙값은 +0.343 bits로 10개 instruction 전부에서 양수다. $k$가 phase 수보다 커서 한 phase를 여러 cluster가 나눠 갖더라도 각 cluster는 특정 phase에 국한되므로, 최빈 phase 매핑으로 현재 phase를 읽는 데 지장이 없다.
+\textbf{각 cluster는 특정 phase에 국한된다.} 한 phase에서 나타난 cluster는 다른 phase에서 잘 나타나지 않는다. Cluster와 phase의 동시 출현 비율 $p(k,c)$ 행렬을 최빈 phase 순으로 정렬하면 블록-대각 구조가 나타나며(Figure 1a), MI는 이 행렬에서 계산된다. Cluster를 각자의 최빈 phase로 읽었을 때 맞는 스텝의 비율(순도)은 중앙값 0.875, instruction별 0.56$\sim$0.96이다. MI 중앙값은 0.670 bits, 시간 대조군 margin의 중앙값은 +0.343 bits로 10개 instruction 전부에서 양수다. $k$가 phase 수보다 커서 한 phase를 여러 cluster가 나눠 갖더라도 각 cluster는 특정 phase에 국한되므로, 최빈 phase 매핑으로 현재 phase를 읽는 데 지장이 없다.
 
 \textbf{Phase 정보는 장면 암기로 환원되지 않는다.} Activation에는 scene 정보도 섞여 있다(instruction별 scene과의 MI 0.02$\sim$0.86 bits). 그러나 scene별 평균을 제거한 잔차에서 scene 정보는 중앙값 0.44에서 0.27 bits로 크게 줄어드는 반면, phase margin은 +0.34에서 +0.31로 10개 instruction 전부에서 양수로 유지된다(Figure 1b).
 
@@ -106,7 +106,7 @@ Detector의 학습과 평가는 scene 단위로 분리한다. 10개 scene 중 8�
 % TODO: 과제 사사 문구
 
 \renewcommand{\refname}{\centering 참 고 문 헌}
-\begin{thebibliography}{99}\scriptsize\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}
+\begin{thebibliography}{99}\scriptsize\setstretch{1.0}\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}
 \bibitem{groot} NVIDIA GEAR Team, ``GR00T N1: An Open Foundation Model for
 Generalist Humanoid Robots,'' arXiv:2503.14734, 2025.
 \bibitem{robocasa} S. Nasiriany et al., ``RoboCasa: Large-Scale Simulation of
