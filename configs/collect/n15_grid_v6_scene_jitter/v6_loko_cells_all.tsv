@@ -29,3 +29,13 @@ PPCC/bread	PPCC_bread	worker2	0	1	10	8	2	14	26	42	1
 PPCC/bread	PPCC_bread	worker2	0	2	10	6	4	16	24	44	1	
 PPCC/bread	PPCC_bread	worker2	0	3	10	0	10	22	18	50	1	
 PPCC/bread	PPCC_bread	worker2	0	4	10	4	6	18	22	46	1	
+PPCC/candle	PPCC_candle	worker2	1	0	10	6	4	33	7	44	1	
+PPCC/candle	PPCC_candle	worker2	1	1	10	9	1	30	10	41	1	
+PPCC/candle	PPCC_candle	worker2	1	2	10	9	1	30	10	41	1	
+PPCC/candle	PPCC_candle	worker2	1	3	10	9	1	30	10	41	1	
+PPCC/candle	PPCC_candle	worker2	1	4	10	6	4	33	7	44	1	
+PPCC/jug	PPCC_jug	worker2	1	0	10	1	9	14	26	49	1	
+PPCC/jug	PPCC_jug	worker2	1	1	10	3	7	12	28	47	1	
+PPCC/jug	PPCC_jug	worker2	1	2	10	0	10	15	25	50	1	
+PPCC/jug	PPCC_jug	worker2	1	3	10	5	5	10	30	45	1	
+PPCC/jug	PPCC_jug	worker2	1	4	10	6	4	9	31	44	1	
