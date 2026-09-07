@@ -123,4 +123,3 @@ loader 테스트 32개 통과. 실제 activation fit도 아래 시점에 완료�
   기존 kanu queue 기록은 보존한다.
 - srv48 dish queue는 GPU2가 점유 중이므로 대기한다. 타인 작업과 GPU를 공유하지 않는다.
 - 이 기록 시점에는 구제율·성공 유지율 결과가 확정되지 않았다.
-
