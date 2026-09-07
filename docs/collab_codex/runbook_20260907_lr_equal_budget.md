@@ -179,3 +179,9 @@ Docker robocasa에서 eval 관련 8개 및 실제 TCP 회귀 4개 테스트를 �
 재개 전 exact-coordinate 감사에서 gate 1판 + 세 조건 각 10판, 총 31판 완료를
 확인했다. drawer 잔여는 1,027판이다. 완료한 조건은 다시 실행하지 않는다.
 이 중단과 GPU 대기 때문에 이전 완료 시각 추정은 더 이상 유효하지 않다.
+
+재개 확인 (08:56:51 UTC): 대기 등록 직후 기존 GPU6 owner가 종료되고 GPU가
+비어 readiness를 통과했다. 새 owner `lr-equal-parallel-4155846`이 lease를 획득해
+포트 8866/8867의 두 lane을 재개했다. 추가 GPU 사용은 없다. 재개 당시
+미완료 조건은 109개이며, 복구 코드 revision은
+`bbe0311fb5b9f5cd9a4a313419eec48894a3f52a`이다.
