@@ -9,7 +9,7 @@
 | | **kanu** (로컬) | **srv48** (`AISem_48_junhyeong`, worker1) | **srv50** (`AISem_50_junhyeong`, worker2) |
 |---|---|---|---|
 | GPU | A4000 16GB × 8 | A100 80GB × 4 | A100 80GB × 4 |
-| 사용 가능 GPU | **빈 GPU만**, 한 세션 최대 3장. 타인 프로세스(예: junhyeong `main.py` 436MiB 상주) 있으면 금지 | 빈 GPU만. 관례 **GPU2** | 빈 GPU만. 관례 **GPU1** (GPU0은 타인 상시 점유) |
+| 사용 가능 GPU | **빈 GPU만**, 한 세션 최대 3장. 타인 프로세스(예: junhyeong `main.py` 436MiB 상주) 있으면 금지 | 빈 GPU만, **서버당 1장(2장 금지, 2026-09-07 사용자 지시)**. 관례 **GPU2** | 빈 GPU만, **서버당 1장**. 관례 **GPU1** (GPU0은 타인 상시 점유) |
 | GPU당 serve | **2** (serve 상주 ~5.8GB) | **6** | **6** |
 | serve 방식 | docker `lerobot` 컨테이너 (`docker exec -d`) | host conda `~/miniconda3/envs/lerobot_050_groot/bin/python` + `SERVE_PYTHONPATH=~/pkt_ws/temporal_vla/lerobot/src` | 좌동 |
 | repo | `~/pkt_ws/temporal_vla` | `~/pkt_ws/temporal_vla` (git pull; NPZ·ckpt·번들은 tar 반입) | 좌동 |
