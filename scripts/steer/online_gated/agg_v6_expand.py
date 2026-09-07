@@ -684,6 +684,436 @@ def write_summary(path, rows, arms, stats, orphans, args):
     return "\n".join(L)
 
 
+# ---------------------------------------------------------------- 쌍대응 비교
+# (detector 교체 라운드: 같은 셀·같은 arm 을 fail detector 만 바꿔 재실행한
+#  두 results 트리 A/B 를 에피소드 단위로 조인)
+
+CMP_EP_KEY_COLS = ("ep",)  # 셀·arm 안에서 에피소드를 식별하는 열
+
+
+def _cmp_split_roots(vals):
+    """--compare-roots 는 여러 번 지정/콤마 구분 모두 허용."""
+    out = []
+    for v in vals or []:
+        for part in str(v).split(","):
+            part = part.strip()
+            if part:
+                out.append(os.path.abspath(part))
+    return out
+
+
+def _rel_to_repo(path):
+    """산출물 기록용: repo 하위면 상대경로, 아니면 basename 계열로 축약."""
+    try:
+        rp = os.path.relpath(path, REPO)
+    except ValueError:
+        rp = path
+    if rp.startswith(".."):
+        # repo 밖 경로는 마지막 3 요소만 (절대경로 기록 금지 규약)
+        parts = [p for p in path.split(os.sep) if p]
+        rp = os.path.join(*parts[-3:]) if len(parts) >= 3 else os.path.basename(path)
+    return rp
+
+
+def _cmp_ep_key(e):
+    return tuple(str(e.get(c, "")) for c in CMP_EP_KEY_COLS)
+
+
+def _cmp_trigger(e):
+    return to_int(e.get("trigger_step"), None)
+
+
+def _cmp_index(res):
+    """scan_results 결과 → {(arm, slug, scene, jit): {ep_key: rec}}"""
+    idx = {}
+    for k, eps in res.items():
+        m = idx.setdefault(k, {})
+        for e in eps:
+            m[_cmp_ep_key(e)] = e
+    return idx
+
+
+def _cmp_delta(sa, sb):
+    if sa and sb:
+        return "both"
+    if sa and not sb:
+        return "only_A"
+    if sb and not sa:
+        return "only_B"
+    return "none"
+
+
+def build_compare(args):
+    """A/B 두 results 트리를 셀·arm·에피소드 단위로 조인."""
+    kmap = KeyMap(args.key_map)
+    cells = load_cells(args.cells, kmap)
+    det_a = load_detector(args.detector)
+    det_b = load_detector(args.detector_b) if args.detector_b else {}
+    limit = set(a.strip() for a in args.limit_arms.split(",") if a.strip()) \
+        if args.limit_arms else None
+
+    roots_a = _cmp_split_roots(args.compare_roots)
+    roots_b = _cmp_split_roots(args.compare_roots_b)
+    if not roots_b:
+        raise SystemExit("--compare-roots-b 가 필요합니다")
+
+    with_sc = not args.no_sidecar
+    res_a = scan_results(roots_a, limit, with_sidecar=with_sc)
+    res_b = scan_results(roots_b, limit, with_sidecar=with_sc)
+    idx_a, idx_b = _cmp_index(res_a), _cmp_index(res_b)
+
+    keys_a, keys_b = set(idx_a), set(idx_b)
+    matched = sorted(keys_a & keys_b,
+                     key=lambda k: (k[1], k[2], k[3], arm_sort_key(k[0])))
+    only_a_keys = sorted(keys_a - keys_b,
+                         key=lambda k: (k[1], k[2], k[3], k[0]))
+    only_b_keys = sorted(keys_b - keys_a,
+                         key=lambda k: (k[1], k[2], k[3], k[0]))
+
+    pairs = []          # 조인된 에피소드
+    off_table = []      # cell 표에 없는 (셀×arm)
+    unmatched_eps = []  # (arm, slug, scene, jit, side, ep_key)
+    for k in matched:
+        arm, slug_old, scene, jit = k
+        c = cells.get((slug_old, scene, jit))
+        if c is None:
+            off_table.append((slug_old, scene, jit, arm))
+        instr = c["instr_new"] if c else kmap.new_instr(slug_old.replace("_", "/"))
+        slug_new = c["slug_new"] if c else kmap.new_slug(slug_old)
+        ma, mb = idx_a[k], idx_b[k]
+        for ek in sorted(set(ma) | set(mb)):
+            ea, eb = ma.get(ek), mb.get(ek)
+            if ea is None or eb is None:
+                unmatched_eps.append((arm, slug_new, scene, jit,
+                                      "A" if eb is None else "B", ek[0]))
+                continue
+            sa, sb = ea["success_i"], eb["success_i"]
+            pairs.append({
+                "instruction": instr, "slug_new": slug_new,
+                "scene": scene, "jitter": jit, "arm": arm,
+                "ep": ea.get("ep", ""),
+                "noise_idx_A": ea.get("noise_idx", ""),
+                "noise_idx_B": eb.get("noise_idx", ""),
+                "env_seed": ea.get("env_seed", ""),
+                "success_A": sa, "success_B": sb,
+                "delta": _cmp_delta(sa, sb),
+                "trigger_A": _cmp_trigger(ea), "trigger_B": _cmp_trigger(eb),
+                "n_gated_A": to_int(ea.get("n_gated"), None),
+                "n_gated_B": to_int(eb.get("n_gated"), None),
+                "fire_A": ea.get("sc_fire_count"),
+                "fire_B": eb.get("sc_fire_count"),
+                "phase_A": ea.get("phase_at_trigger", ""),
+                "phase_B": eb.get("phase_at_trigger", ""),
+                "steps_A": ea.get("steps", ""), "steps_B": eb.get("steps", ""),
+            })
+
+    return {
+        "pairs": pairs, "cells": cells, "det_a": det_a, "det_b": det_b,
+        "matched": matched, "only_a_keys": only_a_keys,
+        "only_b_keys": only_b_keys, "unmatched_eps": unmatched_eps,
+        "off_table": off_table,
+        "roots_a": roots_a, "roots_b": roots_b,
+    }
+
+
+CMP_STAT_INIT = {
+    "n": 0, "succ_A": 0, "succ_B": 0,
+    "both": 0, "only_A": 0, "only_B": 0, "none": 0,
+    "trig_A": None, "trig_B": None,
+    "later_B": 0, "earlier_B": 0, "same_trig": 0, "cmp_trig": 0,
+    "nofire_A": 0, "nofire_B": 0,
+}
+
+
+def _cmp_new_stat():
+    s = dict(CMP_STAT_INIT)
+    s["trig_A"], s["trig_B"] = [], []
+    return s
+
+
+def _cmp_accum(s, p):
+    s["n"] += 1
+    s["succ_A"] += p["success_A"]
+    s["succ_B"] += p["success_B"]
+    s[p["delta"]] += 1
+    ta, tb = p["trigger_A"], p["trigger_B"]
+    if ta is None:
+        s["nofire_A"] += 1
+    else:
+        s["trig_A"].append(ta)
+    if tb is None:
+        s["nofire_B"] += 1
+    else:
+        s["trig_B"].append(tb)
+    if ta is not None and tb is not None:
+        s["cmp_trig"] += 1
+        if tb > ta:
+            s["later_B"] += 1
+        elif tb < ta:
+            s["earlier_B"] += 1
+        else:
+            s["same_trig"] += 1
+
+
+def compare_stats(pairs, keyfn):
+    out = OrderedDict()
+    for p in pairs:
+        k = keyfn(p)
+        s = out.get(k)
+        if s is None:
+            s = out[k] = _cmp_new_stat()
+        _cmp_accum(s, p)
+    return out
+
+
+def _cmp_rate(k, n):
+    return None if not n else round(k / n, 4)
+
+
+def _cmp_frac(k, n):
+    return None if not n else round(k / n, 4)
+
+
+def write_compare_episodes(path, pairs, labels):
+    la, lb = labels
+    hdr = ["instruction", "scene", "jitter", "arm", "ep", "env_seed",
+           "noise_idx", f"success_{la}", f"success_{lb}", "delta",
+           f"trigger_step_{la}", f"trigger_step_{lb}",
+           f"n_gated_{la}", f"n_gated_{lb}",
+           f"fire_count_{la}", f"fire_count_{lb}",
+           f"phase_at_trigger_{la}", f"phase_at_trigger_{lb}",
+           f"steps_{la}", f"steps_{lb}"]
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\t".join(hdr) + "\n")
+        for p in sorted(pairs, key=lambda x: (x["instruction"], x["scene"],
+                                              x["jitter"],
+                                              arm_sort_key(x["arm"]),
+                                              to_int(x["ep"], 0) or 0)):
+            noise = p["noise_idx_A"] if p["noise_idx_A"] == p["noise_idx_B"] \
+                else f"{p['noise_idx_A']}|{p['noise_idx_B']}"
+            fh.write("\t".join(fmt(v) for v in [
+                p["instruction"], p["scene"], p["jitter"], p["arm"], p["ep"],
+                p["env_seed"], noise, p["success_A"], p["success_B"],
+                p["delta"], p["trigger_A"], p["trigger_B"],
+                p["n_gated_A"], p["n_gated_B"], p["fire_A"], p["fire_B"],
+                p["phase_A"] or NA, p["phase_B"] or NA,
+                p["steps_A"], p["steps_B"]]) + "\n")
+
+
+def write_compare_arms(path, stats, labels):
+    la, lb = labels
+    hdr = ["arm", "n_paired", f"rescued_{la}", f"rescue_rate_{la}",
+           f"rescued_{lb}", f"rescue_rate_{lb}", "delta_rate",
+           f"only_{la}", f"only_{lb}", "both", "none",
+           f"trigger_p50_{la}", f"trigger_p50_{lb}",
+           "n_trigger_cmp", f"later_in_{lb}", f"later_frac_{lb}",
+           f"earlier_in_{lb}", "same_trigger",
+           f"nofire_{la}", f"nofire_{lb}"]
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\t".join(hdr) + "\n")
+        for arm in sorted(stats, key=arm_sort_key):
+            s = stats[arm]
+            ra = _cmp_rate(s["succ_A"], s["n"])
+            rb = _cmp_rate(s["succ_B"], s["n"])
+            fh.write("\t".join(fmt(v) for v in [
+                arm, s["n"], s["succ_A"], ra, s["succ_B"], rb,
+                None if (ra is None or rb is None) else round(rb - ra, 4),
+                s["only_A"], s["only_B"], s["both"], s["none"],
+                med(s["trig_A"]), med(s["trig_B"]), s["cmp_trig"],
+                s["later_B"], _cmp_frac(s["later_B"], s["cmp_trig"]),
+                s["earlier_B"], s["same_trig"],
+                s["nofire_A"], s["nofire_B"]]) + "\n")
+
+
+def write_compare_cells(path, cstats, cells, det_a, det_b, labels):
+    la, lb = labels
+    hdr = ["instruction", "scene", "jitter", "arm", "n_paired",
+           f"rescued_{la}", f"rescued_{lb}", f"only_{la}", f"only_{lb}",
+           f"trigger_p50_{la}", f"trigger_p50_{lb}", f"nofire_{lb}",
+           "regime", "td10_holdout",
+           f"fire_p50_{la}", f"fpr_{la}", f"fire_p50_{lb}", f"fpr_{lb}"]
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\t".join(hdr) + "\n")
+        for k in sorted(cstats, key=lambda x: (x[0], x[1], x[2],
+                                               arm_sort_key(x[3]))):
+            instr, scene, jit, arm = k
+            s = cstats[k]
+            da = det_a.get((instr, scene, jit))
+            db = det_b.get((instr, scene, jit))
+            fh.write("\t".join(fmt(v) for v in [
+                instr, scene, jit, arm, s["n"], s["succ_A"], s["succ_B"],
+                s["only_A"], s["only_B"],
+                med(s["trig_A"]), med(s["trig_B"]), s["nofire_B"],
+                regime_of(da),
+                (da or {}).get("td10_holdout"),
+                (da or {}).get("fire_p50"), (da or {}).get("fpr_target_succ"),
+                (db or {}).get("fire_p50"), (db or {}).get("fpr_target_succ"),
+            ]) + "\n")
+
+
+def write_compare_unmatched(path, cmp_res, labels):
+    la, lb = labels
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\t".join(["kind", "side", "instruction_or_slug", "scene",
+                            "jitter", "arm", "ep"]) + "\n")
+        for side, keys in ((la, cmp_res["only_a_keys"]),
+                           (lb, cmp_res["only_b_keys"])):
+            for arm, slug, scene, jit in keys:
+                fh.write("\t".join(fmt(v) for v in [
+                    "cell_arm", side, slug, scene, jit, arm, NA]) + "\n")
+        for arm, slug, scene, jit, side, ep in cmp_res["unmatched_eps"]:
+            fh.write("\t".join(fmt(v) for v in [
+                "episode", la if side == "A" else lb, slug, scene, jit,
+                arm, ep]) + "\n")
+
+
+def write_compare_summary(path, cmp_res, astats, cstats, istats, labels, args):
+    la, lb = labels
+    L = []
+    A = L.append
+    A(f"# detector 교체 쌍대응 비교 ({la} vs {lb})")
+    A("")
+    A(f"- {la} results-root: "
+      + ", ".join(_rel_to_repo(r) for r in cmp_res["roots_a"]))
+    A(f"- {lb} results-root: "
+      + ", ".join(_rel_to_repo(r) for r in cmp_res["roots_b"]))
+    A(f"- cell 표: {_rel_to_repo(args.cells)}")
+    A(f"- detector({la}): {_rel_to_repo(args.detector)}"
+      + (f" · detector({lb}): {_rel_to_repo(args.detector_b)}"
+         if args.detector_b else f" · detector({lb}): (미지정, {la} 것 사용 안 함)"))
+    A(f"- 조인 키: (instruction, scene, jitter, arm, ep) · 신 키 매핑 적용")
+    A(f"- 조인된 (셀×arm) {len(cmp_res['matched'])} · 에피소드 쌍 {len(cmp_res['pairs'])}")
+    A(f"- 한쪽에만 있는 (셀×arm): {la} {len(cmp_res['only_a_keys'])} · "
+      f"{lb} {len(cmp_res['only_b_keys'])} (조인 제외)")
+    n_ua = sum(1 for x in cmp_res["unmatched_eps"] if x[4] == "A")
+    n_ub = len(cmp_res["unmatched_eps"]) - n_ua
+    A(f"- 조인 실패 에피소드: {la} 단독 {n_ua} · {lb} 단독 {n_ub} (조인 제외)")
+    A(f"- cell 표에 없는 (셀×arm) {len(cmp_res['off_table'])}건 "
+      f"(조인에는 포함, regime·detector 칸은 NA)")
+    A("")
+
+    A("## arm 별 구제율 · 발화시점")
+    A("")
+    A(f"| arm | 쌍 | 구제 {la} | 구제 {lb} | Δ | only_{la} | only_{lb} | "
+      f"trig p50 {la} | trig p50 {lb} | {lb} 지연 판 | {lb} 미발화 |")
+    A("|" + "---|" * 11)
+    for arm in sorted(astats, key=arm_sort_key):
+        s = astats[arm]
+        ra = _cmp_rate(s["succ_A"], s["n"])
+        rb = _cmp_rate(s["succ_B"], s["n"])
+        d = NA if (ra is None or rb is None) else fmt(round(rb - ra, 4), 3)
+        lf = _cmp_frac(s["later_B"], s["cmp_trig"])
+        A(f"| {arm} | {s['n']} | {kn(s['succ_A'], s['n'])} | "
+          f"{kn(s['succ_B'], s['n'])} | {d} | {s['only_A']} | {s['only_B']} | "
+          f"{fmt(med(s['trig_A']), 1)} | {fmt(med(s['trig_B']), 1)} | "
+          f"{s['later_B']}/{s['cmp_trig']}"
+          + (f" ({lf:.2f})" if lf is not None else "") + f" | {s['nofire_B']} |")
+    A("")
+    A("(Δ = 구제율 B − A · 불일치쌍은 개수만, 유의성 검정 없음)")
+    A("")
+
+    A("## instruction 별")
+    A("")
+    A(f"| instruction | 쌍 | 구제 {la} | 구제 {lb} | only_{la} | only_{lb} | "
+      f"trig p50 {la} | trig p50 {lb} |")
+    A("|" + "---|" * 8)
+    for instr in sorted(istats):
+        s = istats[instr]
+        A(f"| {instr} | {s['n']} | {kn(s['succ_A'], s['n'])} | "
+          f"{kn(s['succ_B'], s['n'])} | {s['only_A']} | {s['only_B']} | "
+          f"{fmt(med(s['trig_A']), 1)} | {fmt(med(s['trig_B']), 1)} |")
+    A("")
+
+    A("## (instruction, scene, j) 셀 단위 — arm 합산")
+    A("")
+    A(f"| instruction | s | j | 쌍 | 구제 {la} | 구제 {lb} | only_{la} | "
+      f"only_{lb} | trig p50 {la} | trig p50 {lb} | regime | td10_ho | "
+      f"fire_p50 {la} | fire_p50 {lb} | fpr {la} | fpr {lb} |")
+    A("|" + "---|" * 16)
+    merged = OrderedDict()
+    for (instr, scene, jit, _arm), s in cstats.items():
+        m = merged.get((instr, scene, jit))
+        if m is None:
+            m = merged[(instr, scene, jit)] = _cmp_new_stat()
+        for f in ("n", "succ_A", "succ_B", "both", "only_A", "only_B", "none",
+                  "later_B", "earlier_B", "same_trig", "cmp_trig",
+                  "nofire_A", "nofire_B"):
+            m[f] += s[f]
+        m["trig_A"] += s["trig_A"]
+        m["trig_B"] += s["trig_B"]
+    for k in sorted(merged):
+        instr, scene, jit = k
+        s = merged[k]
+        da = cmp_res["det_a"].get((instr, scene, jit))
+        db = cmp_res["det_b"].get((instr, scene, jit))
+        A(f"| {instr} | {scene} | {jit} | {s['n']} | "
+          f"{kn(s['succ_A'], s['n'])} | {kn(s['succ_B'], s['n'])} | "
+          f"{s['only_A']} | {s['only_B']} | {fmt(med(s['trig_A']), 1)} | "
+          f"{fmt(med(s['trig_B']), 1)} | {regime_of(da)} | "
+          f"{fmt((da or {}).get('td10_holdout'), 2)} | "
+          f"{fmt((da or {}).get('fire_p50'), 1)} | "
+          f"{fmt((db or {}).get('fire_p50'), 1)} | "
+          f"{fmt((da or {}).get('fpr_target_succ'), 2)} | "
+          f"{fmt((db or {}).get('fpr_target_succ'), 2)} |")
+    A("")
+
+    if cmp_res["only_a_keys"] or cmp_res["only_b_keys"]:
+        A("## 조인 제외 (한쪽에만 있는 셀×arm)")
+        A("")
+        for side, keys in ((la, cmp_res["only_a_keys"]),
+                           (lb, cmp_res["only_b_keys"])):
+            if not keys:
+                continue
+            A(f"- {side} 단독 {len(keys)}건: "
+              + ", ".join(f"{s} s{sc} j{j} [{a}]" for a, s, sc, j in keys))
+        A("")
+
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(L) + "\n")
+    return "\n".join(L)
+
+
+def run_compare(args):
+    labels = [x.strip() for x in (args.compare_labels or "A,B").split(",")]
+    if len(labels) != 2 or not all(labels):
+        raise SystemExit("--compare-labels 는 'A라벨,B라벨' 두 개여야 함")
+    cmp_res = build_compare(args)
+    pairs = cmp_res["pairs"]
+
+    astats = compare_stats(pairs, lambda p: p["arm"])
+    istats = compare_stats(pairs, lambda p: p["instruction"])
+    cstats = compare_stats(
+        pairs, lambda p: (p["instruction"], p["scene"], p["jitter"], p["arm"]))
+
+    out = os.path.join(args.out_dir, "compare_detector")
+    os.makedirs(out, exist_ok=True)
+    write_compare_episodes(os.path.join(out, "paired_episodes.tsv"),
+                           pairs, labels)
+    write_compare_arms(os.path.join(out, "paired_arms.tsv"), astats, labels)
+    write_compare_cells(os.path.join(out, "paired_cells.tsv"), cstats,
+                        cmp_res["cells"], cmp_res["det_a"], cmp_res["det_b"],
+                        labels)
+    write_compare_unmatched(os.path.join(out, "unmatched.tsv"),
+                            cmp_res, labels)
+    write_compare_summary(os.path.join(out, "summary.md"), cmp_res,
+                          astats, cstats, istats, labels, args)
+
+    la, lb = labels
+    print(f"[compare] {la} vs {lb} · 셀×arm 조인 {len(cmp_res['matched'])} "
+          f"· 에피소드 쌍 {len(pairs)}")
+    print(f"  한쪽만: 셀×arm {la} {len(cmp_res['only_a_keys'])} / "
+          f"{lb} {len(cmp_res['only_b_keys'])} · "
+          f"에피소드 {len(cmp_res['unmatched_eps'])}")
+    for arm in sorted(astats, key=arm_sort_key):
+        s = astats[arm]
+        print(f"  {arm:<18} 쌍 {s['n']:>4} · {la} {kn(s['succ_A'], s['n'])} "
+              f"· {lb} {kn(s['succ_B'], s['n'])} · "
+              f"only_{la} {s['only_A']} / only_{lb} {s['only_B']} · "
+              f"trig p50 {fmt(med(s['trig_A']), 1)}→{fmt(med(s['trig_B']), 1)}")
+    print(f"out: {out}")
+    return 0
+
+
 # ---------------------------------------------------------------- main
 def main(argv=None):
     p = argparse.ArgumentParser(description="v6 expand LOKO 구제 eval 집계")
@@ -704,7 +1134,19 @@ def main(argv=None):
                    help="미완료 셀이 있으면 에러")
     p.add_argument("--no-sidecar", action="store_true",
                    help="raw_rollouts 사이드카 JSON 읽지 않음 (빠름)")
+    # -------- 쌍대응 비교 모드 (detector 교체 라운드)
+    p.add_argument("--compare-roots", action="append", default=None,
+                   help="비교 모드 A(기준) results 루트. 여러 번/콤마 구분 가능. "
+                        "지정하면 단일 루트 집계 대신 비교만 수행")
+    p.add_argument("--compare-roots-b", action="append", default=None,
+                   help="비교 모드 B(대조) results 루트")
+    p.add_argument("--compare-labels", default="A,B",
+                   help="A,B 라벨 (예: insample,holdout)")
+    p.add_argument("--detector-b", default=None,
+                   help="B 쪽 detector cells_summary.tsv (없으면 B 칸 NA)")
     args = p.parse_args(argv)
+    if args.compare_roots:
+        return run_compare(args)
     if not args.results_root:
         args.results_root = [DEF_RESULTS]
     args.results_root = [os.path.abspath(r) for r in args.results_root]
