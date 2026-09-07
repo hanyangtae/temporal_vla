@@ -46,7 +46,7 @@ run() {  # slug s k noises OUT [KEY=VAL...]
   local cs=${task}_s${s}_j${k} sub=s${s}/j${k}
   # ART_SLUG_MAP="old1=new1,old2=new2": replay 는 셀표(구 키) slug 로, 산출물(detector·NPZ)은 매핑된 slug 로 찾는다
   # (09-04 rebase 후 oven/washer 키 교환 — 구 plan 으로 replay 하면서 새 키 산출물을 쓰는 증분 pass 용)
-  local art=$task; local kv; for kv in ${ART_SLUG_MAP//,/ }; do [ "${kv%%=*}" = "$task" ] && art=${kv#*=}; done
+  local art=$task; local kv; for kv in ${ART_SLUG_MAP:-}; do kv=${kv//,/ }; [ -z "$kv" ] && continue; [ "${kv%%=*}" = "$task" ] && art=${kv#*=}; done
   if [[ "$out" == ps_setm_gtplain* ]] && [ ! -d "$NPZ/instr_setm_v6_gt_plain/$art/$sub" ]; then echo "[defer] $cs $out (plain NPZ 없음)" >> "$L/run.log"; return; fi
   if [[ "$out" == ps_setm_gt_b* ]] && [ ! -d "$NPZ/instr_setm_v6_gt/$art/$sub" ]; then echo "[defer] $cs $out (gt NPZ 없음)" >> "$L/run.log"; return; fi
   if [[ "$out" == ps_setm_ck8* ]] && [ ! -d "$NPZ/instr_setm_v6_ck8/$art/$sub" ]; then echo "[defer] $cs $out (ck8 NPZ 없음)" >> "$L/run.log"; return; fi
