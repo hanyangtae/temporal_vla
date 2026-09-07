@@ -88,7 +88,7 @@ python scripts/analysis/grid_phase/lr_equal_budget/planner.py \
 ```
 
 대기열 설정은 `outputs/lr_equal_budget_20260907/queue_configs/`에 고정 commit·절대경로로
-생성한다. 각각 `queues/{fit,kanu_gpu6,srv48}/status.json`에서 PENDING/RUNNING/FAILED/COMPLETED를
+생성한다. 각각 `queues/{fit,kanu_gpu6_parallel,srv48}/status.json`에서 PENDING/RUNNING/FAILED/COMPLETED를
 확인한다. 단순 readiness 실패는 60초 후 재확인하고 실제 stage 실패는 멈춘다.
 
 ```bash
@@ -99,8 +99,8 @@ python scripts/analysis/grid_phase/lr_equal_budget/run_queue.py \
 장기 실행은 반드시 `setsid nohup`으로 분리하고 PPID/프로세스 생존을 확인한다.
 GPU 대기는 예약 의사만 기록하며 미리 claim하지 않는다. 평가 직전 빈 GPU 판정은
 프로세스 소유자를 확인하며 메모리 여유만 보고 발사하지 않는다. 타인 프로세스나
-기존 v6 실행을 종료하지 않는다. 현재 등록 슬롯은 kanu GPU6와 srv48 GPU2, 각
-serve 1개이다. 점유 중이면 대기하며 다른 GPU를 임의로 공유하지 않는다.
+기존 v6 실행을 종료하지 않는다. kanu는 GPU6에서 포트 8866/8867 두 lane을 사용한다. srv48 GPU2 예약은
+현재 serve 1개이다. 점유 중이면 대기하며 다른 GPU를 임의로 공유하지 않는다.
 
 재시작 시 RUNNING 잔재/FAILED가 있으면 원격 실제 프로세스와 산출물을 조사하고
 새 state-dir로 재등록한다. 부분 fit/eval 덮어쓰기 금지.
@@ -123,3 +123,34 @@ loader 테스트 32개 통과. 실제 activation fit도 아래 시점에 완료�
   기존 kanu queue 기록은 보존한다.
 - srv48 dish queue는 GPU2가 점유 중이므로 대기한다. 타인 작업과 GPU를 공유하지 않는다.
 - 이 기록 시점에는 구제율·성공 유지율 결과가 확정되지 않았다.
+
+## kanu GPU6 두 모델 병렬 실행
+
+사용자 요청에 따라 kanu GPU당 serve 2개 규칙을 적용한다. 기존 한 조건짜리
+runner에 `SERVES_PER_GPU=2`만 주면 두 번째 worker에 할 일이 없으므로,
+`parallel_eval.py`가 서로 다른 조건을 두 개의 runner에 하나씩 배정한다.
+
+- GPU lease 소유자는 하나이며 포트는 8866/8867로 고정한다.
+- 각 두 조건 묶음 시작 전 GPU가 비었는지 확인한다. 첫 서버 health 확인 후
+  두 번째 서버를 로드해 동시 모델 로딩 피크를 피한다.
+- 두 번째 발사 전 GPU PID의 UID·정확한 port·detector 경로·failure-task 또는
+  collector endpoint·output 경로가 첫 작업과 일치하는지 검사한다. 검사를 통과한
+  child만 GPU busy 검사를 우회하며, 다른 세션과 GPU를 공유하지 않는다.
+- 해당 target의 실패 재현 gate가 통과해야 비교 작업을 배정한다. 출력 경로와
+  exact-coordinate 검증은 순차 실행과 동일하다. 완료 조건은 재실행하지 않는다.
+- 두 조건 모두 끝나고 서버가 정리된 뒤 다음 묶음을 시작한다. 한 조건이 실패하면
+  이미 실행 중인 다른 조건은 마무리하고 이후 묶음은 중단한다.
+- 전환 때 순차 orchestrator만 SIGSTOP하여 새 조건 시작을 막고, 현재 runner는
+  그대로 끝까지 실행한다. runner 종료 뒤 기존 owner를 종료하고 lease를 반납한
+  후 새 queue가 시작된다. `drain_sequential.log`에 전환 기록을 남긴다.
+
+```bash
+python scripts/analysis/grid_phase/lr_equal_budget/parallel_eval.py \
+  --root outputs/lr_equal_budget_20260907 --repo . --gpu 6 --ports 8866 8867
+```
+
+새 예약은 `queue_configs/kanu_gpu6_parallel.json`과
+`queues/kanu_gpu6_parallel/status.json`을 사용한다. 원래 queue의 중단 상태는
+계획된 전환 기록이며, 새 queue의 완료 여부를 대신하지 않는다.
+검증: Docker robocasa에서 eval 관련 8개 테스트 통과. 실제 자식 프로세스 두 개의
+실행 시간 겹침, 출력 분리, 실패 시 두 번째 발사 차단, target gate 및 소유 판정을 확인했다.
