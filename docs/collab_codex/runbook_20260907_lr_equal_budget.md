@@ -160,3 +160,22 @@ python scripts/analysis/grid_phase/lr_equal_budget/parallel_eval.py \
 health·detector 등록과 두 collector 시작을 확인했다. GPU 메모리는 두 서버 합계
 11,277 MiB / 16,376 MiB였다. 기존 gate 1판과 reseed 10판은 검증 후 재사용했다.
 구현 revision은 `cfe48be86cc58a9ff62406e2b36508e3fa00e351`이다.
+
+## 09-07 포트 검사 중단과 복구
+
+07:48 UTC에 첫 병렬 묶음 두 조건은 정상 완료했으나 다음 묶음 전
+`check_idle()`의 socket bind가 `EADDRINUSE`로 실패하여 queue가 중단됐다.
+종료된 서버의 TCP TIME_WAIT도 기존 bare bind에서는 사용 중으로 판정된다.
+실제 TCP 연결로 이 실패를 재현했고, 서버와 동일한 `SO_REUSEADDR` 조건으로
+검사하도록 수정했다. 살아 있는 listener와 타인 serve는 계속 거부한다.
+Docker robocasa에서 eval 관련 8개 및 실제 TCP 회귀 4개 테스트를 통과했다.
+
+08:54 UTC 확인 시 GPU6에는 다른 세션 `전체파이프/v6_expand`의 live lease와
+서버가 있었다. 사용자도 빈 GPU가 없음을 확인했다. 현재 LR 실험은 실행 중이
+아니며, `queue_configs/kanu_gpu6_resume_tcp.json` / `queues/kanu_gpu6_resume_tcp/`로
+재개 대기를 등록한다. 해당 GPU의 기존 lease가 끝나고 GPU가 비어야 실행한다.
+기존 실패 상태는 원인 기록으로 보존한다.
+
+재개 전 exact-coordinate 감사에서 gate 1판 + 세 조건 각 10판, 총 31판 완료를
+확인했다. drawer 잔여는 1,027판이다. 완료한 조건은 다시 실행하지 않는다.
+이 중단과 GPU 대기 때문에 이전 완료 시각 추정은 더 이상 유효하지 않다.

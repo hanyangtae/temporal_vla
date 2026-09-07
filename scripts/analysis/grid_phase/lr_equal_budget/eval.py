@@ -154,6 +154,15 @@ def build_jobs(root, repo, machine, gpu, *, fit_root=None, repeat0=False, port=N
     return jobs, coverage
 
 
+def check_port_available(port):
+    # Uvicorn uses reusable listening sockets. A closed server's TCP TIME_WAIT
+    # must not be mistaken for a live listener when advancing to the next job.
+    # SO_REUSEADDR still rejects a port held by an active listening socket.
+    with socket.socket() as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("0.0.0.0", port))
+
+
 def check_idle(gpu, port):
     query = subprocess.run(["nvidia-smi", f"--id={gpu}", "--query-compute-apps=pid", "--format=csv,noheader"],
                            check=True, capture_output=True, text=True)
@@ -161,8 +170,7 @@ def check_idle(gpu, port):
     if pids:
         details = subprocess.run(["ps", "-o", "user,pid,args", "-p", ",".join(pids)], capture_output=True, text=True)
         raise RuntimeError(f"GPU {gpu} is occupied; no processes may be shared:\n{details.stdout}")
-    with socket.socket() as sock:
-        sock.bind(("0.0.0.0", port))
+    check_port_available(port)
     # The existing runner cleans up by this port; reject stale serve processes
     # even if they are currently not listening, to avoid killing others' work.
     processes = subprocess.run(["ps", "-eo", "pid,args"], check=True, capture_output=True, text=True).stdout

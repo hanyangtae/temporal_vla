@@ -12,16 +12,15 @@ import json
 import os
 from pathlib import Path
 import signal
-import socket
 import subprocess
 import time
 import urllib.request
 
 try:
-    from .eval import build_jobs, completed, check_idle
+    from .eval import build_jobs, completed, check_idle, check_port_available
     from .remote_stage import verify_inputs
 except ImportError:
-    from eval import build_jobs, completed, check_idle
+    from eval import build_jobs, completed, check_idle, check_port_available
     from remote_stage import verify_inputs
 
 
@@ -74,8 +73,7 @@ def check_owned_gpu(gpu, tasks, repo):
 
 
 def check_port(port):
-    with socket.socket() as sock:
-        sock.bind(('0.0.0.0', port))
+    check_port_available(port)
     for p in Path('/proc').iterdir():
         if not p.name.isdigit():
             continue
