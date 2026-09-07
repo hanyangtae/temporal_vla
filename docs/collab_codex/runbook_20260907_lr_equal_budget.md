@@ -154,3 +154,9 @@ python scripts/analysis/grid_phase/lr_equal_budget/parallel_eval.py \
 계획된 전환 기록이며, 새 queue의 완료 여부를 대신하지 않는다.
 검증: Docker robocasa에서 eval 관련 8개 테스트 통과. 실제 자식 프로세스 두 개의
 실행 시간 겹침, 출력 분리, 실패 시 두 번째 발사 차단, target gate 및 소유 판정을 확인했다.
+
+실행 확인 (2026-09-07 07:15 UTC): 기존 조건 10판 완료 후 전환했고, 새 owner가
+07:14:36 GPU6 lease를 획득했다. 포트 8866(LRmix/plain), 8867(L_only/reseed)의
+health·detector 등록과 두 collector 시작을 확인했다. GPU 메모리는 두 서버 합계
+11,277 MiB / 16,376 MiB였다. 기존 gate 1판과 reseed 10판은 검증 후 재사용했다.
+구현 revision은 `cfe48be86cc58a9ff62406e2b36508e3fa00e351`이다.
