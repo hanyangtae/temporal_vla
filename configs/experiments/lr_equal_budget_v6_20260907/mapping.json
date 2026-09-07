@@ -1,0 +1,32 @@
+{
+  "OpenDrawer/left": {
+    "family": "drawer",
+    "side": "L",
+    "canonical_instruction": "OpenDrawer/left"
+  },
+  "OpenDrawer/right": {
+    "family": "drawer",
+    "side": "R",
+    "canonical_instruction": "OpenDrawer/right"
+  },
+  "OvenRack/out-left": {
+    "family": "oven",
+    "side": "R",
+    "canonical_instruction": "OvenRack/out-right"
+  },
+  "OvenRack/out-right": {
+    "family": "oven",
+    "side": "L",
+    "canonical_instruction": "OvenRack/out-left"
+  },
+  "DishwasherRack/out-left": {
+    "family": "dish",
+    "side": "R",
+    "canonical_instruction": "DishwasherRack/out-right"
+  },
+  "DishwasherRack/out-right": {
+    "family": "dish",
+    "side": "L",
+    "canonical_instruction": "DishwasherRack/out-left"
+  }
+}
