@@ -88,7 +88,7 @@ python scripts/analysis/grid_phase/lr_equal_budget/planner.py \
 ```
 
 대기열 설정은 `outputs/lr_equal_budget_20260907/queue_configs/`에 고정 commit·절대경로로
-생성한다. 각각 `queues/{fit,kanu,srv48}/status.json`에서 PENDING/RUNNING/FAILED/COMPLETED를
+생성한다. 각각 `queues/{fit,kanu_gpu6,srv48}/status.json`에서 PENDING/RUNNING/FAILED/COMPLETED를
 확인한다. 단순 readiness 실패는 60초 후 재확인하고 실제 stage 실패는 멈춘다.
 
 ```bash
@@ -99,13 +99,28 @@ python scripts/analysis/grid_phase/lr_equal_budget/run_queue.py \
 장기 실행은 반드시 `setsid nohup`으로 분리하고 PPID/프로세스 생존을 확인한다.
 GPU 대기는 예약 의사만 기록하며 미리 claim하지 않는다. 평가 직전 빈 GPU 판정은
 프로세스 소유자를 확인하며 메모리 여유만 보고 발사하지 않는다. 타인 프로세스나
-기존 v6 실행을 종료하지 않는다. 준비된 기본 슬롯은 kanu GPU4와 srv48 GPU2, 각
+기존 v6 실행을 종료하지 않는다. 현재 등록 슬롯은 kanu GPU6와 srv48 GPU2, 각
 serve 1개이다. 점유 중이면 대기하며 다른 GPU를 임의로 공유하지 않는다.
 
-현재 최초 점검에서는 archive가 양쪽 경로에서 timeout이었다. 연결 복구 전 상태는
-학습 완료가 아니라 대기이다. 재시작 시 RUNNING 잔재/FAILED가 있으면 원격 실제
-프로세스와 산출물을 조사하고 새 state-dir로 재등록한다. 부분 fit/eval 덮어쓰기 금지.
+재시작 시 RUNNING 잔재/FAILED가 있으면 원격 실제 프로세스와 산출물을 조사하고
+새 state-dir로 재등록한다. 부분 fit/eval 덮어쓰기 금지.
 
-검증: stdlib planner/queue/eval 테스트와 Docker robocasa의 합성 shard→fit→실제
-online loader 테스트를 사용한다. 실제 activation과 full simulator smoke는 archive
-복구 후 실행 단계에 포함되며, 그 전에는 통과했다고 표시하지 않는다.
+검증: stdlib planner/queue/eval 및 Docker robocasa의 합성 shard→fit→실제 online
+loader 테스트 32개 통과. 실제 activation fit도 아래 시점에 완료했다. simulator
+재현 gate와 정책 효과 검증은 별도이며, 학습 완료를 평가 통과로 표시하지 않는다.
+
+## 실행 기록 (2026-09-07 UTC)
+
+- 코드 revision: `5e5fdf8c9443f9796cc09450580dd2415d8640e5`.
+- 연결 복구 후 archive fit이 06:34 시작, 06:42 완료. 30쌍/60모델의 완료 report와
+  N 일치를 확인했고, 모델 산출물 약 452 MB를 회수했다.
+- plain은 60모델 모두 phase 등록. lr_jfair는 혼합 30모델 모두 각 side의 mixed
+  jitter 지원 부족으로 미등록이다. 단독 모델 15개만 등록되어, 현재 산출물로는
+  단독 대 혼합 jfair 효과 비교가 성립하지 않는다. plain 비교는 진행한다.
+- kanu GPU4에 타인 작업이 시작되어, 실행 전 대기 중이던 우리 queue만 중단했다.
+  빈 GPU6을 재검증하고 `queue_configs/kanu_gpu6.json`, `queues/kanu_gpu6/`으로
+  새 예약을 만들었다. 06:47 readiness 통과 후 drawer 재현 gate 실행을 시작했다.
+  기존 kanu queue 기록은 보존한다.
+- srv48 dish queue는 GPU2가 점유 중이므로 대기한다. 타인 작업과 GPU를 공유하지 않는다.
+- 이 기록 시점에는 구제율·성공 유지율 결과가 확정되지 않았다.
+
