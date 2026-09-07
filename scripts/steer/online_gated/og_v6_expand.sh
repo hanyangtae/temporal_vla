@@ -14,7 +14,7 @@ case "$(hostname)" in *worker1*|*srv48*) MC=worker1; LM=srv48;; *worker2*|*srv50
 if [ "${LEASED:-0}" != 1 ]; then
   exec env LEASED=1 bash "$W/scripts/utils/with_gpu_lease.sh" "$LM" "$(printf '%s\n' "$G1" "$G2" "$G3" | sort -u | tr '\n' ' ')" 전체파이프 v6_expand -- bash "$0" "$@"
 fi
-B=$W/outputs/eval/robocasa/groot_n15/og_v6_expand
+B=${B_ROOT:-$W/outputs/eval/robocasa/groot_n15/og_v6_expand}   # B_ROOT 로 결과 루트 분리(예: detector 교체 라운드 og_v6_expand_ho)
 NPZ=$W/outputs/steer/online_pipe_v4_pilot          # v6 연산자도 같은 루트 아래 *_v6 폴더
 BUNDLE=${BUNDLE:-$W/outputs/analysis/grid_phase/ae_k8/ae_bundle_k8.npz}
 DK=${DK:-$W/outputs/analysis/grid_phase/detector_v6/loko}   # <slug>/s<i>/j<r>/detector_pertask_lstm_<slug>.pt   # fail detector 세션 산출 경로(확정 시 갱신)
@@ -23,7 +23,7 @@ L=$B/logs; mkdir -p "$L"
 echo "machine=$MC alpha=0.1 perstep_n=8 beta_sweep=0.6-1.0 v6 loko capture_hooks=7layer arms=setm_gt_b*(jfair),setm_gtplain_b08,reseed[,setm_ck8_b* if CK8] base=none detector=$DK bundle=$BUNDLE" > "$B/MACHINE.txt"
 [ "${CK8:-0}" = 1 ] && { [ -f "$BUNDLE" ] || { echo "[abort] CK8=1 인데 번들 없음: $BUNDLE" | tee -a "$L/run.log"; exit 2; }; }
 [ "${CK8:-0}" = 1 ] || BUNDLE=   # gt/plain/reseed 는 cluster 번들 불요(GT phase POST)
-if [ "$MC" = kanu ]; then SLOTS=("$G1" "$G2" "$G3" "$G1" "$G2" "$G3"); NSLOT=6
+if [ "$MC" = kanu ]; then if [ "$G2" = "$G1" ]; then SLOTS=("$G1" "$G1"); NSLOT=2; elif [ "$G3" = "$G2" ]; then SLOTS=("$G1" "$G2" "$G1" "$G2"); NSLOT=4; else SLOTS=("$G1" "$G2" "$G3" "$G1" "$G2" "$G3"); NSLOT=6; fi
 else SLOTS=("$G1" "$G2" "$G1" "$G2" "$G1" "$G2" "$G1" "$G2" "$G1" "$G2" "$G1" "$G2"); NSLOT=$([ "$G1" = "$G2" ] && echo 6 || echo 12); fi
 # 슬롯 점유 추적 — 카운터(i%NSLOT) 배정은 먼저 끝난 슬롯과 무관하게 GPU 를 고르므로 한 GPU 에 serve 3개가 몰려
 # OOM 으로 부팅 실패한다(09-04 kanu 실측 rc=13). 살아있는 pid 로 빈 슬롯을 찾아 그 GPU 를 준다.
