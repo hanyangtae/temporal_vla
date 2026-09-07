@@ -1164,7 +1164,7 @@ def run_loto(kind: str, tasks: dict, splits: dict, args,
 # arm: loko-cell (scene-local leave-one-jitter-out, 셀별 detector)
 # =============================================================================
 
-REGISTRY_COLS = ("instruction", "slug", "scene", "jitter", "registered",
+REGISTRY_COLS = ("instruction", "slug", "scene", "jitter", "train_pool", "registered",
                  "n_pool_other", "n_pool_fail", "n_target_fail", "n_target_succ",
                  "n_succ_calib", "reason", "ckpt_rel",
                  # j-only 대조군 진단 (미등록 셀은 빈 값 — 모델이 없어 채울 수 없다)
@@ -1377,6 +1377,18 @@ def target_j_holdout_diag(kind: str, args, pool_other: list[Episode],
                            args.hidden, args.lambda_reg, args.grad_clip,
                            args.batch_size, args.seed, verbose=False)
     scored = [(e, score_seq(model, apply_std(e, mu, sd))) for e in cell_eps]
+    out.update(holdout_rank_metrics(scored))
+    return out
+
+
+def holdout_rank_metrics(scored: list[tuple[Episode, np.ndarray]]) -> dict:
+    """대상 j 를 학습 밖에 둔 모델의 점수 → 무편향 target-j 순위 지표.
+
+    `target_j_holdout_diag`(2차 모델)와 `--loko-train-pool other`(배포 모델 자체가
+    대상 j 를 안 봤다) 양쪽이 같은 계산을 쓰도록 뽑아 둔 것. CP 밴드는 쓰지 않는다.
+    """
+    out: dict = {"auroc_target_j_holdout": None,
+                 f"auroc_target_j_holdout_td{JSTRAT_TD}": None}
     sc = np.array([float(s.max()) for _, s in scored], dtype=np.float64)
     y = np.array([int(e.y) for e, _ in scored], dtype=np.int64)
     a = auroc(sc, y)
@@ -1385,6 +1397,27 @@ def target_j_holdout_diag(kind: str, args, pool_other: list[Episode],
     if len(pairs) >= TARGET_TD_NMIN:
         a2, _n = td_auroc(pairs)
         out[f"auroc_target_j_holdout_td{JSTRAT_TD}"] = a2
+    return out
+
+
+def target_j_holdout_from_deploy(cell_eps: list[Episode],
+                                 scored: list[tuple[Episode, np.ndarray]],
+                                 n_train: int, n_train_fail: int) -> dict:
+    """`--loko-train-pool other` 전용 — **배포 모델이 곧 holdout 모델**이라 재학습 없이
+    같은 열을 채운다 (대상 j 는 실패·성공 모두 학습 밖).
+    """
+    out: dict = {k: None for k in HOLDOUT_DIAG_KEYS}
+    out["target_j_holdout_reason"] = ""
+    ys = {int(e.y) for e in cell_eps}
+    if 0 not in ys:
+        out["target_j_holdout_reason"] = "no_target_succ"
+        return out
+    if 1 not in ys:
+        out["target_j_holdout_reason"] = "no_target_fail"
+        return out
+    out["n_holdout_train"] = int(n_train)
+    out["n_holdout_fail"] = int(n_train_fail)
+    out.update(holdout_rank_metrics(scored))
     return out
 
 
@@ -1404,8 +1437,14 @@ def run_loko_cells(kind: str, tasks: dict, args, out_dir: Path,
                    ) -> tuple[list[dict], list[dict], list[dict]]:
     """셀 (slug, scene s, jitter j) 하나마다 독립 detector + 발화 시뮬.
 
-    학습 pool = 같은 scene 의 **다른 j 전판**(pool_other) + **대상 j 의 실패판**.
-    대상 j 의 성공판은 학습에서 뺀다 (success-blind) — 위양성을 그 판으로 재기 때문.
+    학습 pool 은 `--loko-train-pool` 로 고른다 (기본 deploy = 기존 동작):
+      - `deploy`: pool_other(같은 scene 의 다른 j 전판) + **대상 j 의 실패판**.
+        "그 셀에서 이미 관측된 재발 실패를 구제"하는 시나리오 — 대상 j 실패는
+        in-sample 이라 그 판 위 발화는 낙관 편향이 있다.
+      - `other`: pool_other 만. 대상 j 를 실패·성공 모두 학습 밖에 두므로 저장되는
+        체크포인트가 그대로 **무편향(대상 j 완전 미관측) 배포 모델**이고, 대상 j 위
+        발화 시점도 편향 없이 읽힌다.
+    어느 모드든 대상 j 의 성공판은 학습에서 뺀다 (success-blind) — 위양성을 그 판으로 재기 때문.
     CP 밴드는 pool_other 성공판 위에서 LOO/k-fold (`loo_cp_band`).
     절제(`--truncate-train`)는 학습 pool 에만, 평가 시퀀스는 항상 full.
 
@@ -1432,12 +1471,15 @@ def run_loko_cells(kind: str, tasks: dict, args, out_dir: Path,
     for slug, s, j in cells:
         info = tasks.get(slug)
         base_reg = {"instruction": (info or {}).get("instruction", slug), "slug": slug,
-                    "scene": s, "jitter": j, "registered": 0, "n_pool_other": 0,
+                    "scene": s, "jitter": j,
+                    "train_pool": str(getattr(args, "loko_train_pool", "deploy")),
+                    "registered": 0, "n_pool_other": 0,
                     "n_pool_fail": 0, "n_target_fail": 0, "n_target_succ": 0,
                     "n_succ_calib": 0, "reason": "", "ckpt_rel": ""}
         base_row = {"task": slug, "instruction": (info or {}).get("instruction", slug),
                     "arm": "loko-cell", "model": kind, "truncate": args.truncate_train,
-                    "scene": s, "jitter": j}
+                    "scene": s, "jitter": j,
+                    "train_pool": str(getattr(args, "loko_train_pool", "deploy"))}
         if info is None:
             base_reg["reason"] = "shard_not_loaded"
             registry.append(base_reg)
@@ -1453,7 +1495,8 @@ def run_loko_cells(kind: str, tasks: dict, args, out_dir: Path,
         t_succ = [e for e in cell_eps if e.succ == 1]
         n_pool_fail = sum(1 for e in pool_other if e.succ == 0)
         n_calib_succ = sum(1 for e in pool_other if e.succ == 1)
-        train_pool = pool_other + t_fail
+        pool_mode = str(getattr(args, "loko_train_pool", "deploy"))
+        train_pool = (pool_other + t_fail) if pool_mode == "deploy" else list(pool_other)
         base_reg.update({"n_pool_other": len(pool_other), "n_pool_fail": n_pool_fail,
                          "n_target_fail": len(t_fail), "n_target_succ": len(t_succ),
                          "n_succ_calib": n_calib_succ})
@@ -1500,8 +1543,11 @@ def run_loko_cells(kind: str, tasks: dict, args, out_dir: Path,
         seqs = [(apply_std(e, mu, sd), e.y) for e in tr_eps]
         input_dim = seqs[0][0].shape[1]
         train_ep_ids = sorted({int(e.ep_id) for e in tr_eps})
+        _pool_desc = (f"pool_other {len(pool_other)} + target_fail {len(t_fail)}"
+                      if pool_mode == "deploy"
+                      else f"pool_other {len(pool_other)} only [holdout]")
         print(f"[loko] {slug} s{s} j{j}: train {len(seqs)} "
-              f"(pool_other {len(pool_other)} + target_fail {len(t_fail)}, "
+              f"({_pool_desc}, "
               f"drop {n_drop}) | calib_succ {n_calib_succ} | W={W} dim={input_dim}",
               flush=True)
         model = train_detector(kind, seqs, input_dim, args.epochs, args.lr, args.hidden,
@@ -1525,7 +1571,14 @@ def run_loko_cells(kind: str, tasks: dict, args, out_dir: Path,
         # 포인트는 위에서 이미 확정됐고 이 진단이 건드리지 않는다.
         holdout_on = bool(getattr(args, "loko_holdout_diag", False))
         if holdout_on:
-            cell_diag.update(target_j_holdout_diag(kind, args, pool_other, cell_eps))
+            if pool_mode == "other":
+                # 배포 모델 자체가 대상 j 를 안 봤다 → 2차 학습은 중복. 같은 계산을
+                # 배포 모델 점수 위에서 그대로 돌린다.
+                cell_diag.update(target_j_holdout_from_deploy(
+                    cell_eps, [(e, sc_map[int(e.ep_id)]) for e in cell_eps],
+                    len(seqs), sum(1 for e in tr_eps if e.y == 1)))
+            else:
+                cell_diag.update(target_j_holdout_diag(kind, args, pool_other, cell_eps))
         def _d(k, nd=2):                       # 없으면 em-dash
             v = cell_diag.get(k)
             return "\u2014" if v is None else (f"{v:.{nd}f}" if nd else str(v))
@@ -1641,6 +1694,7 @@ def run_loko_cells(kind: str, tasks: dict, args, out_dir: Path,
                      "n_pool_other": len(pool_other), "n_target_fail": len(t_fail),
                      "n_calib_succ": len(calib_scores), "cp": cp_kind,
                      "n_target_succ_excluded": len(t_succ),
+                     "train_pool": pool_mode,
                      "train_ep_ids": train_ep_ids},
         }
         torch.save(payload, ck_path)
@@ -1679,7 +1733,7 @@ TSV_COLS = (["task", "instruction", "arm", "model", "alpha", "truncate", "n_test
                "n_trunc_dropped", "train_scenes", "calib_scenes", "test_scenes",
                "skip_reason"]
             # loko-cell 전용 (다른 arm 은 빈 칸). 기존 열 순서는 건드리지 않는다.
-            + ["scene", "jitter", "eval_set", "in_train",
+            + ["scene", "jitter", "train_pool", "eval_set", "in_train",
                f"auroc_td{JSTRAT_TD}_jstrat_mean", "n_j_scored", "n_j_unscored",
                "jstrat_detail", "t_fire_p25", "t_fire_p50", "t_fire_p75", "n_fired"]
             # j-only 대조군 진단 (loko-cell 전용, 셀 단위 상수)
@@ -2530,7 +2584,10 @@ def run(args) -> int:
                 "jstrat_td": JSTRAT_TD,
                 "loko_holdout_diag": bool(getattr(args, "loko_holdout_diag", False)),
                 "eval_sets": [n for n, _ in LOKO_EVAL_SETS],
-                "train": "pool_other(같은 scene 의 다른 j 전판) + 대상 j 실패판",
+                "train_pool": str(getattr(args, "loko_train_pool", "deploy")),
+                "train": ("pool_other(같은 scene 의 다른 j 전판) + 대상 j 실패판"
+                          if str(getattr(args, "loko_train_pool", "deploy")) == "deploy"
+                          else "pool_other(같은 scene 의 다른 j 전판) 만 — 대상 j 전판 제외"),
                 "excluded_from_train": "대상 j 성공판 (success-blind)",
                 "eval_seq": "full (절제 없음)"}}
                if args.arm == "loko-cell" else {}),
@@ -2604,6 +2661,12 @@ def main() -> int:
     ap.add_argument("--min-calib-succ", type=int, default=9,
                     help="loko-cell 게이트: CP 밴드용 최소 성공 판 수 "
                          "(conformal (1−α) 분위 정의에 n ≥ 1/α − 1; α=0.1 → 9)")
+    ap.add_argument("--loko-train-pool", default="deploy",
+                    choices=("deploy", "other"),
+                    help="loko-cell 학습 pool. deploy=pool_other + 대상 j 실패판 "
+                         "(기본, 관측된 재발 실패 구제 시나리오·대상 j 실패는 in-sample). "
+                         "other=pool_other 만 — 대상 j 를 실패·성공 모두 학습에서 빼서 "
+                         "저장되는 체크포인트가 곧 무편향 holdout 배포 모델")
     ap.add_argument("--loko-holdout-diag", action="store_true",
                     help="loko-cell 셀마다 **대상 j 를 통째로 뺀** 두 번째 모델을 추가 "
                          "학습해 무편향 target-j AUROC 를 낸다 (진단 전용 — 배포용 "

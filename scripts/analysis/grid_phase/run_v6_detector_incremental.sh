@@ -10,6 +10,10 @@
 # 멱등: instruction 단위 완료 마커(<DET_OUT>/.done_<slug>)로 재실행 시 skip.
 # 산출: $DET_OUT/loko/<slug>/s<i>/j<r>/detector_pertask_lstm_<slug>.pt
 #       $DET_OUT/<slug>/{sim_summary.tsv, sim_detail.json, cell_registry.tsv}
+#
+# 학습 pool 선택: TRAIN_POOL=deploy(기본, 대상 j 실패판 포함) | other(대상 j 전판 제외
+# = 무편향 holdout 배포 모델). 출력 루트는 반드시 분리할 것 —
+#   TRAIN_POOL=other DET_OUT=$REPO/outputs/analysis/grid_phase/detector_v6_ho ./run_v6_detector_incremental.sh
 set -euo pipefail
 
 REPO="${REPO:-$HOME/workspace/temporal_vla_safeablate}"
@@ -30,6 +34,8 @@ ONCE="${ONCE:-0}"
 THREADS="${THREADS:-8}"             # 승준 CPU cap 8 (사용자 규약)
 # 무편향 진단(타 j 만으로 학습한 2차 모델로 대상 j 채점) — 셀당 학습이 1회 더 는다.
 HOLDOUT="${HOLDOUT:-1}"
+# 배포 모델 학습 pool: deploy = pool_other + 대상 j 실패판(기존) / other = pool_other 만.
+TRAIN_POOL="${TRAIN_POOL:-deploy}"
 HOLDOUT_FLAG=""; [[ "$HOLDOUT" == "1" ]] && HOLDOUT_FLAG="--loko-holdout-diag"
 
 export OMP_NUM_THREADS="$THREADS" OPENBLAS_NUM_THREADS="$THREADS" \
@@ -66,7 +72,7 @@ run_one() {   # <slug> <shard-stems(csv)> <shard-dir>
     --models lstm --alphas "$ALPHAS" \
     --truncate-train "$TRUNC" \
     --min-pool-fail "$MIN_POOL_FAIL" --min-calib-succ "$MIN_CALIB_SUCC" \
-    --cp-folds "$CP_FOLDS" --seed 0 --threads "$THREADS" ${HOLDOUT_FLAG} --quiet || rc=$?
+    --cp-folds "$CP_FOLDS" --loko-train-pool "$TRAIN_POOL" --seed 0 --threads "$THREADS" ${HOLDOUT_FLAG} --quiet || rc=$?
   if [[ "$rc" -ne 0 ]]; then
     echo "[v6det] ERROR: $slug sim 실패 rc=$rc — 완료 마커 쓰지 않음 ($(ts))" >&2
     return "$rc"

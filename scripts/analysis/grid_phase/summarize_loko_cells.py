@@ -28,7 +28,7 @@ import glob
 import os
 from pathlib import Path
 
-COLS = ["instruction", "stem", "scene", "jitter", "registered", "reason",
+COLS = ["instruction", "stem", "scene", "jitter", "train_pool", "registered", "reason",
         "n_pool_other", "n_pool_fail", "n_target_fail", "n_target_succ",
         "n_succ_calib", "td10_holdout", "td10_insample", "auroc_target_j_max",
         "fire_p25", "fire_p50", "fire_p75", "n_fired_fail",
@@ -62,6 +62,9 @@ def main() -> int:
             cells[key] = {
                 "instruction": _v(r, "instruction"), "stem": _v(r, "slug"),
                 "scene": _v(r, "scene"), "jitter": _v(r, "jitter"),
+                # 학습 pool 모드 (deploy=대상 j 실패판 포함 / other=대상 j 전판 제외).
+                # 구 registry(열 없음)는 빈 칸 — deploy 로 간주.
+                "train_pool": _v(r, "train_pool"),
                 "registered": _v(r, "registered"), "reason": _v(r, "reason"),
                 "n_pool_other": _v(r, "n_pool_other"), "n_pool_fail": _v(r, "n_pool_fail"),
                 "n_target_fail": _v(r, "n_target_fail"),
