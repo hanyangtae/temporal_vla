@@ -51,6 +51,14 @@ class TestCheckRows(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "inference_seed"):
             v6.check_rows(bad, self.expected)
 
+    def test_build_arms_preserves_default_gt_names_and_selects_ck8_names(self):
+        gt = v6.build_arms()
+        self.assertEqual(gt["jfair_b09"], ("ps_setm", "instr_setm_v6_gt", "0.9"))
+        self.assertEqual(gt["reseed_jfair_b09"], ("ps_reseed_setm", "instr_setm_v6_gt", "0.9"))
+        ck8 = v6.build_arms("v7", "ck8")
+        self.assertEqual(ck8["plain_b08"][1], "instr_setm_v7_ck8_plain")
+        self.assertEqual(ck8["jfair_b09"][1], "instr_setm_v7_ck8")
+
 
 class TestSummarize(unittest.TestCase):
     def test_paired_rescue_destruction_and_completion(self):
@@ -66,9 +74,12 @@ class TestSummarize(unittest.TestCase):
                 path.parent.mkdir(parents=True)
                 v6.write_tsv(path, rows, list(rows[0]))
 
-            result = v6.summarize(out, {cell: expected}, ["reseed_jfair_b09"])
+            result = v6.summarize(
+                out, {cell: expected}, ["reseed_jfair_b09"], reference_labels=True
+            )
 
             self.assertTrue(result["complete"])
+            self.assertEqual(result["reference_source"], "collection_success")
             self.assertEqual(result["baseline_collection_mismatches"], 0)
             total = result["arms"][0]
             self.assertEqual(total["completed"], 2)

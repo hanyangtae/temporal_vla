@@ -1159,7 +1159,7 @@ def _parse_perstep_gate(payload: dict) -> dict | None:
             )
         want_family = "condg" if op == "condg" else "setpoint"
         fams = {ent["family"] for ent in _arm_registry.values()}
-        if want_family not in fams:
+        if want_family not in fams and not (want_family == "setpoint" and _gated_registry.get("fallback_only")):
             raise HTTPException(
                 status_code=409,
                 detail=f"perstep op={op}(family={want_family}) != 등록 family {sorted(fams)}",
@@ -2019,6 +2019,22 @@ def _register_steering_if_requested(loaded_policy, args):
             d.name for d in base.iterdir()
             if d.is_dir() and (d / f"dit_L{layers[0]}" / "conceptors.npz").exists()
         )
+        if not phases and (base / "fallback_only.json").is_file():
+            import json
+            fallback_spec = json.loads((base / "fallback_only.json").read_text())
+            if fallback_spec.get("fallback_only") is not True:
+                raise ValueError("invalid fallback-only marker")
+            _gated_registry = dict(hooks={}, matrices={}, identity={}, current=None,
+                                   current_scene=None, fallback_only=True)
+            import hashlib
+            _update_steering_spec(mode="gated", op="setpoint", layers=layers, beta=beta,
+                alpha=getattr(args, "steering_alpha", None), key="C_steer",
+                token_select=token_select, denoise=denoise, phases=[],
+                npz_shas=[hashlib.sha256((base / "fallback_only.json").read_bytes()).hexdigest()[:12]],
+                extra={"fallback_only": True, "registered_hook_layers": [],
+                       "phase_source": fallback_spec.get("phase_source")})
+            print("[steer-registered] fallback-only: no learned cluster operators or hooks", flush=True)
+            return _steering
         if not phases:
             raise FileNotFoundError(f"phase 서브디렉토리 없음: {base}")
         # 기대 phase 목록이 주어지면 발견 집합과 정확히 일치해야 함 (부분 로드 무음 방지)

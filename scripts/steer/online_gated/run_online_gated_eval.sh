@@ -339,6 +339,10 @@ scan_npz_base() {  # base
     return 0
   fi
   [ -d "$base" ] || { echo "ABORT: NPZ base 없음: $base" >&2; return 1; }
+  if [ -f "$base/fallback_only.json" ]; then
+    PHASES="__fallback_only__"; LAYER="${EXPECTED_STEER_LAYER:-12}"
+    return 0
+  fi
   PHASES=""
   for ph in "$base"/*/; do
     [ -d "$ph" ] && ls "$ph"dit_L* > /dev/null 2>&1 && PHASES="${PHASES:+$PHASES,}$(basename "$ph")"

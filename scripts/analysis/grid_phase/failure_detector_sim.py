@@ -38,6 +38,14 @@
   zero-shot test (밴드도 train task 풀링으로 잡아 held-out 판을 한 개도 안 쓴다).
   질문 = "학습에 없던 task 에서 작동하나, phase 절제가 전이를 살리나"
   (SAFE 논문 unseen 전이 주장 재검 — seen18 재현은 unseen 0.434 였다).
+- `loko-cell` — **scene-local leave-one-k(지터)-out**. 셀 = (instruction, scene,
+  jitter, noise) 중 (slug, scene s, jitter j) 단위로 detector 를 하나씩 만든다.
+  학습 = 같은 scene 의 **다른 j 전판**(pool_other) + **대상 j 의 실패판**,
+  대상 j 의 **성공판은 학습에서 제외**(success-blind — 그 판이 곧 위양성 측정 대상).
+  CP 밴드는 calib split 을 따로 떼지 않고 pool_other 성공판 위에서 **episode LOO
+  (또는 k-fold)** 로 잡는다 (셀 하나의 성공 판 수가 적어 calib 을 또 쪼갤 수 없다).
+  대상 j 실패판은 학습에 들어간 **in-sample** 이므로 그 발화율은 상한이지 일반화가
+  아니다 — 행마다 `in_train` 열로 명시하고, 일반화는 `pool_other` / j-층화 AUROC 로 읽는다.
 
 ## 입력 계약 (Tier A shard)
 `<shard-dir>/<instr_slug>.npz`
@@ -74,6 +82,11 @@ layer 는 meta 의 layer 리스트에서 **인덱스 역산**한다 (하드코�
       ~/anaconda3/bin/python scripts/analysis/grid_phase/failure_detector_sim.py \
         --shard-dir <segA> --out <out>/loto_$M --arm loto --truncate-train $M \
         --models lstm --threads 8 --quiet; done
+
+    # scene-local LOKO (셀별 detector; 셀 목록 TSV 필수)
+    ... failure_detector_sim.py --shard-dir <segA> --out <out>/loko \
+        --arm loko-cell --loko-cells-tsv <cells.tsv> --models lstm \
+        --min-pool-fail 3 --min-calib-succ 9 --cp-folds 0 --threads 8
 """
 from __future__ import annotations
 
@@ -86,6 +99,7 @@ for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 
 import argparse
+import csv
 import json
 import tempfile
 import time
@@ -102,6 +116,13 @@ MIN_BAND_EPS = 3          # μ/σ, bw 추정에 필요한 최소 성공 판 수 
 EPS = 1e-8
 TD_GRID = (5, 10, 15, 20, 30)   # 고정 판정시각 AUROC 격자 (causal, full test 시퀀스 위)
 MIN_TRUNC_LEN = 2         # 절제 후 이보다 짧은 시퀀스는 버린다
+JSTRAT_TD = 10            # loko-cell j-층화 AUROC 의 고정 판정시각 (TD_GRID 안의 값)
+# 셀 TSV 의 지터 열 — jitter_idx 가 있으면 그것만 쓴다 (jitter_reset_idx 는 legacy).
+CELL_JITTER_COLS = ("jitter_idx", "jitter_reset_idx")
+# instruction 식별 열 (매칭 시도 순서). v6 TSV 는 slug+grid_instruction 을 담는다.
+CELL_INSTR_COLS = ("slug", "grid_instruction", "instruction")
+# 사람이 읽는 라벨로 쓸 열 (없으면 slug)
+CELL_LABEL_COLS = ("grid_instruction", "instruction", "slug")
 
 
 # =============================================================================
@@ -153,14 +174,15 @@ def build_detector(kind: str, input_dim: int, hidden: int) -> nn.Module:
 class Episode:
     """판 하나. X 는 표준화 **전** 원본 [T,D] (표준화는 arm 별로 다시 건다)."""
 
-    __slots__ = ("task", "ep_id", "scene", "noise", "succ", "X", "phase", "T")
+    __slots__ = ("task", "ep_id", "scene", "noise", "succ", "X", "phase", "T", "jitter")
 
-    def __init__(self, task, ep_id, scene, noise, succ, X, phase):
+    def __init__(self, task, ep_id, scene, noise, succ, X, phase, jitter=-1):
         self.task, self.ep_id, self.scene, self.noise = task, ep_id, scene, noise
         self.succ = int(succ)
         self.X = X
         self.phase = phase
         self.T = int(X.shape[0])
+        self.jitter = int(jitter)   # 지터 축 k (reset_idx); 2축 legacy shard 는 -1
 
     @property
     def y(self) -> int:
@@ -228,6 +250,8 @@ def load_shard_episodes(path: Path, layer: int, denoise: int, seg: str
             if k not in f.files:
                 raise ValueError(f"{path.name}: 필수 열 '{k}' 없음")
             cols[k] = np.asarray(f[k]).ravel().astype(np.int64)
+        if "jitter" in f.files:
+            cols["jitter"] = np.asarray(f["jitter"]).ravel().astype(np.int64)
     n = len(feat)
     for k, v in cols.items():
         if len(v) != n:
@@ -249,7 +273,8 @@ def load_shard_episodes(path: Path, layer: int, denoise: int, seg: str
                 raise ValueError(
                     f"{path.name}: ep{ep} ep_len={el} != record 수 {len(m)}")
         eps.append(Episode(task, int(ep), int(sc[0]), int(cols["noise"][m[0]]),
-                           int(su[0]), feat[m], cols["phase_code"][m]))
+                           int(su[0]), feat[m], cols["phase_code"][m],
+                           jitter=int(cols["jitter"][m[0]]) if "jitter" in cols else -1))
     if not eps:
         raise ValueError(f"{path.name}: episode 0")
     return eps, spec
@@ -266,6 +291,169 @@ def discover_shards(shard_dir: Path, only: list[str] | None) -> list[Path]:
     if not paths:
         raise SystemExit(f"shard NPZ 없음: {shard_dir}")
     return paths
+
+
+# =============================================================================
+# 셀 TSV (v6 열 계약) — exclude / loko 공용 리더
+# =============================================================================
+# 셀 키 = (instruction, scene_idx, jitter_idx, noise_idx). instruction 은 사람이 쓰는
+# 표기("PPCC/bread")와 shard 파일 stem(slug, "PPCC_bread")이 갈리므로 둘 다로 매칭한다.
+
+
+def _instr_variants(v) -> set[str]:
+    """매칭 후보 문자열 집합 ('/'·공백 → '_' 변형 포함)."""
+    s = str(v or "").strip()
+    if not s:
+        return set()
+    return {s, s.replace("/", "_").replace(" ", "_")}
+
+
+def shard_slug_index(paths: list[Path]) -> dict[str, str]:
+    """slug(stem) → meta instruction. meta_json 만 읽는다 (X 는 안 푼다)."""
+    idx: dict[str, str] = {}
+    for p in paths:
+        instr = ""
+        try:
+            with np.load(p, allow_pickle=False) as f:
+                if "meta_json" in f.files:
+                    instr = str(json.loads(str(f["meta_json"])).get("instruction", ""))
+        except (OSError, ValueError, KeyError):
+            instr = ""      # 깨진 shard 는 실제 로드(ShardSpec)에서 fail-loud 된다
+        idx[p.stem] = instr
+    # 파일명과 meta 가 **서로 다른 키**를 가리키면 즉시 멈춘다.
+    # 2026-09-05 실사고: oven/washer left↔right 키 교환에서 scene shard 는 파일명만
+    # rename 되고 내부 meta_json.instruction 은 구 키로 남았다. 이 상태로 매칭하면
+    # 셀 TSV(신 키)의 행이 **반대쪽 물리 대상 shard** 에 걸린다 — 조용히 틀린 detector 가
+    # 나오는 최악의 경로라 fail-loud 로 막는다.
+    bad = []
+    for stem, instr in idx.items():
+        if not instr or "__s" not in stem:
+            continue
+        head = stem.rsplit("__s", 1)[0]
+        if head not in _instr_variants(instr):
+            bad.append(f"{stem}.npz (meta instruction={instr})")
+    if bad:
+        raise SystemExit(
+            "shard 파일명과 meta_json.instruction 이 어긋난다 — 키 교환 후 meta 미패치가 "
+            "의심된다(파일명 기준으로 학습하면 반대 대상 detector 가 나온다). "
+            f"불일치 {len(bad)}건: {bad[:6]}")
+    return idx
+
+
+def read_cell_tsv(path, slug_instr: dict[str, str], what: str = "--cells-tsv"
+                  ) -> tuple[list[dict], dict[str, list[dict]]]:
+    """셀 TSV → (행 목록, slug별 인덱스). 계약 위반은 전부 fail-loud.
+
+    필수 열: scene_idx, noise_idx, 식별 열(instruction|slug|grid_instruction 중 하나
+    이상), 지터 열 하나 이상. 그 밖의 열(machine·sig·rel_path·pool_* 등)은 무시한다.
+
+    지터 열 규약: **`jitter_idx` 가 있으면 그것만 셀 키로 쓴다** (`jitter_reset_idx` 는
+    무시). v6 TSV 는 두 열을 다 담고, oven/washer 는 jitter_reset_idx 가 전부 0 이라
+    두 값이 정당하게 다르다 — 불일치는 정보성 로그 한 줄로만 남긴다.
+    `jitter_idx` 가 없으면 legacy `jitter_reset_idx` 를 쓰되, 그 값이 전부 같으면
+    지터 축이 없는 것이므로 fail-loud.
+    """
+    p = Path(path)
+    if not p.exists():
+        raise SystemExit(f"{what}: 파일 없음 {p.name}")
+    with open(p, encoding="utf-8") as fh:
+        rd = csv.DictReader(fh, delimiter="\t")
+        cols = list(rd.fieldnames or [])
+        raw_rows = [dict(r) for r in rd]
+
+    miss = [c for c in ("scene_idx", "noise_idx") if c not in cols]
+    if miss:
+        raise SystemExit(f"{what}: 필수 열 누락 {miss} (있는 열: {cols})")
+    if not any(c in cols for c in CELL_INSTR_COLS):
+        raise SystemExit(f"{what}: 식별 열이 필요하다 {CELL_INSTR_COLS} "
+                         f"(있는 열: {cols})")
+    jcol = next((c for c in CELL_JITTER_COLS if c in cols), None)
+    if jcol is None:
+        raise SystemExit(f"{what}: 지터 열 없음 — {CELL_JITTER_COLS[0]} (또는 legacy "
+                         f"{CELL_JITTER_COLS[1]}) 이 필요하다 (있는 열: {cols})")
+    if jcol == "jitter_idx" and "jitter_reset_idx" in cols:
+        n_diff = sum(1 for r in raw_rows
+                     if str(r.get("jitter_idx", "")).strip()
+                     and str(r.get("jitter_reset_idx", "")).strip()
+                     and str(r["jitter_idx"]).strip() != str(r["jitter_reset_idx"]).strip())
+        if n_diff:
+            print(f"[cells] jitter_idx≠jitter_reset_idx 행 {n_diff}/{len(raw_rows)} "
+                  "— jitter_idx 채택", flush=True)
+    if jcol == "jitter_reset_idx":
+        vals = {str(r.get(jcol, "")).strip() for r in raw_rows}
+        vals.discard("")
+        if len(vals) <= 1:
+            raise SystemExit(f"{what}: 지터 축 없음 (jitter_reset_idx 값 {sorted(vals)}) "
+                             "— v6 jitter_idx 열 필요")
+
+    # 매칭 키 → slug 후보들. **같은 instruction 이 scene 별 shard 로 여러 개** 올 수 있다
+    # (v6 scene 단위 shard: OvenRack_out-left__s0 / __s1). 그래서 모호를 fail-loud 로
+    # 막지 않고 후보를 모아 두었다가, 아래에서 행의 scene_idx 로 가린다
+    # (stem 이 `…__s<scene>` 규칙이면 그 숫자로, 아니면 유일 후보로).
+    keymap: dict[str, list[str]] = {}
+    for slug, instr in sorted(slug_instr.items()):
+        for k in _instr_variants(slug) | _instr_variants(instr):
+            keymap.setdefault(k, [])
+            if slug not in keymap[k]:
+                keymap[k].append(slug)
+
+    def _pick(cands_slugs: list[str], scene_v: str) -> str | None:
+        """후보 shard 중 그 행의 scene 에 해당하는 것 하나. 판별 불가면 None."""
+        if len(cands_slugs) == 1:
+            return cands_slugs[0]
+        want = f"__s{str(scene_v).strip()}"
+        hit = [c for c in cands_slugs if c.endswith(want)]
+        if len(hit) == 1:
+            return hit[0]
+        return None
+
+    rows: list[dict] = []
+    by_slug: dict[str, list[dict]] = {}
+    unmatched: list[str] = []
+    for i, r in enumerate(raw_rows, start=2):
+        cands: list[str] = []
+        for c in CELL_INSTR_COLS:                 # slug → grid_instruction → instruction
+            cands += list(_instr_variants(r.get(c)))
+        cand_slugs: list[str] = []
+        for c in cands:
+            for sl in keymap.get(c, []):
+                if sl not in cand_slugs:
+                    cand_slugs.append(sl)
+        slug = _pick(cand_slugs, r.get("scene_idx", "")) if cand_slugs else None
+        if slug is None and cand_slugs:
+            # 그 instruction 의 shard 는 있는데 **그 scene 의 shard 가 아직 없는** 경우다
+            # (증분 추출 중). 아래 미매칭과 같이 건너뛴다 — 여기서 죽이면 셀 TSV 가
+            # 공용이라 **다른 instruction 실행까지 전부 죽는다**(2026-09-05 실사고).
+            unmatched.append(
+                "line{}: scene {} shard 없음 (후보 {})".format(
+                    i, r.get("scene_idx"), cand_slugs))
+            continue
+        if slug is None:
+            unmatched.append("line{}: {}".format(
+                i, {c: r.get(c, "") for c in CELL_INSTR_COLS if c in cols}))
+            continue
+        jv = str(r.get(jcol, "")).strip()
+        if jv == "":
+            raise SystemExit(f"{what}: line{i} 지터 값({jcol})이 비어 있다")
+        row = {"slug": slug,
+               "instruction": str(next((r[c] for c in CELL_LABEL_COLS
+                                        if r.get(c)), "") or slug),
+               "scene": int(r["scene_idx"]), "jitter": int(jv),
+               "noise": int(r["noise_idx"]), "raw": r}
+        rows.append(row)
+        by_slug.setdefault(slug, []).append(row)
+    # 이 실행에 로드된 shard 에 없는 instruction 행은 **정상적으로 있을 수 있다** —
+    # 셀 TSV 는 전 instruction 공용이고 러너는 준비된 instruction 만 골라 돌리기 때문
+    # (2026-09-04: 증분 학습에서 이걸 fail-loud 로 막아 첫 셀이 무음 실패했다).
+    # 따라서 미매칭은 건너뛰고 수만 로그로 남기되, **한 행도 안 맞으면** 잘못된 TSV·
+    # shard 조합이므로 그때는 멈춘다.
+    if unmatched:
+        print(f"[cells] {what}: 로드된 shard 밖 행 {len(unmatched)}개 건너뜀 "
+              f"(shard: {sorted(slug_instr)})", flush=True)
+    if not rows:
+        raise SystemExit(f"{what}: 유효 행 0 — 로드된 shard {sorted(slug_instr)} 와 "
+                         f"겹치는 셀이 없다 (미매칭 {len(unmatched)}: {unmatched[:5]})")
+    return rows, by_slug
 
 
 # =============================================================================
@@ -356,20 +544,24 @@ def truncate_episode(e: Episode, mode: str, W: int | None,
         if W is None:
             return e
         idx = np.arange(min(e.T, int(W)))
-    elif mode == "phase-gt":
+    elif mode in ("phase-gt", "phase-ck8"):
         if not caps:
             return e
         keep: list[int] = []
         for c, cap in caps.items():
             sel = np.where(e.phase == c)[0][:cap]     # 시간순 앞쪽 우선
             keep.extend(int(i) for i in sel)
+        if mode == "phase-ck8":
+            # 성공 pool에 없는 cluster도 실패 episode의 정상 일부다. 제거하지 않는다.
+            keep.extend(int(i) for i, c in enumerate(e.phase) if int(c) not in caps)
         idx = np.asarray(sorted(keep), dtype=np.int64)
     else:
         raise ValueError(f"알 수 없는 truncate 모드: {mode}")
-    if len(idx) < MIN_TRUNC_LEN:
+    if len(idx) < (1 if mode == "phase-ck8" else MIN_TRUNC_LEN):
         return None
     return Episode(e.task, e.ep_id, e.scene, e.noise, e.succ,
-                   np.ascontiguousarray(e.X[idx]), np.ascontiguousarray(e.phase[idx]))
+                   np.ascontiguousarray(e.X[idx]), np.ascontiguousarray(e.phase[idx]),
+                   jitter=e.jitter)
 
 
 def apply_truncation(split: dict, mode: str, W: int | None,
@@ -473,6 +665,43 @@ def functional_cp_band(band_scores: list[np.ndarray], calib_scores: list[np.ndar
     return {"mu": mu, "sd": sd, "bw": bw, "delta": mu + bw * sd, "L": int(L)}
 
 
+def loo_cp_band(succ_scores: list[np.ndarray], alpha: float, folds: int = 0
+                ) -> dict | None:
+    """calib 분리 없이 **성공 판 LOO(또는 k-fold)** 로 잡는 functional CP 밴드.
+
+    `functional_cp_band` 는 μ/σ 출처와 bw 출처(calib)를 다른 판 집합으로 나눈다.
+    셀 하나(=한 scene 의 다른 지터 판들) 위에서는 성공 판이 10판 안팎이라 또 쪼개면
+    양쪽 다 무너진다 → 같은 집합을 fold 로 돌려 쓴다: 각 fold 에서 held-out 판을 뺀
+    나머지로 μ_t/σ_t 를 잡고, held-out 판의 초과량 max_t((s−μ)/σ) 를 모아 (1−α) 분위를
+    bw 로 쓴다 (split-CP 대신 cross-conformal). 최종 μ/σ 는 전체 성공 판으로 다시 잡고
+    δ = μ + bw·σ. 패딩·ddof·EPS 규약은 `functional_cp_band` 와 동일.
+    """
+    n = len(succ_scores)
+    if n < MIN_BAND_EPS or n < 2:
+        return None
+    L = max(len(s) for s in succ_scores)
+    M = np.stack([_pad_to(s, L) for s in succ_scores])
+    k = n if folds is None or int(folds) <= 0 else min(int(folds), n)
+    assign = np.arange(n) % k                    # 결정적 분할 (셔플 없음)
+    exceed: list[float] = []
+    for f in range(k):
+        ho = np.where(assign == f)[0]
+        tr = np.where(assign != f)[0]
+        if len(tr) < 2:                          # ddof=1 σ 가 정의되지 않는다
+            continue
+        mu_f = M[tr].mean(axis=0)
+        sd_f = M[tr].std(axis=0, ddof=1) + EPS
+        for i in ho:
+            exceed.append(float(np.max((M[i] - mu_f) / sd_f)))
+    if not exceed:
+        return None
+    bw = float(np.quantile(np.asarray(exceed, dtype=np.float64), 1.0 - alpha))
+    mu = M.mean(axis=0)
+    sd = M.std(axis=0, ddof=1) + EPS
+    return {"mu": mu, "sd": sd, "bw": bw, "delta": mu + bw * sd, "L": int(L),
+            "n_cal": int(n), "folds": int(k)}
+
+
 def fire_step(score: np.ndarray, delta: np.ndarray) -> int | None:
     """첫 발화 t. t 가 밴드 길이를 넘으면 **마지막 밴드 유지**."""
     idx = np.minimum(np.arange(len(score)), len(delta) - 1)
@@ -549,6 +778,16 @@ def timer_records(test_eps: list[Episode], task: str, W: int | None,
             "max_score": None,
         })
     return recs
+
+
+def fire_percentiles(records: list[dict]) -> dict:
+    """발화 record 의 첫 발화시각 분포 (median 계열과 별개로 4분위를 남긴다)."""
+    v = [float(r["t_fire"]) for r in records if r.get("fired") and r.get("t_fire") is not None]
+    if not v:
+        return {"t_fire_p25": None, "t_fire_p50": None, "t_fire_p75": None, "n_fired": 0}
+    q = np.percentile(np.asarray(v, dtype=np.float64), [25, 50, 75])
+    return {"t_fire_p25": round(float(q[0]), 2), "t_fire_p50": round(float(q[1]), 2),
+            "t_fire_p75": round(float(q[2]), 2), "n_fired": len(v)}
 
 
 def summarize(records: list[dict], phase_top: int = 4) -> dict:
@@ -925,6 +1164,572 @@ def run_loto(kind: str, tasks: dict, splits: dict, args,
 
 
 # =============================================================================
+# arm: loko-cell (scene-local leave-one-jitter-out, 셀별 detector)
+# =============================================================================
+
+REGISTRY_COLS = ("instruction", "slug", "scene", "jitter", "train_pool", "registered",
+                 "n_pool_other", "n_pool_fail", "n_target_fail", "n_target_succ",
+                 "n_succ_calib", "reason", "ckpt_rel",
+                 # j-only 대조군 진단 (미등록 셀은 빈 값 — 모델이 없어 채울 수 없다)
+                 "auroc_jonly_scene", "auroc_target_j", "t_beats_jonly",
+                 # --loko-holdout-diag 를 켠 run 에만 값이 찬다
+                 "auroc_target_j_holdout")
+
+LOKO_EVAL_SETS = (
+    # (이름, in_train) — in_train=1 은 그 집합이 학습에 들어갔다는 뜻(=상한 지표).
+    ("target_j_fail", 1),
+    ("target_j_succ", 0),
+    ("pool_other", 1),
+)
+
+
+def _jstrat_auroc(scene_scored: list[tuple[Episode, np.ndarray]]) -> dict:
+    """j 별 고정시각(JSTRAT_TD) AUROC. 성공·실패가 공존하지 않는 j 는 채점 제외."""
+    by_j: dict[int, list[tuple[Episode, np.ndarray]]] = {}
+    for e, sc in scene_scored:
+        by_j.setdefault(int(e.jitter), []).append((e, sc))
+    vals: dict[int, float] = {}
+    unscored = 0
+    for j2 in sorted(by_j):
+        a, _n = td_auroc(td_pairs(by_j[j2], JSTRAT_TD))
+        if a is None:                      # 단일 클래스(또는 t_d 까지 남은 판 없음)
+            unscored += 1
+        else:
+            vals[j2] = float(a)
+    return {
+        f"auroc_td{JSTRAT_TD}_jstrat_mean":
+            round(float(np.mean(list(vals.values()))), 4) if vals else None,
+        "n_j_scored": len(vals), "n_j_unscored": unscored,
+        "jstrat_detail": "|".join(f"j{j2}:{v:.2f}" for j2, v in sorted(vals.items())),
+    }
+
+
+# --- j-only 대조군 · scene 전수 시각 스캔 · 대상 j 내부 판별력 --------------
+# 배경: loko-cell detector 가 "실패"가 아니라 "어느 j 인가"(초기조건)를 읽고 있을
+# 가능성이 실측으로 제기됐다 (record 0~10 창에서 j 5-class 정확도 .92~.98). 그래서
+# **활성화를 전혀 보지 않고 j 별 성공률만 쓰는 대조군**을 정면 지표로 둔다.
+BEAT_SCAN_TMAX = 60       # t_beats_jonly 전수 스캔 상한 (record)
+BEAT_SCAN_NMIN = 6        # 그 t 를 채점하려면 필요한 최소 쌍 수
+TARGET_TD_NMIN = 4        # 대상 j 고정시각 AUROC 최소 쌍 수
+
+
+def jonly_scene_auroc(scene_eps: list[Episode]) -> float | None:
+    """j-only 대조군 AUROC. 점수 = 1 − SR(j), SR(j) 는 **그 scene 안의 j 별 성공률**.
+
+    이건 배포 가능한 예측기가 아니라 **진단용 대조군**이다 (대상 j 성공을 포함한 그
+    scene 전수로 SR 을 추정한다 — 즉 정답을 일부 보고 만든 상한). detector 의 고정시각
+    AUROC 가 이 값을 못 넘으면 그 detector 는 "실패"가 아니라 "j" 를 읽고 있는 것.
+    한 scene 에서 상수이므로 그 scene 의 모든 셀 행에 같은 값이 들어간다.
+    j 가 1종뿐이거나 라벨이 한 클래스뿐이면 None.
+    """
+    by_j: dict[int, list[Episode]] = {}
+    for e in scene_eps:
+        by_j.setdefault(int(e.jitter), []).append(e)
+    if len(by_j) < 2:
+        return None
+    sr = {j: float(np.mean([e.succ for e in v])) for j, v in by_j.items()}
+    sc = np.array([1.0 - sr[int(e.jitter)] for e in scene_eps], dtype=np.float64)
+    y = np.array([e.y for e in scene_eps], dtype=np.int64)
+    a = auroc(sc, y)
+    return None if a is None else round(float(a), 4)
+
+
+def scene_beat_scan(scene_scored: list[tuple[Episode, np.ndarray]],
+                    jonly: float | None) -> dict:
+    """scene 전판 위에서 t = 0,1,…,min(BEAT_SCAN_TMAX, maxT−1) 전수 고정시각 AUROC.
+
+    `td_pairs` 와 같은 규약(그 시각 전에 끝난 판 제외). 반환:
+      auroc_scene_best / t_scene_best  = 격자 위 최댓값과 그 t
+      t_beats_jonly                    = jonly 대조군을 처음 넘는 최소 t (없으면 None)
+      t_beats_jonly_reason             = "" | "never" | "no_jonly" | "no_valid_t"
+      n_t_skipped                      = 단일 클래스이거나 n < NMIN 이라 건너뛴 t 수
+    """
+    best_a: float | None = None
+    best_t: int | None = None
+    beat_t: int | None = None
+    n_skip = 0
+    n_scored = 0
+    if scene_scored:
+        t_hi = min(BEAT_SCAN_TMAX, max(e.T for e, _ in scene_scored) - 1)
+        for t in range(0, max(t_hi, -1) + 1):
+            pairs = td_pairs(scene_scored, t)
+            if len(pairs) < BEAT_SCAN_NMIN:
+                n_skip += 1
+                continue
+            a, _n = td_auroc(pairs)
+            if a is None:
+                n_skip += 1
+                continue
+            n_scored += 1
+            if best_a is None or a > best_a:
+                best_a, best_t = float(a), t
+            if beat_t is None and jonly is not None and a > jonly:
+                beat_t = t
+    if beat_t is not None:
+        reason = ""
+    elif n_scored == 0:
+        reason = "no_valid_t"
+    elif jonly is None:
+        reason = "no_jonly"
+    else:
+        reason = "never"
+    # 생존 판 편향 표기 (2026-09-04, action phase 지적): 고정시각 t 는 그 시각 전에
+    # 끝난 판을 뺀다 — 짧은 판이 대개 성공이라 t 가 커질수록 성공 쪽이 먼저 빠진다.
+    # 그래서 지표 옆에 각 t 의 **생존 succ/fail 수**를 함께 남긴다(수치 해석 필수 문맥).
+    def _surv(t: int) -> tuple[int, int]:
+        alive = [e for e, _ in scene_scored if e.T > t]
+        return sum(1 for e in alive if e.y == 0), sum(1 for e in alive if e.y == 1)
+
+    prof = []
+    for t in TD_GRID:
+        ns, nf = _surv(t)
+        prof.append(f"t{t}:s{ns}/f{nf}")
+    out = {"auroc_scene_best": None if best_a is None else round(best_a, 4),
+           "t_scene_best": best_t, "t_beats_jonly": beat_t,
+           "t_beats_jonly_reason": reason, "n_t_skipped": n_skip,
+           "surv_profile": "|".join(prof)}
+    for key, t in (("surv_at_t_best", best_t), ("surv_at_t_beats", beat_t)):
+        if t is None:
+            out[key] = ""
+        else:
+            ns, nf = _surv(int(t))
+            out[key] = f"s{ns}/f{nf}"
+    return out
+
+
+def scene_td_metrics(scene_scored: list[tuple[Episode, np.ndarray]]) -> dict:
+    """scene 전판(= jonly 와 **같은 episode 집합**) 위 TD_GRID 고정시각 AUROC."""
+    out: dict = {}
+    for t_d in TD_GRID:
+        a, _n = td_auroc(td_pairs(scene_scored, t_d))
+        out[f"auroc_scene_td{t_d}"] = a
+    return out
+
+
+def target_j_auroc(target_scored: list[tuple[Episode, np.ndarray]]) -> dict:
+    """**대상 j 안에서만** 실패 vs 성공 (우리 배포 형태의 정직한 판별력).
+
+    j 를 고정했으므로 "어느 j 인가" 로는 절대 못 맞힌다. max-score AUROC 를 정면
+    지표로 두고, 같은 집합의 고정시각(JSTRAT_TD) AUROC 를 함께 낸다.
+    """
+    out: dict = {"auroc_target_j": None,
+                 f"auroc_target_j_td{JSTRAT_TD}": None, "target_j_reason": ""}
+    if not target_scored:
+        out["target_j_reason"] = "no_target_eps"
+        return out
+    ys = {int(e.y) for e, _ in target_scored}
+    if 0 not in ys:
+        out["target_j_reason"] = "no_target_succ"
+        return out
+    if 1 not in ys:
+        out["target_j_reason"] = "no_target_fail"
+        return out
+    sc = np.array([float(s.max()) for _, s in target_scored], dtype=np.float64)
+    y = np.array([int(e.y) for e, _ in target_scored], dtype=np.int64)
+    a = auroc(sc, y)
+    out["auroc_target_j"] = None if a is None else round(float(a), 4)
+    pairs = td_pairs(target_scored, JSTRAT_TD)
+    if len(pairs) >= TARGET_TD_NMIN:
+        a2, _n = td_auroc(pairs)
+        out[f"auroc_target_j_td{JSTRAT_TD}"] = a2
+    return out
+
+
+HOLDOUT_DIAG_KEYS = ("auroc_target_j_holdout",
+                     f"auroc_target_j_holdout_td{JSTRAT_TD}",
+                     "n_holdout_train", "n_holdout_fail", "target_j_holdout_reason")
+
+
+def target_j_holdout_diag(kind: str, args, pool_other: list[Episode],
+                          cell_eps: list[Episode]) -> dict:
+    """**무편향** 대상 j 판별력 — leave-one-jitter-out 로 두 번째 모델을 따로 학습.
+
+    배포용(1번) 모델의 학습 pool 은 pool_other + **대상 j 실패판**이라 대상 j 실패는
+    in-sample, 성공은 out-of-sample 이다 → `auroc_target_j` 는 낙관 편향이 있다.
+    여기서는 학습 집합을 **pool_other 만**(같은 scene 의 다른 j 전판)으로 두어 대상 j
+    를 실패·성공 모두 학습 밖에 둔다. 절제·표준화 규약은 배포 경로와 동일하되 이
+    집합 위에서 다시 잡는다. **순위 지표만** 내고 CP 밴드는 쓰지 않는다 (임계 보정 없음).
+    배포용 모델·체크포인트·밴드는 이 진단이 절대 건드리지 않는다.
+    """
+    out: dict = {k: None for k in HOLDOUT_DIAG_KEYS}
+    out["target_j_holdout_reason"] = ""
+    ys = {int(e.y) for e in cell_eps}
+    if 0 not in ys:
+        out["target_j_holdout_reason"] = "no_target_succ"
+        return out
+    if 1 not in ys:
+        out["target_j_holdout_reason"] = "no_target_fail"
+        return out
+
+    W = rollout_cap(pool_other)
+    caps = phase_dwell_caps(pool_other)
+    tr_eps = [te for te in (truncate_episode(e, args.truncate_train, W, caps)
+                            for e in pool_other) if te is not None]
+    out["n_holdout_train"] = len(tr_eps)
+    out["n_holdout_fail"] = sum(1 for e in tr_eps if e.y == 1)
+    if len(tr_eps) < MIN_BAND_EPS:
+        out["target_j_holdout_reason"] = "too_few_train"
+        return out
+    if len({e.y for e in tr_eps}) < 2:
+        out["target_j_holdout_reason"] = "single_class_train"
+        return out
+
+    mu, sd = standardizer(tr_eps)
+    seqs = [(apply_std(e, mu, sd), e.y) for e in tr_eps]
+    model = train_detector(kind, seqs, seqs[0][0].shape[1], args.epochs, args.lr,
+                           args.hidden, args.lambda_reg, args.grad_clip,
+                           args.batch_size, args.seed, verbose=False)
+    scored = [(e, score_seq(model, apply_std(e, mu, sd))) for e in cell_eps]
+    out.update(holdout_rank_metrics(scored))
+    return out
+
+
+def holdout_rank_metrics(scored: list[tuple[Episode, np.ndarray]]) -> dict:
+    """대상 j 를 학습 밖에 둔 모델의 점수 → 무편향 target-j 순위 지표.
+
+    `target_j_holdout_diag`(2차 모델)와 `--loko-train-pool other`(배포 모델 자체가
+    대상 j 를 안 봤다) 양쪽이 같은 계산을 쓰도록 뽑아 둔 것. CP 밴드는 쓰지 않는다.
+    """
+    out: dict = {"auroc_target_j_holdout": None,
+                 f"auroc_target_j_holdout_td{JSTRAT_TD}": None}
+    sc = np.array([float(s.max()) for _, s in scored], dtype=np.float64)
+    y = np.array([int(e.y) for e, _ in scored], dtype=np.int64)
+    a = auroc(sc, y)
+    out["auroc_target_j_holdout"] = None if a is None else round(float(a), 4)
+    pairs = td_pairs(scored, JSTRAT_TD)
+    if len(pairs) >= TARGET_TD_NMIN:
+        a2, _n = td_auroc(pairs)
+        out[f"auroc_target_j_holdout_td{JSTRAT_TD}"] = a2
+    return out
+
+
+def target_j_holdout_from_deploy(cell_eps: list[Episode],
+                                 scored: list[tuple[Episode, np.ndarray]],
+                                 n_train: int, n_train_fail: int) -> dict:
+    """`--loko-train-pool other` 전용 — **배포 모델이 곧 holdout 모델**이라 재학습 없이
+    같은 열을 채운다 (대상 j 는 실패·성공 모두 학습 밖).
+    """
+    out: dict = {k: None for k in HOLDOUT_DIAG_KEYS}
+    out["target_j_holdout_reason"] = ""
+    ys = {int(e.y) for e in cell_eps}
+    if 0 not in ys:
+        out["target_j_holdout_reason"] = "no_target_succ"
+        return out
+    if 1 not in ys:
+        out["target_j_holdout_reason"] = "no_target_fail"
+        return out
+    out["n_holdout_train"] = int(n_train)
+    out["n_holdout_fail"] = int(n_train_fail)
+    out.update(holdout_rank_metrics(scored))
+    return out
+
+
+def cell_jonly_diag(scene_scored: list[tuple[Episode, np.ndarray]],
+                    target_scored: list[tuple[Episode, np.ndarray]]) -> dict:
+    """셀 하나의 j-only 진단 묶음 (그 셀의 모든 행에 같은 값으로 들어간다)."""
+    jonly = jonly_scene_auroc([e for e, _ in scene_scored])
+    out: dict = {"auroc_jonly_scene": jonly}
+    out.update(scene_td_metrics(scene_scored))
+    out.update(scene_beat_scan(scene_scored, jonly))
+    out.update(target_j_auroc(target_scored))
+    return out
+
+
+def run_loko_cells(kind: str, tasks: dict, args, out_dir: Path,
+                   cells: list[tuple[str, int, int]]
+                   ) -> tuple[list[dict], list[dict], list[dict]]:
+    """셀 (slug, scene s, jitter j) 하나마다 독립 detector + 발화 시뮬.
+
+    학습 pool 은 `--loko-train-pool` 로 고른다 (기본 deploy = 기존 동작):
+      - `deploy`: pool_other(같은 scene 의 다른 j 전판) + **대상 j 의 실패판**.
+        "그 셀에서 이미 관측된 재발 실패를 구제"하는 시나리오 — 대상 j 실패는
+        in-sample 이라 그 판 위 발화는 낙관 편향이 있다.
+      - `other`: pool_other 만. 대상 j 를 실패·성공 모두 학습 밖에 두므로 저장되는
+        체크포인트가 그대로 **무편향(대상 j 완전 미관측) 배포 모델**이고, 대상 j 위
+        발화 시점도 편향 없이 읽힌다.
+    어느 모드든 대상 j 의 성공판은 학습에서 뺀다 (success-blind) — 위양성을 그 판으로 재기 때문.
+    CP 밴드는 pool_other 성공판 위에서 LOO/k-fold (`loo_cp_band`).
+    절제(`--truncate-train`)는 학습 pool 에만, 평가 시퀀스는 항상 full.
+
+    반환 = (요약행, 상세기록, registry 행). registry 는 **미등록 셀도 사유와 함께**
+    한 줄씩 남긴다 (무음 탈락 금지).
+    """
+    rows: list[dict] = []
+    detail: list[dict] = []
+    registry: list[dict] = []
+    loko_root = out_dir / "loko"
+
+    # 안전장치: 대상 slug 의 shard 에 지터 축이 실제로 있나 (oven/washer 는 legacy
+    # jitter_reset_idx 가 전부 0 이라 셀이 전부 한 칸으로 뭉개진다).
+    for slug in sorted({c[0] for c in cells}):
+        info = tasks.get(slug)
+        if info is None:
+            continue
+        jvals = {int(e.jitter) for e in info["all_eps"]}
+        if len(jvals) <= 1:
+            raise SystemExit(
+                f"[loko] {slug}: jitter 축 없음 (값 {sorted(jvals)}) — v6 jitter_idx 열로 "
+                "추출된 shard 인지 확인(oven/washer 는 jitter_reset_idx 가 전부 0)")
+
+    for slug, s, j in cells:
+        info = tasks.get(slug)
+        base_reg = {"instruction": (info or {}).get("instruction", slug), "slug": slug,
+                    "scene": s, "jitter": j,
+                    "train_pool": str(getattr(args, "loko_train_pool", "deploy")),
+                    "registered": 0, "n_pool_other": 0,
+                    "n_pool_fail": 0, "n_target_fail": 0, "n_target_succ": 0,
+                    "n_succ_calib": 0, "reason": "", "ckpt_rel": ""}
+        base_row = {"task": slug, "instruction": (info or {}).get("instruction", slug),
+                    "arm": "loko-cell", "model": kind, "truncate": args.truncate_train,
+                    "scene": s, "jitter": j,
+                    "train_pool": str(getattr(args, "loko_train_pool", "deploy"))}
+        if info is None:
+            base_reg["reason"] = "shard_not_loaded"
+            registry.append(base_reg)
+            rows.append({**base_row, "alpha": None, "skip_reason": "shard_not_loaded"})
+            print(f"[loko] {slug} s{s} j{j}: shard 미로드 — 건너뜀", flush=True)
+            continue
+
+        eps = info["all_eps"]
+        scene_eps = [e for e in eps if e.scene == s]
+        cell_eps = [e for e in scene_eps if e.jitter == j]
+        pool_other = [e for e in scene_eps if e.jitter != j]
+        t_fail = [e for e in cell_eps if e.succ == 0]
+        t_succ = [e for e in cell_eps if e.succ == 1]
+        n_pool_fail = sum(1 for e in pool_other if e.succ == 0)
+        n_calib_succ = sum(1 for e in pool_other if e.succ == 1)
+        pool_mode = str(getattr(args, "loko_train_pool", "deploy"))
+        train_pool = (pool_other + t_fail) if pool_mode == "deploy" else list(pool_other)
+        base_reg.update({"n_pool_other": len(pool_other), "n_pool_fail": n_pool_fail,
+                         "n_target_fail": len(t_fail), "n_target_succ": len(t_succ),
+                         "n_succ_calib": n_calib_succ})
+
+        # ---- 게이트 (순서 고정) --------------------------------------------
+        reason = ""
+        if not cell_eps:
+            reason = "cell_empty"
+        elif n_pool_fail < int(args.min_pool_fail):
+            reason = f"pool_fail<{int(args.min_pool_fail)}"
+        elif len({e.y for e in train_pool}) < 2:
+            reason = "single-class"
+        elif n_calib_succ < int(args.min_calib_succ):
+            # conformal (1−α) 분위가 정의되려면 n ≥ 1/α − 1 (α=0.1 → 9).
+            reason = f"calib_succ<{int(args.min_calib_succ)}"
+        if reason:
+            base_reg["reason"] = reason
+            registry.append(base_reg)
+            rows.append({**base_row, "alpha": None, "skip_reason": reason})
+            print(f"[loko] {slug} s{s} j{j}: 미등록 ({reason}) "
+                  f"pool={len(pool_other)}(fail {n_pool_fail}) "
+                  f"target={len(t_fail)}F/{len(t_succ)}S", flush=True)
+            continue
+
+        # ---- 절제 (학습 pool 의 성공 판 기준; 평가는 항상 full) --------------
+        W = rollout_cap(train_pool)
+        caps = phase_dwell_caps(train_pool)
+        tr_eps: list[Episode] = []
+        n_drop = 0
+        for e in train_pool:
+            te = truncate_episode(e, args.truncate_train, W, caps)
+            if te is None:
+                n_drop += 1
+            else:
+                tr_eps.append(te)
+        if len({e.y for e in tr_eps}) < 2:
+            base_reg["reason"] = "single-class(trunc)"
+            registry.append(base_reg)
+            rows.append({**base_row, "alpha": None, "skip_reason": "single-class(trunc)"})
+            print(f"[loko] {slug} s{s} j{j}: 미등록 (절제 후 단일 클래스)", flush=True)
+            continue
+
+        mu, sd = standardizer(tr_eps)
+        seqs = [(apply_std(e, mu, sd), e.y) for e in tr_eps]
+        input_dim = seqs[0][0].shape[1]
+        train_ep_ids = sorted({int(e.ep_id) for e in tr_eps})
+        _pool_desc = (f"pool_other {len(pool_other)} + target_fail {len(t_fail)}"
+                      if pool_mode == "deploy"
+                      else f"pool_other {len(pool_other)} only [holdout]")
+        print(f"[loko] {slug} s{s} j{j}: train {len(seqs)} "
+              f"({_pool_desc}, "
+              f"drop {n_drop}) | calib_succ {n_calib_succ} | W={W} dim={input_dim}",
+              flush=True)
+        model = train_detector(kind, seqs, input_dim, args.epochs, args.lr, args.hidden,
+                               args.lambda_reg, args.grad_clip, args.batch_size,
+                               args.seed, verbose=not args.quiet)
+
+        # ---- CP 밴드: pool_other 성공 판(절제 반영본) 위 LOO/k-fold ----------
+        calib_eps = [e for e in tr_eps if e.succ == 1]
+        calib_scores = [score_seq(model, apply_std(e, mu, sd)) for e in calib_eps]
+        bands = {a: loo_cp_band(calib_scores, a, args.cp_folds) for a in args.alphas}
+        cp_kind = "loo" if int(args.cp_folds) <= 0 else f"kfold-{int(args.cp_folds)}"
+
+        # ---- 평가 (full 시퀀스) ---------------------------------------------
+        sc_map = {int(e.ep_id): score_seq(model, apply_std(e, mu, sd)) for e in scene_eps}
+        scene_scored = [(e, sc_map[int(e.ep_id)]) for e in scene_eps]
+        jstrat = _jstrat_auroc(scene_scored)
+        # j-only 대조군 묶음 — 셀 단위 값이라 이 셀의 **모든 행(timer 포함)**에 같이 붙는다.
+        cell_diag = cell_jonly_diag(scene_scored,
+                                    [(e, sc_map[int(e.ep_id)]) for e in cell_eps])
+        # 무편향 진단(옵션): 대상 j 를 통째로 뺀 두 번째 모델. 배포용 모델·밴드·체크
+        # 포인트는 위에서 이미 확정됐고 이 진단이 건드리지 않는다.
+        holdout_on = bool(getattr(args, "loko_holdout_diag", False))
+        if holdout_on:
+            if pool_mode == "other":
+                # 배포 모델 자체가 대상 j 를 안 봤다 → 2차 학습은 중복. 같은 계산을
+                # 배포 모델 점수 위에서 그대로 돌린다.
+                cell_diag.update(target_j_holdout_from_deploy(
+                    cell_eps, [(e, sc_map[int(e.ep_id)]) for e in cell_eps],
+                    len(seqs), sum(1 for e in tr_eps if e.y == 1)))
+            else:
+                cell_diag.update(target_j_holdout_diag(kind, args, pool_other, cell_eps))
+        def _d(k, nd=2):                       # 없으면 em-dash
+            v = cell_diag.get(k)
+            return "\u2014" if v is None else (f"{v:.{nd}f}" if nd else str(v))
+        _msg = (f"[loko] {slug} s{s} j{j}: j-only {_d('auroc_jonly_scene')} "
+                f"| scene best {_d('auroc_scene_best')}@t{_d('t_scene_best', 0)} "
+                f"| target-j AUROC {_d('auroc_target_j')} "
+                f"| beats@t{_d('t_beats_jonly', 0)}")
+        if holdout_on:
+            _msg += (f" | holdout {_d('auroc_target_j_holdout')} "
+                     f"(n_tr={_d('n_holdout_train', 0)})")
+        print(_msg, flush=True)
+        groups = {"target_j_fail": t_fail, "target_j_succ": t_succ,
+                  "pool_other": pool_other}
+
+        band_ck: dict[str, dict] = {}
+        for a in args.alphas:
+            band = bands[a]
+            if band is None:
+                rows.append({**base_row, "alpha": a,
+                             "skip_reason": f"성공 판 부족 (calib {len(calib_scores)} "
+                                            f"< {MIN_BAND_EPS})"})
+                continue
+            band_ck[f"{a:.2f}"] = {"mu": band["mu"].astype(np.float32),
+                                   "sd": band["sd"].astype(np.float32),
+                                   "bw": band["bw"],
+                                   "delta": band["delta"].astype(np.float32)}
+            for name, in_train in LOKO_EVAL_SETS:
+                group = groups[name]
+                if not group:
+                    rows.append({**base_row, "alpha": a, "eval_set": name,
+                                 "in_train": in_train, "skip_reason": "eval 판 0"})
+                    continue
+                recs = []
+                for e in group:
+                    sc = sc_map[int(e.ep_id)]
+                    ft = fire_step(sc, band["delta"])
+                    rec = {
+                        "task": slug, "arm": "loko-cell", "model": kind, "alpha": a,
+                        "eval_set": name, "in_train": in_train,
+                        "ep_id": e.ep_id, "scene": e.scene, "noise": e.noise,
+                        "jitter": e.jitter, "succ": e.succ, "y": e.y, "T": e.T,
+                        "W": None if W is None else int(W),
+                        "fired": ft is not None, "t_fire": ft,
+                        "relpos": None if ft is None else round(ft / max(e.T - 1, 1), 4),
+                        "steps_before_end": None if ft is None else int(e.T - 1 - ft),
+                        "fire_phase": None if ft is None else
+                                      info["phase_names"].get(int(e.phase[ft]),
+                                                              str(int(e.phase[ft]))),
+                        "max_score": round(float(sc.max()), 4),
+                    }
+                    recs.append(rec)
+                    detail.append(rec)
+                row = {**base_row, "alpha": a, "eval_set": name, "in_train": in_train,
+                       "band_L": band["L"], "bw": round(band["bw"], 4),
+                       "n_train_ep": len(seqs), "n_band_succ": len(calib_scores),
+                       "n_calib_succ": len(calib_scores),
+                       "train_scenes": f"s{s}/other-j", "calib_scenes": f"loo({cp_kind})",
+                       "test_scenes": f"s{s}/j{j}" if name != "pool_other"
+                                      else f"s{s}/other-j",
+                       "n_trunc_dropped": n_drop, "skip_reason": ""}
+                row.update(summarize(recs))
+                row.update(td_metrics([(e, sc_map[int(e.ep_id)]) for e in group]))
+                row.update(jstrat)
+                row.update(cell_diag)
+                row.update(fire_percentiles(recs))
+                rows.append(row)
+
+        # ---- timer 기준선 (무feature; W 는 학습 pool 성공 기준) ---------------
+        for name, in_train in LOKO_EVAL_SETS:
+            group = groups[name]
+            if not group:
+                continue
+            trecs = timer_records(group, slug, W, info["phase_names"])
+            for r in trecs:
+                r["arm"] = "loko-cell"
+                r["eval_set"] = name
+                r["in_train"] = in_train
+            detail += trecs
+            trow = {**base_row, "alpha": None, "model": "timer", "eval_set": name,
+                    "in_train": in_train, "skip_reason": ""}
+            trow.update(summarize(trecs))
+            trow.update(cell_diag)
+            trow.update(fire_percentiles(trecs))
+            rows.append(trow)
+
+        # ---- 체크포인트 + registry ------------------------------------------
+        ck_rel = Path("loko") / slug / f"s{s}" / f"j{j}" / \
+            f"detector_pertask_{kind}_{slug}.pt"
+        ck_path = out_dir / ck_rel
+        ck_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "arm": "loko-cell", "model": kind, "group": slug,
+            "state_dict": {k: v.cpu() for k, v in model.state_dict().items()},
+            "input_dim": input_dim, "hidden": args.hidden,
+            "std_mean": mu, "std_std": sd,
+            "feature": {"layer": args.layer, "denoise": args.denoise, "seg": args.seg,
+                        "layer_idx": info["layer_idx"],
+                        "denoise_idx": info["denoise_idx"],
+                        "seg_idx": info["seg_idx"], "dim": input_dim},
+            # serve(`src/failure_online/online_failure.py`) 계약: task(=slug) → α → 밴드
+            "cp_bands": {slug: band_ck} if band_ck else {},
+            "tasks": [slug],
+            "shards": [info["shard"]],                 # basename 만 (docs/04 §8)
+            "train": {"epochs": args.epochs, "lr": args.lr, "lambda_reg": args.lambda_reg,
+                      "grad_clip": args.grad_clip, "batch_size": args.batch_size,
+                      "seed": args.seed, "band_mu": "loo(pool_other succ)"},
+            "phase_source": info.get("phase_source"),
+            "phase_codebook": info["phase_names"],
+            "training_contributions": [dict(ep_id=e.ep_id, success=e.succ, jitter=e.jitter,
+                raw_records=next(z.T for z in train_pool if z.ep_id == e.ep_id),
+                used_records=e.T, cluster_counts={str(int(c)): int((e.phase == c).sum())
+                    for c in np.unique(e.phase)}) for e in tr_eps],
+            "truncate": {"mode": args.truncate_train, "rollout_W": {slug: W},
+                         "phase_caps": {slug: {str(k): v for k, v in caps.items()}},
+                         "n_dropped": {slug: n_drop},
+                         "eval": "full (절제 없음)"},
+            "loko": {"instruction": info["instruction"], "slug": slug,
+                     "scene": s, "jitter": j,
+                     "n_pool_other": len(pool_other), "n_target_fail": len(t_fail),
+                     "n_calib_succ": len(calib_scores), "cp": cp_kind,
+                     "n_target_succ_excluded": len(t_succ),
+                     "train_pool": pool_mode,
+                     "train_ep_ids": train_ep_ids},
+        }
+        torch.save(payload, ck_path)
+        base_reg.update({"registered": 1, "reason": "",
+                         "n_succ_calib": len(calib_scores),
+                         "auroc_jonly_scene": cell_diag["auroc_jonly_scene"],
+                         "auroc_target_j": cell_diag["auroc_target_j"],
+                         "t_beats_jonly": cell_diag["t_beats_jonly"],
+                         "auroc_target_j_holdout":
+                             cell_diag.get("auroc_target_j_holdout"),
+                         "ckpt_rel": ck_rel.as_posix()})
+        registry.append(base_reg)
+
+    return rows, detail, registry
+
+
+def write_registry(rows: list[dict], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = ["\t".join(REGISTRY_COLS)]
+    for r in rows:
+        lines.append("\t".join("" if r.get(c) is None else str(r.get(c, ""))
+                               for c in REGISTRY_COLS))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+# =============================================================================
 # TSV
 # =============================================================================
 
@@ -935,7 +1740,18 @@ TSV_COLS = (["task", "instruction", "arm", "model", "alpha", "truncate", "n_test
             + [f"auroc_td{t}" for t in TD_GRID] + [f"n_td{t}" for t in TD_GRID]
             + ["band_L", "bw", "n_train_ep", "n_band_succ", "n_calib_succ",
                "n_trunc_dropped", "train_scenes", "calib_scenes", "test_scenes",
-               "skip_reason"])
+               "skip_reason"]
+            # loko-cell 전용 (다른 arm 은 빈 칸). 기존 열 순서는 건드리지 않는다.
+            + ["scene", "jitter", "train_pool", "eval_set", "in_train",
+               f"auroc_td{JSTRAT_TD}_jstrat_mean", "n_j_scored", "n_j_unscored",
+               "jstrat_detail", "t_fire_p25", "t_fire_p50", "t_fire_p75", "n_fired"]
+            # j-only 대조군 진단 (loko-cell 전용, 셀 단위 상수)
+            + ["auroc_jonly_scene"] + [f"auroc_scene_td{t}" for t in TD_GRID]
+            + ["auroc_scene_best", "t_scene_best", "t_beats_jonly",
+               "t_beats_jonly_reason", "n_t_skipped", "surv_profile", "surv_at_t_best", "surv_at_t_beats", "auroc_target_j",
+               f"auroc_target_j_td{JSTRAT_TD}", "target_j_reason"]
+            # 무편향 대상-j 진단 (--loko-holdout-diag 를 켠 run 에만 값이 찬다)
+            + list(HOLDOUT_DIAG_KEYS))
 
 
 def write_tsv(rows: list[dict], path: Path) -> None:
@@ -952,7 +1768,9 @@ def write_tsv(rows: list[dict], path: Path) -> None:
 # =============================================================================
 
 def _write_synth_shard(path: Path, n_scene=10, n_noise=6, dim=32, seed=0,
-                       onset=0.4, signal=1.6, sig_off=0, sig_rand_sign=False):
+                       onset=0.4, signal=1.6, sig_off=0, sig_rand_sign=False,
+                       n_jitter=0, succ_jitter=None, det_jitter=False,
+                       instruction=None):
     """shard 계약과 동일한 NPZ 를 합성한다. 실패 판은 onset 이후 일부 축이 이동.
 
     `sig_off` = 실패 신호가 실리는 축 offset. task 마다 다르게 주면 **공유 신호 없음**
@@ -960,62 +1778,83 @@ def _write_synth_shard(path: Path, n_scene=10, n_noise=6, dim=32, seed=0,
     `sig_rand_sign` = 실패 이동의 부호를 판마다 무작위로. 다른 task 에서 학습한 고정
     readout 의 투영이 ± 대칭이 되어 held-out AUROC 가 기대값 0.5 로 모인다 (부호가
     고정이면 우연히 −방향에 걸려 0.5 에서 크게 벗어난다 — 음성 대조가 불안정).
+    `n_jitter` = 0 이면 **jitter 열을 쓰지 않는다**(2축 legacy shard = 기존 케이스와
+    바이트 단위로 같은 난수열). >0 이면 scene × jitter × noise 3축.
+    `succ_jitter` = 그 j 는 항상 성공 (j-층화 채점에서 단일 클래스 j 를 만들기 위한 장치).
+    `det_jitter` = 성패를 **j 가 완전히 결정**한다 (홀수 j 는 전판 실패, 짝수 j 는 전판
+    성공). j-only 대조군 AUROC 가 1.0 이 되는 극단 케이스 — 활성화 신호를 끄면
+    (signal=0) 어떤 detector 도 이 대조군을 넘을 수 없어야 한다.
     """
     rng = np.random.default_rng(seed)
     layers = [0, 2, 4, 8, 10, 12, 15]
     K, S = 4, 4
     Xs, ep_id, scene, noise, rec_idx, succ, phase, ep_len = [], [], [], [], [], [], [], []
+    jitter: list[np.ndarray] = []
     codebook = {"reach": 0, "grasp": 1, "transport": 2, "release": 3}
     e = 0
+    jits = list(range(n_jitter)) if n_jitter > 0 else [None]
     for s in range(n_scene):
-        for nz in range(n_noise):
-            fail = bool(rng.random() < 0.45)
-            T = int(rng.integers(18, 26)) if fail else int(rng.integers(10, 18))
-            base = rng.normal(0, 1, size=(T, dim)).astype(np.float32)
-            base += rng.normal(0, 0.5, size=(1, dim)).astype(np.float32)   # scene 효과
-            if fail:
-                t0 = int(onset * T)
-                sgn = -1.0 if (sig_rand_sign and rng.random() < 0.5) else 1.0
-                base[t0:, sig_off:sig_off + 4] += sgn * signal
-            blk = np.zeros((T, len(layers), K, S, dim), dtype=np.float16)
-            # layer 12 × denoise 3 × seg "all" 만 신호를 담고 나머지는 잡음
-            blk[:] = rng.normal(0, 1, size=blk.shape).astype(np.float16)
-            blk[:, layers.index(12), K - 1, S - 1, :] = base.astype(np.float16)
-            Xs.append(blk)
-            ep_id.append(np.full(T, e, np.int32))
-            scene.append(np.full(T, s, np.int16))
-            noise.append(np.full(T, nz, np.int16))
-            rec_idx.append(np.arange(T, dtype=np.int16))
-            succ.append(np.full(T, 0 if fail else 1, np.int8))
-            ph = np.minimum((np.arange(T) * 4) // T, 3).astype(np.int16)
-            phase.append(ph)
-            ep_len.append(np.full(T, T, np.int16))
-            e += 1
-    meta = {"instruction": path.stem, "capture_layers": layers,
+        for jt in jits:
+            for nz in range(n_noise):
+                fail = bool(rng.random() < 0.45)
+                if det_jitter and jt is not None:
+                    fail = bool(int(jt) % 2 == 1)
+                if jt is not None and succ_jitter is not None and jt == int(succ_jitter):
+                    fail = False
+                T = int(rng.integers(18, 26)) if fail else int(rng.integers(10, 18))
+                base = rng.normal(0, 1, size=(T, dim)).astype(np.float32)
+                base += rng.normal(0, 0.5, size=(1, dim)).astype(np.float32)  # scene 효과
+                if fail:
+                    t0 = int(onset * T)
+                    sgn = -1.0 if (sig_rand_sign and rng.random() < 0.5) else 1.0
+                    base[t0:, sig_off:sig_off + 4] += sgn * signal
+                blk = np.zeros((T, len(layers), K, S, dim), dtype=np.float16)
+                # layer 12 × denoise 3 × seg "all" 만 신호를 담고 나머지는 잡음
+                blk[:] = rng.normal(0, 1, size=blk.shape).astype(np.float16)
+                blk[:, layers.index(12), K - 1, S - 1, :] = base.astype(np.float16)
+                Xs.append(blk)
+                ep_id.append(np.full(T, e, np.int32))
+                scene.append(np.full(T, s, np.int16))
+                noise.append(np.full(T, nz, np.int16))
+                rec_idx.append(np.arange(T, dtype=np.int16))
+                succ.append(np.full(T, 0 if fail else 1, np.int8))
+                ph = np.minimum((np.arange(T) * 4) // T, 3).astype(np.int16)
+                phase.append(ph)
+                ep_len.append(np.full(T, T, np.int16))
+                if jt is not None:
+                    jitter.append(np.full(T, jt, np.int16))
+                e += 1
+    meta = {"instruction": instruction or path.stem, "capture_layers": layers,
             "segment_names": ["state", "future", "action", "all"],
             "phase_codebook": codebook, "denoise_k": K, "dim": dim, "tier": "segA"}
-    np.savez(path, X=np.concatenate(Xs), ep_id=np.concatenate(ep_id),
-             scene=np.concatenate(scene), noise=np.concatenate(noise),
-             rec_idx=np.concatenate(rec_idx), succ=np.concatenate(succ),
-             phase_code=np.concatenate(phase), ep_len=np.concatenate(ep_len),
-             meta_json=np.array(json.dumps(meta, ensure_ascii=False)))
+    arrs = dict(X=np.concatenate(Xs), ep_id=np.concatenate(ep_id),
+                scene=np.concatenate(scene), noise=np.concatenate(noise),
+                rec_idx=np.concatenate(rec_idx), succ=np.concatenate(succ),
+                phase_code=np.concatenate(phase), ep_len=np.concatenate(ep_len),
+                meta_json=np.array(json.dumps(meta, ensure_ascii=False)))
+    if jitter:
+        arrs["jitter"] = np.concatenate(jitter)
+    np.savez(path, **arrs)
 
 
 def _synth_case(root: Path, tag: str, seed: int, signal: float, onset: float,
                 n_scene: int, n_noise: int, sig_offs=(0, 0),
-                sig_rand_sign: bool = False) -> Path:
+                sig_rand_sign: bool = False, n_jitter: int = 0,
+                succ_jitter=None, det_jitter: bool = False) -> Path:
     """합성 shard 2개(=task 2개)를 담은 디렉터리. sig_offs 가 다르면 공유 신호 없음."""
     sd = root / f"segA_{tag}"
     sd.mkdir(parents=True, exist_ok=True)
     for i, name in enumerate(("SynthTaskA", "SynthTaskB")):
         _write_synth_shard(sd / f"{name}.npz", n_scene=n_scene, n_noise=n_noise,
                            seed=seed + i, onset=onset, signal=signal,
-                           sig_off=sig_offs[i], sig_rand_sign=sig_rand_sign)
+                           sig_off=sig_offs[i], sig_rand_sign=sig_rand_sign,
+                           n_jitter=n_jitter, succ_jitter=succ_jitter,
+                           det_jitter=det_jitter)
     return sd
 
 
 def _synth_run(args, shard_dir: Path, out_dir: Path, truncate: str,
-               epochs: int, arm: str = "pertask") -> list[dict]:
+               epochs: int, arm: str = "pertask", extra: dict | None = None) -> list[dict]:
     """합성 케이스 1회 실행 → sim_rows.json 의 행 목록."""
     a = argparse.Namespace(**vars(args))
     a.shard_dir, a.out = shard_dir, out_dir
@@ -1026,10 +1865,135 @@ def _synth_run(args, shard_dir: Path, out_dir: Path, truncate: str,
     a.models = "lstm"
     a.quiet = True
     a.train_scenes, a.calib_scenes, a.test_scenes = 8, 3, 3
+    for k, v in (extra or {}).items():
+        setattr(a, k, v)
     rc = run(a)
     if rc != 0:
         raise RuntimeError(f"self-test 하위 실행 실패 (truncate={truncate})")
     return json.loads((out_dir / "sim_rows.json").read_text())
+
+
+def _read_tsv_rows(path: Path) -> list[dict]:
+    with open(path, encoding="utf-8") as fh:
+        return [dict(r) for r in csv.DictReader(fh, delimiter="\t")]
+
+
+def _write_cells_tsv(path: Path, rows: list[dict], cols: list[str]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = ["\t".join(cols)]
+    lines += ["\t".join(str(r.get(c, "")) for c in cols) for r in rows]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _selftest_cell_tsv_reader(root: Path) -> list[str]:
+    """read_cell_tsv 계약 단위 점검 (torch 안 씀 — 즉시 끝난다)."""
+    fails: list[str] = []
+    known = {"PPCC_bread": "PPCC/bread", "SynthTaskA": "SynthTaskA"}
+    d = root / "celltsv"
+
+    # (1) instruction 에 '/' 가 있어도 slug 로 매칭 + jitter_idx 우선
+    p1 = _write_cells_tsv(d / "ok.tsv",
+                          [{"instruction": "PPCC/bread", "scene_idx": 3,
+                            "jitter_idx": 2, "jitter_reset_idx": 2, "noise_idx": 0}],
+                          ["instruction", "scene_idx", "jitter_idx",
+                           "jitter_reset_idx", "noise_idx"])
+    rows, by_slug = read_cell_tsv(p1, known, "(test1)")
+    if not (len(rows) == 1 and rows[0]["slug"] == "PPCC_bread"
+            and rows[0]["jitter"] == 2 and set(by_slug) == {"PPCC_bread"}):
+        fails.append(f"(tsv) 슬래시 instruction 매칭 실패: {rows}")
+
+    # (2) legacy jitter_reset_idx 단독 — 값이 두 종류 이상이면 허용
+    p2 = _write_cells_tsv(d / "legacy.tsv",
+                          [{"slug": "SynthTaskA", "scene_idx": 1,
+                            "jitter_reset_idx": 4, "noise_idx": 2},
+                           {"slug": "SynthTaskA", "scene_idx": 1,
+                            "jitter_reset_idx": 0, "noise_idx": 3}],
+                          ["slug", "scene_idx", "jitter_reset_idx", "noise_idx"])
+    rows2, _ = read_cell_tsv(p2, known, "(test2)")
+    if not (len(rows2) == 2 and rows2[0]["jitter"] == 4):
+        fails.append(f"(tsv) legacy jitter_reset_idx 실패: {rows2}")
+
+    # (2b) legacy 단독인데 값이 전부 같으면 지터 축이 없는 것 → fail-loud
+    p2b = _write_cells_tsv(d / "legacy_flat.tsv",
+                           [{"slug": "SynthTaskA", "scene_idx": 1,
+                             "jitter_reset_idx": 0, "noise_idx": 2},
+                            {"slug": "SynthTaskA", "scene_idx": 2,
+                             "jitter_reset_idx": 0, "noise_idx": 3}],
+                           ["slug", "scene_idx", "jitter_reset_idx", "noise_idx"])
+    try:
+        read_cell_tsv(p2b, known, "(test2b)")
+        fails.append("(tsv) jitter_reset_idx 가 전부 0 인데 통과했다")
+    except SystemExit:
+        pass
+
+    # (3) 두 열이 어긋나면 **jitter_idx 를 채택**하고 로그만 남긴다 (v6 실데이터 규약:
+    #     oven/washer 는 jitter_reset_idx 가 전부 0 이라 불일치가 정상)
+    p3 = _write_cells_tsv(d / "both.tsv",
+                          [{"grid_instruction": "PPCC/bread", "slug": "PPCC_bread",
+                            "scene_idx": 1, "jitter_idx": 3, "jitter_reset_idx": 0,
+                            "noise_idx": 2, "machine": "kanu", "sig": "deadbeef"}],
+                          ["grid_instruction", "slug", "machine", "scene_idx",
+                           "jitter_idx", "noise_idx", "jitter_reset_idx", "sig"])
+    rows3, _ = read_cell_tsv(p3, known, "(test3)")
+    if not (len(rows3) == 1 and rows3[0]["jitter"] == 3
+            and rows3[0]["slug"] == "PPCC_bread"
+            and rows3[0]["instruction"] == "PPCC/bread"):
+        fails.append(f"(tsv) jitter_idx 우선 채택 실패: {rows3}")
+
+    # (4) 어느 shard 와도 매칭 안 되는 행은 fail-loud
+    p4 = _write_cells_tsv(d / "unmatched.tsv",
+                          [{"grid_instruction": "NoSuchTask", "scene_idx": 0,
+                            "jitter_idx": 0, "noise_idx": 0}],
+                          ["grid_instruction", "scene_idx", "jitter_idx", "noise_idx"])
+    try:
+        read_cell_tsv(p4, known, "(test4)")
+        fails.append("(tsv) 미매칭 행인데 통과했다")
+    except SystemExit:
+        pass
+
+    # (5) 지터 열이 아예 없으면 fail-loud
+    p5 = _write_cells_tsv(d / "nojit.tsv",
+                          [{"slug": "SynthTaskA", "scene_idx": 0, "noise_idx": 0}],
+                          ["slug", "scene_idx", "noise_idx"])
+    try:
+        read_cell_tsv(p5, known, "(test5)")
+        fails.append("(tsv) 지터 열 없는데 통과했다")
+    except SystemExit:
+        pass
+    return fails
+
+
+def _selftest_loo_band() -> list[str]:
+    """loo_cp_band: bw 가 유한하고 α 가 커지면 단조 감소하는가."""
+    fails: list[str] = []
+    rng = np.random.default_rng(0)
+    succ = [np.abs(rng.normal(0.3, 0.1, size=int(rng.integers(8, 15))))
+            for _ in range(12)]
+    prev = None
+    got = []
+    for a in (0.05, 0.1, 0.2, 0.3):
+        band = loo_cp_band(succ, a, 0)
+        if band is None:
+            fails.append(f"(loo) α={a}: 밴드 None (표본 12판인데)")
+            continue
+        if not np.isfinite(band["bw"]) or not np.all(np.isfinite(band["delta"])):
+            fails.append(f"(loo) α={a}: bw/delta 에 비유한값")
+        if band["folds"] != 12 or band["n_cal"] != 12:
+            fails.append(f"(loo) α={a}: folds/n_cal = {band['folds']}/{band['n_cal']} "
+                         "(LOO 면 12/12 이어야)")
+        got.append((a, round(band["bw"], 4)))
+        if prev is not None and band["bw"] > prev + 1e-12:
+            fails.append(f"(loo) α={a}: bw {band['bw']:.4f} > 이전 {prev:.4f} — "
+                         "(1−α) 분위 단조성 위반")
+        prev = band["bw"]
+    if loo_cp_band(succ[:2], 0.1, 0) is not None:
+        fails.append("(loo) 성공 판 2개인데 밴드가 나왔다 (MIN_BAND_EPS 위반)")
+    kb = loo_cp_band(succ, 0.1, 4)
+    if kb is None or kb["folds"] != 4:
+        fails.append(f"(loo) k-fold(4) 밴드 실패: {None if kb is None else kb['folds']}")
+    print(f"  (b) LOO 밴드 bw(α↑) : {got}  (단조 감소 기대)")
+    return fails
 
 
 def _pooled(rows: list[dict]) -> list[dict]:
@@ -1057,13 +2021,13 @@ def self_test(args) -> int:
         len_dir = _synth_case(root, "lenonly", args.seed + 100, signal=0.0, onset=0.4,
                               n_scene=14, n_noise=8)
 
-        print("\n=== [self-test 1/6] 신호 O · truncate=none (기존 게이트) ===")
+        print("\n=== [self-test 1/11] 신호 O · truncate=none (기존 게이트) ===")
         rows_a_none = _synth_run(args, sig_dir, root / "out_a_none", "none", epochs)
-        print("\n=== [self-test 2/6] 신호 O · truncate=rollout ===")
+        print("\n=== [self-test 2/11] 신호 O · truncate=rollout ===")
         rows_a_tr = _synth_run(args, sig_dir, root / "out_a_rollout", "rollout", epochs)
-        print("\n=== [self-test 3/6] 신호 X(길이만) · truncate=none ===")
+        print("\n=== [self-test 3/11] 신호 X(길이만) · truncate=none ===")
         rows_b_none = _synth_run(args, len_dir, root / "out_b_none", "none", epochs)
-        print("\n=== [self-test 4/6] 신호 X(길이만) · truncate=rollout ===")
+        print("\n=== [self-test 4/11] 신호 X(길이만) · truncate=rollout ===")
         rows_b_tr = _synth_run(args, len_dir, root / "out_b_rollout", "rollout", epochs)
 
         def _td(rows) -> float | None:
@@ -1140,10 +2104,10 @@ def self_test(args) -> int:
         nosh_dir = _synth_case(root, "loto_nosh", args.seed + 200, signal=2.0,
                                onset=0.25, n_scene=14, n_noise=8, sig_offs=(0, 8),
                                sig_rand_sign=True)
-        print("\n=== [self-test 5/6] loto · 공유 신호 O ===")
+        print("\n=== [self-test 5/11] loto · 공유 신호 O ===")
         rows_c_sh = _synth_run(args, sig_dir, root / "out_c_shared", "none", epochs,
                                arm="loto")
-        print("\n=== [self-test 6/6] loto · 공유 신호 X (다른 축) ===")
+        print("\n=== [self-test 6/11] loto · 공유 신호 X (다른 축) ===")
         rows_c_no = _synth_run(args, nosh_dir, root / "out_c_noshare", "none", epochs,
                                arm="loto")
         c_sh, c_no = _td(rows_c_sh), _td(rows_c_no)
@@ -1160,6 +2124,265 @@ def self_test(args) -> int:
         elif not (0.35 <= c_no <= 0.65):
             fails.append(f"(c) loto/공유X: held-out AUROC {c_no} 이 0.35~0.65 밖 — "
                          "공유 신호 없는 합성인데 전이가 보인다 (held-out 누수 의심)")
+
+        # ---- (d~g) loko-cell 게이트 ---------------------------------------
+        # 3축(scene × jitter × noise) 합성. j=0 은 **항상 성공** → j-층화 채점에서
+        # 반드시 제외되어야 하는 단일 클래스 j 가 결정적으로 생긴다.
+        lk_dir = _synth_case(root, "loko", args.seed + 300, signal=2.0, onset=0.25,
+                             n_scene=3, n_noise=8, n_jitter=4, succ_jitter=0)
+        cells_cols = ["instruction", "scene_idx", "jitter_idx", "noise_idx"]
+        cells = [
+            # 같은 셀을 noise 2행으로 → dedupe 되어 1셀이어야 한다
+            {"instruction": "SynthTaskA", "scene_idx": 0, "jitter_idx": 1, "noise_idx": 0},
+            {"instruction": "SynthTaskA", "scene_idx": 0, "jitter_idx": 1, "noise_idx": 3},
+            {"instruction": "SynthTaskA", "scene_idx": 1, "jitter_idx": 2, "noise_idx": 0},
+            # 존재하지 않는 지터 → cell_empty 로 registry 에 남아야 한다
+            {"instruction": "SynthTaskA", "scene_idx": 2, "jitter_idx": 9, "noise_idx": 0},
+        ]
+        cells_tsv = _write_cells_tsv(root / "loko_cells.tsv", cells, cells_cols)
+        lk_out = root / "out_loko"
+        print("\n=== [self-test 7/11] loko-cell · 셀별 detector ===")
+        rows_lk = _synth_run(args, lk_dir, lk_out, "none", epochs, arm="loko-cell",
+                             extra={"loko_cells_tsv": str(cells_tsv),
+                                    "min_pool_fail": 3, "min_calib_succ": 6,
+                                    "cp_folds": 0})
+        print("\n=== [self-test 8/11] loko-cell · 게이트 미달(min-calib-succ 999) ===")
+        lk_out2 = root / "out_loko_gate"
+        _synth_run(args, lk_dir, lk_out2, "none", epochs, arm="loko-cell",
+                   extra={"loko_cells_tsv": str(cells_tsv), "min_pool_fail": 3,
+                          "min_calib_succ": 999, "cp_folds": 0})
+
+        reg = _read_tsv_rows(lk_out / "cell_registry.tsv")
+        reg2 = _read_tsv_rows(lk_out2 / "cell_registry.tsv")
+        det = json.loads((lk_out / "sim_detail.json").read_text())
+        print("\n[self-test] loko-cell 게이트")
+        print(f"  (a) registry {len(reg)}행 — "
+              + " | ".join(f"s{r['scene']}j{r['jitter']}:"
+                           f"{'등록' if r['registered'] == '1' else r['reason']}"
+                           for r in reg))
+
+        # (a) 게이트 미달 셀이 사유와 함께 registry 에 남는가 (무음 탈락 금지)
+        if len(reg) != 3:
+            fails.append(f"(a) registry 행 {len(reg)} != 대상 셀 3 (noise dedupe 실패?)")
+        empty = [r for r in reg if r["reason"] == "cell_empty"]
+        if len(empty) != 1:
+            fails.append(f"(a) cell_empty 행 {len(empty)}개 (존재하지 않는 j 하나 기대)")
+        if not any(r["registered"] == "1" for r in reg):
+            fails.append("(a) 등록된 셀이 하나도 없다 — 합성 표본/게이트 확인")
+        bad2 = [r for r in reg2 if r["registered"] == "1"]
+        if bad2:
+            fails.append(f"(a) min_calib_succ=999 인데 등록된 셀 {len(bad2)}개")
+        if not any(r["reason"].startswith("calib_succ<999") for r in reg2):
+            fails.append(f"(a) calib_succ<999 사유 행이 없다: "
+                         f"{[r['reason'] for r in reg2]}")
+
+        # (c) 대상 j 성공판이 학습 pool 에 안 들어갔는가 (ep_id 집합 직접 대조)
+        checked = 0
+        for r in reg:
+            if r["registered"] != "1":
+                continue
+            ck = torch.load(lk_out / r["ckpt_rel"], map_location="cpu",
+                            weights_only=False)
+            tr_ids = set(int(v) for v in ck["loko"]["train_ep_ids"])
+            tgt_succ = {int(d["ep_id"]) for d in det["episodes"]
+                        if d.get("eval_set") == "target_j_succ"
+                        and d.get("task") == r["slug"]
+                        and int(d.get("scene", -1)) == int(r["scene"])
+                        and int(d.get("jitter", -1)) == int(r["jitter"])}
+            if not tgt_succ:
+                fails.append(f"(c) s{r['scene']}j{r['jitter']}: target_j_succ 판이 0 "
+                             "— 검증이 공허하다")
+                continue
+            leak = tgt_succ & tr_ids
+            checked += 1
+            print(f"  (c) s{r['scene']}j{r['jitter']}: target_j_succ {len(tgt_succ)}판 "
+                  f"∩ train {len(tr_ids)}판 = {len(leak)} (0 기대)")
+            if leak:
+                fails.append(f"(c) s{r['scene']}j{r['jitter']}: 대상 j 성공판 "
+                             f"{sorted(leak)} 가 학습 pool 에 들어갔다")
+        if checked == 0:
+            fails.append("(c) 검증할 등록 셀이 없다")
+
+        # (d) j-층화 AUROC 가 단일클래스 j(=항상 성공인 j0)를 제외하는가
+        jrows = [r for r in rows_lk if r.get("arm") == "loko-cell"
+                 and r.get("model") != "timer" and r.get("n_j_scored") is not None]
+        if not jrows:
+            fails.append("(d) j-층화 열이 붙은 행이 없다")
+        for r in jrows[:1] or []:
+            print(f"  (d) jstrat: mean={r.get(f'auroc_td{JSTRAT_TD}_jstrat_mean')} "
+                  f"scored={r['n_j_scored']} unscored={r['n_j_unscored']} "
+                  f"detail={r.get('jstrat_detail')}")
+        for r in jrows:
+            if int(r["n_j_unscored"]) < 1:
+                fails.append(f"(d) s{r['scene']}j{r['jitter']}: 단일클래스 j0 가 있는데 "
+                             f"n_j_unscored={r['n_j_unscored']}")
+            if "j0:" in str(r.get("jstrat_detail") or ""):
+                fails.append(f"(d) s{r['scene']}j{r['jitter']}: 항상 성공인 j0 가 "
+                             f"채점됐다 ({r['jstrat_detail']})")
+            if int(r["n_j_scored"]) < 1:
+                fails.append(f"(d) s{r['scene']}j{r['jitter']}: 채점된 j 가 0")
+
+        # in_train 표기 계약 (target_j_succ 만 학습 밖)
+        for r in jrows:
+            want = 0 if r.get("eval_set") == "target_j_succ" else 1
+            if int(r["in_train"]) != want:
+                fails.append(f"(d) eval_set={r.get('eval_set')} 의 in_train="
+                             f"{r['in_train']} (기대 {want})")
+
+        # ---- (h) j-only 대조군 게이트 --------------------------------------
+        # 배경: detector 가 "실패"가 아니라 "어느 j 인가"를 읽고 있을 수 있다. 두 극단
+        # 합성으로 대조군 지표의 방향성을 못 박는다.
+        #   (h1) 성패를 j 가 완전히 결정 + feature 신호 0 → j-only=1.0, 넘을 수 없음
+        #        (그리고 대상 j 가 전판 실패라 auroc_target_j 는 None/no_target_succ)
+        #   (h2) 성패가 j 와 무관 + 후반에만 feature 신호 → j-only≈0.5, 넘을 수 있고
+        #        최고점이 후반 t 에 온다
+        jd_dir = _synth_case(root, "jonly_det", args.seed + 400, signal=0.0, onset=0.4,
+                             n_scene=2, n_noise=8, n_jitter=4, det_jitter=True)
+        lt_dir = _synth_case(root, "jonly_late", args.seed + 500, signal=2.0, onset=0.6,
+                             n_scene=2, n_noise=10, n_jitter=4)
+        jd_cells = _write_cells_tsv(
+            root / "jonly_cells.tsv",
+            [{"instruction": "SynthTaskA", "scene_idx": 0, "jitter_idx": 1,
+              "noise_idx": 0}], cells_cols)
+        print("\n=== [self-test 9/11] j-only 대조군 · 성패를 j 가 결정(신호 0) ===")
+        rows_h1 = _synth_run(args, jd_dir, root / "out_jonly_det", "none", epochs,
+                             arm="loko-cell",
+                             extra={"loko_cells_tsv": str(jd_cells),
+                                    "min_pool_fail": 3, "min_calib_succ": 6,
+                                    "cp_folds": 0})
+        print("\n=== [self-test 10/11] j-only 대조군 · j 무관 후반 신호 ===")
+        rows_h2 = _synth_run(args, lt_dir, root / "out_jonly_late", "none", epochs,
+                             arm="loko-cell",
+                             extra={"loko_cells_tsv": str(jd_cells),
+                                    "min_pool_fail": 3, "min_calib_succ": 6,
+                                    "cp_folds": 0})
+
+        def _diag(rows) -> dict | None:
+            """loko-cell detector 행 하나(셀 단위 상수라 아무 행이나 같다)."""
+            v = [r for r in rows if r.get("arm") == "loko-cell"
+                 and r.get("model") != "timer"
+                 and r.get("auroc_jonly_scene") is not None]
+            return v[0] if v else None
+
+        d1, d2 = _diag(rows_h1), _diag(rows_h2)
+        print("\n[self-test] j-only 대조군 게이트")
+        if d1 is None:
+            fails.append("(h1) j-only 열이 붙은 loko-cell 행이 없다 (셀 미등록?)")
+        else:
+            print(f"  (h1) j 결정·신호0 : j-only={_fmt(d1['auroc_jonly_scene'])} "
+                  f"scene_best={_fmt(d1['auroc_scene_best'])}@t{d1['t_scene_best']} "
+                  f"beats@t={d1['t_beats_jonly']} ({d1['t_beats_jonly_reason']}) "
+                  f"skipped={d1['n_t_skipped']} | target_j={d1['auroc_target_j']} "
+                  f"({d1['target_j_reason']})")
+            if float(d1["auroc_jonly_scene"]) < 0.99:
+                fails.append(f"(h1) j-only AUROC {d1['auroc_jonly_scene']} < 0.99 — "
+                             "성패를 j 가 결정하는 합성인데 대조군이 안 올라간다")
+            if d1["t_beats_jonly"] is not None:
+                fails.append(f"(h1) t_beats_jonly={d1['t_beats_jonly']} — j-only=1.0 을 "
+                             "넘었다는 것은 스캔 비교가 잘못됐다는 뜻")
+            if d1["t_beats_jonly_reason"] != "never":
+                fails.append(f"(h1) t_beats_jonly_reason={d1['t_beats_jonly_reason']} "
+                             "(기대 'never')")
+            # (h1) 겸 대상 j 성공 0판 계약
+            if d1["auroc_target_j"] is not None:
+                fails.append(f"(h1) 대상 j 에 성공이 0판인데 auroc_target_j="
+                             f"{d1['auroc_target_j']} (None 기대)")
+            if d1["target_j_reason"] != "no_target_succ":
+                fails.append(f"(h1) target_j_reason={d1['target_j_reason']} "
+                             "(기대 'no_target_succ')")
+        if d2 is None:
+            fails.append("(h2) j-only 열이 붙은 loko-cell 행이 없다 (셀 미등록?)")
+        else:
+            print(f"  (h2) j 무관·후반신호: j-only={_fmt(d2['auroc_jonly_scene'])} "
+                  f"scene_best={_fmt(d2['auroc_scene_best'])}@t{d2['t_scene_best']} "
+                  f"beats@t={d2['t_beats_jonly']} ({d2['t_beats_jonly_reason']}) "
+                  f"skipped={d2['n_t_skipped']} | target_j={d2['auroc_target_j']}")
+            if d2["t_beats_jonly"] is None:
+                fails.append(f"(h2) t_beats_jonly=None ({d2['t_beats_jonly_reason']}) — "
+                             "j 무관 후반 신호 합성인데 대조군을 한 번도 못 넘었다")
+            if d2["auroc_scene_best"] is None:
+                fails.append("(h2) auroc_scene_best=None — 스캔이 아무 t 도 채점 못 했다")
+            elif float(d2["auroc_scene_best"]) <= float(d2["auroc_jonly_scene"]) + 0.15:
+                fails.append(f"(h2) scene_best {d2['auroc_scene_best']} 이 j-only "
+                             f"{d2['auroc_jonly_scene']} 대비 +0.15 도 못 넘었다")
+            elif d2["t_scene_best"] is None or int(d2["t_scene_best"]) < 5:
+                fails.append(f"(h2) t_scene_best={d2['t_scene_best']} — 후반(onset 0.6)에만 "
+                             "신호를 준 합성인데 최고점이 초반이다")
+            if d2["auroc_target_j"] is None:
+                fails.append(f"(h2) auroc_target_j=None ({d2['target_j_reason']}) — "
+                             "대상 j 에 성패가 섞여 있어야 한다")
+
+        # ---- (i) 무편향 target-j 진단 (--loko-holdout-diag) ------------------
+        # 같은 두 합성을 flag on 으로 다시 태운다.
+        #   h2(j 무관·후반 신호) → 대상 j 를 학습에서 통째로 빼도 AUROC 가 0.5 위
+        #   h1(대상 j 전판 실패) → None + no_target_succ
+        # 그리고 flag off run 과 **기존 열 값이 한 글자도 다르지 않아야** 한다.
+        print("\n=== [self-test 11/11] 무편향 target-j 진단 (holdout) ===")
+        hd_extra = {"loko_cells_tsv": str(jd_cells), "min_pool_fail": 3,
+                    "min_calib_succ": 6, "cp_folds": 0, "loko_holdout_diag": True}
+        t_hd = time.time()
+        rows_h2b = _synth_run(args, lt_dir, root / "out_holdout_late", "none", epochs,
+                              arm="loko-cell", extra=hd_extra)
+        rows_h1b = _synth_run(args, jd_dir, root / "out_holdout_det", "none", epochs,
+                              arm="loko-cell", extra=hd_extra)
+        dt_hd = time.time() - t_hd
+
+        def _hd(rows) -> dict | None:
+            v = [r for r in rows if r.get("arm") == "loko-cell"
+                 and r.get("model") != "timer"
+                 and r.get("auroc_jonly_scene") is not None]
+            return v[0] if v else None
+
+        print("\n[self-test] holdout 진단")
+        h2b, h1b = _hd(rows_h2b), _hd(rows_h1b)
+        if h2b is None:
+            fails.append("(i) holdout run(h2)에 loko-cell 행이 없다")
+        else:
+            print(f"  (i) h2: target_j={h2b['auroc_target_j']} \u2192 "
+                  f"holdout={h2b['auroc_target_j_holdout']} "
+                  f"td{JSTRAT_TD}={h2b[f'auroc_target_j_holdout_td{JSTRAT_TD}']} "
+                  f"n_tr={h2b['n_holdout_train']}(fail {h2b['n_holdout_fail']}) "
+                  f"reason='{h2b['target_j_holdout_reason']}'")
+            if h2b["auroc_target_j_holdout"] is None:
+                fails.append(f"(i) h2 holdout AUROC=None "
+                             f"({h2b['target_j_holdout_reason']}) — 대상 j 에 성패가 "
+                             "섞여 있고 pool_other 도 충분한 합성이다")
+            elif float(h2b["auroc_target_j_holdout"]) <= 0.65:
+                fails.append(f"(i) h2 holdout AUROC {h2b['auroc_target_j_holdout']} "
+                             "\u2264 0.65 — j 와 무관한 실패 신호를 준 합성인데 타 j "
+                             "학습이 대상 j 로 전이되지 않는다")
+            if not h2b["n_holdout_train"] or int(h2b["n_holdout_train"]) < MIN_BAND_EPS:
+                fails.append(f"(i) h2 n_holdout_train={h2b['n_holdout_train']}")
+        if h1b is None:
+            fails.append("(i) holdout run(h1)에 loko-cell 행이 없다")
+        else:
+            print(f"  (i) h1: holdout={h1b['auroc_target_j_holdout']} "
+                  f"reason='{h1b['target_j_holdout_reason']}'")
+            if h1b["auroc_target_j_holdout"] is not None:
+                fails.append(f"(i) h1 대상 j 성공 0판인데 holdout AUROC="
+                             f"{h1b['auroc_target_j_holdout']} (None 기대)")
+            if h1b["target_j_holdout_reason"] != "no_target_succ":
+                fails.append(f"(i) h1 target_j_holdout_reason="
+                             f"{h1b['target_j_holdout_reason']} (기대 'no_target_succ')")
+
+        # (i-회귀) flag on/off 에서 기존 열 값이 동일한가
+        new_cols = set(HOLDOUT_DIAG_KEYS)
+        for tag, r_off, r_on in (("h2", rows_h2, rows_h2b), ("h1", rows_h1, rows_h1b)):
+            if len(r_off) != len(r_on):
+                fails.append(f"(i-회귀) {tag}: 행 수 {len(r_off)} \u2192 {len(r_on)}")
+                continue
+            diff = [(k, a.get(k), b.get(k)) for a, b in zip(r_off, r_on)
+                    for k in set(a) | set(b)
+                    if k not in new_cols and a.get(k) != b.get(k)]
+            if diff:
+                fails.append(f"(i-회귀) {tag}: holdout 플래그가 기존 열을 바꿨다 "
+                             f"{diff[:3]} (총 {len(diff)})")
+        print(f"  (i) 추가 학습 2 run 소요 {dt_hd:.0f}s")
+
+        # ---- 셀 TSV 리더 · LOO 밴드 단위 점검 -------------------------------
+        print("\n[self-test] 셀 TSV 리더 · LOO 밴드")
+        fails += _selftest_cell_tsv_reader(root)
+        fails += _selftest_loo_band()
 
         if fails:
             print("\n[self-test] FAIL")
@@ -1185,25 +2408,81 @@ def run(args) -> int:
     only = [s.strip() for s in args.shards.split(",") if s.strip()] if args.shards else None
     paths = discover_shards(shard_dir, only)
 
+    # 셀 TSV 매칭용 slug ↔ instruction 지도. `--shards` 로 일부만 골랐어도 TSV 가 다른
+    # shard 를 가리킬 수 있으므로 **디렉터리 전체** 로 만든다 (meta_json 만 읽는다).
+    slug_instr = shard_slug_index(discover_shards(shard_dir, None))
+
+    exclude_cells: set[tuple[str, int, int, int]] = set()
+    exclude_cells_by_slug: dict[str, set] = {}
+    if args.exclude_cells_tsv:
+        ex_rows, _ = read_cell_tsv(args.exclude_cells_tsv, slug_instr,
+                                   "--exclude-cells-tsv")
+        for r in ex_rows:
+            key = (r["slug"], r["scene"], r["jitter"], r["noise"])
+            exclude_cells.add(key)
+            exclude_cells_by_slug.setdefault(r["slug"], set()).add(key)
+        print(f"[exclude] 셀 {len(exclude_cells)}개 로드 "
+              f"({ {k: len(v) for k, v in sorted(exclude_cells_by_slug.items())} })",
+              flush=True)
+
+    loko_cells: list[tuple[str, int, int]] = []
+    if args.arm == "loko-cell":
+        if not args.loko_cells_tsv:
+            raise SystemExit("--arm loko-cell 은 --loko-cells-tsv 가 필수")
+        lk_rows, _ = read_cell_tsv(args.loko_cells_tsv, slug_instr, "--loko-cells-tsv")
+        # 같은 (slug, scene, jitter) 가 noise 별로 여러 행이면 셀 단위로 dedupe.
+        loko_cells = sorted({(r["slug"], r["scene"], r["jitter"]) for r in lk_rows})
+        print(f"[loko] 셀 TSV 행 {len(lk_rows)} → 대상 셀 {len(loko_cells)}개 "
+              f"(slug {len(set(c[0] for c in loko_cells))}종)", flush=True)
+
     tasks: dict[str, dict] = {}
     splits: dict[str, dict] = {}
     t0 = time.time()
     for p in paths:
         eps, spec = load_shard_episodes(p, args.layer, args.denoise, args.seg)
         slug = p.stem
-        sc_split = split_scenes(slug, [e.scene for e in eps], args.train_scenes,
-                                args.calib_scenes, args.test_scenes, args.seed)
-        part = {k: [e for e in eps if e.scene in set(v)] for k, v in sc_split.items()}
+        if args.truncate_train == "phase-ck8" and spec.meta.get("phase_source", {}).get("kind") != "ck8":
+            raise ValueError(f"{slug}: phase-ck8 requires audited ck8 shard provenance")
+        if args.arm == "loko-cell":
+            # scene-local arm 은 scene 분할을 쓰지 않는다 (셀 = (instruction, scene, j)).
+            # v6 scene 단위 shard 는 scene 열이 상수라 split_scenes 가 애초에 불가능하다.
+            # W/dwell cap 은 아래에서 part["train"](=전 episode) 위에서 잡히고, 실제
+            # 학습 pool 기준 재계산은 run_loko_cells 가 셀마다 따로 한다.
+            sc_split = {"train": sorted({e.scene for e in eps}), "calib": [], "test": []}
+            part = {"train": list(eps), "calib": [], "test": []}
+        else:
+            sc_split = split_scenes(slug, [e.scene for e in eps], args.train_scenes,
+                                    args.calib_scenes, args.test_scenes, args.seed)
+            part = {k: [e for e in eps if e.scene in set(v)] for k, v in sc_split.items()}
+        # eval 대상 셀(slug, scene, jitter, noise)은 train/calib 에서 제외 — in-sample 방지.
+        # scene 자체는 남긴다(45 §3: scene 노출 허용, held-out 은 episode 축). test 에
+        # 떨어진 셀은 그대로 둔다(평가 자체가 목적).
+        n_excl = {"train": 0, "calib": 0}
+        if exclude_cells:
+            for k in ("train", "calib"):
+                before = len(part[k])
+                part[k] = [e for e in part[k]
+                           if (slug, e.scene, e.jitter, e.noise) not in exclude_cells]
+                n_excl[k] = before - len(part[k])
+            if exclude_cells_by_slug.get(slug) and sum(n_excl.values()) == 0 and \
+                    not any(e.jitter >= 0 for e in eps):
+                raise SystemExit(f"{slug}: --exclude-cells-tsv 지정됐으나 shard 에 jitter "
+                                 "열이 없어 셀 매칭 불가 (2축 legacy shard)")
+            print(f"[exclude] {slug}: eval 셀 {len(exclude_cells_by_slug.get(slug, ()))}개 "
+                  f"→ train −{n_excl['train']} / calib −{n_excl['calib']}", flush=True)
         tasks[slug] = {
+            "n_excluded": n_excl,
+            "phase_source": spec.meta.get("phase_source"),
             "instruction": spec.instruction, "shard": p.name,
             "phase_names": spec.phase_names, "dim": spec.dim,
             "layer_idx": spec.layer_idx, "denoise_idx": spec.denoise_idx,
             "seg_idx": spec.seg_idx, "layers": spec.layers,
         }
         splits[slug] = {**part, "scenes": sc_split}
-        if args.arm == "loto":
+        if args.arm in ("loto", "loko-cell"):
             # held-out fold 의 test = 전 episode(절제 전 원본). 아래 apply_truncation 은
             # train/calib 리스트를 절제 사본으로 갈아끼우므로 여기서 원본을 붙들어 둔다.
+            # loko-cell 은 scene split 자체를 쓰지 않고 이 원본 위에서 셀을 자른다.
             tasks[slug]["all_eps"] = eps
         # W/cap 은 truncate 모드와 무관하게 **항상** 계산한다 — timer 기준선·tpr_before_W
         # 가 모든 run 에서 필요하고, task 별(mixed arm 에서도 task 별)로 잡는다.
@@ -1237,10 +2516,16 @@ def run(args) -> int:
 
     rows: list[dict] = []
     detail: list[dict] = []
+    registry: list[dict] = []
     for arm in arms:
         for kind in models:
             if arm == "loto":
                 r, d, _ = run_loto(kind, tasks, splits, args, out_dir)
+            elif arm == "loko-cell":
+                r, d, reg = run_loko_cells(kind, tasks, args, out_dir, loko_cells)
+                # registry 는 model 무관(셀 게이트 결과) — 첫 model 것만 원장으로 남긴다.
+                if kind == models[0]:
+                    registry += reg
             else:
                 r, d, _ = run_arm(arm, kind, tasks, splits, args, out_dir)
             rows += r
@@ -1249,8 +2534,9 @@ def run(args) -> int:
     # timer 기준선 (무feature): "t ≥ W 면 발화". detector 가 이것보다 못하면 학습한 것은
     # 길이뿐이다. arm/α 무관이라 task 당 한 행 + 풀링 한 행.
     # (loto 는 fold 마다 held-out 전 episode 위 timer 행을 run_loto 안에서 이미 낸다)
+    # (loko-cell 도 셀마다 자기 W 로 timer 행을 run_loko_cells 안에서 낸다)
     timer_all: list[dict] = []
-    for t in (sorted(tasks) if arms != ["loto"] else []):
+    for t in (sorted(tasks) if not set(arms) & {"loto", "loko-cell"} else []):
         recs = timer_records(splits[t]["test"], t, tasks[t].get("W"),
                              tasks[t]["phase_names"])
         if not recs:
@@ -1269,6 +2555,11 @@ def run(args) -> int:
         detail += timer_all
 
     write_tsv(rows, out_dir / "sim_summary.tsv")
+    if args.arm == "loko-cell":
+        write_registry(registry, out_dir / "cell_registry.tsv")
+        n_reg = sum(1 for r in registry if r.get("registered"))
+        print(f"[loko] registry {len(registry)} 셀 → 등록 {n_reg} / 미등록 "
+              f"{len(registry) - n_reg} (cell_registry.tsv)", flush=True)
     (out_dir / "sim_rows.json").write_text(json.dumps(rows, ensure_ascii=False, indent=1),
                                            encoding="utf-8")
     payload = {
@@ -1288,6 +2579,30 @@ def run(args) -> int:
             "td_grid": list(TD_GRID),
             "split": {"train": args.train_scenes, "calib": args.calib_scenes,
                       "test": args.test_scenes, "unit": "scene"},
+            "exclude_cells": {
+                "tsv": Path(args.exclude_cells_tsv).name if args.exclude_cells_tsv else None,
+                "n_cells": len(exclude_cells),
+                "n_excluded": {t: tasks[t].get("n_excluded") for t in sorted(tasks)}},
+            **({"loko": {
+                # 파일명은 basename 만 (docs/04 §8 — 절대경로 기록 금지)
+                "cells_tsv": Path(args.loko_cells_tsv).name if args.loko_cells_tsv
+                             else None,
+                "n_cells": len(loko_cells),
+                "n_registered": sum(1 for r in registry if r.get("registered")),
+                "gates": {"min_pool_fail": int(args.min_pool_fail),
+                          "min_calib_succ": int(args.min_calib_succ)},
+                "cp": "loo" if int(args.cp_folds) <= 0 else f"kfold-{int(args.cp_folds)}",
+                "cp_folds": int(args.cp_folds),
+                "jstrat_td": JSTRAT_TD,
+                "loko_holdout_diag": bool(getattr(args, "loko_holdout_diag", False)),
+                "eval_sets": [n for n, _ in LOKO_EVAL_SETS],
+                "train_pool": str(getattr(args, "loko_train_pool", "deploy")),
+                "train": ("pool_other(같은 scene 의 다른 j 전판) + 대상 j 실패판"
+                          if str(getattr(args, "loko_train_pool", "deploy")) == "deploy"
+                          else "pool_other(같은 scene 의 다른 j 전판) 만 — 대상 j 전판 제외"),
+                "excluded_from_train": "대상 j 성공판 (success-blind)",
+                "eval_seq": "full (절제 없음)"}}
+               if args.arm == "loko-cell" else {}),
             **({"loto": {"folds": {h: [t for t in sorted(tasks) if t != h]
                                    for h in sorted(tasks)},
                          "test": "held-out task 전 episode (full, zero-shot)",
@@ -1337,15 +2652,41 @@ def main() -> int:
     ap.add_argument("--seg", default="all",
                     help="token segment 이름 (state|future|action|all)")
     ap.add_argument("--arm", default="both",
-                    choices=("both", "pertask", "mixed", "loto"),
-                    help="both=pertask+mixed. loto=leave-one-task-out (task 전이) 단독 실행")
+                    choices=("both", "pertask", "mixed", "loto", "loko-cell"),
+                    help="both=pertask+mixed. loto=leave-one-task-out (task 전이), "
+                         "loko-cell=scene-local leave-one-jitter-out (셀별 detector) "
+                         "— 각각 단독 실행")
     ap.add_argument("--models", default="lstm,mlp", help="lstm,mlp")
     ap.add_argument("--alphas", default="0.05,0.1,0.2,0.3", help="CP 유의수준(FPR 목표)")
     ap.add_argument("--train-scenes", type=int, default=6)
     ap.add_argument("--calib-scenes", type=int, default=2)
     ap.add_argument("--test-scenes", type=int, default=2)
+    ap.add_argument("--exclude-cells-tsv", default="",
+                    help="train/calib 에서 제외할 eval 셀 TSV (열: slug|grid_instruction"
+                         "|instruction, scene_idx, jitter_idx(우선)|jitter_reset_idx, "
+                         "noise_idx; 나머지 열은 무시)")
+    ap.add_argument("--loko-cells-tsv", default="",
+                    help="--arm loko-cell 의 대상 셀 TSV (열 계약은 "
+                         "--exclude-cells-tsv 와 동일; (slug,scene,jitter) 로 dedupe)")
+    ap.add_argument("--min-pool-fail", type=int, default=3,
+                    help="loko-cell 게이트: pool_other 의 최소 실패 판 수")
+    ap.add_argument("--min-calib-succ", type=int, default=9,
+                    help="loko-cell 게이트: CP 밴드용 최소 성공 판 수 "
+                         "(conformal (1−α) 분위 정의에 n ≥ 1/α − 1; α=0.1 → 9)")
+    ap.add_argument("--loko-train-pool", default="deploy",
+                    choices=("deploy", "other"),
+                    help="loko-cell 학습 pool. deploy=pool_other + 대상 j 실패판 "
+                         "(기본, 관측된 재발 실패 구제 시나리오·대상 j 실패는 in-sample). "
+                         "other=pool_other 만 — 대상 j 를 실패·성공 모두 학습에서 빼서 "
+                         "저장되는 체크포인트가 곧 무편향 holdout 배포 모델")
+    ap.add_argument("--loko-holdout-diag", action="store_true",
+                    help="loko-cell 셀마다 **대상 j 를 통째로 뺀** 두 번째 모델을 추가 "
+                         "학습해 무편향 target-j AUROC 를 낸다 (진단 전용 — 배포용 "
+                         "모델·체크포인트·밴드는 그대로). 기본 off")
+    ap.add_argument("--cp-folds", type=int, default=0,
+                    help="loko-cell CP 밴드 fold 수 (0 = episode LOO, >0 = k-fold)")
     ap.add_argument("--truncate-train", default="none",
-                    choices=("none", "rollout", "phase-gt"),
+                    choices=("none", "rollout", "phase-gt", "phase-ck8"),
                     help="학습 데이터 길이 절제 (TRAIN·CALIB 만; TEST 는 항상 full). "
                          "rollout=성공 record 수 ceil(μ+1σ) 로 앞부분만, "
                          "phase-gt=phase 별 성공 dwell ceil(μ+1σ) cap. 기본 none")

@@ -1,0 +1,116 @@
+"""모델 준비 감시 → reseed 먼저 → 나머지 4 arm. baseline replay는 예약하지 않는다."""
+import argparse
+import csv
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import time
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--main-root', type=Path, required=True)
+    p.add_argument('--analysis-repo', required=True)
+    a = p.parse_args()
+    root = a.main_root.resolve()
+    repo = Path(__file__).resolve().parents[3]
+    helper = root/'scripts/utils/remote_compute.sh'
+    remote_env = dict(os.environ, REMOTE_REPO=a.analysis_repo)
+    release_rel = 'outputs/analysis/grid_phase/v6_ck8_dwell_build/released'
+    release = root/release_rel
+    state_dir = root/'outputs/analysis/v6_ck8_dispatch_20260908'
+    state_dir.mkdir(parents=True, exist_ok=True)
+    log = state_dir/'dispatcher.log'
+    manifest = repo/'configs/experiments/v6_ck8_dwell_20260908/episodes.tsv'
+    targets = list(csv.DictReader((manifest.parent/'targets.tsv').open(), delimiter='\t'))
+    machines = {'kanu': dict(host=None, gpus='5,6,7', lease='kanu'),
+                'worker2': dict(host='AISem_50_junhyeong', gpus='2', lease='srv50')}
+    active, done = {}, []
+    def report(message):
+        print(message, flush=True)
+        (state_dir/'state.json').write_text(json.dumps(dict(active={k:v[0].pid for k,v in active.items()},
+            done=done, status=message, updated=time.time()), indent=2)+'\n')
+    def call(cmd, **kw):
+        return subprocess.run(cmd, check=True, **kw)
+    while len(done) < 4:
+        for key, (proc, fh) in list(active.items()):
+            if proc.poll() is None: continue
+            fh.close()
+            del active[key]
+            if proc.returncode:
+                report(f'FAILED {key} rc={proc.returncode}; no automatic retry')
+                raise SystemExit(1)
+            done.append(key)
+            report(f'completed {key}')
+        # Retrieve only the small released artifacts, never prepared/raw shards.
+        with log.open('a') as fh:
+            call(['bash', str(helper), 'pull-results', release_rel], env=remote_env, stdout=fh, stderr=fh)
+        ready = json.loads((release/'ready.json').read_text())
+        if ready['failed']:
+            report(f'BUILD FAILED {ready["failed"]}')
+            raise SystemExit(1)
+        for machine, cfg in machines.items():
+            wanted = [f'{r["slug"]}:{r["scene_idx"]}:{r["jitter_idx"]}' for r in targets if r['machine'] == machine]
+            for stage, arm_list, needed in [('reseed', 'reseed', 'detectors'),
+                    ('operators', 'plain_b08,jfair_b09,reseed_plain_b08,reseed_jfair_b09', 'operators')]:
+                key = machine+'_'+stage
+                if key in active or key in done: continue
+                if stage == 'operators' and machine+'_reseed' not in done: continue
+                if not set(wanted) <= set(ready[needed]): continue
+                # Published files are immutable. Copy only this experiment's artifact roots.
+                for rel in ['outputs/analysis/grid_phase/detector_v6_ck8_dwell',
+                            'outputs/analysis/grid_phase/ae_k8',
+                            'outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8',
+                            'outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain',
+                            'outputs/analysis/v6_preflight_audit_20260908/fit_diagnostics']:
+                    src = release/rel
+                    if src.exists(): shutil.copytree(src, root/rel, dirs_exist_ok=True)
+                proto = state_dir/key
+                proto.mkdir(exist_ok=True)
+                shutil.copy2(manifest, proto/'episodes.tsv')
+                hashes = [dict(path=str(f.relative_to(release)), sha256=hashlib.sha256(f.read_bytes()).hexdigest())
+                          for f in (release/'outputs').rglob('*') if f.is_file()]
+                (proto/'artifacts.json').write_text(json.dumps(hashes, indent=2)+'\n')
+                # GPU use is restricted to free GPUs and guarded by the local lease wrapper.
+                gpu_cmd = ['nvidia-smi', '--query-compute-apps=pid', '--format=csv,noheader']
+                free = True
+                for gpu in cfg['gpus'].split(','):
+                    cmd = gpu_cmd+['--id='+gpu]
+                    if cfg['host']: cmd = ['ssh',cfg['host'], *cmd]
+                    if subprocess.check_output(cmd, text=True).strip(): free=False
+                if not free:
+                    report(f'waiting free GPU: {key}'); continue
+                if cfg['host']:
+                    # Data only. Source code was already synced by git before dispatcher launch.
+                    for rel in ['outputs/analysis/grid_phase/detector_v6_ck8_dwell',
+                                'outputs/analysis/grid_phase/ae_k8',
+                                'outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8',
+                                'outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain',
+                                str(proto.relative_to(root))]:
+                        if not (root/rel).exists(): continue
+                        call(['rsync','-a','--mkpath',str(root/rel)+'/',cfg['host']+':pkt_ws/temporal_vla/'+rel+'/'])
+                out = f'outputs/eval/robocasa/groot_n15/og_v6_ck8_dwell_20260908/{stage}'
+                args = ['--machine',machine,'--gpus',cfg['gpus'],'--lease-held','--port-base','9400',
+                        '--phase-source','ck8','--artifact-tag','v6_ck8dwell','--reference-labels',
+                        '--arms',arm_list,'--manifest',str((proto/'episodes.tsv').relative_to(root)),
+                        '--detector-root','outputs/analysis/grid_phase/detector_v6_ck8_dwell',
+                        '--cluster-bundle','outputs/analysis/grid_phase/ae_k8/ae_bundle_k8.npz', '--out',out]
+                command = ['python',str(repo/'scripts/steer/online_gated/run_v6_heldout_all.py'),*args]
+                if cfg['host']:
+                    import shlex
+                    command=['ssh','-o','ServerAliveInterval=30',cfg['host'],
+                             'cd ~/pkt_ws/temporal_vla && exec setsid '+shlex.join(['python3','scripts/steer/online_gated/run_v6_heldout_all.py',*args])]
+                launch=['bash',str(root/'scripts/utils/with_gpu_lease.sh'),cfg['lease'],cfg['gpus'].replace(',',' '),
+                        'codex-ck8-dwell',key,'--',*command]
+                fh=(state_dir/(key+'.log')).open('a')
+                proc=subprocess.Popen(launch,cwd=root,stdout=fh,stderr=subprocess.STDOUT,stdin=subprocess.DEVNULL)
+                active[key]=(proc,fh)
+                report(f'launched {key} pid={proc.pid}')
+        if len(done) < 4: time.sleep(30)
+    report('ALL_EVAL_STAGES_COMPLETE')
+
+
+if __name__ == '__main__': main()

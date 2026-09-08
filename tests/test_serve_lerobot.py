@@ -1626,6 +1626,27 @@ class TestPerstepGate(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertIn("setpoint", ctx.exception.detail)
 
+    def test_fallback_only_accepts_setpoint_and_reseed_setm_is_one_pure_rerun(self):
+        """A fallback-only registry has no phase hook; reseed_setm still reruns once."""
+        self.srv._gated_registry = {"fallback_only": True, "current": None, "matrices": {}}
+        self.srv._arm_registry = {}
+        cfg = self.srv._parse_perstep_gate({
+            "perstep_gate": {"op": "reseed_setm", "reseed_offset": 5}
+        })
+        self.assertEqual(cfg["op"], "reseed_setm")
+        self.assertFalse(self.srv._gated_phase_registered(None))
+        with patch.object(self.srv, "_failure_from_hidden", return_value=self._detector_result(True)), \
+                patch.object(self.srv, "_rerun_dit_only", return_value=(torch.ones(1, 1, 2), None)) as rerun, \
+                patch.object(self.srv, "_steering_phase_off") as off, \
+                patch.object(self.srv.torch, "manual_seed") as manual_seed:
+            _, _, extras, _ = self.srv._run_perstep_gate(
+                cfg, torch.zeros(1, 1, 2), np.zeros((1, 1, 1, 2)), 20
+            )
+        rerun.assert_called_once_with(capture=True)
+        manual_seed.assert_called_with(25)
+        off.assert_not_called()
+        self.assertEqual(extras["features.perstep_seed2"], 25)
+
 
 if __name__ == "__main__":
     unittest.main()

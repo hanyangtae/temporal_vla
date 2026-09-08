@@ -1,0 +1,25 @@
+{
+  "source_index_sha256": "ea116f4838c4358e48e68d13b3d0b1906aa94ff963fd429fb6e4de08a251a6d3",
+  "rule": "target success>=1 and fail>=1; other4j pool has both classes; all3scenes required; prefer more target success, tie smaller j; no intervention outcomes used",
+  "targets": {
+    "OpenDrawer/left": [
+      1,
+      3,
+      4
+    ],
+    "PPCC/candle": [
+      0,
+      1,
+      2
+    ]
+  },
+  "phase_source": "ck8",
+  "baseline_replay": false,
+  "reference": "original collection success",
+  "excluded_instruction_reasons": "see target_candidates.tsv; no supported target in every scene",
+  "beta": {
+    "plain": 0.8,
+    "jfair": 0.9
+  },
+  "operator_target_fail_allowed": true
+}
