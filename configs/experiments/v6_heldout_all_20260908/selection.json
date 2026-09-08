@@ -1,0 +1,51 @@
+{
+  "arms": {
+    "jfair_beta_0.9": {
+      "beta": 0.9,
+      "operator": "jfair",
+      "reseed": false
+    },
+    "plain_beta_0.8": {
+      "beta": 0.8,
+      "operator": "plain",
+      "reseed": false
+    },
+    "reseed": {
+      "operator": "default",
+      "reseed": true
+    },
+    "reseed_jfair": {
+      "operator": "jfair",
+      "reseed": true
+    },
+    "reseed_plain": {
+      "operator": "plain",
+      "reseed": true
+    }
+  },
+  "corrected_keying": "episodes selected by old_instruction+scene+jitter+machine; grid_instruction preserved from original index; artifact fields use instruction_new/slug_new",
+  "manifest": "v6_heldout_all_20260908",
+  "n_cells": 49,
+  "n_episodes": 490,
+  "noise_ids": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "plan_id": "77e745c37b0f",
+  "provenance": {
+    "outputs/analysis/grid_phase/detector_v6_ho/cells_summary.tsv": "9e17bba4918b37ab5d7d28278f9f83cd9f64ececba52593193691fd718df6fcd",
+    "outputs/analysis/v6_expand_agg/cells.tsv": "8961fc371a6803450eef1497e5b946ac0a83ed7605c775c779ab8dd86e63b438",
+    "outputs/tmp/index_v6_1800.tsv": "ea116f4838c4358e48e68d13b3d0b1906aa94ff963fd429fb6e4de08a251a6d3",
+    "outputs/tmp/v6_cells_agg_oldkeys.tsv": "fd0a401b6b8645c16a964e823b98261323c8968761fb5e42e946ffac921be520"
+  },
+  "selection_rule": "cells.tsv det_registered=1 and n_phase_jfair>0",
+  "tie_break": "jfair beta .9; plain beta .8 is the sole prior candidate"
+}

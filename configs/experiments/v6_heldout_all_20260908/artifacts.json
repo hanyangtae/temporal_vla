@@ -1,0 +1,1986 @@
+[
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/OpenDrawer_left__s0/s0/j0/detector_pertask_lstm_OpenDrawer_left__s0.pt",
+    "sha256": "608938df12abed7f03f4f15cbe5c8f3032492d06cbf68532a20b93b447b3ef5d",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 0,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s0/j0/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "6f3fb2ef223b38b86bc42f3d05b0f126ca54d0cf0fd1bd5f4e9b2e7d1068c6bf"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s0/j0/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "0da60d2c37514055ea85d91426b9e4a9cef6ba1579585cae935f661ca44faf95"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s0/j0/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "774cf82c4a694c32109d5dc6fc0dfd59f7309e8bbb5d7e5d0e98083aa5afa42f"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s0/j0/grasp-handle/dit_L12/metadata.json",
+    "sha256": "7cc48168b680684c528adfc8d109a05cb4aa33c8c8338454b747e0f9293ce23c"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j0/pull/dit_L12/conceptors.npz",
+    "sha256": "a3b0f6dec1b853f50a0ce989958b6898841d1a494da72db7e32bc8dbb8f37230"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j0/pull/dit_L12/metadata.json",
+    "sha256": "a195b9aa24e07cf8d0da8c4d5b2a77ae063b9f2e07538d9ea5ead5eee93c544a"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j0/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "d22478b5261e0f73651558d22fde411f2fbd1cbe85f9940e231639fda2067ca5"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j0/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "1cae39ebb5f643efa830d4997d331c8356ca263eb28b685f6465f34ef2d76cdf"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j0/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "02d07a79d5804d8aacd7f1b25d0d0ef961c72f230c89332374c6b8811f8aee6a"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j0/grasp-handle/dit_L12/metadata.json",
+    "sha256": "ad555663a666471117eb5ccd2f9785ef1a28c95f20a702319f8b9f2af9160e4a"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/OpenDrawer_left__s0/s0/j1/detector_pertask_lstm_OpenDrawer_left__s0.pt",
+    "sha256": "a28b87f870b46f0ef598f0c2b356a25c9dd946990524a788334aa4ca5092f129",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 1,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s0/j1/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "bf2a2146f962346a519c99054fc70043e75c02f8880b88cec52f676cd9b86282"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s0/j1/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "e9416b26bef4d68f0204570c0f77295ffbbaece12833a144148cb6fa2b8021ee"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s0/j1/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "db00cab684ffbc8fd8be321ecc8e4f31913418c3cdff05b5f29cb7d24bfcaf94"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s0/j1/grasp-handle/dit_L12/metadata.json",
+    "sha256": "d6f256b51d0a085dbbaf4bad05fe81ce689c01ae051049571c9f4201b9180656"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j1/pull/dit_L12/conceptors.npz",
+    "sha256": "6ba614062971771509a9c2e0c41ae22f9acf338d8a62acfea72e2c00b6f5f56f"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j1/pull/dit_L12/metadata.json",
+    "sha256": "a4fbcfb3ba48f0bdbd97310620775ef4dc3ca166e7b26f3537079ec7d610f380"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j1/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "e6ad2b0991c0e241d575cca119b7f2d1e187a2ff528aff9e456e6fe9f3c66a19"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j1/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "ba3cf797e92cadba0cd0a897d4ab278d799bb3a1dbb3358dc469b03edf911242"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j1/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "f9aa64baf63edb081b035a94e5cd32a4e0b157a873ca6ed46b915ef4b699c099"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j1/grasp-handle/dit_L12/metadata.json",
+    "sha256": "6d8f3f07235e81260e72b6e6b761fe0ea9c0d945273b0ed3ffd284cf5d4ce678"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/OpenDrawer_left__s0/s0/j2/detector_pertask_lstm_OpenDrawer_left__s0.pt",
+    "sha256": "203fdf82446c8ae7b74df670c695937e66b4f26e936d797c4e19a340cb9984d2",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 2,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s0/j2/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "10bbca4f5852371f260d7f831d1495195567e4913cec9b1e813ae8f76630544e"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s0/j2/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "f28050d78d5ae5dabe152ee4cad02b30673ee5f14bc9c8e6335083bbf1497360"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s0/j2/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "9fae98abff5d1010342209429c8e1188c82b8c4fe3a536c3aff02a7c49cc915d"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s0/j2/grasp-handle/dit_L12/metadata.json",
+    "sha256": "4d7a6c6e0023dd7547e3a04fa2426ebbe92cb8e80d486ca91d0b207e85e84eea"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j2/pull/dit_L12/conceptors.npz",
+    "sha256": "f5d922859423e42d681bf0d989f5c2fb5b8cf86f80326818d514f32959d76b16"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j2/pull/dit_L12/metadata.json",
+    "sha256": "5a9c1f9a0f89de9c6218652ec435ea241da89d900b60d86e3482059b4a2f851d"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j2/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "39b7cb2173508e0bc68be3ceb15122d4c8ba1ad715a7354a1752f5955acd5c1d"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j2/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "7248f53130504adde6f6e4dc7b30622b15de908a0ab898df65908ee211c176f7"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j2/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "a73ee835558dc065a9eafc6ed153b7703b1fe1028476c79249b9ad43009aecaf"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j2/grasp-handle/dit_L12/metadata.json",
+    "sha256": "fc65b448f14390bcddd5182c0634f51f475a552c0c7dc73a519fb5bd61c19dc5"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/OpenDrawer_left__s0/s0/j3/detector_pertask_lstm_OpenDrawer_left__s0.pt",
+    "sha256": "1742beb44e1db677f7175fcd0bb187fda8b5f4f8ec6f1c9455a11f08fef4c8fa",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 3,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s0/j3/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "3434037b559eb9bc4961a0c8012edf16ce53695d8862cff4dd6839caf3054e97"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s0/j3/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "34b068783e096166b69b628ff14ab96cf3b5f2e444ba469e5d07689015280075"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s0/j3/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "8d0e32f0060eab4d44ab6844ccde23da704755faa0987b4b3808ff97f8429f86"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s0/j3/grasp-handle/dit_L12/metadata.json",
+    "sha256": "d418774dab40f60de4749bd043e534d8e6fe1c2f30453051cb7bfc7f73435a95"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j3/pull/dit_L12/conceptors.npz",
+    "sha256": "e401d5f39807dc508f65609c0a35994a9d46116750f09d83e4b1026e1bbea998"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j3/pull/dit_L12/metadata.json",
+    "sha256": "b192f005c279f9e75d7846bb0c5dd511419065705ce8f6bd89231383df1bae30"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j3/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "fa9da640cd3b1114719b1038f0da2b8bf3438429862ea5fe38ba6baf06943d82"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j3/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "3fd6a562db6fe35f1581ce8cadb4d909f17cae83a8d768d64f34b6e88bac53cc"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j3/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "7450bb3f831ff26992938200a3fea262112657f4fbb9ca29a7ab2f649676bfa8"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s0/j3/grasp-handle/dit_L12/metadata.json",
+    "sha256": "e75ce598a75b407f5aa052849d1c86f3df8ed941f615ab422e102438f82da4c3"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/OpenDrawer_left__s2/s2/j1/detector_pertask_lstm_OpenDrawer_left__s2.pt",
+    "sha256": "7b620a074523b02de54e66ef5bea67d0c3f27cac0828300b14466f7cfec90f43",
+    "train_pool": "other",
+    "scene": 2,
+    "jitter": 1,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s2/j1/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "9a3cba5d383ad42a92b9e0c0ecbd8a8081d46f968bf4ae831fcc9018239a0a02"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s2/j1/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "7176cc4c3ea7af3e0f06f7b06b792a332ce929df7b586eec0e9ecb4c369c07af"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s2/j1/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "d3887693794ab5454dc9520f7f3e17e002b479e06524977b0bbe28b283b52662"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s2/j1/grasp-handle/dit_L12/metadata.json",
+    "sha256": "1ffeaf9d876139972b614fde70514f44a226ae695dfca0c62f98ca859203db55"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s2/j1/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "765c813a5b5c2c8c8a92a1d19c88f43e58c08df400733e939f72605060ea3d6e"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s2/j1/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "5250c81e6c3c61a991fcd8fc8739bd0936df915c8a0313ffccb4100c6eaf3d67"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s2/j1/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "8d06aed3b08eb3f1e9ebdb2caf4b11ca0212b563542118e93e00696fd3513a2f"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s2/j1/grasp-handle/dit_L12/metadata.json",
+    "sha256": "159f6b11191010ea6066340c16e252820a9b4d833580b48e6fd635aff5465a20"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/OpenDrawer_left__s2/s2/j2/detector_pertask_lstm_OpenDrawer_left__s2.pt",
+    "sha256": "849c8767612c1ad485e94b321ad95141cf432ec7f1233c20176356894fe527b3",
+    "train_pool": "other",
+    "scene": 2,
+    "jitter": 2,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s2/j2/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "73c2a53aefd0b9c01e861dddecad709f343fd8f836086befae6abd524a4d6fbc"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s2/j2/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "46007858f843186ef5ab51c5d27c8012fa019417e7b7ed6a2cc683f016732ea5"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s2/j2/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "30979aaa2d85a37ab86d010dcf88f49b9373ad7f5e2ff1c82071b66d3e4a1ce8"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s2/j2/grasp-handle/dit_L12/metadata.json",
+    "sha256": "2376a3c83b7b5eb2f72a41550df55bbf84ba49e7400971491d395a39d860afb3"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s2/j2/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "c9a4bb91b7adf748b98343726caba78db929ec842d1928506aeeebd4985fc5bd"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s2/j2/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "f2bd6a102249302ae8d94aee6bf8ff9a054822fd1f3d57efd723a02d99937f7b"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s2/j2/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "ed8241473d7ef105608e779ed0cf960621fbfa5462b0516f3bf67b4b0f58c8c5"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s2/j2/grasp-handle/dit_L12/metadata.json",
+    "sha256": "06cdebb572c667e60d1fe99bdf47fccf0ce93f5747efc7b9071d70bf4b218f5e"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/OpenDrawer_left__s2/s2/j3/detector_pertask_lstm_OpenDrawer_left__s2.pt",
+    "sha256": "2fcbe444ea1961c6b075e726fa94075ec83023a55070c5db5087167ded532103",
+    "train_pool": "other",
+    "scene": 2,
+    "jitter": 3,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s2/j3/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "bc895edeb0a62e1c34caad1ff4372cdea4ea9717c25b23ae975fdda3e9caa8e9"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s2/j3/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "e2b13f13df36fd521e50143d9adff712614b4662cb8b93821cbe939f7a4d1789"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s2/j3/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "f60d5f325c2404911482f76fbd212222ca2f55464c89b223881498e293341c67"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s2/j3/grasp-handle/dit_L12/metadata.json",
+    "sha256": "912ea5d254446b91e63a1e9a3f5839b77de86827d247d30c1bcb1af751b51b82"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s2/j3/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "f022832b0402a96e983315a42e18b4caf07f296d4119f1228ff9dc321807403e"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s2/j3/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "ff5aaa81d5837b0785b7b4429ef622adfec4ecabef9e4e23bdda10a2dea73602"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s2/j3/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "4725038122ace51519480950f33782758ccece76539eebba36a95a49f5d9fbfe"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s2/j3/grasp-handle/dit_L12/metadata.json",
+    "sha256": "1deb5f8a34b3289c4125cc0bd53dee4bd3052ffb129b23d32782fc7613c42d0b"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/OpenDrawer_left__s2/s2/j4/detector_pertask_lstm_OpenDrawer_left__s2.pt",
+    "sha256": "2918c0832150ad91b338040a9b4a90567f9d2e83cb79dd9851b7d95ad0ec9189",
+    "train_pool": "other",
+    "scene": 2,
+    "jitter": 4,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s2/j4/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "12b3ef5884f33eb3ec179c500115a8d4ebba6179258146e169ac7df42751f8d5"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s2/j4/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "28c7b68b67507efb3ef6345083c7a4ebb6a99382f312f51f211df1717df32a27"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s2/j4/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "76ed72a383722e8a1c47781bbfbd214e1f386044dc342c46cedd2090b41f3b13"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_left/s2/j4/grasp-handle/dit_L12/metadata.json",
+    "sha256": "f3c1177e280cf609364b36d2f5214adf3ce0c44cb19660d87e8bf0feeaa863df"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s2/j4/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "9f4fe931ee069c104b1fb15d33dbaa814ac17daa40614732edebae07369872be"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s2/j4/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "188d064535de11c7dd0e7908f6c3f5ba907b51707bd31bd57c3639d4fad119ae"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s2/j4/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "b5060e691006da7e7a3436aa5846e3e534462e0ef69bf432a9acee723f64d531"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_left/s2/j4/grasp-handle/dit_L12/metadata.json",
+    "sha256": "5ca3d5f76350c8f6581bfaf21d09987cdd9bb2e9850f22bc56aadcc6508d3c50"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/OpenDrawer_right__s1/s1/j1/detector_pertask_lstm_OpenDrawer_right__s1.pt",
+    "sha256": "41c0bb06b32c2c6e5177c732a9d0391dfc433dc954bc596896b287eacc883dd1",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 1,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_right/s1/j1/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "6fd3cc374ab6c266ac592045e934c2d2686de81e4ed6263285db85ffb7920f05"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_right/s1/j1/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "f720f8fe040f4f235b7540a3221d20a7b33b329bf745de6daae6e6480e4c9e4d"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_right/s1/j1/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "023b46a961ec827b2a897a8ff4ce37576ec6847668a54b2818b147a8760787cb"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_right/s1/j1/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "f3af412e343d45290e7c34a291d1151fa63a7e73a9e17361d99eb49b15a8ce55"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_right/s1/j1/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "f06d747199ac874707b2d4dc3881b1ef04cdc3837c97dd71d2270e4869a76bd0"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_right/s1/j1/grasp-handle/dit_L12/metadata.json",
+    "sha256": "e4500c67c0ea9c899faa7eba55e07eab4e71d49f3a52311f156616354a1fa91e"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/OpenDrawer_right__s1/s1/j2/detector_pertask_lstm_OpenDrawer_right__s1.pt",
+    "sha256": "0efb849ce8886ddf46dee8eb6335a83f405789e3c0ad8c540a4ec1905c0dd9b9",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 2,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_right/s1/j2/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "8232dad79130f1be017bdb0a2dfae47d93b9fef86694cdcf019086df807889e2"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_right/s1/j2/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "8dcb697e77f58ce3f36686bc770be80b479f25c701ca7b4bbd432aaa0562c072"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_right/s1/j2/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "05373252fb9dfc36b948aff255018af76155785edc6b32266cb067f56d23a0ca"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_right/s1/j2/grasp-handle/dit_L12/metadata.json",
+    "sha256": "933f320606bea9c9636d7bf371e6a2438d088de1df4376753e9cc79accfcd4f0"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_right/s1/j2/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "023b46a961ec827b2a897a8ff4ce37576ec6847668a54b2818b147a8760787cb"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_right/s1/j2/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "156e1ee5ebe8807352379a631dd3b7f53d2570cae9f6082742a3d5bb32be7d62"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_right/s1/j2/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "f06d747199ac874707b2d4dc3881b1ef04cdc3837c97dd71d2270e4869a76bd0"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_right/s1/j2/grasp-handle/dit_L12/metadata.json",
+    "sha256": "948d6d10606822dfb15c66ddd85d9fad3c15ff9f0c9a063404e60af1b9a11499"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/OpenDrawer_right__s1/s1/j3/detector_pertask_lstm_OpenDrawer_right__s1.pt",
+    "sha256": "ad63e01119982d123bc4a3992006438cc0b24170095e65e2c8214be336faba50",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 3,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_right/s1/j3/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "bac8220bb148e178d79022eee5f0da6dc9f1acd52994f800f3752a66550c3777"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_right/s1/j3/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "73972284e4ab78c8fb535bd80a42acfb14b00d1d0748257f6e38c6d3db590651"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_right/s1/j3/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "fed2fe7e50f330057ad99d9353118f002bb16021ff5f58fdaef85984a4093409"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OpenDrawer_right/s1/j3/grasp-handle/dit_L12/metadata.json",
+    "sha256": "a87be418a89471f043703765aec98571cc8e319a5ef6061a8726196dc9dfa514"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_right/s1/j3/reach-to-handle/dit_L12/conceptors.npz",
+    "sha256": "023b46a961ec827b2a897a8ff4ce37576ec6847668a54b2818b147a8760787cb"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_right/s1/j3/reach-to-handle/dit_L12/metadata.json",
+    "sha256": "951e0d1c342e09ec9b4cd391c724d8aacee6a0c9b319eb0eef2c5f25c258fae1"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_right/s1/j3/grasp-handle/dit_L12/conceptors.npz",
+    "sha256": "f06d747199ac874707b2d4dc3881b1ef04cdc3837c97dd71d2270e4869a76bd0"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OpenDrawer_right/s1/j3/grasp-handle/dit_L12/metadata.json",
+    "sha256": "e0813fb5654dfe9708a28e02a336ded9dd42a5f12c24cafa47e710e281f2da67"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/DishwasherRack_out-left__s1/s1/j2/detector_pertask_lstm_DishwasherRack_out-left__s1.pt",
+    "sha256": "b1c2f0bcd7db0326ec6b100fa83082e8a1f4623962f7a6fcb55fb48f6f57a54f",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 2,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/DishwasherRack_out-left/s1/j2/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "d41fb547d9abec4a107e35560d1f9f07140527f9c37a9215100ccfb4e3705d45"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/DishwasherRack_out-left/s1/j2/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "9897e2e4da6a71a749a098ea19d369ac1a3df35b34d957f1b0cd247002398679"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j2/push-in/dit_L12/conceptors.npz",
+    "sha256": "85467373561aea7c75a0b952b84ec2e1bd826e0ab952a8025f4b73042dec1496"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j2/push-in/dit_L12/metadata.json",
+    "sha256": "363db1011e97d8225cc9527599191e28b62f92e0ce526198a48c72614272a1d9"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j2/pull-out/dit_L12/conceptors.npz",
+    "sha256": "f47a4e3720ddc3e0cd5362f977e6a3bfd37d8fcc48b6d031e5869391b029874e"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j2/pull-out/dit_L12/metadata.json",
+    "sha256": "f5bfe4ae09d80dcf6642a76f18d3d5e46153c10e23b6b39859cc3692beb6d5b5"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j2/contact-rack/dit_L12/conceptors.npz",
+    "sha256": "76b710af1da8ea827f18a4210951b44ccdd0c66547fb75b3e1eff0cabd9393cb"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j2/contact-rack/dit_L12/metadata.json",
+    "sha256": "dc9e4735e1f78599c8992633af857348db7aa66b0cf56a49ddd1c16f91ec5c71"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j2/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "6c3fbfceb716c264803d4411d224cd36cff5e4c18ebcf5a93be0629984ae3b5d"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j2/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "eb6e3c882dedcd732bdc9c32f5addb01edb6b3cf3ecdd33798a552b941671014"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/DishwasherRack_out-left__s1/s1/j3/detector_pertask_lstm_DishwasherRack_out-left__s1.pt",
+    "sha256": "0c21aa55373780e16b07b8c8c30a895479d7601236c0c67f68dea2c932a9ff79",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 3,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/DishwasherRack_out-left/s1/j3/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "42979e985fef9275d84b7639d99ea2769b1e8b119254edb3792ebc01f43d682f"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/DishwasherRack_out-left/s1/j3/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "34e0d523a75089d1847fc1a0e9e4bdbca1481149d7553b84c5313f8f60c68ca8"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j3/push-in/dit_L12/conceptors.npz",
+    "sha256": "3d2147f5621196df514981f0a00028564da6270599f66011e6fd8b2a1b264415"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j3/push-in/dit_L12/metadata.json",
+    "sha256": "c39187b4941d8b6666cc63cffa765845e60f10b9cac90bf964ec330b1c085d36"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j3/pull-out/dit_L12/conceptors.npz",
+    "sha256": "ef077ec4cc1dc82a755f4ceeb9bdb0eb200dabc640bdd8780cf19e9fdeb50e61"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j3/pull-out/dit_L12/metadata.json",
+    "sha256": "1a9701d0dd0edfb0920f6e78f5958ada5c4a86c9818c00f63e34318cad01246b"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j3/contact-rack/dit_L12/conceptors.npz",
+    "sha256": "a46a588f3002bc296def8318933706b4082742f5e80cb30bca57333f7eb74e60"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j3/contact-rack/dit_L12/metadata.json",
+    "sha256": "3a10eb15bcd5ce094a88f5671cd01e7f61e17e24d5d8ee519088cbe7c1e6c004"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j3/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "c1dfbd5704997499e511709e7718d26cad30d3dce4f02c27738c34006285abc3"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j3/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "43cc14997441fee516d610684074be7e6edd100b342959891396cda3d62b5e78"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/DishwasherRack_out-left__s1/s1/j4/detector_pertask_lstm_DishwasherRack_out-left__s1.pt",
+    "sha256": "c4b423ad9833fef59cba8ace56a05075da6946c7e572f9ae7d3de94c3e55161d",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 4,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/DishwasherRack_out-left/s1/j4/contact-rack/dit_L12/conceptors.npz",
+    "sha256": "389c406daa18fc9228fbfd6b3468430d9d5959976a951ee54523a5af7f5a4a84"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/DishwasherRack_out-left/s1/j4/contact-rack/dit_L12/metadata.json",
+    "sha256": "2a9d6d00a24b503dfbf318bb1fa20175a8ab4988b7be1e4af193220c406ad190"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/DishwasherRack_out-left/s1/j4/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "b58ca2c52bfab9e0df33207d7692d80d645b18ef680c0f205958a7f8f42cb71d"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/DishwasherRack_out-left/s1/j4/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "5fd3aaa989cc23c9bb63eb93b01352ab391f39823a346fedc430efe0c20a06be"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j4/push-in/dit_L12/conceptors.npz",
+    "sha256": "a36022683295a20b8f1ca01460412e3fd314c8ae2103eae6197219dc4c91afc0"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j4/push-in/dit_L12/metadata.json",
+    "sha256": "2a6da72eb5eb33af560bad1a9f5b54d834f2be559b4f17eb65bea18e391de08c"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j4/pull-out/dit_L12/conceptors.npz",
+    "sha256": "844c64ddca23c4497b896822cc3253d1eea42d3664f00315b960349f919a94b8"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j4/pull-out/dit_L12/metadata.json",
+    "sha256": "d8bacd855e16f02c9d103f7207b74d1634ba854cb48444a08d171f1b2dd471bb"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j4/contact-rack/dit_L12/conceptors.npz",
+    "sha256": "d444a0f29043f0819ae7a25c876312a8421cdee465a1516175ae2a6b24f2dd6f"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j4/contact-rack/dit_L12/metadata.json",
+    "sha256": "0c1e2992a51ab2767a54dbd21332971d7b1e780d935f08a0fcca9ac993db983b"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j4/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "63a94ae2d553b72fb5ddf8e6b4dba45622b5b44de259933b51d99c32b27766ca"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s1/j4/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "b5e989f8e5a7f550282483cfae6601a38aabdfb7c505c4ca4d362e887d89f05f"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/DishwasherRack_out-left__s2/s2/j2/detector_pertask_lstm_DishwasherRack_out-left__s2.pt",
+    "sha256": "b154520c73ec8bc9d458f217c449235aea91fed81422906ee0263d93737b101d",
+    "train_pool": "other",
+    "scene": 2,
+    "jitter": 2,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/DishwasherRack_out-left/s2/j2/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "5b4995b25488598a5be28b5dfd777e1884b1eedfba75e61cdd3b5c7cdcc5b656"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/DishwasherRack_out-left/s2/j2/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "9c3dfe3a284d3dba78876edefcfdf873603e94c48e1ea33dc5cff983d7853a58"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j2/push-in/dit_L12/conceptors.npz",
+    "sha256": "9900edb0f9ab848a5a5c2a5e9eda4a4d3fed7db612d3e0e87da4713d4268b12e"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j2/push-in/dit_L12/metadata.json",
+    "sha256": "adadf8d7957a6d48207d3960772e2056ae95026c5f55fcba116c117c49839fba"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j2/contact-rack/dit_L12/conceptors.npz",
+    "sha256": "0edb344414debfc25ea976218c3bbc6222c557013b4f8ffe2df50472e7b1cb08"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j2/contact-rack/dit_L12/metadata.json",
+    "sha256": "929185331ea20da19fd4d63512597d969fb596d1265b2355f4016bf1118046f4"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j2/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "68c0069407afdb80d1f8586472b49e3371dc9f29379089d5326bcf45c30a3d06"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j2/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "01aed077fd516649b2d666f926619cc977abcd5e89f4820d4b2a806bdab934e5"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/DishwasherRack_out-left__s2/s2/j3/detector_pertask_lstm_DishwasherRack_out-left__s2.pt",
+    "sha256": "9e6dcd01496a1291809631c2b871ba3d08d3f22fd93c5527b40a67e9dbcde607",
+    "train_pool": "other",
+    "scene": 2,
+    "jitter": 3,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/DishwasherRack_out-left/s2/j3/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "f5cd7a2ebc5782b5a6a3af47ee3abb86f42d1419b349af7600f96e2d36d27188"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/DishwasherRack_out-left/s2/j3/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "870716775a0a6f9977b18c72ee94dacaa628ad15c74555feacaf280f9b4a6c7f"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j3/push-in/dit_L12/conceptors.npz",
+    "sha256": "2d02c4d7449a92235f2870fe7b8e2693630375743da2d6b59b13623a65828339"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j3/push-in/dit_L12/metadata.json",
+    "sha256": "2581a279e26ddc175efb76a943a45620505ca4e533337eb585de670fab60a479"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j3/contact-rack/dit_L12/conceptors.npz",
+    "sha256": "5b3ba6831cb247fa023ce2fe5b7b17ab6cd81c21905a53b60ef7f1ff4fcaf4ad"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j3/contact-rack/dit_L12/metadata.json",
+    "sha256": "f72e46aed841fca82bf1f9ce89978c98471d00d32346f4883a0b8912faae1561"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j3/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "322ece4150ff5732c683194ff53369ca235da604a416b9bf0090c2ae97b402fc"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j3/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "875cc3cfd56a6f2343e63c5eb3f814abc26f905be7c548a0da1c7e1661f117a0"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/DishwasherRack_out-left__s2/s2/j4/detector_pertask_lstm_DishwasherRack_out-left__s2.pt",
+    "sha256": "af4d3109ea457644c5a8c0482b9753988d4131d526573b993b1baa6a6bc5d894",
+    "train_pool": "other",
+    "scene": 2,
+    "jitter": 4,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/DishwasherRack_out-left/s2/j4/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "160072f1ce6db9a9460cec089f72586b787c9798f2ff2e526e82b98fdc0a1898"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/DishwasherRack_out-left/s2/j4/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "e68df585d40592dcd69dde9b08f63066b215e9b3422374204c671b08fddfd2e5"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j4/push-in/dit_L12/conceptors.npz",
+    "sha256": "d4c04d8cdf6d21615cc0107c02db1a7a4d4e55d1f5253aaa77c89f793c1bb725"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j4/push-in/dit_L12/metadata.json",
+    "sha256": "46ede0e8930daad8b05c5d2b08df7c8eceaa210ef2ea165149fa000ae83888fb"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j4/contact-rack/dit_L12/conceptors.npz",
+    "sha256": "6adcb6b2b5f2133174af907812ef07e57cf145981d137350c0b15b0eedbf2331"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j4/contact-rack/dit_L12/metadata.json",
+    "sha256": "bebdde4eeb0880f0797efce472ad7ea1cb345d8c0941f20339c478b278920c4b"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j4/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "167dda3dad18c4b5dde011b59e8f9c069e24b8b4ad8a820365fa8e78e433a774"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/DishwasherRack_out-left/s2/j4/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "8dfb39b53a948b820db201f8468a8c3dc8537677851a3535e66a600f7e21c2b1"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/OvenRack_out-right__s0/s0/j3/detector_pertask_lstm_OvenRack_out-right__s0.pt",
+    "sha256": "30d03266f226b9e3bc6d0993651d1c6c7f163808d2f104c07715230aff31ddfd",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 3,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s0/j3/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "980043297b205064089b4efbc3e91220bc23acb9743c9992f9679f1d660b16e5"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s0/j3/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "3e6aa4939e75f79fe05764d34e3146a9a63c0a102d0f8d2a989845d35cc83a78"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s0/j3/push-in/dit_L12/conceptors.npz",
+    "sha256": "2c3f568103ba3df94d434cceee9f61d69511df020cbff7ea3be591575bb921a7"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s0/j3/push-in/dit_L12/metadata.json",
+    "sha256": "e9f6f597ae7448eb9ca5321bc736474f033f618a31852cc66619c5a26b830fd5"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s0/j3/contact-rack/dit_L12/conceptors.npz",
+    "sha256": "ca33d5af12766f1b8a444ea4f584ff45c0b593098ae5eb1835393edfa9bec46d"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s0/j3/contact-rack/dit_L12/metadata.json",
+    "sha256": "eb4544b3ea0133e13e6652aa4082ac9de58cd4aa0d9230a65839061ffb1f8bb1"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s0/j3/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "531aa29d7793c28a41dfd1d9fc5b28dd76010f21041852f493a57f3f6498ea70"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s0/j3/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "dc29d46558579c7fc835d7170eafffc3ae5667271a46f39e593a80da38e8a93c"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/OvenRack_out-right__s0/s0/j4/detector_pertask_lstm_OvenRack_out-right__s0.pt",
+    "sha256": "8f903be2d265e9ac58bc77a05e398588d5c4e6b8b86a8eb5d25a81260ca42b4e",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 4,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s0/j4/push-in/dit_L12/conceptors.npz",
+    "sha256": "4e4d94559102b28cdd0867b684d74dbef268a73d61afd76a52a5db80570b0d68"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s0/j4/push-in/dit_L12/metadata.json",
+    "sha256": "b89e593d8194f317b6f753a4b310902152daf0091ee19e031bd98ba105210b58"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s0/j4/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "1679ec1fa3d930a4795a3a7377c6cca54313800531b57488bd465d603d80bec1"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s0/j4/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "2abba2f2e753137362e6048465cc2261834854aab3258fdbd1d5bdace1278790"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s0/j4/push-in/dit_L12/conceptors.npz",
+    "sha256": "d737f5c2069e38b7aa88fbc142613b309239e6e6456021320cad830c99e6b297"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s0/j4/push-in/dit_L12/metadata.json",
+    "sha256": "12e9027c1855b36bccfee8d5e90ea3cac5ab4954ff43071ead5c0ca76f25ac24"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s0/j4/contact-rack/dit_L12/conceptors.npz",
+    "sha256": "ba1189cb78dccaf3f50aee780b1f19244426108edb009c030bcdec266ebebf1e"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s0/j4/contact-rack/dit_L12/metadata.json",
+    "sha256": "ddb7fbc24b52d62e673b6c665a2d56d301fbed1526af840cfffa6e1c621b6d6d"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s0/j4/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "845f0b9c2618779cebe5113740d1d1c416b934bb613671c4b6d5902162dcddee"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s0/j4/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "2659a0002c57a5eb44f10957fcd350edb244410ba51e584373c4a2b8e6350a84"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/OvenRack_out-right__s1/s1/j0/detector_pertask_lstm_OvenRack_out-right__s1.pt",
+    "sha256": "102c63eda4a6f33f4dbf8184da5b12a6a806b96b1691f35a820e4fc0e85b0a3a",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 0,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j0/pull-out/dit_L12/conceptors.npz",
+    "sha256": "e819e20ea21e69f16c3572953e4c06e8cb5cc64c4c7398ec1f50a2cfd112c7cc"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j0/pull-out/dit_L12/metadata.json",
+    "sha256": "66536342062d0f75ef3a2ccd23a24f91017ba37e58dfdef431ed9ea2354a1459"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j0/contact-rack/dit_L12/conceptors.npz",
+    "sha256": "9578d26ad937b41e931ee53a82d3d6ad6f3b45475526fb0e550af2192ef4ff6b"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j0/contact-rack/dit_L12/metadata.json",
+    "sha256": "e36372956513a0c298341fe7409593209f77b40a4953524b23f14d9ef74f2da1"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j0/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "d142954c091c124b525b608d6838eb1316c2e14860790250e9a7baa697d87350"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j0/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "19002e12c47e68e6f7aaf3bee2462290c7ae703bfa784842ee3d592e91a55fd6"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j0/push-in/dit_L12/conceptors.npz",
+    "sha256": "8999a3b62f70cebef5fa3c258f2ca759d562e64d29bdc9be5d596b5519db9765"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j0/push-in/dit_L12/metadata.json",
+    "sha256": "4e7ee7cf0ef61f79818c9b32d30bac1438892dd83ae079c44f309ae9f80bacfa"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j0/pull-out/dit_L12/conceptors.npz",
+    "sha256": "c331533257be8e9fe5eb53578f23aae597353e6193f6955ba54c0d168295edb6"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j0/pull-out/dit_L12/metadata.json",
+    "sha256": "bee425da81510fe1e3356fedd24c3cf3265eb353a2b79c71edea7b1764cff9d0"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j0/contact-rack/dit_L12/conceptors.npz",
+    "sha256": "764e424ffc0cbc6ed3b885ee798b60ef22dc7285777cf62e2df7dac6b9e9c831"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j0/contact-rack/dit_L12/metadata.json",
+    "sha256": "d7817ff53649dd102d2b1ada880585b9ded70131e66f27e84b7c1304f82f1623"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j0/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "49ead820dce37dfe690266f2f10d4b3c71982a6e5f58046cc05ca845af62eb33"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j0/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "256d619fa0b1b634e000c17654ced181db5f77565e50f818b01374e60382cba8"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/OvenRack_out-right__s1/s1/j1/detector_pertask_lstm_OvenRack_out-right__s1.pt",
+    "sha256": "745a6e561b50cfc3699ae6c4ed385c48acd20e7d33f595b96019f3185f5ac5b3",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 1,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j1/contact-rack/dit_L12/conceptors.npz",
+    "sha256": "1212a2ef62bf5bdd09d110c65a01e58c29826f706c108b382a50b5b62e9a5e82"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j1/contact-rack/dit_L12/metadata.json",
+    "sha256": "08fa10e0cd7e0984875994b7ae68b3d889130186706eb759eda2e6a4ba20b4bd"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j1/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "71e86cd2accaaf99510a2e0f7623bd001fab55d46bcf5d2292da5db9cbdf1c5e"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j1/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "18c6b389dd74b80597ffd3677179faf45b73523ba9cfd9cd43d9c3b64a6ad4cb"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j1/push-in/dit_L12/conceptors.npz",
+    "sha256": "ad6e866d5c703e8be04328fde40a9861d11f867bbdc9134623700e5c6e645692"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j1/push-in/dit_L12/metadata.json",
+    "sha256": "a04015366306c4c35e47a1c58c4fa14517d189528ae9e153ba53a85a6c378d57"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j1/pull-out/dit_L12/conceptors.npz",
+    "sha256": "9605b8d8da029253b1123508f9bc35e0935df3b824a328c7e055b7c52e064b18"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j1/pull-out/dit_L12/metadata.json",
+    "sha256": "c0282089ed51804386c283679b6f0d9ec65ea63f813b48dc5c5008ceb5489a2d"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j1/contact-rack/dit_L12/conceptors.npz",
+    "sha256": "50b4ae13574e95c6e2b70f710f9ad8a56bce154557398c8cc3a21eb1b5853cde"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j1/contact-rack/dit_L12/metadata.json",
+    "sha256": "40c07ed696a74a1c808882433dcf993da64e7e9490599709f68d329bd222db23"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j1/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "3842cb73d0132d26f774b7203b2da0226077e12ad413ed90430607d72919c97a"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j1/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "686dd69a21b4d0dc0ca645c3ceaf90ba1923cc815947d2a24a6eb2898f251809"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/OvenRack_out-right__s1/s1/j2/detector_pertask_lstm_OvenRack_out-right__s1.pt",
+    "sha256": "7f7e8456078f33bf94c2afaace23fcc0ce526d6552e910a171ec859b6fe14fdb",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 2,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j2/contact-rack/dit_L12/conceptors.npz",
+    "sha256": "3d6f47967065d8941745b1bf7e2ac59f58e52f144927c9608b1b34fd014dcd78"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j2/contact-rack/dit_L12/metadata.json",
+    "sha256": "756e5292ca420d6cde814e06769c59b7feac410c15bdb3e444e86b893066d568"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j2/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "44339da310e1a802883eacf2405675151d72ca05de2f8962e155564a043dc36a"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j2/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "afd7621da3bdd5e09706fbbe2e336f8387a64e22151dfc74eb83fd543edda603"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j2/push-in/dit_L12/conceptors.npz",
+    "sha256": "65304b11c0e68a2f2af338b3a7834fd5dac1647abad185d0871c21257863524d"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j2/push-in/dit_L12/metadata.json",
+    "sha256": "54780c2c96f77625a044a100a990445138873cb05c02be7f3de9a3b4753fffd9"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j2/pull-out/dit_L12/conceptors.npz",
+    "sha256": "ffe6249872b2b05517501c302defeb070407c373650e9ba1525d2ab7d65b665c"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j2/pull-out/dit_L12/metadata.json",
+    "sha256": "aa9c2af73e493d973b9b16c5d65d2faef8f2732f334397a32fc99423f46f8180"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j2/contact-rack/dit_L12/conceptors.npz",
+    "sha256": "8525da62d41b800a4513819abcda141c7f5ba8da392d1c52d4b31c9e96af31e6"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j2/contact-rack/dit_L12/metadata.json",
+    "sha256": "0bbe892c724ad7943ffd3d12e4c1901b8dc94620aec719d0de4b5e688fdea9d5"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j2/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "fa5ab4a56bb62f9af7ffad075be68b4dd63d51834c6d0da03515a9878062fdae"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j2/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "affc84a3c6f88c69b0a9de86de3c3dd1a14b029784ec1ac934e812a43def063a"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/OvenRack_out-right__s1/s1/j4/detector_pertask_lstm_OvenRack_out-right__s1.pt",
+    "sha256": "6528a5bc82b300119c6205df773cefb1e9438fd892a9dc52de8152ae075992c1",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 4,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j4/contact-rack/dit_L12/conceptors.npz",
+    "sha256": "c55299a297ad05d7523d5c5fdda1310f624d873817c1c57bae706315f5429cae"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j4/contact-rack/dit_L12/metadata.json",
+    "sha256": "2197012fe15e6c80e9aecd81779b35a828ab958e8c6630dce9e5b618992bc9ee"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j4/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "ea38c32e8098fe526393b4084f94b5a159a9aacceccaffab23895a5f394f925e"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/OvenRack_out-right/s1/j4/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "c69fe422e6dc1ba31b11d4670ca5fc9f7a3762d3ee00c4c3240b829377685cf6"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j4/push-in/dit_L12/conceptors.npz",
+    "sha256": "674f41dc529ac1ae6c2414d0c3f72859a02572568c1fbf457347285cb5c52894"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j4/push-in/dit_L12/metadata.json",
+    "sha256": "c0921f2667257951ac6ca7b1caffbd3a8aaeabf9224f43c49fb34169c2fdf820"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j4/pull-out/dit_L12/conceptors.npz",
+    "sha256": "06a5687a3a4b8bbf1bf835b404d49f550485e5f39bd8fb51eb23a7b22ff6228d"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j4/pull-out/dit_L12/metadata.json",
+    "sha256": "d88fd477be952c74f3f7083177ae85c138b53968173a28039f43b70a711bda0a"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j4/contact-rack/dit_L12/conceptors.npz",
+    "sha256": "820535781f6427eba71b0681e239d6d7621de3b54e1e8fc727ac0d4930245230"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j4/contact-rack/dit_L12/metadata.json",
+    "sha256": "f6a10935478c446c576d91e0f256724bfb76db53983caa5c38aedc9697b64795"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j4/reach-to-rack/dit_L12/conceptors.npz",
+    "sha256": "2e37ad3ad7eaacf633bf2bf937117e086584c85e019d7564c62264ad96b7e110"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/OvenRack_out-right/s1/j4/reach-to-rack/dit_L12/metadata.json",
+    "sha256": "7f0d12060af6cbccc91f650f2433e1a152321012a7fe36111d37800ee3c1246b"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_bread__s0/s0/j0/detector_pertask_lstm_PPCC_bread__s0.pt",
+    "sha256": "b309c688fafb4bdc0d05451a4eb27a15b9b55c76609f2f49c336320d1594eedc",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 0,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j0/transport/dit_L12/conceptors.npz",
+    "sha256": "c02e4c04111df2ad1a95d3b2b823e39a947ed0362f5f67e8d228773e10073cef"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j0/transport/dit_L12/metadata.json",
+    "sha256": "2a2ef252d63caa01ce18ada09ebc32705327d7438694a2ae87ca38ba9a824468"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j0/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "421ae752887f586fffa0ab010663ebe60735f7f0c5376d2565653eb0d9dc98ca"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j0/reach-to-object/dit_L12/metadata.json",
+    "sha256": "c25cef4fe52e094deceb6d59844346f76ff6145863f239821691a8f79ac4ab70"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j0/transport/dit_L12/conceptors.npz",
+    "sha256": "370b050d6ebd69a5aa30f87553e7849270bb7be22f16a5db20e6f325a7a7f483"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j0/transport/dit_L12/metadata.json",
+    "sha256": "2aa1cdb3fe541f56d97c450a9fee5d465b8429e85e41fa3374ae649e34981758"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j0/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "8ed2c0ceaa54f63d8395525060f797f1add574cbf0787a96ff5c79567dc5adfb"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j0/reach-to-object/dit_L12/metadata.json",
+    "sha256": "bd0b76933eddf1bbd6b8264ba3343d2340e3eddd287f6b2f8963e9da057e0fde"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_bread__s0/s0/j1/detector_pertask_lstm_PPCC_bread__s0.pt",
+    "sha256": "9634aee1c72c985cc2e6eea2475eafdc036946321abeb7a688d621395e37b045",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 1,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j1/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "8487b0445c0e3415940d368b67da26fc4d22005029104698ec55a7fb96f8f8ec"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j1/reach-to-object/dit_L12/metadata.json",
+    "sha256": "475e0572f7d208e0efc9abd9da3eeb02c535bcf1d2b25b1afb46e707e34f1c66"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j1/transport/dit_L12/conceptors.npz",
+    "sha256": "5255a9496c2d9829c1c46cedb1a3d1d2654c5bc04416b032c6e6f6fe9151e0d1"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j1/transport/dit_L12/metadata.json",
+    "sha256": "c9eaa1929f223ab9ae9cc7e3310c553bdda0f37e1343410b1f9247e518cbdb68"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j1/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "3708e73820ab9cbd8f8cfc3457ec7ad51f65442925ef6dec2a3a3dfdb3f71d8a"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j1/reach-to-object/dit_L12/metadata.json",
+    "sha256": "7cc1f9d63f9cd17933d3b7bc6edc925ef40aaef33164e28e3cc8386ef2aae3df"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_bread__s0/s0/j2/detector_pertask_lstm_PPCC_bread__s0.pt",
+    "sha256": "f57361c38d08aeada3653df09634a3bfd45f3d7dd84f9b1e15a2a990217dd3e9",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 2,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j2/transport/dit_L12/conceptors.npz",
+    "sha256": "03f24336be5cb150e560cc2b18eba090ad990ec9f7442f04bcd375516ee67d8f"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j2/transport/dit_L12/metadata.json",
+    "sha256": "562b49b3de383acdb58f56f62782966e61b06892bdfb0789365fc77fcddd1a39"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j2/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "bc03320321e63835e8b86d5d87aa943daa5363f0b520ad60a06ab56cf5dea8d8"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j2/reach-to-object/dit_L12/metadata.json",
+    "sha256": "c8138e0bb5790011b86c1336f7258199ef74b8393bca62da905197d9c8921af4"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j2/transport/dit_L12/conceptors.npz",
+    "sha256": "c54f5899145564fab2ba73dbeaa34cebc93e1ababbd477347e4645c46bbfdadf"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j2/transport/dit_L12/metadata.json",
+    "sha256": "ce365a6b84b6316dd489c1585aa4300769475bee70d2fae69d376cff0a5d65c5"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j2/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "964eff3981a2d7b228ce2954d7712a7ef98e480ac5273885b4ba713136f7a197"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j2/reach-to-object/dit_L12/metadata.json",
+    "sha256": "966fe5813dd7499ed510e834b76868279452e32f73b15d0d30499ee03f0ea38e"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_bread__s0/s0/j3/detector_pertask_lstm_PPCC_bread__s0.pt",
+    "sha256": "8f596e4e0d61d6e67fc221d691ba21e8820b440db8c08c4e811fddb25da5affd",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 3,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j3/transport/dit_L12/conceptors.npz",
+    "sha256": "fa9ff31e17f0a3a1f10c53549c937cf07d554c66c8566a3c830f454143b831ab"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j3/transport/dit_L12/metadata.json",
+    "sha256": "68f3684f730b11bf8998db8d2bdb1b68fd7eb1af4af9878b10ca27145dc16d77"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j3/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "f7c304eb8a03c45b662fe20d8a95a155c7c8c97a7111d8d3afafb43e6ba02887"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j3/reach-to-object/dit_L12/metadata.json",
+    "sha256": "0f8aae61cd027f988a9ba75d95cc6bd3ee60bbca1909e6ce0b345ece12121c7f"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j3/transport/dit_L12/conceptors.npz",
+    "sha256": "8833f0387a5d9e95cf4e6b172988a9d4d13116dcf8458d48aa455603b8f9e413"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j3/transport/dit_L12/metadata.json",
+    "sha256": "e025d6bb99a89e8839421bf9c38285bc6a70f9058a6293dd85aabc7eea4039c7"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j3/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "cad8a509c350f03ab39bf801d5899497f188e0be43e11c5557abdd974dc915e6"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j3/reach-to-object/dit_L12/metadata.json",
+    "sha256": "fee2fe353561ac8b0363585a3c59997f2c8d0ab24137cd53647f70e37dc68d29"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_bread__s0/s0/j4/detector_pertask_lstm_PPCC_bread__s0.pt",
+    "sha256": "8112e0939fb61cfeb688e26176aac167fda35078f7fccfca29b42785ee738383",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 4,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j4/transport/dit_L12/conceptors.npz",
+    "sha256": "b46e55f8116689b220813cb53c80a854e0e36e39e6313410ea9a400c512c0b31"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j4/transport/dit_L12/metadata.json",
+    "sha256": "9397b8aabc5ef6fa7057e550774782a24cc4c4d0718639610238469ec22b73da"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j4/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "5f43edac155a937a35f20b9bb75515788cbca78f148e5909728a42412e23e357"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_bread/s0/j4/reach-to-object/dit_L12/metadata.json",
+    "sha256": "e55c8f762c146cfaad912525ac46cc6c5c90dc1586d14cacccc9541178da98f7"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j4/transport/dit_L12/conceptors.npz",
+    "sha256": "e34b108ea979e5d54929f7f4327c53523118157b6a614f04d7fae01d5f6c224d"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j4/transport/dit_L12/metadata.json",
+    "sha256": "b9e853f68a67ca0a0b73275400d18110319abf77102958bb67009345a9dd6d9a"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j4/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "df498ba82bfac0d576bf429c9b08e274018893c62813070fd466407265c60f74"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_bread/s0/j4/reach-to-object/dit_L12/metadata.json",
+    "sha256": "ebc354053d02658361d72387a73cd0dfcb5a22daa5ed5191295383442768467f"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_candle__s0/s0/j0/detector_pertask_lstm_PPCC_candle__s0.pt",
+    "sha256": "d3ff599cc2919a41453eb4cfc8e434df1190e8b3103c117b0de2ff05fd8c8ad5",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 0,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s0/j0/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "4186df48140e402ebea524898d8d11d3310fa8f213086cf1af8ad4da31277372"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s0/j0/reach-to-object/dit_L12/metadata.json",
+    "sha256": "91ff656d3ba40249220a532223abbecf67e20b183ca69ecd4164375963fd464d"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s0/j0/transport/dit_L12/conceptors.npz",
+    "sha256": "d28fbe192c91cd73f02b65f477f7323d96a4717ba3eb96877522e437222e4a31"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s0/j0/transport/dit_L12/metadata.json",
+    "sha256": "1f0adb42be1b6888ac5c8895c2bc3f8ddce3ad14227054e1df46907221410a85"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s0/j0/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "5c820c389453782c2ff64ea9acbe1f97b518d35b0187ce7991e9df5d6c51024f"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s0/j0/reach-to-object/dit_L12/metadata.json",
+    "sha256": "0e054f91f74c6e982046441cabde64d437cededdb100078196dde17f13e20ed4"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_candle__s0/s0/j1/detector_pertask_lstm_PPCC_candle__s0.pt",
+    "sha256": "8af7ca5c03731c0040071dc318c107910b3eb82330461fced4122897f2ebde97",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 1,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s0/j1/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "892d4a15e9fbfc3b5ed5165a72fcb47c0204fb4a89d14602c51ac89ec0643ac3"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s0/j1/reach-to-object/dit_L12/metadata.json",
+    "sha256": "2ccbbb7201f73fb9c30fabcc921c0e452e6fff55c26e80828510dfebddd54d0d"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s0/j1/transport/dit_L12/conceptors.npz",
+    "sha256": "cf44333c5f745d7665c856c6fd875472d28182936d1a6a5708c0c53a0b43e6b5"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s0/j1/transport/dit_L12/metadata.json",
+    "sha256": "f0ac9e80e881abb15ff951bbd310056d0a7058d4b0c0023fc2308c53f7423bd3"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s0/j1/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "0e730d0cb42bd08b93ca6170d03c23016be8533c4c27e970eb53d15578973401"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s0/j1/reach-to-object/dit_L12/metadata.json",
+    "sha256": "fd219b3d68782905bc5043239a6a9205f249e9eb8c424c4e716701534876fa0e"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_candle__s0/s0/j2/detector_pertask_lstm_PPCC_candle__s0.pt",
+    "sha256": "0d2e7ec19831fde00fda7acddee0c134907f87b648b895fc98684f5881898788",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 2,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s0/j2/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "7606094f31c80915cd5ec50f948e5f54e0b79344e53bf6ea84fafbc5af766bc2"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s0/j2/reach-to-object/dit_L12/metadata.json",
+    "sha256": "6293116a69e882beeb73d45bfe0114e011f3bf2afff42ea7dbcfc844fa2d28e1"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s0/j2/transport/dit_L12/conceptors.npz",
+    "sha256": "636495102535ecdcc7a9f019e57e07a9e5600ce11f2c196051d4bab521b4fbc8"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s0/j2/transport/dit_L12/metadata.json",
+    "sha256": "d36333b9c1f276cd1cd4b268a02bee9b2ebcb42fe6a2df32808e7b9877a6c54a"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s0/j2/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "381143143041cb49ec03289d7eff97a38e03d31e3cb94834a9e3bd7ae2ddf616"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s0/j2/reach-to-object/dit_L12/metadata.json",
+    "sha256": "581385dc15ab40337b9d58639bacf8bda622a1f67597d2537afc43dfa5779c5f"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_candle__s0/s0/j3/detector_pertask_lstm_PPCC_candle__s0.pt",
+    "sha256": "f396ad7dee2bcb328f07ed16643e773350f364be8d094842774a07065665feca",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 3,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s0/j3/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "ecb0d27d6206dceeb2ada835451b4404560b19588c1bb5a850ec58385b002699"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s0/j3/reach-to-object/dit_L12/metadata.json",
+    "sha256": "2c18ceb66c62b6bde62c6813fd167a363622ee4d749b04f7fcc386c07d7877c0"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s0/j3/transport/dit_L12/conceptors.npz",
+    "sha256": "020b4fe35179c6b7d2234c4031fd9fbc117be9b4cad1febc8d6131527a70cdd1"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s0/j3/transport/dit_L12/metadata.json",
+    "sha256": "6912b62d2e494731a259f83133fdfd93478209d8b5b654f1a0e25b30dc517ee1"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s0/j3/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "8bea950e7bbb7fd37946519ef1a330727040079162d6c06bdba0cb1b20ee8693"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s0/j3/reach-to-object/dit_L12/metadata.json",
+    "sha256": "b9cd85f6263735990db5f128d019050f7baca5e498bd3841e7de3f59b4e55162"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_candle__s1/s1/j0/detector_pertask_lstm_PPCC_candle__s1.pt",
+    "sha256": "f1fac63d27b3a924624d080a201661bf47f7af3235bdeb526dab1a9008a90252",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 0,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s1/j0/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "ab864a61611520af7044b8469d0e0da9188199ee3d1fab008746c213aca373b1"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s1/j0/reach-to-object/dit_L12/metadata.json",
+    "sha256": "b5a6a28cfb3cd7d3852abfecc1b745bbea429cc1b3cc7754a1b533183f04a839"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j0/transport/dit_L12/conceptors.npz",
+    "sha256": "5a0a2e4fc01b1688a03425e4543b2d6838689162cd9159dbe042e4edb5e99b9d"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j0/transport/dit_L12/metadata.json",
+    "sha256": "7d854302281be8d861dc9841568ea6108aeade2c6186b6c25285f41409cb6e87"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j0/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "785e4b421f5813d34beff9c14c44b4ff0f9a56badbf6b336765daa599d6b7328"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j0/reach-to-object/dit_L12/metadata.json",
+    "sha256": "6bdf8b38c48b44722c8de84d557c7b2b7083548b692c1b9a1e9843d2dec5a2f6"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_candle__s1/s1/j1/detector_pertask_lstm_PPCC_candle__s1.pt",
+    "sha256": "893cc4a1e9e5d7004273ace5906ad80d837acf30ab42bce8f6f314c3b80d325c",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 1,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s1/j1/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "e219a680fefc8fa7b764c176c4fe1c01ca203e7aab1b89632f17da44e1a564e4"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s1/j1/reach-to-object/dit_L12/metadata.json",
+    "sha256": "8b483faea896b101fb13579d3265fc1ef65adb11766ab395aee45993264e8ef2"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j1/transport/dit_L12/conceptors.npz",
+    "sha256": "4b44f44aee56c6c2a1f6234c95cd9d3c785ea19d0eb4cf673a3d541c0a87ea6b"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j1/transport/dit_L12/metadata.json",
+    "sha256": "e2340b5daaf972002c79a28d9a6eadbf52384478e050f2502f48a41a7bc6358f"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j1/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "8a2c27aa3ce46e43f4db7793db6224b216b3ab991dcf30a33ef69befc9f7ee08"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j1/reach-to-object/dit_L12/metadata.json",
+    "sha256": "fe3325fb723f7a901e1809400aa0bbcc1197b1c84c98c3ecbbd63b279adacf6d"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_candle__s1/s1/j2/detector_pertask_lstm_PPCC_candle__s1.pt",
+    "sha256": "3134197a85fe5cbef4a38151cc31b941130a19b65ea381a4eaf92436c2478e66",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 2,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s1/j2/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "0ebeb7423f14f60558c15d7e89b1f8cfb992b93b161525a97aa1d359aaa3ec44"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s1/j2/reach-to-object/dit_L12/metadata.json",
+    "sha256": "231972a880f65eadf5e8b96cbcc66a1c291c7bb9103bdbf52f83e0ac4216ca67"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j2/transport/dit_L12/conceptors.npz",
+    "sha256": "96ccb7057c485caa2acd056ed94af1d5c324ba821d33a4f326a14aae0633d723"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j2/transport/dit_L12/metadata.json",
+    "sha256": "5153b47576b63d1b0f67508f4a013a82a0767031a1a17a77d565b672d825b721"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j2/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "050950bc770baebda8cdb66f9f8fb7332c15369dbbed9142c99a32190232b442"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j2/reach-to-object/dit_L12/metadata.json",
+    "sha256": "b134ff7712215dadc6744725ce09ad55d853ea14e45def8d0caf7ab109537281"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_candle__s1/s1/j3/detector_pertask_lstm_PPCC_candle__s1.pt",
+    "sha256": "9b17a237f1a49269f53ed5c13920044eab8ab9105fe88ebae15b983ecb27bdea",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 3,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s1/j3/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "6cf371c80ab02ea3f254621a3ba417ef6342e719029b54f25341937099451519"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s1/j3/reach-to-object/dit_L12/metadata.json",
+    "sha256": "48f2ac113a2fd9840cac3e4432e03cffa75d9d34bf32f3c0f7303cc3af713507"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j3/transport/dit_L12/conceptors.npz",
+    "sha256": "7d3170d559f026a02a37255b88441c692129029eef0d083c9252ce30a63a92d7"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j3/transport/dit_L12/metadata.json",
+    "sha256": "3fb59324a25b4e00f80158f1ec5032c8c371d1148471e78fec1c36f29acefee6"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j3/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "9f38c52d579f55ae0fef0c0c2d1294194ff6729a5f863146ee437a610b36f2f8"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j3/reach-to-object/dit_L12/metadata.json",
+    "sha256": "b2ff2f3f88cd48d3461b3408be1e9cf1dc8885465ae283df787f9eca94874256"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_candle__s1/s1/j4/detector_pertask_lstm_PPCC_candle__s1.pt",
+    "sha256": "fe450a549a826169867eed3de471cf736c693d4dff0da5e98450ac51a935c60f",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 4,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s1/j4/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "cce9d1e99729279917b7793326e7d43f5f4343650ffd790debff5f28caa982d2"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s1/j4/reach-to-object/dit_L12/metadata.json",
+    "sha256": "39a03e68ebbe92931c1528a1e4bcc061221ab7c5f05d1142b7910af4cf608f96"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j4/transport/dit_L12/conceptors.npz",
+    "sha256": "366c1ad62cb9cd07a47630d82499ba7b2602d3bb13e6fecc5fcc59fd82dd877d"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j4/transport/dit_L12/metadata.json",
+    "sha256": "7bf6e19554c0be4bcea548f42339e741df14025244a6cb7a959e2c4ca57b1cca"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j4/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "e7c3e2af73d87a9b2610e35c0b137bfe3b432809e2b7dc0c357114c047dd7c0c"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s1/j4/reach-to-object/dit_L12/metadata.json",
+    "sha256": "f94c38fdefc6dd71d7fc1a368ba8fa6e22ff12c98573674ddf1d3dbaa1b25705"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_candle__s2/s2/j0/detector_pertask_lstm_PPCC_candle__s2.pt",
+    "sha256": "f269ae5407fe67f0f5a8270aab74b152dfddda4721fcd8dc78a59c3c76373127",
+    "train_pool": "other",
+    "scene": 2,
+    "jitter": 0,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s2/j0/transport/dit_L12/conceptors.npz",
+    "sha256": "87090d2efcd50aee67c710f47d8c8ce4c2eeb26e3755dad22f38b9b2bbccdc60"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s2/j0/transport/dit_L12/metadata.json",
+    "sha256": "155acbd46b5c2bb2adcb3f0d57b16c95bad4839fa8372b178a7d4769ecda4172"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s2/j0/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "45eca6f64b8d0470cd7353d6dc69161e972ca022178dfb02714e5c1575b7cedf"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s2/j0/reach-to-object/dit_L12/metadata.json",
+    "sha256": "84b8e63084dd1c9030108004270a88aa03fb8d6afe02730a4efd7590450ee6d2"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j0/transport/dit_L12/conceptors.npz",
+    "sha256": "11121f26e17b1bd0c97e82ad0d21f64d6470510ac2435b6fb6ee5331c6b90674"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j0/transport/dit_L12/metadata.json",
+    "sha256": "74968e65892fb59fba750e97bb5a3990dd7bbdc0a926fd1d2de3e8dc6860cd3f"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j0/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "50ecea13c30d711aa95e261b70c50beb4e0356467b9fee6fd1b321c25424e2e0"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j0/reach-to-object/dit_L12/metadata.json",
+    "sha256": "afd80cb46114487b0e8f53f85de3f3fad2c73b2d353e6a1e171032d7304976c0"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j0/insert-settle/dit_L12/conceptors.npz",
+    "sha256": "2dd349f5be689858cca44719a2e15c29e1dc80ff5bc859e02a9be5eb7fe3a5c4"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j0/insert-settle/dit_L12/metadata.json",
+    "sha256": "bc8d9c2228665ad5fae4d74c6571536accdacc74164f559764861dbcd6fa3f6d"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_candle__s2/s2/j2/detector_pertask_lstm_PPCC_candle__s2.pt",
+    "sha256": "a38c9a0b86a73d8bc5f53398317cb83f2770edd682411b33ee86cb6122e9b0d4",
+    "train_pool": "other",
+    "scene": 2,
+    "jitter": 2,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s2/j2/transport/dit_L12/conceptors.npz",
+    "sha256": "cefb4ad0f6451e3ad0879b819a4870a94dd4da1de40fcf7d70f4b5cd514d6d6c"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s2/j2/transport/dit_L12/metadata.json",
+    "sha256": "bc2a53d423526245162bfa3f51ae95fadc1b32b9ee0bd51b2c637919e5d018d3"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s2/j2/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "9cf29e99f500bc9ca0e272cad9540ecc3f5cc6c6c60dcadd81562258a9b81e7b"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s2/j2/reach-to-object/dit_L12/metadata.json",
+    "sha256": "617a77da56cc7987055477963e7a420e2bfabbb392f59d22657dcc3954138b4e"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j2/transport/dit_L12/conceptors.npz",
+    "sha256": "44538240ade089926f22032f3d09264af9fe000beff2c12b3d983a806fb5d0ed"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j2/transport/dit_L12/metadata.json",
+    "sha256": "7ffcc1fbbc1ba824384cc58719fede86f434b42cc10f9b0ca40f5b2a8c3dda33"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j2/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "6bd22b9e402505132c871eca153331f6186ad1905cbbc634f26a78dcca30e8a8"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j2/reach-to-object/dit_L12/metadata.json",
+    "sha256": "a4cac48c2f4912abb68ae7dfb0c0d080cc32a1faabc6090b6b46a9184d5a9ef0"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j2/insert-settle/dit_L12/conceptors.npz",
+    "sha256": "40de6267a18b821aef1d1b0ba849affa2f3d69cc85626cb7fbe560aa8aa5b7f7"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j2/insert-settle/dit_L12/metadata.json",
+    "sha256": "f1836474aefc690f6ab53613590bf55dd91bd81ca6e6fae8f6404c13d9efa945"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_candle__s2/s2/j3/detector_pertask_lstm_PPCC_candle__s2.pt",
+    "sha256": "ca5fab9493e9fa363968b7cfb30f7087fb200e1eaaeaabaca3d75862a5a84e11",
+    "train_pool": "other",
+    "scene": 2,
+    "jitter": 3,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s2/j3/transport/dit_L12/conceptors.npz",
+    "sha256": "2fce74b9cb6189cc6e25ebd6424768e20438617f1ae189df58cdd5c179481ff9"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s2/j3/transport/dit_L12/metadata.json",
+    "sha256": "d88e7627f2a15b0bd182cd531a1af0e508fe5b1fe4db05ec2bc3624dbf3f7856"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s2/j3/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "9b687445bbf6f089b41bc810e90819ef74fd91bf56e775b3a35e67a7ae149479"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s2/j3/reach-to-object/dit_L12/metadata.json",
+    "sha256": "abaa338a454a57d0ec5d6ffae51f093d4807096cd799b09bc7670348d36c5ce8"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j3/transport/dit_L12/conceptors.npz",
+    "sha256": "53db0c8ff9a1be3c35cbe6da3080be76cf9397cef3305b8b192c669d285b980f"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j3/transport/dit_L12/metadata.json",
+    "sha256": "2e3ed98e69767f7a2426f08cd4c7825341507bb98a6e7ed0636adebe06870dae"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j3/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "2317a9f481385c6ef4773af3a52dd1419e6e521299c055aaacba7dc8b71cd867"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j3/reach-to-object/dit_L12/metadata.json",
+    "sha256": "9772ecee7ff8dda3ac8a7f00e676013429d51695d995a69e87a0c82c66d3ea6a"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j3/insert-settle/dit_L12/conceptors.npz",
+    "sha256": "5336b32a687082f172c3bbc57488931de096141cb5f2c4f26f0858cc47893203"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j3/insert-settle/dit_L12/metadata.json",
+    "sha256": "d55b38ab0096488d8929c8cfd883e45475eb2b8160362ba70d8b671ab6304b77"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_candle__s2/s2/j4/detector_pertask_lstm_PPCC_candle__s2.pt",
+    "sha256": "44ee740122ac25cdfd74ec56e22cb53ee5ce1e60bf5e9652a9a5a2797846513d",
+    "train_pool": "other",
+    "scene": 2,
+    "jitter": 4,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s2/j4/transport/dit_L12/conceptors.npz",
+    "sha256": "7c5025bda5117b81d15f7c37e7f8ced6ed7ace93e4eeffb38f09f39c70d15ea8"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s2/j4/transport/dit_L12/metadata.json",
+    "sha256": "c16694fb830bee9e622c0eb4b336ed5411f79334d3e161e1bbe864c22f214dc5"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s2/j4/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "e196af47bb9023a451a816fda34059b3c20535c8b2de5c96e1de5e85deb45e9a"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_candle/s2/j4/reach-to-object/dit_L12/metadata.json",
+    "sha256": "78d960ac901c522064fc0dc5d597ed12efd0a5f2fd5e372cd481965f7fd23001"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j4/transport/dit_L12/conceptors.npz",
+    "sha256": "973d49b245a3c6c36757174eb2e9d9286ddd8ca903be0711336d91e78635b8c4"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j4/transport/dit_L12/metadata.json",
+    "sha256": "0a86d704ae7a3cc728a3701571530ba97a0c212c1a1c75e06c3729a98d1f6b42"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j4/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "82d6f4c7c295d5b5498f44dac229efe99f7c51b6fdd20423faeff695d93c8cdf"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j4/reach-to-object/dit_L12/metadata.json",
+    "sha256": "777c27b128fbf1adaedcf5051001f8447284e33f167fdb525e3d2877bb912140"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j4/insert-settle/dit_L12/conceptors.npz",
+    "sha256": "ac6680d21cd4d66f3b3fe0d8c449a1ec3bcace7fb9520b79c8458f0185e66094"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_candle/s2/j4/insert-settle/dit_L12/metadata.json",
+    "sha256": "90a6b99c036fd4c0305acb73c31d1c580d72e585c976956fd7e8495c1e3d8c5b"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_jug__s1/s1/j0/detector_pertask_lstm_PPCC_jug__s1.pt",
+    "sha256": "fd52afac27e498df92f2dd4854ed6227fda986f30a2bc5187232bf742ee01faf",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 0,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_jug/s1/j0/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "87bba8c4edc4cf3ccfed7b8c571d661fc940e97b2d2bf47643d36a10946e9a89"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_jug/s1/j0/reach-to-object/dit_L12/metadata.json",
+    "sha256": "fe293b68d77d54787d8e71c951c4ebda925dc9f26d61bd275497805d9257d564"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j0/transport/dit_L12/conceptors.npz",
+    "sha256": "c6435bace545366aa2f13664c1b70567de3ebe766e162e382bc54120988742d8"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j0/transport/dit_L12/metadata.json",
+    "sha256": "84b53c2a97617c5a8eb94e2580f269970bcb4aeaefb3ea5f3c4dab10d673f0ae"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j0/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "84a73de93d74a9bf87785f678c2952e9db0f1d9db7a73250f5bfb48ea105e2b8"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j0/reach-to-object/dit_L12/metadata.json",
+    "sha256": "2c29bd3a24a9be7571e008a01d878fa0c4353f847c9e5ccbd955a926a785fe13"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_jug__s1/s1/j1/detector_pertask_lstm_PPCC_jug__s1.pt",
+    "sha256": "61b91068261f14352b3d529f55de42f4213a8b39e987c1156adba93f3ee80439",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 1,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_jug/s1/j1/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "92a6264ffebf4c4049c10f12185e2838f3eff5940e9baafdc3f7a58c298fcfa7"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_jug/s1/j1/reach-to-object/dit_L12/metadata.json",
+    "sha256": "7111110b864f49e9260a11716d31baa4c521c6dcf64d32f91536f7ef89b87fcd"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j1/transport/dit_L12/conceptors.npz",
+    "sha256": "83e4e948b46b5f524a13853523b7262271a8d780e0679119ec4f56cba534ebee"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j1/transport/dit_L12/metadata.json",
+    "sha256": "806b49a56ebc1b966bbe4ff1cd8c5e293926a74fc4828879ee31147bbde34f55"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j1/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "965b2d1c5d98761bd5673ecad50c086d03f50a2d28b5fb7815c28220399b41d1"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j1/reach-to-object/dit_L12/metadata.json",
+    "sha256": "9f2c25ff6c1d096e0be87dc32e6a3cfbc0fab7fb388760613f8ee9e91e1f9ad7"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_jug__s1/s1/j2/detector_pertask_lstm_PPCC_jug__s1.pt",
+    "sha256": "7dad57489071aad716690b32ef55610eef7a28f096397a623652ed118665f523",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 2,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_jug/s1/j2/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "8ddf53ac8f9e6a758e4bb60ec503c60dc7bf491797792032729d6a6df2444bf6"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_jug/s1/j2/reach-to-object/dit_L12/metadata.json",
+    "sha256": "4109721ff9c9fa0161798208247d91d4dd31c325e82359957a68cc5c47c8e92b"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j2/transport/dit_L12/conceptors.npz",
+    "sha256": "c1bdebe48a128281f7558c30cbd47cecc64a84c6956295cb4b6e3bcb89d23d0a"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j2/transport/dit_L12/metadata.json",
+    "sha256": "f3f36742fd93a6de30946d09032d121463c39232d9869e7346772e6b41337bbc"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j2/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "347255b76ccb8005f7d02978909e25009df59ecded28f4d029245dc3e3a138fd"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j2/reach-to-object/dit_L12/metadata.json",
+    "sha256": "e5f19f181244a0a9505191eaae1c3dbec635bc30c24f4057f798db6727d00fcf"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_jug__s1/s1/j3/detector_pertask_lstm_PPCC_jug__s1.pt",
+    "sha256": "4463e12e2a51601b0e128e7f064aea226f6e067e5be514463503e1a8093c92c9",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 3,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_jug/s1/j3/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "748c06657df1a104c843295f44ca89b5477402dbb3d54d34ab154e634e5837fa"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_jug/s1/j3/reach-to-object/dit_L12/metadata.json",
+    "sha256": "ea9d5902c42ddfcd081a9f43339004d613e0197d9b0c2986541282181c24ab28"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j3/transport/dit_L12/conceptors.npz",
+    "sha256": "f30409adb2fb85c2ff61e2853dd14c5b758fc9a6602c73b431a9e2b6585525f5"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j3/transport/dit_L12/metadata.json",
+    "sha256": "e9f7487285ba2401183feb3bd50fcc083eac4fdd7087ccb8664d47fab1a9367c"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j3/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "6fd1f432954b02a4e000c9466489143f7e826c1490aeb7dc7d82d4708b63e170"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j3/reach-to-object/dit_L12/metadata.json",
+    "sha256": "c16cc674ad2ee35ae22b8c3abbf8f51e5aef0b315ac28597edd0bb32dc57c23e"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_jug__s1/s1/j4/detector_pertask_lstm_PPCC_jug__s1.pt",
+    "sha256": "2bcfe019d0096f89e2ae008e4ee5120ecff815206ff33f45e849f1a1f123a1ee",
+    "train_pool": "other",
+    "scene": 1,
+    "jitter": 4,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_jug/s1/j4/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "76dd45c0cbacba49c5f1d5216f7ab31814a2b849a0db00197aaf7c7b5ed2688d"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_jug/s1/j4/reach-to-object/dit_L12/metadata.json",
+    "sha256": "91321dea9c6ee4ce0477ba1ca7b1ddfb7be76f1e6bfec892bc682f0172d14814"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j4/transport/dit_L12/conceptors.npz",
+    "sha256": "98fc7d781edc9d068b50b718c5f20c465d008671efd3a9630357627474af7bb9"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j4/transport/dit_L12/metadata.json",
+    "sha256": "a3e0b4f0eac5c20a6eff1a5bf07fe1b1263e4653f3bc1037bc443a6be3ebd6ba"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j4/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "a2a7c10e4cdefc5a245ed884e897c354088c4b7ffbad371a013366ec03d8dcd3"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_jug/s1/j4/reach-to-object/dit_L12/metadata.json",
+    "sha256": "3f98e061c5f8752958cbcb53a465d5a06d755a99eeae6cd24dd699b25f5d1adc"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_marshmallow__s0/s0/j0/detector_pertask_lstm_PPCC_marshmallow__s0.pt",
+    "sha256": "c165fc1dc6257a35457d82a2ec1843ccbe0b005570654491cb4dc30b5026daac",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 0,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_marshmallow/s0/j0/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "9088934940f5a815f27fd9e5cce90aab015ae6e75d8d2cbe1e1a1422b5e9b24e"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_marshmallow/s0/j0/reach-to-object/dit_L12/metadata.json",
+    "sha256": "023f511e47280f75135dbc09ca9dd88a27260825348d9c1207c5d9ddc31cdc9e"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_marshmallow/s0/j0/transport/dit_L12/conceptors.npz",
+    "sha256": "4af416353532bc04d3faccf1bf358ee7b3899e6cd48aa837150c1af96e27a912"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_marshmallow/s0/j0/transport/dit_L12/metadata.json",
+    "sha256": "1834d4414bcccb24fd9839a549f66d8cf9c7060e24022eba480c01de9c9c740f"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_marshmallow/s0/j0/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "e0cd2efed467a8732436379ef37e88dc8142a27771755843fab507adf7b14c97"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_marshmallow/s0/j0/reach-to-object/dit_L12/metadata.json",
+    "sha256": "0acd2e1983eb37c6564b64e6257d5920ca1e38dcf549e4be7299d2340e000c11"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_marshmallow__s0/s0/j3/detector_pertask_lstm_PPCC_marshmallow__s0.pt",
+    "sha256": "f71e3062b062bc140d413953ac606a5984fa61637b3ec2ba73c9c1073a3ae5ff",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 3,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_marshmallow/s0/j3/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "e7bf5f9b95dd18b35ac144a4481927ac3279d0b0db498049f6f383466f056b5e"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_marshmallow/s0/j3/reach-to-object/dit_L12/metadata.json",
+    "sha256": "52f72ff1ea19423b31e7ab5668c152ed3ae30bffe608dad531f6f43680679c6c"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_marshmallow/s0/j3/transport/dit_L12/conceptors.npz",
+    "sha256": "2fa1b67b0f5ab9b0bc40ebb37bf57fb94afb9aa494c569dd6f4a908bc4d82a52"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_marshmallow/s0/j3/transport/dit_L12/metadata.json",
+    "sha256": "0ffcc0e93e28a2719116ed80c0ec9a0698a6787480173e5dc73515ecf00de86c"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_marshmallow/s0/j3/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "78be1d89c678e1325be906cb1d8893d019cb914b367670db327c9a62ff759e4a"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_marshmallow/s0/j3/reach-to-object/dit_L12/metadata.json",
+    "sha256": "ee30d0138bf2d91497c4f5ff9a14c7824c2d5991680fb850b926dd298b79597a"
+  },
+  {
+    "path": "outputs/analysis/grid_phase/detector_v6_ho/loko/PPCC_marshmallow__s0/s0/j4/detector_pertask_lstm_PPCC_marshmallow__s0.pt",
+    "sha256": "1624c14b609820fdadf99304aa2ea64f58426effe9171d2af10846c6b8fcd14b",
+    "train_pool": "other",
+    "scene": 0,
+    "jitter": 4,
+    "n_train": 40
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_marshmallow/s0/j4/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "5290b11b7e449e44d1f93f6409df756beea3f490fd36d16856f14667f62ce830"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt/PPCC_marshmallow/s0/j4/reach-to-object/dit_L12/metadata.json",
+    "sha256": "5891944747e6f77aabd45aa2f4de8f837ba289aff54dd76d6157cf2aab5ea67e"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_marshmallow/s0/j4/transport/dit_L12/conceptors.npz",
+    "sha256": "f64081539581594c5f7dfbd9796fd5d2cd68de4ba37111f64def6296b762e481"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_marshmallow/s0/j4/transport/dit_L12/metadata.json",
+    "sha256": "46810550a678436f6a4b74635a03bda42f75df6acf83f3d931b9925f92f60d58"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_marshmallow/s0/j4/reach-to-object/dit_L12/conceptors.npz",
+    "sha256": "1fc64e795b5dda2337bb7029e3a3d48bc72d31fcc7b34e56298180f88050dd4c"
+  },
+  {
+    "path": "outputs/steer/online_pipe_v4_pilot/instr_setm_v6_gt_plain/PPCC_marshmallow/s0/j4/reach-to-object/dit_L12/metadata.json",
+    "sha256": "b74bb33af3a5ed90253f65ed2d659f5534d97030bbb91b76bb74c5ce93fcc812"
+  }
+]

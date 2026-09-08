@@ -1068,7 +1068,7 @@ def _action_to_emit_array(action: torch.Tensor) -> np.ndarray:
 # 규약: 1차 pass 는 **hook 전부 off** 로 돌려 자연 활성화 x_t 를 얻고(detector 순환
 # 차단, §1-2), detector 가 발화한 record 에서만 **DiT-only 2차 pass** 로 개입한다.
 # 개입은 그 record 1회성 — 다음 record 는 다시 무개입이 기본값(latch 폐기).
-_PERSTEP_OPS = ("setm", "condg", "reseed", "rsn_llr", "rsn_rand")
+_PERSTEP_OPS = ("setm", "condg", "reseed", "reseed_setm", "rsn_llr", "rsn_rand")
 # rsn_* = best-of-N 재샘플: 후보 n 개를 DiT-only 로 뽑아 하나만 실행(순수 재샘플 —
 # setm/condg 훅은 적용하지 않는다). 선택 규칙만 다르다 (llr argmin vs 무작위).
 _PERSTEP_RESAMPLE_OPS = ("rsn_llr", "rsn_rand")
@@ -1096,7 +1096,7 @@ def _parse_perstep_gate(payload: dict) -> dict | None:
     """payload 의 ``perstep_gate`` / ``perstep_debug_rerun`` 파싱 + 사전 배선 검증.
 
     payload 계약:
-      ``perstep_gate``: {"op": "setm"|"condg"|"reseed"|"rsn_llr"|"rsn_rand"|null,
+      ``perstep_gate``: {"op": "setm"|"condg"|"reseed"|"reseed_setm"|"rsn_llr"|"rsn_rand"|null,
                          "reseed_offset": int (기본 900000),
                          "n": int (rsn_* 후보 수, 기본 8, 1≤n≤32),
                          "fallback": "skip"(기본)|"reseed" — setm/condg 가 발화했는데
@@ -1151,7 +1151,7 @@ def _parse_perstep_gate(payload: dict) -> dict | None:
             status_code=409,
             detail="per-step 게이트 + skip_features 는 detector 켜진 serve 에서만 가능",
         )
-    if op in ("setm", "condg"):
+    if op in ("setm", "condg", "reseed_setm"):
         if not _gated_registry:
             raise HTTPException(
                 status_code=409,
@@ -1447,15 +1447,16 @@ def _run_perstep_gate(
     else:
         # 1차 pass 가 전역 RNG 를 소모했으므로 2차 직전 반드시 재설정:
         #   setm/condg → seed1 (1차와 같은 noise, 차이는 개입뿐)
-        #   reseed     → seed1+offset (denoise noise 재추첨 자체가 개입)
-        seed2 = seed1 + int(cfg["reseed_offset"]) if op == "reseed" else seed1
+        #   reseed/reseed_setm → seed1+offset. 결합 arm 은 이 새 noise 로 생긴
+        #   DiT activation 에 setM 을 적용한다(원래 pass activation 재사용 없음).
+        seed2 = seed1 + int(cfg["reseed_offset"]) if op in ("reseed", "reseed_setm") else seed1
         torch.manual_seed(seed2)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed2)
 
-        if op in ("setm", "condg") and not _gated_phase_registered(cur_phase):
+        if op in ("setm", "condg", "reseed_setm") and not _gated_phase_registered(cur_phase):
             # 현재 phase 에 연산자가 없으면 setm/condg 2차 pass 는 identity.
-            if cfg["fallback"] != "reseed":
+            if cfg["fallback"] != "reseed" and op != "reseed_setm":
                 # 개입 없음으로 커밋하고 사유를 데이터에 남긴다 (무음 no-op 금지).
                 extras["features.perstep_gate_skipped"] = f"phase_unregistered:{cur_phase!r}"
                 return action1, hidden1, extras, fail1
@@ -1474,7 +1475,7 @@ def _run_perstep_gate(
 
         applied = False
         try:
-            if op_apply in ("setm", "condg"):
+            if op_apply in ("setm", "condg", "reseed_setm"):
                 # 마지막으로 POST 된 phase/scene 상태를 그 record 에만 적용
                 _apply_steering_phase_state(cur_phase, _gated_registry.get("current_scene"))
                 applied = True

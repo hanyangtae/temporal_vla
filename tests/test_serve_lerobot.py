@@ -18,7 +18,7 @@ import tempfile
 import types
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from pathlib import Path
 
 import numpy as np
@@ -1470,6 +1470,161 @@ class TestHealthEndpoint(unittest.TestCase):
         self.assertEqual(data["groot_dit_capture_layers"], [0, 2, 31])
         self.assertEqual(data["model_action_horizon"], 16)
         self.assertNotIn("feature_action_horizon", data)
+
+
+class TestPerstepGate(unittest.TestCase):
+    """Bounded unit coverage for per-step reseed/setpoint gating."""
+
+    def setUp(self):
+        self.srv = serve_lerobot
+        self.saved = {
+            "policy_type": self.srv._policy_type,
+            "failure_detector": self.srv._failure_detector,
+            "gated_registry": self.srv._gated_registry,
+            "arm_registry": self.srv._arm_registry,
+            "cluster_assigner": self.srv._cluster_assigner,
+        }
+        self.srv._policy_type = "groot"
+        self.srv._failure_detector = MagicMock()
+        self.srv._cluster_assigner = None
+        self.srv._gated_registry = {
+            "current": "phase-gt",
+            "current_scene": "scene-gt",
+            "matrices": {8: {"phase-gt": np.eye(2)}},
+        }
+        self.srv._arm_registry = {
+            ("dit", 8): {"family": "setpoint"},
+        }
+
+    def tearDown(self):
+        self.srv._policy_type = self.saved["policy_type"]
+        self.srv._failure_detector = self.saved["failure_detector"]
+        self.srv._gated_registry = self.saved["gated_registry"]
+        self.srv._arm_registry = self.saved["arm_registry"]
+        self.srv._cluster_assigner = self.saved["cluster_assigner"]
+
+    def _cfg(self, op="reseed_setm", **kwargs):
+        cfg = {
+            "op": op,
+            "reseed_offset": 37,
+            "n": 8,
+            "fallback": "skip",
+            "debug_rerun": False,
+        }
+        cfg.update(kwargs)
+        return cfg
+
+    def _detector_result(self, fired):
+        self.srv._failure_detector.snapshot.return_value = "snapshot"
+        self.srv._failure_detector.restore = MagicMock()
+        return {"fired": fired, "score": 0.9, "delta": 0.5, "t": 1}
+
+    def test_reseed_setm_triggered_uses_offset_seed_and_setpoint_hook(self):
+        self.srv._failure_detector.step = MagicMock(
+            side_effect=[self._detector_result(True), self._detector_result(True)]
+        )
+        action1 = torch.zeros(1, 2, 3)
+        hidden1 = np.zeros((1, 1, 1, 2), dtype=np.float32)
+        action2 = torch.ones(1, 2, 3)
+        hidden2 = np.ones((1, 1, 1, 2), dtype=np.float32)
+
+        with patch.object(self.srv, "_failure_from_hidden", side_effect=[
+            self._detector_result(True), self._detector_result(True)
+        ]) as failure, patch.object(
+            self.srv, "_rerun_dit_only", return_value=(action2, hidden2)
+        ) as rerun, patch.object(
+            self.srv, "_apply_steering_phase_state"
+        ) as apply, patch.object(self.srv, "_steering_phase_off") as off, patch.object(
+            self.srv, "_gated_phase_registered", return_value=True
+        ), patch.object(self.srv.torch, "manual_seed") as manual_seed:
+            got_action, got_hidden, extras, _ = self.srv._run_perstep_gate(
+                self._cfg(), action1, hidden1, 123
+            )
+
+        self.assertIs(got_action, action2)
+        self.assertIs(got_hidden, hidden2)
+        rerun.assert_called_once_with(capture=True)
+        manual_seed.assert_called_with(160)
+        apply.assert_called_once_with("phase-gt", "scene-gt")
+        off.assert_called_once_with()
+        self.assertEqual(extras["features.perstep_seed2"], 160)
+        self.assertEqual(extras["features.perstep_op"], "reseed_setm")
+        self.srv._failure_detector.restore.assert_called_once_with("snapshot")
+        self.assertEqual(failure.call_count, 2)
+
+    def test_reseed_setm_does_not_rerun_when_detector_does_not_fire(self):
+        with patch.object(self.srv, "_failure_from_hidden", return_value=self._detector_result(False)), patch.object(
+            self.srv, "_rerun_dit_only"
+        ) as rerun:
+            action1 = torch.zeros(1, 1, 2)
+            hidden1 = np.zeros((1, 1, 1, 2))
+            got_action, got_hidden, extras, _ = self.srv._run_perstep_gate(
+                self._cfg(), action1, hidden1, 123
+            )
+
+        self.assertFalse(extras["features.perstep_fired"])
+        self.assertIs(got_action, action1)
+        self.assertIs(got_hidden, hidden1)
+        self.assertEqual(got_hidden.shape, (1, 1, 1, 2))
+        rerun.assert_not_called()
+        self.srv._failure_detector.restore.assert_not_called()
+
+    def test_reseed_setm_unregistered_phase_reseeds_even_with_skip_fallback(self):
+        self.srv._gated_registry["current"] = "phase-missing"
+        with patch.object(self.srv, "_failure_from_hidden", return_value=self._detector_result(True)), patch.object(
+            self.srv, "_gated_phase_registered", return_value=False
+        ), patch.object(self.srv, "_rerun_dit_only", return_value=(torch.ones(1, 1, 2), None)) as rerun, patch.object(
+            self.srv.torch, "manual_seed"
+        ) as manual_seed:
+            _, _, extras, _ = self.srv._run_perstep_gate(
+                self._cfg(fallback="skip"), torch.zeros(1, 1, 2), np.zeros((1, 1, 1, 2)), 10
+            )
+
+        rerun.assert_called_once_with(capture=True)
+        manual_seed.assert_called_with(47)
+        self.assertEqual(extras["features.perstep_fallback"], "reseed:phase_unregistered:phase-missing")
+        self.assertNotIn("features.perstep_gate_skipped", extras)
+
+    def test_setpoint_hook_is_turned_off_when_rerun_raises(self):
+        self.srv._gated_registry["current"] = "phase-gt"
+        with patch.object(self.srv, "_failure_from_hidden", return_value=self._detector_result(True)), patch.object(
+            self.srv, "_gated_phase_registered", return_value=True
+        ), patch.object(
+            self.srv, "_apply_steering_phase_state"
+        ), patch.object(self.srv, "_steering_phase_off") as off, patch.object(
+            self.srv, "_rerun_dit_only", side_effect=RuntimeError("rerun failed")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "rerun failed"):
+                self.srv._run_perstep_gate(
+                    self._cfg(), torch.zeros(1, 1, 2), np.zeros((1, 1, 1, 2)), 10
+                )
+
+        off.assert_called_once_with()
+
+    def test_existing_setm_keeps_seed_and_skip_behavior(self):
+        self.srv._gated_registry["current"] = "phase-missing"
+        with patch.object(self.srv, "_failure_from_hidden", return_value=self._detector_result(True)), patch.object(
+            self.srv, "_gated_phase_registered", return_value=False
+        ), patch.object(self.srv, "_rerun_dit_only") as rerun, patch.object(
+            self.srv.torch, "manual_seed"
+        ) as manual_seed:
+            action1 = torch.zeros(1, 1, 2)
+            got_action, _, extras, _ = self.srv._run_perstep_gate(
+                self._cfg(op="setm"), action1, np.zeros((1, 1, 1, 2)), 10
+            )
+
+        self.assertIs(got_action, action1)
+        rerun.assert_not_called()
+        manual_seed.assert_called_once_with(10)
+        self.assertEqual(extras["features.perstep_gate_skipped"], "phase_unregistered:'phase-missing'")
+
+    def test_parser_rejects_reseed_setm_without_setpoint_registry(self):
+        self.srv._gated_registry = {"matrices": {8: {"phase-gt": np.eye(2)}}}
+        self.srv._arm_registry = {}
+        with self.assertRaises(self.srv.HTTPException) as ctx:
+            self.srv._parse_perstep_gate({"perstep_gate": {"op": "reseed_setm"}})
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("setpoint", ctx.exception.detail)
 
 
 if __name__ == "__main__":

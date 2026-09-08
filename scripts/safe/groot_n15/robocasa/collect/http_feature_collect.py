@@ -798,11 +798,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--perstep-op",
-        choices=("none", "reseed", "setm", "condg", "rsn_llr", "rsn_rand"),
+        choices=("none", "reseed", "setm", "reseed_setm", "condg", "rsn_llr", "rsn_rand"),
         default="none",
         help=(
             "--gated-steering-mode perstep 에서 발화 시 적용할 연산자 family. "
             "none=발화만 기록하고 개입 없음(게이트 감지-only 대조). "
+            "reseed_setm=발화 시 새 denoise noise 로 재추첨하면서 그 activation 에 setM 적용. "
             "rsn_llr=발화 step 만 best-of-N 재샘플 후 LLR 채점기로 후보 선택 "
             "(serve 는 --llr-bundle 필요), rsn_rand=같은 N 후보 중 무작위 1개 "
             "(재샘플 자체의 효과를 분리하는 위약 대조). 후보 수는 --perstep-n."

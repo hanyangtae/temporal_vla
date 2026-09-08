@@ -260,7 +260,7 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
       ps_condg)                          printf '%s/condg\n'    "$root" ;;
       ps_base|ps_reseed)                 printf '' ;;
       ps_rsn_rand|ps_rsn_llr)            printf '' ;;
-      ps_setm) echo "ABORT: arm=ps_setm 은 STEER_OP=setpoint_seg 에서만 (현재 STEER_OP=${STEER_OP})" >&2; return 2 ;;
+      ps_setm|ps_reseed_setm) echo "ABORT: arm=$2 은 STEER_OP=setpoint 에서만 (현재 STEER_OP=${STEER_OP})" >&2; return 2 ;;
       *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
     esac
     return 0
@@ -274,7 +274,7 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
       online_pl|online_fut_pl|oracle_always_pl) printf '%s_pl\n' "$root" ;;
       ps_base|ps_reseed)               printf '' ;;
       ps_rsn_rand|ps_rsn_llr)          printf '' ;;
-      ps_setm|ps_condg) echo "ABORT: arm=$2 는 STEER_OP=conceptor 와 맞지 않는다 (setpoint_seg|condg 필요)" >&2; return 2 ;;
+      ps_setm|ps_reseed_setm|ps_condg) echo "ABORT: arm=$2 는 STEER_OP=conceptor 와 맞지 않는다 (setpoint_seg|condg 필요)" >&2; return 2 ;;
       *) echo "ABORT: 알 수 없는 arm=$2" >&2; return 2 ;;
     esac
     return 0
@@ -289,7 +289,7 @@ npz_base_for_arm() {  # slug arm → NPZ base 경로 (base·oracle 도 반환, b
     oracle_always_pl) printf '%s/%s/%s_pl\n'  "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     rs_steer)      printf '%s/%s/%s\n'        "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     # per-step arm: ps_setm 만 setM 트리 등록, ps_base/ps_reseed 는 steering 미등록.
-    ps_setm)       printf '%s/%s/%s\n'        "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
+    ps_setm|ps_reseed_setm) printf '%s/%s/%s\n' "$NPZ_ROOT" "$1" "$NPZ_VARIANT" ;;
     ps_base|ps_reseed) printf '' ;;
     # best-of-N 재샘플 arm: 연산자 NPZ 불요 (ps_reseed 와 같은 취급).
     ps_rsn_rand|ps_rsn_llr) printf '' ;;
@@ -322,7 +322,7 @@ token_select_for_arm() {  # arm
 # per-step arm 4종은 라이브 게이트라 전부 detector 필수 (ps_base/ps_reseed 는 steering 미등록).
 arm_uses_detector() { case "$1" in
   base|online|online_fut|online_pl|online_fut_pl|online_hs) return 0 ;;
-  ps_base|ps_reseed|ps_setm|ps_condg) return 0 ;;
+  ps_base|ps_reseed|ps_setm|ps_reseed_setm|ps_condg) return 0 ;;
   ps_rsn_rand|ps_rsn_llr) return 0 ;;
   *) return 1 ;;
 esac; }
@@ -373,7 +373,9 @@ serve_flags_for() {  # slug arm → serve 추가 플래그 (scan_npz_base 선행
       flags="${flags} --steering-layers ${LAYER} --steering-op ${STEER_OP}"
       flags="${flags} --steering-beta ${STEER_BETA}"
       flags="${flags} --steering-token-select $(token_select_for_arm "$arm")"
-      is_conceptor_family && flags="${flags} --steering-alpha 0"
+      if is_conceptor_family; then flags="${flags} --steering-alpha 0"
+      elif [ -n "${STEER_ALPHA:-}" ]; then flags="${flags} --steering-alpha ${STEER_ALPHA}"
+      fi
     fi
   fi
   # best-of-N LLR arm: 후보 채점기 번들을 serve 에 등록 (rsn_llr 전용).
@@ -525,7 +527,11 @@ cleanup() {
   command -v nvidia-smi > /dev/null 2>&1 && nvidia-smi --query-gpu=index,memory.used \
     --format=csv,noheader 2> /dev/null || true
 }
-[ "$DRY_RUN" = "1" ] || trap cleanup EXIT INT TERM
+if [ "$DRY_RUN" != "1" ]; then
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+fi
 
 health_curl() {  # port
   if [ "$SERVE_MODE" = host ]; then
@@ -560,6 +566,12 @@ start_serve() {  # gpu port extra_flags...
   local ok=0
   for _ in $(seq 1 "${SERVE_BOOT_TRIES:-150}"); do
     if health_curl "$port" | grep -q '"status":"ok"'; then ok=1; break; fi
+    # 명시적인 startup failure 는 전체 boot timeout 을 기다리지 않는다.
+    if [ "$SERVE_MODE" = host ]; then
+      grep -q 'Application startup failed' "$(serve_log_host "$port")" 2>/dev/null && break
+    else
+      docker exec lerobot grep -q 'Application startup failed' "$(serve_log_cont "$port")" 2>/dev/null && break
+    fi
     sleep 5
   done
   if [ "$ok" != 1 ]; then
@@ -678,6 +690,8 @@ run_episode() {  # port slug arm task env_name instr ep inf_seed env_seed out_ho
                      --perstep-reseed-offset "$RESEED_OFFSET") ;;
     ps_setm)   mode=(--gated-steering-mode perstep --perstep-op setm
                      --perstep-fallback "$PERSTEP_FALLBACK") ;;
+    ps_reseed_setm) mode=(--gated-steering-mode perstep --perstep-op reseed_setm
+                         --perstep-fallback "$PERSTEP_FALLBACK") ;;
     ps_condg)  mode=(--gated-steering-mode perstep --perstep-op condg
                      --perstep-fallback "$PERSTEP_FALLBACK") ;;
     ps_rsn_rand) mode=(--gated-steering-mode perstep --perstep-op rsn_rand
