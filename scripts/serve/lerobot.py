@@ -1840,6 +1840,12 @@ def _update_steering_spec(*, mode, op, layers, beta, alpha, key,
         "npz_shas": sorted(set(npz_shas)),
         "phases": sorted(phases) if phases else None,
     }
+    if op == "setpoint":
+        _steering_spec.update(
+            setpoint_application="token_mean_common_shift_v2",
+            setpoint_read_tokens="all",
+            setpoint_write_tokens=token_select or "last_horizon",
+        )
     if extra:
         _steering_spec.update(extra)
 
@@ -2030,7 +2036,7 @@ def _register_steering_if_requested(loaded_policy, args):
         if any(k.endswith("_v_seg") for k in _first_keys):
             detected_op = "setpoint_seg"      # exp4-1 v2: 세그먼트 방향 + 토큰별 setpoint
         elif any(k.endswith("_v_steer") for k in _first_keys):
-            detected_op = "setpoint"          # v1 pooled (배포 금지 — 공간 불일치)
+            detected_op = "setpoint"          # scalar token-mean setpoint (common shift)
         else:
             detected_op = "conceptor" 
         want_op = getattr(args, "steering_op", "auto") or "auto"

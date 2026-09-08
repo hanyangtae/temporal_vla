@@ -408,13 +408,18 @@ class ConceptorSteering:
 class SetpointSteering:
     """setpoint형 mean-diff(setM) affine hook (exp4-1, docs/steering/24a §4.1).
 
-    적용식: ``h' = h − β[(h·r̂) − s]·r̂`` — 오차 비례 개입, (h·r̂)=s 도달 시 개입량 0
+    scalar setpoint 적용식: ``m = mean_tokens(h), δ = β[s − (m·r̂)]r̂``;
+    대상 token 모두에 같은 δ를 더한다. fit의 token 평균 공간에서 이동하므로 대상
+    token끼리의 차이를 보존한다(개별 token을 같은 scalar로 수축시키지 않음).
+    ``m·r̂=s`` 도달 시 개입량 0
     (자기 소멸), β≤1 이면 목표 초과 불가. 선행: ACE(2411.09003)·LEACE·WA-LQR setpoint.
     conceptor 경로(h'=hMᵀ, β를 M 에 굽기)와 달리 bias 항이 있는 affine 이라 별도 hook.
 
     주입 지점·발화 규약은 ``ConceptorSteering`` 의 dit 경로와 동일
     (``transformer_blocks[layer]`` 출력 residual stream D=1536, denoise call 마다 발화,
-    ``last_horizon`` 이면 마지막 action token 만). per-step vec 시퀀스는 미지원.
+    ``last_horizon`` 이면 마지막 action token 만). DiT scalar형의 mean은 항상 전체
+    입력 token(v6: state1+future32+action16=49)에서 구하며 token_select는 쓰기 범위만
+    정한다. v6 fit/실행은 모두 all. per-step vec 시퀀스는 미지원.
 
     ★ ``pathway="vl"`` (exp5-2 setM VL 확장): 주입 지점은 ``action_head.vlln`` 출력
     (D=2048, get_action 당 1회 발화 — ConceptorSteering vl 경로와 동일 지점).
@@ -558,14 +563,16 @@ class SetpointSteering:
             if is_tuple:
                 return (steered, *output[1:])
             return steered
-        steered = out.clone()
+        # DiT scalar setpoint도 fit과 같은 token-mean 공간에서 공통 이동한다.
+        # 토큰별 projection을 빼면 방향 v 위 token 차이가 (1-beta)배로 수축한다.
+        mean = out.mean(dim=-2)
+        delta = self.beta * (self._s - (mean * vt).sum(dim=-1))
+        shift = delta[..., None, None] * vt
         if self.token_select == "last_horizon":
-            hs = steered[..., -self.horizon :, :]
-            proj = hs @ vt  # [..., horizon]
-            steered[..., -self.horizon :, :] = hs - self.beta * (proj - self._s).unsqueeze(-1) * vt
+            steered = out.clone()
+            steered[..., -self.horizon :, :] = out[..., -self.horizon :, :] + shift
         else:  # "all"
-            proj = steered @ vt
-            steered = steered - self.beta * (proj - self._s).unsqueeze(-1) * vt
+            steered = out + shift
         if is_tuple:
             return (steered, *output[1:])
         return steered

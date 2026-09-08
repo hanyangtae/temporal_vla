@@ -346,6 +346,9 @@ scan_npz_base() {  # base
   [ -n "$PHASES" ] || { echo "ABORT: NPZ phase 디렉토리 없음: $base" >&2; return 1; }
   LAYER=$(basename "$(ls -d "$base/${PHASES%%,*}"/dit_L* 2>/dev/null | head -1)" | sed 's/dit_L//')
   [ -n "$LAYER" ] || { echo "ABORT: layer 감지 실패: $base" >&2; return 1; }
+  if [ -n "${EXPECTED_STEER_LAYER:-}" ] && [ "$LAYER" != "$EXPECTED_STEER_LAYER" ]; then
+    echo "ABORT: hook layer $LAYER != fit layer $EXPECTED_STEER_LAYER" >&2; return 1
+  fi
   [ -f "$base/${PHASES%%,*}/dit_L${LAYER}/conceptors.npz" ] || {
     echo "ABORT: conceptors.npz 없음: $base/${PHASES%%,*}/dit_L${LAYER}" >&2; return 1; }
 }

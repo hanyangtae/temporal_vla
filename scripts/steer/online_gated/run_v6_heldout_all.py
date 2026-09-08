@@ -73,6 +73,12 @@ def check_sidecars(out, arm, cell, rows):
         d = json.loads(paths[0].read_text())
         if d.get('perstep_op') != want_op or int(d['episode_success']) != int(r['success']):
             raise ValueError('sidecar op/success mismatch')
+        if want_op in ('setm', 'reseed_setm'):
+            spec = d.get('serve_steering') or {}
+            if (spec.get('setpoint_application') != 'token_mean_common_shift_v2'
+                    or spec.get('layers') != [12] or spec.get('token_select') != 'all'
+                    or spec.get('denoise') != 'global'):
+                raise ValueError('setpoint version/layer/token/denoise mismatch')
         for i, seed2 in enumerate(d.get('perstep_seed2', [])):
             if seed2 is None:
                 continue
@@ -167,6 +173,9 @@ def main():
                 'manifest_sha256':hashlib.sha256(a.manifest.read_bytes()).hexdigest(),
                 'cells':[list(c) for c in sorted(cells)], 'noises':a.noises,
                 'detector':'detector_v6_ho', 'fallback':'reseed', 'phase':'GT',
+                'setpoint_application':'token_mean_common_shift_v2',
+                'fit_layer':12, 'hook_layers':[12], 'fit_denoise':3,
+                'apply_denoise':'all_calls', 'fit_tokens':'all_49', 'apply_tokens':'all_49',
                 'beta_selection':'prior 225 fail episodes; jfair .9 tie lower; plain .8 sole candidate'}
     contract_file = a.out/'contract.json'
     if contract_file.exists() and json.loads(contract_file.read_text()) != contract:
@@ -212,6 +221,7 @@ def main():
                      FAILURE_TASK=stem, FAILURE_ALPHA='0.1', PERSTEP_N='1',
                      DETECTOR_LAYERS='0,2,4,8,10,12,15', TOKEN_POOL='all_token_full',
                      NPZ_ROOT=str(root), NPZ_VARIANT=variant, STEER_OP='setpoint',
+                     EXPECTED_STEER_LAYER='12',
                      STEER_ALPHA='0', STEER_BETA=beta, PERSTEP_FALLBACK='reseed',
                      CLUSTER_BUNDLE='', OUT_ROOT=str(a.out/arm/f'{slug}_s{s}_j{j}'),
                      MAXEP=str(a.maxep), CAPTURE_FEATURES='0', SERVE_BOOT_TRIES='150',

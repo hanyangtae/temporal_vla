@@ -93,6 +93,12 @@ class TestCheckSidecars(unittest.TestCase):
             sidecar.write_text(json.dumps({
                 "perstep_op": "reseed_setm",
                 "episode_success": 1,
+                "serve_steering": {
+                    "setpoint_application": "token_mean_common_shift_v2",
+                    "layers": [12],
+                    "token_select": "all",
+                    "denoise": "global",
+                },
                 "perstep_seed2": [901000, 901001],
             }))
 
@@ -101,6 +107,40 @@ class TestCheckSidecars(unittest.TestCase):
             sidecar.write_text(json.dumps({
                 "perstep_op": "reseed_setm",
                 "episode_success": 1,
+                "serve_steering": {
+                    "setpoint_application": "token_mean_common_shift_v1",
+                    "layers": [12],
+                    "token_select": "all",
+                    "denoise": "global",
+                },
+                "perstep_seed2": [901000],
+            }))
+            with self.assertRaisesRegex(ValueError, "version/layer/token/denoise"):
+                v6.check_sidecars(out, "reseed_jfair_b09", cell, [row])
+
+            sidecar.write_text(json.dumps({
+                "perstep_op": "reseed_setm",
+                "episode_success": 1,
+                "serve_steering": {
+                    "setpoint_application": "token_mean_common_shift_v2",
+                    "layers": [11],
+                    "token_select": "all",
+                    "denoise": "global",
+                },
+                "perstep_seed2": [901000],
+            }))
+            with self.assertRaisesRegex(ValueError, "version/layer/token/denoise"):
+                v6.check_sidecars(out, "reseed_jfair_b09", cell, [row])
+
+            sidecar.write_text(json.dumps({
+                "perstep_op": "reseed_setm",
+                "episode_success": 1,
+                "serve_steering": {
+                    "setpoint_application": "token_mean_common_shift_v2",
+                    "layers": [12],
+                    "token_select": "all",
+                    "denoise": "global",
+                },
                 "perstep_seed2": [1000, 1001],
             }))
             with self.assertRaisesRegex(ValueError, "seed2 mismatch"):

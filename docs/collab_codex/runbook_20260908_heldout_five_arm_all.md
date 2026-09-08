@@ -44,19 +44,19 @@ kanu ≤3장, GPU당 2 serve; srv48/50 각 1장, GPU당 6 serve.
 
 ```bash
 # kanu: 메인 트리에서 실행. wrapper를 detach하므로 lease PID가 전체 run을 감싼다.
-mkdir -p outputs/eval/robocasa/groot_n15/og_v6_ho5_all_20260908
+mkdir -p outputs/eval/robocasa/groot_n15/og_v6_ho5_commonshift_v2_20260908
 setsid nohup bash scripts/utils/with_gpu_lease.sh kanu '5 6 7' codex-ho5 'heldout all five-arm eval' -- \
   python .claude/worktrees/eval-whole-pipe/scripts/steer/online_gated/run_v6_heldout_all.py \
   --machine kanu --gpus 5,6,7 --lease-held --port-base 9200 \
   --manifest .claude/worktrees/eval-whole-pipe/configs/experiments/v6_heldout_all_20260908/episodes.tsv \
-  --out outputs/eval/robocasa/groot_n15/og_v6_ho5_all_20260908 \
-  > outputs/eval/robocasa/groot_n15/og_v6_ho5_all_20260908/launch.log 2>&1 < /dev/null &
+  --out outputs/eval/robocasa/groot_n15/og_v6_ho5_commonshift_v2_20260908 \
+  > outputs/eval/robocasa/groot_n15/og_v6_ho5_commonshift_v2_20260908/launch.log 2>&1 < /dev/null &
 
 # srv48: 로컬 lease wrapper가 SSH를 유지한다. 원격 python은 setsid로 실행.
 mkdir -p outputs/tmp/ho5_launch
 setsid nohup bash scripts/utils/with_gpu_lease.sh srv48 '0' codex-ho5 'heldout all five-arm eval' -- \
   ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=6 AISem_48_junhyeong \
-  'cd ~/pkt_ws/temporal_vla && exec setsid python3 scripts/steer/online_gated/run_v6_heldout_all.py --machine worker1 --gpus 0 --lease-held --port-base 9200 --manifest configs/experiments/v6_heldout_all_20260908/episodes.tsv --out outputs/eval/robocasa/groot_n15/og_v6_ho5_all_20260908' \
+  'cd ~/pkt_ws/temporal_vla && exec setsid python3 scripts/steer/online_gated/run_v6_heldout_all.py --machine worker1 --gpus 0 --lease-held --port-base 9200 --manifest configs/experiments/v6_heldout_all_20260908/episodes.tsv --out outputs/eval/robocasa/groot_n15/og_v6_ho5_commonshift_v2_20260908' \
   > outputs/tmp/ho5_launch/srv48.log 2>&1 < /dev/null &
 # srv50: srv48→srv50, AISem_48→AISem_50, worker1→worker2, GPU는 당시 빈 1장으로 변경.
 ```
@@ -107,3 +107,38 @@ runner 오류나 base/collection 불일치 발견 시 새 작업 발사를 중�
   rescue 1/1, destruction 1/1 확인(원래 label을 arm 결과로 읽는 오류 방지).
 - serve·collector CLI smoke, shell syntax, git diff --check 통과.
 - 런처는 실행 전 해당 머신이 사용할 모든 detector·NPZ·metadata SHA256을 대조한다.
+
+## 2026-09-08 scalar setM 수정 및 중단 기록
+
+기존 `og_v6_ho5_all_20260908` 평가는 kanu GPU5/6/7, srv48 GPU0,
+srv50 GPU2에서 모두 중단했다. 완료·부분 산출물은 보존하고 새 평가에 합치지 않는다.
+상위 런처 종료 후 남은 worker shell과 collector까지 확인·종료했고 lease를 해제했다.
+위 실행 예시는 수정 버전 전용 새 경로다. 전체 평가 재개는 아직 하지 않았다.
+
+- 구 DiT scalar 구현은 token별 projection을 setpoint로 수축했다.
+- 수정 버전 `token_mean_common_shift_v2`는 `m=mean_tokens(h)`와
+  `delta=beta*(s-dot(m,v))*v`를 구한 뒤 모든 대상 token에 같은 delta를 더한다.
+- 이 실험의 fit/read/write 범위는 state 1 + future 32 + action 16 = 전체 49 token.
+  일반 `last_horizon` 선택은 전체 입력 평균을 읽되 마지막 action token에만 쓴다.
+- fit은 L12, denoise index 3. hook 등록은 L12 하나이며 denoise는 기존 `global`,
+  즉 모든 호출에 적용한다. 마지막 denoise로 좁히는 변경은 하지 않았다.
+- `EXPECTED_STEER_LAYER=12` 사전 검사와 sidecar의 v2/layers/all/global 완료 검사를 추가했다.
+  `/health`, sidecar, armsig 및 root contract에 의미 버전을 기록한다.
+- 방향 공유·LR 혼합은 수정 범위에 없다. segmented setM은 별도 연산자로 유지한다.
+- β0.8/0.9는 구 구현의 기존 선택값을 그대로 사용하며 수정 구현에서 재탐색하지 않았다.
+- 평균 이동·token 차이 보존은 hook의 직접 수학적 성질이다. 최종 action 분산과 성공률에
+  미치는 영향은 이 단위 검증으로 입증되지 않는다.
+
+수정 runtime smoke 경로: `outputs/tmp/v6_ho5_commonshift_smoke_20260908`.
+기존 smoke와 별도 경로에서 같은 6 arm, `OpenDrawer_left:2:1`, noise 7,
+`maxep=30`으로 발화·새 seed·버전과 적용 범위를 확인한다. 이 짧은 실행은 성능 집계에서 제외한다.
+
+수정 단위 검증: 모델 서버 컨테이너 hook 22개 + serve 78개 통과,
+stdlib orchestration 6개 통과. 평균 이동, token pair 차이 보존, off tensor/tuple identity,
+L12 반복 호출과 다른 15개 layer 미적용, 구버전·잘못된 layer sidecar 거절을 포함한다.
+
+수정 runtime smoke는 6/6 arm `DONE.json`, runner rc0으로 완료했다. 네 setM arm의
+실제 `/health`와 sidecar에서 v2/L12/all/global을 확인했다. 두 결합 arm은 각각
+reseed seed `2200007`, `2200009`에서 fallback 없이 2회 개입했다.
+`verified_health.json`, `runtime_verification.json`에 검증 근거를 보존했다.
+종료 후 kanu GPU5/6/7 메모리 각 2 MiB와 lease 없음을 확인했다.

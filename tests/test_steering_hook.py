@@ -238,3 +238,118 @@ def test_seg_mask_fractional_gain_scales_dose():
     for si, (lo, hi) in enumerate(bounds):
         got = float(d_scaled[:, lo:hi].sum() / d_raw[:, lo:hi].sum())
         assert abs(got - scale[si]) < 1e-6, f"seg {si} 이동량 배율 {got} != scale {scale[si]}"
+
+
+# --------------------------------------------------------------------------- #
+# Scalar DiT setpoint: v6 fit 공간은 49개 전체 토큰의 평균이다. 따라서 scalar
+# setpoint는 선택된 토큰별 projection이 아니라, 전체 입력 토큰 평균에서 계산한
+# 하나의 delta를 적용 토큰 전체에 공통으로 더한다.
+# --------------------------------------------------------------------------- #
+@pytest.fixture(params=[torch.float32, torch.float64])
+def scalar_fixture(request):
+    dtype = request.param
+    rng = np.random.default_rng(41)
+    d, tokens, horizon = 8, 49, 16
+    v = rng.normal(size=d)
+    v /= np.linalg.norm(v)
+    x = torch.as_tensor(rng.normal(size=(2, tokens, d)), dtype=dtype)
+    model = _FakeGroot(_FakeHead(_FakeDiT(x), horizon=horizon))
+    return model, x, torch.as_tensor(v, dtype=dtype), horizon
+
+
+def _scalar_expected(x, v, beta, s):
+    mean = x.mean(dim=-2)
+    delta = beta * ((mean * v).sum(dim=-1) - s)
+    return delta, x - delta[..., None, None] * v
+
+
+def test_scalar_setpoint_unit_vector_mean_motion_is_exact(scalar_fixture):
+    model, x, v, _ = scalar_fixture
+    beta, s = 0.8, 0.37
+    op = SetpointSteering(model, (v.numpy(), s), beta, token_select="all")
+    with op:
+        y = model.action_head.model(x)
+
+    delta, expected = _scalar_expected(x, v, beta, s)
+    torch.testing.assert_close(y, expected, rtol=2e-5, atol=2e-6)
+    torch.testing.assert_close(
+        (y.mean(dim=-2) * v).sum(dim=-1),
+        (x.mean(dim=-2) * v).sum(dim=-1) - delta,
+        rtol=2e-5,
+        atol=2e-6,
+    )
+
+
+def test_scalar_setpoint_all_preserves_pairwise_token_differences(scalar_fixture):
+    model, x, v, _ = scalar_fixture
+    op = SetpointSteering(model, (v.numpy(), -0.2), 0.8, token_select="all")
+    with op:
+        y = model.action_head.model(x)
+    torch.testing.assert_close(y[:, 3] - y[:, 27], x[:, 3] - x[:, 27])
+
+
+def test_scalar_setpoint_beta_one_hits_target_mean_without_collapsing_tokens(scalar_fixture):
+    model, x, v, _ = scalar_fixture
+    target = -0.61
+    op = SetpointSteering(model, (v.numpy(), target), 1.0, token_select="all")
+    with op:
+        y = model.action_head.model(x)
+
+    projected_mean = (y.mean(dim=-2) * v).sum(dim=-1)
+    torch.testing.assert_close(projected_mean, torch.full_like(projected_mean, target))
+    torch.testing.assert_close(y[:, 0] - y[:, 1], x[:, 0] - x[:, 1])
+    assert not torch.allclose(y[:, 0], y[:, 1])
+
+
+def test_scalar_setpoint_off_returns_exact_tensor_and_tuple_objects(scalar_fixture):
+    model, x, v, _ = scalar_fixture
+    op = SetpointSteering(model, (v.numpy(), 0.0), 0.8, token_select="all")
+    op.set_vector(None)
+    tail = object()
+    assert op._hook(None, (), x) is x
+    output = (x, tail)
+    assert op._hook(None, (), output) is output
+
+
+def test_scalar_setpoint_registered_layer_12_applies_on_repeated_calls():
+    rng = np.random.default_rng(52)
+    d, tokens, horizon = 8, 49, 16
+    v = rng.normal(size=d)
+    v /= np.linalg.norm(v)
+    outputs = [torch.as_tensor(rng.normal(size=(1, tokens, d)), dtype=torch.float64) for _ in range(16)]
+    blocks = [_FakeBlock(out) for out in outputs]
+    model = _FakeGroot(_FakeHead(_FakeDiT(outputs[0], blocks), horizon=horizon))
+    op = SetpointSteering(model, (v, 0.1), 0.8, layer=12, token_select="all")
+    with op:
+        y12_calls = [model.action_head.model.transformer_blocks[12](outputs[12]) for _ in range(4)]
+        other_calls = [
+            model.action_head.model.transformer_blocks[i](outputs[i])
+            for i in range(16) if i != 12
+        ]
+
+    _, expected12 = _scalar_expected(outputs[12], torch.as_tensor(v, dtype=torch.float64), 0.8, 0.1)
+    for y12 in y12_calls:
+        torch.testing.assert_close(y12, expected12)
+    for i, y in zip([i for i in range(16) if i != 12], other_calls):
+        torch.testing.assert_close(y, outputs[i])
+
+
+def test_scalar_setpoint_last_horizon_uses_full_token_mean_and_preserves_selected_pairs(scalar_fixture):
+    model, x, v, horizon = scalar_fixture
+    op = SetpointSteering(model, (v.numpy(), 0.23), 0.8, token_select="last_horizon")
+    with op:
+        y = model.action_head.model(x)
+
+    delta, _ = _scalar_expected(x, v, 0.8, 0.23)
+    torch.testing.assert_close(y[:, :-horizon], x[:, :-horizon])
+    torch.testing.assert_close(
+        y[:, -horizon:], x[:, -horizon:] - delta[..., None, None] * v,
+        rtol=2e-5,
+        atol=2e-6,
+    )
+    torch.testing.assert_close(
+        y[:, -horizon:, :] - y[:, -horizon:, :][..., :1, :],
+        x[:, -horizon:, :] - x[:, -horizon:, :][..., :1, :],
+        rtol=2e-5,
+        atol=2e-6,
+    )
