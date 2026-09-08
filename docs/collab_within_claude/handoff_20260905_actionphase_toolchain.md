@@ -230,10 +230,34 @@ python3 …/snapshot_archive_fingerprints.py --compare pre.tsv post.tsv \
 | 5 | **완료 판정을 meta 수로 하면** 이관 중 셀이 완료로 잡힌다 | pkl 수(=이관 완료)로 판정 — 수집 인덱서·중추 셀표·내 러너 3층 모두 적용됨 |
 | 6 | **원격 장시간 작업을 일반 bg 로 돌리면 harness 가 죽인다** | `setsid nohup … &` 필수 |
 | 7 | **v6 지터 열이 둘** — `jitter_idx`(좌표) vs `jitter_reset_idx`(성분). oven·washer 는 후자가 전부 0이라 좌표로 쓰면 (scene,noise)당 5판이 한 키로 뭉친다 | 추출기가 `jitter_idx` 우선(수정 반영됨) |
-| 8 | 공유 HDD I/O 경합 중 일시적 `Bad CRC-32` — 파일은 무손상 | 재시도 3회, 소진 시 실패(조용히 삼키지 않음) |
+| 8 | 공유 HDD I/O 경합 중 **일시적** `Bad CRC-32` — 파일은 무손상(직후 다시 읽으면 정상) | 재시도 3회, 소진 시 실패(조용히 삼키지 않음) |
+| 8b | **지속성 CRC 손상** — 재시도해도 계속 실패하면 그건 진짜 손상이다. 실측: `segA_scene/OpenDrawer_right__s1.npz` 가 09-07 손상(중추 세션 발견). 8 과 구분하는 법 = **재시도 후에도 같은 멤버에서 실패**하는가 | §6b 복구 절차 |
 | 9 | **scene shard 를 `segA/` 에 두면** ae_cluster 가 별개 instruction 으로 잡는다 | `segA_scene/` 분리 |
 | 10 | 병합 시 **phase 코드북 재매핑 누락** → 에러 없이 phase 라벨이 섞인다(코드북은 shard 마다 독립 생성) | `merge_scene_shards.py` 가 union+remap (합성 데이터로 검증됨) |
 | 11 | **모니터가 SSH 연결을 계속 점유** — persistent `tail -F` 가 하나씩 물고 있어 연결 한도에 걸린다 | 작업 끝나면 즉시 정지. 원격 sshd MaxStartups 10 |
+
+### 6b. 손상 shard 복구 (지속성 CRC)
+
+scene shard 하나가 깨져도 **그 키의 병합본이 멀쩡하면 재추출 없이 되살릴 수 있다** —
+병합본은 scene shard 를 이어 붙인 것이라 `scene` 열로 잘라내면 원본과 같은 행이 나온다.
+
+```python
+# 병합본에서 해당 scene 행만 잘라 scene shard 재생성
+import numpy as np
+with np.load(MERGED, allow_pickle=False) as z:          # segA/<slug>.npz
+    m = z["scene"] == SCENE
+    out = {k: (z[k][m] if z[k].shape[:1] == z["scene"].shape else z[k]) for k in z.files}
+# ep_id 는 0부터 다시 매기고, meta_json 의 n_episodes·sigs 도 그 scene 것만 남길 것
+```
+
+**전제와 확인 사항**
+- 병합본이 **손상 이전에** 만들어졌고 그때 감사를 통과했어야 한다. 병합은 scene shard 를
+  읽어 만들므로, 손상이 병합보다 앞섰다면 병합본도 같은 손상을 물려받는다.
+- 복구 후 **판수·succ·j 분포를 원래 감사 기록과 대조**하라(`audit_cells_scene.tsv` 의 그 행).
+- 손상본은 지우지 말고 `.bad_crc_<날짜>` 로 보관 — 원인 추적(디스크·이관·동시 쓰기)이
+  남아 있다. 삭제는 사용자 지시 후.
+- 09-07 사례는 중추 세션이 이 방법으로 `OpenDrawer_right__s1`(50판)을 복구했고 CRC 검증까지
+  마쳤다.
 
 ---
 
