@@ -185,3 +185,30 @@ Docker robocasa에서 eval 관련 8개 및 실제 TCP 회귀 4개 테스트를 �
 포트 8866/8867의 두 lane을 재개했다. 추가 GPU 사용은 없다. 재개 당시
 미완료 조건은 109개이며, 복구 코드 revision은
 `bbe0311fb5b9f5cd9a4a313419eec48894a3f52a`이다.
+
+## 09-08 GPU 두 장 추가
+
+사용자 요청으로 빈 GPU5·7의 점유와 lease를 확인해 추가했다. 07:34:51 UTC
+두 새 owner의 claim과 실행을 확인했다. 세 GPU 모두 같은 LR 실험이며
+kanu 세션당 최대 3장·GPU당 서버 2개 규칙 안에서 실행한다.
+
+| GPU | target | 포트 | 전환 시 미완료 판수 |
+|---|---|---|---:|
+| 6 | Drawer L scene1 jitter2 | 8866/8867 | 100 (기존 진행 중 20 포함) |
+| 5 | Drawer L scene1 jitter3 | 8880/8881 | 120 |
+| 7 | Drawer L scene1 jitter4 | 8882/8883 | 121 (gate 1 포함) |
+
+기존 GPU6 orchestrator만 일시 정지해 새로운 target을 가져가지 않게 하고,
+진행 중인 두 runner는 끝까지 실행한다. `drain_for_three_gpus.log`에 기록하며
+해당 묶음 종료 후 old owner가 반납하면 GPU6의 target 전용 queue가 이어받는다.
+GPU5·7은 기존 owner가 더 이상 배정하지 않을 disjoint target만 시작한다.
+
+새 queue는 `queues/kanu_gpu{5,6,7}_j{3,2,4}/status.json`이다. 각 shard는
+자기 target의 gate를 포함하며 gate 통과 전 비교를 시작하지 않는다.
+`eval/kanu/shards/<slug>__<scene>__<jitter>/EVAL_DONE`은 shard 완료이고,
+전체 1,058판의 exact-coordinate 감사가 통과해야 전역 EVAL_DONE을 쓴다.
+완료된 다른 target 결과와 학습 데이터는 바꾸지 않는다.
+
+코드 `82d29a8`의 target 필터와 gate·분할 비중복 테스트를 포함해 Docker robocasa
+eval 9개 및 TCP 회귀 4개 테스트 통과. GPU7은 먼저 무개입 gate 한 판을 돌리므로
+그동안은 서버 하나만 사용하고, 통과 후 두 조건을 병렬화한다.
