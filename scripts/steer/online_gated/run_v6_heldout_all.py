@@ -111,7 +111,7 @@ def summarize(out, cells, arms, strict=False, arm_defs=None, reference_labels=Fa
         if 'base' not in arms and not reference_labels:
             raise ValueError('base arm absent; --reference-labels is required')
         base = {int(r['noise_idx']): int(r['success']) for r in base_rows}
-        labels = {int(r['noise_idx']): int(r['collection_success'] if reference_labels else r['success']) for r in expected}
+        labels = {int(r['noise_idx']): int(r['success']) for r in expected}
         if 'base' not in arms:
             base = labels.copy()
         baseline_mismatch += sum(base[n] != labels[n] for n in base if n in labels)
@@ -162,6 +162,7 @@ def main():
     p.add_argument('--arms', default=','.join(ARMS))
     p.add_argument('--dry-run', action='store_true')
     p.add_argument('--lease-held', action='store_true')
+    p.add_argument('--allow-busy-local', action='store_true', help='explicit one-run user exception for kanu GPU5/6/7')
     p.add_argument('--phase-source', choices=('gt', 'ck8'), default='gt')
     p.add_argument('--artifact-tag', default='v6')
     p.add_argument('--detector-root', type=Path)
@@ -287,7 +288,7 @@ def main():
     if not a.dry_run:
         for gpu in gpus:
             busy=subprocess.check_output(['nvidia-smi',f'--id={gpu}','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip()
-            if busy:
+            if busy and not (a.allow_busy_local and a.machine == 'kanu' and set(gpus) <= {5,6,7}):
                 raise SystemExit(f'GPU {gpu} already occupied: {busy}')
     slots=[g for g in gpus for _ in range(2 if a.machine=='kanu' else 6)]
     active={}; errors=[]; stopped=False; port=a.port_base

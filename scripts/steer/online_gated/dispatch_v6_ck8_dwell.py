@@ -14,6 +14,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--main-root', type=Path, required=True)
     p.add_argument('--analysis-repo', required=True)
+    p.add_argument('--allow-busy-local', action='store_true')
     a = p.parse_args()
     root = a.main_root.resolve()
     repo = Path(__file__).resolve().parents[3]
@@ -23,6 +24,13 @@ def main():
     release = root/release_rel
     state_dir = root/'outputs/analysis/v6_ck8_dispatch_20260908'
     state_dir.mkdir(parents=True, exist_ok=True)
+    pid_file = state_dir/'dispatcher.pid'
+    if pid_file.exists():
+        old = int(pid_file.read_text())
+        if old != os.getpid() and Path(f'/proc/{old}/cmdline').exists():
+            if b'dispatch_v6_ck8_dwell.py' in Path(f'/proc/{old}/cmdline').read_bytes():
+                raise SystemExit(f'dispatcher already running: {old}')
+    pid_file.write_text(str(os.getpid())+'\n')
     log = state_dir/'dispatcher.log'
     manifest = repo/'configs/experiments/v6_ck8_dwell_20260908/episodes.tsv'
     targets = list(csv.DictReader((manifest.parent/'targets.tsv').open(), delimiter='\t'))
@@ -81,7 +89,7 @@ def main():
                     cmd = gpu_cmd+['--id='+gpu]
                     if cfg['host']: cmd = ['ssh',cfg['host'], *cmd]
                     if subprocess.check_output(cmd, text=True).strip(): free=False
-                if not free:
+                if not free and not (machine == 'kanu' and a.allow_busy_local):
                     report(f'waiting free GPU: {key}'); continue
                 if cfg['host']:
                     # Data only. Source code was already synced by git before dispatcher launch.
@@ -98,6 +106,7 @@ def main():
                         '--arms',arm_list,'--manifest',str((proto/'episodes.tsv').relative_to(root)),
                         '--detector-root','outputs/analysis/grid_phase/detector_v6_ck8_dwell',
                         '--cluster-bundle','outputs/analysis/grid_phase/ae_k8/ae_bundle_k8.npz', '--out',out]
+                if machine == 'kanu' and a.allow_busy_local: args.append('--allow-busy-local')
                 command = ['python',str(repo/'scripts/steer/online_gated/run_v6_heldout_all.py'),*args]
                 if cfg['host']:
                     import shlex

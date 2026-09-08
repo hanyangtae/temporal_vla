@@ -64,6 +64,8 @@ class TestSummarize(unittest.TestCase):
     def test_paired_rescue_destruction_and_completion(self):
         cell = ("cell", 0, 0)
         expected = [_row(0, 0), _row(1, 1)]
+        for r in expected:
+            r.pop("collection_success")  # source index stores the label as success
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
             for arm, rows in {
