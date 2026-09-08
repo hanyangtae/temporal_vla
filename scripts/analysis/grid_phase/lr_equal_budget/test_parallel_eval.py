@@ -13,6 +13,18 @@ except ImportError:
 
 
 class ParallelTests(unittest.TestCase):
+    def test_shards_are_disjoint_and_each_keeps_its_gate(self):
+        jobs = []
+        for name in ('a', 'b', 'c'):
+            jobs.extend([self.task(name, True), self.task(name)])
+        shards = [module.select_target(jobs, [name, '0', '1']) for name in ('a', 'b', 'c')]
+        self.assertEqual(sum(map(len, shards)), len(jobs))
+        self.assertEqual(len({id(j) for shard in shards for j in shard}), len(jobs))
+        for shard in shards:
+            self.assertEqual(module.next_batch(shard, set(), 2), [shard[0]])
+        with self.assertRaisesRegex(ValueError, 'gate'):
+            module.select_target(jobs, ['missing', '0', '1'])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

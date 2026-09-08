@@ -32,6 +32,15 @@ def next_batch(pending, passed, lanes):
     return [j for j in pending if j['gate'] or target(j) in passed][:lanes]
 
 
+def select_target(jobs, selected):
+    if selected is None:
+        return jobs
+    chosen = [j for j in jobs if target(j) == tuple(selected)]
+    if not chosen or not any(j['gate'] for j in chosen):
+        raise ValueError('target shard must contain its replay gate')
+    return chosen
+
+
 def option(argv, name):
     try:
         return argv[argv.index(name) + 1]
@@ -182,12 +191,15 @@ def main():
     parser.add_argument('--gpu', type=int, required=True)
     parser.add_argument('--ports', type=int, nargs=2, default=[8866, 8867])
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--target', nargs=3, metavar=('SLUG', 'SCENE', 'JITTER'))
     args = parser.parse_args()
     if args.gpu not in range(8) or len(set(args.ports)) != 2 or any(p < 8860 or p > 65535 for p in args.ports):
         parser.error('kanu GPU 0..7 and two distinct ports >=8860 required')
     args.root, args.repo = args.root.resolve(), args.repo.resolve()
     verify_inputs(args.root)
     jobs, coverage = build_jobs(args.root, args.repo, 'kanu', args.gpu, port=args.ports[0])
+    all_jobs = jobs
+    jobs = select_target(jobs, args.target)
     if not jobs or any(c['status'] == 'awaiting_fit' for c in coverage):
         raise RuntimeError('no jobs or missing fits')
     passed, pending = set(), []
@@ -203,7 +215,8 @@ def main():
                 passed.add(target(task))
         else:
             pending.append(task)
-    output = args.root / 'eval/kanu'
+    global_output = args.root / 'eval/kanu'
+    output = global_output if args.target is None else global_output / 'shards' / ('__'.join(args.target))
     output.mkdir(parents=True, exist_ok=True)
     schedule = dict(jobs=jobs, operator_coverage=coverage, ports=args.ports, lanes=2,
                     n_jobs=len(jobs), n_pending=len(pending), n_episode_runs=sum(len(j['expected']) for j in jobs))
@@ -238,6 +251,11 @@ def main():
             if not completed(task['result'], task['expected'], require_failure=task['gate']):
                 raise RuntimeError('final exact completion audit failed')
         (output / 'EVAL_DONE').write_text('EVAL_DONE_kanu\n')
+        if args.target is not None:
+            # Another shard may still be running. Only the last fully audited
+            # shard writes the global completion sentinel.
+            if all(completed(j['result'], j['expected'], require_failure=j['gate']) for j in all_jobs):
+                (global_output / 'EVAL_DONE').write_text('EVAL_DONE_kanu\n')
     finally:
         subprocess.run(['bash', str(lease), 'release', 'kanu', str(args.gpu), session], check=True)
 
