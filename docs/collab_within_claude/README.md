@@ -4,4 +4,5 @@ Claude 세션(중추·파트) 사이의 인수인계 문서와 파트 발주 요
 
 - 파일명: `handoff_YYYYMMDD_<round>.md` / `<part>_request_<topic>.md`
 - 현행 정본: [`handoff_20260902_전체파이프라인.md`](handoff_20260902_전체파이프라인.md)
+- 파트별 현행 핸드오프: fail detector = [`handoff_20260907_fail_detector.md`](handoff_20260907_fail_detector.md) (v6 loko-cell 셀 단위 detector — 코드 경로·운영 절차·지표 인용 규약·함정)
 - 구판은 헤더에 "대체됨" 표기 후 존치. 라운드 판정은 `docs/steering/RESULTS.md`로, 방향은 `RESEARCH_DIRECTION.md`로 옮겨 적는다 — 핸드오프에만 남기지 말 것.
