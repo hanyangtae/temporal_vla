@@ -61,6 +61,13 @@ def main() -> int:
     ap.add_argument("--shard", required=True, type=Path, action="append",
                     help="같은 순서로 대응하는 shard (jitter 열 출처)")
     ap.add_argument("--windows", default="0:10,10:30,30:9999")
+    ap.add_argument("--max-j-share", type=float, default=0.40,
+                    help="cluster 의 최빈 j 점유율이 이 값 이상이면 연산자 대상에서 제외 "
+                         "(기본 0.40 = 5-j 균등 0.20 의 2배)")
+    ap.add_argument("--min-n", type=int, default=50,
+                    help="이보다 적은 record 의 cluster 는 점유율이 흔들려 판정 보류")
+    ap.add_argument("--mi-j-norm-warn", type=float, default=0.10,
+                    help="창별 MI(c;j) 정규화값이 이 값 이상이면 그 창을 경고 표시")
     ap.add_argument("--out-json", type=Path, default=None)
     a = ap.parse_args()
 
@@ -98,6 +105,8 @@ def main() -> int:
             mip, nip = mutual_info(cluster[m], phase[m])
             verdict = ("j 우세" if nij > nip * 1.2 else
                        "phase 우세" if nip > nij * 1.2 else "혼재")
+            if nij >= a.mi_j_norm_warn:
+                verdict += " ⚠오염"
             print(f"{f'{lo}:{hi}':>10} {int(m.sum()):>7} {mij:>9.3f} {nij:>6.3f} "
                   f"{mip:>12.3f} {nip:>6.3f}  {verdict}")
             rows.append({"window": [lo, hi], "n_records": int(m.sum()),
@@ -105,19 +114,38 @@ def main() -> int:
                          "mi_cluster_phase": mip, "mi_cluster_phase_norm": nip,
                          "verdict": verdict})
 
-        # cluster 별 j 쏠림 — 어느 cluster 를 연산자 대상에서 뺄지의 근거
-        print(f"  cluster 별 최빈 j 점유율(전 구간):")
+        # cluster 별 j 쏠림 — 어느 cluster 를 연산자 대상에서 뺄지의 **기계 판독 근거**.
+        # 규칙(연산자 세션 합의 2026-09-04): max-j 점유율 ≥ --max-j-share 면 제외.
+        # 균등 점유율은 1/(j 종수) 이므로 기본 0.40 = 5-j 균등(0.20)의 2배.
+        # ⚠ 작은 cluster 는 점유율이 흔들린다(n=250·5j 면 SE≈0.025 라 0.52 는 유의하지만,
+        # n<50 이면 우연으로도 0.4 를 넘는다) → n 을 함께 싣고 --min-n 미만은 판정 보류.
+        n_j = len(np.unique(jit))
+        uniform = 1.0 / n_j if n_j else float("nan")
+        print(f"  cluster 별 최빈 j 점유율(전 구간, 균등={uniform:.2f}, "
+              f"제외기준 ≥{a.max_j_share:.2f}):")
         per_cluster = {}
         for c in np.unique(cluster):
             mc = cluster == c
             vals, cnt = np.unique(jit[mc], return_counts=True)
             share = float(cnt.max() / cnt.sum())
-            per_cluster[int(c)] = {"n": int(mc.sum()), "top_j": int(vals[cnt.argmax()]),
-                                   "top_j_share": share}
-            flag = " ⚠j쏠림" if share >= 0.6 else ""
-            print(f"    c{int(c)}: n={int(mc.sum()):>6} 최빈 j{int(vals[cnt.argmax()])} "
+            n_c = int(mc.sum())
+            if n_c < a.min_n:
+                verdict, flag = "보류(표본부족)", " ·표본부족"
+            elif share >= a.max_j_share:
+                verdict, flag = "제외", " ⚠j쏠림→제외"
+            else:
+                verdict, flag = "사용", ""
+            per_cluster[int(c)] = {"n": n_c, "top_j": int(vals[cnt.argmax()]),
+                                   "top_j_share": share, "uniform_share": uniform,
+                                   "verdict": verdict,
+                                   "exclude": verdict == "제외"}
+            print(f"    c{int(c)}: n={n_c:>6} 최빈 j{int(vals[cnt.argmax()])} "
                   f"{share:.2f}{flag}")
-        report[name] = {"windows": rows, "per_cluster": per_cluster}
+        n_excl = sum(1 for v in per_cluster.values() if v["exclude"])
+        print(f"  → 제외 {n_excl} / {len(per_cluster)} cluster")
+        report[name] = {"windows": rows, "per_cluster": per_cluster,
+                        "rule": {"max_j_share": a.max_j_share, "min_n": a.min_n,
+                                 "mi_j_norm_warn": a.mi_j_norm_warn}}
 
     if a.out_json:
         a.out_json.write_text(json.dumps(report, indent=2, ensure_ascii=False),

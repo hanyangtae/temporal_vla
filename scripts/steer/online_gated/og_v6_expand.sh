@@ -14,7 +14,7 @@ case "$(hostname)" in *worker1*|*srv48*) MC=worker1; LM=srv48;; *worker2*|*srv50
 if [ "${LEASED:-0}" != 1 ]; then
   exec env LEASED=1 bash "$W/scripts/utils/with_gpu_lease.sh" "$LM" "$(printf '%s\n' "$G1" "$G2" "$G3" | sort -u | tr '\n' ' ')" 전체파이프 v6_expand -- bash "$0" "$@"
 fi
-B=$W/outputs/eval/robocasa/groot_n15/og_v6_expand
+B=${B_ROOT:-$W/outputs/eval/robocasa/groot_n15/og_v6_expand}   # B_ROOT 로 결과 루트 분리(예: detector 교체 라운드 og_v6_expand_ho)
 NPZ=$W/outputs/steer/online_pipe_v4_pilot          # v6 연산자도 같은 루트 아래 *_v6 폴더
 BUNDLE=${BUNDLE:-$W/outputs/analysis/grid_phase/ae_k8/ae_bundle_k8.npz}
 DK=${DK:-$W/outputs/analysis/grid_phase/detector_v6/loko}   # <slug>/s<i>/j<r>/detector_pertask_lstm_<slug>.pt   # fail detector 세션 산출 경로(확정 시 갱신)
@@ -23,9 +23,19 @@ L=$B/logs; mkdir -p "$L"
 echo "machine=$MC alpha=0.1 perstep_n=8 beta_sweep=0.6-1.0 v6 loko capture_hooks=7layer arms=setm_gt_b*(jfair),setm_gtplain_b08,reseed[,setm_ck8_b* if CK8] base=none detector=$DK bundle=$BUNDLE" > "$B/MACHINE.txt"
 [ "${CK8:-0}" = 1 ] && { [ -f "$BUNDLE" ] || { echo "[abort] CK8=1 인데 번들 없음: $BUNDLE" | tee -a "$L/run.log"; exit 2; }; }
 [ "${CK8:-0}" = 1 ] || BUNDLE=   # gt/plain/reseed 는 cluster 번들 불요(GT phase POST)
-if [ "$MC" = kanu ]; then SLOTS=("$G1" "$G2" "$G3" "$G1" "$G2" "$G3"); NSLOT=6
+if [ "$MC" = kanu ]; then if [ "$G2" = "$G1" ]; then SLOTS=("$G1" "$G1"); NSLOT=2; elif [ "$G3" = "$G2" ]; then SLOTS=("$G1" "$G2" "$G1" "$G2"); NSLOT=4; else SLOTS=("$G1" "$G2" "$G3" "$G1" "$G2" "$G3"); NSLOT=6; fi
 else SLOTS=("$G1" "$G2" "$G1" "$G2" "$G1" "$G2" "$G1" "$G2" "$G1" "$G2" "$G1" "$G2"); NSLOT=$([ "$G1" = "$G2" ] && echo 6 || echo 12); fi
-gpu_of() { echo "${SLOTS[$(( ${1:-0} % NSLOT ))]}"; }
+# 슬롯 점유 추적 — 카운터(i%NSLOT) 배정은 먼저 끝난 슬롯과 무관하게 GPU 를 고르므로 한 GPU 에 serve 3개가 몰려
+# OOM 으로 부팅 실패한다(09-04 kanu 실측 rc=13). 살아있는 pid 로 빈 슬롯을 찾아 그 GPU 를 준다.
+declare -a SLOT_PID; for ((k=0;k<NSLOT;k++)); do SLOT_PID[$k]=0; done
+pick_slot() {  # 결과는 전역 SLOT 에; 빈 슬롯 없으면 하나 끝날 때까지 대기
+  # ★ 루프 변수는 반드시 local — bash 는 동적 스코프라 호출자 run() 의 local k(=지터)를 덮어쓴다(09-04 실측: EVAL_JITTERS 가 슬롯 번호로 바뀜)
+  local kk pid_; SLOT=-1
+  while [ "$SLOT" -lt 0 ]; do
+    for ((kk=0;kk<NSLOT;kk++)); do pid_=${SLOT_PID[$kk]}; if [ "$pid_" = 0 ] || ! kill -0 "$pid_" 2>/dev/null; then SLOT=$kk; break; fi; done
+    [ "$SLOT" -lt 0 ] && { wait -n 2>/dev/null || sleep 5; }
+  done
+}
 HOSTARGS=(); [ "$MC" != kanu ] && HOSTARGS=(SERVE_MODE=host SERVE_PY=${SERVE_PY:-$HOME/miniconda3/envs/lerobot_050_groot/bin/python} SERVE_PYTHONPATH=${SERVE_PYTHONPATH:-$W/lerobot/src})
 # 케이스 = (slug, s, k) → noises (awk falsy-0 함정: (key in ns) 판정)
 mapfile -t CASES < <(awk -F'\t' -v m="$MC" 'NR>1 && $3==m {key=$2"\t"$4"\t"$5; ns[key]=(key in ns)?ns[key]","$6:$6} END{for(k in ns) print k"\t"ns[k]}' "$EV" | sort)
@@ -34,29 +44,35 @@ p=${PORT_BASE:-8890}; i=0
 run() {  # slug s k noises OUT [KEY=VAL...]
   local task=$1 s=$2 k=$3 ns=$4 out=$5; shift 5
   local cs=${task}_s${s}_j${k} sub=s${s}/j${k}
-  if [[ "$out" == ps_setm_gtplain* ]] && [ ! -d "$NPZ/instr_setm_v6_gt_plain/$task/$sub" ]; then echo "[defer] $cs $out (plain NPZ 없음)" >> "$L/run.log"; return; fi
-  if [[ "$out" == ps_setm_gt_b* ]] && [ ! -d "$NPZ/instr_setm_v6_gt/$task/$sub" ]; then echo "[defer] $cs $out (gt NPZ 없음)" >> "$L/run.log"; return; fi
-  if [[ "$out" == ps_setm_ck8* ]] && [ ! -d "$NPZ/instr_setm_v6_ck8/$task/$sub" ]; then echo "[defer] $cs $out (ck8 NPZ 없음)" >> "$L/run.log"; return; fi
-  local stem=${task}__s${s}; local det=$DK/$stem/$sub/detector_pertask_lstm_$stem.pt   # fail detector 산출: scene shard stem = <slug>__s<i>, cp_bands 키 동일
+  # ART_SLUG_MAP="old1=new1,old2=new2": replay 는 셀표(구 키) slug 로, 산출물(detector·NPZ)은 매핑된 slug 로 찾는다
+  # (09-04 rebase 후 oven/washer 키 교환 — 구 plan 으로 replay 하면서 새 키 산출물을 쓰는 증분 pass 용)
+  local art=$task; local kv; for kv in ${ART_SLUG_MAP:-}; do kv=${kv//,/ }; [ -z "$kv" ] && continue; [ "${kv%%=*}" = "$task" ] && art=${kv#*=}; done
+  if [[ "$out" == ps_setm_gtplain* ]] && [ ! -d "$NPZ/instr_setm_v6_gt_plain/$art/$sub" ]; then echo "[defer] $cs $out (plain NPZ 없음)" >> "$L/run.log"; return; fi
+  if [[ "$out" == ps_setm_gt_b* ]] && [ ! -d "$NPZ/instr_setm_v6_gt/$art/$sub" ]; then echo "[defer] $cs $out (gt NPZ 없음)" >> "$L/run.log"; return; fi
+  if [[ "$out" == ps_setm_ck8* ]] && [ ! -d "$NPZ/instr_setm_v6_ck8/$art/$sub" ]; then echo "[defer] $cs $out (ck8 NPZ 없음)" >> "$L/run.log"; return; fi
+  local stem=${art}__s${s}; local det=$DK/$stem/$sub/detector_pertask_lstm_$stem.pt   # fail detector 산출: scene shard stem = <slug>__s<i>, cp_bands 키 동일
   [ -f "$det" ] || { echo "[defer] $cs $out (detector 없음: $det)" >> "$L/run.log"; return; }
   local want; want=$(( $(echo "$ns" | tr -cd , | wc -c) + 1 ))
   local have; have=$(awk 'FNR>1' "$B/$out/$cs/$task"/*/per_episode.tsv 2>/dev/null | wc -l)
   [ "$have" -ge "$want" ] && { echo "[skip] $cs $out ($have/$want)" >> "$L/run.log"; return; }
   local root=$NPZ/instr_roots_v6/$cs; mkdir -p "$root/$task"
-  ln -sfn "../../../instr_setm_v6_gt/$task/$sub"  "$root/$task/instr_setm_v6_gt"
-  ln -sfn "../../../instr_setm_v6_gt_plain/$task/$sub" "$root/$task/instr_setm_v6_gt_plain"
-  ln -sfn "../../../instr_setm_v6_ck8/$task/$sub" "$root/$task/instr_setm_v6_ck8"
-  ( env GPUS="$(gpu_of $i)" SERVES_PER_GPU=1 SLUGS="$task" "${HOSTARGS[@]}" \
+  ln -sfn "../../../instr_setm_v6_gt/$art/$sub"  "$root/$task/instr_setm_v6_gt"
+  ln -sfn "../../../instr_setm_v6_gt_plain/$art/$sub" "$root/$task/instr_setm_v6_gt_plain"
+  ln -sfn "../../../instr_setm_v6_ck8/$art/$sub" "$root/$task/instr_setm_v6_ck8"
+  pick_slot; local gpu=${SLOTS[$SLOT]}
+  # 포트 충돌 회피 — 타 프로세스가 잡은 포트(09-04 kanu 8898/8899 실측)는 건너뛴다
+  while ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${p}$"; do p=$((p+1)); done
+  ( env GPUS="$gpu" SERVES_PER_GPU=1 SLUGS="$task" "${HOSTARGS[@]}" \
       EP_MODE=replay EVAL_SCENES="$s" EVAL_JITTERS="$k" EVAL_NOISES="$ns" FIT_SCENES=0-4 FIT_NOISES=0-4 REPLAY_MACHINE="$MC" \
-      INDEX_TSV=$W/configs/collect/n15_grid_v6_scene_jitter/index_v6_complete_cells.tsv \
+      INDEX_TSV=${INDEX_TSV_OVERRIDE:-$W/configs/collect/n15_grid_v6_scene_jitter/index_v6_complete_cells.tsv} \
       PLAN_JSON=$W/configs/collect/n15_grid_v6_scene_jitter/collection_plan.json EP_META_DIR= EP_META_LOAD_ENV_NAME= \
       DETECTOR_CKPT="$det" FAILURE_TASK="$stem" \
       FAILURE_ALPHA=0.1 PERSTEP_N=8 DETECTOR_LAYERS=0,2,4,8,10,12,15 TOKEN_POOL=all_token_full \
       NPZ_ROOT="$root" OUT_ROOT="$B/$out/$cs" PORT_BASE=$p SERVE_BOOT_TRIES=360 ALLOW_BUSY_GPU=1 \
       "$@" bash $W/scripts/steer/online_gated/run_online_gated_eval.sh \
       >> "$L/run.log" 2>&1; echo "[v6-exp] $cs $out rc=$?" >> "$L/run.log" ) &
+  SLOT_PID[$SLOT]=$!; echo "[launch] $cs $out slot=$SLOT gpu=$gpu port=$p" >> "$L/run.log"
   p=$((p+1)); i=$((i+1))
-  [ "$(jobs -rp | wc -l)" -ge "$NSLOT" ] && wait -n
 }
 for c in "${CASES[@]}"; do
   IFS=$'\t' read -r task s k ns <<< "$c"
