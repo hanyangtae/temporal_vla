@@ -1,0 +1,26 @@
+diff --git a/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py b/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py
+index 0ad35e3..7a889ee 100644
+--- a/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py
++++ b/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py
+@@ -449,6 +449,21 @@ def eval_simpler(cfg: GenerateConfig) -> None:
+                             # Create batch of language instructions
+                             batch_size = policy_batch_inference_size * lang_rephrase_num
+
++                            # NOTE(temporal_vla): rebuild task_list for the composed path too.
++                            # Upstream rebuilds it only in the resample branch below, so when the prefail
++                            # batch is smaller than the postfail batch (e.g. prefail 1x1, postfail composed 5)
++                            # task_list keeps its prefail length and `task_list[global_action_idx]` raises
++                            # IndexError. Upstream's own arms never hit this (prefail/postfail both 40).
++                            if composed_samples > 0:
++                                if rephrased_list is not None and lang_rephrase_num > 1:
++                                    unique_prompts = [task_description] + rephrased_list[:lang_rephrase_num - 1]
++                                else:
++                                    unique_prompts = [task_description]
++                                task_list = []
++                                for _p in unique_prompts:
++                                    task_list.extend([_p] * policy_batch_inference_size)
++                                assert len(task_list) == batch_size, "Batch size mismatch (composed)"
++
+                             # Truncate extra actions from queue
+                             if cfg.action_samples_prefail > cfg.action_samples and cfg.lang_rephrase_num < cfg.lang_rephrase_num_prefail and composed_samples <= 0:
+                                 action_queue = list(action_queue)

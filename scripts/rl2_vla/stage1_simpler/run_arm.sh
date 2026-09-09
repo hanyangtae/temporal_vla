@@ -2,7 +2,10 @@
 # RL2-VLA SIMPLER 축소 재현 러너 (Stage 1b) — arm 하나를 GPU 하나에서 실행.
 #
 # 사용: bash run_arm.sh <arm> <gpu> [suite] [seed] [trials] [alpha]
-#   arm   : vanilla | rephrase | always | adaptive
+#   arm   : vanilla | rephrase | always | adaptive | resample | resample_gated
+#           | compose | compose_gated  (rephrase 없이 QAM 합성만 — 상시 / 발화 후만)
+#   resample*: 순수 noise 재샘플 + verifier (rephrase 1종·QAM 無). N=RESAMPLE_N(기본 40
+#   = RL2 기본 후보수 8×5와 동일 예산). resample_gated는 SAFE 발화 후만 재샘플(prefail=vanilla).
 #   suite : IID | OOD (기본 OOD — 논문 Fig 8 대조)
 #   alpha : adaptive 전용 CP significance level. 미지정 시 해당 seed의 top-1 사용.
 #
@@ -82,6 +85,50 @@ for TASK in "${TASKS[@]}"; do
             --qam_ckpt "$QAM_CKPT" \
             --lang_rephrase_num_prefail 8 --action_samples_prefail 5 --composed_samples_prefail 0 \
             --lang_rephrase_num 8 --action_samples 1 --composed_samples 5
+        ;;
+      resample)
+        # 상시 재샘플: 원문 지시 1종 × N noise 후보 → CoVer best-of-N (합성·rephrase 없음)
+        CUDA_VISIBLE_DEVICES=$GPU python run_simpler_eval_with_openpi.py "${COMMON[@]}" \
+            --use_failure_prediction False \
+            --lang_rephrase_num_prefail 1 --action_samples_prefail "${RESAMPLE_N:-40}" --composed_samples_prefail 0
+        ;;
+      resample_gated)
+        # SAFE 발화 후만 재샘플: prefail=vanilla(1×1), 발화 시 1×N noise 재샘플 + verifier
+        ALPHA="${ALPHA_ARG:-0.2}"
+        CUDA_VISIBLE_DEVICES=$GPU python run_simpler_eval_with_openpi.py "${COMMON[@]}" \
+            --use_failure_prediction True --use_taskwise_cp_band "$TASKWISE" \
+            --failure_checkpoint_dir "$SAFE_DIR" --failure_cp_alpha "$ALPHA" \
+            --lang_rephrase_num_prefail 1 --action_samples_prefail 1 --composed_samples_prefail 0 \
+            --lang_rephrase_num 1 --action_samples "${RESAMPLE_N:-40}" --composed_samples 0
+        ;;
+      compose)
+        # rephrase 없이 QAM 합성만: 원문 지시 1종 × 합성 후보 5 → CoVer 선별 (상시)
+        CUDA_VISIBLE_DEVICES=$GPU python run_simpler_eval_with_openpi.py "${COMMON[@]}" \
+            --use_failure_prediction False --qam_ckpt "$QAM_CKPT" \
+            --lang_rephrase_num_prefail 1 --action_samples_prefail 1 --composed_samples_prefail 5
+        ;;
+      compose_gated)
+        # rephrase 없이, SAFE 발화 후만 QAM 합성 (prefail=vanilla 1×1)
+        ALPHA="${ALPHA_ARG:-0.2}"
+        CUDA_VISIBLE_DEVICES=$GPU python run_simpler_eval_with_openpi.py "${COMMON[@]}" \
+            --use_failure_prediction True --use_taskwise_cp_band "$TASKWISE" \
+            --failure_checkpoint_dir "$SAFE_DIR" --failure_cp_alpha "$ALPHA" \
+            --qam_ckpt "$QAM_CKPT" \
+            --lang_rephrase_num_prefail 1 --action_samples_prefail 1 --composed_samples_prefail 0 \
+            --lang_rephrase_num 1 --action_samples 1 --composed_samples 5
+        ;;
+      compose1_gated)
+        # 선별·rephrase 없는 단일 합성: 평시 vanilla(1x1), SAFE 발화 시에만 QAM 합성 후보 1개
+        # (composed_samples=1 -> verifier 선택이 항등). w = MERGE_W 고정(기본 0.5),
+        # -1 이면 스텝마다 N(0.5,0.25)에서 추첨.
+        ALPHA="${ALPHA_ARG:-0.2}"
+        CUDA_VISIBLE_DEVICES=$GPU python run_simpler_eval_with_openpi.py "${COMMON[@]}" \
+            --use_failure_prediction True --use_taskwise_cp_band "$TASKWISE" \
+            --failure_checkpoint_dir "$SAFE_DIR" --failure_cp_alpha "$ALPHA" \
+            --qam_ckpt "$QAM_CKPT" --merge_rel_weight "${MERGE_W:-0.5}" \
+            --use_rephrased_latents_for_qam False \
+            --lang_rephrase_num_prefail 1 --action_samples_prefail 1 --composed_samples_prefail 0 \
+            --lang_rephrase_num 1 --action_samples 1 --composed_samples 1
         ;;
       *) echo "unknown arm: $ARM"; exit 1;;
     esac
