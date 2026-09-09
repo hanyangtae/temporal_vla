@@ -1,0 +1,101 @@
+{
+  "owner": "collection fork",
+  "excluded": [
+    "CoffeeSetupMug",
+    "PPCC/apple"
+  ],
+  "original_plan": "77e745c37b0f",
+  "canonical_parent_plan": "08f1c9df8207",
+  "requested_scene_shortfall": 13,
+  "available_new_layout_scenes": 11,
+  "available_collection_episodes": 550,
+  "unfillable_scene_shortfall": 2,
+  "noise_per_jitter": 10,
+  "jitters_per_scene": 5,
+  "preserve_existing_scenes": [
+    0,
+    1,
+    2
+  ],
+  "new_scene_id_start": 3,
+  "collection_and_future_eval_machine": "kanu",
+  "oven_limit_evidence": [
+    "src/benchmarks/robocasa/robocasa/environments/kitchen/atomic/kitchen_oven.py:36",
+    "src/benchmarks/robocasa/robocasa/environments/kitchen/kitchen.py:222",
+    "src/benchmarks/robocasa/robocasa/environments/kitchen/kitchen.py:440"
+  ],
+  "instructions": [
+    {
+      "original_instruction": "OpenDrawer/right",
+      "canonical_instruction": "OpenDrawer/right",
+      "requested_new_scenes": 1,
+      "available_new_layout_scenes": 1,
+      "unfillable_scenes_in_target10": 0,
+      "current_collection_plan": null,
+      "note": "collection outcomes still need eligibility assessment"
+    },
+    {
+      "original_instruction": "DishwasherRack/out-left",
+      "canonical_instruction": "DishwasherRack/out-right",
+      "requested_new_scenes": 2,
+      "available_new_layout_scenes": 2,
+      "unfillable_scenes_in_target10": 0,
+      "current_collection_plan": null,
+      "note": "collection outcomes still need eligibility assessment"
+    },
+    {
+      "original_instruction": "DishwasherRack/out-right",
+      "canonical_instruction": "DishwasherRack/out-left",
+      "requested_new_scenes": 1,
+      "available_new_layout_scenes": 1,
+      "unfillable_scenes_in_target10": 0,
+      "current_collection_plan": null,
+      "note": "collection outcomes still need eligibility assessment"
+    },
+    {
+      "original_instruction": "OvenRack/out-left",
+      "canonical_instruction": "OvenRack/out-right",
+      "requested_new_scenes": 1,
+      "available_new_layout_scenes": 1,
+      "unfillable_scenes_in_target10": 0,
+      "current_collection_plan": null,
+      "note": "collection outcomes still need eligibility assessment"
+    },
+    {
+      "original_instruction": "OvenRack/out-right",
+      "canonical_instruction": "OvenRack/out-left",
+      "requested_new_scenes": 3,
+      "available_new_layout_scenes": 1,
+      "unfillable_scenes_in_target10": 2,
+      "current_collection_plan": null,
+      "note": "collection outcomes still need eligibility assessment"
+    },
+    {
+      "original_instruction": "PPCC/bread",
+      "canonical_instruction": "PPCC/bread",
+      "requested_new_scenes": 2,
+      "available_new_layout_scenes": 2,
+      "unfillable_scenes_in_target10": 0,
+      "current_collection_plan": "4fa6496cd684",
+      "note": "collection outcomes still need eligibility assessment"
+    },
+    {
+      "original_instruction": "PPCC/jug",
+      "canonical_instruction": "PPCC/jug",
+      "requested_new_scenes": 1,
+      "available_new_layout_scenes": 1,
+      "unfillable_scenes_in_target10": 0,
+      "current_collection_plan": "4fa6496cd684",
+      "note": "collection outcomes still need eligibility assessment"
+    },
+    {
+      "original_instruction": "PPCC/marshmallow",
+      "canonical_instruction": "PPCC/marshmallow",
+      "requested_new_scenes": 2,
+      "available_new_layout_scenes": 2,
+      "unfillable_scenes_in_target10": 0,
+      "current_collection_plan": "4fa6496cd684",
+      "note": "collection outcomes still need eligibility assessment"
+    }
+  ]
+}
