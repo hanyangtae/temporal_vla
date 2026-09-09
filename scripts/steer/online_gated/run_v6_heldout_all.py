@@ -162,6 +162,7 @@ def main():
     p.add_argument('--arms', default=','.join(ARMS))
     p.add_argument('--dry-run', action='store_true')
     p.add_argument('--lease-held', action='store_true')
+    p.add_argument('--coexisting-serve-pids', default='', help='known existing GR00T serves on the single A100 GPU; reserve their slots')
     p.add_argument('--allow-busy-local', action='store_true', help='explicit one-run user exception for kanu GPU5/6/7')
     p.add_argument('--phase-source', choices=('gt', 'ck8'), default='gt')
     p.add_argument('--artifact-tag', default='v6')
@@ -174,6 +175,9 @@ def main():
     a.main_root = a.main_root.resolve(); a.out = a.out.resolve(); a.manifest = a.manifest.resolve()
     gpus = [int(g) for g in a.gpus.split(',')]
     assert len(gpus) == len(set(gpus)) and 1 <= len(gpus) <= (3 if a.machine=='kanu' else 1)
+    coexisting = {int(v) for v in a.coexisting_serve_pids.split(',') if v}
+    if coexisting:
+        assert a.lease_held and a.machine != 'kanu' and len(gpus) == 1 and len(coexisting) < 6
     arms = a.arms.split(','); assert set(arms) <= set(arm_defs) and len(set(arms)) == len(arms)
     if a.phase_source == 'ck8' and not a.cluster_bundle:
         p.error('--phase-source ck8 requires --cluster-bundle')
@@ -288,7 +292,7 @@ def main():
     if not a.dry_run:
         for gpu in gpus:
             busy=subprocess.check_output(['nvidia-smi',f'--id={gpu}','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip()
-            if busy and not (a.allow_busy_local and a.machine == 'kanu' and set(gpus) <= {5,6,7}):
+            if busy and not (coexisting and set(map(int, busy.split())) <= coexisting) and not (a.allow_busy_local and a.machine == 'kanu' and set(gpus) <= {5,6,7}):
                 raise SystemExit(f'GPU {gpu} already occupied: {busy}')
     slots=[g for g in gpus for _ in range(2 if a.machine=='kanu' else 6)]
     active={}; errors=[]; stopped=False; port=a.port_base
@@ -324,7 +328,15 @@ def main():
             if not a.dry_run:
                 summarize(a.out,cells,arms,arm_defs=arm_defs,reference_labels=a.reference_labels)
         if stopped: jobs.clear()
+        # Existing serves have no pending jobs: as they exit, refill their slots.
+        # Query GPU residency, not PID existence (a zombie must not reserve a slot).
+        slot_limit = len(slots)
+        if coexisting and not a.dry_run:
+            resident = subprocess.check_output(['nvidia-smi', f'--id={gpus[0]}',
+                '--query-compute-apps=pid', '--format=csv,noheader'], text=True)
+            slot_limit -= len(coexisting & {int(v) for v in resident.split()})
         for slot,gpu in enumerate(slots):
+            if slot >= slot_limit: continue
             if not jobs: break
             if slot in active: continue
             job=jobs.pop(0); arm,c,rows,env=job

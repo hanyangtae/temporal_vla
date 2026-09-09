@@ -1,6 +1,9 @@
 # 05 GPU 서버 운영·예약 규약 (GR00T N1.5 eval 단일 출처)
 
-모든 Claude 세션이 kanu·srv48·srv50에 serve/eval을 올릴 때 여기만 본다.
+모든 Codex·Claude 세션은 **GR00T serve/eval을 발사하거나 예약을 변경하기 전에 이 문서를 반드시 확인한다.**
+이 문서의 모델 병렬 수는 **GR00T에만 적용**하며 다른 정책 모델에 자동 적용하지 않는다.
+A100 서버(srv48·srv50)는 GPU당 최대 6모델, kanu는 GPU당 최대 2모델·한 세션 최대 3장이다.
+준비된 작업이 있으면 arm 단계가 다르더라도 빈 슬롯을 채운다. 동시 실행기 전체의 합계가 이 한도를 넘지 않게 관리한다.
 발사 전 **반드시 `scripts/utils/gpu_lease.sh claim`** — 다른 세션이 잡고 있으면 기다리거나 사용자에게 묻는다.
 (흩어져 있던 규칙 통합: CLAUDE.md 평가표준·robocasa-steer-eval 스킬·메모리 kanu/a100 규칙·핸드오프 §3. 충돌 시 이 문서가 이긴다.)
 

@@ -12,6 +12,7 @@ description: Dongkyu-specific agent operating spec for research-code work
 - Entrypoint chain은 이 파일에서 멈춘다. `AGENTS.md`/`CLAUDE.md`는 pointer로 취급하고,
   이후 문서(관련 README, `docs/**`, ADR, runbook)는 task context로 필요한 섹션만 읽는다.
 - 시작 시 확인: `git status -sb`, target env(host / container / conda / uv 중 무엇인지).
+- GR00T serve/eval 발사·예약 변경 전 `docs/05_gpu_server_rules.md`를 반드시 확인한다. A100 GPU당 6모델, kanu GPU당 2모델·최대 3장; 다른 모델에 자동 적용하지 않는다.
 - Instruction 충돌 시 우선순위: 작업 파일의 local rule > 관련 ADR·runbook > repo-wide
   instruction > 일반 workflow.
 

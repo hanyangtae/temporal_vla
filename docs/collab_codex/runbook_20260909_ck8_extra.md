@@ -50,3 +50,8 @@ srv50은GPU2가타인점유되어빈GPU0으로옮기고 `combined_arms`로5arm20
 기존reseed 프로세스는중단하지않고 dispatcher부모만교체, `--resume-existing`으로기존wrapperPID를인계한다.
 기존lease의유휴GPU6/7은원소유자로반납후operators고유소유자가확보해기존wrapper종료trap과충돌하지않는다.
 완료표시는기존프로세스종료+해당머신stage DONE.json을확인한다. 추가평가판수550은불변.
+
+srv48도 기존rese ed 5serve에 operators1serve를추가하고기존serve가끝나는만큼6slot까지늘린다.
+(위 `rese ed`는 reseed를뜻한다.) `--coexisting-serve-pids`는이번실행의확인된5개GPU프로세스만허용한다.
+다른PID가있으면시작대기하며, runner는매주기기존PID의실제GPU상주수를빼서새작업슬롯수를정한다.
+기존reseed는pendingjob0이고5개cell모두이미발사됨을확인했다. GPU2lease는operators고유소유자로인계한다.

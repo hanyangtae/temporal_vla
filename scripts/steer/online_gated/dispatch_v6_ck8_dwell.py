@@ -156,13 +156,20 @@ def main():
                 (proto/'artifacts.json').write_text(json.dumps(hashes, indent=2)+'\n')
                 # GPU use is restricted to free GPUs and guarded by the local lease wrapper.
                 gpu_cmd = ['nvidia-smi', '--query-compute-apps=pid', '--format=csv,noheader']
-                free = True
+                busy_pids = set()
                 stage_gpus = cfg.get('stage_gpus', {}).get(stage, cfg['gpus'])
                 for gpu in stage_gpus.split(','):
                     cmd = gpu_cmd+['--id='+gpu]
                     if cfg['host']: cmd = ['ssh',cfg['host'], *cmd]
-                    if subprocess.check_output(cmd, text=True).strip(): free=False
-                if not free and not (machine == 'kanu' and a.allow_busy_local):
+                    for line in subprocess.check_output(cmd, text=True).splitlines():
+                        line = line.strip()
+                        if line:
+                            try: busy_pids.add(int(line.split()[0]))
+                            except ValueError: busy_pids.add(-1)
+                coexisting = {int(pid) for pid in cfg.get('coexisting_serve_pids', [])}
+                overlap_ok = (stage == 'operators' and cfg.get('operators_overlap')
+                              and coexisting and busy_pids <= coexisting)
+                if busy_pids and not overlap_ok and not (machine == 'kanu' and a.allow_busy_local):
                     report(f'waiting free GPU: {key}'); continue
                 if cfg['host']:
                     # Data only. Source code was already synced by git before dispatcher launch.
@@ -180,6 +187,8 @@ def main():
                         '--arms',arm_list,'--manifest',str((proto/'episodes.tsv').relative_to(root)),
                         '--detector-root','outputs/analysis/grid_phase/detector_v6_ck8_dwell',
                         '--cluster-bundle','outputs/analysis/grid_phase/ae_k8/ae_bundle_k8.npz', '--out',out]
+                if stage == 'operators' and cfg.get('operators_overlap') and coexisting:
+                    args += ['--coexisting-serve-pids', ','.join(str(pid) for pid in sorted(coexisting))]
                 if machine == 'kanu' and a.allow_busy_local: args.append('--allow-busy-local')
                 command = ['python',str(repo/'scripts/steer/online_gated/run_v6_heldout_all.py'),*args]
                 if cfg['host']:

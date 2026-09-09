@@ -12,7 +12,15 @@
   "worker1": {
     "host": "AISem_48_junhyeong",
     "gpus": "2",
-    "lease": "srv48"
+    "lease": "srv48",
+    "operators_overlap": true,
+    "coexisting_serve_pids": [
+      4156758,
+      4156750,
+      4156753,
+      4156763,
+      4156771
+    ]
   },
   "worker2": {
     "host": "AISem_50_junhyeong",
