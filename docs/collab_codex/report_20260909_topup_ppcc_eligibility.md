@@ -1,6 +1,6 @@
 # PPCC 추가 수집 및 eval 후보
 
-plan `4fa6496cd684`, kanu, GR00T N1.5 RoboCasa365 ckpt120000. 신규5scene × 5j × n10 = 250판. 2026-09-09 원격 archive metadata와 로컬 완료 payload 합집합250셀, noise inference seed1300000..1300009 검증. 전송은 아직 일부 재시도 중.
+plan `4fa6496cd684`, kanu, GR00T N1.5 RoboCasa365 ckpt120000. 신규5scene × 5j × n10 = 250판. 2026-09-09 원격 archive metadata와 로컬 완료 payload 합집합250셀, noise inference seed1300000..1300009 검증. 08:02 UTC 확인: shipped_cells 250개 unique, 로컬 잔여 rollout.pkl 0개로 승준 전송도 완료.
 
 | Scene | Layout/style | j0 S/F | j1 S/F | j2 S/F | j3 S/F | j4 S/F | 선택 target | other40 S/F |
 |---|---|---|---|---|---|---|---|---|

@@ -25,3 +25,17 @@ Shipper는같은GRID_ROOT,INTERVAL60,STAGING_CAP_GB20,PARALLEL6으로분리detac
 ## 2026-09-09 04:27 UTC GPU 5/6/7 재개
 
 사용자 요청으로 kanu GPU 5,6,7 각 2 serve로 PPCC 추가 수집 재개. 동일 plan 4fa6496cd684, 기존 29셀(archive 27 + local 2)을 건너뛰어 잔여 221셀. Collector wrapper PID 3640447, shipper PID 3640448; 로그 outputs/collect/topup_ppcc_20260909/collector_resume_567.log 및 shipper_resume_567.log. 이전 paused.json은 중지 당시 이력이고 현재 상태는 resume_567.json 참조. Coffee/apple 제외 유지.
+
+## A100 추가 수집 (2026-09-09)
+
+PPCC250판 수집 완료 후 새 plan `4ab360df2b71` (기존 canonical1800+PPCC250 보존, 신규 pull250)으로 발사. canonical 신 키 기준:
+- srv48 GPU1, 6serve, DishwasherRack/out-right s3 L7 seed100421, s4 L2 seed100280; out-left s3 L8 seed100031. 총150판.
+- srv50 GPU2, 6serve, OvenRack/out-right s3 L2 seed100040; out-left s3 L2 seed100518. 총100판.
+- 각 scene 5j×n10. 양 머신 ports9560..9565. 해당 신규 scene은 이후 worker1/worker2 원 수집 머신에서 eval.
+- Oven/out-left 후보100691은 j4충돌,100451은 j3충돌로 제외. 최종100518은5j 통과. target10내 Oven/out-left 부족2scene은 여전히 불가.
+- 실행 코드 worktree `.claude/worktrees/collect-topup`, remoteHEAD d9f4894. 메인 eval checkout 유지. `lerobot/src` 는 main의 동일 패키지에 심볼릭 링크 (worktree 빈 dependency 디렉토리 때문에 최초 serve import 실패해 수집 시작 전 중단·연결 후 재발사).
+- 실제 collector `_v6_apply_jitter` 최신 fixture-side left=>+l/right=>-l, production reset/contact/base 검사. srv48 15/15, srv50 right5/5 및 최종left5/5 통과.
+- launcher `scripts/collect/launch_topup_remaining_20260909.sh`, 환경 GPUS/INSTRUCTIONS/COLLECTION_SHARD, 원격 hostconda serve + Docker robocasa collector.
+- 로컬 durable leasewrapper/전송 SSH PID 및 로그 `outputs/collect/topup_remaining_20260909/{srv48,srv50}_pids.json`, *_collector.log, *_shipper.log.
+- 원격 staging `outputs/collect/grid_staging_topup_remaining_20260909_{srv48,srv50}`, shipper 동일 루트→승준 archive. 초기 빈 디렉토리 sent_tally 경고 후 다음 cycle 정상 생성.
+- PPCC의 coffee/apple 제외는 그대로. 서랍 새 scene은 reset k-scan 별도 검증 중으로 이 plan에는 없음.
