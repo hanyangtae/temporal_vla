@@ -1,0 +1,22 @@
+{
+  "target_count": 11,
+  "episodes_per_arm": 110,
+  "arms": [
+    "reseed",
+    "plain_b08",
+    "jfair_b09",
+    "reseed_plain_b08",
+    "reseed_jfair_b09"
+  ],
+  "episode_arms": 550,
+  "detector_min_calib_succ": 3,
+  "low_calibration_note": "empirical LOO band; no nominal 90% coverage claim",
+  "selection": "OpenDrawer/right s0,s1 j4 per user; remaining user alternatives prefer more target successes; ties smaller j",
+  "sparse_success": [
+    "PPCC/jug:s0",
+    "DishwasherRack/out-left:s1"
+  ],
+  "baseline_replay": false,
+  "phase": "ck8",
+  "GT_phase": false
+}

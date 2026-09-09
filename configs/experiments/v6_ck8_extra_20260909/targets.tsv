@@ -1,0 +1,12 @@
+instruction	slug	machine	scene_idx	jitter_idx	noise_idx	success	fail
+OpenDrawer/right	OpenDrawer_right	kanu	0	4	0	9	1
+OpenDrawer/right	OpenDrawer_right	kanu	1	4	0	2	8
+DishwasherRack/out-left	DishwasherRack_out-right	worker1	1	2	0	1	9
+DishwasherRack/out-right	DishwasherRack_out-left	worker1	1	3	0	7	3
+DishwasherRack/out-right	DishwasherRack_out-left	worker1	2	3	0	6	4
+OvenRack/out-left	OvenRack_out-right	worker1	0	0	0	6	4
+OvenRack/out-left	OvenRack_out-right	worker1	1	0	0	3	7
+PPCC/bread	PPCC_bread	worker2	0	0	0	4	6
+PPCC/jug	PPCC_jug	worker2	0	2	0	2	8
+PPCC/jug	PPCC_jug	worker2	1	1	0	3	7
+PPCC/marshmallow	PPCC_marshmallow	worker2	0	0	0	8	2

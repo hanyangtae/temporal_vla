@@ -15,14 +15,28 @@ def main():
     p.add_argument('--main-root', type=Path, required=True)
     p.add_argument('--analysis-repo', required=True)
     p.add_argument('--allow-busy-local', action='store_true')
+    p.add_argument('--config-dir', type=Path, default=Path('configs/experiments/v6_ck8_dwell_20260908'),
+                   help='experiment config directory (default: %(default)s)')
+    p.add_argument('--build-dir', type=Path, default=Path('outputs/analysis/grid_phase/v6_ck8_dwell_build'),
+                   help='released build directory (default: %(default)s)')
+    p.add_argument('--state-dir', type=Path, default=Path('outputs/analysis/v6_ck8_dispatch_20260908'),
+                   help='dispatcher state/log directory (default: %(default)s)')
+    p.add_argument('--out-root', type=Path,
+                   default=Path('outputs/eval/robocasa/groot_n15/og_v6_ck8_dwell_20260908'),
+                   help='evaluation output root (default: %(default)s)')
     a = p.parse_args()
     root = a.main_root.resolve()
     repo = Path(__file__).resolve().parents[3]
+    def under_root(path):
+        return path if path.is_absolute() else root / path
+    config_dir = (a.config_dir if a.config_dir.is_absolute() else repo / a.config_dir).resolve()
+    build_dir = under_root(a.build_dir).resolve()
+    state_dir = under_root(a.state_dir).resolve()
+    out_root = under_root(a.out_root).resolve()
     helper = root/'scripts/utils/remote_compute.sh'
     remote_env = dict(os.environ, REMOTE_REPO=a.analysis_repo)
-    release_rel = 'outputs/analysis/grid_phase/v6_ck8_dwell_build/released'
-    release = root/release_rel
-    state_dir = root/'outputs/analysis/v6_ck8_dispatch_20260908'
+    release = build_dir/'released'
+    release_rel = str(release.relative_to(root)) if release.is_relative_to(root) else str(release)
     state_dir.mkdir(parents=True, exist_ok=True)
     pid_file = state_dir/'dispatcher.pid'
     if pid_file.exists():
@@ -32,10 +46,14 @@ def main():
                 raise SystemExit(f'dispatcher already running: {old}')
     pid_file.write_text(str(os.getpid())+'\n')
     log = state_dir/'dispatcher.log'
-    manifest = repo/'configs/experiments/v6_ck8_dwell_20260908/episodes.tsv'
-    targets = list(csv.DictReader((manifest.parent/'targets.tsv').open(), delimiter='\t'))
+    manifest = config_dir/'episodes.tsv'
+    targets = list(csv.DictReader((config_dir/'targets.tsv').open(), delimiter='\t'))
     machines = {'kanu': dict(host=None, gpus='5,6,7', lease='kanu'),
                 'worker2': dict(host='AISem_50_junhyeong', gpus='2', lease='srv50')}
+    machine_file = config_dir/'machines.json'
+    if machine_file.is_file():
+        loaded = json.loads(machine_file.read_text())
+        machines = loaded.get('machines', loaded)
     active, done = {}, []
     def report(message):
         print(message, flush=True)
@@ -43,7 +61,7 @@ def main():
             done=done, status=message, updated=time.time()), indent=2)+'\n')
     def call(cmd, **kw):
         return subprocess.run(cmd, check=True, **kw)
-    while len(done) < 4:
+    while len(done) < 2 * len(machines):
         for key, (proc, fh) in list(active.items()):
             if proc.poll() is None: continue
             fh.close()
@@ -56,7 +74,12 @@ def main():
         # Retrieve only the small released artifacts, never prepared/raw shards.
         with log.open('a') as fh:
             call(['bash', str(helper), 'pull-results', release_rel], env=remote_env, stdout=fh, stderr=fh)
-        ready = json.loads((release/'ready.json').read_text())
+        ready_path = release/'ready.json'
+        if not ready_path.is_file():
+            report(f'waiting build ready: {ready_path}')
+            time.sleep(30)
+            continue
+        ready = json.loads(ready_path.read_text())
         if ready['failed']:
             report(f'BUILD FAILED {ready["failed"]}')
             raise SystemExit(1)
@@ -100,7 +123,8 @@ def main():
                                 str(proto.relative_to(root))]:
                         if not (root/rel).exists(): continue
                         call(['rsync','-a','--mkpath',str(root/rel)+'/',cfg['host']+':pkt_ws/temporal_vla/'+rel+'/'])
-                out = f'outputs/eval/robocasa/groot_n15/og_v6_ck8_dwell_20260908/{stage}'
+                out_path = out_root/stage
+                out = str(out_path.relative_to(root)) if out_path.is_relative_to(root) else str(out_path)
                 args = ['--machine',machine,'--gpus',cfg['gpus'],'--lease-held','--port-base','9400',
                         '--phase-source','ck8','--artifact-tag','v6_ck8dwell','--reference-labels',
                         '--arms',arm_list,'--manifest',str((proto/'episodes.tsv').relative_to(root)),

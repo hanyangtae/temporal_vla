@@ -23,6 +23,7 @@ def main():
     ap.add_argument('--targets', type=Path, required=True)
     ap.add_argument('--episodes', type=Path, required=True)
     ap.add_argument('--out', type=Path, required=True)
+    ap.add_argument('--min-calib-succ', type=int, default=9)
     a = ap.parse_args()
     repo = Path(__file__).resolve().parents[3]
     scripts = repo/'scripts/analysis/grid_phase'
@@ -56,17 +57,27 @@ def main():
                 expected = {(int(v['jitter_idx']), int(v['noise_idx'])): int(v['success']) for v in index
                             if v['grid_instruction'] == r['instruction'] and int(v['scene_idx']) == scene}
                 assert len(observed) == 50 and observed == expected, (key, 'shard/index mismatch')
+            # Use only the artifact stem: old instruction aliases can refer to
+            # the opposite physical side in the current shard namespace.
+            detector_cells = a.out/f'{stem}_j{j}_detector_cells.tsv'
+            with detector_cells.open('w') as f:
+                writer = csv.DictWriter(f, fieldnames=['slug', 'scene_idx', 'jitter_idx', 'noise_idx'], delimiter='\t')
+                writer.writeheader()
+                writer.writerow(dict(slug=stem, scene_idx=scene, jitter_idx=j, noise_idx=0))
             detout = a.out/'detector_build'/stem
             run('failure_detector_sim.py', ['--shard-dir', prepared.parent, '--shards', stem,
-                '--out', detout, '--arm', 'loko-cell', '--loko-cells-tsv', a.targets,
+                '--out', detout, '--arm', 'loko-cell', '--loko-cells-tsv', detector_cells,
                 '--models', 'lstm', '--alphas', '0.1', '--truncate-train', 'phase-ck8',
-                '--min-pool-fail', '1', '--min-calib-succ', '9', '--cp-folds', '0',
+                '--min-pool-fail', '1', '--min-calib-succ', str(a.min_calib_succ), '--cp-folds', '0',
                 '--loko-train-pool', 'other', '--seed', '0', '--threads', '8', '--quiet'])
             ckrel = Path('loko')/stem/f's{scene}'/f'j{j}'/f'detector_pertask_lstm_{stem}.pt'
             ck = torch.load(detout/ckrel, map_location='cpu', weights_only=False)
             assert ck['loko']['train_pool'] == 'other' and len(ck['loko']['train_ep_ids']) == 40
             assert ck['phase_source']['kind'] == 'ck8' and ck['truncate']['mode'] == 'phase-ck8'
             assert ck['feature']['denoise_idx'] == 3
+            ck['extra_experiment'] = {'min_calib_succ': a.min_calib_succ,
+                'calibration_note': 'empirical LOO; nominal coverage not guaranteed'}
+            torch.save(ck, detout/ckrel)
             dest = released/'outputs/analysis/grid_phase/detector_v6_ck8_dwell'/ckrel
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(detout/ckrel, dest)

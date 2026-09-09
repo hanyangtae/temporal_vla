@@ -1,0 +1,17 @@
+{
+  "kanu": {
+    "host": null,
+    "gpus": "5,6,7",
+    "lease": "kanu"
+  },
+  "worker1": {
+    "host": "AISem_48_junhyeong",
+    "gpus": "2",
+    "lease": "srv48"
+  },
+  "worker2": {
+    "host": "AISem_50_junhyeong",
+    "gpus": "2",
+    "lease": "srv50"
+  }
+}
