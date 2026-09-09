@@ -1,0 +1,31 @@
+{
+  "plan_id": "d8c7e569aa37",
+  "machine": "worker2",
+  "server": "srv50",
+  "gpu": 3,
+  "serves_per_gpu": 6,
+  "new_cells": 50,
+  "scene": {
+    "instruction": "OpenDrawer/right",
+    "scene_idx": 3,
+    "layout_id": 8,
+    "style_id": 8,
+    "env_seed": 100247,
+    "reset_idx_list": [
+      0,
+      1,
+      2,
+      4,
+      5
+    ]
+  },
+  "ports": [
+    9620,
+    9621,
+    9622,
+    9623,
+    9624,
+    9625
+  ],
+  "reproduction": "Future eval for this scene must use worker2; candidate selection machine_assignment is superseded by this actual execution record."
+}

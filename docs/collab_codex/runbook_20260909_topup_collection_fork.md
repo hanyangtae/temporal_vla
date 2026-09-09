@@ -39,3 +39,11 @@ PPCC250판 수집 완료 후 새 plan `4ab360df2b71` (기존 canonical1800+PPCC2
 - 로컬 durable leasewrapper/전송 SSH PID 및 로그 `outputs/collect/topup_remaining_20260909/{srv48,srv50}_pids.json`, *_collector.log, *_shipper.log.
 - 원격 staging `outputs/collect/grid_staging_topup_remaining_20260909_{srv48,srv50}`, shipper 동일 루트→승준 archive. 초기 빈 디렉토리 sent_tally 경고 후 다음 cycle 정상 생성.
 - PPCC의 coffee/apple 제외는 그대로. 서랍 새 scene은 reset k-scan 별도 검증 중으로 이 plan에는 없음.
+
+### 서랍 50판 추가 발사
+
+최종 `OpenDrawer/right s3` L8/style8 seed100247, live reset pattern RRRLRRLRRLLL에서 right인[0,1,2,4,5] 채택. 메인도 독립 순차live scan으로0..5 RRRLRR 확인. worker2 production5j reset/contact/base probe PASS5. 새 plan `d8c7e569aa37`은 앞2300셀 전부 보존한2350셀 superset, 신규50만 수집. 기존 실행중인 pull plan/launcher는 수정하지 않음.
+
+srv50 GPU3에6serve ports9620..9625, 실행 `launch_topup_drawer_20260909.sh` (GPUS=3 COLLECTION_SHARD=srv50 INSTRUCTIONS=OpenDrawer/right). 실제machine=worker2, 이후eval도worker2. candidate selection의srv48 기본권고는 실제execution_manifest.json이 대체. 본문첫발사250 + 서랍50 = 이번 A100추가300판, 카누완료250 합550판.
+
+로컬 `outputs/collect/topup_remaining_20260909/srv50_drawer_pids.json`, *_collector.log, *_shipper.log; 원격 staging `outputs/collect/grid_staging_topup_drawer_20260909_srv50`. 종료된PPCC250판 전송완료 확인 후 idle shipper3640448은 종료함. A100세수집의별도shipper는 유지.
