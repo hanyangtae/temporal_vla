@@ -3,6 +3,7 @@
     "host": null,
     "gpus": "5",
     "lease": "kanu",
-    "port_base": 9600
+    "port_base": 9600,
+    "prefer_combined_when_ready": true
   }
 }

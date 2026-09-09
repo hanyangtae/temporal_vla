@@ -100,6 +100,9 @@ def main():
         if state_path.is_file():
             prior = json.loads(state_path.read_text())
             done.extend(prior.get('done', []))
+            for machine, cfg in machines.items():
+                if machine+'_all' in done or machine+'_all' in (prior.get('active') or {}):
+                    cfg['combined_arms'] = True
             for key, pid in (prior.get('active') or {}).items():
                 machine, stage = key.rsplit('_', 1)
                 if machine in machines:
@@ -135,6 +138,11 @@ def main():
             raise SystemExit(1)
         for machine, cfg in machines.items():
             wanted = [f'{r["slug"]}:{r["scene_idx"]}:{r["jitter_idx"]}' for r in targets if r['machine'] == machine]
+            started = any(k.startswith(machine+'_') for k in [*active, *done])
+            if (cfg.get('prefer_combined_when_ready') and not started
+                    and set(wanted) <= set(ready['operators'])):
+                cfg['combined_arms'] = True
+                expected_stage_count = sum(len(stage_specs(c)) for c in machines.values())
             for stage, arm_list, needed in stage_specs(cfg):
                 key = machine+'_'+stage
                 if key in active or key in done: continue
