@@ -6,17 +6,26 @@
 
 ## 1. 층위 (사용자 확정 2026-09-03)
 
+> **2026-09-04 개정 (사용자 결정)** — side / 키의 `left`·`right` 는 **로봇 기준 target fixture 가 있는 쪽**이다
+> (행동 의미: "내 왼쪽에 있는 것을 조작하라"). 개정 전에는 *로봇 스폰 쪽*이라 뜻이 정반대였고, 영상 프레임 실측으로
+> 구 `out-left` 셀에서 오븐·식기세척기가 로봇의 **오른쪽**에 보이는 것을 확인했다. 개정 전 수집분(plan `77e745c37b0f`)은
+> `rebase_plan_id.py --rename-key/--flip-side` 로 아카이브를 옮겼다 — 구 `out-left` 폴더 → `out-right`, 그 반대도 같이,
+> meta.json 의 `grid_instruction`·`side` 패치, **pkl 은 불변**. 물리 수집(스폰 seed·base 오프셋)은 바뀌지 않는다:
+> 수집기의 lat 부호 규칙도 함께 뒤집혀 두 반전이 상쇄된다. 서랍 left/right(대상 서랍 = 문장 변형)·PPCC·coffee 는 무관.
+
 | 층 | 정의 | 무엇이 바뀌나 |
 |---|---|---|
-| instruction 키 | 과제 + 문장 변형 + (pull 계열) 스폰 side | 12키: oven-left/right, washer-left/right, drawer-left/right, ppcc apple/jug/candle/bread/marshmallow, coffee |
-| **scene s** | **주방 = (layout, style) 쌍** (+ pull 계열은 스폰 side 로 갈린 키에 속함) | 주방 도면·외관·fixture 배치. style 만 따로 바꾸지 않는다(target split 은 layout↔style 고정) |
+| instruction 키 | 과제 + 문장 변형 + (pull 계열) fixture side | 12키: oven-left/right, washer-left/right, drawer-left/right, ppcc apple/jug/candle/bread/marshmallow, coffee |
+| **scene s** | **주방 = (layout, style) 쌍** (+ pull 계열은 fixture side 로 갈린 키에 속함) | 주방 도면·외관·fixture 배치. style 만 따로 바꾸지 않는다(target split 은 layout↔style 고정) |
 | **jitter j** | 같은 scene 의 세계 변형 하나 | PPCC·coffee: ep_meta 고정 + 연속 reset(물체 위치·팔 관절). pull 계열: **base 오프셋**(+drawer 는 reset 재추첨도) |
 | noise n | 정책 denoise seed | 세계 불변 |
 
-- side(오븐·식기세척기): 문을 연 채 시작해 정면 앵커가 막히고 로봇이 좌/우 약 0.45m 로 밀려난 결과.
-  seed 에 묶인 50/50 무작위(rack 단·in/out 과 독립). **로봇 시점** 좌/우로 판정한다:
-  `l = (−sin yaw, cos yaw)`, `lat = l·(base − fixture_pos)`, lat>0 → left, else right.
-  서랍의 left/right 는 스폰이 아니라 **대상 서랍**(문장 변형)이다. PPCC·coffee·drawer 는 열린 문이
+- side(오븐·식기세척기) = **로봇 기준 target fixture 가 있는 쪽**(2026-09-04 개정). 문을 연 채 시작해 정면
+  앵커가 막히고 로봇이 좌/우 약 0.45m 로 밀려나 생기는 축이며, seed 에 묶인 50/50 무작위(rack 단·in/out 과 독립).
+  판정: `l = (−sin yaw, cos yaw)`, `spawn_lat = l·(base − fixture_pos)` — `spawn_lat>0` 이면 **로봇이 fixture 의
+  왼쪽에 스폰**했다는 뜻이므로 fixture 는 로봇의 오른쪽 ⇒ `side = "right"`(반대면 `"left"`). 선택표의 `spawn_lat`
+  은 개정 후에도 스폰 lat 부호 그대로이고, 키 항목 `spawn_side` 는 side 의 반대(= 실제 스폰 쪽)다.
+  서랍의 left/right 는 스폰도 fixture 쪽도 아니라 **대상 서랍**(문장 변형)이다. PPCC·coffee·drawer 는 열린 문이
   없어 스폰이 단봉(±15cm)이라 side 축이 없다.
 - 규모: 12키 × scene 3 × j 5 × n **10** = **1,800판** (2026-09-04 n 5→10 확대, plan `77e745c37b0f`; 실측 900판 = 324GB 라 1,800판 ≈ 650GB). n0~4 는 plan `a81f07b86371` 수집분을 rebase 로 승계.
 
@@ -39,10 +48,10 @@
 |---|---|---|
 | ppcc 5종, coffee | j (0..4) | 없음 |
 | drawer-left/right | scene 별 채택 reset 목록[j] (연속 reset 이 서랍 좌/우를 재추첨하므로 문장이 맞는 인덱스만 — 선택표 `reset_idx_list`, v5 k-스캔과 동일 원리) | back ∈ {0, 0.05, 0.10, 0.05, 0.10}[j], lat 0 |
-| oven-·washer-left/right | 0 | (lat, back) ∈ {(0,0), (0,0.05), (0,0.10), (0.05,0.10), (0.05,0.15)}[j]; **lat 은 항상 fixture 중심 쪽**(left 키 → 오른쪽으로, right 키 → 왼쪽으로). 안쪽 lat 만(back 0)은 열린 문과 접촉해 불가(전수 reset 검사 실측) |
+| oven-·washer-left/right | 0 | (lat, back) ∈ {(0,0), (0,0.05), (0,0.10), (0.05,0.10), (0.05,0.15)}[j]; **lat 방향 = side 방향 = fixture 쪽**(side=left 키 → 로봇 왼쪽 +l 로, side=right 키 → 오른쪽 −l 로). 안쪽 lat 만(back 0)은 열린 문과 접촉해 불가(전수 reset 검사 실측) |
 
 - 적용: `reset(seed)` → ep_meta 획득 → `init_robot_base_pos += (−f·back) + (±l·lat)` (f = (cos yaw, sin yaw),
-  l = (−sin yaw, cos yaw), 부호 = side 규칙) → ep_meta 주입 → plain reset (reset_idx+1)회 →
+  l = (−sin yaw, cos yaw), 부호 = side 규칙 = fixture 쪽) → ep_meta 주입 → plain reset (reset_idx+1)회 →
   **충돌 검사**(RoboCasa 원 스폰의 접촉 상태 대비 **새 접촉 또는 1cm 이상 관입 증가**면 RuntimeError — 원 스폰 자체가 열린 문에 닿아 있는 scene 이 있어 '접촉 有' 기준은 못 쓴다). 오프셋값·최종 base 를
   meta.json 과 셀 ep_meta 에 기록.
 - 재현: eval/replay 는 plan 의 같은 (scene, j) 정의에서 오프셋을 **다시 계산**해 같은 절차를 밟는다
