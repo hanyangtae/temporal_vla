@@ -2,7 +2,12 @@
   "kanu": {
     "host": null,
     "gpus": "5,6,7",
-    "lease": "kanu"
+    "lease": "kanu",
+    "stage_gpus": {
+      "reseed": "5",
+      "operators": "6,7"
+    },
+    "operators_overlap": true
   },
   "worker1": {
     "host": "AISem_48_junhyeong",
@@ -11,7 +16,8 @@
   },
   "worker2": {
     "host": "AISem_50_junhyeong",
-    "gpus": "2",
-    "lease": "srv50"
+    "gpus": "0",
+    "lease": "srv50",
+    "combined_arms": true
   }
 }

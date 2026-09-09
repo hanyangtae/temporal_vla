@@ -41,3 +41,12 @@ python scripts/steer/online_gated/dispatch_v6_ck8_dwell.py \
 ```
 
 머신별 detector 준비시 reseed 먼저, 완료후4arm. kanuGPU5/6/7, worker1/srv48GPU2, worker2/srv50GPU2. 발사시 빈GPU 및 lease 확인. machine은 원수집과 일치한다. 09-08 runbook의 길이통제/연산자 규약을 계승하며 이 문서의 scope/calibration 설정이 우선한다.
+
+## 병렬 슬롯 확장
+
+사용자 후속 지시: kanu의 비어 있던 추가2장과 srv50 GPU당6serve를 즉시 활용한다.
+kanu 기존reseed는 GPU5의2serve 그대로, operators는GPU6/7의4serve에서동시실행.
+srv50은GPU2가타인점유되어빈GPU0으로옮기고 `combined_arms`로5arm20jobs를6slot큐에넣는다.
+기존reseed 프로세스는중단하지않고 dispatcher부모만교체, `--resume-existing`으로기존wrapperPID를인계한다.
+기존lease의유휴GPU6/7은원소유자로반납후operators고유소유자가확보해기존wrapper종료trap과충돌하지않는다.
+완료표시는기존프로세스종료+해당머신stage DONE.json을확인한다. 추가평가판수550은불변.
