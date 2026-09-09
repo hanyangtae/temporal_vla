@@ -1,6 +1,6 @@
 {
   "schema": "v6_scene_selection/1",
-  "note": "CPU feasibility candidate selection 2026-09-09; canonical NEW keys requested. Pull-only; target10 scan; dishwasher newly probed, oven from existing cache.",
+  "note": "Canonical fixture-side keys; L2 Oven left changed100691 to100518 after five-jitter contact probes. Old2050cells preserved.",
   "n_scenes_per_key": null,
   "env_kwargs": {
     "layout_and_style_ids": [
@@ -48,12 +48,13 @@
   },
   "machine_assignment": {
     "srv48": [
-      "OvenRack/out-left",
-      "OvenRack/out-right",
-      "DishwasherRack/out-left",
-      "DishwasherRack/out-right"
+      "DishwasherRack/out-right",
+      "DishwasherRack/out-left"
     ],
-    "srv50": []
+    "srv50": [
+      "OvenRack/out-right",
+      "OvenRack/out-left"
+    ]
   },
   "keys": {
     "DishwasherRack/out-right": {
@@ -166,22 +167,22 @@
       "kind": "pull_side",
       "scenes": [
         {
-          "env_seed": 100691,
+          "env_seed": 100518,
           "layout": 2,
           "style": 2,
           "side": "left",
           "lang": "Fully slide the bottom oven rack out.",
           "fixture_group": "oven_main_group",
-          "spawn_lat": -0.4752,
-          "base_x": 1.331,
-          "base_y": -1.28,
+          "spawn_lat": -0.4932,
+          "base_x": 1.349,
+          "base_y": -1.187,
           "base_yaw": 1.571,
           "feasible": true,
           "feasibility": {
             "q_max_feasible": 1.0,
             "q_start": 0.5,
             "blocker_geom": null,
-            "ep_lang": "Fully slide the bottom oven rack out.",
+            "probe_lang": "Fully slide the bottom oven rack out.",
             "lang_match": true
           }
         }
