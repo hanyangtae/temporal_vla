@@ -1,0 +1,192 @@
+{
+  "schema": "v6_scene_selection/1",
+  "note": "CPU feasibility candidate selection 2026-09-09; canonical NEW keys requested. Pull-only; target10 scan; dishwasher newly probed, oven from existing cache.",
+  "n_scenes_per_key": null,
+  "env_kwargs": {
+    "layout_and_style_ids": [
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        5
+      ],
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        7
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        9
+      ],
+      [
+        10,
+        10
+      ]
+    ]
+  },
+  "machine_assignment": {
+    "srv48": [
+      "OvenRack/out-left",
+      "OvenRack/out-right",
+      "DishwasherRack/out-left",
+      "DishwasherRack/out-right"
+    ],
+    "srv50": []
+  },
+  "keys": {
+    "DishwasherRack/out-right": {
+      "task_env": "robocasa_panda_omron/SlideDishwasherRack_PandaOmron_Env",
+      "task": "SlideDishwasherRack",
+      "kind": "pull_side",
+      "scenes": [
+        {
+          "env_seed": 100421,
+          "layout": 7,
+          "style": 7,
+          "side": "right",
+          "lang": "Fully slide the top dishwasher rack out.",
+          "fixture_group": "dishwasher_island_group",
+          "spawn_lat": 0.4287,
+          "base_x": 4.463,
+          "base_y": -1.603,
+          "base_yaw": 4.712,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "ep_lang": "Fully slide the top dishwasher rack out.",
+            "lang_match": true
+          }
+        },
+        {
+          "env_seed": 100280,
+          "layout": 2,
+          "style": 2,
+          "side": "right",
+          "lang": "Fully slide the top dishwasher rack out.",
+          "fixture_group": "dishwasher_island_group",
+          "spawn_lat": 0.5148,
+          "base_x": 2.446,
+          "base_y": -1.567,
+          "base_yaw": 4.712,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "ep_lang": "Fully slide the top dishwasher rack out.",
+            "lang_match": true
+          }
+        }
+      ],
+      "spawn_side": "left"
+    },
+    "DishwasherRack/out-left": {
+      "task_env": "robocasa_panda_omron/SlideDishwasherRack_PandaOmron_Env",
+      "task": "SlideDishwasherRack",
+      "kind": "pull_side",
+      "scenes": [
+        {
+          "env_seed": 100031,
+          "layout": 8,
+          "style": 8,
+          "side": "left",
+          "lang": "Fully slide the top dishwasher rack out.",
+          "fixture_group": "dishwasher_right_group",
+          "spawn_lat": -0.4955,
+          "base_x": 3.362,
+          "base_y": -2.509,
+          "base_yaw": -0.0,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "ep_lang": "Fully slide the top dishwasher rack out.",
+            "lang_match": true
+          }
+        }
+      ],
+      "spawn_side": "right"
+    },
+    "OvenRack/out-right": {
+      "task_env": "robocasa_panda_omron/SlideOvenRack_PandaOmron_Env",
+      "task": "SlideOvenRack",
+      "kind": "pull_side",
+      "scenes": [
+        {
+          "env_seed": 100040,
+          "layout": 2,
+          "style": 2,
+          "side": "right",
+          "lang": "Fully slide the bottom oven rack out.",
+          "fixture_group": "oven_main_group",
+          "spawn_lat": 0.4818,
+          "base_x": 0.374,
+          "base_y": -1.251,
+          "base_yaw": 1.571,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "ep_lang": "Fully slide the bottom oven rack out.",
+            "lang_match": true
+          }
+        }
+      ],
+      "spawn_side": "left"
+    },
+    "OvenRack/out-left": {
+      "task_env": "robocasa_panda_omron/SlideOvenRack_PandaOmron_Env",
+      "task": "SlideOvenRack",
+      "kind": "pull_side",
+      "scenes": [
+        {
+          "env_seed": 100691,
+          "layout": 2,
+          "style": 2,
+          "side": "left",
+          "lang": "Fully slide the bottom oven rack out.",
+          "fixture_group": "oven_main_group",
+          "spawn_lat": -0.4752,
+          "base_x": 1.331,
+          "base_y": -1.28,
+          "base_yaw": 1.571,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "ep_lang": "Fully slide the bottom oven rack out.",
+            "lang_match": true
+          }
+        }
+      ],
+      "spawn_side": "right"
+    }
+  }
+}
