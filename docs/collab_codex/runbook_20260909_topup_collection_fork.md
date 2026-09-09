@@ -21,3 +21,7 @@
 Shipper는같은GRID_ROOT,INTERVAL60,STAGING_CAP_GB20,PARALLEL6으로분리detached실행. 실제pkl도착후QA/strictindex단계가필요하며수집발사를완료로표기하지않는다. 원격보관기존루트및기존eval은변경하지않는다.
 
 후속부족13scene중이번5scene이후Drawer1,Dishwasher3,Oven최대2(layout2양측;추가2부족근거검토)후속조사. Claude데이터추가수집세션에CPUfeasibility/kscan자료만요청했고GPU발사하지않도록전달했다. 수집진행중plan/collector/runner파일수정금지.
+
+## 2026-09-09 04:27 UTC GPU 5/6/7 재개
+
+사용자 요청으로 kanu GPU 5,6,7 각 2 serve로 PPCC 추가 수집 재개. 동일 plan 4fa6496cd684, 기존 29셀(archive 27 + local 2)을 건너뛰어 잔여 221셀. Collector wrapper PID 3640447, shipper PID 3640448; 로그 outputs/collect/topup_ppcc_20260909/collector_resume_567.log 및 shipper_resume_567.log. 이전 paused.json은 중지 당시 이력이고 현재 상태는 resume_567.json 참조. Coffee/apple 제외 유지.
