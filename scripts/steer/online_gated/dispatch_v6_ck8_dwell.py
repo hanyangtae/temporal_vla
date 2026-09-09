@@ -178,7 +178,7 @@ def main():
                     command=['ssh','-o','ServerAliveInterval=30',cfg['host'],
                              'cd ~/pkt_ws/temporal_vla && exec setsid '+shlex.join(['python3','scripts/steer/online_gated/run_v6_heldout_all.py',*args])]
                 launch=['bash',str(root/'scripts/utils/with_gpu_lease.sh'),cfg['lease'],stage_gpus.replace(',',' '),
-                        'codex-ck8-dwell-'+key,'--',*command]
+                        'codex-ck8-dwell-'+key,key,'--',*command]
                 fh=(state_dir/(key+'.log')).open('a')
                 proc=subprocess.Popen(launch,cwd=root,stdout=fh,stderr=subprocess.STDOUT,stdin=subprocess.DEVNULL)
                 active[key]=(proc,fh)
