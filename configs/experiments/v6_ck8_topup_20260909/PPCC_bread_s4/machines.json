@@ -1,0 +1,8 @@
+{
+  "kanu": {
+    "host": null,
+    "gpus": "5",
+    "lease": "kanu",
+    "port_base": 9600
+  }
+}

@@ -155,6 +155,7 @@ def main():
     p.add_argument('--main-root', type=Path, default=Path.home()/'pkt_ws/temporal_vla')
     p.add_argument('--manifest', type=Path, required=True)
     p.add_argument('--out', type=Path, required=True)
+    p.add_argument('--plan-json', type=Path)
     p.add_argument('--port-base', type=int, default=9100)
     p.add_argument('--cell', help='optional smoke cell slug:s:j')
     p.add_argument('--noises', help='optional smoke noise ids')
@@ -172,6 +173,7 @@ def main():
     a = p.parse_args()
     arm_defs = build_arms(a.artifact_tag, a.phase_source)
     repo = Path(__file__).resolve().parents[3]
+    plan = (a.plan_json or repo/'configs/collect/n15_grid_v6_scene_jitter/collection_plan.json').resolve()
     a.main_root = a.main_root.resolve(); a.out = a.out.resolve(); a.manifest = a.manifest.resolve()
     gpus = [int(g) for g in a.gpus.split(',')]
     assert len(gpus) == len(set(gpus)) and 1 <= len(gpus) <= (3 if a.machine=='kanu' else 1)
@@ -222,6 +224,10 @@ def main():
                 'fit_layer':12, 'hook_layers':[12], 'fit_denoise':3,
                 'apply_denoise':'all_calls', 'fit_tokens':'all_49', 'apply_tokens':'all_49',
                 'beta_selection':'prior 225 fail episodes; jfair .9 tie lower; plain .8 sole candidate'}
+    if a.plan_json:
+        contract['plan_sha256'] = hashlib.sha256(plan.read_bytes()).hexdigest()
+        contract['plan_id'] = json.loads(plan.read_text())['plan_id']
+        assert all(r['plan_id'] == contract['plan_id'] for rs in cells.values() for r in rs)
     contract_file = a.out/'contract.json'
     if contract_file.exists() and json.loads(contract_file.read_text()) != contract:
         raise SystemExit('output contract mismatch')
@@ -265,7 +271,7 @@ def main():
                      SLUGS=slug, ARMS=runarm, EP_MODE='replay', EVAL_SCENES=str(s),
                      EVAL_JITTERS=str(j), EVAL_NOISES=','.join(r['noise_idx'] for r in rows),
                      FIT_SCENES='0-4', FIT_NOISES='0-4', REPLAY_MACHINE=a.machine,
-                     INDEX_TSV=str(a.out/'manifest.tsv'), PLAN_JSON=str(repo/'configs/collect/n15_grid_v6_scene_jitter/collection_plan.json'),
+                     INDEX_TSV=str(a.out/'manifest.tsv'), PLAN_JSON=str(plan),
                      EP_META_DIR='', EP_META_LOAD_ENV_NAME='', DETECTOR_CKPT=str(det),
                      FAILURE_TASK=stem, FAILURE_ALPHA='0.1', PERSTEP_N='1',
                      DETECTOR_LAYERS='0,2,4,8,10,12,15', TOKEN_POOL='all_token_full',

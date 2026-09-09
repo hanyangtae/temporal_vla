@@ -1,0 +1,25 @@
+{
+  "target": {
+    "instruction": "PPCC/bread",
+    "slug": "PPCC_bread",
+    "machine": "kanu",
+    "scene_idx": 4,
+    "jitter_idx": 3,
+    "noise_idx": 0,
+    "success": 8,
+    "fail": 2
+  },
+  "other40_success": 18,
+  "other40_fail": 22,
+  "reason": "maximum success among mixed targets with mixed other40; ties smallest j",
+  "plan_id": "4fa6496cd684",
+  "baseline_replay": false,
+  "phase": "k8",
+  "arms": [
+    "reseed",
+    "plain_b08",
+    "jfair_b09",
+    "reseed_plain_b08",
+    "reseed_jfair_b09"
+  ]
+}

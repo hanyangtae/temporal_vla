@@ -24,6 +24,8 @@ def main():
     ap.add_argument('--episodes', type=Path, required=True)
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--min-calib-succ', type=int, default=9)
+    ap.add_argument('--index-tsv', type=Path)
+    ap.add_argument('--prepared-dir', type=Path)
     a = ap.parse_args()
     repo = Path(__file__).resolve().parents[3]
     scripts = repo/'scripts/analysis/grid_phase'
@@ -31,7 +33,7 @@ def main():
     released = a.out/'released'
     released.mkdir(exist_ok=True)
     rows = list(csv.DictReader(a.targets.open(), delimiter='\t'))
-    index = list(csv.DictReader((repo/'configs/collect/n15_grid_v6_scene_jitter/index_v6_complete_cells.tsv').open(), delimiter='\t'))
+    index = list(csv.DictReader((a.index_tsv or repo/'configs/collect/n15_grid_v6_scene_jitter/index_v6_complete_cells.tsv').open(), delimiter='\t'))
     bundle = a.store/'ae_k8/ae_bundle_k8.npz'
     bundle_dest = released/'outputs/analysis/grid_phase/ae_k8/ae_bundle_k8.npz'
     bundle_dest.parent.mkdir(parents=True, exist_ok=True)
@@ -47,9 +49,10 @@ def main():
             slug, scene, j = r['slug'], int(r['scene_idx']), int(r['jitter_idx'])
             stem = f'{slug}__s{scene}'
             key = f'{slug}:{scene}:{j}'
-            prepared = a.out/'prepared'/f'{stem}.npz'
-            run('prepare_ck8_scene.py', ['--shard', a.store/'segA_scene'/f'{stem}.npz',
-                '--bundle', bundle, '--slug', slug, '--out', prepared])
+            prepared = (a.prepared_dir or a.out/'prepared')/f'{stem}.npz'
+            if not a.prepared_dir:
+                run('prepare_ck8_scene.py', ['--shard', a.store/'segA_scene'/f'{stem}.npz',
+                    '--bundle', bundle, '--slug', slug, '--out', prepared])
             with np.load(prepared, allow_pickle=False) as z:
                 # 50 episodes and their original outcomes, not merely 50 record groups.
                 ep = z['ep_id']; starts = [np.flatnonzero(ep == e)[0] for e in np.unique(ep)]

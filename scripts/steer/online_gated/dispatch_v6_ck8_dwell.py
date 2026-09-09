@@ -182,11 +182,14 @@ def main():
                         call(['rsync','-a','--mkpath',str(root/rel)+'/',cfg['host']+':pkt_ws/temporal_vla/'+rel+'/'])
                 out_path = out_root/stage
                 out = str(out_path.relative_to(root)) if out_path.is_relative_to(root) else str(out_path)
-                args = ['--machine',machine,'--gpus',stage_gpus,'--lease-held','--port-base','9400',
+                args = ['--machine',machine,'--gpus',stage_gpus,'--lease-held','--port-base',str(cfg.get('port_base', 9400)),
                         '--phase-source','ck8','--artifact-tag','v6_ck8dwell','--reference-labels',
                         '--arms',arm_list,'--manifest',str((proto/'episodes.tsv').relative_to(root)),
                         '--detector-root','outputs/analysis/grid_phase/detector_v6_ck8_dwell',
                         '--cluster-bundle','outputs/analysis/grid_phase/ae_k8/ae_bundle_k8.npz', '--out',out]
+                if (config_dir/'collection_plan.json').is_file():
+                    assert not cfg['host'], 'custom plan remote deployment must be explicit'
+                    args += ['--plan-json', str(config_dir/'collection_plan.json')]
                 if stage == 'operators' and cfg.get('operators_overlap') and coexisting:
                     args += ['--coexisting-serve-pids', ','.join(str(pid) for pid in sorted(coexisting))]
                 if machine == 'kanu' and a.allow_busy_local: args.append('--allow-busy-local')
