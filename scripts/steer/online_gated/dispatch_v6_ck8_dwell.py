@@ -29,6 +29,15 @@ class _ExternalProcess:
             return self.returncode
 
 
+def atomic_copy(src, dst):
+    """Do not expose a partially copied checkpoint to concurrent preflight."""
+    dst = Path(dst)
+    tmp = dst.with_name(dst.name + f'.copy-{os.getpid()}')
+    shutil.copy2(src, tmp)
+    os.replace(tmp, dst)
+    return str(dst)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--main-root', type=Path, required=True)
@@ -138,7 +147,7 @@ def main():
                             'outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain',
                             'outputs/analysis/v6_preflight_audit_20260908/fit_diagnostics']:
                     src = release/rel
-                    if src.exists(): shutil.copytree(src, root/rel, dirs_exist_ok=True)
+                    if src.exists(): shutil.copytree(src, root/rel, dirs_exist_ok=True, copy_function=atomic_copy)
                 proto = state_dir/key
                 proto.mkdir(exist_ok=True)
                 shutil.copy2(manifest, proto/'episodes.tsv')
