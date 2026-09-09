@@ -1,0 +1,90 @@
+{
+  "schema": "v6_scene_selection/1",
+  "note": "OpenDrawer/right verified CPU k-scan using live drawer_side after each fresh sequential plain reset; first five right states selected.",
+  "n_scenes_per_key": 1,
+  "env_kwargs": {
+    "layout_and_style_ids": [
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        5
+      ],
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        7
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        9
+      ],
+      [
+        10,
+        10
+      ]
+    ]
+  },
+  "machine_assignment": {
+    "srv48": [
+      "OpenDrawer/right"
+    ]
+  },
+  "keys": {
+    "OpenDrawer/right": {
+      "task_env": "robocasa_panda_omron/OpenDrawer_PandaOmron_Env",
+      "task": "OpenDrawer",
+      "kind": "pull_drawer",
+      "scenes": [
+        {
+          "env_seed": 100247,
+          "layout": 8,
+          "style": 8,
+          "side": null,
+          "lang": "Open the right drawer.",
+          "fixture_group": "stack_2_main_group_3",
+          "spawn_lat": 0.0,
+          "base_x": 2.05,
+          "base_y": -0.902,
+          "base_yaw": 1.571,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "probe": "feasibility_cache.json",
+            "ep_lang": "Open the right drawer.",
+            "lang_match": true
+          },
+          "reset_idx_list": [
+            0,
+            1,
+            2,
+            4,
+            5
+          ],
+          "reset_scan_pattern": "RRRLRRLRRLLL"
+        }
+      ]
+    }
+  }
+}
