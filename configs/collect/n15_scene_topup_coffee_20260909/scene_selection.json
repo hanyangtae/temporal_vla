@@ -1,0 +1,89 @@
+{
+  "schema": "v6_scene_selection/1",
+  "source": "target10 fixture scan; exclude existing layouts 4,9,5; rank by scan support and central spawn, no policy outcome selection",
+  "env_kwargs": {
+    "layout_and_style_ids": [
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        5
+      ],
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        7
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        9
+      ],
+      [
+        10,
+        10
+      ]
+    ]
+  },
+  "machine_assignment": {
+    "kanu": [
+      "CoffeeSetupMug"
+    ]
+  },
+  "keys": {
+    "CoffeeSetupMug": {
+      "task_env": "robocasa_panda_omron/CoffeeSetupMug_PandaOmron_Env",
+      "task": "CoffeeSetupMug",
+      "kind": "coffee",
+      "scenes": [
+        {
+          "env_seed": 100396,
+          "layout": 6,
+          "style": 6,
+          "side": null,
+          "lang": "Pick the mug from the counter and place it under the coffee machine dispenser.",
+          "fixture_group": "",
+          "spawn_lat": -0.0112
+        },
+        {
+          "env_seed": 100229,
+          "layout": 8,
+          "style": 8,
+          "side": null,
+          "lang": "Pick the mug from the counter and place it under the coffee machine dispenser.",
+          "fixture_group": "",
+          "spawn_lat": 0.0008
+        },
+        {
+          "env_seed": 100161,
+          "layout": 1,
+          "style": 1,
+          "side": null,
+          "lang": "Pick the mug from the counter and place it under the coffee machine dispenser.",
+          "fixture_group": "",
+          "spawn_lat": -0.0004
+        }
+      ]
+    }
+  }
+}

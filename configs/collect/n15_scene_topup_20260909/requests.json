@@ -1,0 +1,49 @@
+{
+  "basis": "user 2026-09-09: collect new scenes until 3 eligible scenes per instruction; initial missing count19",
+  "source_eval_key_namespace": "original 77e745c37b0f; oven/washer flip when using current collection keys",
+  "needed_original_keys": {
+    "OpenDrawer/right": 1,
+    "DishwasherRack/out-left": 2,
+    "DishwasherRack/out-right": 1,
+    "OvenRack/out-left": 1,
+    "OvenRack/out-right": 3,
+    "PPCC/bread": 2,
+    "PPCC/jug": 1,
+    "PPCC/marshmallow": 2,
+    "CoffeeSetupMug": 3,
+    "PPCC/apple": 3
+  },
+  "episodes_per_new_scene": 50,
+  "jitters_per_scene": 5,
+  "noise_seeds": [
+    1300000,
+    1300001,
+    1300002,
+    1300003,
+    1300004,
+    1300005,
+    1300006,
+    1300007,
+    1300008,
+    1300009
+  ],
+  "initial_candidate_episodes": 950,
+  "first_plan": "aa4d86162226",
+  "first_plan_key": "CoffeeSetupMug",
+  "first_plan_new_layout_style": [
+    [
+      6,
+      6
+    ],
+    [
+      8,
+      8
+    ],
+    [
+      1,
+      1
+    ]
+  ],
+  "existing_raw_plan_preserved": "08f1c9df8207",
+  "collection_outcome_not_guaranteed": true
+}
