@@ -38,7 +38,7 @@ def probe(args):
         env = gym.make(env_name, enable_render=False, seed=cell.env_seed, **plan.env_kwargs)
         env.reset(seed=cell.env_seed)
         em = get_robocasa_ep_meta(env)
-        em2, _ = hfc._v6_apply_jitter(env, cell, em, plan.extra.get("instruction_text", {}).get(key))
+        em2, _ = hfc._v6_apply_jitter(env, cell, em, plan.extra.get("instruction_text", {}).get(key), plan_id=plan.plan_id)
         env.close()
         return dict(key=key, sid=sid, jid=jid, env_seed=cell.env_seed, lat=cell.base_lat, back=cell.base_back,
                     reset_idx=cell.jitter_reset_idx, base=str([round(float(x), 3) for x in em2["init_robot_base_pos"]]), ok=1, err="")

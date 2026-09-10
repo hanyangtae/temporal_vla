@@ -59,7 +59,7 @@ def main():
             '--cluster-bundle','outputs/analysis/grid_phase/ae_k8/ae_bundle_k8.npz','--out',out]
         if host:
             cmd=['ssh','-o','ServerAliveInterval=30',host,
-                 'cd ~/pkt_ws/temporal_vla && exec setsid '+shlex.join(['python3','scripts/steer/online_gated/run_v6_heldout_all.py',*args])]
+                 'cd ~/pkt_ws/temporal_vla && exec setsid --wait '+shlex.join(['python3','scripts/steer/online_gated/run_v6_heldout_all.py',*args])]
         else:
             cmd=['python3',str(repo/'scripts/steer/online_gated/run_v6_heldout_all.py'),'--main-root',str(root),*args]
         print(f'[harness-admitted] {lease} GPUs={gpus} slots={serves} receipt={receipt}',flush=True)

@@ -563,7 +563,7 @@ def _find_kitchen_env(env: Any) -> Any:
 
 
 def _v6_apply_jitter(
-    env: Any, cell: Any, ep_meta: dict, fallback_lang: str | None
+    env: Any, cell: Any, ep_meta: dict, fallback_lang: str | None, *, plan_id: str | None = None
 ) -> "tuple[dict, Any]":
     """v6 셀의 세계 변형을 적용한다 (핸드오프 §3 · 부록 B).
 
@@ -611,11 +611,12 @@ def _v6_apply_jitter(
         f = (math.cos(yaw), math.sin(yaw))
         l = (-math.sin(yaw), math.cos(yaw))
         # side = fixture 가 로봇 기준 어느 쪽인가 → lat 은 항상 그 방향(fixture 쪽)으로 민다.
-        sign = 1.0 if cell.side == "left" else -1.0    # left 키 → 로봇 왼쪽(+l)로 이동
+        from src.collect.plan import jitter_lateral_sign
+        sign = jitter_lateral_sign(cell.side, plan_id)
         pos[0] += sign * lat * l[0] - back * f[0]
         pos[1] += sign * lat * l[1] - back * f[1]
         ep_meta["init_robot_base_pos"] = pos
-        print(f"[collect][v6] base 오프셋 적용 side={cell.side} lat={lat} back={back} "
+        print(f"[collect][v6] base 오프셋 적용 plan_id={plan_id} side={cell.side} lat={lat} back={back} "
               f"yaw={yaw:.4f} -> init_robot_base_pos={pos}", flush=True)
 
     # 3) 주입 + plain reset (reset_idx+1)회
@@ -1263,6 +1264,7 @@ def run() -> dict[str, Any]:
                     env, _v6_cell, captured_ep_meta,
                     (grid_plan.extra.get("instruction_text") or {}).get(_v6_cell.instruction)
                     if grid_plan is not None else None,
+                    plan_id=grid_plan.plan_id if grid_plan is not None else None,
                 )
                 v6_base_pos = [float(v) for v in captured_ep_meta["init_robot_base_pos"]]
             elif getattr(args, "jitter_reset_idx", None) is not None:

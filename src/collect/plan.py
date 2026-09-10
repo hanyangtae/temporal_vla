@@ -48,6 +48,18 @@ from typing import Any, Iterator
 PLAN_NAME = "collection_plan.json"
 
 
+def jitter_lateral_sign(side: str, plan_id: str | None = None) -> float:
+    """Preserve the pre-rebase v6 spawn-side convention without changing plans.
+
+    77e745c37b0f is the immutable original v6 plan. 08f1c9df8207 and
+    its extensions use fixture-side labels, which have the opposite sign.
+    """
+    if side not in ("left", "right"):
+        raise ValueError(f"invalid lateral side: {side!r}")
+    sign = 1.0 if side == "left" else -1.0
+    return -sign if plan_id == "77e745c37b0f" else sign
+
+
 @dataclass(frozen=True)
 class GridCell:
     """그리드의 한 칸 = rollout 하나.
