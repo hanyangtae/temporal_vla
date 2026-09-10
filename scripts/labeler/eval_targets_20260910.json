@@ -1,0 +1,538 @@
+{
+  "source": "configs/experiments/instruction_fallback_20260910/episodes.tsv",
+  "mapping": "Exact original rollout sig match; no key rename guess",
+  "target_rels": [
+    "kanu/OpenDrawer/left/s0/j1/n0/base",
+    "kanu/OpenDrawer/left/s0/j1/n1/base",
+    "kanu/OpenDrawer/left/s0/j1/n2/base",
+    "kanu/OpenDrawer/left/s0/j1/n3/base",
+    "kanu/OpenDrawer/left/s0/j1/n4/base",
+    "kanu/OpenDrawer/left/s0/j1/n5/base",
+    "kanu/OpenDrawer/left/s0/j1/n6/base",
+    "kanu/OpenDrawer/left/s0/j1/n7/base",
+    "kanu/OpenDrawer/left/s0/j1/n8/base",
+    "kanu/OpenDrawer/left/s0/j1/n9/base",
+    "kanu/OpenDrawer/left/s1/j3/n0/base",
+    "kanu/OpenDrawer/left/s1/j3/n1/base",
+    "kanu/OpenDrawer/left/s1/j3/n2/base",
+    "kanu/OpenDrawer/left/s1/j3/n3/base",
+    "kanu/OpenDrawer/left/s1/j3/n4/base",
+    "kanu/OpenDrawer/left/s1/j3/n5/base",
+    "kanu/OpenDrawer/left/s1/j3/n6/base",
+    "kanu/OpenDrawer/left/s1/j3/n7/base",
+    "kanu/OpenDrawer/left/s1/j3/n8/base",
+    "kanu/OpenDrawer/left/s1/j3/n9/base",
+    "kanu/OpenDrawer/left/s2/j4/n0/base",
+    "kanu/OpenDrawer/left/s2/j4/n1/base",
+    "kanu/OpenDrawer/left/s2/j4/n2/base",
+    "kanu/OpenDrawer/left/s2/j4/n3/base",
+    "kanu/OpenDrawer/left/s2/j4/n4/base",
+    "kanu/OpenDrawer/left/s2/j4/n5/base",
+    "kanu/OpenDrawer/left/s2/j4/n6/base",
+    "kanu/OpenDrawer/left/s2/j4/n7/base",
+    "kanu/OpenDrawer/left/s2/j4/n8/base",
+    "kanu/OpenDrawer/left/s2/j4/n9/base",
+    "kanu/OpenDrawer/right/s0/j4/n0/base",
+    "kanu/OpenDrawer/right/s0/j4/n1/base",
+    "kanu/OpenDrawer/right/s0/j4/n2/base",
+    "kanu/OpenDrawer/right/s0/j4/n3/base",
+    "kanu/OpenDrawer/right/s0/j4/n4/base",
+    "kanu/OpenDrawer/right/s0/j4/n5/base",
+    "kanu/OpenDrawer/right/s0/j4/n6/base",
+    "kanu/OpenDrawer/right/s0/j4/n7/base",
+    "kanu/OpenDrawer/right/s0/j4/n8/base",
+    "kanu/OpenDrawer/right/s0/j4/n9/base",
+    "kanu/OpenDrawer/right/s1/j4/n0/base",
+    "kanu/OpenDrawer/right/s1/j4/n1/base",
+    "kanu/OpenDrawer/right/s1/j4/n2/base",
+    "kanu/OpenDrawer/right/s1/j4/n3/base",
+    "kanu/OpenDrawer/right/s1/j4/n4/base",
+    "kanu/OpenDrawer/right/s1/j4/n5/base",
+    "kanu/OpenDrawer/right/s1/j4/n6/base",
+    "kanu/OpenDrawer/right/s1/j4/n7/base",
+    "kanu/OpenDrawer/right/s1/j4/n8/base",
+    "kanu/OpenDrawer/right/s1/j4/n9/base",
+    "worker1/DishwasherRack/out-right/s1/j2/n0/base",
+    "worker1/DishwasherRack/out-right/s1/j2/n1/base",
+    "worker1/DishwasherRack/out-right/s1/j2/n2/base",
+    "worker1/DishwasherRack/out-right/s1/j2/n3/base",
+    "worker1/DishwasherRack/out-right/s1/j2/n4/base",
+    "worker1/DishwasherRack/out-right/s1/j2/n5/base",
+    "worker1/DishwasherRack/out-right/s1/j2/n6/base",
+    "worker1/DishwasherRack/out-right/s1/j2/n7/base",
+    "worker1/DishwasherRack/out-right/s1/j2/n8/base",
+    "worker1/DishwasherRack/out-right/s1/j2/n9/base",
+    "worker1/DishwasherRack/out-left/s1/j3/n0/base",
+    "worker1/DishwasherRack/out-left/s1/j3/n1/base",
+    "worker1/DishwasherRack/out-left/s1/j3/n2/base",
+    "worker1/DishwasherRack/out-left/s1/j3/n3/base",
+    "worker1/DishwasherRack/out-left/s1/j3/n4/base",
+    "worker1/DishwasherRack/out-left/s1/j3/n5/base",
+    "worker1/DishwasherRack/out-left/s1/j3/n6/base",
+    "worker1/DishwasherRack/out-left/s1/j3/n7/base",
+    "worker1/DishwasherRack/out-left/s1/j3/n8/base",
+    "worker1/DishwasherRack/out-left/s1/j3/n9/base",
+    "worker1/DishwasherRack/out-left/s2/j3/n0/base",
+    "worker1/DishwasherRack/out-left/s2/j3/n1/base",
+    "worker1/DishwasherRack/out-left/s2/j3/n2/base",
+    "worker1/DishwasherRack/out-left/s2/j3/n3/base",
+    "worker1/DishwasherRack/out-left/s2/j3/n4/base",
+    "worker1/DishwasherRack/out-left/s2/j3/n5/base",
+    "worker1/DishwasherRack/out-left/s2/j3/n6/base",
+    "worker1/DishwasherRack/out-left/s2/j3/n7/base",
+    "worker1/DishwasherRack/out-left/s2/j3/n8/base",
+    "worker1/DishwasherRack/out-left/s2/j3/n9/base",
+    "worker1/OvenRack/out-right/s0/j0/n0/base",
+    "worker1/OvenRack/out-right/s0/j0/n1/base",
+    "worker1/OvenRack/out-right/s0/j0/n2/base",
+    "worker1/OvenRack/out-right/s0/j0/n3/base",
+    "worker1/OvenRack/out-right/s0/j0/n4/base",
+    "worker1/OvenRack/out-right/s0/j0/n5/base",
+    "worker1/OvenRack/out-right/s0/j0/n6/base",
+    "worker1/OvenRack/out-right/s0/j0/n7/base",
+    "worker1/OvenRack/out-right/s0/j0/n8/base",
+    "worker1/OvenRack/out-right/s0/j0/n9/base",
+    "worker1/OvenRack/out-right/s1/j0/n0/base",
+    "worker1/OvenRack/out-right/s1/j0/n1/base",
+    "worker1/OvenRack/out-right/s1/j0/n2/base",
+    "worker1/OvenRack/out-right/s1/j0/n3/base",
+    "worker1/OvenRack/out-right/s1/j0/n4/base",
+    "worker1/OvenRack/out-right/s1/j0/n5/base",
+    "worker1/OvenRack/out-right/s1/j0/n6/base",
+    "worker1/OvenRack/out-right/s1/j0/n7/base",
+    "worker1/OvenRack/out-right/s1/j0/n8/base",
+    "worker1/OvenRack/out-right/s1/j0/n9/base",
+    "worker2/PPCC/candle/s0/j0/n0/base",
+    "worker2/PPCC/candle/s0/j0/n1/base",
+    "worker2/PPCC/candle/s0/j0/n2/base",
+    "worker2/PPCC/candle/s0/j0/n3/base",
+    "worker2/PPCC/candle/s0/j0/n4/base",
+    "worker2/PPCC/candle/s0/j0/n5/base",
+    "worker2/PPCC/candle/s0/j0/n6/base",
+    "worker2/PPCC/candle/s0/j0/n7/base",
+    "worker2/PPCC/candle/s0/j0/n8/base",
+    "worker2/PPCC/candle/s0/j0/n9/base",
+    "worker2/PPCC/candle/s1/j1/n0/base",
+    "worker2/PPCC/candle/s1/j1/n1/base",
+    "worker2/PPCC/candle/s1/j1/n2/base",
+    "worker2/PPCC/candle/s1/j1/n3/base",
+    "worker2/PPCC/candle/s1/j1/n4/base",
+    "worker2/PPCC/candle/s1/j1/n5/base",
+    "worker2/PPCC/candle/s1/j1/n6/base",
+    "worker2/PPCC/candle/s1/j1/n7/base",
+    "worker2/PPCC/candle/s1/j1/n8/base",
+    "worker2/PPCC/candle/s1/j1/n9/base",
+    "worker2/PPCC/candle/s2/j2/n0/base",
+    "worker2/PPCC/candle/s2/j2/n1/base",
+    "worker2/PPCC/candle/s2/j2/n2/base",
+    "worker2/PPCC/candle/s2/j2/n3/base",
+    "worker2/PPCC/candle/s2/j2/n4/base",
+    "worker2/PPCC/candle/s2/j2/n5/base",
+    "worker2/PPCC/candle/s2/j2/n6/base",
+    "worker2/PPCC/candle/s2/j2/n7/base",
+    "worker2/PPCC/candle/s2/j2/n8/base",
+    "worker2/PPCC/candle/s2/j2/n9/base",
+    "worker2/PPCC/bread/s0/j0/n0/base",
+    "worker2/PPCC/bread/s0/j0/n1/base",
+    "worker2/PPCC/bread/s0/j0/n2/base",
+    "worker2/PPCC/bread/s0/j0/n3/base",
+    "worker2/PPCC/bread/s0/j0/n4/base",
+    "worker2/PPCC/bread/s0/j0/n5/base",
+    "worker2/PPCC/bread/s0/j0/n6/base",
+    "worker2/PPCC/bread/s0/j0/n7/base",
+    "worker2/PPCC/bread/s0/j0/n8/base",
+    "worker2/PPCC/bread/s0/j0/n9/base",
+    "worker2/PPCC/jug/s0/j2/n0/base",
+    "worker2/PPCC/jug/s0/j2/n1/base",
+    "worker2/PPCC/jug/s0/j2/n2/base",
+    "worker2/PPCC/jug/s0/j2/n3/base",
+    "worker2/PPCC/jug/s0/j2/n4/base",
+    "worker2/PPCC/jug/s0/j2/n5/base",
+    "worker2/PPCC/jug/s0/j2/n6/base",
+    "worker2/PPCC/jug/s0/j2/n7/base",
+    "worker2/PPCC/jug/s0/j2/n8/base",
+    "worker2/PPCC/jug/s0/j2/n9/base",
+    "worker2/PPCC/jug/s1/j1/n0/base",
+    "worker2/PPCC/jug/s1/j1/n1/base",
+    "worker2/PPCC/jug/s1/j1/n2/base",
+    "worker2/PPCC/jug/s1/j1/n3/base",
+    "worker2/PPCC/jug/s1/j1/n4/base",
+    "worker2/PPCC/jug/s1/j1/n5/base",
+    "worker2/PPCC/jug/s1/j1/n6/base",
+    "worker2/PPCC/jug/s1/j1/n7/base",
+    "worker2/PPCC/jug/s1/j1/n8/base",
+    "worker2/PPCC/jug/s1/j1/n9/base",
+    "worker2/PPCC/marshmallow/s0/j0/n0/base",
+    "worker2/PPCC/marshmallow/s0/j0/n1/base",
+    "worker2/PPCC/marshmallow/s0/j0/n2/base",
+    "worker2/PPCC/marshmallow/s0/j0/n3/base",
+    "worker2/PPCC/marshmallow/s0/j0/n4/base",
+    "worker2/PPCC/marshmallow/s0/j0/n5/base",
+    "worker2/PPCC/marshmallow/s0/j0/n6/base",
+    "worker2/PPCC/marshmallow/s0/j0/n7/base",
+    "worker2/PPCC/marshmallow/s0/j0/n8/base",
+    "worker2/PPCC/marshmallow/s0/j0/n9/base"
+  ],
+  "missing_from_labeler": [
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/bread",
+      "s": "4",
+      "j": "3"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/bread",
+      "s": "4",
+      "j": "3"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/bread",
+      "s": "4",
+      "j": "3"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/bread",
+      "s": "4",
+      "j": "3"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/bread",
+      "s": "4",
+      "j": "3"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/bread",
+      "s": "4",
+      "j": "3"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/bread",
+      "s": "4",
+      "j": "3"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/bread",
+      "s": "4",
+      "j": "3"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/bread",
+      "s": "4",
+      "j": "3"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/bread",
+      "s": "4",
+      "j": "3"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "3",
+      "j": "4"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "3",
+      "j": "4"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "3",
+      "j": "4"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "3",
+      "j": "4"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "3",
+      "j": "4"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "3",
+      "j": "4"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "3",
+      "j": "4"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "3",
+      "j": "4"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "3",
+      "j": "4"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "3",
+      "j": "4"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "4",
+      "j": "2"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "4",
+      "j": "2"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "4",
+      "j": "2"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "4",
+      "j": "2"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "4",
+      "j": "2"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "4",
+      "j": "2"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "4",
+      "j": "2"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "4",
+      "j": "2"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "4",
+      "j": "2"
+    },
+    {
+      "plan_id": "4fa6496cd684",
+      "key": "PPCC/marshmallow",
+      "s": "4",
+      "j": "2"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-left",
+      "s": "3",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-left",
+      "s": "3",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-left",
+      "s": "3",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-left",
+      "s": "3",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-left",
+      "s": "3",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-left",
+      "s": "3",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-left",
+      "s": "3",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-left",
+      "s": "3",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-left",
+      "s": "3",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-left",
+      "s": "3",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-right",
+      "s": "4",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-right",
+      "s": "4",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-right",
+      "s": "4",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-right",
+      "s": "4",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-right",
+      "s": "4",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-right",
+      "s": "4",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-right",
+      "s": "4",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-right",
+      "s": "4",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-right",
+      "s": "4",
+      "j": "0"
+    },
+    {
+      "plan_id": "4ab360df2b71",
+      "key": "DishwasherRack/out-right",
+      "s": "4",
+      "j": "0"
+    },
+    {
+      "plan_id": "d8c7e569aa37",
+      "key": "OpenDrawer/right",
+      "s": "3",
+      "j": "1"
+    },
+    {
+      "plan_id": "d8c7e569aa37",
+      "key": "OpenDrawer/right",
+      "s": "3",
+      "j": "1"
+    },
+    {
+      "plan_id": "d8c7e569aa37",
+      "key": "OpenDrawer/right",
+      "s": "3",
+      "j": "1"
+    },
+    {
+      "plan_id": "d8c7e569aa37",
+      "key": "OpenDrawer/right",
+      "s": "3",
+      "j": "1"
+    },
+    {
+      "plan_id": "d8c7e569aa37",
+      "key": "OpenDrawer/right",
+      "s": "3",
+      "j": "1"
+    },
+    {
+      "plan_id": "d8c7e569aa37",
+      "key": "OpenDrawer/right",
+      "s": "3",
+      "j": "1"
+    },
+    {
+      "plan_id": "d8c7e569aa37",
+      "key": "OpenDrawer/right",
+      "s": "3",
+      "j": "1"
+    },
+    {
+      "plan_id": "d8c7e569aa37",
+      "key": "OpenDrawer/right",
+      "s": "3",
+      "j": "1"
+    },
+    {
+      "plan_id": "d8c7e569aa37",
+      "key": "OpenDrawer/right",
+      "s": "3",
+      "j": "1"
+    },
+    {
+      "plan_id": "d8c7e569aa37",
+      "key": "OpenDrawer/right",
+      "s": "3",
+      "j": "1"
+    }
+  ]
+}
