@@ -824,7 +824,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--perstep-fallback",
-        choices=("skip", "reseed"),
+        choices=("skip", "reseed", "instruction"),
         default="skip",
         help=(
             "발화했지만 연산자를 적용하지 못한 record 에서 serve 가 취할 대체 동작. "

@@ -1,0 +1,257 @@
+{
+  "cells": [
+    {
+      "instruction": "OpenDrawer/left",
+      "artifact_slug": "OpenDrawer_left",
+      "scene": 0,
+      "target": 1,
+      "target_success": 9,
+      "machine": "kanu",
+      "plan_id": "77e745c37b0f",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_dwell_build/prepared/OpenDrawer_left__s0.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_dwell_build/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/OpenDrawer_left/s0/j1"
+    },
+    {
+      "instruction": "OpenDrawer/left",
+      "artifact_slug": "OpenDrawer_left",
+      "scene": 1,
+      "target": 3,
+      "target_success": 4,
+      "machine": "kanu",
+      "plan_id": "77e745c37b0f",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_dwell_build/prepared/OpenDrawer_left__s1.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_dwell_build/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/OpenDrawer_left/s1/j3"
+    },
+    {
+      "instruction": "OpenDrawer/left",
+      "artifact_slug": "OpenDrawer_left",
+      "scene": 2,
+      "target": 4,
+      "target_success": 8,
+      "machine": "kanu",
+      "plan_id": "77e745c37b0f",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_dwell_build/prepared/OpenDrawer_left__s2.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_dwell_build/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/OpenDrawer_left/s2/j4"
+    },
+    {
+      "instruction": "OpenDrawer/right",
+      "artifact_slug": "OpenDrawer_right",
+      "scene": 0,
+      "target": 4,
+      "target_success": 9,
+      "machine": "kanu",
+      "plan_id": "77e745c37b0f",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/prepared/OpenDrawer_right__s0.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/OpenDrawer_right/s0/j4"
+    },
+    {
+      "instruction": "OpenDrawer/right",
+      "artifact_slug": "OpenDrawer_right",
+      "scene": 1,
+      "target": 4,
+      "target_success": 2,
+      "machine": "kanu",
+      "plan_id": "77e745c37b0f",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/prepared/OpenDrawer_right__s1.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/OpenDrawer_right/s1/j4"
+    },
+    {
+      "instruction": "PPCC/bread",
+      "artifact_slug": "PPCC_bread",
+      "scene": 4,
+      "target": 3,
+      "target_success": 8,
+      "machine": "kanu",
+      "plan_id": "4fa6496cd684",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_topup_build_20260909/PPCC_bread_s4/prepared/PPCC_bread__s4.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_topup_build_20260909/PPCC_bread_s4/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/PPCC_bread/s4/j3"
+    },
+    {
+      "instruction": "PPCC/marshmallow",
+      "artifact_slug": "PPCC_marshmallow",
+      "scene": 3,
+      "target": 4,
+      "target_success": 6,
+      "machine": "kanu",
+      "plan_id": "4fa6496cd684",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_topup_build_20260909/PPCC_marshmallow_s3/prepared/PPCC_marshmallow__s3.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_topup_build_20260909/PPCC_marshmallow_s3/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/PPCC_marshmallow/s3/j4"
+    },
+    {
+      "instruction": "PPCC/marshmallow",
+      "artifact_slug": "PPCC_marshmallow",
+      "scene": 4,
+      "target": 2,
+      "target_success": 5,
+      "machine": "kanu",
+      "plan_id": "4fa6496cd684",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_topup_build_20260909/PPCC_marshmallow_s4/prepared/PPCC_marshmallow__s4.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_topup_build_20260909/PPCC_marshmallow_s4/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/PPCC_marshmallow/s4/j2"
+    },
+    {
+      "instruction": "DishwasherRack/out-right",
+      "artifact_slug": "DishwasherRack_out-right",
+      "scene": 1,
+      "target": 2,
+      "target_success": 1,
+      "machine": "worker1",
+      "plan_id": "77e745c37b0f",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/prepared/DishwasherRack_out-right__s1.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/DishwasherRack_out-right/s1/j2"
+    },
+    {
+      "instruction": "DishwasherRack/out-left",
+      "artifact_slug": "DishwasherRack_out-left",
+      "scene": 1,
+      "target": 3,
+      "target_success": 7,
+      "machine": "worker1",
+      "plan_id": "77e745c37b0f",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/prepared/DishwasherRack_out-left__s1.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/DishwasherRack_out-left/s1/j3"
+    },
+    {
+      "instruction": "DishwasherRack/out-left",
+      "artifact_slug": "DishwasherRack_out-left",
+      "scene": 2,
+      "target": 3,
+      "target_success": 6,
+      "machine": "worker1",
+      "plan_id": "77e745c37b0f",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/prepared/DishwasherRack_out-left__s2.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/DishwasherRack_out-left/s2/j3"
+    },
+    {
+      "instruction": "OvenRack/out-right",
+      "artifact_slug": "OvenRack_out-right",
+      "scene": 0,
+      "target": 0,
+      "target_success": 6,
+      "machine": "worker1",
+      "plan_id": "77e745c37b0f",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/prepared/OvenRack_out-right__s0.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/OvenRack_out-right/s0/j0"
+    },
+    {
+      "instruction": "OvenRack/out-right",
+      "artifact_slug": "OvenRack_out-right",
+      "scene": 1,
+      "target": 0,
+      "target_success": 3,
+      "machine": "worker1",
+      "plan_id": "77e745c37b0f",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/prepared/OvenRack_out-right__s1.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/OvenRack_out-right/s1/j0"
+    },
+    {
+      "instruction": "DishwasherRack/out-left",
+      "artifact_slug": "DishwasherRack_out-left",
+      "scene": 3,
+      "target": 0,
+      "target_success": 8,
+      "machine": "worker1",
+      "plan_id": "4ab360df2b71",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_remaining_build_20260910/srv48_dish/prepared/DishwasherRack_out-left__s3.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_remaining_build_20260910/srv48_dish/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/DishwasherRack_out-left/s3/j0"
+    },
+    {
+      "instruction": "DishwasherRack/out-right",
+      "artifact_slug": "DishwasherRack_out-right",
+      "scene": 4,
+      "target": 0,
+      "target_success": 1,
+      "machine": "worker1",
+      "plan_id": "4ab360df2b71",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_remaining_build_20260910/srv48_dish/prepared/DishwasherRack_out-right__s4.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_remaining_build_20260910/srv48_dish/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/DishwasherRack_out-right/s4/j0"
+    },
+    {
+      "instruction": "PPCC/candle",
+      "artifact_slug": "PPCC_candle",
+      "scene": 0,
+      "target": 0,
+      "target_success": 8,
+      "machine": "worker2",
+      "plan_id": "77e745c37b0f",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_dwell_build/prepared/PPCC_candle__s0.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_dwell_build/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/PPCC_candle/s0/j0"
+    },
+    {
+      "instruction": "PPCC/candle",
+      "artifact_slug": "PPCC_candle",
+      "scene": 1,
+      "target": 1,
+      "target_success": 9,
+      "machine": "worker2",
+      "plan_id": "77e745c37b0f",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_dwell_build/prepared/PPCC_candle__s1.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_dwell_build/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/PPCC_candle/s1/j1"
+    },
+    {
+      "instruction": "PPCC/candle",
+      "artifact_slug": "PPCC_candle",
+      "scene": 2,
+      "target": 2,
+      "target_success": 7,
+      "machine": "worker2",
+      "plan_id": "77e745c37b0f",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_dwell_build/prepared/PPCC_candle__s2.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_dwell_build/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/PPCC_candle/s2/j2"
+    },
+    {
+      "instruction": "PPCC/bread",
+      "artifact_slug": "PPCC_bread",
+      "scene": 0,
+      "target": 0,
+      "target_success": 4,
+      "machine": "worker2",
+      "plan_id": "77e745c37b0f",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/prepared/PPCC_bread__s0.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/PPCC_bread/s0/j0"
+    },
+    {
+      "instruction": "PPCC/jug",
+      "artifact_slug": "PPCC_jug",
+      "scene": 0,
+      "target": 2,
+      "target_success": 2,
+      "machine": "worker2",
+      "plan_id": "77e745c37b0f",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/prepared/PPCC_jug__s0.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/PPCC_jug/s0/j2"
+    },
+    {
+      "instruction": "PPCC/jug",
+      "artifact_slug": "PPCC_jug",
+      "scene": 1,
+      "target": 1,
+      "target_success": 3,
+      "machine": "worker2",
+      "plan_id": "77e745c37b0f",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/prepared/PPCC_jug__s1.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/PPCC_jug/s1/j1"
+    },
+    {
+      "instruction": "PPCC/marshmallow",
+      "artifact_slug": "PPCC_marshmallow",
+      "scene": 0,
+      "target": 0,
+      "target_success": 8,
+      "machine": "worker2",
+      "plan_id": "77e745c37b0f",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/prepared/PPCC_marshmallow__s0.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_extra_build_20260909/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/PPCC_marshmallow/s0/j0"
+    },
+    {
+      "instruction": "OpenDrawer/right",
+      "artifact_slug": "OpenDrawer_right",
+      "scene": 3,
+      "target": 1,
+      "target_success": 9,
+      "machine": "worker2",
+      "plan_id": "d8c7e569aa37",
+      "prepared": "outputs/analysis/grid_phase/v6_ck8_remaining_build_20260910/srv50_drawer/prepared/OpenDrawer_right__s3.npz",
+      "cluster_operator": "outputs/analysis/grid_phase/v6_ck8_remaining_build_20260910/srv50_drawer/released/outputs/steer/online_pipe_v4_pilot/instr_setm_v6_ck8dwell_ck8_plain/OpenDrawer_right/s3/j1"
+    }
+  ]
+}

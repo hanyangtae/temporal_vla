@@ -33,6 +33,8 @@ def build_arms(tag='v6', phase_source='gt'):
         raise ValueError(f'unknown phase source: {phase_source}')
     suffix = f'instr_setm_{tag}_{phase_source}'
     return {
+        'instruction_b08': ('ps_setm', f'{suffix}_instruction_plain', '0.8'),
+        'cluster_instruction_b08': ('ps_setm', f'{suffix}_cluster_instruction_plain', '0.8'),
         'base': ('ps_base', '', '0'),
         'plain_b08': ('ps_setm', f'{suffix}_plain', '0.8'),
         'jfair_b09': ('ps_setm', suffix, '0.9'),
@@ -94,11 +96,19 @@ def check_sidecars(out, arm, cell, rows, arm_defs=None):
                     or spec.get('layers') != [12] or spec.get('token_select') != 'all'
                     or spec.get('denoise') != 'global'):
                 raise ValueError('setpoint version/layer/token/denoise mismatch')
+        if arm in ('instruction_b08', 'cluster_instruction_b08'):
+            expected_mode = 'instruction_only' if arm == 'instruction_b08' else 'cluster_instruction_fallback'
+            if (d.get('serve_steering') or {}).get('instruction_routing', {}).get('mode') != expected_mode:
+                raise ValueError('instruction routing mismatch')
+            if d.get('perstep_fallback_mode') != 'instruction':
+                raise ValueError('instruction fallback mode mismatch')
+            if any(str(v).startswith('reseed:') for v in d.get('gate_fallback', []) if v):
+                raise ValueError('unexpected reseed in instruction arm')
         for i, seed2 in enumerate(d.get('perstep_seed2', [])):
             if seed2 is None:
                 continue
             fallback = (d.get('gate_fallback') or [None]*len(d['perstep_seed2']))[i]
-            offset = 900000 if want_op in ('reseed', 'reseed_setm') or fallback else 0
+            offset = 900000 if want_op in ('reseed', 'reseed_setm') or str(fallback or '').startswith('reseed:') else 0
             if seed2 != int(r['inference_seed']) + i + offset:
                 raise ValueError(f'seed2 mismatch at record {i}: {seed2}')
 
@@ -156,6 +166,7 @@ def main():
     p.add_argument('--manifest', type=Path, required=True)
     p.add_argument('--out', type=Path, required=True)
     p.add_argument('--plan-json', type=Path)
+    p.add_argument('--plan-map', type=Path, help='plan_id to repository-relative original plan path')
     p.add_argument('--port-base', type=int, default=9100)
     p.add_argument('--cell', help='optional smoke cell slug:s:j')
     p.add_argument('--noises', help='optional smoke noise ids')
@@ -219,7 +230,7 @@ def main():
                 'phase_source':a.phase_source, 'artifact_tag':a.artifact_tag,
                 'cluster_bundle_sha256':bundle_sha,
                 'reference_source':'base' if 'base' in arms else 'collection_success',
-                'fallback':'reseed', 'phase':'GT' if a.phase_source == 'gt' else 'cluster',
+                'fallback':('instruction' if set(arms) <= {'instruction_b08', 'cluster_instruction_b08'} else 'reseed'), 'phase':'GT' if a.phase_source == 'gt' else 'cluster',
                 'setpoint_application':'token_mean_common_shift_v2',
                 'fit_layer':12, 'hook_layers':[12], 'fit_denoise':3,
                 'apply_denoise':'all_calls', 'fit_tokens':'all_49', 'apply_tokens':'all_49',
@@ -228,6 +239,14 @@ def main():
         contract['plan_sha256'] = hashlib.sha256(plan.read_bytes()).hexdigest()
         contract['plan_id'] = json.loads(plan.read_text())['plan_id']
         assert all(r['plan_id'] == contract['plan_id'] for rs in cells.values() for r in rs)
+    plans = {}
+    if a.plan_map:
+        for pid, rel in json.loads(a.plan_map.read_text()).items():
+            pp = (repo/rel).resolve()
+            assert json.loads(pp.read_text())['plan_id'] == pid
+            plans[pid] = pp
+        assert all(r['plan_id'] in plans for rs in cells.values() for r in rs)
+        contract['plans'] = {pid: dict(path=str(pp.relative_to(repo)), sha256=hashlib.sha256(pp.read_bytes()).hexdigest()) for pid, pp in plans.items()}
     contract_file = a.out/'contract.json'
     if contract_file.exists() and json.loads(contract_file.read_text()) != contract:
         raise SystemExit('output contract mismatch')
@@ -257,6 +276,7 @@ def main():
             target=npz/variant/art/f's{s}'/f'j{j}'
             assert list(target.glob('*/dit_L12/conceptors.npz')) or (target/'fallback_only.json').is_file(), target
             if (target/'fallback_only.json').is_file(): verify(target/'fallback_only.json')
+            if (target/'instruction_routing.json').is_file(): verify(target/'instruction_routing.json')
             for artifact in target.glob('*/dit_L12/*'):
                 if artifact.name in ('conceptors.npz', 'metadata.json'):
                     verify(artifact)
@@ -271,13 +291,13 @@ def main():
                      SLUGS=slug, ARMS=runarm, EP_MODE='replay', EVAL_SCENES=str(s),
                      EVAL_JITTERS=str(j), EVAL_NOISES=','.join(r['noise_idx'] for r in rows),
                      FIT_SCENES='0-4', FIT_NOISES='0-4', REPLAY_MACHINE=a.machine,
-                     INDEX_TSV=str(a.out/'manifest.tsv'), PLAN_JSON=str(plan),
+                     INDEX_TSV=str(a.out/'manifest.tsv'), PLAN_JSON=str(plans.get(rows[0]['plan_id'], plan)),
                      EP_META_DIR='', EP_META_LOAD_ENV_NAME='', DETECTOR_CKPT=str(det),
                      FAILURE_TASK=stem, FAILURE_ALPHA='0.1', PERSTEP_N='1',
                      DETECTOR_LAYERS='0,2,4,8,10,12,15', TOKEN_POOL='all_token_full',
                      NPZ_ROOT=str(root), NPZ_VARIANT=variant, STEER_OP='setpoint',
                      EXPECTED_STEER_LAYER='12',
-                     STEER_ALPHA='0', STEER_BETA=beta, PERSTEP_FALLBACK='reseed',
+                     STEER_ALPHA='0', STEER_BETA=beta, PERSTEP_FALLBACK=('instruction' if arm in ('instruction_b08', 'cluster_instruction_b08') else 'reseed'),
                      CLUSTER_BUNDLE=str(a.cluster_bundle) if a.cluster_bundle else '',
                      CLUSTER_TASK=art, OUT_ROOT=str(a.out/arm/f'{slug}_s{s}_j{j}'),
                      MAXEP=str(a.maxep), CAPTURE_FEATURES='0', SERVE_BOOT_TRIES='150',
@@ -285,7 +305,7 @@ def main():
             if a.machine!='kanu':
                 env.update(SERVE_MODE='host',SERVE_PY=str(Path.home()/'miniconda3/envs/lerobot_050_groot/bin/python'),
                            SERVE_PYTHONPATH=str(a.main_root/'lerobot/src'))
-            existing=result_rows(a.out,arm,c)
+            existing=result_rows(a.out,arm,c,arm_defs)
             if existing:
                 try:
                     check_rows(existing,rows)
@@ -321,7 +341,7 @@ def main():
             if rc: error=f'runner rc={rc}'
             elif not a.dry_run:
                 try:
-                    rr=result_rows(a.out,arm,c); check_rows(rr,rows)
+                    rr=result_rows(a.out,arm,c,arm_defs); check_rows(rr,rows)
                     check_sidecars(a.out,arm,c,rr,arm_defs)
                     if arm=='base' and a.maxep==720 and any(int(r['success'])!=int(r['collection_success']) for r in rr):
                         error='base != collection (replay mismatch); pending launches stopped'

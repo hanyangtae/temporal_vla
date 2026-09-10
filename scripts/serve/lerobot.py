@@ -1074,7 +1074,7 @@ _PERSTEP_OPS = ("setm", "condg", "reseed", "reseed_setm", "rsn_llr", "rsn_rand")
 _PERSTEP_RESAMPLE_OPS = ("rsn_llr", "rsn_rand")
 _PERSTEP_DEFAULT_RESEED_OFFSET = 900000
 # setm/condg 가 발화했는데 phase 미등록일 때: skip=무개입 | reseed=reseed 로 대체 개입
-_PERSTEP_FALLBACKS = ("skip", "reseed")
+_PERSTEP_FALLBACKS = ("skip", "reseed", "instruction")
 _PERSTEP_DEFAULT_N = 8
 _PERSTEP_MAX_N = 32
 # action_head.get_action 호출 인자 캐시 — backbone(VL) 재실행 없이 DiT 만 다시 돌린다.
@@ -1436,6 +1436,20 @@ def _run_perstep_gate(
         cur_phase = cluster1["name"]
     else:
         cur_phase = _gated_registry.get("current") if _gated_registry else None
+
+    # Instruction ablations use the same original noise. Routing is artifact-bound.
+    if op == "setm" and _gated_registry and _gated_registry.get("instruction_routing"):
+        from scripts.serve.instruction_routing import resolve_routing
+        route = _gated_registry["instruction_routing"]
+        if cfg["fallback"] != "instruction":
+            raise HTTPException(status_code=409, detail="instruction artifact requires instruction fallback contract")
+        cur_phase, reason = resolve_routing(route, cur_phase, _gated_phase_registered(cur_phase))
+        if not _gated_phase_registered(cur_phase):
+            raise HTTPException(status_code=500, detail="instruction route has no operator")
+        if reason:
+            extras["features.perstep_fallback"] = reason
+    elif cfg["fallback"] == "instruction":
+        raise HTTPException(status_code=409, detail="instruction fallback artifact missing")
 
     # 2차 pass 전체 소요 (rsn 후보 루프+채점 포함, detector 재step 직전까지) — 제어
     # 주기 영향 정량화용. 무발화 record 는 여기 오지 않으므로 필드 자체가 없다.
@@ -2120,7 +2134,12 @@ def _register_steering_if_requested(loaded_policy, args):
                 "family": "setpoint" if op.startswith("setpoint") else "conceptor",
                 "per_step": per_step,
             }
-        _gated_registry = {"hooks": hooks, "matrices": matrices, "identity": identity, "current": None}
+        from scripts.serve.instruction_routing import validate_routing
+        import json as _json
+        routing_file = base / "instruction_routing.json"
+        routing = validate_routing(_json.loads(routing_file.read_text()) if routing_file.is_file() else None, phases)
+        _gated_registry = {"hooks": hooks, "matrices": matrices, "identity": identity, "current": None,
+                           "instruction_routing": routing}
         logger.info(
             "Phase-gated %s steering registered: base=%s layers=%s phases=%s "
             "beta=%s token_select=%s denoise=%s",
@@ -2128,6 +2147,8 @@ def _register_steering_if_requested(loaded_policy, args):
             token_select or "last_horizon(default)", denoise,
         )
         _set_steering_spec("gated", layers, phases, op=op)
+        if routing is not None:
+            _steering_spec["instruction_routing"] = routing
         # 러너 preflight 대조용 (module logger 는 serve 로그 파일에 안 남음 — print 필수)
         print(
             f"[steer-registered] path=gated op={op} "
