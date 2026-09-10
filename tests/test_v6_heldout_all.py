@@ -59,6 +59,11 @@ class TestCheckRows(unittest.TestCase):
         self.assertEqual(ck8["plain_b08"][1], "instr_setm_v7_ck8_plain")
         self.assertEqual(ck8["jfair_b09"][1], "instr_setm_v7_ck8")
 
+    def test_build_arms_exposes_instruction_arms(self):
+        arms = v6.build_arms("v6", "ck8")
+        self.assertEqual(arms["instruction_b08"], ("ps_setm", "instr_setm_v6_ck8_instruction_plain", "0.8"))
+        self.assertEqual(arms["cluster_instruction_b08"], ("ps_setm", "instr_setm_v6_ck8_cluster_instruction_plain", "0.8"))
+
 
 class TestSummarize(unittest.TestCase):
     def test_paired_rescue_destruction_and_completion(self):
@@ -158,6 +163,47 @@ class TestCheckSidecars(unittest.TestCase):
             }))
             with self.assertRaisesRegex(ValueError, "seed2 mismatch"):
                 v6.check_sidecars(out, "reseed_jfair_b09", cell, [row])
+
+    def test_instruction_fallback_uses_plain_seed_and_instruction_route(self):
+        cell = ("cell", 0, 0)
+        row = _row(0, 1, ep=7)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            folder = out / "instruction_b08" / "cell_s0_j0" / "cell" / "ps_setm" / "raw_rollouts"
+            folder.mkdir(parents=True)
+            sidecar = folder / "task0--ep7--succ1.json"
+            payload = {"perstep_op": "setm", "episode_success": 1,
+                       "serve_steering": {"setpoint_application": "token_mean_common_shift_v2", "layers": [12], "token_select": "all", "denoise": "global", "instruction_routing": {"mode": "instruction_only"}},
+                       "perstep_fallback_mode": "instruction", "gate_fallback": ["instruction:missing_cluster"], "perstep_seed2": [1000]}
+            sidecar.write_text(json.dumps(payload))
+            defs = v6.build_arms("v6", "ck8")
+            v6.check_sidecars(out, "instruction_b08", cell, [row], defs)
+            payload["perstep_seed2"] = [901000]
+            sidecar.write_text(json.dumps(payload))
+            with self.assertRaisesRegex(ValueError, "seed2 mismatch"):
+                v6.check_sidecars(out, "instruction_b08", cell, [row], defs)
+            payload["perstep_seed2"] = [1000]
+            payload["gate_fallback"] = ["reseed:missing_cluster"]
+            sidecar.write_text(json.dumps(payload))
+            with self.assertRaisesRegex(ValueError, "unexpected reseed"):
+                v6.check_sidecars(out, "instruction_b08", cell, [row], defs)
+            payload["gate_fallback"] = ["instruction:missing_cluster"]
+            payload["serve_steering"]["instruction_routing"]["mode"] = "cluster_instruction_fallback"
+            sidecar.write_text(json.dumps(payload))
+            with self.assertRaisesRegex(ValueError, "instruction routing"):
+                v6.check_sidecars(out, "instruction_b08", cell, [row], defs)
+
+    def test_cluster_instruction_fallback_route_is_validated(self):
+        cell = ("cell", 0, 0)
+        row = _row(0, 1, ep=7)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            folder = out / "cluster_instruction_b08" / "cell_s0_j0" / "cell" / "ps_setm" / "raw_rollouts"
+            folder.mkdir(parents=True)
+            sidecar = folder / "task0--ep7--succ1.json"
+            sidecar.write_text(json.dumps({"perstep_op": "setm", "episode_success": 1, "serve_steering": {"setpoint_application": "token_mean_common_shift_v2", "layers": [12], "token_select": "all", "denoise": "global", "instruction_routing": {"mode": "cluster_instruction_fallback"}}, "perstep_fallback_mode": "instruction", "gate_fallback": ["instruction:missing_cluster"], "perstep_seed2": [1000]}))
+            defs = v6.build_arms("v6", "ck8")
+            v6.check_sidecars(out, "cluster_instruction_b08", cell, [row], defs)
 
 
 if __name__ == "__main__":
