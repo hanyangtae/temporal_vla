@@ -1,0 +1,9 @@
+{
+  "worker1": {
+    "host": "AISem_48_junhyeong",
+    "gpus": "2",
+    "lease": "srv48",
+    "port_base": 9720,
+    "prefer_combined_when_ready": true
+  }
+}

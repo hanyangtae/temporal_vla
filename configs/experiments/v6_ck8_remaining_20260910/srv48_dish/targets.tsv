@@ -1,0 +1,3 @@
+instruction	slug	machine	scene_idx	jitter_idx	noise_idx	success	fail
+DishwasherRack/out-left	DishwasherRack_out-left	worker1	3	0	0	8	2
+DishwasherRack/out-right	DishwasherRack_out-right	worker1	4	0	0	1	9

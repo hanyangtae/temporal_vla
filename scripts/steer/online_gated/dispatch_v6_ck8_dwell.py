@@ -125,8 +125,16 @@ def main():
             done.append(key)
             report(f'completed {key}')
         # Retrieve only the small released artifacts, never prepared/raw shards.
-        with log.open('a') as fh:
-            call(['bash', str(helper), 'pull-results', release_rel], env=remote_env, stdout=fh, stderr=fh)
+        cached = release/'ready.json'
+        published = cached.is_file() and json.loads(cached.read_text()).get('complete', False)
+        if not published:
+            try:
+                with log.open('a') as fh:
+                    call(['bash', str(helper), 'pull-results', release_rel], env=remote_env, stdout=fh, stderr=fh)
+            except subprocess.CalledProcessError:
+                report('waiting artifact transfer retry; active evaluations preserved')
+                time.sleep(30)
+                continue
         ready_path = release/'ready.json'
         if not ready_path.is_file():
             report(f'waiting build ready: {ready_path}')
@@ -196,8 +204,10 @@ def main():
                         '--detector-root','outputs/analysis/grid_phase/detector_v6_ck8_dwell',
                         '--cluster-bundle','outputs/analysis/grid_phase/ae_k8/ae_bundle_k8.npz', '--out',out]
                 if (config_dir/'collection_plan.json').is_file():
-                    assert not cfg['host'], 'custom plan remote deployment must be explicit'
-                    args += ['--plan-json', str(config_dir/'collection_plan.json')]
+                    plan_arg = config_dir/'collection_plan.json'
+                    if cfg['host']:
+                        plan_arg = plan_arg.relative_to(repo)
+                    args += ['--plan-json', str(plan_arg)]
                 if stage == 'operators' and cfg.get('operators_overlap') and coexisting:
                     args += ['--coexisting-serve-pids', ','.join(str(pid) for pid in sorted(coexisting))]
                 if machine == 'kanu' and a.allow_busy_local: args.append('--allow-busy-local')
