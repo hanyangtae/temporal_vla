@@ -336,9 +336,9 @@ run_worker() {  # wid port
       args+=(--jitter-reset-idx "$k" --ep-meta-dir "${GRID_ROOT_CONT}/ep_meta")
     fi
     if [ "$DRY_RUN" = "1" ]; then
-      echo "[dry] docker exec robocasa ${args[*]}"
+      echo "[dry] docker exec ${COLLECT_CONTAINER:-robocasa} ${args[*]}"
     else
-      docker exec -e MUJOCO_GL=egl -e PYTHONPATH="$PYPATH" robocasa "${args[@]}" 2>&1 \
+      docker exec -e MUJOCO_GL=egl -e PYTHONPATH="$PYPATH" "${COLLECT_CONTAINER:-robocasa}" "${args[@]}" 2>&1 \
         | grep -E "^wrote|Error|Traceback|좌표" || true
     fi
   done < <(tsv_us "$TODO_TSV")
