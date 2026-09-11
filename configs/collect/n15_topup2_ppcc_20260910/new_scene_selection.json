@@ -1,0 +1,88 @@
+{
+  "env_kwargs": {
+    "layout_and_style_ids": [
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        5
+      ],
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        7
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        9
+      ],
+      [
+        10,
+        10
+      ]
+    ]
+  },
+  "keys": {
+    "PPCC/bread": {
+      "kind": "pickplace",
+      "task": "PickPlaceCounterToCabinet",
+      "task_env": "robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env",
+      "scenes": [
+        {
+          "env_seed": 100812,
+          "layout": 1,
+          "style": 1,
+          "side": null,
+          "lang": "Pick the bread from the counter and place it in the cabinet.",
+          "fixture_group": "cab_3_main_group",
+          "spawn_lat": -0.0,
+          "base_x": 3.848,
+          "base_y": -0.764,
+          "base_yaw": 1.571,
+          "feasible": null
+        }
+      ]
+    },
+    "PPCC/jug": {
+      "kind": "pickplace",
+      "task": "PickPlaceCounterToCabinet",
+      "task_env": "robocasa_panda_omron/PickPlaceCounterToCabinet_PandaOmron_Env",
+      "scenes": [
+        {
+          "env_seed": 100276,
+          "layout": 7,
+          "style": 7,
+          "side": null,
+          "lang": "Pick the jug from the counter and place it in the cabinet.",
+          "fixture_group": "shelves_main_group",
+          "spawn_lat": -0.0,
+          "base_x": 4.72,
+          "base_y": -0.772,
+          "base_yaw": 1.571,
+          "feasible": null
+        }
+      ]
+    }
+  }
+}

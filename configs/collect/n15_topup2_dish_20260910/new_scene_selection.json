@@ -1,0 +1,97 @@
+{
+  "schema": "v6_scene_selection/1",
+  "note": "2026-09-10 DishwasherRack/out-right top-up; unused target10 layout L1; CPU feasibility cache pass, 5j CPU probe passed (5/5).",
+  "n_scenes_per_key": 1,
+  "env_kwargs": {
+    "layout_and_style_ids": [
+      [
+        1,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        3
+      ],
+      [
+        4,
+        4
+      ],
+      [
+        5,
+        5
+      ],
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        7
+      ],
+      [
+        8,
+        8
+      ],
+      [
+        9,
+        9
+      ],
+      [
+        10,
+        10
+      ]
+    ]
+  },
+  "machine_assignment": {
+    "srv48": [
+      "DishwasherRack/out-right"
+    ]
+  },
+  "keys": {
+    "DishwasherRack/out-right": {
+      "task_env": "robocasa_panda_omron/SlideDishwasherRack_PandaOmron_Env",
+      "task": "SlideDishwasherRack",
+      "kind": "pull_side",
+      "instruction_text": "Fully slide the top dishwasher rack out.",
+      "scenes": [
+        {
+          "env_seed": 100571,
+          "layout": 1,
+          "style": 1,
+          "side": "right",
+          "lang": "Fully slide the top dishwasher rack out.",
+          "fixture_group": "dishwasher_main_group",
+          "spawn_lat": 0.4529,
+          "base_x": 1.617,
+          "base_y": -0.998,
+          "base_yaw": 1.571,
+          "feasible": true,
+          "feasibility": {
+            "q_max_feasible": 1.0,
+            "q_start": 0.5,
+            "blocker_geom": null,
+            "probe_lang": "Fully slide the top dishwasher rack out.",
+            "lang_match": true
+          },
+          "selection_proof": {
+            "scan": "SlideDishwasherRack_target10_100000_100999.tsv",
+            "cache": "configs/collect/n15_grid_v6_scene_jitter/feasibility_cache.json",
+            "unused_layout": true,
+            "jitter_probe": "/tmp/topup2_dish_probe.tsv"
+          },
+          "jitter_probe": {
+            "j0": true,
+            "j1": true,
+            "j2": true,
+            "j3": true,
+            "j4": true
+          }
+        }
+      ]
+    }
+  }
+}
