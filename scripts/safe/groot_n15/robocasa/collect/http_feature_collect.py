@@ -612,7 +612,7 @@ def _v6_apply_jitter(
         l = (-math.sin(yaw), math.cos(yaw))
         # side = fixture 가 로봇 기준 어느 쪽인가 → lat 은 항상 그 방향(fixture 쪽)으로 민다.
         from src.collect.plan import jitter_lateral_sign
-        sign = jitter_lateral_sign(cell.side, plan_id)
+        sign = jitter_lateral_sign(cell.side, plan_id, lateral=lat)
         pos[0] += sign * lat * l[0] - back * f[0]
         pos[1] += sign * lat * l[1] - back * f[1]
         ep_meta["init_robot_base_pos"] = pos

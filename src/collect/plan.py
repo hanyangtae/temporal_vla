@@ -48,12 +48,14 @@ from typing import Any, Iterator
 PLAN_NAME = "collection_plan.json"
 
 
-def jitter_lateral_sign(side: str, plan_id: str | None = None) -> float:
+def jitter_lateral_sign(side: str | None, plan_id: str | None = None, *, lateral: float = 1.0) -> float:
     """Preserve the pre-rebase v6 spawn-side convention without changing plans.
 
     77e745c37b0f is the immutable original v6 plan. 08f1c9df8207 and
     its extensions use fixture-side labels, which have the opposite sign.
     """
+    if lateral == 0.0:
+        return 0.0  # Back-only drawer cells have no lateral side.
     if side not in ("left", "right"):
         raise ValueError(f"invalid lateral side: {side!r}")
     sign = 1.0 if side == "left" else -1.0
