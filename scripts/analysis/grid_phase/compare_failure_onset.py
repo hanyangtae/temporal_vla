@@ -21,6 +21,8 @@ def main():
     ap.add_argument('--manifest', type=Path, required=True)
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--threads', type=int, default=8)
+    ap.add_argument('--modes', nargs='+', choices=['phase_ck8','first_event_prefix','phase_gt'],
+                    default=['phase_ck8','first_event_prefix'])
     a = ap.parse_args()
     import numpy as np
     import torch
@@ -44,8 +46,7 @@ def main():
         onsets = [annotations[e.ep_id]['event_env_step'] for e in tr
                   if annotations[e.ep_id]['event_env_step'] is not None]
         cutoff = min(onsets) if onsets else None
-        full = []
-        for mode in ['phase_ck8', 'first_event_prefix']:
+        for mode in a.modes:
             dst = root / (mode + '.json')
             if dst.exists():
                 old=json.loads(dst.read_text())
@@ -55,10 +56,27 @@ def main():
             if mode == 'first_event_prefix' and (not c['prefix_eligible'] or cutoff is None):
                 print('[skip prefix]',c['cell_id'],c['incomplete_reason'],flush=True)
                 continue
-            W=det.rollout_cap(tr);caps=det.phase_dwell_caps(tr)
-            if mode == 'phase_ck8':
-                fit=[det.truncate_episode(e,'phase-ck8',W,caps) for e in tr]
-                assert all(e is not None for e in fit)
+            fit_pool=tr
+            if mode == 'phase_gt':
+                with np.load(c['prepared'], allow_pickle=False) as z:
+                    gt=z['gt_phase_code']; ep=z['ep_id']; rec=z['rec_idx']
+                    assert len(gt)==len(ep)==len(rec)
+                    fit_pool=[]
+                    for e in tr:
+                        ix=np.flatnonzero(ep==e.ep_id)
+                        ix=ix[np.argsort(rec[ix],kind='stable')]
+                        assert np.array_equal(rec[ix],np.arange(e.T))
+                        assert np.isfinite(gt[ix]).all()
+                        fit_pool.append(det.Episode(e.task,e.ep_id,e.scene,e.noise,e.succ,
+                                        e.X,np.ascontiguousarray(gt[ix]),jitter=e.jitter))
+            W=det.rollout_cap(fit_pool);caps=det.phase_dwell_caps(fit_pool)
+            dropped=[]
+            unsupported_records=sum(int(sum(int(v) not in caps for v in e.phase)) for e in fit_pool)
+            if mode in ('phase_ck8','phase_gt'):
+                fit=[det.truncate_episode(e,mode.replace('_','-'),W,caps) for e in fit_pool]
+                dropped=[e.ep_id for e,f in zip(fit_pool,fit) if f is None]
+                fit=[e for e in fit if e is not None]
+                assert len({e.y for e in fit})==2
             else:
                 n=prefix_count(cutoff,c['action_steps'])
                 fit=[det.Episode(e.task,e.ep_id,e.scene,e.noise,e.succ,
@@ -83,6 +101,9 @@ def main():
             out=dict(cell=c['cell_id'],mode=mode,manifest_sha256=hashlib.sha256(a.manifest.read_bytes()).hexdigest(),
                      train_ep_ids=[e.ep_id for e in tr],test_ep_ids=[e.ep_id for e in te],
                      training_records={str(e.ep_id):e.T for e in fit},cutoff_env_step=cutoff,
+                     phase_caps={str(k):v for k,v in caps.items()},dropped_episode_ids=dropped,
+                     unsupported_phase_records=unsupported_records,
+                     phase_gt_policy='production phase-gt: discard phases absent in train successes; drop sequences shorter than 2',
                      fit_outcome_labels='original rollout outcome, not manual event label',
                      calibration='training successes; empirical LOO band alpha=.1; last threshold held beyond band',
                      band_length=int(band['L']),episodes=results)
@@ -92,7 +113,7 @@ def main():
                             std_std=torch.from_numpy(sd),delta=torch.from_numpy(band['delta']),
                             hidden=256,input_dim=seq[0][0].shape[1]),root/(mode+'.pt'))
             print('[done]',dst,flush=True)
-    (a.out/'DONE.json').write_text(json.dumps({'complete':True,'cells':len(cells)})+'\n')
+    (a.out/('DONE_'+ '_'.join(a.modes)+'.json')).write_text(json.dumps({'complete':True,'cells':len(cells),'modes':a.modes})+'\n')
 
 
 if __name__ == '__main__':
