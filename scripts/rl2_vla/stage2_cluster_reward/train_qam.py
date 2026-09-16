@@ -61,6 +61,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--manifest', required=True)
     p.add_argument('--qam-root', required=True)
+    p.add_argument('--training-cache', help='derived cache.json exported beside archived source')
     p.add_argument('--checkpoint', required=True)
     p.add_argument('--reward-mode', choices=['base', 'cluster_potential'], required=True)
     p.add_argument('--cluster-bundle')
@@ -72,7 +73,15 @@ def main():
     p.add_argument('--output', required=True)
     args = p.parse_args()
     os.environ.setdefault('XLA_PYTHON_CLIENT_PREALLOCATE', 'false')
-    episodes = load_manifest(args.manifest, 'train')
+    cache = None
+    if args.training_cache:
+        cache = json.loads(Path(args.training_cache).read_text())
+        if cache['manifest_sha256'] != sha256(args.manifest):
+            raise ValueError('derived cache/manifest mismatch')
+        manifest_rows = json.loads(Path(args.manifest).read_text())['episodes']
+        episodes = [r for r in manifest_rows if r['split'] == 'train']
+    else:
+        episodes = load_manifest(args.manifest, 'train')
     bundle = None
     if args.reward_mode == 'cluster_potential':
         if not args.cluster_bundle:
@@ -88,7 +97,23 @@ def main():
         raise ValueError('checkpoint must be 4-action chunk QAM with N=1')
     if config['ob_dims'] != [1024] or config['action_dim'] != 7 or config['discount'] != .99:
         raise ValueError('checkpoint context/action/discount contract mismatch')
-    data = transitions(episodes, bundle, args.shaping_scale if bundle else 0., config['discount'])
+    if cache is None:
+        data = transitions(episodes, bundle, args.shaping_scale if bundle else 0., config['discount'])
+    else:
+        meta = cache['qam_transitions'][args.reward_mode]
+        path = Path(args.training_cache).parent / meta['path']
+        if meta['sha256'] != sha256(path) or meta['manifest_sha256'] != sha256(args.manifest):
+            raise ValueError('derived transitions hash mismatch')
+        if set(meta['episode_ids']) != {e['episode_id'] for e in episodes}:
+            raise ValueError('derived transitions train split mismatch')
+        if meta['discount'] != config['discount'] or meta['shaping_scale'] != (args.shaping_scale if bundle else 0.):
+            raise ValueError('derived reward parameters mismatch')
+        if bundle and meta['cluster_sha256'] != sha256(args.cluster_bundle):
+            raise ValueError('derived transitions cluster mismatch')
+        with np.load(path, allow_pickle=False) as archive:
+            data = {k: archive[k] for k in archive.files}
+        if not all(np.isfinite(v).all() for v in data.values()):
+            raise ValueError('nonfinite derived transitions')
     klass = agent_class(args.qam_root)
     import jax
     from utils.flax_utils import restore_agent_with_file, save_agent
@@ -109,6 +134,7 @@ def main():
     if bundle:
         flags['cluster_sha256'] = sha256(args.cluster_bundle)
     (out/'flags.json').write_text(json.dumps(flags, indent=2))
+    print('TRAIN_READY', args.reward_mode, len(data['observations']), jax.devices(), flush=True)
     rng = np.random.default_rng(args.seed)
     with (out/'metrics.jsonl').open('w') as log:
         for step in range(args.warmup_steps + args.steps):

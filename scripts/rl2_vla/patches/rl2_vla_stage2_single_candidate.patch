@@ -106,7 +106,7 @@ index abeb9f3..036f0df 100644
 +            "hidden_states_np must be supplied when use_rephrased_latents_for_qam=False"
 +        )
 diff --git a/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py b/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py
-index 0ad35e3..d668fce 100644
+index 0ad35e3..6cfd68c 100644
 --- a/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py
 +++ b/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py
 @@ -14,0 +15 @@ import itertools
@@ -114,7 +114,7 @@ index 0ad35e3..d668fce 100644
 @@ -62,2 +62,0 @@ from lerobot.common.policies.pi0.modeling_pi0 import PI0Policy
 -# Ensemble verifier imports (installed as module via env_simpler_pi.sh)
 -from bridge_verifier.ensemble_eval import EfficientEnsembleMerged
-@@ -128,0 +128,257 @@ class GenerateConfig:
+@@ -128,0 +128,260 @@ class GenerateConfig:
 +    # Opt-in Stage 2 single-candidate rollout contract.
 +    stage2_single_candidate: bool = False
 +    stage2_rollout_dir: str = ""
@@ -141,6 +141,9 @@ index 0ad35e3..d668fce 100644
 +    values = values[:, :, 1:, :]
 +    for selector in (getattr(failure_model, "safe_horizon_idx_rel", "mean"),
 +                     getattr(failure_model, "safe_diff_idx_rel", 0.0)):
++        # Sweep IDs serialize endpoint selectors as strings in config.yaml.
++        if selector in ("0.0", "1.0"):
++            selector = float(selector)
 +        if selector == "mean":
 +            values = values.mean(axis=-2)
 +        elif selector == "concat-2":
@@ -372,17 +375,17 @@ index 0ad35e3..d668fce 100644
 +                raise
 +
 +
-@@ -201,0 +458,5 @@ def eval_simpler(cfg: GenerateConfig) -> None:
+@@ -201,0 +461,5 @@ def eval_simpler(cfg: GenerateConfig) -> None:
 +
 +    task_suite = get_benchmark(cfg.task_suite_name)()
 +    if cfg.stage2_single_candidate:
 +        _eval_stage2_single_candidate(cfg, pi0_policy, task_suite)
 +        return
-@@ -204,0 +466 @@ def eval_simpler(cfg: GenerateConfig) -> None:
+@@ -204,0 +469 @@ def eval_simpler(cfg: GenerateConfig) -> None:
 +        from bridge_verifier.ensemble_eval import EfficientEnsembleMerged
-@@ -215 +476,0 @@ def eval_simpler(cfg: GenerateConfig) -> None:
+@@ -215 +479,0 @@ def eval_simpler(cfg: GenerateConfig) -> None:
 -    task_suite = get_benchmark(cfg.task_suite_name)()
-@@ -513,0 +775,3 @@ def eval_simpler(cfg: GenerateConfig) -> None:
+@@ -513,0 +778,3 @@ def eval_simpler(cfg: GenerateConfig) -> None:
 +                            hidden_states_np=(hidden_states_last_token.detach().cpu().numpy()[None, :]
 +                                               if cfg.use_failure_prediction and not cfg.use_rephrased_latents_for_qam
 +                                               else None),

@@ -20,9 +20,10 @@ def extract(path, names, namespace):
     return namespace
 
 
+@pytest.mark.parametrize('serialized', [False, True])
 @pytest.mark.parametrize('horizon', [0.0, 1.0, 'mean', 'concat-2'])
 @pytest.mark.parametrize('denoise', [0.0, 1.0, 'mean', 'concat-2'])
-def test_all_16_features_match_original_safe(horizon, denoise):
+def test_all_16_features_match_original_safe(horizon, denoise, serialized):
     ns = extract(SIMPLER / 'run_simpler_eval_with_openpi.py',
                  {'_stage2_safe_feature', '_stage2_context'}, {'np': np})
     original = extract(ROOT / 'RL2-VLA/third_party/SAFE/failure_prob/data/utils.py',
@@ -30,7 +31,12 @@ def test_all_16_features_match_original_safe(horizon, denoise):
     values = np.random.default_rng(7).normal(size=(1, 10, 5, 1024)).astype(np.float32)
     transform = original['process_tensor_idx_rel']
     expected = transform(transform(values[:, :, 1:, :], horizon), denoise)[0]
-    model = SimpleNamespace(safe_horizon_idx_rel=horizon, safe_diff_idx_rel=denoise,
+    # Exercise exact YAML feature values emitted by the sweep, not only floats.
+    config = OmegaConf.create(dict(
+        horizon_idx_rel=str(horizon) if serialized else horizon,
+        diff_idx_rel=str(denoise) if serialized else denoise))
+    model = SimpleNamespace(safe_horizon_idx_rel=config.horizon_idx_rel,
+                            safe_diff_idx_rel=config.diff_idx_rel,
                             safe_input_dim=expected.size)
     actual = ns['_stage2_safe_feature'](values, model)
     np.testing.assert_allclose(actual, expected)

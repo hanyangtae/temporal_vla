@@ -118,8 +118,8 @@ def validate(safe_dir: Path, manifest_path: Path) -> dict[str, Any]:
     provenance = _load_json(manifest_path, "provenance manifest")
     if provenance.get("owner") != "temporal_vla":
         raise ProvenanceError("provenance.owner must be 'temporal_vla'")
-    if provenance.get("feature_contract") != FEATURE_CONTRACT:
-        raise ProvenanceError(f"provenance.feature_contract must be '{FEATURE_CONTRACT}'")
+    if provenance.get("feature_contract") not in (FEATURE_CONTRACT, "pi0_safe_original_grid_v1"):
+        raise ProvenanceError("unsupported SAFE feature contract")
 
     manifest_payloads: dict[str, Any] = {}
     for name in ("training_manifest", "calibration_manifest"):

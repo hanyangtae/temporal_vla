@@ -162,6 +162,7 @@ def main():
     p.add_argument('--qam-base')
     p.add_argument('--qam-shaped')
     p.add_argument('--manifest')
+    p.add_argument('--training-cache')
     p.add_argument('--run', action='store_true')
     args = p.parse_args()
     if len(set(args.tasks)) != len(args.tasks):
@@ -176,13 +177,17 @@ def main():
     if args.mode == 'eval':
         if args.models_per_gpu != 1:
             p.error('multiple models per GPU supported for collection only')
-        if args.gpus:
-            p.error('--gpus is supported for collect only; use --gpu for eval')
         if not all([args.safe_dir, args.qam_original, args.qam_base, args.qam_shaped, args.manifest]):
             p.error('eval requires our SAFE, three QAM checkpoints, and training --manifest')
         safe = Path(args.safe_dir).resolve()
         validate(safe, safe/'provenance.json')
-        episodes = load_manifest(args.manifest)
+        if args.training_cache:
+            cache = json.loads(Path(args.training_cache).read_text())
+            if cache['manifest_sha256'] != sha256(args.manifest):
+                raise ValueError('training cache/manifest mismatch')
+            episodes = json.loads(Path(args.manifest).read_text())['episodes']
+        else:
+            episodes = load_manifest(args.manifest)
         used = {(e['task_id'], e['env_seed']) for e in episodes}
         if any((task, seed) in used for task in args.tasks for seed in range(start,start+trials)):
             raise ValueError('evaluation reset overlaps offline data')
@@ -221,7 +226,7 @@ def main():
                     cmd += ['--stage2_save_activations', 'True']
                 if checkpoint:
                     cmd += ['--qam_ckpt',str(Path(checkpoint).resolve()),'--failure_checkpoint_dir',str(safe),
-                            '--failure_cp_alpha','0.2','--use_taskwise_cp_band','False']
+                            '--failure_cp_alpha','0.2','--use_taskwise_cp_band','True']
                 print(json.dumps({'arm':arm,'task':task,'seed':seed,'command':cmd}), flush=True)
                 request = dict(command=cmd, policy=args.policy,
                                safe_sha256=sha256(safe/'provenance.json') if checkpoint else None,
@@ -229,7 +234,7 @@ def main():
                 jobs.append((lane, cmd, request, seed))
     if not args.run:
         return
-    if args.mode == 'collect' and (args.gpus or args.models_per_gpu > 1):
+    if args.gpus or args.models_per_gpu > 1:
         slots = [gpu for gpu in (args.gpus or [args.gpu]) for _ in range(args.models_per_gpu)]
         with ThreadPoolExecutor(max_workers=len(slots)) as pool:
             grouped = [[] for _ in slots]

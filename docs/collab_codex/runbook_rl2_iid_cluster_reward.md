@@ -134,3 +134,26 @@ Synthetic CPU smoke는 원본 QAM update와 원본 SAFE training/save/load를 �
 kanu A4000 GPU1에서 격리된 π0 2개 ×10판 시험을 수행했다. 두 process 모두 exit0, 20판 완료, OOM 없음. 실측 합산 사용량 약15904MiB/16376MiB로 여유는 작다. 이번 수집에서만 GPU당 최대2개를 허용하며, GR00T 규칙의 일반 확장으로 해석하지 않는다. `run_experiment.py --models-per-gpu 2`가 두 고정 worker를 GPU별로 배치한다(기본값1).
 
 진행 중이던 최초 1200판은 기존 scheduler만 SIGSTOP하여 미착수 lane 중복 발사를 방지하고, 잔여3lane(seed7 eggplant/stack/carrot)을 GPU2/3/4의 두 번째 slot에 배정했다. 기존 collector와 shipper는 계속 실행한다. `outputs/rl2_iid_20260916/setup/expand_pending.py`가 잔여lane 완료 후 기존 scheduler를 SIGCONT하며, 기존 scheduler는 동일 request/완료 결과를 확인해 skip한다. 추가 총평가량은 없으며 분리된20판 capacity smoke만 본 데이터에서 제외한다. 실제 운영PID와 로그는 같은 setup 디렉터리에 있다.
+
+## 실제 학습·보정·비교 실행 (2026-09-16, 최신)
+
+수집1200판/sidecar1200개 전송검증 완료. 원본은 승준 archive root에만 두고 `export_training_cache.py`로 derived SAFE16feature와 QAMtransition을 추출했다. 파생캐시880MiB는 kanu `outputs/rl2_iid_training_cache_20260916`에 있으며 모든 checksum을 확인했다. SAFE reset-group split은 train60/selection10/calibration10/holdout20; QAM과 cluster는 기존train60을 동일하게 사용한다.
+
+`safe_sweep.py`는 원본512batch LSTM/loss/optimizer, feature16×lr3×reg4×seed3=576학습을2000epoch까지 수행하고1000/2000endpoint1152개를 비교한다. 원본 지표는 task별 shortest duration까지의 max-score earlyROC-AUC이다. task cutoff는 train+selection만으로 정해 원본 전체자료 cutoff의 holdout lookahead를 제거했다. 3seed평균으로 설정을 선택하며 배포seed는 원본처럼0이다.
+
+CP는 원본 Tfunc modulation, 성공trajectory30/70 회귀/잔차 분할, terminal edge-padding, np.quantile을 사용한다. 다만 reset그룹은분리한다. task별alpha15개를 원본padded final-end BA로 순위화하고top3(동점포함)를 보존하며, 실제배포는 task합산BA상위1개(동점lowalpha)를 고정한다. 실제종료전BA도 병기한다. 이원본padding은 이미끝난성공의후기alarm을alpha선택에포함할수있다. 엄밀한유한표본coverage를 주장하지않는다. holdout은설정/보정에쓰지않는다.
+
+```bash
+.venvs/rl2_iid/bin/python scripts/rl2_vla/stage2_cluster_reward/run_training_pipeline.py \
+ --cache outputs/rl2_iid_training_cache_20260916/cache.json --rl2-root RL2-VLA \
+ --output outputs/rl2_iid_20260916/training \
+ --policy "$PWD/outputs/rl2_assets/pi0_bridge" \
+ --qam-initial outputs/rl2_assets/qam_bridge/rl2_vla_qam_bridge_500k.pkl \
+ --python "$PWD/.venvs/rl2_iid/bin/python" --run
+```
+
+SAFE10workers(GPU2/3/4/6/7,각2개)와QAMbase/shaped(GPU0/1)를동시실행한다. QAM은동일초기actor/criticseed/720trainrollouts/미니배치순서,5kcriticwarmup+50kupdates이며reward만다르다. 원본QAM초기checkpoint의N=1/horizon4/discount.99를검증한다.
+
+모든학습이성공하면SAFE선택·CP보정·provenance검증후4arm(vanilla/originalQAM/baseQAM/shapedQAM)×4task×25reset×3policyseed=1200eval을수행한다. 첫seed42의400판이정상완료된후0/7의800판으로진행한다. eval은GPU당1모델이며모든gatedarm이같은SAFE와task별선택alpha를쓴다. SAFE입력선택과QAM고정mean/denoise0입력을분리했다. 실제GPUforced-gate smoke1판(9개chunk/9개개입)에서모델load/feature/taskwiseband/QAMcomposition/action실행을검증했다. 이smoke의인위적band는실험에사용하지않는다.
+
+실행상태는`training/status.json`,세부로그는`training/logs/training/worker_*.log`,최종비교는`training/summary.json`이다. 기존QAM완료checkpoint는설정·hash일치시만재사용하며부분QAM은덮어쓰지않는다. SAFE는100epoch마다중간재개파일을저장한다. 최종성과보고전confound-audit를적용하고, IID/단일QAM학습seed범위를넘어일반화하지않는다.
