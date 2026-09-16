@@ -3,10 +3,10 @@ import argparse,json,re
 from pathlib import Path
 
 SPECS=[('4fa6496cd684','worker2','PPCC/bread',4,3,24),('4ab360df2b71','worker1','DishwasherRack/out-left',3,0,23)]
-def extend(html,root):
+def extend(html,root,specs=SPECS):
     cm=re.search(r'const CELLS = (\[.*?\]);',html);assert cm
     old=json.loads(cm.group(1));new=[];targets=[];stats=[]
-    for plan,machine,key,scene,target,expected_fail in SPECS:
+    for plan,machine,key,scene,target,expected_fail in specs:
         assert not any(c['key']==key and c['s']==scene for c in old),'scene already present'
         entries=[]
         for j in range(5):
@@ -23,12 +23,12 @@ def extend(html,root):
     tm=re.search(r'const TARGET_RELS = new Set\((\[.*?\])\);',html);assert tm
     prev=json.loads(tm.group(1));html=html[:tm.start(1)]+json.dumps(prev+targets,ensure_ascii=False)+html[tm.end(1):]
     before='<option value="target">대상 j만 · detector 평가</option><option value="all">전체 j</option>'
-    assert before in html
     html=html.replace(before,'<option value="all">전체 j</option><option value="target">대상 j만 · detector 평가</option>')
     helptext='추가 bread s4·rack-L s3 등록 완료. 전체 j + 실패 판만: bread 24판, rack-L 23판. 성공 포함 시 각각 50판. 추가 자료는 plan·수집 머신별 원본으로 구분됩니다.'
-    needle='<div class="help">기존 v6 + 마시멜로 추가 s3·s4.'
-    pos=html.index(needle);end=html.index('</div>',pos)
-    html=html[:pos]+'<div class="help">'+helptext+html[end:]
+    if specs == SPECS:
+        needle='<div class="help">기존 v6 + 마시멜로 추가 s3·s4.'
+        pos=html.index(needle);end=html.index('</div>',pos)
+        html=html[:pos]+'<div class="help">'+helptext+html[end:]
     assert json.loads(re.search(r'const CELLS = (\[.*?\]);',html).group(1))[:len(old)]==old
     assert 'successful_retry' in html
     return html,stats
