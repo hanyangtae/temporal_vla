@@ -1,0 +1,249 @@
+diff --git a/RL2_CoVer_VLA/simpler/rl2_utils.py b/RL2_CoVer_VLA/simpler/rl2_utils.py
+index abeb9f3..2f5ee6e 100644
+--- a/RL2_CoVer_VLA/simpler/rl2_utils.py
++++ b/RL2_CoVer_VLA/simpler/rl2_utils.py
+@@ -172,7 +172,13 @@ def load_failure_detection_model(cfg, curr_task):
+-        # Stretch CP band to account for cfg.n_action_steps
+-        # CP band was trained at frequency of cfg.n_action_steps, so interpolate to get all timesteps
+-        original_length = len(cp_band)
+-        x_original = np.arange(original_length) * cfg.n_action_steps
+-        x_new = np.arange(original_length * cfg.n_action_steps)
+-        cp_band = np.interp(x_new, x_original, cp_band)
+-        print(f"Stretched CP band from {original_length} to {len(cp_band)} steps (act_steps={cfg.n_action_steps})")
++        # Legacy CP bands are chunk-step bands and need interpolation. Stage2
++        # training emits environment-step bands and must not be stretched again.
++        band_unit = str(getattr(failure_cfg, "cp_band_time_unit", "chunk"))
++        if band_unit == "environment_step":
++            print("Using CP band at environment-step resolution without stretching")
++        elif band_unit == "chunk":
++            original_length = len(cp_band)
++            x_original = np.arange(original_length) * cfg.n_action_steps
++            x_new = np.arange(original_length * cfg.n_action_steps)
++            cp_band = np.interp(x_new, x_original, cp_band)
++            print(f"Stretched CP band from {original_length} to {len(cp_band)} steps (act_steps={cfg.n_action_steps})")
++        else:
++            raise ValueError(f"Unsupported cp_band_time_unit: {band_unit!r}")
+@@ -280 +286,2 @@ def compute_composed_actions(cfg, task_description, rephrased_list, lang_rephras
+-                              processed_obs, image_key, pi0_policy, qam, action_noise_std):
++                              processed_obs, image_key, pi0_policy, qam, action_noise_std,
++                              hidden_states_np=None):
+@@ -352,0 +360,4 @@ def compute_composed_actions(cfg, task_description, rephrased_list, lang_rephras
++    elif hidden_states_np is None:
++        raise ValueError(
++            "hidden_states_np must be supplied when use_rephrased_latents_for_qam=False"
++        )
+diff --git a/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py b/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py
+index 0ad35e3..a0dee23 100644
+--- a/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py
++++ b/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py
+@@ -14,0 +15 @@ import itertools
++import json
+@@ -62,2 +62,0 @@ from lerobot.common.policies.pi0.modeling_pi0 import PI0Policy
+-# Ensemble verifier imports (installed as module via env_simpler_pi.sh)
+-from bridge_verifier.ensemble_eval import EfficientEnsembleMerged
+@@ -128,0 +128,191 @@ class GenerateConfig:
++    # Opt-in Stage 2 single-candidate rollout contract.
++    stage2_single_candidate: bool = False
++    stage2_rollout_dir: str = ""
++    env_seed_start: int = 1000
++
++def _stage2_context(action_embeds: np.ndarray) -> list:
++    """First candidate, denoise-0 action-token mean; shape is exactly (1024,)."""
++    embeds = np.asarray(action_embeds)
++    if embeds.ndim != 4 or embeds.shape[0] < 1 or embeds.shape[1] < 1 or embeds.shape[2] < 2:
++        raise ValueError(f"Unexpected PI0 action_embeds shape: {embeds.shape}")
++    context = embeds[0, 0, 1:, :].mean(axis=0)
++    if context.shape != (1024,):
++        raise ValueError(f"Expected stage2 context shape (1024,), got {context.shape}")
++    return context.astype(np.float32).tolist()
++
++
++def _atomic_write_stage2_episode(path: Path, payload: dict) -> None:
++    if path.exists():
++        raise FileExistsError(f"Refusing to overwrite existing stage2 rollout: {path}")
++    path.parent.mkdir(parents=True, exist_ok=True)
++    tmp_path = path.with_name(f".{path.name}.tmp-{os.getpid()}")
++    try:
++        with tmp_path.open("x", encoding="utf-8") as handle:
++            json.dump(payload, handle, ensure_ascii=False, indent=2)
++            handle.write("\n")
++            handle.flush()
++            os.fsync(handle.fileno())
++        try:
++            os.link(tmp_path, path)
++        except FileExistsError:
++            raise FileExistsError(f"Refusing to overwrite existing stage2 rollout: {path}")
++        finally:
++            tmp_path.unlink(missing_ok=True)
++    finally:
++        if tmp_path.exists():
++            tmp_path.unlink()
++
++
++def _stage2_should_compose(use_failure_prediction: bool, safe_trigger: bool, composed_samples: int) -> bool:
++    return bool(use_failure_prediction and safe_trigger and composed_samples > 0)
++
++
++def _stage2_next_action(env_queue: deque):
++    if not env_queue:
++        raise IndexError("stage2 action queue is empty")
++    return env_queue.popleft()
++
++
++def _stage2_end_reason(done: bool, trunc: bool, step: int, max_steps: int) -> str:
++    return "success" if done else "truncated" if trunc else "horizon" if step >= max_steps else "terminated"
++
++
++def _eval_stage2_single_candidate(cfg: GenerateConfig, pi0_policy, task_suite) -> None:
++    """Collect four-step, single-candidate chunks for Stage 2."""
++    assert cfg.use_verifier is False and cfg.use_verifier_always is False
++    assert cfg.lang_transform_type == "no_transform"
++    assert cfg.num_steps_wait == 0
++    assert cfg.action_samples_prefail == cfg.action_samples == 1
++    assert cfg.lang_rephrase_num_prefail == cfg.lang_rephrase_num == 1
++    assert cfg.composed_samples_prefail == 0 and cfg.composed_samples in (0, 1)
++    assert cfg.n_action_steps == 4
++    assert cfg.stage2_rollout_dir, "stage2_rollout_dir is required"
++    preprocess_adapter = getattr(pi0_policy, "_preprocess_adapter", None)
++    if preprocess_adapter is None:
++        preprocess_adapter = create_bridge_adapter_wrapper(cfg.action_ensemble_temp)
++        pi0_policy._preprocess_adapter = preprocess_adapter
++    qam = QAMInference(checkpoint_path=cfg.qam_ckpt) if cfg.composed_samples > 0 else None
++    rollout_root = Path(cfg.stage2_rollout_dir)
++    for task_idx in tqdm.tqdm(range(task_suite.n_tasks)):
++        task = task_suite.get_task(task_idx)
++        env = get_simpler_env(task, cfg.model_family)
++        task_description = env.get_language_instruction()
++        curr_task = SAFE_TASK_MAP_DICT.get(task_description, cfg.task_suite_name)
++        failure_model = cp_band = None
++        if cfg.use_failure_prediction:
++            failure_model, cp_band = load_failure_detection_model(cfg, curr_task)
++        max_steps = 150 if cfg.task_suite_name.startswith("simpler") else None
++        if max_steps is None:
++            raise NotImplementedError
++        for eps_idx in tqdm.tqdm(range(cfg.num_trials_per_task)):
++            env_seed = cfg.env_seed_start + eps_idx
++            episode_started = time.monotonic()
++            obs, _ = env.reset(seed=env_seed)
++            chunks, raw_queue, env_queue = [], deque(), deque()
++            current_chunk = None
++            t, done, trunc = 0, False, False
++            all_features = []
++            try:
++                while t < max_steps and not done and not trunc:
++                    if not env_queue:
++                        raw_img = get_image_from_maniskill2_obs_dict(env, obs)
++                        processed_obs = preprocess_adapter.preprocess({
++                            "observation.images.top": raw_img,
++                            "observation.state": obs,
++                            "task": task_description,
++                        })
++                        policy_device = torch.device(pi0_policy.config.device)
++                        processed_obs = {k: v.to(device=policy_device) if isinstance(v, torch.Tensor) else v
++                                         for k, v in processed_obs.items()}
++                        image_key = list(pi0_policy.config.image_features.keys())[0]
++                        observation = {image_key: processed_obs["observation.images.top"],
++                                       "observation.state": processed_obs["observation.state"],
++                                       "task": [task_description]}
++                        with torch.no_grad():
++                            pi0_policy.reset()
++                            output_queue, action_embeds = pi0_policy.select_action(
++                                observation, noise_std=1.0, return_action_embeds=True)
++                            vanilla_queue = deque(list(output_queue)[:cfg.n_action_steps])
++                            output_queue.clear()
++                        if len(vanilla_queue) != cfg.n_action_steps:
++                            raise ValueError(f"PI0 returned {len(vanilla_queue)} actions, expected 4")
++                        context = _stage2_context(action_embeds)
++                        hidden_states_device = next(failure_model.parameters()).device if failure_model is not None else torch.device("cpu")
++                        hidden_states = torch.as_tensor(context, dtype=torch.float32, device=hidden_states_device)
++                        safe_trigger = False
++                        failure_probability = failure_threshold = None
++                        if cfg.use_failure_prediction:
++                            failure_probability, safe_trigger = check_failure_prediction_lstm(
++                                hidden_states_last_token=hidden_states,
++                                failure_model=failure_model, cp_band=cp_band,
++                                timestep=t, all_features=all_features)
++                            failure_threshold = float(cp_band[min(t, len(cp_band) - 1)])
++                        selected_queue = vanilla_queue
++                        if _stage2_should_compose(cfg.use_failure_prediction, safe_trigger, cfg.composed_samples):
++                            old_rephrased = cfg.use_rephrased_latents_for_qam
++                            cfg.use_rephrased_latents_for_qam = False
++                            try:
++                                _, composed_queue, _ = compute_composed_actions(
++                                    cfg=cfg, task_description=task_description,
++                                    rephrased_list=None, lang_rephrase_num=1,
++                                    composed_samples=cfg.composed_samples,
++                                    processed_obs=processed_obs, image_key=image_key,
++                                    pi0_policy=pi0_policy, qam=qam,
++                                    action_noise_std=1.0,
++                                    hidden_states_np=np.asarray(context, dtype=np.float32)[None, :],
++                                )
++                            finally:
++                                cfg.use_rephrased_latents_for_qam = old_rephrased
++                            selected_queue = deque(list(composed_queue)[:cfg.n_action_steps])
++                        if len(selected_queue) != cfg.n_action_steps:
++                            raise ValueError("Selected action queue must contain exactly four actions")
++                        proposed_actions = torch.stack(list(selected_queue), dim=1)[0].detach().cpu().float().numpy()
++                        postprocessed = np.asarray(process_inputs(
++                            1, list(selected_queue), verifier_action=False,
++                            action_history=[], cfg=cfg)[0], dtype=np.float32)
++                        # Preserve the original first-step gripper sign vote.
++                        postprocessed[0, -1] = 1.0 if postprocessed[0, -1] >= 0 else -1.0
++                        normalized_actions = pi0_policy.normalize_targets(
++                            {"action": torch.as_tensor(proposed_actions, device=policy_device).unsqueeze(0)}
++                        )["action"][0].detach().cpu().float().numpy()
++                        raw_queue = deque(list(selected_queue))
++                        env_queue = deque(list(postprocessed))
++                        current_chunk = {
++                            "context": context, "proposed_actions": proposed_actions.tolist(),
++                            "postprocessed_actions": postprocessed.tolist(),
++                            "normalized_actions": normalized_actions.tolist(),
++                            "train_actions": normalized_actions.tolist(), "executed_actions": [],
++                            "step_success": [], "step_reward": [], "step_truncated": [],
++                            "start_step": t, "safe_trigger": bool(safe_trigger),
++                        }
++                        if failure_probability is not None:
++                            current_chunk["failure_probability"] = float(failure_probability)
++                            current_chunk["failure_threshold"] = failure_threshold
++                        chunks.append(current_chunk)
++                    raw_queue.popleft()
++                    action_for_env = _stage2_next_action(env_queue).copy()
++                    obs, reward, done, trunc, _ = env.step(action_for_env)
++                    current_chunk["executed_actions"].append(action_for_env.tolist())
++                    current_chunk["step_success"].append(bool(done))
++                    current_chunk["step_reward"].append(float(reward))
++                    current_chunk["step_truncated"].append(bool(trunc))
++                    t += 1
++                end_reason = _stage2_end_reason(done, trunc, t, max_steps)
++                payload = {
++                    "schema_version": 1, "task_id": cfg.task_suite_name,
++                    "episode_id": f"{cfg.task_suite_name}/env{env_seed}/policy{cfg.seed}",
++                    "reset_id": f"{cfg.task_suite_name}/env{env_seed}",
++                    "policy_seed": cfg.seed, "env_seed": env_seed,
++                    "success": bool(done), "end_reason": end_reason,
++                    "feature_contract": "pi0_denoise0_action_mean_1024",
++                    "action_contract": "pi0_normalize_targets_executed_v1",
++                    "policy_checkpoint": str(cfg.pretrained_checkpoint),
++                    "elapsed_seconds": float(time.monotonic() - episode_started),
++                    "chunks": chunks,
++                }
++                _atomic_write_stage2_episode(
++                    rollout_root / f"episode_task{task_idx}_env{env_seed}_policy{cfg.seed}.json", payload)
++            except Exception:
++                raise
++
++
+@@ -201,0 +392,5 @@ def eval_simpler(cfg: GenerateConfig) -> None:
++
++    task_suite = get_benchmark(cfg.task_suite_name)()
++    if cfg.stage2_single_candidate:
++        _eval_stage2_single_candidate(cfg, pi0_policy, task_suite)
++        return
+@@ -204,0 +400 @@ def eval_simpler(cfg: GenerateConfig) -> None:
++        from bridge_verifier.ensemble_eval import EfficientEnsembleMerged
+@@ -215 +410,0 @@ def eval_simpler(cfg: GenerateConfig) -> None:
+-    task_suite = get_benchmark(cfg.task_suite_name)()
+@@ -513,0 +709,3 @@ def eval_simpler(cfg: GenerateConfig) -> None:
++                            hidden_states_np=(hidden_states_last_token.detach().cpu().numpy()[None, :]
++                                               if cfg.use_failure_prediction and not cfg.use_rephrased_latents_for_qam
++                                               else None),

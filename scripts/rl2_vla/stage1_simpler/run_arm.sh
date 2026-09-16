@@ -7,7 +7,7 @@
 #   resample*: 순수 noise 재샘플 + verifier (rephrase 1종·QAM 無). N=RESAMPLE_N(기본 40
 #   = RL2 기본 후보수 8×5와 동일 예산). resample_gated는 SAFE 발화 후만 재샘플(prefail=vanilla).
 #   suite : IID | OOD (기본 OOD — 논문 Fig 8 대조)
-#   alpha : adaptive 전용 CP significance level. 미지정 시 해당 seed의 top-1 사용.
+#   alpha : gated arms의 CP significance level (기본 0.2).
 #
 # 플래그는 RL2-VLA/RL2_CoVer_VLA/simpler/bashes/eval_*.sh 원본과 동일하게 유지
 # (차이: 절대경로, WANDB offline, INFERENCE_ROOT 경로 정정).
@@ -21,18 +21,27 @@ SEED=${4:-42}
 TRIALS=${5:-50}
 ALPHA_ARG=${6:-}
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+RL2="$REPO_ROOT/RL2-VLA"
+GATED_ARM=0
+case "$ARM" in
+  adaptive|resample_gated|compose_gated|compose1_gated) GATED_ARM=1 ;;
+esac
+if (( GATED_ARM )); then
+    : "${SAFE_DIR_OVERRIDE:?gated arms require SAFE_DIR_OVERRIDE with temporal_vla provenance}"
+    SAFE_DIR_OVERRIDE="$(cd "$SAFE_DIR_OVERRIDE" && pwd)"
+    SAFE_MANIFEST="${SAFE_PROVENANCE_OVERRIDE:-$SAFE_DIR_OVERRIDE/provenance.json}"
+    python3 "$REPO_ROOT/scripts/rl2_vla/stage2_cluster_reward/safe_provenance.py" \
+        --safe-dir "$SAFE_DIR_OVERRIDE" --manifest "$SAFE_MANIFEST"
+fi
+
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate rl2
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-RL2="$REPO_ROOT/RL2-VLA"
 export MUJOCO_GL=osmesa PYOPENGL_PLATFORM=osmesa WANDB_MODE=offline PRISMATIC_DATA_ROOT=.
 export PYTHONPATH="$RL2:$RL2/RL2_CoVer_VLA:${PYTHONPATH:-}"
 
-QAM_CKPT="$RL2/third_party/qam/exp/SAVED/rl2-vla-qam-bridge/rl2_vla_qam_bridge_500k.pkl"
-SAFE_DIR_IID="$RL2/third_party/SAFE/scripts/batch_training/logs/SAVED/rl2_pi0_bridge_safe_ckpt_per_task_cp"
-SAFE_DIR_OOD="${SAFE_DIR_OVERRIDE:-$RL2/third_party/SAFE/scripts/batch_training/logs/SAVED/rl2_pi0_bridge_safe_ckpt_combined_cp}"
-# SAFE_DIR_OVERRIDE: 재학습 SAFE ckpt 디렉토리로 교체할 때 사용 (OOD suite 한정)
+QAM_CKPT="${QAM_CKPT_OVERRIDE:-$RL2/third_party/qam/exp/SAVED/rl2-vla-qam-bridge/rl2_vla_qam_bridge_500k.pkl}"
 CKPT="juexzz/INTACT-pi0-finetune-bridge"
 LANE="$ARM"
 [ -n "$ALPHA_ARG" ] && LANE="${ARM}_a${ALPHA_ARG}"
@@ -42,11 +51,13 @@ mkdir -p "$LOG_DIR"
 
 if [[ "$SUITE" == "IID" ]]; then
     TASKS=(simpler_put_eggplant_in_basket simpler_spoon_on_towel simpler_stack_cube simpler_carrot_on_plate)
-    TASKWISE=True; SAFE_DIR="$SAFE_DIR_IID"; ALPHA_JSON="$RL2/RL2_CoVer_VLA/simpler/bashes/rl2_cp_alphas_per_task.json"
+
 else
     TASKS=(simpler_orange_juice_on_plate simpler_spoon_on_towel_google simpler_tape_measure_in_basket simpler_toy_dinosaur_on_towel)
-    TASKWISE=False; SAFE_DIR="$SAFE_DIR_OOD"; ALPHA_JSON="$RL2/RL2_CoVer_VLA/simpler/bashes/rl2_cp_alphas_combined.json"
+
 fi
+TASKWISE="${SAFE_TASKWISE:-False}"
+SAFE_DIR="${SAFE_DIR_OVERRIDE:-}"
 
 cd "$RL2/RL2_CoVer_VLA/simpler"
 
@@ -72,13 +83,7 @@ for TASK in "${TASKS[@]}"; do
             --lang_rephrase_num_prefail 8 --action_samples_prefail 1 --composed_samples_prefail 5
         ;;
       adaptive)
-        if [ -n "$ALPHA_ARG" ]; then
-            ALPHA="$ALPHA_ARG"
-        elif [[ "$SUITE" == "IID" ]]; then
-            ALPHA=$(python -c "import json;print(json.load(open('$ALPHA_JSON'))['alpha']['$TASK']['$SEED'][0])")
-        else
-            ALPHA=$(python -c "import json;print(json.load(open('$ALPHA_JSON'))['alpha']['combined']['$SEED'][0])")
-        fi
+        ALPHA="${ALPHA_ARG:-0.2}"
         CUDA_VISIBLE_DEVICES=$GPU python run_simpler_eval_with_openpi.py "${COMMON[@]}" \
             --use_failure_prediction True --use_taskwise_cp_band "$TASKWISE" \
             --failure_checkpoint_dir "$SAFE_DIR" --failure_cp_alpha "$ALPHA" \
