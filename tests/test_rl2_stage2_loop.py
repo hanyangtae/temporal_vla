@@ -55,7 +55,7 @@ def test_actual_loop_records_only_executed_actions(tmp_path,stop_at,gated):
         check_failure_prediction_lstm=failure,compute_composed_actions=compose,
         process_inputs=lambda n,q,**_: [torch.stack(list(q),dim=1)[0].numpy()])
     exec(compile(ast.Module(body=funcs,type_ignores=[]),str(source),'exec'),namespace)
-    cfg=SimpleNamespace(use_verifier=False,use_verifier_always=False,lang_transform_type='no_transform',num_steps_wait=0,
+    cfg=SimpleNamespace(stage2_save_activations=True,stage2_min_free_gb=0,use_verifier=False,use_verifier_always=False,lang_transform_type='no_transform',num_steps_wait=0,
         action_samples_prefail=1,action_samples=1,lang_rephrase_num_prefail=1,lang_rephrase_num=1,composed_samples_prefail=0,
         composed_samples=int(gated),n_action_steps=4,stage2_rollout_dir=str(tmp_path),action_ensemble_temp=-.8,
         qam_ckpt='fake',task_suite_name='simpler_spoon_on_towel',model_family='openvla',num_trials_per_task=1,
@@ -74,3 +74,9 @@ def test_actual_loop_records_only_executed_actions(tmp_path,stop_at,gated):
     else:
         assert not calls
     assert e['elapsed_seconds']>=0
+
+    import hashlib
+    sidecar=tmp_path/e['activation_file']['path']
+    assert hashlib.sha256(sidecar.read_bytes()).hexdigest()==e['activation_file']['sha256']
+    with np.load(sidecar) as archive:
+        assert archive['action_embeds'].shape==(len(e['chunks']),1,10,5,1024)

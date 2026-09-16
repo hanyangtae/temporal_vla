@@ -1,5 +1,26 @@
 # RL2 IID cluster reward 실험
 
+## 2026-09-16 실행 변경 (이 절이 아래 초기 예시보다 우선)
+
+- 사용자 지시로 kanu에서 GPU당 π0 하나씩 collection lane을 병렬 실행한다. GR00T 전용 슬롯 규칙은 적용하지 않는다. GPU 소유/lease와 실제 simulator device smoke를 먼저 확인한다.
+- 수집은 `--stage2_save_activations True`: QAM context 외에 전체 `[chunk, candidate, denoise, token, feature]` activation을 lossless NPZ sidecar로 저장한다. 첫 redundant token도 보존하여 원본 SAFE loader와 같은 방식으로 제거할 수 있다. episode JSON은 sidecar 완료 후 마지막으로 atomic publish한다.
+- `archive_shipper.py`는 완료 JSON을 감시하여 sidecar → JSON 순서로 승준에 전송하고 각각 크기/SHA-256을 검증한다. 작은 전송 영수증을 fsync한 뒤 동일한 로컬 파일만 삭제한다. 오류이면 로컬을 보존하고 재시도한다. 수집 중 파일·checkpoint·다른 실험은 삭제하지 않는다.
+- archive root: `/home/kimseungjun/datasets/rl2_iid_cluster_reward_20260916`; 이 아래 local repo 상대 경로가 유지된다. local staging: `outputs/rl2_iid_20260916/rollouts`.
+- 여유 디스크가 4 GiB 미만이면 다음 episode 시작을 대기한다. 전송 완료 영수증으로 lane 완료를 확인하므로 전송 후 삭제를 미수집으로 오인하지 않는다.
+- **SAFE 고정 설정/통합 CP alpha .2의 아래 학습·평가 예시는 최신 승인 설정이 아니다. 현재 `train_safe.py`/eval 기본값도 아직 초기 고정 설정이므로 그대로 본 실험에 실행하지 않는다.** 사용자 지시에 따라 원본 SAFE feature/lr/regularization/epoch sweep → ROC-AUC 기반 선택 → IID task별 CP 보정 → balanced-accuracy alpha 선택 절차를 연결한 뒤 학습한다. 평가 holdout은 선택에 사용하지 않는다. 원본 스크립트: `submit_opi0_simpler.bash`, `train_optimal_opi0_simpler.bash`, `alpha_heuristic_opi0_simpler.bash`. 전체 activation 저장은 이 탐색을 재수집 없이 가능하게 한다.
+
+```bash
+REMOTE_REPO=/home/kimseungjun/datasets/rl2_iid_cluster_reward_20260916 \
+  .venvs/rl2_iid/bin/python scripts/rl2_vla/stage2_cluster_reward/archive_shipper.py \
+  --root outputs/rl2_iid_20260916/rollouts --interval 5
+
+# 실제 소유권/빈 GPU 확인 후 --run; 초기 smoke는 별도 root와 reset 9000 사용.
+.venvs/rl2_iid/bin/python scripts/rl2_vla/stage2_cluster_reward/run_experiment.py \
+  --mode collect --rl2-root "$PWD/RL2-VLA" --python "$PWD/.venvs/rl2_iid/bin/python" \
+  --gpus 2 3 4 5 6 7 --policy "$PWD/outputs/rl2_assets/pi0_bridge" \
+  --output "$PWD/outputs/rl2_iid_20260916/rollouts" --seeds 42 0 7 --trials 100
+```
+
 ## 목적·실행 계약
 
 π0 동결, RL2-QAM flow composition, 우리가 학습한 SAFE만 사용한다. IID 네 task는 eggplant/spoon/stack cube/carrot이다. N=1, 원문 instruction, verifier 미호출, SAFE chunk별 gate, 혼합 비율 0.5, CP alpha 0.2다. phase 입력이나 OOD로 확장하지 않는다.
@@ -107,3 +128,9 @@ git diff --check
 ```
 
 Synthetic CPU smoke는 원본 QAM update와 원본 SAFE training/save/load를 검증한다. 실험 성공률로 해석하지 않는다. 실제 배포 환경에서는 먼저 task 하나·episode 하나로 π0 정규화, CPU/GPU tensor device, SAFE CP 인덱스, QAM 합성, JSON contract를 확인한다.
+
+### GPU당 모델 2개 확인 (2026-09-16)
+
+kanu A4000 GPU1에서 격리된 π0 2개 ×10판 시험을 수행했다. 두 process 모두 exit0, 20판 완료, OOM 없음. 실측 합산 사용량 약15904MiB/16376MiB로 여유는 작다. 이번 수집에서만 GPU당 최대2개를 허용하며, GR00T 규칙의 일반 확장으로 해석하지 않는다. `run_experiment.py --models-per-gpu 2`가 두 고정 worker를 GPU별로 배치한다(기본값1).
+
+진행 중이던 최초 1200판은 기존 scheduler만 SIGSTOP하여 미착수 lane 중복 발사를 방지하고, 잔여3lane(seed7 eggplant/stack/carrot)을 GPU2/3/4의 두 번째 slot에 배정했다. 기존 collector와 shipper는 계속 실행한다. `outputs/rl2_iid_20260916/setup/expand_pending.py`가 잔여lane 완료 후 기존 scheduler를 SIGCONT하며, 기존 scheduler는 동일 request/완료 결과를 확인해 skip한다. 추가 총평가량은 없으며 분리된20판 capacity smoke만 본 데이터에서 제외한다. 실제 운영PID와 로그는 같은 setup 디렉터리에 있다.

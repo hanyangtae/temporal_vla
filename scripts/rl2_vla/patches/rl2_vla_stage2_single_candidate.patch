@@ -1,8 +1,81 @@
+diff --git a/RL2_CoVer_VLA/simpler/eval_utils.py b/RL2_CoVer_VLA/simpler/eval_utils.py
+index 22a1b9e..2d0d342 100644
+--- a/RL2_CoVer_VLA/simpler/eval_utils.py
++++ b/RL2_CoVer_VLA/simpler/eval_utils.py
+@@ -82 +82,4 @@ def get_simpler_env(task, model_family):
+-    env = simpler_env.make(task, renderer_kwargs={"offscreen_only": True})
++    renderer_kwargs = {"offscreen_only": True}
++    if os.environ.get("SAPIEN_RENDER_DEVICE"):
++        renderer_kwargs["device"] = os.environ["SAPIEN_RENDER_DEVICE"]
++    env = simpler_env.make(task, renderer_kwargs=renderer_kwargs)
 diff --git a/RL2_CoVer_VLA/simpler/rl2_utils.py b/RL2_CoVer_VLA/simpler/rl2_utils.py
-index abeb9f3..2f5ee6e 100644
+index abeb9f3..036f0df 100644
 --- a/RL2_CoVer_VLA/simpler/rl2_utils.py
 +++ b/RL2_CoVer_VLA/simpler/rl2_utils.py
-@@ -172,7 +172,13 @@ def load_failure_detection_model(cfg, curr_task):
+@@ -118 +118,2 @@ def load_failure_detection_model(cfg, curr_task):
+-    input_dim = 1024   
++    input_dim = int(OmegaConf.select(failure_cfg, "input_dim", default=
++                    OmegaConf.select(failure_cfg, "dataset.dim_features", default=1024)))
+@@ -119,0 +121,7 @@ def load_failure_detection_model(cfg, curr_task):
++    failure_model.safe_input_dim = input_dim
++    failure_model.safe_horizon_idx_rel = OmegaConf.select(
++        failure_cfg, "horizon_idx_rel", default=OmegaConf.select(
++            failure_cfg, "dataset.horizon_idx_rel", default="mean"))
++    failure_model.safe_diff_idx_rel = OmegaConf.select(
++        failure_cfg, "diff_idx_rel", default=OmegaConf.select(
++            failure_cfg, "dataset.diff_idx_rel", default=0.0))
+@@ -146,12 +154,18 @@ def load_failure_detection_model(cfg, curr_task):
+-            # Task-wise format: {task_name: {alpha: cp_band}}
+-            if curr_task not in cp_band_data:
+-                available_tasks = list(cp_band_data.keys())
+-                raise ValueError(f"Task '{curr_task}' not found in CP band file. Available: {available_tasks}")
+-
+-            task_cp_data = cp_band_data[curr_task]
+-            if cfg.failure_cp_alpha not in task_cp_data:
+-                available_alphas = list(task_cp_data.keys())
+-                raise ValueError(f"Alpha={cfg.failure_cp_alpha} not found for task '{curr_task}'. Available: {available_alphas}")
+-
+-            cp_band = task_cp_data[cfg.failure_cp_alpha]
+-            print(f"Loaded task-specific CP band for '{curr_task}' with alpha={cfg.failure_cp_alpha}")
++            # New manifests use suite keys; original SAFE artifacts use widowx keys.
++            task_key = curr_task if curr_task in cp_band_data else cfg.task_suite_name
++            if task_key not in cp_band_data:
++                raise ValueError(f"Task {curr_task!r}/{cfg.task_suite_name!r} missing from CP bands")
++            selected = OmegaConf.select(failure_cfg, "selected_cp_alpha_by_task", default=None)
++            if selected is not None:
++                alpha_key = curr_task if curr_task in selected else cfg.task_suite_name
++                if alpha_key not in selected:
++                    raise ValueError(f"No selected CP alpha for task {curr_task!r}")
++                alpha = float(selected[alpha_key])
++            else:
++                alpha = float(cfg.failure_cp_alpha)
++            task_cp_data = cp_band_data[task_key]
++            if alpha not in task_cp_data:
++                raise ValueError(f"Selected alpha={alpha} missing for task {task_key!r}")
++            cp_band = task_cp_data[alpha]
++            failure_model.safe_selected_cp_alpha = alpha
++            print(f"Loaded task-specific CP band for {task_key!r} with alpha={alpha}")
+@@ -159,8 +173,8 @@ def load_failure_detection_model(cfg, curr_task):
+-            # Pooled format: {alpha: cp_band}
+-            if cfg.failure_cp_alpha not in cp_band_data:
+-                available_alphas = list(cp_band_data.keys())
+-                raise ValueError(f"CP band for alpha={cfg.failure_cp_alpha} not found. Available: {available_alphas}")
+-
+-            cp_band = cp_band_data[cfg.failure_cp_alpha]
+-            print(f"Loaded pooled CP band with alpha={cfg.failure_cp_alpha}")
+-
++            alpha = float(cfg.failure_cp_alpha)
++            if alpha not in cp_band_data:
++                raise ValueError(f"CP band for alpha={alpha} missing")
++            cp_band = cp_band_data[alpha]
++            failure_model.safe_selected_cp_alpha = alpha
++            print(f"Loaded pooled CP band with alpha={alpha}")
++
++        cp_band = np.asarray(cp_band, dtype=np.float64)
+@@ -169,0 +184,2 @@ def load_failure_detection_model(cfg, curr_task):
++        if cp_band.ndim != 1 or len(cp_band) == 0 or not np.isfinite(cp_band).all():
++            raise ValueError("CP band must be a nonempty finite vector")
+@@ -172,7 +188,13 @@ def load_failure_detection_model(cfg, curr_task):
 -        # Stretch CP band to account for cfg.n_action_steps
 -        # CP band was trained at frequency of cfg.n_action_steps, so interpolate to get all timesteps
 -        original_length = len(cp_band)
@@ -23,17 +96,17 @@ index abeb9f3..2f5ee6e 100644
 +            print(f"Stretched CP band from {original_length} to {len(cp_band)} steps (act_steps={cfg.n_action_steps})")
 +        else:
 +            raise ValueError(f"Unsupported cp_band_time_unit: {band_unit!r}")
-@@ -280 +286,2 @@ def compute_composed_actions(cfg, task_description, rephrased_list, lang_rephras
+@@ -280 +302,2 @@ def compute_composed_actions(cfg, task_description, rephrased_list, lang_rephras
 -                              processed_obs, image_key, pi0_policy, qam, action_noise_std):
 +                              processed_obs, image_key, pi0_policy, qam, action_noise_std,
 +                              hidden_states_np=None):
-@@ -352,0 +360,4 @@ def compute_composed_actions(cfg, task_description, rephrased_list, lang_rephras
+@@ -352,0 +376,4 @@ def compute_composed_actions(cfg, task_description, rephrased_list, lang_rephras
 +    elif hidden_states_np is None:
 +        raise ValueError(
 +            "hidden_states_np must be supplied when use_rephrased_latents_for_qam=False"
 +        )
 diff --git a/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py b/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py
-index 0ad35e3..a0dee23 100644
+index 0ad35e3..d668fce 100644
 --- a/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py
 +++ b/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py
 @@ -14,0 +15 @@ import itertools
@@ -41,11 +114,13 @@ index 0ad35e3..a0dee23 100644
 @@ -62,2 +62,0 @@ from lerobot.common.policies.pi0.modeling_pi0 import PI0Policy
 -# Ensemble verifier imports (installed as module via env_simpler_pi.sh)
 -from bridge_verifier.ensemble_eval import EfficientEnsembleMerged
-@@ -128,0 +128,191 @@ class GenerateConfig:
+@@ -128,0 +128,257 @@ class GenerateConfig:
 +    # Opt-in Stage 2 single-candidate rollout contract.
 +    stage2_single_candidate: bool = False
 +    stage2_rollout_dir: str = ""
 +    env_seed_start: int = 1000
++    stage2_save_activations: bool = False
++    stage2_min_free_gb: float = 4.0
 +
 +def _stage2_context(action_embeds: np.ndarray) -> list:
 +    """First candidate, denoise-0 action-token mean; shape is exactly (1024,)."""
@@ -56,6 +131,30 @@ index 0ad35e3..a0dee23 100644
 +    if context.shape != (1024,):
 +        raise ValueError(f"Expected stage2 context shape (1024,), got {context.shape}")
 +    return context.astype(np.float32).tolist()
++
++
++def _stage2_safe_feature(action_embeds, failure_model):
++    """Apply the original SAFE horizon-then-denoise transform, independently of QAM."""
++    values = np.asarray(action_embeds, dtype=np.float32)
++    if values.ndim != 4 or values.shape[0] != 1 or values.shape[2:] != (5, 1024):
++        raise ValueError(f"Expected single-candidate PI0 embeds (1,T,5,1024), got {values.shape}")
++    values = values[:, :, 1:, :]
++    for selector in (getattr(failure_model, "safe_horizon_idx_rel", "mean"),
++                     getattr(failure_model, "safe_diff_idx_rel", 0.0)):
++        if selector == "mean":
++            values = values.mean(axis=-2)
++        elif selector == "concat-2":
++            values = values[..., [0, values.shape[-2] - 1], :]
++            values = values.reshape(*values.shape[:-2], -1)
++        elif isinstance(selector, (int, float)) and 0 <= selector <= 1:
++            values = values[..., round((values.shape[-2] - 1) * selector), :]
++        else:
++            raise ValueError(f"Unsupported SAFE feature selector: {selector!r}")
++    feature = values[0].reshape(-1)
++    expected = getattr(failure_model, "safe_input_dim", 1024)
++    if feature.shape != (expected,) or not np.isfinite(feature).all():
++        raise ValueError(f"SAFE feature mismatch: got {feature.shape}, expected ({expected},)")
++    return feature
 +
 +
 +def _atomic_write_stage2_episode(path: Path, payload: dict) -> None:
@@ -78,6 +177,36 @@ index 0ad35e3..a0dee23 100644
 +    finally:
 +        if tmp_path.exists():
 +            tmp_path.unlink()
++
++
++def _stage2_save_activation_file(path: Path, features: list) -> dict:
++    import hashlib
++    path.parent.mkdir(parents=True, exist_ok=True)
++    tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
++    try:
++        values = np.stack(features)
++        if values.ndim != 5 or not np.isfinite(values).all():
++            raise ValueError("Activation archive must be finite [chunks,N,denoise,tokens,features]")
++        with tmp.open("xb") as handle:
++            np.savez_compressed(handle, action_embeds=values)
++            handle.flush()
++            os.fsync(handle.fileno())
++        digest = hashlib.sha256(tmp.read_bytes()).hexdigest()
++        size = tmp.stat().st_size
++        os.link(tmp, path)
++        return {"path": path.name, "sha256": digest, "size_bytes": size,
++                "shape": list(values.shape), "dtype": str(values.dtype),
++                "includes_redundant_first_token": True}
++    finally:
++        tmp.unlink(missing_ok=True)
++
++
++def _stage2_wait_for_space(path: Path, minimum_gb: float) -> None:
++    import shutil
++    path.mkdir(parents=True, exist_ok=True)
++    while shutil.disk_usage(path).free < minimum_gb * 1024**3:
++        print(f"Waiting for archive transfer: less than {minimum_gb} GiB free", flush=True)
++        time.sleep(15)
 +
 +
 +def _stage2_should_compose(use_failure_prediction: bool, safe_trigger: bool, composed_samples: int) -> bool:
@@ -123,6 +252,9 @@ index 0ad35e3..a0dee23 100644
 +            raise NotImplementedError
 +        for eps_idx in tqdm.tqdm(range(cfg.num_trials_per_task)):
 +            env_seed = cfg.env_seed_start + eps_idx
++            if getattr(cfg, "stage2_save_activations", False):
++                _stage2_wait_for_space(rollout_root, cfg.stage2_min_free_gb)
++            episode_activations = []
 +            episode_started = time.monotonic()
 +            obs, _ = env.reset(seed=env_seed)
 +            chunks, raw_queue, env_queue = [], deque(), deque()
@@ -153,9 +285,12 @@ index 0ad35e3..a0dee23 100644
 +                            output_queue.clear()
 +                        if len(vanilla_queue) != cfg.n_action_steps:
 +                            raise ValueError(f"PI0 returned {len(vanilla_queue)} actions, expected 4")
++                        if getattr(cfg, "stage2_save_activations", False):
++                            episode_activations.append(np.asarray(action_embeds).copy())
 +                        context = _stage2_context(action_embeds)
 +                        hidden_states_device = next(failure_model.parameters()).device if failure_model is not None else torch.device("cpu")
-+                        hidden_states = torch.as_tensor(context, dtype=torch.float32, device=hidden_states_device)
++                        safe_feature = _stage2_safe_feature(action_embeds, failure_model) if failure_model is not None else context
++                        hidden_states = torch.as_tensor(safe_feature, dtype=torch.float32, device=hidden_states_device)
 +                        safe_trigger = False
 +                        failure_probability = failure_threshold = None
 +                        if cfg.use_failure_prediction:
@@ -227,23 +362,27 @@ index 0ad35e3..a0dee23 100644
 +                    "elapsed_seconds": float(time.monotonic() - episode_started),
 +                    "chunks": chunks,
 +                }
++                if getattr(cfg, "stage2_save_activations", False):
++                    payload["activation_file"] = _stage2_save_activation_file(
++                        rollout_root / f"episode_task{task_idx}_env{env_seed}_policy{cfg.seed}.npz",
++                        episode_activations)
 +                _atomic_write_stage2_episode(
 +                    rollout_root / f"episode_task{task_idx}_env{env_seed}_policy{cfg.seed}.json", payload)
 +            except Exception:
 +                raise
 +
 +
-@@ -201,0 +392,5 @@ def eval_simpler(cfg: GenerateConfig) -> None:
+@@ -201,0 +458,5 @@ def eval_simpler(cfg: GenerateConfig) -> None:
 +
 +    task_suite = get_benchmark(cfg.task_suite_name)()
 +    if cfg.stage2_single_candidate:
 +        _eval_stage2_single_candidate(cfg, pi0_policy, task_suite)
 +        return
-@@ -204,0 +400 @@ def eval_simpler(cfg: GenerateConfig) -> None:
+@@ -204,0 +466 @@ def eval_simpler(cfg: GenerateConfig) -> None:
 +        from bridge_verifier.ensemble_eval import EfficientEnsembleMerged
-@@ -215 +410,0 @@ def eval_simpler(cfg: GenerateConfig) -> None:
+@@ -215 +476,0 @@ def eval_simpler(cfg: GenerateConfig) -> None:
 -    task_suite = get_benchmark(cfg.task_suite_name)()
-@@ -513,0 +709,3 @@ def eval_simpler(cfg: GenerateConfig) -> None:
+@@ -513,0 +775,3 @@ def eval_simpler(cfg: GenerateConfig) -> None:
 +                            hidden_states_np=(hidden_states_last_token.detach().cpu().numpy()[None, :]
 +                                               if cfg.use_failure_prediction and not cfg.use_rephrased_latents_for_qam
 +                                               else None),
