@@ -21,7 +21,7 @@ def main():
     ap.add_argument('--manifest', type=Path, required=True)
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--threads', type=int, default=8)
-    ap.add_argument('--modes', nargs='+', choices=['phase_ck8','first_event_prefix','phase_gt'],
+    ap.add_argument('--modes', nargs='+', choices=['phase_ck8','first_event_prefix','phase_gt','min_success_prefix'],
                     default=['phase_ck8','first_event_prefix'])
     a = ap.parse_args()
     import numpy as np
@@ -78,7 +78,8 @@ def main():
                 fit=[e for e in fit if e is not None]
                 assert len({e.y for e in fit})==2
             else:
-                n=prefix_count(cutoff,c['action_steps'])
+                n=(min(e.T for e in tr if e.succ==1) if mode=='min_success_prefix'
+                   else prefix_count(cutoff,c['action_steps']))
                 fit=[det.Episode(e.task,e.ep_id,e.scene,e.noise,e.succ,
                      np.ascontiguousarray(e.X[:n]),np.ascontiguousarray(e.phase[:n]),jitter=e.jitter) for e in tr]
                 assert all(0<e.T<=n for e in fit)
@@ -100,7 +101,10 @@ def main():
                     T=e.T,scores=sc.tolist(),threshold=band['delta'].tolist()))
             out=dict(cell=c['cell_id'],mode=mode,manifest_sha256=hashlib.sha256(a.manifest.read_bytes()).hexdigest(),
                      train_ep_ids=[e.ep_id for e in tr],test_ep_ids=[e.ep_id for e in te],
-                     training_records={str(e.ep_id):e.T for e in fit},cutoff_env_step=cutoff,
+                     training_records={str(e.ep_id):e.T for e in fit},
+                     cutoff_env_step=(n*c['action_steps'] if mode=='min_success_prefix' else cutoff),
+                     prefix_records=(n if mode in ('min_success_prefix','first_event_prefix') else None),
+                     cutoff_source=('minimum training-success record count' if mode=='min_success_prefix' else 'training first event or phase dwell'),
                      phase_caps={str(k):v for k,v in caps.items()},dropped_episode_ids=dropped,
                      unsupported_phase_records=unsupported_records,
                      phase_gt_policy='production phase-gt: discard phases absent in train successes; drop sequences shorter than 2',
