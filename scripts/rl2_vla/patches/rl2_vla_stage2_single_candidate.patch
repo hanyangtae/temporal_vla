@@ -1,3 +1,15 @@
+diff --git a/README.md b/README.md
+index 71d8135..7555079 100644
+--- a/README.md
++++ b/README.md
+@@ -213,0 +214,7 @@ If you intend to use our work in your research, please cite the following public
++
++### Local paired evaluation contract
++
++이 workspace의 RL2 개입 비교/회귀 테스트는
++[paired eval 주의사항](../scripts/rl2_vla/PAIRED_EVAL.md)을 따른다.
++Episode 및 policy/intervention 난수 흐름을 분리하고, 최초 개입 전 action 일치와
++무개입 episode의 결과 일치를 검증한 뒤 구제/파괴 효과를 집계한다.
 diff --git a/RL2_CoVer_VLA/simpler/eval_utils.py b/RL2_CoVer_VLA/simpler/eval_utils.py
 index 22a1b9e..2d0d342 100644
 --- a/RL2_CoVer_VLA/simpler/eval_utils.py
@@ -106,17 +118,21 @@ index abeb9f3..036f0df 100644
 +            "hidden_states_np must be supplied when use_rephrased_latents_for_qam=False"
 +        )
 diff --git a/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py b/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py
-index 0ad35e3..6cfd68c 100644
+index 0ad35e3..a9b27cc 100644
 --- a/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py
 +++ b/RL2_CoVer_VLA/simpler/run_simpler_eval_with_openpi.py
-@@ -14,0 +15 @@ import itertools
+@@ -14,0 +15,4 @@ import itertools
++import contextlib
++import hashlib
++import random
 +import json
-@@ -62,2 +62,0 @@ from lerobot.common.policies.pi0.modeling_pi0 import PI0Policy
+@@ -62,2 +65,0 @@ from lerobot.common.policies.pi0.modeling_pi0 import PI0Policy
 -# Ensemble verifier imports (installed as module via env_simpler_pi.sh)
 -from bridge_verifier.ensemble_eval import EfficientEnsembleMerged
-@@ -128,0 +128,260 @@ class GenerateConfig:
+@@ -128,0 +131,330 @@ class GenerateConfig:
 +    # Opt-in Stage 2 single-candidate rollout contract.
 +    stage2_single_candidate: bool = False
++    stage2_force_gate_off: bool = False  # diagnostic; never use for policy performance
 +    stage2_rollout_dir: str = ""
 +    env_seed_start: int = 1000
 +    stage2_save_activations: bool = False
@@ -212,6 +228,51 @@ index 0ad35e3..6cfd68c 100644
 +        time.sleep(15)
 +
 +
++def _stage2_hash(value):
++    """Hash typed tensor/array/nested observation contents, never object addresses."""
++    h = hashlib.sha256()
++    def visit(x):
++        if isinstance(x, torch.Tensor):
++            x = x.detach().cpu().contiguous().numpy()
++        if isinstance(x, np.ndarray):
++            h.update(str(x.dtype).encode())
++            h.update(json.dumps(list(x.shape)).encode())
++            h.update(np.ascontiguousarray(x).tobytes())
++        elif isinstance(x, dict):
++            for k in sorted(x):
++                h.update(json.dumps(k).encode()); visit(x[k])
++        elif isinstance(x, (list, tuple)):
++            h.update(str(len(x)).encode())
++            for v in x: visit(v)
++        else:
++            h.update(json.dumps(x.item() if isinstance(x, np.generic) else x).encode())
++    visit(value)
++    return h.hexdigest()
++
++
++def _stage2_seed(task, env_seed, policy_seed, stream, step=0):
++    """Stable coordinate seed; independent of arm, worker, and preceding episodes."""
++    key = json.dumps(["paired_rng_v2", task, int(env_seed), int(policy_seed), stream, int(step)],
++                     separators=(",", ":")).encode()
++    return int.from_bytes(hashlib.sha256(key).digest()[:4], "little")
++
++
++@contextlib.contextmanager
++def _stage2_rng(seed):
++    """Isolate Python, NumPy and Torch RNG, including visible CUDA devices."""
++    py_state, np_state = random.getstate(), np.random.get_state()
++    devices = list(range(torch.cuda.device_count())) if torch.cuda.is_available() else []
++    try:
++        with torch.random.fork_rng(devices=devices):
++            random.seed(seed)
++            np.random.seed(seed)
++            torch.manual_seed(seed)
++            yield
++    finally:
++        random.setstate(py_state)
++        np.random.set_state(np_state)
++
++
 +def _stage2_should_compose(use_failure_prediction: bool, safe_trigger: bool, composed_samples: int) -> bool:
 +    return bool(use_failure_prediction and safe_trigger and composed_samples > 0)
 +
@@ -246,6 +307,7 @@ index 0ad35e3..6cfd68c 100644
 +        task = task_suite.get_task(task_idx)
 +        env = get_simpler_env(task, cfg.model_family)
 +        task_description = env.get_language_instruction()
++        env.close()  # discovery only; never reuse a simulation scene across episodes
 +        curr_task = SAFE_TASK_MAP_DICT.get(task_description, cfg.task_suite_name)
 +        failure_model = cp_band = None
 +        if cfg.use_failure_prediction:
@@ -259,6 +321,10 @@ index 0ad35e3..6cfd68c 100644
 +                _stage2_wait_for_space(rollout_root, cfg.stage2_min_free_gb)
 +            episode_activations = []
 +            episode_started = time.monotonic()
++            episode_rng_seed = _stage2_seed(cfg.task_suite_name, env_seed, cfg.seed, "episode")
++            set_seed_everywhere(episode_rng_seed)
++            env = get_simpler_env(task, cfg.model_family)
++            preprocess_adapter = create_bridge_adapter_wrapper(cfg.action_ensemble_temp)
 +            obs, _ = env.reset(seed=env_seed)
 +            chunks, raw_queue, env_queue = [], deque(), deque()
 +            current_chunk = None
@@ -280,10 +346,18 @@ index 0ad35e3..6cfd68c 100644
 +                        observation = {image_key: processed_obs["observation.images.top"],
 +                                       "observation.state": processed_obs["observation.state"],
 +                                       "task": [task_description]}
-+                        with torch.no_grad():
++                        input_hashes = {"raw_observation": _stage2_hash(obs),
++                                        "model_observation": _stage2_hash(observation)}
++                        state_fn = getattr(env.unwrapped, "get_state", None)
++                        if callable(state_fn):
++                            input_hashes["simulator_state"] = _stage2_hash(state_fn())
++                        with _stage2_rng(_stage2_seed(cfg.task_suite_name, env_seed, cfg.seed, "policy", t)), torch.no_grad():
 +                            pi0_policy.reset()
++                            policy_noise = pi0_policy.model.sample_noise(
++                                (1, pi0_policy.model.config.chunk_size, pi0_policy.model.config.max_action_dim),
++                                policy_device, noise_std=1.0)
 +                            output_queue, action_embeds = pi0_policy.select_action(
-+                                observation, noise_std=1.0, return_action_embeds=True)
++                                observation, noise=policy_noise, noise_std=1.0, return_action_embeds=True)
 +                            vanilla_queue = deque(list(output_queue)[:cfg.n_action_steps])
 +                            output_queue.clear()
 +                        if len(vanilla_queue) != cfg.n_action_steps:
@@ -302,20 +376,23 @@ index 0ad35e3..6cfd68c 100644
 +                                failure_model=failure_model, cp_band=cp_band,
 +                                timestep=t, all_features=all_features)
 +                            failure_threshold = float(cp_band[min(t, len(cp_band) - 1)])
++                        if getattr(cfg, "stage2_force_gate_off", False):
++                            safe_trigger = False
 +                        selected_queue = vanilla_queue
 +                        if _stage2_should_compose(cfg.use_failure_prediction, safe_trigger, cfg.composed_samples):
 +                            old_rephrased = cfg.use_rephrased_latents_for_qam
 +                            cfg.use_rephrased_latents_for_qam = False
 +                            try:
-+                                _, composed_queue, _ = compute_composed_actions(
-+                                    cfg=cfg, task_description=task_description,
-+                                    rephrased_list=None, lang_rephrase_num=1,
-+                                    composed_samples=cfg.composed_samples,
-+                                    processed_obs=processed_obs, image_key=image_key,
-+                                    pi0_policy=pi0_policy, qam=qam,
-+                                    action_noise_std=1.0,
-+                                    hidden_states_np=np.asarray(context, dtype=np.float32)[None, :],
-+                                )
++                                with _stage2_rng(_stage2_seed(cfg.task_suite_name, env_seed, cfg.seed, "intervention", t)):
++                                    _, composed_queue, _ = compute_composed_actions(
++                                        cfg=cfg, task_description=task_description,
++                                        rephrased_list=None, lang_rephrase_num=1,
++                                        composed_samples=cfg.composed_samples,
++                                        processed_obs=processed_obs, image_key=image_key,
++                                        pi0_policy=pi0_policy, qam=qam,
++                                        action_noise_std=1.0,
++                                        hidden_states_np=np.asarray(context, dtype=np.float32)[None, :],
++                                    )
 +                            finally:
 +                                cfg.use_rephrased_latents_for_qam = old_rephrased
 +                            selected_queue = deque(list(composed_queue)[:cfg.n_action_steps])
@@ -339,6 +416,10 @@ index 0ad35e3..6cfd68c 100644
 +                            "train_actions": normalized_actions.tolist(), "executed_actions": [],
 +                            "step_success": [], "step_reward": [], "step_truncated": [],
 +                            "start_step": t, "safe_trigger": bool(safe_trigger),
++                            "input_hashes": input_hashes,
++                            "policy_noise_sha256": _stage2_hash(policy_noise),
++                            "proposed_actions_sha256": _stage2_hash(proposed_actions),
++                            "executed_action_sha256": [],
 +                        }
 +                        if failure_probability is not None:
 +                            current_chunk["failure_probability"] = float(failure_probability)
@@ -348,6 +429,7 @@ index 0ad35e3..6cfd68c 100644
 +                    action_for_env = _stage2_next_action(env_queue).copy()
 +                    obs, reward, done, trunc, _ = env.step(action_for_env)
 +                    current_chunk["executed_actions"].append(action_for_env.tolist())
++                    current_chunk["executed_action_sha256"].append(_stage2_hash(action_for_env))
 +                    current_chunk["step_success"].append(bool(done))
 +                    current_chunk["step_reward"].append(float(reward))
 +                    current_chunk["step_truncated"].append(bool(trunc))
@@ -358,6 +440,9 @@ index 0ad35e3..6cfd68c 100644
 +                    "episode_id": f"{cfg.task_suite_name}/env{env_seed}/policy{cfg.seed}",
 +                    "reset_id": f"{cfg.task_suite_name}/env{env_seed}",
 +                    "policy_seed": cfg.seed, "env_seed": env_seed,
++                    "environment_contract": "fresh_env_per_episode_v1",
++                    "rng_contract": "paired_rng_v2", "episode_rng_seed": episode_rng_seed,
++                    "force_gate_off": bool(getattr(cfg, "stage2_force_gate_off", False)),
 +                    "success": bool(done), "end_reason": end_reason,
 +                    "feature_contract": "pi0_denoise0_action_mean_1024",
 +                    "action_contract": "pi0_normalize_targets_executed_v1",
@@ -371,21 +456,21 @@ index 0ad35e3..6cfd68c 100644
 +                        episode_activations)
 +                _atomic_write_stage2_episode(
 +                    rollout_root / f"episode_task{task_idx}_env{env_seed}_policy{cfg.seed}.json", payload)
-+            except Exception:
-+                raise
++            finally:
++                env.close()
 +
 +
-@@ -201,0 +461,5 @@ def eval_simpler(cfg: GenerateConfig) -> None:
+@@ -201,0 +534,5 @@ def eval_simpler(cfg: GenerateConfig) -> None:
 +
 +    task_suite = get_benchmark(cfg.task_suite_name)()
 +    if cfg.stage2_single_candidate:
 +        _eval_stage2_single_candidate(cfg, pi0_policy, task_suite)
 +        return
-@@ -204,0 +469 @@ def eval_simpler(cfg: GenerateConfig) -> None:
+@@ -204,0 +542 @@ def eval_simpler(cfg: GenerateConfig) -> None:
 +        from bridge_verifier.ensemble_eval import EfficientEnsembleMerged
-@@ -215 +479,0 @@ def eval_simpler(cfg: GenerateConfig) -> None:
+@@ -215 +552,0 @@ def eval_simpler(cfg: GenerateConfig) -> None:
 -    task_suite = get_benchmark(cfg.task_suite_name)()
-@@ -513,0 +778,3 @@ def eval_simpler(cfg: GenerateConfig) -> None:
+@@ -513,0 +851,3 @@ def eval_simpler(cfg: GenerateConfig) -> None:
 +                            hidden_states_np=(hidden_states_last_token.detach().cpu().numpy()[None, :]
 +                                               if cfg.use_failure_prediction and not cfg.use_rephrased_latents_for_qam
 +                                               else None),

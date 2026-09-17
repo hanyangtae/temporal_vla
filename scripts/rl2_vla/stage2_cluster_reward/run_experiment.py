@@ -161,10 +161,16 @@ def main():
     p.add_argument('--qam-original')
     p.add_argument('--qam-base')
     p.add_argument('--qam-shaped')
+    p.add_argument('--eval-arms', nargs='+', choices=['vanilla','qam_original','qam_base','qam_shaped'], default=['vanilla','qam_original','qam_base','qam_shaped'])
+    p.add_argument('--force-gate-off', action='store_true', help='Diagnostic only; record forced gate-off in every episode')
     p.add_argument('--manifest')
     p.add_argument('--training-cache')
     p.add_argument('--run', action='store_true')
     args = p.parse_args()
+    if len(set(args.eval_arms)) != len(args.eval_arms):
+        p.error('duplicate evaluation arms')
+    if args.force_gate_off and args.mode != 'eval':
+        p.error('gate-off diagnostic is evaluation only')
     if len(set(args.tasks)) != len(args.tasks):
         p.error('--tasks must not contain duplicates')
     if args.gpus and len(set(args.gpus)) != len(args.gpus):
@@ -203,7 +209,8 @@ def main():
             raise ValueError('different QAM initializations')
         if flags[0]['initial_checkpoint_sha256'] != sha256(args.qam_original):
             raise ValueError('original QAM differs from C/D initialization')
-        arms = [('vanilla',None),('qam_original',args.qam_original),('qam_base',args.qam_base),('qam_shaped',args.qam_shaped)]
+        choices = dict(vanilla=None,qam_original=args.qam_original,qam_base=args.qam_base,qam_shaped=args.qam_shaped)
+        arms = [(name,choices[name]) for name in args.eval_arms]
     else:
         arms = [('collect',None)]
     jobs = []
@@ -222,13 +229,15 @@ def main():
                     '--use_failure_prediction','True' if checkpoint else 'False',
                     '--use_rephrased_latents_for_qam','False','--merge_rel_weight','0.5',
                     '--num_steps_wait','0','--n_action_steps','4']
+                if args.force_gate_off:
+                    cmd += ['--stage2_force_gate_off', 'True']
                 if args.mode == 'collect':
                     cmd += ['--stage2_save_activations', 'True']
                 if checkpoint:
                     cmd += ['--qam_ckpt',str(Path(checkpoint).resolve()),'--failure_checkpoint_dir',str(safe),
                             '--failure_cp_alpha','0.2','--use_taskwise_cp_band','True']
                 print(json.dumps({'arm':arm,'task':task,'seed':seed,'command':cmd}), flush=True)
-                request = dict(command=cmd, policy=args.policy,
+                request = dict(command=cmd, policy=args.policy, rng_contract="paired_rng_v2", environment_contract="fresh_env_per_episode_v1",
                                safe_sha256=sha256(safe/'provenance.json') if checkpoint else None,
                                qam_sha256=sha256(checkpoint) if checkpoint else None)
                 jobs.append((lane, cmd, request, seed))

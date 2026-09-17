@@ -1,5 +1,8 @@
 """Execute the actual opt-in loop with a fake simulator and real CPU tensors."""
 import ast
+import contextlib
+import hashlib
+import random
 from collections import deque
 import json
 import os
@@ -25,12 +28,19 @@ def test_actual_loop_records_only_executed_actions(tmp_path,stop_at,gated):
     class Env:
         def __init__(self): self.actions=[]
         def reset(self,seed): self.seed=seed; return {},{}
+        @property
+        def unwrapped(self): return self
+        def close(self): self.closed=True
+        def get_state(self): return np.zeros(2)
         def get_language_instruction(self): return 'test'
         def step(self,a):
             self.actions.append(a)
             return {},0., bool(stop_at and len(self.actions)==stop_at),False,{}
-    env=Env()
+    envs=[]
+    def new_env(*_):
+        env=Env();envs.append(env);return env
     class Policy:
+        model=SimpleNamespace(config=SimpleNamespace(chunk_size=4,max_action_dim=7),sample_noise=lambda shape,device,noise_std:torch.randn(shape,device=device))
         config=SimpleNamespace(device='cpu',image_features={'observation.images.top':None})
         def reset(self): pass
         def normalize_targets(self,b): return b
@@ -46,9 +56,9 @@ def test_actual_loop_records_only_executed_actions(tmp_path,stop_at,gated):
         assert kw['hidden_states_last_token'].device==next(kw['failure_model'].parameters()).device
         kw['all_features'].append(kw['hidden_states_last_token'])
         return (.9,kw['timestep']==0)
-    namespace=dict(np=np,torch=torch,deque=deque,Path=Path,os=os,json=json,time=time,
+    namespace=dict(contextlib=contextlib,hashlib=hashlib,random=random,set_seed_everywhere=lambda s:(random.seed(s),np.random.seed(s),torch.manual_seed(s)),np=np,torch=torch,deque=deque,Path=Path,os=os,json=json,time=time,
         GenerateConfig=SimpleNamespace,tqdm=SimpleNamespace(tqdm=lambda it:it),
-        create_bridge_adapter_wrapper=lambda _:adapter,get_simpler_env=lambda *_:env,
+        create_bridge_adapter_wrapper=lambda _:adapter,get_simpler_env=new_env,
         get_image_from_maniskill2_obs_dict=lambda *_:np.zeros((2,2,3)),
         SAFE_TASK_MAP_DICT={},QAMInference=lambda **_:object(),
         load_failure_detection_model=lambda *_:(torch.nn.Linear(1024,1),np.full(150,.5)),
@@ -58,24 +68,30 @@ def test_actual_loop_records_only_executed_actions(tmp_path,stop_at,gated):
     cfg=SimpleNamespace(stage2_save_activations=True,stage2_min_free_gb=0,use_verifier=False,use_verifier_always=False,lang_transform_type='no_transform',num_steps_wait=0,
         action_samples_prefail=1,action_samples=1,lang_rephrase_num_prefail=1,lang_rephrase_num=1,composed_samples_prefail=0,
         composed_samples=int(gated),n_action_steps=4,stage2_rollout_dir=str(tmp_path),action_ensemble_temp=-.8,
-        qam_ckpt='fake',task_suite_name='simpler_spoon_on_towel',model_family='openvla',num_trials_per_task=1,
+        qam_ckpt='fake',task_suite_name='simpler_spoon_on_towel',model_family='openvla',num_trials_per_task=2,
         env_seed_start=10000,seed=42,use_failure_prediction=gated,use_rephrased_latents_for_qam=False,pretrained_checkpoint='synthetic')
     suite=SimpleNamespace(n_tasks=1,get_task=lambda _: 'test')
     namespace['_eval_stage2_single_candidate'](cfg,Policy(),suite)
-    files=list(tmp_path.glob('episode_*.json')); assert len(files)==1
+    files=sorted(tmp_path.glob('episode_*.json')); assert len(files)==2
+    assert len(envs)==3 and all(e.closed for e in envs)
+    assert len({id(e) for e in envs})==3
+    env=envs[-1]
     e=load_episode(files[0]); n=stop_at or 150
     assert sum(len(c['executed_actions']) for c in e['chunks'])==n
     assert len(env.actions)==n
     assert env.actions[0][0]==(10 if gated else 0)
     assert env.actions[1][0]==(11 if gated else 1)
     if gated:
-        assert len(calls)==1 and calls[0].shape==(1,1024)
+        assert len(calls)==2 and calls[0].shape==(1,1024)
         assert env.actions[4][0]==0  # gate clears; no latch
     else:
         assert not calls
     assert e['elapsed_seconds']>=0
+    assert e['environment_contract']=='fresh_env_per_episode_v1'
+    assert len(e['chunks'][0]['policy_noise_sha256'])==64
+    assert 'simulator_state' in e['chunks'][0]['input_hashes']
+    assert len(e['chunks'][0]['executed_action_sha256'])==len(e['chunks'][0]['executed_actions'])
 
-    import hashlib
     sidecar=tmp_path/e['activation_file']['path']
     assert hashlib.sha256(sidecar.read_bytes()).hexdigest()==e['activation_file']['sha256']
     with np.load(sidecar) as archive:

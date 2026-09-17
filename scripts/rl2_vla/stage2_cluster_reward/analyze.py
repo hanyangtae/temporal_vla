@@ -8,6 +8,44 @@ import numpy as np
 from data import TASKS, load_episode
 
 
+def validate_paired_rng(arms):
+    """Fail closed before interpreting outcome flips as intervention effects."""
+    baseline = arms['vanilla']
+    for name, episodes in arms.items():
+        if set(episodes) != set(baseline):
+            raise ValueError(f'unpaired/missing episodes in {name}')
+        for key, ep in episodes.items():
+            base = baseline[key]
+            if ep.get('rng_contract') != 'paired_rng_v2' or base.get('rng_contract') != 'paired_rng_v2':
+                raise ValueError(f'legacy/unverified RNG contract: {name}/{key}')
+            for field in ('task_id', 'reset_id', 'env_seed', 'policy_seed', 'episode_rng_seed',
+                          'policy_checkpoint', 'action_contract', 'feature_contract'):
+                if field not in ep or field not in base or ep[field] != base[field]:
+                    raise ValueError(f'paired metadata mismatch {field}: {name}/{key}')
+            if ep.get('environment_contract') != base.get('environment_contract'):
+                raise ValueError(f'environment contract mismatch: {name}/{key}')
+            # Require identical observations' latents/actions until first intervention.
+            triggered = False
+            for a, b in zip(ep['chunks'], base['chunks']):
+                if ep.get('environment_contract') == 'fresh_env_per_episode_v1':
+                    for field in ('input_hashes', 'policy_noise_sha256'):
+                        if field not in a or field not in b or a[field] != b[field]:
+                            raise ValueError(f'pre-intervention {field} mismatch: {name}/{key}/step{a["start_step"]}')
+                if a['start_step'] != b['start_step'] or not np.array_equal(a['context'], b['context']):
+                    raise ValueError(f'pre-intervention context mismatch: {name}/{key}')
+                if a['safe_trigger']:
+                    triggered = True
+                    break
+                for field in ('context', 'proposed_actions', 'executed_actions'):
+                    if a['start_step'] != b['start_step'] or not np.array_equal(a[field], b[field]):
+                        raise ValueError(f'pre-intervention {field} mismatch: {name}/{key}')
+            if not triggered:
+                if any(c['safe_trigger'] for c in ep['chunks']):
+                    raise ValueError(f'baseline ended before intervention: {name}/{key}')
+                if len(ep['chunks']) != len(base['chunks']) or ep['success'] != base['success']:
+                    raise ValueError(f'nonintervention outcome/length mismatch: {name}/{key}')
+
+
 def summarize(arms, bootstraps=2000):
     names = ('vanilla','qam_original','qam_base','qam_shaped')
     baseline = arms['vanilla']
@@ -65,6 +103,7 @@ def main():
             if ep['episode_id'] in arms[name]:
                 raise ValueError(f'duplicate {name}/{ep["episode_id"]}')
             arms[name][ep['episode_id']] = ep
+    validate_paired_rng(arms)
     Path(args.output).write_text(json.dumps(summarize(arms),indent=2))
 
 
