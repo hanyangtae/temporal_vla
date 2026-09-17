@@ -43,6 +43,7 @@ def main():
     p.add_argument('--repo', type=Path, default=Path(__file__).resolve().parents[3])
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--reuse-root', type=Path, required=True)
+    p.add_argument('--gpus', nargs='+', type=int, default=[2,3,4])
     p.add_argument('--run', action='store_true')
     args = p.parse_args()
     root, out, reuse = args.repo.resolve(), args.output.resolve(), args.reuse_root.resolve()
@@ -106,7 +107,7 @@ def main():
             rows=subprocess.check_output(['nvidia-smi','--query-gpu=index,memory.used','--format=csv,noheader,nounits'],text=True).splitlines()
             for row in rows:
                 gpu,mem=map(int,row.split(','))
-                if gpu not in (2,3,4) or gpu in claimed or mem>64:continue
+                if gpu not in args.gpus or gpu in claimed or mem>64:continue
                 rc=subprocess.run(['bash','scripts/utils/gpu_lease.sh','claim','kanu',str(gpu),owner,'full paired RL2 evaluation','24'],cwd=root,env=dict(os.environ,LEASE_MODEL='rl2',LEASE_PID=str(os.getpid()))).returncode
                 if rc==0:claimed.append(gpu)
             if claimed:return list(map(str,claimed))
