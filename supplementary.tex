@@ -1,0 +1,940 @@
+\documentclass[letterpaper,10pt,onecolumn]{IEEEtran}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{multirow}
+\usepackage{placeins}
+\usepackage{longtable}
+\usepackage{xcolor}
+\usepackage{framed}
+\usepackage{fancyvrb}
+\usepackage{amsthm}
+\newtheorem{theorem}{Theorem}
+\definecolor{shadecolor}{RGB}{245,245,245}
+\newcommand{\quotes}[1]{``#1''}
+\graphicspath{{figs/}}
+
+
+\begin{document}
+\title{Appendix for\\
+\quotes{Adaptive Time-aware Task Planning with LLMs for Efficient Execution under Uncertainty}}
+\author{Anonymous Author}
+\maketitle
+\setcounter{tocdepth}{2}
+\tableofcontents
+\newpage
+\section{Implementation Details}
+\label{supp:prompt}
+
+\subsection{Prompt Template}
+The following prompt template is used to construct the initial tDAG.
+It specifies the robot capabilities, environment context, subtask-decomposition
+guidelines, temporal-constraint inference rules, and JSON output format. The full prompt files are provided in the anonymous repository.
+\begin{shaded}
+\begin{Verbatim}[fontsize=\small, commandchars=\\\{\}]
+You are a household robot task planner for an AI2-THOR or physical
+robot environment. Given a natural-language instruction and an
+environment context, decompose the instruction into Tasks and Subtasks.
+\textcolor{blue}{[ROBOT CAPABILITIES]}
+Use only the following primitive actions:
+GRASP, PLACE, OPEN, CLOSE, SLICE, NAVIGATE_TO, WAIT,
+TOGGLE_ON, TOGGLE_OFF, MONITOR.
+\textcolor{blue}{[ENVIRONMENT CONTEXT]}
+The environment context lists available object instances and the
+primitive actions permitted for each object. Use only objects and
+object-action pairs that appear in this context.
+\textcolor{blue}{[SUBTASK DECOMPOSITION GUIDELINES]}
+1. Decompose each instruction into independently meaningful subtasks.
+2. Each subtask must be executable as a sequence of primitive actions.
+3. Do not invent objects, locations, or primitive actions.
+4. Use exact object names from the environment context.
+5. Insert temporal constraints only when the relation is necessary
+   for task success or explicitly implied by the instruction.
+\textcolor{blue}{[TEMPORAL CONSTRAINT INFERENCE]}
+Classify temporal relations as:
+- Simple precedence: one subtask should occur before another, but
+  no strict time-critical interval is required.
+- Time-critical interval: the successor subtask must start after a
+  specified interval and timing errors may cause task failure, e.g.,
+  overcooking, undercooking, overflow, or delayed unloading.
+\textcolor{blue}{[OUTPUT FORMAT]}
+Return only a JSON array that follows the schema below.
+\end{Verbatim}
+\begin{Verbatim}
+[
+  {
+    "Task": "<main task name>",
+    "Subtasks": [
+      {
+        "Name": "<subtask name>",
+        "Repetition": <integer>,
+        "Type": "Interaction",
+        "Executions": {
+          "Objects": {
+            "<object name from environment context>": <integer>
+          },
+          "PrimitiveActions": [
+            "<primitive action>",
+            "..."
+          ]
+        },
+        "Duration": {
+          "Type": "Controllable",
+          "Interval": <integer>
+        },
+        "TemporalConstraints": [
+          {
+            "Type": "<Before | After>",
+            "Subtask": "<related subtask name>",
+            "Interval": <integer>,
+            "Urgency": <true | false>
+          }
+        ]
+      }
+    ]
+  }
+]
+\end{Verbatim}
+\end{shaded}
+% The field \texttt{TemporalConstraints.Interval} specifies the interval $\Delta_{ij}$ associated with an edge from $T_i$ to $T_j$. When \texttt{Urgency} is true, the edge is treated as time-critical and $t_i^{\mathrm{end}}+\Delta_{ij}$ becomes the target start time of $T_j$. Otherwise, the interval specifies the earliest allowable start time. In the reported experiments, a time-critical constraint is considered satisfied when $T_j$ starts within $12.5\,\mathrm{s}$ of its target. This tolerance
+The \texttt{TemporalConstraints} field specifies the temporal relation
+between two subtasks. The \texttt{Interval} value is mapped to the
+interval $\Delta_{ij}$ of the corresponding tDAG edge $e_{ij}$.
+If \texttt{Urgency} is true, the edge is marked as time-critical and
+$t_i^{\mathrm{end}}+\Delta_{ij}$ specifies the target start time of $T_j$.
+Otherwise, it specifies the earliest allowable start time of $T_j$.
+
+
+\subsection{Hyperparameter Settings}\label{supp:hyperparams}
+Table~\ref{tab:supp_hyperparams} lists the key hyperparameters used in all
+reported experiments.
+\begin{table}[H]
+\centering
+\caption{Key hyperparameter settings used in the reported experiments.}
+\label{tab:supp_hyperparams}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Parameter} & \textbf{Value} & \textbf{Role} \\
+\midrule
+$W$, $D$ & $10$, $10$ & beam width / lookahead depth \\
+$\eta$ & $0.1$ & risk tolerance for monitoring trigger \\
+$\alpha_{\mathrm{sim}}$ & $0.001$ & observation-noise coefficient (simulation) \\
+$\alpha_{\mathrm{vlm}}$ & $0.08$ & observation-noise coefficient (real-world VLM) \\
+$\sigma_{\mathrm{floor}}^2$ & $(10\,\mathrm{s})^2$ & VLM observation variance floor \\
+$\epsilon_{\min}^2$ & $10^{-6}\,\mathrm{s}^2$ & minimum simulation observation variance \\
+$\hat{\Delta}_0$ & $\{60,80,100,120,140\}\,\mathrm{s}$ & initial prior mean \\
+$\sigma_0^2$ & $(40\,\mathrm{s})^2$ & initial belief variance \\
+$\Delta_{\mathrm{GT}}$ & $100\,\mathrm{s}$ & ground-truth interval for evaluation \\
+TCSR tolerance & $12.5\,\mathrm{s}$ & temporal-constraint evaluation tolerance \\
+LLM & GPT-4o, temperature $0$ & tDAG construction \\
+VLM & GPT-4.1, temperature $0$, 14 few-shot anchors & real-world progress estimation \\
+\bottomrule
+\end{tabular}
+\end{table}
+\subsection{Observation Model Settings}
+We use environment-specific observation models under the Gaussian likelihood
+$o_k\mid\Delta\sim\mathcal{N}(\Delta,\epsilon_k^2)$. Let
+$e_k=t_k-t_i^{\mathrm{end}}$ denote the elapsed time since predecessor $T_i$
+completed. In simulation, the duration observation is sampled as
+\[
+o_k\mid\Delta_{\mathrm{GT}}
+\sim\mathcal{N}(\Delta_{\mathrm{GT}},\epsilon_k^2),
+\qquad
+\epsilon_k^2=
+\max\!\left\{\epsilon_{\min}^2,\,
+\alpha_{\mathrm{sim}}(\hat{\Delta}_{k-1}-e_k)^2\right\}.
+\]
+Equivalently, defining $r_k=e_k/\hat{\Delta}_{k-1}$ shows that the
+progress-dependent variance contains the quadratic factor $(1-r_k)^2$
+described in the main paper.
+
+For real-world monitoring, the VLM returns a quantized progress score
+$s_k\in\{0,10,\ldots,130\}$, which is normalized and bounded as
+$r_k=\operatorname{clip}(s_k/100,\,0.05,\,1.3)$; values above one
+represent estimated post-completion states. The duration observation is
+constructed from elapsed time and estimated progress as $o_k=e_k/r_k$.
+Its variance is modeled as
+\[
+\epsilon_k^2=
+\sigma_{\mathrm{floor}}^2+
+\alpha_{\mathrm{vlm}}(1-r_k)^2o_k^2.
+\]
+\section{Theoretical Analysis}
+\subsection{Derivation of the Posterior Update}\label{supp:derivation}
+We provide the derivation of the closed-form Bayesian update used in the
+main paper. At monitoring step $k$, the posterior from the previous step is
+used as the prior,
+\[
+\Delta \mid o^{k-1}
+\sim
+\mathcal{N}(\hat{\Delta}_{k-1},\sigma_{k-1}^{2}),
+\]
+and the new observation is modeled as
+\[
+o_k \mid \Delta
+\sim
+\mathcal{N}(\Delta,\epsilon_k^{2}).
+\]
+By Bayes' rule, the updated posterior is proportional to the product of
+the likelihood and the prior:
+\[
+p(\Delta \mid o_{1:k})
+\propto
+\exp\left(
+-\frac{(\Delta-o_k)^2}{2\epsilon_k^2}
+\right)
+\exp\left(
+-\frac{(\Delta-\hat{\Delta}_{k-1})^2}
+{2\sigma_{k-1}^2}
+\right).
+\]
+
+Expanding the quadratic terms in $\Delta$ gives
+\[
+p(\Delta \mid o^k)
+\propto
+\exp\left(
+-\frac{1}{2}
+\left[
+\left(
+\frac{1}{\epsilon_k^2}
++
+\frac{1}{\sigma_{k-1}^2}
+\right)\Delta^2
+-
+2\left(
+\frac{o_k}{\epsilon_k^2}
++
+\frac{\hat{\Delta}_{k-1}}{\sigma_{k-1}^2}
+\right)\Delta
++
+\mathcal{C}
+\right]
+\right),
+\]
+where $\mathcal{C}$ collects terms independent of $\Delta$.
+Therefore, the posterior remains Gaussian. Its variance is
+\[
+\sigma_k^2
+=
+\left(
+\frac{1}{\epsilon_k^2}
++
+\frac{1}{\sigma_{k-1}^2}
+\right)^{-1}
+=
+\frac{\epsilon_k^2\sigma_{k-1}^2}
+{\epsilon_k^2+\sigma_{k-1}^2},
+\]
+and completing the square gives the posterior mean
+\[
+\hat{\Delta}_k
+=
+\frac{
+\sigma_{k-1}^2 o_k
++
+\epsilon_k^2\hat{\Delta}_{k-1}
+}{
+\epsilon_k^2+\sigma_{k-1}^2
+}.
+\]
+These are the posterior update equations used in the main paper.
+
+\subsection{Proof of Theorem 1}
+\label{supp:proof_theorem1}
+
+\begin{proof}
+Specifically, let $o_j$ denote the $j$-th observation with Gaussian noise, i.e., $o_j\sim \mathcal{N}(\Delta, \epsilon_j^2)$, where $\Delta$ is the ground truth interval duration. From the Bayesian update, the posterior mean $\hat\Delta_k$ admits the closed-form expression
+
+\begin{eqnarray*}
+    \hat{\Delta}_1 &=& \frac{\frac{1}{\epsilon_1^2} O_1 +\frac{1}{\sigma_0^2}\hat{\Delta}_0 }{\frac{1}{\epsilon_1^2}+\frac{1}{\sigma_0^2}}\\
+    \hat{\Delta}_2&=&\frac{\frac{1}{\epsilon_2^2} O_2+\frac{1}{\epsilon_1^2} O_1 +\frac{1}{\sigma_0^2}\hat{\Delta}_0 }{\frac{1}{\epsilon_2^2}+\frac{1}{\sigma_1^2}}\\   &\cdots&\\
+\hat{\Delta}_k&=&\frac{\sum_{j=1}^k{\frac{1}{\epsilon_j^2} O_j} +\frac{1}{\sigma_0^2}\hat{\Delta}_0 }{\frac{1}{\epsilon_k^2}+\frac{1}{\sigma_{k-1}^2}}=\frac{\sum_{j=1}^k{\frac{1}{\epsilon_j^2} O_j} +\frac{1}{\sigma_0^2}\hat{\Delta}_0 }{\sum_{j=1}^k{\frac{1}{\epsilon_j^2}}+\frac{1}{\sigma_{0}^2}}\\
+\end{eqnarray*}
+Define the cumulative observation precision as
+\[
+S_k = \sum_{j=1}^{k}\epsilon_j^{-2}.
+\]
+The posterior estimate in Theorem 1 can then be written as
+\begin{eqnarray}
+\hat{\Delta}_k =
+\frac{
+\sigma_0^{-2}\hat{\Delta}_0+
+\sum_{j=1}^{k}\epsilon_j^{-2}o_j
+}{
+\sigma_0^{-2}+S_k
+}.   \label{eqn:delta_est}
+\end{eqnarray}
+
+Subtracting the true interval duration $\Delta$ from both sides gives
+\[
+\hat{\Delta}_k-\Delta
+=
+\frac{
+\sigma_0^{-2}(\hat{\Delta}_0-\Delta)
++
+\sum_{j=1}^{k}\epsilon_j^{-2}(o_j-\Delta)
+}{
+\sigma_0^{-2}+S_k
+}.
+\]
+
+Since the observations are unbiased,
+$\mathbb{E}[o_j]=\Delta$, and hence
+\[
+\mathbb{E}[\hat{\Delta}_k-\Delta]
+=
+\frac{
+\sigma_0^{-2}(\hat{\Delta}_0-\Delta)
+}{
+\sigma_0^{-2}+S_k
+}.
+\]
+By assumption, $S_k\rightarrow\infty$ as $k\rightarrow\infty$.
+Therefore,
+\[
+\mathbb{E}[\hat{\Delta}_k-\Delta]\rightarrow 0.
+\]
+
+
+Since $\hat{\Delta}_0$, $\sigma_0^2$, and $\{\epsilon_j^2\}$ are
+fixed, the randomness in $\hat{\Delta}_k$ arises only from the
+observations in (\ref{eqn:delta_est}). Using their independence,
+\begin{align*}
+\operatorname{Var}(\hat{\Delta}_k)
+&=
+\frac{1}{(\sigma_0^{-2}+S_k)^2}
+\operatorname{Var}\left(
+\sum_{j=1}^{k}\epsilon_j^{-2}o_j
+\right)\\
+&=
+\frac{
+\sum_{j=1}^{k}\epsilon_j^{-4}\operatorname{Var}(o_j)
+}{
+(\sigma_0^{-2}+S_k)^2
+}.
+\end{align*}
+
+Next, using the independence of the observations and
+$\operatorname{Var}(o_j)=\epsilon_j^2$, we obtain
+\begin{align*}
+\operatorname{Var}(\hat{\Delta}_k)
+&=
+\frac{
+\sum_{j=1}^{k}
+\epsilon_j^{-4}\operatorname{Var}(o_j)
+}{
+(\sigma_0^{-2}+S_k)^2
+}\\
+&=
+\frac{
+\sum_{j=1}^{k}\epsilon_j^{-2}
+}{
+(\sigma_0^{-2}+S_k)^2
+}
+=
+\frac{S_k}{(\sigma_0^{-2}+S_k)^2}.
+\end{align*}
+Since
+\[
+\frac{S_k}{(\sigma_0^{-2}+S_k)^2}
+\leq
+\frac{1}{S_k},
+\]
+it follows that
+\[
+\operatorname{Var}(\hat{\Delta}_k)\rightarrow 0.
+\]
+
+Consequently, the mean-squared estimation error satisfies
+\begin{align*}
+\mathbb{E}\!\left[
+(\hat{\Delta}_k-\Delta)^2
+\right]
+&=
+\operatorname{Var}(\hat{\Delta}_k)
++
+\left(
+\mathbb{E}[\hat{\Delta}_k]-\Delta
+\right)^2
+\\
+&\rightarrow 0.
+\end{align*}
+Thus, $\hat{\Delta}_k$ converges to $\Delta$ in mean square, which
+implies convergence in probability:
+\[
+\hat{\Delta}_k \xrightarrow{p} \Delta.
+\]
+
+We next consider the posterior variance.
+The posterior variance at step $k$ is updated using the precision of the $(k-1)$-th belief and the $k$-th observation:
+\begin{equation}
+\sigma_k^2 = \frac{\epsilon_k^2 \sigma_{k-1}^2}{\epsilon_k^2 + \sigma_{k-1}^2} = \left( \frac{1}{\epsilon_k^2} + \frac{1}{\sigma_{k-1}^2} \right)^{-1}. \label{eq:var_update}
+\end{equation}
+By recursively expanding Eq. \eqref{eq:var_update}, the closed-form expression for the $k$-th variance is obtained as:
+\begin{equation*}
+\sigma_k^2 = \left( \sum_{j=1}^k \frac{1}{\epsilon_j^2} + \frac{1}{\sigma_0^2} \right)^{-1}=\left(
+\sigma_0^{-2}+S_k
+\right)^{-1}. \label{eq:var_closed}
+\end{equation*}
+
+Since $\epsilon_k^2>0$,
+\[
+\sigma_k^{-2}
+=
+\sigma_{k-1}^{-2}+\epsilon_k^{-2}
+>
+\sigma_{k-1}^{-2},
+\]
+and therefore
+\[
+\sigma_k^2<\sigma_{k-1}^2.
+\]
+Hence, $\{\sigma_k^2\}$ is monotonically decreasing. Finally,
+$S_k\rightarrow\infty$ gives
+\[
+\lim_{k\rightarrow\infty}\sigma_k^2
+=
+\lim_{k\rightarrow\infty}
+\frac{1}{\sigma_0^{-2}+S_k}
+=0.
+\]
+This completes the proof.
+\end{proof}
+
+\subsection{Proof of Theorem 2: Finite-Sample Posterior Error Bound}
+\label{supp:proof_theorem2}
+\begin{proof}
+According to Chebyshev's inequality, for a random variable $X$ with
+mean $\mu$ and variance $\sigma^2$,
+\[
+P\!\left(
+|X-\mu|\geq\zeta
+\right)
+\leq
+\frac{\sigma^2}{\zeta^2},
+\qquad \zeta>0.
+\]
+
+After observing $o_{1:k}$, our Bayesian update represents the unknown
+interval duration by the posterior distribution
+\[
+\Delta \mid o_{1:k},
+\]
+whose posterior mean and variance are
+\[
+\mathbb{E}\!\left[\Delta\mid o_{1:k}\right]
+=
+\hat{\Delta}_k
+\]
+and
+\[
+\operatorname{Var}\!\left(\Delta\mid o_{1:k}\right)
+=
+\sigma_k^2,
+\]
+respectively.
+
+Therefore, applying Chebyshev's inequality to the posterior random
+variable $\Delta\mid o_{1:k}$ with
+\[
+X=\Delta,\qquad
+\mu=\hat{\Delta}_k,\qquad
+\sigma^2=\sigma_k^2,
+\]
+gives
+\[
+P\!\left(
+|\Delta-\hat{\Delta}_k|\geq\zeta
+\mid o_{1:k}
+\right)
+\leq
+\frac{\sigma_k^2}{\zeta^2}.
+\]
+This proves the finite-sample posterior error bound.
+
+We next consider the monitoring trigger
+\[
+t_M^*
+=
+t_{end}^{pre}
++
+\hat{\Delta}_k
+-
+\kappa\sigma_k,
+\qquad
+\kappa=-\Phi^{-1}(\eta)>0.
+\]
+The event that the true interval transition occurs before monitoring
+begins is
+\[
+t_{end}^{pre}+\Delta<t_M^*.
+\]
+Substituting the definition of $t_M^*$ yields
+\[
+t_{end}^{pre}+\Delta
+<
+t_{end}^{pre}
++
+\hat{\Delta}_k
+-
+\kappa\sigma_k,
+\]
+which is equivalent to
+\[
+\Delta-\hat{\Delta}_k
+<
+-\kappa\sigma_k.
+\]
+
+Hence,
+\begin{align}
+P\!\left(
+t_{end}^{pre}+\Delta<t_M^*
+\mid o_{1:k}
+\right)
+&=
+P\!\left(
+\Delta-\hat{\Delta}_k<-\kappa\sigma_k
+\mid o_{1:k}
+\right)\\
+&\leq
+P\!\left(
+|\Delta-\hat{\Delta}_k|
+\geq
+\kappa\sigma_k
+\mid o_{1:k}
+\right).
+\end{align}
+
+Applying the finite-sample posterior error bound with
+\[
+\zeta=\kappa\sigma_k
+\]
+gives
+\begin{align}
+P\!\left(
+t_{end}^{pre}+\Delta<t_M^*
+\mid o_{1:k}
+\right)
+&\leq
+\frac{\sigma_k^2}
+{\kappa^2\sigma_k^2}\\
+&=
+\frac{1}{\kappa^2}.
+\end{align}
+
+Therefore, the posterior probability that the true interval transition
+occurs before monitoring begins is conservatively bounded by
+$1/\kappa^2$.
+\end{proof}
+
+\section{Additional Experimental Analysis}
+\subsection{LLM-Generated tDAG Consistency}\label{supp:consistency}
+With temperature $0$ and a fixed prompt/output schema, we measured the
+consistency of inferred time-critical relations across repeated translations.
+Count-level agreement with the intended task category held for
+$1{,}612/1{,}800$ generated instruction--scene--translation outputs
+($89.6\%$). The 360 instruction--scene instances comprise 72 unique
+instructions instantiated in five scenes; translating each instance five
+times produces the 1,800 outputs. At the stricter edge level, the exact set
+of time-critical edges was identical across all five translations for
+$221/360$ instruction--scene instances ($61.4\%$), and appeared in at least
+four of five translations for $265/360$ instances ($73.6\%$).
+The rule-based refinement stage validates the schema, grounds object names,
+repairs basic executability violations such as missing \texttt{NAVIGATE\_TO}
+or \texttt{GRASP} actions, and normalizes temporal annotations. Before
+refinement, $81.4\%$ ($1{,}465/1{,}800$) of generated pairs satisfied the
+executor's executability conditions; after applying the repair rules, all
+pairs did.
+\subsection{Search-Parameter and Scheduler-Computation Analysis}
+\label{supp:scalability}
+We vary the shared search parameter $B$ ($W{=}D{=}B$) and measure schedule quality and scheduler computation time (CT). CT denotes the cumulative runtime of all scheduler invocations during one complete instruction execution (Table~\ref{tab:supp_scalability}). The shallow setting $B{=}1$ serves as a greedy single-step baseline.
+\begin{table}[H]
+\centering
+\caption{Scalability of the scheduler under the correct-prior setting
+($\eta{=}0.1$). Gap denotes the makespan difference from the exhaustive oracle schedule computed with ground-truth interval durations and without monitoring; CT denotes the cumulative scheduler runtime per instruction execution. Entries are means over five instruction sets.}
+\label{tab:supp_scalability}
+{\small
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{@{}llrrrrrr@{}}
+\toprule
+\multirow{2}{*}{\textbf{Method}} & \multirow{2}{*}{\textbf{Task}} &
+\multicolumn{3}{c}{\textbf{Gap (s)} ($\downarrow$)} &
+\multicolumn{3}{c}{\textbf{CT (s)} ($\downarrow$)} \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}
+& & \textbf{$B{=}1$} & \textbf{$B{=}10$} & \textbf{$B{=}20$} &
+\textbf{$B{=}1$} & \textbf{$B{=}10$} & \textbf{$B{=}20$} \\
+\midrule
+\multirow{4}{*}{\textbf{Ours}} & T2C1 & $6.70$ & $0.55$ & $0.55$ & $0.14$ & $1.34$ & $2.01$ \\
+ & T2C2 & $4.48$ & $3.68$ & $3.26$ & $0.21$ & $1.92$ & $2.70$ \\
+ & T3C1 & $27.03$ & $15.99$ & $13.41$ & $0.27$ & $3.67$ & $5.72$ \\
+ & T3C2 & $24.75$ & $18.52$ & $14.34$ & $0.43$ & $6.67$ & $12.63$ \\
+\midrule
+\multirow{4}{*}{\textbf{Ours w/o Mon.}} & T2C1 & $6.14$ & $0.00$ & $0.00$ & $0.10$ & $0.50$ & $0.52$ \\
+ & T2C2 & $4.73$ & $3.50$ & $3.50$ & $0.12$ & $0.57$ & $0.59$ \\
+ & T3C1 & $9.73$ & $4.21$ & $3.79$ & $0.15$ & $1.38$ & $1.82$ \\
+ & T3C2 & $14.56$ & $4.85$ & $3.86$ & $0.23$ & $2.66$ & $3.48$ \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+At $B \in \{10,20\}$, every generated schedule satisfied all temporal constraints for both methods. At $B=1$, Instr. Feas. was $98.9\%$ for Ours on T3C2 and $100\%$ for all other method--task configurations. Instr. Feas. columns are omitted from Table~\ref{tab:supp_scalability} for compactness. Thus, the search parameter $B$ primarily trades schedule efficiency (Gap) against computation time, with only a minor feasibility degradation at the greedy setting. Robustness under incorrect priors is evaluated separately in Sec.~\ref{supp:eta} and in the belief-mismatch experiments of the main paper. Averaged over the four task settings, increasing $B$ from 1 to 10 reduces the makespan gap by $6.1\,\mathrm{s}$, while increasing $B$ to 20 saves only an additional $1.8\,\mathrm{s}$ and increases the average cumulative scheduler runtime per instruction execution from $3.4\,\mathrm{s}$ to $5.8\,\mathrm{s}$.
+
+%The Bayesian belief update is a closed-form $O(1)$ computation per observation. With beam width $W$, lookahead depth $D$, and maximum branching factor $A$, each replanning call expands $O(WDA)$ candidate nodes after initialization.
+\subsection{Comparison with an Oracle Scheduler}\label{supp:oracle}
+
+The oracle uses ground-truth interval durations and exhaustive
+depth-first search without monitoring. It provides a schedule-level lower
+bound on makespan but does not scale to large task graphs.
+Table~\ref{tab:supp_oracle} reports the corresponding per-task makespan
+gaps. These values exclude execution-level stochasticity and wall-clock
+planning latency and are therefore not directly comparable to the
+execution-level makespans in the main paper.
+
+\begin{table}[H]
+\centering
+\caption{Schedule-level makespan comparison with the oracle.
+Gap is $\mathrm{MS}_{\mathrm{method}}-\mathrm{MS}_{\mathrm{oracle}}$.}
+\label{tab:supp_oracle}
+{\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Task} & \textbf{Oracle MS (s)} & \textbf{Ours Gap (s)} & \textbf{w/o Mon. Gap (s)} \\
+\midrule
+T2C1 & $156.4$ & $+0.6$ & $+0.0$ \\
+T2C2 & $193.8$ & $+3.7$ & $+3.5$ \\
+T3C1 & $156.8$ & $+16.0$ & $+4.2$ \\
+T3C2 & $180.8$ & $+18.5$ & $+4.9$ \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+Under the correct-prior setting, the larger gaps for Ours reflect the scheduling overhead of monitoring; its robustness benefit is evaluated under belief mismatch in the main paper.
+
+\subsection{Risk-Tolerance Sensitivity}\label{supp:eta}
+Table~\ref{tab:supp_eta} reports the full risk-tolerance sensitivity results,
+separated into under-, correct-, and over-estimated prior regimes.
+\begin{table}[H]
+\centering
+\caption{Schedule-level sensitivity to the risk tolerance $\eta$, separated
+into under-, correct-, and over-estimated priors. Instr. Feas. denotes the
+percentage of generated schedules satisfying all temporal constraints of an
+instruction. MS is omitted when Instr. Feas. $<5\%$. Values are mean $\pm$
+standard deviation over five decomposed instruction sets.}
+\label{tab:supp_eta}
+{\small
+\setlength{\tabcolsep}{3.0pt}
+\begin{tabular}{@{}llccc@{}}
+\toprule
+\textbf{Regime} & $\eta$ & \textbf{Instr. Feas. (\%)} ($\uparrow$) & \textbf{MS (s)} ($\downarrow$) & \textbf{Mon./Int.} ($\downarrow$) \\
+\midrule
+\multirow{3}{*}{\textbf{Under}}
+ & $0.01$ & $98.3 \pm 0.0$  & $216.7 \pm 0.6$ & $1.95 \pm 0.00$ \\
+ & $0.1$  & $99.7 \pm 0.0$  & $213.7 \pm 0.5$ & $1.95 \pm 0.00$ \\
+ & $0.9$  & $0.3 \pm 0.2$   & --              & $0.00 \pm 0.00$ \\
+\midrule
+\multirow{3}{*}{\textbf{Correct}}
+ & $0.01$ & $100.0 \pm 0.0$ & $210.8 \pm 0.7$ & $1.98 \pm 0.00$ \\
+ & $0.1$  & $100.0 \pm 0.0$ & $181.6 \pm 0.3$ & $1.93 \pm 0.00$ \\
+ & $0.9$  & $100.0 \pm 0.0$ & $175.1 \pm 0.4$ & $0.00 \pm 0.00$ \\
+\midrule
+\multirow{3}{*}{\textbf{Over}}
+ & $0.01$ & $100.0 \pm 0.0$ & $181.3 \pm 0.4$ & $1.97 \pm 0.00$ \\
+ & $0.1$  & $98.1 \pm 0.1$  & $179.4 \pm 0.3$ & $1.06 \pm 0.00$ \\
+ & $0.9$  & $0.3 \pm 0.2$   & --              & $0.00 \pm 0.00$ \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+The MS values reported here are computed separately for the Under and Over prior settings. In the main paper, the aggregated Incorrect MS is computed over all temporally feasible schedules from both settings. Therefore, the reported \(198.5\,\mathrm{s}\) is not necessarily the arithmetic mean of the Under and Over MS values in this table.
+The setting \(\eta=0.9\) is included only as a stress test, since it lies outside the range \(\eta<0.5\) for which \(\kappa=-\Phi^{-1}(\eta)>0\). In this setting, the monitoring trigger occurs after the estimated transition. Consequently, monitoring is not executed (Mon./Int. \(=0\)), and temporal feasibility drops substantially under incorrect priors.
+%The MS values in this table are schedule-level averages for
+%the corresponding prior settings. The aggregated Incorrect MS in the main
+%paper is computed over temporally feasible schedules; consequently, its
+%$198.5\,\mathrm{s}$ value need not equal the arithmetic mean of the rounded
+%Under and Over entries reported here.
+%The setting $\eta=0.9$ lies outside the valid range $\eta<0.5$ required for
+%a positive safety margin and is included as a stress test rather than as a
+%sensitivity point. Its trigger falls after the expected transition,
+%monitoring is never executed (Mon./Int. $=0$), and instruction-level
+%temporal feasibility collapses under incorrect priors.
+
+
+\subsection{Robustness to Non-Gaussian Duration Distributions}\label{supp:pf}
+To examine robustness when the true duration distribution deviates from the
+Gaussian belief model, we compare the closed-form Gaussian-Bayesian update
+against a particle-filter (PF) belief update under three ground-truth duration
+families (Table~\ref{tab:supp_pf}).
+\begin{table}[H]
+\centering
+\caption{Particle filter vs. Gaussian-Bayesian updates under different
+ground-truth duration families ($W{=}D{=}10$, $\eta{=}0.1$, correct prior
+mean). Unlike the fixed-GT analysis in Table~\ref{tab:supp_scalability},
+ground-truth durations are sampled from each family. Instr. Feas. denotes the
+percentage of instructions whose schedules satisfy all temporal constraints.}
+\label{tab:supp_pf}
+{\small
+\setlength{\tabcolsep}{4.0pt}
+\begin{tabular}{@{}l|rr|rr|rr@{}}
+\toprule
+\multirow{2}{*}{\textbf{GT Family}} &
+\multicolumn{2}{c|}{\textbf{Instr. Feas. (\%)} ($\uparrow$)} &
+\multicolumn{2}{c|}{\textbf{Gap (s)} ($\downarrow$)} &
+\multicolumn{2}{c}{\textbf{CT (s)} ($\downarrow$)} \\
+& \textbf{Bayes} & \textbf{PF} & \textbf{Bayes} & \textbf{PF} & \textbf{Bayes} & \textbf{PF} \\
+\midrule
+Gaussian & $99.31$ & $99.08$ & $23.64$ & $22.05$ & $3.45$ & $3.53$ \\
+Log-normal & $85.71$ & $86.92$ & $27.85$ & $25.42$ & $3.54$ & $3.37$ \\
+Mixture & $94.53$ & $94.90$ & $84.71$ & $86.08$ & $3.59$ & $3.58$ \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+The Gaussian update remains competitive under log-normal and multimodal
+ground truths. Absolute performance still degrades under stronger
+distribution mismatch, so this result should be interpreted as evidence that
+the closed-form Gaussian update is a practical approximation rather than as a
+distribution-free guarantee.
+\subsection{Evaluation-Tolerance Sensitivity}\label{supp:tolerance}
+Table~\ref{tab:supp_tolerance} reports TCSR re-scored under different
+evaluation tolerances.
+\begin{table}[H]
+\centering
+\caption{TCSR (\%) under different evaluation tolerances, computed by
+post-hoc re-scoring of saved execution logs.}
+\label{tab:supp_tolerance}
+{\small
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+\textbf{Tolerance} & \textbf{Ours} & \textbf{w/o Mon.} & \textbf{EDF} & \textbf{CPM} & \textbf{Prog.} & \textbf{CaP} \\
+\midrule
+$5.0\,\mathrm{s}$  & $87.5$ & $89.4$ & $90.4$ & $89.5$ & $52.7$ & $58.1$ \\
+$8.0\,\mathrm{s}$  & $90.5$ & $90.8$ & $90.7$ & $89.5$ & $63.4$ & $63.3$ \\
+$12.5\,\mathrm{s}$ & $90.5$ & $90.8$ & $90.8$ & $89.5$ & $63.4$ & $63.3$ \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+Stricter tolerances reduce tDAG-based schedulers by at most three percentage
+points, whereas LLM-only baselines drop by 5--11 points. This post-hoc check
+is not used as the main success metric; it only verifies that the relative
+trends are not driven by a single tolerance value.
+
+\section{Real-World and Qualitative Analysis}
+\subsection{Real-World Perception Details}\label{supp:perception}
+The perception module estimates task progress from a single RGB frame using
+GPT-4.1 (temperature $0$), prompted with 14 few-shot anchor frames per task
+(progress scores $0,10,\ldots,130$, corresponding to progress ratios
+$0.0,0.1,\ldots,1.3$). The prompts use task-specific brightness and hue
+rubrics: bright pink to dim red-pink for sausage, pale pink to dim deep red
+for tomato sauce, and bright white-cyan to dim teal for tea. The VLM returns
+a quantized score in the same anchor set, which is converted to a progress
+ratio and duration observation as shown in
+Fig.~\ref{fig:supp_tomato} shows representative
+frames of the tomato-sauce task at three progress stages.
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[b]{0.32\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figs/tomato_progress_010.jpg}
+\end{minipage}
+\hfill
+\begin{minipage}[b]{0.32\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figs/tomato_progress_050.jpg}
+\end{minipage}
+\hfill
+\begin{minipage}[b]{0.32\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figs/tomato_progress_100.jpg}
+\end{minipage}
+
+\caption{Visual progress of the tomato-sauce task as observed by the
+perception module: (left) early pink-white glow (progress score 10,
+ratio 0.1); (middle) a more saturated reddish-pink glow (progress score 50,
+ratio 0.5); and (right) a dimmer red/coral-red glow (progress score 100,
+ratio 1.0).}
+\label{fig:supp_tomato}
+\end{figure}
+
+\subsection{Qualitative Scheduling Examples and Error Analysis}\label{supp:qualitative}
+Fig.~\ref{fig:supp_gantt} contrasts the schedules generated by tDAG+CPM and
+our method for the same instruction under a mismatched prior, and
+Fig.~\ref{fig:supp_error_decomp} decomposes the real-world failure modes.
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth]{figs/gantt_chart_comparison.png}
+\caption{Representative Gantt-chart comparison for the same T2C2 instruction
+under a mismatched temporal prior
+($\hat{\Delta}_0{=}140\,\mathrm{s}$, $\Delta_{\mathrm{GT}}{=}100\,\mathrm{s}$).
+The non-interleaved tDAG+CPM schedule follows the overestimated prior and
+misses the time-critical timings, whereas our method inserts monitoring,
+refines the interval belief online, and interleaves subtasks, yielding a
+shorter makespan.}
+\label{fig:supp_gantt}
+\end{figure}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.6\linewidth]{figs/action_error_temporal_constraint_error.png}
+\caption{Failure-mode decomposition in the real-world experiments:
+temporal-constraint violations versus low-level action errors across prior
+settings. Baselines without online belief refinement fail predominantly
+through temporal violations under mismatched priors, whereas the residual
+failures of our method stem mainly from low-level perception and manipulation
+noise rather than the scheduler.}
+\label{fig:supp_error_decomp}
+\end{figure}
+\FloatBarrier
+
+\section{Task Specifications}
+\subsection{Simulation Instruction List}\label{supp:sim_instructions}
+Table~\ref{tab:supp_sim_instructions} lists the simulation instructions used
+in AI2-THOR. The dataset contains 72 unique instructions: 18 instructions for
+each of the four task/constraint cases. Each instruction is instantiated
+across five AI2-THOR scenes and evaluated over five repeated trials.
+{\small
+\begin{longtable}{@{}llp{0.72\linewidth}@{}}
+\caption{The 72 unique natural-language instructions used in simulation.}
+\label{tab:supp_sim_instructions}\\
+\toprule
+\textbf{Case} & \textbf{ID} & \textbf{Instruction} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Case} & \textbf{ID} & \textbf{Instruction} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+T2C1 & 1 & boil potato and put apple and lettuce in fridge \\
+T2C1 & 2 & boil water with pot and put apple and lettuce in fridge \\
+T2C1 & 3 & cook egg and put apple and lettuce in fridge \\
+T2C1 & 4 & cook egg and wash a butterknife \\
+T2C1 & 5 & cook egg and wash a spatula \\
+T2C1 & 6 & fill bowl with water and put apple and lettuce in fridge \\
+T2C1 & 7 & heat the bread using microwave and wash a spatula \\
+T2C1 & 8 & heat the bread using microwave and wash all fork and spoon \\
+T2C1 & 9 & heat the bread using microwave and wash apple and lettuce \\
+T2C1 & 10 & heat the bread using microwave and wash plate and cup \\
+T2C1 & 11 & heat the potato using microwave and wash a tomato \\
+T2C1 & 12 & heat the potato using microwave and wash all fork and spoon \\
+T2C1 & 13 & heat the potato using microwave and wash apple and lettuce \\
+T2C1 & 14 & heat the potato using microwave and wash plate and cup \\
+T2C1 & 15 & make a coffee and put apple and lettuce in fridge \\
+T2C1 & 16 & make a coffee and wash a spatula \\
+T2C1 & 17 & make a coffee and wash a tomato \\
+T2C1 & 18 & make a coffee and wash apple and lettuce \\
+\midrule
+T2C2 & 1 & boil potato and heat the bread using microwave \\
+T2C2 & 2 & boil potato and make a coffee \\
+T2C2 & 3 & boil water with pot and heat the bread using microwave \\
+T2C2 & 4 & boil water with pot and heat the potato using microwave \\
+T2C2 & 5 & boil water with pot and make a coffee \\
+T2C2 & 6 & fill bowl with water and cook egg \\
+T2C2 & 7 & fill bowl with water and heat the bread using microwave \\
+T2C2 & 8 & fill bowl with water and heat the potato using microwave \\
+T2C2 & 9 & fill bowl with water and make a coffee \\
+T2C2 & 10 & fill pot with water and cook egg \\
+T2C2 & 11 & fill pot with water and heat the bread using microwave \\
+T2C2 & 12 & fill pot with water and heat the potato using microwave \\
+T2C2 & 13 & fill pot with water and make a coffee \\
+T2C2 & 14 & heat the bread using microwave and cook egg \\
+T2C2 & 15 & heat the bread using microwave and make a coffee \\
+T2C2 & 16 & heat the potato using microwave and cook egg \\
+T2C2 & 17 & heat the potato using microwave and make a coffee \\
+T2C2 & 18 & make a coffee and cook egg \\
+\midrule
+T3C1 & 1 & cook egg and wash a butterknife and wash apple and lettuce \\
+T3C1 & 2 & cook egg and wash a spatula and wash apple and lettuce \\
+T3C1 & 3 & cook egg and wash a tomato and wash all fork and spoon \\
+T3C1 & 4 & cook egg and wash all fork and spoon and wash apple and lettuce \\
+T3C1 & 5 & heat the bread using microwave and put apple and lettuce in fridge and wash all fork and spoon \\
+T3C1 & 6 & heat the bread using microwave and wash a butterknife and wash all fork and spoon \\
+T3C1 & 7 & heat the bread using microwave and wash a butterknife and wash plate and cup \\
+T3C1 & 8 & heat the bread using microwave and wash a spatula and wash plate and cup \\
+T3C1 & 9 & heat the bread using microwave and wash a tomato and wash a spatula \\
+T3C1 & 10 & heat the bread using microwave and wash a tomato and wash all fork and spoon \\
+T3C1 & 11 & heat the potato using microwave and put apple and lettuce in fridge and wash a butterknife \\
+T3C1 & 12 & heat the potato using microwave and put apple and lettuce in fridge and wash a spatula \\
+T3C1 & 13 & heat the potato using microwave and put apple and lettuce in fridge and wash a tomato \\
+T3C1 & 14 & heat the potato using microwave and wash a butterknife and wash a spatula \\
+T3C1 & 15 & heat the potato using microwave and wash a spatula and wash plate and cup \\
+T3C1 & 16 & heat the potato using microwave and wash a tomato and wash plate and cup \\
+T3C1 & 17 & make a coffee and wash a butterknife and wash apple and lettuce \\
+T3C1 & 18 & make a coffee and wash a spatula and wash apple and lettuce \\
+\midrule
+T3C2 & 1 & boil potato and heat the bread using microwave and put apple and lettuce in fridge \\
+T3C2 & 2 & boil potato and make a coffee and put apple and lettuce in fridge \\
+T3C2 & 3 & boil water with pot and make a coffee and put apple and lettuce in fridge \\
+T3C2 & 4 & fill bowl with water and cook egg and put apple and lettuce in fridge \\
+T3C2 & 5 & fill bowl with water and heat the bread using microwave and put apple and lettuce in fridge \\
+T3C2 & 6 & fill bowl with water and make a coffee and put apple and lettuce in fridge \\
+T3C2 & 7 & fill pot with water and cook egg and put apple and lettuce in fridge \\
+T3C2 & 8 & heat the bread using microwave and cook egg and wash plate and cup \\
+T3C2 & 9 & heat the bread using microwave and make a coffee and wash all fork and spoon \\
+T3C2 & 10 & heat the potato using microwave and cook egg and wash a spatula \\
+T3C2 & 11 & heat the potato using microwave and cook egg and wash a tomato \\
+T3C2 & 12 & heat the potato using microwave and cook egg and wash all fork and spoon \\
+T3C2 & 13 & heat the potato using microwave and cook egg and wash plate and cup \\
+T3C2 & 14 & heat the potato using microwave and make a coffee and wash a butterknife \\
+T3C2 & 15 & heat the potato using microwave and make a coffee and wash a tomato \\
+T3C2 & 16 & heat the potato using microwave and make a coffee and wash all fork and spoon \\
+T3C2 & 17 & heat the potato using microwave and make a coffee and wash apple and lettuce \\
+T3C2 & 18 & make a coffee and cook egg and wash a spatula \\
+\end{longtable}
+}
+
+\newpage
+
+\subsection{Real-World Instruction List}\label{supp:instructions}
+Table~\ref{tab:supp_instructions} lists all 21 instructions used in the
+real-world evaluation.
+{\small
+\begin{longtable}{@{}llp{0.72\linewidth}@{}}
+\caption{The 21 natural-language instructions used in the real-world
+evaluation (7 per case).}
+\label{tab:supp_instructions}\\
+\toprule
+\textbf{Case} & \textbf{ID} & \textbf{Instruction} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Case} & \textbf{ID} & \textbf{Instruction} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+T2C1 & 1 & cook sausage and place banana on plate \\
+T2C1 & 2 & cook sausage and place carrot on plate \\
+T2C1 & 3 & cook sausage and put green cup in sink \\
+T2C1 & 4 & make tomato sauce and place banana on plate \\
+T2C1 & 5 & make tomato sauce and place carrot on plate \\
+T2C1 & 6 & make tea in teapot and place banana on plate \\
+T2C1 & 7 & make tea in teapot and place carrot on plate \\
+\midrule
+T3C1 & 1 & cook sausage and put green cup in sink and put orange bowl in sink \\
+T3C1 & 2 & cook sausage and put orange bowl in sink and place carrot on plate \\
+T3C1 & 3 & cook sausage and put purple bowl in sink and place banana on plate \\
+T3C1 & 4 & make tomato sauce and place banana on plate and put orange bowl in sink \\
+T3C1 & 5 & make tomato sauce and put green cup in sink and place carrot on plate \\
+T3C1 & 6 & make tea in teapot and place banana on plate and put orange bowl in sink \\
+T3C1 & 7 & make tea in teapot and put green cup in sink and place banana on plate \\
+\midrule
+T3C2 & 1 & cook sausage and make tea in teapot and place banana on plate \\
+T3C2 & 2 & cook sausage and make tea in teapot and place carrot on plate \\
+T3C2 & 3 & cook sausage and make tea in teapot and put green cup in sink \\
+T3C2 & 4 & cook sausage and make tea in teapot and put orange bowl in sink \\
+T3C2 & 5 & make tomato sauce and make tea in teapot and place banana on plate \\
+T3C2 & 6 & make tomato sauce and make tea in teapot and place carrot on plate \\
+T3C2 & 7 & make tomato sauce and make tea in teapot and put green cup in sink \\
+\end{longtable}
+}
+\end{document}

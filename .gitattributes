@@ -1,0 +1,3 @@
+
+# Keep PDF snapshots binary; some PDFs contain only ASCII streams.
+*.pdf binary
