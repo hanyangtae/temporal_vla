@@ -31,7 +31,7 @@ MATH = {
     r"$k=8$": "k = 8", r"$k$": "k", r"$t/T$": "t/T", r"$i$": "i",
     r"$z_i \in \{1,\dots,k\}$": "zᵢ ∈ {1, …, k}", r"$y_i$": "yᵢ",
     r"$I(Z;Y)=\sum_{k}\sum_{c} p(k,c)\log_2\frac{p(k,c)}{p(k)p(c)}$":
-        "I(Z;Y) = Σₖ Σ𝒸 p(k,c) log₂ [p(k,c) / (p(k)p(c))]",
+        "I(Z;Y) = Σ_k Σ_c p(k,c) log₂ [p(k,c) / (p(k)p(c))]",
     r"$p(k,c)$": "p(k,c)", r"$c$": "c", r"$\sim$": "@SIM@", r"$\pm$": "±", r"$k\ge8$": "k ≥ 8",
     r"$\times$": "×",
 }
