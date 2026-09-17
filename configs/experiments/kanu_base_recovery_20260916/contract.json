@@ -1,0 +1,38 @@
+{
+  "purpose": "baseline_reproduction_not_new_scene_collection",
+  "model": "groot",
+  "machine": "kanu",
+  "allowed_gpus": [
+    2,
+    3,
+    4
+  ],
+  "selected_gpus": [
+    2
+  ],
+  "serves_per_gpu": 2,
+  "plan_id": "4fa6496cd684",
+  "plan_sha256": "968e97b4f4aa9ece0e9e027b669028d799f81d1f74bdf7e59b48154726ada063",
+  "n": 22,
+  "original_baselines_preserved": true,
+  "checkpoint": "lerobot_groot_n15__robocasa365_ckpt120000",
+  "capture_layers": [
+    0,
+    2,
+    4,
+    8,
+    10,
+    12,
+    15
+  ],
+  "token_mode": "all_token_full",
+  "policy_chunk": 16,
+  "executed_action_steps": 5,
+  "env_steps": 720,
+  "code_sha256": {
+    "scripts/serve/lerobot.py": "018f54b927c34d4a46971fe28252b0bd9c758a7c723d8edb8502cc949529cffd",
+    "configs/checkpoints/lerobot_groot_n15__robocasa365_ckpt120000.yaml": "1c63f329ebc5a7076f636f3e99a6a92aba96aaca865d5a384401101505a567ff",
+    ".claude/worktrees/collect-topup/scripts/safe/groot_n15/robocasa/collect/http_feature_collect.py": "24c42d2ec6939c5c6517b932e8b96d5df02f4618a774d5bde569718ae8b44b2a"
+  },
+  "renderer": "NVIDIA RTX A4000 via isolated host 550.144.03 EGL libraries; original renderer identity unverified"
+}
