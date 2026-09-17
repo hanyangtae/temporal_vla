@@ -1,2 +1,8 @@
 - [Remote scipy/sklearn available](remote-python-scipy-sklearn-available.md) — as of 2026-07-01 ~/anaconda3/bin/python HAS scipy+sklearn (contradicts older "no scipy" claim); verify per-package, don't trust stale doc
 - [Remote imageio-ffmpeg pip install](remote-imageio-ffmpeg-pip-install.md) — imageio present but imageio-ffmpeg missing for mp4 read/write; `pip install --user imageio-ffmpeg` works, no root/sudo needed
+- [Local host has no numpy](local-host-no-numpy.md) — validate pulled NPZ artifacts on the remote python, not locally; local python3 lacks numpy
+- [Remote node hardware](remote-node-hardware.md) — 8 core / 31GB RAM / HDD: thread cap 8, shard npz 로드가 I/O·RAM 병목
+- [v4 segA scene 분할](v4-sega-scene-split.md) — scene 5개뿐이라 detector 분할은 3/1/1 seed0; PPCC_apple·CoffeeSetupMug는 cp_bands 구조적 불가
+- [v4sb fit-pool 라운드](v4sb-fit-pool.md) — 대상 scene 성공 제외 재학습 완주(seed0 7/7 cp_bands); 원격 체인 outputs/tmp/v4sb, zip64 필수
+- [v4r 재수집 교체 라운드](v4r-recollect-round.md) — 대상 scene을 신규 실패판으로 교체 완주(seed0 7/7 cp_bands); drawer-L은 대상 scene 소멸; gt_phases 사용
+- [shard 스트리밍 복사 CRC 확인](remote-shard-stream-crc.md) — HDD 일회성 손상 실측: 대형 npz 만든 뒤 멤버 CRC 대조 필수
