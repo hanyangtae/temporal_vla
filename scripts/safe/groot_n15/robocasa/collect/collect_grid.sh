@@ -38,6 +38,11 @@
 # 하드코딩 금지: 위 값은 전부 PLAN_JSON 에서 읽는다.
 set -uo pipefail
 
+# Mandatory GR00T admission, before any output or model process is created.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)/scripts/utils/groot_launch_guard.sh"
+groot_launch_guard collect "$0" "$@" || exit $?
+
+
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../../.." && pwd)"
 : "${PLAN_JSON:?PLAN_JSON (collection_plan.json 경로) 필요}"
 : "${GRID_ROOT:?GRID_ROOT (로컬 staging 루트) 필요}"

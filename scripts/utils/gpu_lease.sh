@@ -11,9 +11,17 @@
 # LEASE_PID=<오케스트레이터 pid> 를 주면 그 pid 사망 시 stale 자동 해제, 없으면 ttl 로만 해제
 set -u
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
-ROOT=$REPO/outputs/gpu_leases
+# All worktrees use the coordinator checkout's single ledger.
+COMMON=$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir) || exit 2
+ROOT=$(dirname "$COMMON")/outputs/gpu_leases
+[ "$(hostname -s)" = kanu ] || { echo '[lease] use coordinator kanu; remote independent ledgers forbidden' >&2; exit 2; }
 mkdir -p "$ROOT"
 cmd=${1:-status}
+# wait recurses into claim; it must not hold the lock while sleeping.
+if [ "$cmd" != wait ]; then
+  exec 9>"$ROOT/.lock"
+  flock -x 9 || exit 2
+fi
 
 lease_dir() { echo "$ROOT/${1}_gpu${2}"; }
 alive() {  # pid 살아있나 (pid 미기록이면 ttl 로만 판정)
@@ -45,11 +53,14 @@ case "$cmd" in
   claim)
     [ $# -ge 5 ] || { echo "usage: claim <machine> <gpu> <session> <purpose> [ttl_h]" >&2; exit 2; }
     m=$2; g=$3; s=$4; p=$5; ttl_h=${6:-12}
+    [[ "$m" =~ ^(kanu|srv48|srv50)$ && "$g" =~ ^[0-9]+$ && "$ttl_h" =~ ^[1-9][0-9]*$ ]] || exit 2
+    python3 "$REPO/scripts/utils/groot_harness.py" check-legacy-lease --machine "$m" --gpu "$g" --session "$s" --model "${LEASE_MODEL:-groot}" >/dev/null || exit 3
     d=$(lease_dir "$m" "$g")
     if [ -d "$d" ] && is_stale "$d"; then echo "[lease] stale 해제: $(basename "$d")"; rm -rf "$d"; fi
     if mkdir "$d" 2>/dev/null; then
       printf 'machine=%s\ngpu=%s\nsession=%s\npurpose=%s\npid=%s\nstart=%s\nttl_s=%s\nsince=%s\n' \
         "$m" "$g" "$s" "$p" "${LEASE_PID:-none}" "$(date +%s)" "$((ttl_h*3600))" "$(date '+%F %T')" > "$d/meta"
+      printf 'model=%s\n' "${LEASE_MODEL:-groot}" >> "$d/meta"
       echo "[lease] claimed ${m} gpu${g} ← ${s} (${p}, ttl ${ttl_h}h)"
     else
       echo "[lease] BUSY ${m} gpu${g}: $(tr '\n' ' ' < "$d/meta")" >&2
@@ -77,6 +88,15 @@ case "$cmd" in
     if [ "$owner" != "$4" ] && ! is_stale "$d"; then
       echo "[lease] 거부: ${2} gpu${3} 소유자=${owner} (요청=${4})" >&2; exit 3
     fi
+    # Do not free a legacy lease while admitted child runners still own slots.
+    python3 - "$ROOT/harness_slots.json" "$2" "$3" <<'PY_CHECK' || exit 3
+import json, sys
+from pathlib import Path
+p = Path(sys.argv[1])
+state = json.loads(p.read_text()) if p.exists() else {}
+if any(x['machine'] == sys.argv[2] and int(sys.argv[3]) in x['gpus'] for x in state.values()):
+    sys.exit('active harness reservation: lease release refused')
+PY_CHECK
     rm -rf "$d"; echo "[lease] released ${2} gpu${3}"
     ;;
   *) echo "unknown cmd: $cmd" >&2; exit 2 ;;

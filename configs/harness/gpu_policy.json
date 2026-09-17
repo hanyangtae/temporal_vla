@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "model": "groot",
+  "coordinator_host": "kanu",
+  "machines": {
+    "kanu": {
+      "max_gpus_all_sessions": 3,
+      "max_serves_per_gpu": 2,
+      "hostname": "kanu"
+    },
+    "srv48": {
+      "max_gpus_all_sessions": 1,
+      "max_serves_per_gpu": 6,
+      "hostname": "worker1"
+    },
+    "srv50": {
+      "max_gpus_all_sessions": 1,
+      "max_serves_per_gpu": 6,
+      "hostname": "worker2"
+    }
+  }
+}

@@ -1,6 +1,9 @@
 # 05 GPU 서버 운영·예약 규약 (GR00T N1.5 eval 단일 출처)
 
-모든 Claude 세션이 kanu·srv48·srv50에 serve/eval을 올릴 때 여기만 본다.
+모든 Codex·Claude 세션은 **GR00T serve/eval을 발사하거나 예약을 변경하기 전에 이 문서를 반드시 확인한다.**
+이 문서의 모델 병렬 수는 **GR00T에만 적용**하며 다른 정책 모델에 자동 적용하지 않는다.
+A100 서버(srv48·srv50)는 **모든 세션 합산 서버별 GPU 최대 1장**, GPU당 최대 6모델이다. kanu는 **모든 세션 합산 GPU 최대 3장**, GPU당 최대 2모델이다.
+준비된 작업이 있으면 arm 단계가 다르더라도 빈 슬롯을 채운다. 동시 실행기 전체의 합계가 이 한도를 넘지 않게 관리한다.
 발사 전 **반드시 `scripts/utils/gpu_lease.sh claim`** — 다른 세션이 잡고 있으면 기다리거나 사용자에게 묻는다.
 (흩어져 있던 규칙 통합: CLAUDE.md 평가표준·robocasa-steer-eval 스킬·메모리 kanu/a100 규칙·핸드오프 §3. 충돌 시 이 문서가 이긴다.)
 
@@ -9,7 +12,7 @@
 | | **kanu** (로컬) | **srv48** (`AISem_48_junhyeong`, worker1) | **srv50** (`AISem_50_junhyeong`, worker2) |
 |---|---|---|---|
 | GPU | A4000 16GB × 8 | A100 80GB × 4 | A100 80GB × 4 |
-| 사용 가능 GPU | **빈 GPU만**, 한 세션 최대 3장. 타인 프로세스(예: junhyeong `main.py` 436MiB 상주) 있으면 금지 | 빈 GPU만. 관례 **GPU2** | 빈 GPU만. 관례 **GPU1** (GPU0은 타인 상시 점유) |
+| 사용 가능 GPU | **빈 GPU만**, 모든 세션 합산 최대 3장. 타인 프로세스(예: junhyeong `main.py` 436MiB 상주) 있으면 금지 | 빈 GPU만, 모든 세션 합산 1장. 관례 **GPU2** | 빈 GPU만, 모든 세션 합산 1장. 관례 **GPU1** (GPU0은 타인 상시 점유) |
 | GPU당 serve | **2** (serve 상주 ~5.8GB) | **6** | **6** |
 | serve 방식 | docker `lerobot` 컨테이너 (`docker exec -d`) | host conda `~/miniconda3/envs/lerobot_050_groot/bin/python` + `SERVE_PYTHONPATH=~/pkt_ws/temporal_vla/lerobot/src` | 좌동 |
 | repo | `~/pkt_ws/temporal_vla` | `~/pkt_ws/temporal_vla` (git pull; NPZ·ckpt·번들은 tar 반입) | 좌동 |
@@ -53,3 +56,9 @@ scripts/utils/gpu_lease.sh release kanu 4 "<세션명>"                   # 반�
 5. claim → 발사 → 완료 감사(매니페스트 대비 행수) → serve 정리 → release
 
 관련: 러너 `scripts/steer/online_gated/run_online_gated_eval.sh`(`ALLOW_BUSY_GPU`, `SERVES_PER_GPU`, `SERVE_MODE=host`), 스킬 `.claude/skills/robocasa-steer-eval/SKILL.md`(pre-flight 게이트).
+
+## 4. 실행 하네스 (2026-09-10)
+
+기계 정책: `configs/harness/gpu_policy.json`. 수집·online-gated eval 진입점은 `groot_launch_guard.sh`를 통해 세션·머신·모델 슬롯을 예약한다. worktree 공통 원장과 원자적 잠금으로 **실행기 전체 합계**를 검사한다. 기존 lease도 GPU 장수 합계에 포함한다.
+
+원장은 kanu의 git common checkout `outputs/gpu_leases/` 한 곳이다. 원격은 coordinator RPC(SSH)를 사용하며 연결 실패 시 발사를 거부한다. 자세한 환경변수·수집 계약·제약은 `docs/collab_codex/runbook_groot_harness.md` 참조. 이미 실행 중인 작업은 자동 중단하거나 이관하지 않는다.
