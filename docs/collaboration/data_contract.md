@@ -1,4 +1,4 @@
-# Rollout 데이터·라벨 공유 초안
+# Detector용 Rollout 데이터·라벨 사용 조건
 
 ## 변경되는 데이터와 고정된 실험
 
@@ -117,7 +117,7 @@
 - 같은 rollout에서 파생한 activation·중복 사본은 split을 넘나들지 않는다.
 - 기존 target-j 평가 재현 시 detector는 같은 scene의 target j 전체를 제외한 다른 4j 40판으로 학습한다.
   전체 40판에는 양 클래스가 필요하지만 각 j가 개별적으로 양 클래스를 가질 필요는 없다.
-- 연산자는 detector와 다른 fit 규약을 갖는다. 기존 규약에서는 target 성공을 제외하고 target 실패는 허용한다.
+- 기존 operator 학습 pool에는 target 실패가 포함될 수 있으므로 detector fit에 그대로 재사용하지 않는다.
 - 새 detector 일반화 실험은 별도 split을 명시한다. 기존 target-j 결과와 scene-heldout 결과를 동일하게 부르지 않는다.
 - 성공/실패·episode·phase/cluster별 샘플 기여와 길이 통제를 명시한다. 기존 k8 조건을 기준 비교로 보존하되
   detector 구조나 입력 범위 확장은 별도 설정으로 실험할 수 있다.

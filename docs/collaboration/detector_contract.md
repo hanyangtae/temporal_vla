@@ -1,4 +1,4 @@
-# Detector–Steering 입출력 계약 초안
+# Detector 입력 범위와 온라인 판정 조건
 
 시간 기준은 **inference step**이며 현재 step의 action을 환경에서 실행하기 전에 판정해야 한다.
 모델 종류나 activation 선택은 유연하게 두고 이 실행 순서를 고정한다.

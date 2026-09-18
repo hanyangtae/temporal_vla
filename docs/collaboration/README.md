@@ -1,11 +1,11 @@
-# Detector–Steering 최초 협업 전달 자료
+# 김상우의 Detector 개발을 위한 최초 전달 자료
 
-목적: 동료와 동료의 AI가 이전 대화 없이 연구 목적, 담당 범위, 데이터와 인터페이스 조건을 이해하도록 한다.
+목적: 김상우와 함께 작업하는 AI가 이전 대화 없이 detector 개발 시 지킬 입력·데이터·학습·평가 조건을 이해하도록 한다.
 후속 작업 관리나 AI 간 세션 인계 절차는 이 자료의 범위가 아니다.
 
 ## 읽는 순서
 
-1. [공동 작업 조건](WORKING_AGREEMENT.md): 연구 목적, 역할, 사용자 확정 조건과 미결 사항.
+1. [공동 작업 조건](WORKING_AGREEMENT.md): detector 개발 목표, 학습·평가 주의사항, 사용자 확정 조건과 미결 사항.
 2. [데이터·라벨](data_contract.md): rollout 식별, 공유 방식, 라벨·split 버전 관리.
 3. [Detector 인터페이스](detector_contract.md): 입력 범위, 현재 inference step의 발화 판정, 개입 후 상태 정렬의 고민점.
 
