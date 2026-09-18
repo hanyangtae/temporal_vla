@@ -114,6 +114,7 @@
 - 코드 개발: `task_classification`
 - 통합: 검증한 commit을 `temporal_vla` submodule로 연결
 - 모델·전처리·threshold·입력 정의를 함께 고정
+- **데이터가 추가로 필요하면 박경태에게 요청**: 필요한 task/scene, 성공·실패 구성, 수량, activation 범위와 사용 목적을 함께 전달
 - 추가 캡처·파이프라인 변경은 박경태와 조율
 
 ---
