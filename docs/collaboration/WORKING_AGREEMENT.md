@@ -1,15 +1,15 @@
 # Detector 개발 시 주의사항
 
-김상우와 detector 개발 방향을 맞추기 위한 요약입니다. 구현 시 세부 조건은 연결된 문서를 참고합니다.
+- 대상: 김상우 및 detector 개발 AI
+- 용도: 협업 설명용 요약. 구현 세부 조건은 연결 문서 참고
 
-## 1. 무엇을 개발하나
+## 1. 목표와 역할
 
-**오발화를 줄이면서 실패 감지를 유지하고, 실패 사건 전에 더 일찍 발화하는 detector**를 개발합니다.
-이미 실패에 stuck된 상태를 감지하는 능력도 따로 봅니다.
-
-- **김상우:** `task_classification`에서 detector 개발.
-- **박경태:** steering과 전체 파이프라인 통합.
-- 모델 구조는 자유입니다. LSTM이나 두 MLP로 제한하지 않습니다.
+- **목표: 오발화 감소 · 실패 감지 유지 · 사건 전 발화 개선**
+- 사건 후 stuck 감지 능력은 별도 평가
+- **김상우:** `task_classification`에서 detector 개발
+- **박경태:** steering 및 전체 파이프라인 통합
+- 모델 구조 자유: LSTM·두 MLP 등 특정 구조로 제한하지 않음
 
 ## 2. 입력과 출력
 
@@ -20,16 +20,17 @@
 | 출력 | **현재 inference step의 개입 필요 여부** |
 | 판정 시점 | **해당 action이 환경에서 실행되기 전** |
 
-확인된 저장본은 **`[7 layers, 4 denoise steps, 49 tokens, 1536 features]`**입니다.
-저장 layer는 `[0, 2, 4, 8, 10, 12, 15]`이고, 코드상 전체 16개 layer를 캡처할 수 있습니다.
-기존 파일에 없는 layer는 추가 캡처가 필요합니다. 모든 기존 데이터가 같은 범위인지는 전달 묶음별로 확인합니다.
+- 확인 저장본: **`[7 layers, 4 denoise steps, 49 tokens, 1536 features]`**
+- 저장 layer: `[0, 2, 4, 8, 10, 12, 15]`
+- 코드상 캡처 범위: 전체 16개 layer. 미저장 layer는 추가 캡처 필요
+- 전달 묶음별 실제 저장 범위 확인
 
 → [축별 범위·token 구성·온라인 연결 조건](detector_contract.md)
 
 ## 3. 같은 데이터인지 먼저 확인
 
-**같은 scene/j/n이나 seed만으로 activation·영상·라벨을 연결하면 안 됩니다.**
-원본 실행과 파일의 관계를 확인해야 합니다.
+- **scene/j/n·seed만으로 activation·영상·라벨 연결 금지**
+- 원본 실행과 각 파일의 대응 관계 확인
 
 | 식별값 | 무엇을 확인하나 |
 |---|---|
@@ -38,12 +39,12 @@
 | `video_sha256` | 같은 영상 파일인지 |
 | `run_id` | 어느 실행에서 생성됐는지 |
 
-PKL hash로 연결된 영상을 **찾을 수는 있지만**, 그 값 자체가 영상 hash는 아닙니다.
-또한 PKL은 metadata 차이만으로도 hash가 달라질 수 있어 **파일 차이와 궤적 차이를 구분**해야 합니다.
-`video_sha256`과 `run_id`가 모든 기존 파일에 이미 저장돼 있다는 뜻은 아닙니다.
-
-동일 조건의 결정적 재실행은 동일 결과를 기대합니다. Run ID는 따로 두되 실제 궤적·영상 일치를 확인해
-원본과 연결합니다. 같은 내용으로 확인된 재현본은 독립 표본 두 개로 세지 않습니다.
+- PKL hash: 대응 영상 조회에 사용 가능. 영상 동일성 자체의 증거는 아님
+- Metadata 차이만으로 PKL hash가 바뀔 수 있음 → **파일 차이 ≠ 궤적 차이**
+- 기존 파일의 `video_sha256`·`run_id` 보유 여부 확인
+- 동일 조건의 결정적 재실행: 동일 결과 기대, run ID는 별도 부여
+- 원본 연결 전 실제 궤적·영상 일치 검증
+- 동일 내용의 재현본을 독립 표본으로 중복 집계 금지
 
 <details>
 <summary>재실행 시 대조할 조건 펼치기</summary>
@@ -55,35 +56,42 @@ PKL hash로 연결된 영상을 **찾을 수는 있지만**, 그 값 자체가 �
 - **관측·action:** camera·영상 전처리·state/history, horizon·denoise·action 실행 수·후처리·물리 timestep·종료/개입 조건.
 - **영상·activation:** frame 시각·누락·FPS·codec·편집 이력, hook·pooling·dtype·capture pass, frame↔env step↔inference step 대응.
 
-설정 일치는 실제 영상 동일성의 충분조건이 아닙니다. 영상 파일 hash 또는 정확한 프레임·시각 비교로 확인합니다.
-재인코딩본은 파생 영상이고, 원본의 byte-copy는 저장 머신이 달라도 같은 파일입니다.
-빠진 조건은 추정하지 않고 미확인으로 표시합니다.
+- 설정 일치만으로 동일 영상 판정 금지: 영상 hash 또는 프레임·시각 비교 필요
+- 재인코딩본: 파생 영상으로 구분
+- 원본 byte-copy: 저장 머신이 달라도 동일 파일
+- 누락된 조건: 추정하지 않고 미확인 표시
 
 </details>
 
 → [전체 대조표와 영상·라벨 연결 기준](data_contract.md#재실행-조건-대조표)
 
-## 4. 학습할 때 중요한 세 가지
+## 4. 학습 주의사항
 
-**① 평가 데이터가 학습에 들어가지 않게 합니다.**
-같은 rollout의 frame이나 복사본을 train/test에 나누지 않습니다. 표준화·PCA·AE·cluster 등 전처리의 fit 데이터도 확인합니다.
-Threshold 선택·calibration과 최종 평가도 구분합니다.
+### ① 데이터 누출 방지
 
-기존 target-j 비교 기준은 **대상 j의 10판 전체를 제외하고 다른 4j의 40판으로 학습**하는 것입니다.
-대상 j의 실패판도 제외합니다. 40판 전체에 양 클래스가 필요하지만 각 j마다 양 클래스일 필요는 없습니다.
-새 split은 사용할 수 있으나 기존과 다른 실험임을 명시합니다.
+- 같은 rollout의 frame·복사본을 train/test로 나누지 않기
+- 표준화·PCA·AE·cluster의 fit 데이터 확인
+- Threshold 선택·calibration과 최종 평가 데이터 구분
+- 기존 target-j 비교: **대상 j 10판 전체 제외 → 다른 4j 40판으로 학습**
+- 대상 j의 실패판도 학습에서 제외
+- 40판 전체에 양 클래스 필요. 각 j별 양 클래스는 필수 아님
+- 새 split 사용 가능. 기존과 다른 실험임을 명시
 
-**② 길이 차이와 미래 정보에 주의합니다.**
-긴 episode가 학습을 지배하거나 성공/실패의 길이 차이만 배우지 않는지 봅니다.
-현재 시점 이후 activation, 전체 episode 평균·최종 길이 등은 온라인 입력으로 사용할 수 없습니다.
+### ② 길이 편향·미래 정보 방지
 
-**③ 최종 실패와 ‘현재 실패 사건’을 구분합니다.**
-실패한 rollout의 모든 frame이 실패 상태는 아닙니다. 성공한 rollout에도 실패 사건과 회복이 있을 수 있습니다.
-정상 timeout이나 후반 phase 미도달을 데이터 손상으로 제외하지 않습니다.
+- 긴 episode의 과도한 학습 기여 확인
+- 성공/실패의 길이 차이만 학습하는지 확인
+- 미래 activation·전체 episode 평균·종료 후 확정되는 길이를 온라인 입력에 사용 금지
+
+### ③ 최종 결과와 사건 라벨 구분
+
+- 최종 실패 rollout의 모든 frame을 실패 상태로 해석하지 않기
+- 성공 rollout에도 실패 사건·회복 가능
+- 정상 timeout·후반 phase 미도달을 데이터 손상으로 제외 금지
 
 → [데이터 분할·길이 통제·평가 상세](data_contract.md#detector-학습평가-상세-주의사항)
 
-## 5. 성능은 이렇게 나눠 봅니다
+## 5. 평가 항목
 
 | 보고할 것 | 구분할 점 |
 |---|---|
@@ -92,18 +100,23 @@ Threshold 선택·calibration과 최종 평가도 구분합니다.
 | 발화 시점 | 첫 사건 전/후와 시차. 사후 stuck 감지는 사전 예측과 구분 |
 | 온라인 동작 | Action 실행 전 판정, 지연, episode 간 상태 reset |
 
-모든 수치는 **분자·분모와 미검토/누락 수**를 함께 보고합니다. Frame 지표와 rollout 지표,
-instruction/scene별 편차도 구분합니다. Detector 발화 성능과 steering의 구제 성능은 별개입니다.
+- 모든 지표에 **분자·분모·미검토/누락 수** 표시
+- Frame 지표와 rollout 지표 구분
+- Instruction/scene별 편차 확인
+- Detector 발화 성능과 steering 구제 성능 구분
 
-## 6. 아직 정해야 할 것
+## 6. 미결 사항과 연결 방식
 
 - 실제 전달할 데이터·라벨·split snapshot과 접근 방법.
 - 사용할 detector 개발 branch/commit과 허용 지연.
 - **개입 후 detector 상태 처리:** 현재 LSTM의 hidden-state 갱신을 다른 모델에도 그대로 적용할지는 미결.
 
-코드는 `task_classification`에서 개발하고, 검증한 commit을 `temporal_vla`의 submodule로 연결합니다.
-모델·전처리·threshold·입력 정의를 함께 고정합니다. 추가 캡처나 파이프라인 변경은 박경태와 맞춥니다.
+- 코드 개발: `task_classification`
+- 통합: 검증한 commit을 `temporal_vla` submodule로 연결
+- 모델·전처리·threshold·입력 정의를 함께 고정
+- 추가 캡처·파이프라인 변경은 박경태와 조율
 
 ---
 
-**용어:** jitter(j)는 같은 scene의 위치 변화, noise(n)는 같은 scene/jitter의 정책 diffusion noise 변화입니다.
+- **jitter(j):** 같은 scene의 위치 변화
+- **noise(n):** 같은 scene/jitter의 정책 diffusion noise 변화
