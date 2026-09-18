@@ -1,5 +1,46 @@
 # Detector용 Rollout 데이터·라벨 사용 조건
 
+## 데이터 위치 — 승준 서버
+
+**데이터는 승준 서버에 접속해 가져와야 한다.** 아래 경로는 로컬 PC가 아닌 승준 서버 내부 경로다.
+Git clone만으로 원본 데이터와 라벨이 내려오지 않는다. 접속 정보·권한은 박경태에게 확인한다.
+
+### 원본 영상·데이터
+
+- 기본 데이터: `/home/kimseungjun/datasets/temporal_vla_store/groot/n15/grid/08f1c9df8207/`
+- 추가 수집: `/home/kimseungjun/datasets/temporal_vla_store/groot/n15/grid/4fa6496cd684/`
+- 추가 수집: `/home/kimseungjun/datasets/temporal_vla_store/groot/n15/grid/4ab360df2b71/`
+
+```text
+<plan>/<machine>/<instruction>/s<scene>/j<jitter>/n<noise>/base/
+  video.mp4
+  meta.json
+  rollout.pkl
+```
+
+- 같은 폴더에 원본 영상, 실행 metadata, rollout 데이터 저장
+- `instruction`은 `PPCC/bread`처럼 하위 경로를 포함할 수 있음
+- 복사 시 원본 경로 구조와 파일 hash를 보존해 영상·activation·라벨 대응 확인
+
+### 라벨 정본
+
+`/home/kimseungjun/workspace/labeler/v6_failure_onset_labels.tsv`
+
+- 사건 시각·프레임·유형·메모와 원본 식별자 저장
+- 복수 사건은 **marks 열의 JSON**에 저장 → 전체 사건 파싱
+- 로컬/Git의 동명 파일은 과거 snapshot일 수 있으므로 서버 정본과 구분
+- 학습·평가에는 가져온 라벨을 snapshot으로 고정하고 취득 시각·SHA256 기록
+
+### 라벨러 UI·서버 코드
+
+`/home/kimseungjun/workspace/labeler/`
+
+- SSH/SFTP/rsync 등으로 필요한 데이터를 가져오거나 승준 서버에서 읽기 전용 분석
+- 데이터 취득을 위해 기존 라벨러 서버·원본 파일을 변경할 필요는 없음
+- 추가 데이터가 필요하면 박경태에게 요청
+
+경로는 2026-09-18 사용자 제공 정보이며 이번 문서 작업에서 원격 파일을 직접 확인하거나 다운로드하지 않았다.
+
 ## 변경되는 데이터와 고정된 실험
 
 공유 저장소의 데이터 pool은 늘거나 줄 수 있다. 각 실험은 그 시점의 고정 manifest를 사용한다.

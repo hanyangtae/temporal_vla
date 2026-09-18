@@ -29,6 +29,10 @@
 
 ## 3. 같은 데이터인지 확인할 재현 조건
 
+- **데이터는 승준 서버에 접속해 가져오기**
+- [기본/추가 수집·라벨 정본·라벨러 경로](data_contract.md#데이터-위치--승준-서버) 참고
+- 접속 정보·권한은 박경태에게 확인
+
 - **Task·instruction:** task/env 이름, instruction 원문, 좌우 키 매핑
 - **Scene:** plan, scene_idx, 실제 layout_id·style_id, 주방 후보 목록과 순서
 - **객체·fixture:** 종류, asset 버전, target 매핑, 초기 pose·관절 상태
@@ -96,7 +100,7 @@
 
 ## 6. 미결 사항과 연결 방식
 
-- 실제 전달할 데이터·라벨·split snapshot과 접근 방법.
+- 실제 사용할 데이터·라벨·split snapshot과 승준 서버 접속 권한 확인.
 - 사용할 detector 개발 branch/commit과 허용 지연.
 - **개입 후 detector 상태 처리:** 현재 LSTM의 hidden-state 갱신을 다른 모델에도 그대로 적용할지는 미결.
 
