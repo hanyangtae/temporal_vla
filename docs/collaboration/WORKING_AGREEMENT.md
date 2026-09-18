@@ -27,43 +27,32 @@
 
 → [축별 범위·token 구성·온라인 연결 조건](detector_contract.md)
 
-## 3. 같은 데이터인지 먼저 확인
+## 3. 같은 데이터인지 확인할 재현 조건
 
-- **scene/j/n·seed만으로 activation·영상·라벨 연결 금지**
-- 원본 실행과 각 파일의 대응 관계 확인
+- **Task·instruction:** task/env 이름, instruction 원문, 좌우 키 매핑
+- **Scene:** plan, scene_idx, 실제 layout_id·style_id, 주방 후보 목록과 순서
+- **객체·fixture:** 종류, asset 버전, target 매핑, 초기 pose·관절 상태
+- **Jitter:** jitter_idx(j), reset_idx, lat/back 오프셋, base pose, 좌표계·부호
+- **Noise·seed:** noise_idx(n), env/scenario seed, inference/policy seed, seed 매핑·reseed 설정
+- **초기 상태:** ep_meta, simulator state, robot qpos/qvel·gripper, reset 순서·재시도·warmup
+- **Episode 실행:** episode_idx·시작 index, episode 수, 실행 순서, 환경 재사용 여부, one_episode_per_env
+- **병렬 환경:** n_envs, worker 수, episode→worker 배정, 동기/비동기 실행, policy batch 크기
+- **ep_roll:** 현재 확인한 코드에서 동명 필드 미확인. 원본에서 뜻하는 episode/rollout 순번·설정을 확인해 대조
+- **Machine:** 실제 수집·policy serve·render 머신 및 각 실행 device
+- **하드웨어·런타임:** GPU 모델, driver, CUDA/cuDNN, container·라이브러리 버전, thread 수
+- **실행 코드:** collector·serve·policy·benchmark·submodule 버전, 미커밋 변경, 실제 로드 경로
+- **정책 모델:** checkpoint, model config, embodiment, eval mode, dtype·TF32·결정성 설정
+- **관측 입력:** camera 이름·순서·pose·해상도, crop/resize/회전·색상 처리, state 항목·정규화, 관측 history
+- **정책 추론:** action horizon, denoise 횟수·schedule, sampling 설정, 실제 noise, RNG 초기화·소비 순서
+- **Action 실행:** n_action_steps, queue/reset, 정규화·역정규화, rotation/gripper·좌표계·clipping
+- **물리 진행:** controller, control rate, physics timestep·substep, horizon, 성공·종료·timeout 조건
+- **개입 조건:** arm, detector·전처리·threshold, operator·beta·적용 위치, gate·fallback·reseed·재-forward·상태 갱신
+- **렌더링:** backend(EGL/OSMesa 등), vendor(NVIDIA/Mesa 등), render device, camera·해상도·렌더 옵션
+- **영상 기록:** FPS, steps_per_render, 시작 offset, frame 누락·중복, 전체 frame 수·PTS, codec·pixel format·편집 설정
+- **Activation 저장:** hook 위치, capture layer·denoise slot·token, pooling·dtype, 후보/개입 pass, inference record와 영상 frame 대응
 
-| 식별값 | 무엇을 확인하나 |
-|---|---|
-| `pkl_sha256` | 같은 PKL 파일인지, 손상·교체되지 않았는지 |
-| `sig` | PKL을 찾는 짧은 값. 현재는 SHA256 앞 16자리이며 전체 hash와 함께 확인 |
-| `video_sha256` | 같은 영상 파일인지 |
-| `run_id` | 어느 실행에서 생성됐는지 |
-
-- PKL hash: 대응 영상 조회에 사용 가능. 영상 동일성 자체의 증거는 아님
-- Metadata 차이만으로 PKL hash가 바뀔 수 있음 → **파일 차이 ≠ 궤적 차이**
-- 기존 파일의 `video_sha256`·`run_id` 보유 여부 확인
-- 동일 조건의 결정적 재실행: 동일 결과 기대, run ID는 별도 부여
-- 원본 연결 전 실제 궤적·영상 일치 검증
-- 동일 내용의 재현본을 독립 표본으로 중복 집계 금지
-
-<details>
-<summary>재실행 시 대조할 조건 펼치기</summary>
-
-- **원본:** plan·run ID, 실제 생성 머신, PKL·영상·activation hash와 파생 이력.
-- **환경:** task·instruction·좌우 키 의미, 실제 layout/style, 객체·fixture, jitter의 reset/위치/좌표계.
-- **초기 상태·난수:** ep_meta, simulator·robot·객체 상태, reset 순서, env/policy seed, RNG 소비 순서·실제 noise.
-- **정책·실행 환경:** checkpoint·전처리·코드·라이브러리, GPU·driver·renderer·수치 정밀도와 결정성 설정.
-- **관측·action:** camera·영상 전처리·state/history, horizon·denoise·action 실행 수·후처리·물리 timestep·종료/개입 조건.
-- **영상·activation:** frame 시각·누락·FPS·codec·편집 이력, hook·pooling·dtype·capture pass, frame↔env step↔inference step 대응.
-
-- 설정 일치만으로 동일 영상 판정 금지: 영상 hash 또는 프레임·시각 비교 필요
-- 재인코딩본: 파생 영상으로 구분
-- 원본 byte-copy: 저장 머신이 달라도 동일 파일
-- 누락된 조건: 추정하지 않고 미확인 표시
-
-</details>
-
-→ [전체 대조표와 영상·라벨 연결 기준](data_contract.md#재실행-조건-대조표)
+같은 조건의 결정적 실행은 같은 결과를 기대하며, 실제 궤적·영상 일치는 별도 검증.
+식별값 용도와 상세 확인 방법은 [데이터 문서](data_contract.md#식별값별-용도) 참고.
 
 ## 4. 학습 주의사항
 
