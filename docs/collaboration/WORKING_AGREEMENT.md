@@ -29,10 +29,27 @@
 | 출력 | 현재 inference step의 fire/no-fire. 해당 action이 환경에서 실행되기 전에 판정 완료. |
 | 인과성 | 현재 시점에 아직 얻을 수 없는 activation·미래 결과·최종 성공 라벨을 온라인 입력으로 쓰지 않는다. |
 | 데이터 버전 | 바뀌는 데이터 pool과 실험용 frozen manifest를 분리한다. 학습 중 snapshot을 교체하지 않는다. |
-| 실행 식별 | scene/j/n만으로 조인 금지. plan, 실제 layout/style, machine/run, seed, artifact hash를 보존한다. 재실행은 별개 rollout이다. |
+| 실행 식별 | scene/j/n·seed·성공 여부만으로 동일 실행/영상으로 조인하지 않는다. 아래 실행 식별 조건을 모두 기록·대조한다. 동일 영상 파일은 전체 SHA256으로 확인하며, 재실행은 같은 조건이어도 별개 rollout이다. |
 | 라벨 | 최종 성공과 실패 사건은 별도 변수. 모든 사건을 보존하고 라이브 라벨의 고정 snapshot으로 학습·평가한다. |
 | 비교 | detector 판별 성능과 steering의 SR·구제·파괴를 구분한다. 다른 머신 참고 영상의 라벨을 원본과 동일시하지 않는다. |
 | 버전 통합 | detector commit과 모델·전처리·threshold를 함께 고정한다. submodule은 검증한 commit만 갱신한다. |
+
+### 실행 식별: 같은 영상과 같은 재현 조건의 구분
+
+- **원본 식별:** rollout_id/run ID, 실제 생성 machine, 원본 plan ID·hash, rollout·video·activation 각각의 전체 SHA256 및 생성·파생 관계. `pkl_sha256`이나 짧은 `sig`만으로 영상 동일성을 판정하지 않는다.
+- **환경 좌표:** task/env와 원문 instruction·좌우 키 매핑, scene_idx, 실제 layout/style, 주방 후보 목록·순서, fixture/객체 asset, jitter_idx와 실제 reset_idx·lat/back·좌표계·부호를 보존한다.
+- **초기 상태·난수:** ep_meta와 주입 시점, 초기 simulator/robot/객체 상태, reset 순서, env/inference seed, noise_idx→seed 매핑, RNG 초기화·소비 순서, 실제 policy noise 및 reseed 이력을 대조한다.
+- **정책·실행 환경:** checkpoint·전처리·normalization hash, 코드와 submodule commit·미커밋 patch, 실제 모듈 경로, container/라이브러리, GPU·driver·renderer/backend/vendor·dtype·결정성 설정을 대조한다.
+- **관측·action·개입:** camera·해상도·pose와 영상 전처리, state/history 입력, horizon·denoise·실행 action 수, action 후처리·controller·physics timestep, 종료 조건, detector/operator·threshold·fallback·발화 및 hidden-state 처리를 대조한다.
+- **영상·activation 대응:** render 주기·시작 offset·누락/중복 frame·전체 frame 수·PTS/FPS, codec·pixel format·crop/overlay, activation hook·축·pooling·dtype·후보/개입 pass를 기록한다. 라벨은 실제로 본 video hash와 frame↔env_step↔inference_step 대응에 연결한다.
+
+**설정 일치는 동일 영상의 충분조건이 아니다.** 같은 파일은 전체 video SHA256 일치로 확인한다.
+파일 hash가 다른 경우 같은 프레임열을 주장하려면 동일 디코딩 규약의 모든 픽셀·프레임 수·표시 시각을 확인해야 한다.
+재인코딩·편집본은 원본 hash와 변환 대응을 가진 파생 영상이고, 같은 seed의 재수집은 별개 실행이다.
+원본 영상의 byte-copy는 저장 머신이 달라도 같은 파일이다. 누락된 조건은 `미확인`으로 기록한다.
+실제 재실행 비교에는 초기 상태와 step별 관측·noise·실행 action·state 검증도 필요하며,
+같은 결과나 비슷한 영상만으로 원본의 사건 라벨을 옮기지 않는다.
+전체 항목·판정 수준은 [데이터 계약의 재실행 조건 대조표](data_contract.md#재실행-조건-대조표)를 따른다.
 
 ## 3. 기존 steering 평가를 재현할 때의 조건
 
