@@ -16,11 +16,11 @@
 | 항목 | 합의한 내용 |
 |---|---|
 | 입력 | Activation. 제공 범위 안에서 layer·denoise step·token 선택과 pooling 가능 |
-| 시간 단위 | Inference step. Denoise step과 구분 |
+| 시간 단위 | Inference step. |
 | 출력 | **현재 inference step의 개입 필요 여부** |
-| 판정 시점 | **해당 action이 환경에서 실행되기 전** |
+| 판정 시점 | **해당 action이 환경에서 실행되기 전**, 추후 activation을 수정하고 denoise step을 다시 밟을 만큼에 여유도 필요  |
 
-- 확인 저장본: **`[7 layers, 4 denoise steps, 49 tokens, 1536 features]`**
+- 저장본: **`[7 layers, 4 denoise steps, 49 tokens, 1536 features]`**
 - 저장 layer: `[0, 2, 4, 8, 10, 12, 15]`
 - 코드상 캡처 범위: 전체 16개 layer. 미저장 layer는 추가 캡처 필요
 - 전달 묶음별 실제 저장 범위 확인
@@ -41,7 +41,6 @@
 - **초기 상태:** ep_meta, simulator state, robot qpos/qvel·gripper, reset 순서·재시도·warmup
 - **Episode 실행:** episode_idx·시작 index, episode 수, 실행 순서, 환경 재사용 여부, one_episode_per_env
 - **병렬 환경:** n_envs, worker 수, episode→worker 배정, 동기/비동기 실행, policy batch 크기
-- **ep_roll:** 현재 확인한 코드에서 동명 필드 미확인. 원본에서 뜻하는 episode/rollout 순번·설정을 확인해 대조
 - **Machine:** 실제 수집·policy serve·render 머신 및 각 실행 device
 - **하드웨어·런타임:** GPU 모델, driver, CUDA/cuDNN, container·라이브러리 버전, thread 수
 - **실행 코드:** collector·serve·policy·benchmark·submodule 버전, 미커밋 변경, 실제 로드 경로
@@ -107,9 +106,8 @@
 - 코드 개발: `task_classification`
 - 통합: 검증한 commit을 `temporal_vla` submodule로 연결
 - 모델·전처리·threshold·입력 정의를 함께 고정
-- **데이터가 추가로 필요하면 박경태에게 요청**: 필요한 task/scene, 성공·실패 구성, 수량, activation 범위와 사용 목적을 함께 전달
 - 추가 캡처·파이프라인 변경은 박경태와 조율
-
+- **데이터가 추가로 필요하면 박경태에게 요청**: 필요한 task/scene, 성공·실패 구성, 수량, activation 범위와 사용 목적을 함께 전달
 ---
 
 - **jitter(j):** 같은 scene의 위치 변화
