@@ -123,7 +123,7 @@ I(Z;Y)=\sum_{k}\sum_{c} p(k,c)\log_2\frac{p(k,c)}{p(k)p(c)}
 
 \textbf{Phase 정보는 장면 암기로 환원되지 않는다.} Activation에는 scene 정보도 섞여 있다(instruction별 scene과의 MI 0.02$\sim$0.86 bits). 그러나 scene별 평균을 제거한 잔차에서 scene 정보는 중앙값 0.44에서 0.27 bits로 크게 줄어드는 반면, phase margin +0.34에서 +0.31로 10개 instruction 전부에서 양수로 유지된다(Figure 2b).
 
-\textbf{Cluster 전환은 압축 모델에 관계없이 일관된다.} Cluster 전환이 특정 압축 모델의 산물이 아님을 확인하기 위해, 같은 activation을 AE와 SAE로 각각 압축·clustering했다. 각 모델은 에피소드의 스텝마다 cluster를 하나씩 배정하므로 앞 step과 cluster가 달라지는 지점을 전환으로 정의할 수 있다. 두 모델이 낸 전환을 $\pm$1스텝 이내에서 짝지었다. 짝지어진 비율을 AE 전환 기준(precision)과 SAE 전환 기준(recall)으로 구해 조화평균한 값이 전환 일치 F1이며, 전환 개수는 두고 위치만 무작위로 흩은 상태열 300개의 F1 분포로 z를 구한다. 두 모델의 전환 일치율은 F1 0.66$\sim$0.75, z +8.8$\sim$+13.5을 보인다. 즉 activation에는 전환 시점 정보가 존재한다.
+\textbf{Cluster가 바뀌는 시점은 압축 모델에 관계없이 일관된다.} 같은 activation을 AE와 SAE로 각각 압축·clustering한 뒤, 앞 스텝과 cluster가 달라지는 지점(전환)을 $\pm$1스텝 이내에서 짝지어 일치도를 F1 score로 쟀다. 두 모델의 전환 일치 F1은 0.66$\sim$0.75로, 같은 개수의 전환을 무작위 위치에 놓았을 때의 0.51$\sim$0.53을 웃돌아 전환 시점이 압축 모델이 아니라 activation 자체에 담긴 구조임을 보인다.
 
 \section{한계와 결론}
 \textbf{한계.} 평가는 단일 모델(GR00T N1.5)·단일 벤치마크(RoboCasa, 시뮬레이션)에 한정되어 다른 VLA나 실제 로봇으로의 일반화는 확인하지 않았다. GT phase 라벨은 한 명의 연구자가 부여한 것이라 정확도의 절대값은 그 기준에 의존한다. 다만 모든 방법을 같은 라벨로 채점하므로 비교에는 영향이 같다. 또한 본 연구는 표상을 읽는 것이며, 개입해 행동을 바꾸는 것은 별개의 검증을 요한다.
