@@ -140,3 +140,44 @@ PKL·영상·activation·라벨은 manifest에서 서로 연결한다. 따라서
 
 전달 전 검증: 원본 존재·hash·NaN/Inf·shape·episode 경계·record 대응·라벨/seed 정합성.
 정상 timeout, 행동 실패, 후반 phase 미도달은 손상 사유가 아니다.
+
+## Detector 학습·평가 상세 주의사항
+
+### 데이터 분할과 길이 통제
+
+- 같은 rollout의 frame/activation을 train과 test에 나눠 넣지 않는다. 복사본·파생 artifact도 원본 ID 기준으로 함께 분리한다.
+- 기존 target-j 기준 비교에서는 같은 instruction/scene의 target j 10판 전체를 제외하고 다른 4j 40판으로 detector를 학습한다.
+  Target의 실패판도 detector fit에 포함하지 않는다. 기존 operator는 target 실패를 쓰기도 하지만 그 학습 pool을 detector에 재사용하면 안 된다.
+- 위 40판 전체에는 성공·실패가 필요하다. 각 j가 개별적으로 양 클래스를 가져야 한다는 추가 조건은 없다.
+- 새 split이나 학습 방법은 별도 실험으로 명시할 수 있다. target-j heldout과 scene heldout의 일반화 범위를 구분한다.
+- 표준화·PCA·AE·cluster 등 학습하는 전처리도 해당 split의 학습 데이터로 fit한다.
+  기존 pretrained artifact를 사용하면 학습 데이터 중첩 여부와 고정/재학습 여부를 밝혀 평가 누출을 확인한다.
+- 모델 선택·threshold 조정·calibration에 사용한 데이터를 최종 평가 데이터와 구분한다.
+- 성공/실패의 길이 차이, 긴 episode의 과도한 기여, scene/jitter별 불균형을 확인한다.
+  기존 k8 조건과 비교할 때는 cluster별 길이 통제 방식과 episode별 기여량을 명시한다.
+  다른 방식은 사용할 수 있지만 기존과 같은 통제를 했다고 추정해서 쓰지 않는다.
+- 실패 rollout의 후반 phase/cluster 부재, 정상 timeout·행동 실패는 손상이 아니다.
+  표본이 적으면 확인 불가를 표시하고 임의 cutoff로 유리한 표본만 남기지 않는다.
+
+### 예측 대상과 시간
+
+- Episode의 최종 성공/실패 라벨과 특정 시점의 실패 사건 라벨은 다르다.
+  최종 실패 라벨을 모든 frame의 '현재 실패 상태' 정답으로 해석하지 않는다.
+- 최종 성공한 rollout에도 실패 사건과 회복이 있을 수 있다.
+  성공판 발화율 전체와 검토된 무사건 성공판의 발화율을 분리해서 본다.
+- Sequence 모델뿐 아니라 pooling·window·정규화에도 미래 record가 섞이지 않게 한다.
+  양방향 window, 전체 episode 평균, 종료 후에만 아는 최종 길이 등은 online 입력이 될 수 없다.
+- 같은 inference_step의 denoise slot과 서로 다른 시간의 inference_step을 혼동하지 않는다.
+  사건 frame/env_step을 inference_step으로 바꾸는 offset과 대응은 데이터별로 확인한다.
+- 사건 전 감지 성능은 사건 전 라벨과 발화 시점으로 직접 평가한다.
+  단순 성공/실패 분리 점수만으로 사전 감지 능력을 주장하지 않는다.
+
+### 보고할 성능
+
+- 성공판 전체 발화율, 검토된 무사건 성공판의 발화율, 실패판 발화율·미발화 수를 분자/분모와 함께 본다.
+- 첫 발화가 첫 실패 사건 전인지 후인지와 시차를 보고한다. 여러 사건은 보존하고 어느 사건과 비교했는지 명시한다.
+- 사건 후 stuck 감지는 사전 예측과 구분한다. 미검토·라벨 누락은 별도 분모로 드러낸다.
+- Frame 지표와 rollout 지표를 구분하고 instruction/scene별 편차를 함께 확인한다.
+- Score는 모델별 의미가 다르다. 두 MLP의 점수가 독립 출력이라면 합이 1인 성공/실패 확률로 가정하지 않는다.
+- Detector의 발화 개선과 steering의 구제/파괴는 별도 평가다. 구제 실패만으로 detector 오발화라고 판정하지 않는다.
+- 현재 inference step의 판정이 action 실행 전에 끝나는지, 실제 실행 환경의 지연과 episode reset을 확인한다.
