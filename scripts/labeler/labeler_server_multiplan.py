@@ -3,11 +3,12 @@
 GET /            → index.html   GET /video/<rel>/video.mp4 → 아카이브 영상(Range 지원)
 GET /api/labels  → 저장된 라벨 JSON   POST /api/label → 한 셀 저장(upsert, TSV 원자적 재기록)
 GET /api/export.csv → CSV
-사용: python3 labeler_server.py --root <grid>/08f1c9df8207 --labels <tsv> --port 8765 (localhost 바인드)
+사용: python3 labeler_server.py --root <grid>/08f1c9df8207 --labels <tsv> --port 8767 (localhost 바인드)
 """
 import argparse, json, os, csv, io, threading, time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import unquote
+from label_events import validate_record, event_rows, EVENT_COLS
 COLS=["rel","key","s","j","n","succ","no_failure","t_fail","frame","fps","frames_total","type","n_marks","marks","note","by","updated_at","sig"]
 LOCK=threading.Lock()
 def load(p):
@@ -49,6 +50,12 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/labels":
             with LOCK: body=json.dumps(list(self.labels.values()),ensure_ascii=False).encode()
             return self._send(200,body)
+        if p in ("/api/events.csv", "/api/events.tsv"):
+            with LOCK: rows=list(event_rows(self.labels.values()))
+            sep="\t" if p.endswith(".tsv") else ","
+            b=io.StringIO(); w=csv.DictWriter(b,fieldnames=EVENT_COLS,delimiter=sep); w.writeheader(); w.writerows(rows)
+            ext="tsv" if sep=="\t" else "csv"
+            return self._send(200,b.getvalue().encode(),"text/plain; charset=utf-8",{"Content-Disposition":f'attachment; filename="v6_label_events.{ext}"'})
         if p=="/api/export.csv":
             with LOCK: rows=sorted(self.labels.values(),key=lambda x:x["rel"])
             b=io.StringIO(); w=csv.DictWriter(b,fieldnames=COLS,extrasaction='ignore'); w.writeheader()
@@ -90,11 +97,20 @@ class H(BaseHTTPRequestHandler):
         if self.path!="/api/label": return self._send(404,b"","text/plain")
         n=int(self.headers.get("Content-Length","0")); rec=json.loads(self.rfile.read(n).decode())
         if not rec.get("rel") or ".." in rec["rel"]: return self._send(400,b'{"err":"rel"}')
+        try:
+            normalized=validate_record(rec)
+        except (ValueError, TypeError, KeyError, OverflowError) as e:
+            return self._send(400,json.dumps({"err":str(e)}).encode())
         with LOCK:
-            self.labels[rec["rel"]]=rec; dump(self.labels_path,self.labels)
+            old=self.labels.get(rec["rel"],{})
+            if any(m.get("kind")=="interval" for m in old.get("marks",[])) and rec.get("schema_version")!=2:
+                return self._send(409,b'{"err":"Interval labels exist. Refresh the labeler before saving."}')
+            updated=dict(self.labels);updated[rec["rel"]]=normalized
+            dump(self.labels_path,updated)
+            self.labels.clear();self.labels.update(updated)
         return self._send(200,b'{"ok":true}')
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument("--root",required=True); ap.add_argument("--labels",required=True); ap.add_argument("--index",default=os.path.join(os.path.dirname(os.path.abspath(__file__)),"index.html")); ap.add_argument("--port",type=int,default=8765); ap.add_argument("--host",default="127.0.0.1")
+    ap=argparse.ArgumentParser(); ap.add_argument("--root",required=True); ap.add_argument("--labels",required=True); ap.add_argument("--index",default=os.path.join(os.path.dirname(os.path.abspath(__file__)),"index.html")); ap.add_argument("--port",type=int,default=8767); ap.add_argument("--host",default="127.0.0.1")
     ap.add_argument("--extra-root",action="append",default=[],metavar="PLAN_ID=PATH")
     a=ap.parse_args()
     for item in a.extra_root:
