@@ -1,0 +1,9 @@
+jax[cuda12]==0.5.3
+jaxlib==0.5.3
+flax==0.10.5
+optax==0.2.4
+distrax==0.1.5
+ml-collections==1.0.0
+numpy==1.26.4
+scipy==1.15.3
+tensorflow-probability==0.25.0
