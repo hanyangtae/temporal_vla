@@ -5,7 +5,7 @@ GET /api/labels  → 저장된 라벨 JSON   POST /api/label → 한 셀 저장(
 GET /api/export.csv → CSV
 사용: python3 labeler_server.py --root <grid>/08f1c9df8207 --labels <tsv> --port 8767 (localhost 바인드)
 """
-import argparse, json, os, csv, io, threading, time
+import argparse, json, os, csv, io, threading, time, shutil
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import unquote
 from label_events import validate_record, event_rows, EVENT_COLS
@@ -94,6 +94,24 @@ class H(BaseHTTPRequestHandler):
             return
         return self._send(404,b"not found","text/plain")
     def do_POST(self):
+        if self.path=="/api/labels/delete-all":
+            try:
+                rec=json.loads(self.rfile.read(int(self.headers.get("Content-Length","0"))).decode())
+                if rec.get("confirmation")!="DELETE_ALL_LABELS":
+                    return self._send(400,b'{"err":"explicit confirmation required"}')
+                with LOCK:
+                    count=len(self.labels)
+                    if os.path.exists(self.labels_path):
+                        backup_dir=os.path.join(os.path.dirname(self.labels_path),"deleted_label_backups")
+                        os.makedirs(backup_dir,exist_ok=True)
+                        shutil.copy2(self.labels_path,os.path.join(backup_dir,f"labels_{time.time_ns()}.tsv"))
+                    dump(self.labels_path,{})
+                    self.labels.clear()
+                return self._send(200,json.dumps({"ok":True,"deleted":count}).encode())
+            except (ValueError, TypeError, AttributeError):
+                return self._send(400,b'{"err":"invalid request"}')
+            except OSError:
+                return self._send(500,b'{"err":"could not persist deletion"}')
         if self.path!="/api/label": return self._send(404,b"","text/plain")
         n=int(self.headers.get("Content-Length","0")); rec=json.loads(self.rfile.read(n).decode())
         if not rec.get("rel") or ".." in rec["rel"]: return self._send(400,b'{"err":"rel"}')
