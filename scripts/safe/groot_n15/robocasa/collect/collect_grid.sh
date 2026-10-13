@@ -38,6 +38,11 @@
 # 하드코딩 금지: 위 값은 전부 PLAN_JSON 에서 읽는다.
 set -uo pipefail
 
+# Mandatory GR00T admission, before any output or model process is created.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)/scripts/utils/groot_launch_guard.sh"
+groot_launch_guard collect "$0" "$@" || exit $?
+
+
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../../.." && pwd)"
 : "${PLAN_JSON:?PLAN_JSON (collection_plan.json 경로) 필요}"
 : "${GRID_ROOT:?GRID_ROOT (로컬 staging 루트) 필요}"
@@ -336,9 +341,9 @@ run_worker() {  # wid port
       args+=(--jitter-reset-idx "$k" --ep-meta-dir "${GRID_ROOT_CONT}/ep_meta")
     fi
     if [ "$DRY_RUN" = "1" ]; then
-      echo "[dry] docker exec ${COLLECT_CONTAINER:-robocasa} ${args[*]}"
+      echo "[dry] docker exec robocasa ${args[*]}"
     else
-      docker exec -e MUJOCO_GL=egl -e PYTHONPATH="$PYPATH" "${COLLECT_CONTAINER:-robocasa}" "${args[@]}" 2>&1 \
+      docker exec -e MUJOCO_GL=egl -e PYTHONPATH="$PYPATH" robocasa "${args[@]}" 2>&1 \
         | grep -E "^wrote|Error|Traceback|좌표" || true
     fi
   done < <(tsv_us "$TODO_TSV")

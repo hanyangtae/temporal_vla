@@ -1,0 +1,40 @@
+{
+  "kind": "collect",
+  "model": "groot",
+  "machine": "srv50",
+  "expansion_mode": "noise",
+  "parent_plan": "/home/dongkyu/pkt_ws/temporal_vla/.claude/worktrees/collect-topup/configs/collect/n15_topup_remaining_20260909/collection_plan.json",
+  "parent_plan_sha256": "f34494e999a6626eecb7ebf85c44ec3a01e4eac9f7390a8f0ae6cf6717885193",
+  "plan_sha256": "74c7fbc0c52c9270aa44147eea7b7ba3d4bd92de8cb54a393aee380935f79bc2",
+  "parent_grid_root": "/home/dongkyu/pkt_ws/temporal_vla/outputs/collect/grid_staging_v6",
+  "allowed_instructions": [
+    "PPCC/bread",
+    "PPCC/candle",
+    "PPCC/jug",
+    "PPCC/marshmallow"
+  ],
+  "excluded_instructions": [
+    "CoffeeSetupMug",
+    "PPCC/apple"
+  ],
+  "noise_count": 20,
+  "jitter_count": 5,
+  "selected_scenes": [
+    {
+      "instruction": "PPCC/bread",
+      "scene": 4
+    },
+    {
+      "instruction": "PPCC/candle",
+      "scene": 0
+    },
+    {
+      "instruction": "PPCC/jug",
+      "scene": 1
+    },
+    {
+      "instruction": "PPCC/marshmallow",
+      "scene": 4
+    }
+  ]
+}
