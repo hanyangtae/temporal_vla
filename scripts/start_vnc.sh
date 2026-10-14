@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Explicit batch commands must never enter interactive desktop setup.
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+fi
+
 # 에러 발생 시 중단하지 않음 (유연한 실행을 위해)
 set +e
 
@@ -26,13 +31,13 @@ fi
 # - User: 현재 유저
 # - Desktop: XFCE
 echo "Starting KasmVNC Server on port 8444..."
-vncserver -port 8444 -select-de xfce -interface 0.0.0.0
+timeout 60s vncserver -port 8444 -select-de xfce -interface 0.0.0.0 </dev/null || exit $?
 
 echo "-------------------------------------------------------"
 echo "KasmVNC is running!"
 echo "Access URL: https://<Server-IP>:8444"
 echo "User: $USER"
-echo "Password: $VNC_PW"
+
 echo "-------------------------------------------------------"
 
 # 컨테이너가 종료되지 않도록 대기

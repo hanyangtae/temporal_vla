@@ -38,6 +38,9 @@
 # 하드코딩 금지: 위 값은 전부 PLAN_JSON 에서 읽는다.
 set -uo pipefail
 
+# Fail closed before admission: headless container and bounded Docker logs.
+python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)/scripts/utils/check_collect_container.py" "${COLLECT_CONTAINER:-robocasa}" || exit $?
+
 # Mandatory GR00T admission, before any output or model process is created.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)/scripts/utils/groot_launch_guard.sh"
 groot_launch_guard collect "$0" "$@" || exit $?
