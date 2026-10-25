@@ -82,6 +82,20 @@ local_stats() {  # dir → "count bytes" (실물 파일만, 심링크 제외)
     | awk '{n++; s+=$1} END {printf "%d %d\n", n+0, s+0}'
 }
 
+# 원격 셸 인자용 단일따옴표 인용 (경로에 ' · 공백 · $ 가 있어도 안전).
+sq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+# SHA256 manifest: 셀 안 모든 실물 파일의 "<sha256>  ./<상대경로>" 를 C-locale 정렬로.
+# 로컬·원격이 같은 명령을 돌려 문자열로 비교한다 (임시파일 없음, 내용 출력 없음).
+# xargs -r: 파일 0개일 때 sha256sum 이 stdin 을 읽지 않게.
+MANIFEST_CMD="find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum --"
+local_manifest() {  # dir → manifest (stdout); 해시 실패 시 비0
+  ( cd -- "$1" && eval "$MANIFEST_CMD" )
+}
+remote_manifest() {  # rel → manifest (stdout); ssh/해시 실패 시 비0
+  $SSH_CMD "$DEST_HOST" "cd -- $(sq "${DEST_ROOT}/$1") && ${MANIFEST_CMD}" < /dev/null
+}
+
 ship_cell() {  # host_cell_dir rel
   local dir="$1" rel="$2"
   local key; key="$(cell_key_of "$rel")" || { log "SKIP 레이아웃 이상: ${rel}"; return 1; }
@@ -92,23 +106,41 @@ ship_cell() {  # host_cell_dir rel
   if [ "$DRY_RUN" = "1" ]; then
     echo "[dry] ${SSH_CMD} ${DEST_HOST} mkdir -p ${DEST_ROOT}/${rel}"
     echo "[dry] rsync -a --partial -e \"${SSH_CMD}\" ${dir}/ ${DEST}/${rel}/"
-    echo "[dry] verify + rsync --remove-source-files + prune empty dirs"
+    echo "[dry] verify(count/bytes + sha256 manifest) + rsync --remove-source-files + prune empty dirs"
     echo "$key" >> "$SHIPPED"
     return 0
   fi
 
-  run_ssh "mkdir -p '${DEST_ROOT}/${rel}'" || { log "FAIL mkdir ${rel}"; return 1; }
+  run_ssh "mkdir -p -- $(sq "${DEST_ROOT}/${rel}")" || { log "FAIL mkdir ${rel}"; return 1; }
   rsync -a --partial -e "$SSH_CMD" "${dir}/" "${DEST}/${rel}/" || {
     log "FAIL rsync ${rel} — 로컬 유지"; return 1; }
 
   # 대조: 원격 실물 개수·바이트 (이름만 세지 않는다 — docs/04 §7.5)
   local remote; remote="$($SSH_CMD "$DEST_HOST" \
-    "find '${DEST_ROOT}/${rel}' -type f -printf '%s\n' 2>/dev/null | awk '{n++; s+=\$1} END {printf \"%d %d\n\", n+0, s+0}'")"
+    "find $(sq "${DEST_ROOT}/${rel}") -type f -printf '%s\n' 2>/dev/null | awk '{n++; s+=\$1} END {printf \"%d %d\n\", n+0, s+0}'")"
   local rc rb; read -r rc rb <<< "$remote"
   if [ "${rc:-0}" != "$lc" ] || [ "${rb:-0}" != "$lb" ]; then
     log "MISMATCH ${rel}: local=${lc}/${lb} remote=${rc:-?}/${rb:-?} — 로컬 삭제 안 함"
     return 1
   fi
+
+  # 대조 2: 전 파일 SHA256 manifest (같은 크기 내용 손상까지 잡는다). 실패·불일치 = 로컬 유지.
+  local lman rman
+  lman="$(local_manifest "$dir")" || { log "FAIL 로컬 해시 ${rel} — 로컬 삭제 안 함"; return 1; }
+  rman="$(remote_manifest "$rel")" || { log "FAIL 원격 해시 ${rel} — 로컬 삭제 안 함"; return 1; }
+  local ln_l ln_r
+  ln_l=$(printf '%s\n' "$lman" | grep -c .); ln_r=$(printf '%s\n' "$rman" | grep -c .)
+  if [ "$ln_l" != "$lc" ] || [ "$lman" != "$rman" ]; then
+    log "HASH MISMATCH ${rel}: local=${ln_l} remote=${ln_r} entries (files=${lc}) — 로컬 삭제 안 함"
+    return 1
+  fi
+  # 삭제 직전 로컬 재해시: 검증 후 바뀐 파일이 있으면 미검증본을 지우지 않는다
+  local lman2
+  lman2="$(local_manifest "$dir")" || { log "FAIL 로컬 재해시 ${rel} — 로컬 유지"; return 1; }
+  if [ "$lman2" != "$lman" ]; then
+    log "CHANGED ${rel}: 해시 검증 후 로컬 변경 — 로컬 유지"; return 1
+  fi
+  log "HASH OK ${rel} (${ln_l} files sha256 일치)"
 
   # 대조 통과 → 로컬 비움 (전송된 파일만 삭제 + 빈 디렉토리 정리)
   rsync -a --remove-source-files -e "$SSH_CMD" "${dir}/" "${DEST}/${rel}/" || {

@@ -1,0 +1,35 @@
+{
+  "kind": "collect",
+  "model": "groot",
+  "machine": "srv48",
+  "expansion_mode": "noise",
+  "parent_plan": "../n15_target9_n20_20261013/collection_plan.json",
+  "parent_plan_sha256": "74c7fbc0c52c9270aa44147eea7b7ba3d4bd92de8cb54a393aee380935f79bc2",
+  "plan_sha256": "feac1b97a4bede8151790dbd140abbffe91bb434861c7c9f4e4788d49e0dc1ce",
+  "parent_grid_root": "/home/dongkyu/pkt_ws/temporal_vla/outputs/collect/grid_n20_kanu_20261013",
+  "allowed_instructions": [
+    "DishwasherRack/out-left",
+    "DishwasherRack/out-right",
+    "OvenRack/out-left"
+  ],
+  "excluded_instructions": [
+    "CoffeeSetupMug",
+    "PPCC/apple"
+  ],
+  "noise_count": 40,
+  "jitter_count": 5,
+  "selected_scenes": [
+    {
+      "instruction": "DishwasherRack/out-left",
+      "scene": 3
+    },
+    {
+      "instruction": "DishwasherRack/out-right",
+      "scene": 1
+    },
+    {
+      "instruction": "OvenRack/out-left",
+      "scene": 2
+    }
+  ]
+}

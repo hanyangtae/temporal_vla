@@ -182,9 +182,11 @@ def noise_extension_check(contract, old, new, plan_path, instructions, noise_lim
     for field in ('model','version','ckpt','capture_layers','denoise_k','token_mode','instructions','scenes','jitters','extra'):
         require(new[field] == old[field], f'noise extension changed {field}')
     require(new['model'] == 'groot', 'GR00T policy only')
+    # Append-only nold→noise_limit (e.g. n10→20, n20→40); old noise indices are never backfilled.
     seeds=new['noise_seeds'];nold=len(old['noise_seeds'])
-    require(nold == 10 and len(seeds) == noise_limit == contract['noise_count'] == 20, 'requires n10 to n20')
-    require(seeds[:nold] == old['noise_seeds'] and len(set(seeds)) == 20, 'noise prefix changed or duplicate seed')
+    require(nold > 0 and type(noise_limit) is int and len(seeds) == noise_limit == contract['noise_count'] > nold,
+            f'requires append-only n{nold} to n{noise_limit} matching contract noise_count')
+    require(seeds[:nold] == old['noise_seeds'] and len(set(seeds)) == noise_limit, 'noise prefix changed or duplicate seed')
     require(all(type(s) is int for s in seeds), 'noise seeds must be integers')
     wanted=set(instructions.split(','))
     require(wanted and wanted <= set(contract['allowed_instructions']), 'instruction outside allowed scope')
@@ -196,12 +198,12 @@ def noise_extension_check(contract, old, new, plan_path, instructions, noise_lim
     for key,sid in selected:
         require(0 <= sid < len(old['instructions'][key]), 'unknown scene')
         require(len(old['jitters'][key][sid]) == contract['jitter_count'] == 5, 'expected five original jitters')
-        allowed.update(f'{key}|s{sid}|j{j}|n{n}' for j in range(5) for n in range(nold,20))
-    universe={f'{key}|s{sid}|j{j}|n{n}' for key in wanted for sid in range(len(new['instructions'][key])) for j in range(len(new['jitters'][key][sid])) for n in range(20)}
+        allowed.update(f'{key}|s{sid}|j{j}|n{n}' for j in range(5) for n in range(nold,noise_limit))
+    universe={f'{key}|s{sid}|j{j}|n{n}' for key in wanted for sid in range(len(new['instructions'][key])) for j in range(len(new['jitters'][key][sid])) for n in range(noise_limit)}
     done=set(Path(done_list).read_text().splitlines())
     require(universe - allowed <= done, 'DONE_LIST would recollect original/out-of-scope cells')
     require(hashlib.sha256(Path(plan_path).read_bytes()).hexdigest() == contract['plan_sha256'], 'plan digest mismatch')
-    return {'new_scenes':0,'new_episodes':len(allowed),'remaining_episodes':len(universe-done),'noise_range':[10,19]}
+    return {'new_scenes':0,'new_episodes':len(allowed),'remaining_episodes':len(universe-done),'noise_range':[nold,noise_limit-1]}
 
 
 def collection_check(contract_path, plan_path, instructions, noise_limit, done_list, grid_root):
