@@ -15,6 +15,9 @@
      종료 후 완료 여부는 다음 사이클 아카이브 재감사로만 판정한다.
 
 발사 전 검사(harness check-collection) 실패 = 설정 오류 → 재시도 없이 종료.
+GPU 선택 전 harness status 로 이 머신·세션 receipt 를 조회해, launcher/consumer PID 가 모두 죽고
+receipt GPU 가 전부 idle 인 stale receipt 만 정확히 release 한다. 그 외 자기 receipt 가 남으면 대기.
+수집기 rc=2 + '[harness] BLOCKED:' = 예약 거부 → 실패로 세지 않고 대기.
 진척 없는 시도 3회 연속 → 발사 중단·종료. SIGTERM: 대기 중단, 수집기·shipper 는 살려두고 PID 기록 후 종료.
 
   python3 scripts/collect/watch_target9_n40.py --machine srv48 --dry-run --once   # 감사
@@ -158,13 +161,57 @@ def parse_apps_csv(text):
     return apps
 
 
+def idle_gpu_indices(gpus, apps, mem_max=GPU_MEM_MAX_MIB):
+    """프로세스 0 · memory.used < mem_max 인 GPU index 집합."""
+    busy = {a['uuid'] for a in apps}
+    return {g['index'] for g in gpus if g['uuid'] not in busy and g['mem'] is not None and g['mem'] < mem_max}
+
+
 def choose_gpu(gpus, apps, mem_max=GPU_MEM_MAX_MIB):
     """프로세스 0 · memory.used < mem_max 인 첫 GPU index (없으면 None)."""
-    busy = {a['uuid'] for a in apps}
-    for g in sorted(gpus, key=lambda g: g['index']):
-        if g['uuid'] not in busy and g['mem'] is not None and g['mem'] < mem_max:
-            return g['index']
-    return None
+    return min(idle_gpu_indices(gpus, apps, mem_max), default=None)
+
+
+def short_host(name):
+    return str(name or '').split('.')[0]
+
+
+def valid_pid(pid):
+    return type(pid) is int and pid > 0
+
+
+def own_receipts(state, machine, session):
+    """harness status → 이 머신·이 세션 receipt {id: item} (kind 무관; 남아 있으면 발사 보류)."""
+    return {r: it for r, it in state.items()
+            if isinstance(it, dict) and it.get('machine') == machine and it.get('session') == session}
+
+
+def receipt_release_eligible(item, machine, session, host, pid_alive, idle_gpus):
+    """detached serve 종료 후 남은 receipt 의 보수적 해제 판정 → (bool, 사유).
+    전부 만족할 때만 True: 같은 machine·session·kind=collect, launcher_host 단축명 == host,
+    launcher_pid·consumer_pid 모두 양의 int 이고 살아있지 않음, receipt GPU 전부 idle."""
+    if item.get('machine') != machine or item.get('session') != session:
+        return False, 'other machine/session'
+    if item.get('kind') != 'collect':
+        return False, 'kind not collect'
+    if not short_host(item.get('launcher_host')) or short_host(item.get('launcher_host')) != short_host(host):
+        return False, 'launcher_host mismatch'
+    for k in ('launcher_pid', 'consumer_pid'):
+        if not valid_pid(item.get(k)):
+            return False, f'{k} missing/invalid'
+        if pid_alive(item[k]):
+            return False, f'{k} alive'
+    g = item.get('gpus')
+    if not isinstance(g, list) or not g or not all(type(x) is int for x in g):
+        return False, 'gpus invalid'
+    if not set(g) <= set(idle_gpus):
+        return False, 'receipt GPU not idle'
+    return True, 'stale'
+
+
+def harness_admission_blocked(rc, log_text):
+    """수집기 rc=2 + harness BLOCKED = 예약 거부(대기 대상), 모델/수집 오류 아님."""
+    return rc == 2 and '[harness] BLOCKED:' in (log_text or '')
 
 
 def matching_procs(procs, patterns=PROC_PATTERNS, exclude=()):
@@ -318,6 +365,19 @@ def query_gpus():
     a = ['nvidia-smi', '--query-compute-apps=gpu_uuid,pid', '--format=csv,noheader,nounits']
     return (parse_gpu_csv(subprocess.check_output(q, text=True, timeout=60)),
             parse_apps_csv(subprocess.check_output(a, text=True, timeout=60)))
+
+
+def pid_alive(pid):
+    return os.path.exists(f'/proc/{pid}')
+
+
+def harness_call(*args):
+    """수집기와 같은 harness 스크립트·HARNESS_ENV 로 호출 → (rc, stdout, stderr 마지막 줄).
+    env·stdout 원문은 로그에 남기지 않는다."""
+    res = subprocess.run(['python3', str(HARNESS_PY), *args], env=dict(os.environ, **HARNESS_ENV),
+                         stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+    err = (res.stderr.strip().splitlines() or [''])[-1][:200]
+    return res.returncode, res.stdout, err
 
 
 def docker_inspect(name):
@@ -532,6 +592,39 @@ class Watcher:
                     except OSError as exc:
                         log.warning('shipper 정리 실패 %s', exc)
 
+    def reconcile_receipts(self, gpus, apps):
+        """GPU 선택 전: 이 머신·세션의 stale receipt 만 정확히 해제. 반환 = 대기 사유 (없으면 None).
+        status 조회 실패·해제 불가 receipt 잔존·해제 실패는 모두 대기."""
+        session = HARNESS_ENV['HARNESS_SESSION']
+        try:
+            rc, out, err = harness_call('status')
+            state = json.loads(out) if rc == 0 else None
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            rc, state, err = -1, None, type(exc).__name__
+        if not isinstance(state, dict):
+            return f'harness status query failed rc={rc}: {err}'
+        idle = idle_gpu_indices(gpus, apps)
+        held = []
+        for receipt, item in sorted(own_receipts(state, self.machine, session).items()):
+            ok, why = receipt_release_eligible(item, self.machine, session, socket.gethostname(),
+                                               pid_alive, idle)
+            tag = f"{receipt[:8]} gpus={item.get('gpus')}"
+            if not ok:
+                held.append(f'{tag}: {why}')
+                continue
+            if self.a.dry_run:
+                held.append(f'{tag}: [dry] would release stale')
+                continue
+            try:
+                rrc, _out, rerr = harness_call('release', '--receipt', receipt, '--session', session)
+            except (OSError, subprocess.SubprocessError) as exc:
+                rrc, rerr = -1, type(exc).__name__
+            if rrc == 0:
+                log.info('stale receipt 해제 %s (launcher/consumer 종료·GPU idle)', tag)
+            else:
+                held.append(f'{tag}: release failed rc={rrc}: {rerr}')
+        return '; '.join(held) or None
+
     def launch(self, ph):
         contract_path, done_path = self.prepare_phase_files(ph)
         rc, out = self.harness_check(ph, contract_path, done_path)
@@ -543,6 +636,11 @@ class Watcher:
             gpus, apps = query_gpus()
         except (OSError, subprocess.SubprocessError, ValueError) as exc:
             self.write_status(state='wait_gpu_query', message=str(exc))
+            return 'wait'
+        held = self.reconcile_receipts(gpus, apps)
+        if held:  # 자기 예약이 남아 있으면 다른 GPU 로 발사하지 않고 대기 (all-session GPU limit 방지)
+            self.write_status(state='wait_harness', message=held)
+            log.info('harness 예약 보류 — 대기: %s', held)
             return 'wait'
         gpu = choose_gpu(gpus, apps)
         if gpu is None:
@@ -605,14 +703,35 @@ class Watcher:
                                        | local_meta_keys(ph['grid_root'], ph['plan_id'], self.arch_machine)
                                        | ph['archive_complete']))
         progressed = after > before
-        self.failures = 0 if progressed else self.failures + 1
         info.update(rc=rc, ended=time.strftime('%F %T'), progressed=after - before)
+        text = read_attempt_log(alog)
+        for _ in range(5):  # 분리된 로그 파이프가 마지막 줄을 쓸 때까지 잠깐 재확인
+            if rc != 2 or harness_admission_blocked(rc, text):
+                break
+            time.sleep(1)
+            text = read_attempt_log(alog)
+        if not progressed and harness_admission_blocked(rc, text):
+            self.write_status(state='wait_harness', collector=info, failed_attempts=self.failures)
+            log.info('harness 예약 거부 rc=2 — 실패로 세지 않고 대기')
+            return 'wait'
+        self.failures = 0 if progressed else self.failures + 1
         self.write_status(state='collector_exited', collector=info, failed_attempts=self.failures)
         log.info('수집 종료 rc=%s 진척=%d (연속 무진척 %d)', rc, after - before, self.failures)
         if self.failures >= MAX_FAILED_ATTEMPTS:
             self.write_status(state='fatal_no_progress')
             return 'fatal'
         return 'launched'
+
+
+def read_attempt_log(path):
+    """시도 로그(회전본 .1 포함) 텍스트; 못 읽으면 ''."""
+    text = ''
+    for p in (Path(str(path) + '.1'), Path(path)):
+        try:
+            text += p.read_text(errors='replace')
+        except OSError:
+            pass
+    return text
 
 
 def cap_worker_logs(grid_root):

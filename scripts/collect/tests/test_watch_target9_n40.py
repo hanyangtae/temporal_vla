@@ -137,5 +137,62 @@ class GpuProcTest(unittest.TestCase):
         self.assertEqual(w.container_gpu_ids({'HostConfig': {}}), [])
 
 
+class HarnessReceiptTest(unittest.TestCase):
+    S = w.HARNESS_ENV['HARNESS_SESSION']
+    BASE = {'machine': 'srv48', 'gpus': [3], 'serves': 6, 'session': S, 'kind': 'collect',
+            'launcher_host': 'worker1.lab', 'launcher_pid': 1111, 'consumer_pid': 2222}
+
+    def judge(self, alive=(), idle=(3,), host='worker1', **over):
+        item = dict(self.BASE, **over)
+        return w.receipt_release_eligible(item, 'srv48', self.S, host, lambda p: p in alive, set(idle))
+
+    def test_stale_receipt_eligible(self):
+        self.assertEqual(self.judge(), (True, 'stale'))
+        self.assertTrue(self.judge(host='worker1.example.org', gpus=[3, 4], idle=(3, 4, 5))[0])
+
+    def test_conservative_rejections(self):
+        cases = [dict(machine='srv50'), dict(session='other'), dict(kind='eval'),
+                 dict(launcher_host='worker2'), dict(launcher_host=None),
+                 dict(launcher_pid=None), dict(consumer_pid=None), dict(consumer_pid='2222'),
+                 dict(launcher_pid=0), dict(consumer_pid=-5), dict(consumer_pid=True),
+                 dict(gpus=[]), dict(gpus=None), dict(gpus=['3']), dict(gpus=[3, 4])]
+        for over in cases:
+            self.assertFalse(self.judge(**over)[0], over)
+        item = dict(self.BASE)
+        del item['consumer_pid']                                       # verify never ran
+        self.assertFalse(w.receipt_release_eligible(item, 'srv48', self.S, 'worker1', lambda p: False, {3})[0])
+        self.assertFalse(self.judge(alive=(1111,))[0])                  # harness run still alive
+        self.assertFalse(self.judge(alive=(2222,))[0])                  # consumer still alive
+        self.assertFalse(self.judge(idle=())[0])                        # detached servers still on GPU
+        self.assertFalse(self.judge(host='worker2')[0])
+
+    def test_idle_gpu_indices(self):
+        gpus = w.parse_gpu_csv('3, GPU-d, 0\n4, GPU-e, 99\n5, GPU-f, 100\n6, GPU-g, [N/A]\n')
+        self.assertEqual(w.idle_gpu_indices(gpus, w.parse_apps_csv('GPU-e, 7')), {3})
+        self.assertEqual(w.idle_gpu_indices(gpus, []), {3, 4})
+
+    def test_own_receipts_filter(self):
+        state = {'a': dict(self.BASE), 'b': dict(self.BASE, machine='srv50'),
+                 'c': dict(self.BASE, session='x'), 'd': dict(self.BASE, kind='eval'), 'e': 'junk'}
+        self.assertEqual(set(w.own_receipts(state, 'srv48', self.S)), {'a', 'd'})
+
+    def test_admission_classifier(self):
+        blocked = 'x\n[harness] BLOCKED: srv48 GPU3: 6+6 exceeds slot limit\n'
+        self.assertTrue(w.harness_admission_blocked(2, blocked))
+        self.assertFalse(w.harness_admission_blocked(1, blocked))       # genuine collector error
+        self.assertFalse(w.harness_admission_blocked(2, 'Traceback ... RuntimeError: CUDA OOM\n'))
+        self.assertFalse(w.harness_admission_blocked(0, blocked))
+        self.assertFalse(w.harness_admission_blocked(2, None))
+
+    def test_read_attempt_log_includes_rotated(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / 'a.log'
+            self.assertEqual(w.read_attempt_log(p), '')
+            Path(str(p) + '.1').write_text('[harness] BLOCKED: x\n')
+            p.write_text('tail\n')
+            self.assertTrue(w.harness_admission_blocked(2, w.read_attempt_log(p)))
+
+
 if __name__ == '__main__':
     unittest.main()

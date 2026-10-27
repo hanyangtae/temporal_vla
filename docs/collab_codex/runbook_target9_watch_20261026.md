@@ -15,3 +15,10 @@
 - SIGTERM은 watcher만 중지한다. 이미 실행된 수집/전송은 유지하며 PID를 기록한다. 완료 시 자신이 발사한 전송기만 정리.
 - 계약 오류, 컨테이너 불일치, 3회 연속 무진척은 자동발사 중지. 상태파일 확인 후 원인 해결 필요.
 - 서버 재부팅 후 자동기동 서비스는 등록하지 않음. 살아 있는 프로세스가 30분 주기로 동작.
+
+## 10월 27일 예약 충돌 수정
+
+- 48번 backfill108판은 승준 도착 완료. 종료된 작업 receipt가 남아 신규300판 발사가 `6+6 exceeds slot limit`으로 차단됐다. 실제12개 발사는 없었다.
+- 동일 머신·세션·collect·host인 예약만 검사한다. launcher/consumer 두 PID 모두 종료되고 예약 GPU 전부 프로세스0·메모리100MiB미만인 경우만 자동 해제한다. 그 외는 대기.
+- 하네스 admission 거부(rc2)는 수집 무진척 실패 횟수에 넣지 않는다. 감시를 유지한다.
+- 새 checkout에는 기존 검증된 `lerobot/src` 외부 패키지 연결이 필요하다. srv48/srv50 모두 `/home/junhyeong/pkt_ws/temporal_vla/lerobot/src` 링크 및 GR00T import를 검증했다.
