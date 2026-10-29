@@ -108,10 +108,22 @@ main() {
 
   # ---- extract into staging; never extract over an existing package ----
   gate "$EXPECTED"
-  mkdir "$STAGE"
-  tar -xf "$ARCH" -C "$STAGE" --no-same-owner --no-same-permissions
-  [[ -d "$STAGE/lerobot" ]] || fail BAD_ARCHIVE 8 "no lerobot/ after extract"
-  manifest "$STAGE/lerobot" > "$STAGE/files.sha256"
+  local X="$STAGE/x"            # archive content; our own manifests live beside it in $STAGE
+  mkdir -p "$X"
+  tar -xf "$ARCH" -C "$X" --no-same-owner --no-same-permissions
+  [[ -d "$X/lerobot" && ! -L "$X/lerobot" ]] || fail BAD_ARCHIVE 8 "no lerobot/ after extract"
+  # the only allowed top-level extra is a regular README.md; the official downloader
+  # extracts into the <date> dir, so it is mirrored there.
+  local e EXTRAS=()
+  while IFS= read -r -d '' e; do
+    e=${e#"$X/"}
+    [[ "$e" == lerobot ]] && continue
+    [[ "$e" == README.md && -f "$X/$e" && ! -L "$X/$e" ]] \
+      || fail BAD_ARCHIVE 8 "unexpected top-level member: $e"
+    EXTRAS+=("$e")
+  done < <(find "$X" -mindepth 1 -maxdepth 1 -print0)
+  echo "EXTRAS ${EXTRAS[*]:-none}"
+  manifest "$X/lerobot" > "$STAGE/files.sha256"
 
   local origin CHECK
   if [[ -e "$PKG" ]]; then
@@ -122,17 +134,25 @@ main() {
       || fail PREEXISTING_MISMATCH 11 "$PKG differs from archive; untouched; see $STAGE"
     origin="preexisting_verified_identical_to_archive"; CHECK="$PKG"
   else
-    origin="extracted_from_archive"; CHECK="$STAGE/lerobot"
+    origin="extracted_from_archive"; CHECK="$X/lerobot"
   fi
+  local PDIR; PDIR=$(dirname "$PKG")
+  for e in "${EXTRAS[@]}"; do   # same write-once rule for extras next to the package
+    if [[ -e "$PDIR/$e" ]] && ! cmp -s "$X/$e" "$PDIR/$e"; then
+      fail PREEXISTING_MISMATCH 11 "$PDIR/$e differs from archive; untouched"
+    fi
+  done
   mv -n "$STAGE/files.sha256" "$FILES.tmp"
 
   # ---- inventory + receipt, checked BEFORE publishing (relative paths only) ----
   if ! python3 - "$CHECK" "$FILES.tmp" "$RECEIPT.tmp" "$TASK" "$REL" "$URL" "$ARCH_SHA" \
-      "$ARCH_BYTES" "$SCRIPT_SHA" "$FILTER_N" "$FILTER_SEED" "$ROOT_ALIAS" "$origin" <<'PY'
+      "$ARCH_BYTES" "$SCRIPT_SHA" "$FILTER_N" "$FILTER_SEED" "$ROOT_ALIAS" "$origin" \
+      "$X" "${EXTRAS[@]}" <<'PY'
 import hashlib, json, random, sys, time
 from pathlib import Path
 (pkg, files, out, task, rel, url, arch_sha, arch_bytes, script_sha,
- filter_n, filter_seed, root_alias, origin) = sys.argv[1:]
+ filter_n, filter_seed, root_alias, origin, xdir) = sys.argv[1:15]
+extras = {e: hashlib.sha256((Path(xdir) / e).read_bytes()).hexdigest() for e in sys.argv[15:]}
 pkg = Path(pkg); filter_n = int(filter_n); filter_seed = int(filter_seed)
 info = json.loads((pkg / "meta/info.json").read_text())
 eps = [json.loads(l) for l in (pkg / "meta/episodes.jsonl").read_text().splitlines() if l.strip()]
@@ -171,6 +191,7 @@ receipt = {
     "origin": origin, "root_alias": root_alias, "package_rel": rel,
     "archive_rel": "archives/" + rel + ".tar", "source_url": url,
     "archive_sha256": arch_sha, "archive_bytes": int(arch_bytes),
+    "archive_extras_sha256": {str(Path(rel).parent / e): h for e, h in sorted(extras.items())},
     "package_files": len(files_text.splitlines()),
     "package_bytes": sum(p.stat().st_size for p in pkg.rglob("*") if p.is_file()),
     "package_manifest_sha256": hashlib.sha256(files_text.encode()).hexdigest(),
@@ -193,9 +214,14 @@ PY
     fail PACKAGE_INCOMPLETE 10 "inventory check failed (see INVENTORY_ERROR); not published"
   fi
   if [[ "$CHECK" != "$PKG" ]]; then
-    mv -n -T "$STAGE/lerobot" "$PKG"
-    [[ ! -e "$STAGE/lerobot" ]] || fail PUBLISH_RACE 9 "package appeared concurrently"
+    mv -n -T "$X/lerobot" "$PKG"
+    [[ ! -e "$X/lerobot" ]] || fail PUBLISH_RACE 9 "package appeared concurrently"
   fi
+  for e in "${EXTRAS[@]}"; do
+    if [[ ! -e "$PDIR/$e" ]]; then mv -n "$X/$e" "$PDIR/$e"; fi
+    cmp -s "$X/$e" "$PDIR/$e" 2>/dev/null || [[ ! -e "$X/$e" ]] \
+      || fail PUBLISH_RACE 9 "extra $e changed concurrently"
+  done
   if [[ -e "$FILES" ]]; then   # crash between the two publishes below: must match
     cmp -s "$FILES.tmp" "$FILES" || fail FILE_MANIFEST_MISMATCH 13 "$FILES differs"
     mv -n "$FILES.tmp" "$FILES.tmp.dup.$stamp"
@@ -208,14 +234,22 @@ PY
   echo "STATUS COMPLETE"
 }
 
-# tar members must all live under lerobot/ (optionally ./lerobot/), be regular
-# files or directories, and never contain an absolute path or a .. component.
+# tar members must be regular files or directories under lerobot/ (optionally
+# ./lerobot/), plus the single top-level README.md that official archives carry
+# (verified on AdjustWaterTemperature 2026-10-29); anything else top-level is
+# rejected; never an absolute path or a .. component. Rejections print the first
+# offending lines.
 check_members() {
   local listing; listing=$(tar -tvf "$1") || return 1
   [[ -n "$listing" ]] || return 1
-  if grep -qvE '^[-d]' <<<"$listing"; then return 1; fi
+  if grep -qvE '^[-d]' <<<"$listing"; then
+    echo "MEMBER_REJECT type: $(grep -vE '^[-d]' <<<"$listing" | head -3 | tr '\n' '|')"; return 1
+  fi
   local names; names=$(tar -tf "$1") || return 1
-  if grep -qvE '^(\./)?lerobot(/|$)' <<<"$names"; then return 1; fi
+  if grep -qvE '^(\./)?(lerobot(/|$)|README\.md$)' <<<"$names"; then
+    echo "MEMBER_REJECT name: $(grep -vE '^(\./)?(lerobot(/|$)|README\.md$)' <<<"$names" | head -3 | tr '\n' '|')"
+    return 1
+  fi
   if grep -qE '(^|/)\.\.(/|$)' <<<"$names"; then return 1; fi
   return 0
 }
