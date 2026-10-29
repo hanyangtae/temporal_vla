@@ -45,12 +45,23 @@ def parse_rel(rel):
     return (m['plan'], ALIASES.get(m['machine'], m['machine']), m['key'], int(m['s']), int(m['j']), int(m['n'])), m['arm']
 
 
-def load_index(rows):
-    """Index rows -> {coord: row} for arm 'base'. Coords from rel_path; optional coord columns must agree."""
+def load_index(rows, wanted=None):
+    """Index rows -> {coord: row} for arm 'base'. Coords from rel_path; optional coord columns must agree.
+
+    `wanted` = set of (plan_id, canonical machine, instruction) prefixes of the target coords. Rows outside
+    it (older plans without a jitter level, other hosts/instructions) are skipped BEFORE parsing; rows inside it
+    are parsed strictly and any inconsistency aborts.
+    """
     out = {}
     for r in rows:
         if 'rel_path' not in r:
             raise IndexError_('index has no rel_path column')
+        if wanted is not None:
+            parts = r['rel_path'].strip().split('/')
+            if len(parts) < 3 or not any(parts[0] == p and ALIASES.get(parts[1], parts[1]) == m
+                                         and r['rel_path'].strip().startswith(f'{parts[0]}/{parts[1]}/{k}/s')
+                                         for p, m, k in wanted):
+                continue
         coord, arm = parse_rel(r['rel_path'])
         if r.get('armsig', arm) != arm:
             raise IndexError_(f'armsig/rel_path disagree {r["rel_path"]}')
@@ -93,8 +104,9 @@ def main():
         sys.exit(f'refuse overwrite {a.out}')
     with open(a.coords, newline='') as f:
         coords = list(csv.DictReader(f, delimiter='\t'))
+    wanted = {(c['plan_id'], ALIASES.get(c['machine'], c['machine']), c['instruction']) for c in coords}
     with open(a.index or a.store / 'groot/n15/index/rollouts.tsv', newline='') as f:
-        index = load_index(csv.DictReader(f, delimiter='\t'))
+        index = load_index(csv.DictReader(f, delimiter='\t'), wanted)
     rows, errors = [], []
     for c in coords:
         coord = (c['plan_id'], ALIASES.get(c['machine'], c['machine']), c['instruction'], int(c['scene']), int(c['jitter']), int(c['noise']))
