@@ -53,6 +53,33 @@ def action_model12(chunk):
     return np.concatenate(parts, -1)
 
 
+def episode_steps(payload, n):
+    """Executed env steps from src/collect/robocasa/step_phase.py: env_step_success[k] = _check_success() right after
+    env step k, so len = executed steps. Contract (not estimated): ceil(steps/n_action_steps) == n records;
+    success -> the episode ends at its first success step; failure -> no success step and steps == max_episode_steps
+    (read from the pkl, not hardcoded). Returns (steps, first_success_step or -1, max_episode_steps)."""
+    es = payload.get('env_step_success')
+    if es is None:
+        raise ExtractError('pkl has no env_step_success; steps cannot be established')
+    es = [bool(v) for v in es]
+    steps, k = len(es), int(payload.get('env_step_n_action_steps', payload.get('n_action_steps')))
+    max_steps = payload.get('max_episode_steps')
+    if max_steps is None:
+        raise ExtractError('pkl has no max_episode_steps')
+    if k != 5 or -(-steps // k) != n:
+        raise ExtractError(f'steps {steps} / n_action_steps {k} inconsistent with {n} records')
+    ph = payload.get('env_step_phases')
+    if ph is not None and len(ph) != steps + 1:      # step_phase.py:10-11: phases include s_0
+        raise ExtractError(f'env_step_phases length {len(ph)} != steps+1 ({steps + 1})')
+    first = es.index(True) if any(es) else -1
+    if bool(payload['episode_success']):
+        if first != steps - 1:
+            raise ExtractError(f'success episode: first success step {first} != last executed step {steps - 1}')
+    elif first != -1 or steps != int(max_steps):
+        raise ExtractError(f'failure episode: first success {first}, steps {steps} vs max_episode_steps {max_steps}')
+    return steps, first, int(max_steps)
+
+
 def convert(payload, with_last_block):
     if list(payload.get('capture_layers') or []) != LAYERS:
         raise ExtractError(f'capture_layers {payload.get("capture_layers")}')
@@ -69,8 +96,12 @@ def convert(payload, with_last_block):
         tm[i] = tokmean_f16(a[L12, 3])
         if lb is not None:
             lb[i] = a[L15, 0].astype(np.float16)
+    steps, first, max_steps = episode_steps(payload, n)
     out = {'tokmean_l12d3': tm, 'actions_model12': np.stack([action_model12(c) for c in payload['actions']]),
-           'success': np.int8(payload['episode_success']), 'n_inferences': np.int32(n)}
+           'success': np.int8(payload['episode_success']), 'n_inferences': np.int32(n),
+           'env_steps': np.int32(steps), 'first_success_step': np.int32(first), 'max_episode_steps': np.int32(max_steps),
+           'env_step_success': np.asarray([bool(v) for v in payload['env_step_success']], np.int8),
+           'env_step_phases_len': np.int32(len(payload['env_step_phases']) if payload.get('env_step_phases') is not None else -1)}
     if lb is not None:
         out['last_block_d0'] = lb
     return out
@@ -132,6 +163,7 @@ def main():
         os.replace(tmp, npz)
         rec = {'episode_id': eid, 'plan_id': k[0], 'machine': k[1], 'instruction': k[2], 'scene': k[3], 'jitter': k[4],
                'noise': k[5], 'success': int(arrays['success']), 'n_inferences': int(arrays['n_inferences']),
+               'env_steps': int(arrays['env_steps']), 'max_episode_steps': int(arrays['max_episode_steps']),
                'pkl_sha256': r['pkl_sha256'], 'npz': npz.name, 'npz_sha256': sha256_bytes(npz.read_bytes()),
                'seconds': time.time() - t0}
         with open(jp, 'x') as fh:
