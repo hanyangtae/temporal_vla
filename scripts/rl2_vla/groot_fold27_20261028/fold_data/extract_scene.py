@@ -20,6 +20,10 @@ import numpy as np
 
 LAYERS = [0, 2, 4, 8, 10, 12, 15]
 L12, L15 = LAYERS.index(12), LAYERS.index(15)
+# Only the 16 action tokens of the last block are stored: the decoder-input tail (LayerNorm norm_out, timestep-only
+# shift/scale, linear proj_out_2) is per-token, so latent = mean over tokens 33:49 needs exactly these (3x smaller).
+# rollout_latents.py re-proves slice equivalence on the GPU before use.
+LB_TOKENS = slice(33, 49)
 ACTION_KEYS = (('end_effector_position', 3), ('end_effector_rotation', 3), ('gripper_close', 1),
                ('base_motion', 4), ('control_mode', 1))
 
@@ -92,14 +96,14 @@ def convert(payload, with_last_block):
     if n == 0 or len(payload['actions']) != n:
         raise ExtractError(f'records {n} vs actions {len(payload["actions"])}')
     tm = np.empty((n, 1536), np.float16)
-    lb = np.empty((n, 49, 1536), np.float16) if with_last_block else None
+    lb = np.empty((n, LB_TOKENS.stop - LB_TOKENS.start, 1536), np.float16) if with_last_block else None
     for i, h in enumerate(hs):
         a = h.detach().cpu().numpy() if hasattr(h, 'detach') else np.asarray(h)
         if a.shape != (7, 4, 49, 1536):
             raise ExtractError(f'record {i} shape {a.shape}')
         tm[i] = tokmean_f16(a[L12, 3])
         if lb is not None:
-            lb[i] = a[L15, 0].astype(np.float16)
+            lb[i] = a[L15, 0, LB_TOKENS].astype(np.float16)
     steps, first, max_steps = episode_steps(payload, n)
     out = {'tokmean_l12d3': tm, 'actions_model12': np.stack([action_model12(c) for c in payload['actions']]),
            'success': np.int8(payload['episode_success']), 'n_inferences': np.int32(n),
@@ -136,7 +140,8 @@ def main():
             sources[k] = r
     a.out.mkdir(parents=True, exist_ok=True)
     contract = {'spec_sha256': sha256_bytes(a.spec.read_bytes()), 'extractor_sha256': sha256_bytes(Path(__file__).read_bytes()),
-                'with_last_block': a.with_last_block, 'layers': LAYERS}
+                'with_last_block': a.with_last_block, 'layers': LAYERS,
+                'last_block_tokens': [LB_TOKENS.start, LB_TOKENS.stop] if a.with_last_block else None}
     cp = a.out / 'contract.json'
     if cp.exists() and json.loads(cp.read_text()) != contract:
         sys.exit('contract mismatch with existing output dir; use a new --out')
