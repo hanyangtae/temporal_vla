@@ -56,7 +56,8 @@ def action_model12(chunk):
 def episode_steps(payload, n):
     """Executed env steps from src/collect/robocasa/step_phase.py: env_step_success[k] = _check_success() right after
     env step k, so len = executed steps. Contract (not estimated): ceil(steps/n_action_steps) == n records;
-    success -> the episode ends at its first success step; failure -> no success step and steps == max_episode_steps
+    success -> the episode ends at the end of the chunk containing the first success step (<= 4 steps later);
+    failure -> no success step and steps == max_episode_steps
     (read from the pkl, not hardcoded). Returns (steps, first_success_step or -1, max_episode_steps)."""
     es = payload.get('env_step_success')
     if es is None:
@@ -73,8 +74,11 @@ def episode_steps(payload, n):
         raise ExtractError(f'env_step_phases length {len(ph)} != steps+1 ({steps + 1})')
     first = es.index(True) if any(es) else -1
     if bool(payload['episode_success']):
-        if first != steps - 1:
-            raise ExtractError(f'success episode: first success step {first} != last executed step {steps - 1}')
+        # Collection finishes the 5-step chunk in which success first fires (real pkl: first 200, steps 205), so the
+        # executed length ends at that chunk boundary (or the horizon). Both values are stored; neither is altered.
+        want = min(-(-(first + 1) // k) * k, int(max_steps)) if first >= 0 else None
+        if first < 0 or steps != want:
+            raise ExtractError(f'success episode: first success step {first}, steps {steps} != chunk-boundary end {want}')
     elif first != -1 or steps != int(max_steps):
         raise ExtractError(f'failure episode: first success {first}, steps {steps} vs max_episode_steps {max_steps}')
     return steps, first, int(max_steps)
