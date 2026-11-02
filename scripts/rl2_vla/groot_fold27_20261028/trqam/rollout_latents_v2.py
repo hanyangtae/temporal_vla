@@ -192,39 +192,57 @@ def main():
     if cp.exists() and json.loads(cp.read_text()) != contract:
         raise SystemExit('contract mismatch; new --out')
     cp.write_text(json.dumps(contract, indent=1))
-    recs = sorted(p for p in a.episodes.glob('*.json') if p.name not in ('contract.json', 'COMPLETE.json'))
+    import latents_v2_audit as AU
+    recs = AU.expected_records(a.episodes)
     if a.expect_records is not None and len(recs) != a.expect_records:
         raise SystemExit(f'{len(recs)} episode records != expected {a.expect_records}')
     with torch.inference_mode(), torch.autocast('cuda', dtype=torch.bfloat16, enabled=use_bf16):
-        for i, jp in enumerate(recs):
-            rec = json.loads(jp.read_text())
-            V1.device_gate(rec['episode_id'], os.environ.get('HARNESS_MACHINE'), a.cross_device_validated is not None)
-            out_j = a.out / jp.name
-            if out_j.exists():
-                lr = json.loads(out_j.read_text())
-                if lr['episode_id'] != rec['episode_id'] or sha(a.out / lr['npz']) != lr['npz_sha256']:
-                    raise SystemExit(f'committed latent mismatch {rec["episode_id"]}')
-                continue
-            if sha(a.episodes / rec['npz']) != rec['npz_sha256']:
-                raise SystemExit(f'episode npz sha {rec["episode_id"]}')
-            with np.load(a.episodes / rec['npz']) as z:
-                if 'last_block_d0' not in z.files:
-                    raise SystemExit('episodes extracted without --with-last-block')
-                lb = z['last_block_d0']
-            check_record(lb, a.token_contract)
-            lat = reconstruct(lb, tail_fn, torch, 'cuda:0', torch.bfloat16)
-            if lat.shape != (rec['n_inferences'], 1024) or not np.isfinite(lat).all():
-                raise SystemExit(f'bad latent {rec["episode_id"]} {lat.shape}')
-            npz = a.out / rec['npz']
-            np.savez(npz.with_suffix('.tmp.npz'), latents=lat); os.replace(npz.with_suffix('.tmp.npz'), npz)
-            out_j.write_text(json.dumps({'episode_id': rec['episode_id'], 'pkl_sha256': rec['pkl_sha256'],
-                                         'source_npz_sha256': rec['npz_sha256'], 'npz': npz.name, 'npz_sha256': sha(npz),
-                                         'n': int(len(lat)), 'token_contract': a.token_contract, 'time': time.time()}, indent=1))
-            print(json.dumps({'done': i + 1, 'total': len(recs)}), flush=True)
-    done = sum(1 for p in a.out.glob('*.json') if p.name not in ('contract.json', 'COMPLETE.json', 'PARITY_SMOKE_V2.json'))
-    if done != len(recs) or (a.expect_records is not None and done != a.expect_records):
-        raise SystemExit(f'latent records {done} != episodes {len(recs)} / expected {a.expect_records}; no COMPLETE')
-    (a.out / 'COMPLETE.json').write_text(json.dumps({'contract': contract, 'episodes': done}, indent=1))
+        convert_all(recs, a.episodes, a.out, a.token_contract,
+                    convert_one=lambda lb: reconstruct(lb, tail_fn, torch, 'cuda:0', torch.bfloat16),
+                    gate=lambda rec: V1.device_gate(rec['episode_id'], os.environ.get('HARNESS_MACHINE'),
+                                                    a.cross_device_validated is not None))
+    rep = AU.audit(a.episodes, a.out, a.token_contract, expect=a.expect_records)
+    if not rep['ok']:
+        raise SystemExit(f'audit failed, no COMPLETE: {json.dumps(rep["problems"])[:2000]}')
+    p = a.out / 'COMPLETE.json'
+    if p.exists():
+        raise SystemExit(f'{p} already exists; never overwritten')
+    p.write_text(json.dumps({'contract': contract, 'episodes': rep['verified_records'],
+                             'audit': {k: rep[k] for k in ('expected', 'verified_records', 'non_record_present')},
+                             'audit_module_sha256': sha(Path(AU.__file__))}, indent=1))
+
+
+def convert_all(recs, episodes_dir, out, token_contract, convert_one, gate, log=print):
+    """recs: {record file name: episode record}. Committed records are verified and skipped (never recomputed);
+    new ones are converted with convert_one(last_block_d0) and committed atomically (npz then json)."""
+    computed, skipped = 0, 0
+    for i, (name, rec) in enumerate(sorted(recs.items())):
+        gate(rec)
+        out_j = out / name
+        if out_j.exists():
+            lr = json.loads(out_j.read_text())
+            if lr['episode_id'] != rec['episode_id'] or sha(out / lr['npz']) != lr['npz_sha256']:
+                raise SystemExit(f'committed latent mismatch {rec["episode_id"]}')
+            skipped += 1
+            continue
+        if sha(Path(episodes_dir) / rec['npz']) != rec['npz_sha256']:
+            raise SystemExit(f'episode npz sha {rec["episode_id"]}')
+        with np.load(Path(episodes_dir) / rec['npz']) as z:
+            if 'last_block_d0' not in z.files:
+                raise SystemExit('episodes extracted without --with-last-block')
+            lb = z['last_block_d0']
+        check_record(lb, token_contract)
+        lat = convert_one(lb)
+        if lat.shape != (rec['n_inferences'], 1024) or not np.isfinite(lat).all():
+            raise SystemExit(f'bad latent {rec["episode_id"]} {lat.shape}')
+        npz = out / rec['npz']
+        np.savez(npz.with_suffix('.tmp.npz'), latents=lat); os.replace(npz.with_suffix('.tmp.npz'), npz)
+        out_j.write_text(json.dumps({'episode_id': rec['episode_id'], 'pkl_sha256': rec['pkl_sha256'],
+                                     'source_npz_sha256': rec['npz_sha256'], 'npz': npz.name, 'npz_sha256': sha(npz),
+                                     'n': int(len(lat)), 'token_contract': token_contract, 'time': time.time()}, indent=1))
+        computed += 1
+        log(json.dumps({'done': i + 1, 'total': len(recs)}))
+    return {'computed': computed, 'skipped': skipped}
 
 
 def parity_smoke_rows(model, serve, dit, tail_fn, use_bf16, data_root, n_obs=2):
