@@ -1,0 +1,14 @@
+{
+  "100000": {
+    "language": "Open the left drawer.",
+    "fixture": "stack_2_right_group_1_3",
+    "layout": 16,
+    "style": 17
+  },
+  "100001": {
+    "language": "Open the right drawer.",
+    "fixture": "stack_4_right_group_1_2",
+    "layout": 16,
+    "style": 17
+  }
+}
