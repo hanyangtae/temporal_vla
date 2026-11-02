@@ -1,0 +1,37 @@
+# Fold27 TRQAM training/dry-run env for srv48/srv50 — versions pinned to kanu .venvs/rl2_iid (rl2_iid_freeze_kanu_20261102.txt).
+# Python 3.10 (kanu 3.10.20). Install into an ISOLATED prefix (never into lerobot_050_groot / user envs):
+#   ~/miniconda3/bin/conda create -y -p <deploy>/.fold27_env python=3.10
+#   <deploy>/.fold27_env/bin/pip install --extra-index-url https://download.pytorch.org/whl/cu121 -r <this file>
+# Imports used by the chain: finetune_fold(_v2), rewards, trqam_prefix, ae_potential (task_classification AE, omegaconf, torch,
+# sklearn), qam_prefix (upstream RL2-VLA/third_party/qam: jax/flax/optax/distrax/tfp), folds/wait_* (stdlib), pandas/pyarrow (MIL shards).
+jax==0.5.3
+jaxlib==0.5.3
+jax-cuda12-plugin[with_cuda]==0.5.3
+jax-cuda12-pjrt==0.5.3
+flax==0.10.5
+optax==0.2.4
+chex==0.1.89
+distrax==0.1.5
+orbax-checkpoint==0.11.24
+tensorflow-probability==0.25.0
+ml-dtypes==0.5.4
+numpy==1.26.4
+scipy==1.15.3
+scikit-learn==1.7.2
+pandas==2.3.3
+pyarrow==17.0.0
+omegaconf==2.3.1
+antlr4-python3-runtime==4.9.3
+torch==2.5.1+cu121
+absl-py==2.5.0
+opt-einsum==3.4.0
+msgpack==1.2.2
+tensorstore==0.1.78
+etils==1.13.0
+cloudpickle==3.1.2
+dm-tree==0.1.10
+typing-extensions==4.16.0
+einops==0.8.2
+tqdm==4.70.1
+pyyaml==6.0.3
+rich==15.0.0
