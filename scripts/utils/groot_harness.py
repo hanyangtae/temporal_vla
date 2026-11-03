@@ -253,6 +253,21 @@ def check_gpu_processes(gpus):
         require(not result.stdout.strip(), f'GPU{g}: existing compute processes; use one grouped launch, do not adopt untracked servers')
 
 
+def probe_gpus(req):
+    """Default: no compute process may exist (check_gpu_processes, unchanged). Only if HARNESS_SHARING_AUTH names a
+    one-time sharing contract (scripts/utils/gpu_sharing_authorization.py) may the exactly pinned approved process(es)
+    be present -- machine/host/GPU/UUID/session/kind/serves/expiry/boot/identity/memory all verified; anything else fails."""
+    path = os.environ.get('HARNESS_SHARING_AUTH')
+    if not path:
+        return check_gpu_processes(req['gpus'])
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import gpu_sharing_authorization as sharing
+    try:
+        sharing.authorized_processes(sharing.load(path), req['machine'], req['gpus'], req['session'], req['kind'], req['serves'])
+    except (sharing.AuthError, OSError, ValueError, KeyError) as exc:
+        raise ValueError(f'sharing authorization refused: {exc}')
+
+
 def run(args):
     req = request_for(args, 'reserve')
     resources(req['machine'], req['gpus'], req['serves'])
@@ -262,12 +277,12 @@ def run(args):
     if command and command[0] == '--':
         command = command[1:]
     require(command, 'command required')
-    check_gpu_processes(req['gpus'])
+    probe_gpus(req)
     receipt = broker(req)['receipt']
     child = None
     try:
         # Check again after admission to reduce races with launches outside this harness.
-        check_gpu_processes(req['gpus'])
+        probe_gpus(req)
         env = dict(os.environ, HARNESS_RECEIPT=receipt, HARNESS_MACHINE=args.machine,
                    HARNESS_SESSION=args.session, GPUS=args.gpus, SERVES_PER_GPU=str(args.serves))
         child = subprocess.Popen(command, env=env, start_new_session=True)
@@ -281,7 +296,7 @@ def run(args):
         if child is None or child.poll() is not None:
             # A runner may exit while detached model servers remain. Keep the receipt then.
             try:
-                check_gpu_processes(req['gpus'])
+                probe_gpus(req)
             except (ValueError, FileNotFoundError) as exc:
                 print(f'[harness] reservation retained {receipt}: {exc}', file=sys.stderr)
             else:
