@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fold27 reward viewer — basic / MIX (RoboCasa fit rollout)</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header>
+  <h1>Fold27 rollout별 보상 — basic vs MIX</h1>
+  <p class="prov" id="prov">불러오는 중…</p>
+  <p class="badge">훈련 fit 데이터 · 평가 rollout 아님 · RoboCasa GR00T Fold27 production 18fold</p>
+</header>
+<nav class="filters" aria-label="선택">
+  <label>task <select id="sel-task"></select></label>
+  <label>instruction <select id="sel-instr"></select></label>
+  <label>fold <select id="sel-fold"></select></label>
+  <label>outcome <select id="sel-outcome">
+    <option value="all">전체</option><option value="success">성공</option><option value="failure">실패</option>
+  </select></label>
+  <label>rollout <select id="sel-ep"></select></label>
+  <label>x축 <select id="sel-x"><option value="inference">inference step (0-based)</option><option value="env">env step</option></select></label>
+  <label class="chk"><input type="checkbox" id="chk-cum"> 누적(할인 없는 합)</label>
+  <label class="chk"><input type="checkbox" id="chk-table"> 표 보기</label>
+</nav>
+<main>
+  <section id="ep-head" class="card"></section>
+  <section id="charts"></section>
+  <section id="table-wrap" class="card" hidden></section>
+  <section class="grid2">
+    <div id="dups" class="card"></div>
+    <div id="video" class="card"></div>
+  </section>
+  <section id="sha" class="card"></section>
+  <section class="card notes">
+    <h2>읽는 법</h2>
+    <ul>
+      <li>x축 기본 = inference step(저장된 0-based decision 번호, 칸 1개 = decision 1회); 토글로 env step 보기. decision 1회마다 chunk 16 예측 중 5 env step 실행; 마지막 chunk는 m&lt;5일 수 있음(성공 시 성공 chunk 끝까지). 시간(초) 추정은 하지 않음.</li>
+      <li>basic = chunk 내 실행 step의 할인 기본보상 R. MIX = R + α·(anchor − Φ) − β·C (α=0.1, β=0.0396).</li>
+      <li>α항 = α·(anchor − Φ): Φ 차이에 γ^m·bootstrap 없음. anchor = 다음 decision의 Φ, 마지막(terminal) 행은 outcome anchor(성공 +1 / 실패 −1).</li>
+      <li>−βC = 실제 차감량(부호 포함). C = max(0, −Φ)·Σ<sub>i&lt;m</sub> 0.99<sup>i</sup>. Δ = MIX − basic = α항 + (−βC).</li>
+      <li>Φ는 저장된 배열을 그대로 표시. cluster ID는 미저장이며 Φ로부터 역추론하지 않음.</li>
+      <li>같은 rollout은 target j가 다른 여러 fold의 fit 세트에 중복 포함됨: basic은 동일, MIX는 fold별 potential이라 다를 수 있음.</li>
+    </ul>
+  </section>
+</main>
+<div id="tip" class="tip" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
