@@ -198,6 +198,7 @@ function renderCoef() {
 }
 function renderMeans() {
   const box = $('means');
+  box.hidden = !$('chk-means').checked;      // user toggle; kept across fold/outcome/cumulative changes
   if (!state.means) return;
   const cum = cumOn();
   const out = [el('h2', {}, `fold ${state.fold} 성공/실패 평균 (inference step 축)`),
@@ -347,6 +348,7 @@ async function init() {
   $('sel-x').addEventListener('change', () => state.ep && renderCharts());
   $('chk-cum').addEventListener('change', () => { renderMeans(); if (state.ep) { renderCharts(); renderTable(); } });
   $('chk-table').addEventListener('change', renderTable);
+  $('chk-means').addEventListener('change', () => { $('means').hidden = !$('chk-means').checked; });
   fillTasks();
 }
 init();
