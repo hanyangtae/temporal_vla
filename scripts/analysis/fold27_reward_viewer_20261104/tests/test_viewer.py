@@ -277,3 +277,174 @@ def test_build_video_index_split_and_roundtrip(tmp_path):
     shutil_missing = tmp_path / 'grid2'; shutil_missing.mkdir()
     assert BV.main(['--derived', str(der), '--video-root', str(shutil_missing), '--out', str(tmp_path / 'vi2')]) == 0
     assert json.loads((tmp_path / 'vi2/video_index_receipt.json').read_text())['counts']['missing'] == 5
+
+
+# ---------------------------------------------------------------- video <-> chart sync (probe_video_sync + front end)
+def make_mp4(path, frames, codec='libx264', fps=20):
+    """Real encoded MP4 (PyAV) so the probe parses an actual muxer's moov (stts/ctts/elst), not a hand-made box."""
+    av = pytest.importorskip('av')
+    from fractions import Fraction
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with av.open(str(path), 'w', format='mp4') as c:
+        st = c.add_stream(codec, rate=fps)
+        st.width, st.height, st.pix_fmt = 64, 48, 'yuv420p'
+        for i in range(frames):
+            fr = av.VideoFrame.from_ndarray(np.full((48, 64, 3), (i * 23) % 255, np.uint8), format='rgb24')
+            fr.pts, fr.time_base = i, Fraction(1, fps)
+            for pk in st.encode(fr):
+                c.mux(pk)
+        for pk in st.encode():
+            c.mux(pk)
+    return path
+
+
+def simulate_recorder(K, s):
+    """Independent re-statement of upstream VideoRecordingWrapper: reset -> step_count=1, no frame;
+    each env step: step_count += 1, frame iff step_count % s == 0. Returns the 0-based env step after each frame."""
+    after, sc = [], 1
+    for e in range(K):
+        sc += 1
+        if sc % s == 0:
+            after.append(e)
+    return after
+
+
+@pytest.mark.parametrize('s', [1, 2, 3, 4, 5])
+def test_frame_rule_matches_wrapper_simulation(s):
+    import probe_video_sync as PV
+    for K in range(0, 60):
+        after = simulate_recorder(K, s)
+        assert PV.predicted_frames(K, s) == len(after)
+        e0 = s * -(-2 // s) - 2
+        assert after == [e0 + s * f for f in range(len(after))]
+    assert PV.predicted_frames(720, 2) == 360
+
+
+def test_probe_real_mp4_verified_and_rejections(tmp_path):
+    import probe_video_sync as PV
+    root = tmp_path / 'grid'
+    good = make_mp4(root / 'a/base/video.mp4', 9)               # K=18, s=2 -> 9 frames
+    tm = PV.video_timing(good)
+    assert tm['frames'] == 9 and tm['fps'] == 20 and tm['pts_regular_from_zero']
+    r = PV.probe_one(root, {'path': 'a/base/video.mp4', 'sha256': _sha(good)}, 18)
+    assert r['status'] == 'verified', r
+    assert r['sync'] == {**r['sync'], 'fps': 20, 'frames': 9, 'steps_per_render': 2, 'first_frame_env_step': 0, 'env_steps': 18}
+    short = make_mp4(root / 'b/base/video.mp4', 8)              # off-by-one frame count -> never synced
+    r = PV.probe_one(root, {'path': 'b/base/video.mp4', 'sha256': _sha(short)}, 18)
+    assert r['status'] == 'unverified' and 'frame count 8' in r['reason']
+    fast = make_mp4(root / 'c/base/video.mp4', 9, fps=25)       # right count, wrong rate -> never synced
+    r = PV.probe_one(root, {'path': 'c/base/video.mp4', 'sha256': _sha(fast)}, 18)
+    assert r['status'] == 'unverified' and 'fps' in r['reason']
+    r = PV.probe_one(root, {'path': 'a/base/video.mp4', 'sha256': '0' * 64}, 18)
+    assert r['status'] == 'unverified' and 'sha256' in r['reason']
+    (root / 'a/base/meta.json').write_text(json.dumps({'steps_per_render': 1, 'video_fps': 20}))   # meta overrides default
+    r = PV.probe_one(root, {'path': 'a/base/video.mp4', 'sha256': _sha(good)}, 18)
+    assert r['status'] == 'unverified' and 'expected exactly s=1' in r['reason']
+    bad = root / 'd/base/video.mp4'; bad.parent.mkdir(parents=True)
+    bad.write_bytes(b'\x00\x00\x00\x18ftypisom' + bytes(64))   # no moov
+    r = PV.probe_one(root, {'path': 'd/base/video.mp4', 'sha256': _sha(bad)}, 18)
+    assert r['status'] == 'unverified' and r['reason'].startswith('container')
+
+
+def _sync_fixture(tmp_path, codec='libx264'):
+    import build_video_index as BV
+    import probe_video_sync as PV
+    der, root = tmp_path / 'der', tmp_path / 'grid'
+    make_fold(der, 'PPCC-jug_s1_j1', [(E1, True, 4), (E2, False, 6)])   # K: E1=18, E2=30
+    make_mp4(root / E1 / 'base/video.mp4', 9, codec)                   # matches s=2
+    make_mp4(root / E2 / 'base/video.mp4', 14, codec)                  # 30 steps needs 15 -> unverified
+    assert BV.main(['--derived', str(der), '--video-root', str(root), '--out', str(tmp_path / 'vi')]) == 0
+    assert PV.main(['--derived', str(der), '--video-index', str(tmp_path / 'vi/video_index.json'),
+                    '--video-root', str(root), '--out', str(tmp_path / 'vs')]) == 0
+    with pytest.raises(SystemExit):                                    # never overwrites
+        PV.main(['--derived', str(der), '--video-index', str(tmp_path / 'vi/video_index.json'),
+                 '--video-root', str(root), '--out', str(tmp_path / 'vs')])
+    return der, root
+
+
+def test_probe_cli_load_sync_and_payload(tmp_path):
+    der, root = _sync_fixture(tmp_path)
+    sync = json.loads((tmp_path / 'vs/video_sync.json').read_text())
+    rec = json.loads((tmp_path / 'vs/video_sync_receipt.json').read_text())
+    assert list(sync) == [E1] and rec['verified'] == 1 and list(rec['unverified']) == [E2]
+    app = SV.App([der], tmp_path / 'vi/video_index.json', root, tmp_path / 'vs/video_sync.json')
+    p = json.loads(app.route('/api/episode?fold=PPCC-jug_s1_j1&ep=0')[2])
+    assert p['video_sync']['frames'] == 9 and p['video_sync_reason'] is None
+    q = json.loads(app.route('/api/episode?fold=PPCC-jug_s1_j1&ep=1')[2])
+    assert q['video'] and q['video_sync'] is None and q['video_sync_reason'].startswith('probe 미검증: frame count 14')
+    # tampered sync file: sha differs from the video index / record incomplete -> rejected, not synced
+    bad = dict(sync); bad[E1] = {**sync[E1], 'video_sha256': '0' * 64}
+    (tmp_path / 'vs2').mkdir(); (tmp_path / 'vs2/video_sync.json').write_text(json.dumps(bad))
+    ok, rej = VD.load_video_sync(tmp_path / 'vs2/video_sync.json', tmp_path / 'vi/video_index.json')
+    assert ok == {} and 'sha256' in rej[E1]
+    bad[E1] = {k: v for k, v in sync[E1].items() if k != 'first_frame_env_step'}
+    (tmp_path / 'vs2/video_sync.json').write_text(json.dumps(bad))
+    ok, rej = VD.load_video_sync(tmp_path / 'vs2/video_sync.json', tmp_path / 'vi/video_index.json')
+    assert ok == {} and rej[E1] == 'incomplete sync record'
+    # sync recorded for a different env-step count than the arrays -> dropped at serve time
+    bad[E1] = {**sync[E1], 'env_steps': 17}
+    (tmp_path / 'vs2/video_sync.json').write_text(json.dumps(bad))
+    app2 = SV.App([der], tmp_path / 'vi/video_index.json', root, tmp_path / 'vs2/video_sync.json')
+    assert json.loads(app2.route('/api/episode?fold=PPCC-jug_s1_j1&ep=0')[2])['video_sync'] is None
+
+
+@pytest.mark.skipif(not CHROMIUM.exists(), reason='headless chromium not available')
+def test_browser_fixture_video_cursor_and_click_seek(tmp_path, monkeypatch):
+    # VP9-in-MP4: open-source Chromium has no H.264 decoder; the moov timing the probe checks is codec-independent
+    der, root = _sync_fixture(tmp_path, codec='libvpx-vp9')
+    app = SV.App([der], tmp_path / 'vi/video_index.json', root, tmp_path / 'vs/video_sync.json')
+    monkeypatch.setitem(SV.STATIC, 'sync_harness.js', 'text/javascript; charset=utf-8')   # test-only static entry
+    app.static['sync_harness.js'] = (PKG / 'tests/sync_harness.js').read_bytes()
+    app.static['index.html'] = app.static['index.html'].replace(
+        b'</body>', b'<script src="/static/sync_harness.js" defer></script></body>')
+    import urllib.parse
+    results, done = [], threading.Event()
+    real_route = app.route
+
+    def route(raw):     # test-only sink for the harness reports; everything else is the real router
+        if raw.startswith('/harness-result?'):
+            o = json.loads(urllib.parse.parse_qs(raw.split('?', 1)[1])['d'][0]); results.append(o)
+            if o.get('done'):
+                done.set()
+            return 200, {'Content-Type': 'text/plain'}, b'ok'
+        return real_route(raw)
+    app.route = route
+    srv = SV.ThreadingHTTPServer(('127.0.0.1', 0), SV.make_handler(app))
+    th = threading.Thread(target=srv.serve_forever, daemon=True); th.start()
+    prof = tmp_path / 'chrome-profile'
+    br = subprocess.Popen([str(CHROMIUM), '--headless', '--no-sandbox', '--disable-gpu', '--user-data-dir=' + str(prof),
+                           '--autoplay-policy=no-user-gesture-required', '--remote-debugging-port=0',
+                           'http://127.0.0.1:%d/' % srv.server_address[1]],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        finished = done.wait(90)
+    finally:
+        br.kill(); br.wait(10); srv.shutdown(); srv.server_close()
+    o = results[-1] if results else {}
+    assert finished and 'error' not in o, o
+    Xi = lambda x: 56 + 774 * x / 4      # inference axis: 4 decisions (E1)
+    Xe = lambda x: 56 + 774 * x / 18     # env axis: 18 env steps
+
+    def at(curs, x):
+        return len(curs) == 3 and all(v == 'visible' and abs(px - x) < 0.05 for v, px in curs)
+    assert o['verified_text'] and o['means_cursors'] == 0 and o['n_cursors'] == 3
+    assert abs(o['duration'] - 9 / 20) < 1e-6
+    # seek to frame 4 -> observation after env step 8 -> inference 1 (env 5..9), 4/5 through it
+    assert at(o['seek_frame4']['curs'], Xi(1.8)), o['seek_frame4']
+    assert 'frame 5/9 = env step 8' in o['seek_frame4']['lab'] and 'inference step 1' in o['seek_frame4']['lab']
+    # click inside inference 2 (env 10..14) -> first frame at/after env step 10 = frame 5, mid-frame t
+    assert abs(o['click_inf2']['t'] - 5.5 / 20) < 1e-3 and at(o['click_inf2']['curs'], Xi(2.2))
+    assert 'inference step 2' in o['click_inf2']['lab']
+    # last inference (3, env 15..17, m=3) -> frame 8 (last), within duration
+    assert abs(o['click_last']['t'] - 8.5 / 20) < 1e-3 and o['click_last']['t'] < o['duration']
+    assert 'frame 9/9 = env step 16' in o['click_last']['lab'] and 'inference step 3' in o['click_last']['lab']
+    assert at(o['env_axis']['curs'], Xe(17))                  # same frame, env x-axis
+    assert abs(o['env_click']['t'] - 3.5 / 20) < 1e-3 and at(o['env_click']['curs'], Xe(7))
+    assert at(o['cum']['curs'], Xe(7)) and at(o['hidden_series']['curs'], Xe(7))
+    assert o['hidden_series']['hash'].startswith('#hide=') and at(o['paused']['curs'], Xe(7))
+    assert o['ended_fired'] and at(o['ended']['curs'], Xe(17))
+    # rollout change -> E2 (video present but probe-unverified): no cursor, explicit reason, click does not seek
+    assert all(v == 'hidden' for v, _ in o['changed']['curs']) and len(o['changed']['curs']) == 3
+    assert '동기화 미검증' in o['changed']['unverified_text'] and 'frame count 14' in o['changed']['unverified_text']
+    assert o['changed']['lab'] == '' and o['unverified_click']['t'] == 0
+    assert all(v == 'hidden' for v, _ in o['unverified_click']['curs'])

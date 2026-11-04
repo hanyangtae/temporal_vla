@@ -247,3 +247,30 @@ def outcome_means(f):
                      'cum_mean': {k: _f(csums[k] / n_t) for k in MEAN_KEYS},
                      'length': {'min': int(min(s[i + 1] - s[i] for i in eps)), 'max': L}}
     return out
+
+
+SYNC_KEYS = ('fps', 'frames', 'steps_per_render', 'first_frame_env_step', 'env_steps', 'video_sha256')
+
+
+def load_video_sync(sync_path, index_path):
+    """probe_video_sync.py output -> {episode_id: sync}. Kept only if every field is present and the video sha256
+    equals the video index entry (same bytes the probe parsed). Missing/invalid -> no sync (viewer disables cursor)."""
+    if sync_path is None:
+        return {}, {}
+    idx = json.loads(Path(index_path).read_text()) if index_path else {}
+    ok, rejected = {}, {}
+    for eid, rec in json.loads(Path(sync_path).read_text()).items():
+        if not isinstance(rec, dict) or any(k not in rec for k in SYNC_KEYS):
+            rejected[eid] = 'incomplete sync record'
+        elif (idx.get(eid) or {}).get('sha256') != rec['video_sha256']:
+            rejected[eid] = 'video sha256 differs from video index'
+        elif not (rec['fps'] > 0 and rec['frames'] > 0 and rec['steps_per_render'] >= 1):
+            rejected[eid] = 'bad numbers'
+        else:
+            ok[eid] = {k: rec[k] for k in SYNC_KEYS}
+    rc = Path(sync_path).parent / 'video_sync_receipt.json'     # probe's own reasons for videos it did not verify
+    if rc.is_file():
+        for eid, why in (json.loads(rc.read_text()).get('unverified') or {}).items():
+            if eid not in ok:
+                rejected.setdefault(eid, 'probe 미검증: %s' % why)
+    return ok, rejected

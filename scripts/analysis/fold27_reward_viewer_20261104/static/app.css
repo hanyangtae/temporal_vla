@@ -66,3 +66,5 @@ button.tog.off svg { opacity: .35; }
 svg.plot.strip { height: 64px; }
 svg.plot .nt { stroke-width: 1.5; }
 video.rollout-video { display: block; width: 100%; max-width: 560px; max-height: 420px; background: #000; border-radius: 6px; }
+svg.plot .vcur { stroke: #0b0b0b; stroke-width: 1.5; stroke-dasharray: 4 3; }
+.sync-ok { color: var(--good); }

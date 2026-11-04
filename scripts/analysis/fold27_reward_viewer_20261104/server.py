@@ -37,7 +37,7 @@ SEC_HEADERS = {'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', '
 
 
 class App:
-    def __init__(self, roots, video_index=None, video_root=None):
+    def __init__(self, roots, video_index=None, video_root=None, video_sync=None):
         self.folds, self.failures = VD.load_all(roots)
         self.dup = VD.duplicates(self.folds)
         self.means = {k: VD.outcome_means(v) for k, v in self.folds.items()}
@@ -46,6 +46,9 @@ class App:
         self.videos = videos
         self.meta = VD.meta(self.folds, self.failures, videos)
         self.meta['videos_rejected'] = self.video_rejected
+        self.sync, self.sync_rejected = VD.load_video_sync(video_sync, video_index) if video_sync else ({}, {})
+        self.meta['video_sync_verified'] = len(self.sync)
+        self.meta['video_sync_rejected'] = self.sync_rejected
         self.static = {n: (STATIC_DIR / n).read_bytes() for n in STATIC}
 
     # pure routing: (status, headers, body bytes or ('file', path)); tested without sockets
@@ -80,6 +83,12 @@ class App:
                 return self.err(400, 'bad ep')
             p = VD.episode_payload(f, int(ep), self.dup, self.videos)
             p['video_id'] = self.video_ids.index(p['episode_id']) if p['video'] else None
+            sy = self.sync.get(p['episode_id']) if p['video'] else None
+            if sy is not None and sy['env_steps'] != p['env_steps']:
+                sy = None                                  # probe saw a different episode length: never sync
+            p['video_sync'] = sy
+            p['video_sync_reason'] = None if sy else ('영상 없음' if not p['video'] else
+                                                     self.sync_rejected.get(p['episode_id'], 'probe 검증 기록 없음'))
             return self.json(p)
         if path == '/video':
             k = q.get('id', '')
@@ -170,15 +179,19 @@ def main(argv=None):
     ap.add_argument('--host', default='127.0.0.1'); ap.add_argument('--port', type=int, default=8784)
     ap.add_argument('--video-index', type=Path); ap.add_argument('--video-root', type=Path)
     ap.add_argument('--pid-file', type=Path)
+    ap.add_argument('--video-sync', type=Path, help='probe_video_sync.py video_sync.json (needs --video-index)')
     ap.add_argument('--check-only', action='store_true', help='load + validate data, print summary, do not serve')
     a = ap.parse_args(argv)
     if a.port in FORBIDDEN_PORTS:
         sys.exit('port %d is reserved for an existing viewer' % a.port)
     if bool(a.video_index) != bool(a.video_root):
         sys.exit('--video-index and --video-root go together')
-    app = App(a.derived, a.video_index, a.video_root)
+    if a.video_sync and not a.video_index:
+        sys.exit('--video-sync needs --video-index')
+    app = App(a.derived, a.video_index, a.video_root, a.video_sync)
     summary = {'folds': len(app.folds), 'rows': sum(len(f['arrays']['basic']) for f in app.folds.values()),
                'episodes_unique': len(app.dup), 'videos': len(app.videos), 'videos_rejected': len(app.video_rejected),
+               'video_sync': len(app.sync), 'video_sync_rejected': len(app.sync_rejected),
                'failed_attempts_listed': sorted(app.failures)}
     print(json.dumps(summary, ensure_ascii=False), flush=True)
     if a.check_only:

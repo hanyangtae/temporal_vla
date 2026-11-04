@@ -12,7 +12,7 @@ const SERIES = {
 const TOGGLEABLE = ['alpha_term', 'minus_beta_cost', 'delta'];
 const NS = 'http://www.w3.org/2000/svg';
 const $ = (id) => document.getElementById(id);
-const state = { meta: null, fold: null, episodes: [], ep: null, means: null, hidden: new Set() };
+const state = { meta: null, fold: null, episodes: [], ep: null, means: null, hidden: new Set(), cursors: [], raf: 0 };
 
 function el(tag, attrs, text) {
   const e = document.createElement(tag);
@@ -78,7 +78,7 @@ function chart(o) {
   const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
   const W = 1000, H = 190, ml = 56, mr = 170, mt = 8, mb = 26, xmax = o.x1[n - 1];
   const X = (x) => ml + (W - ml - mr) * x / xmax, Y = (y) => mt + (H - mt - mb) * (hi - y) / (hi - lo);
-  const g = sv('svg', { class: 'plot', viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', role: 'img', 'aria-label': o.title });
+  const g = sv('svg', { class: 'plot', 'data-xmax': xmax, viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', role: 'img', 'aria-label': o.title });
   for (let t = 0; t <= 4; t++) {
     const y = lo + (hi - lo) * t / 4;
     g.append(sv('line', { class: 'grid', x1: ml, x2: W - mr, y1: Y(y), y2: Y(y) }));
@@ -111,6 +111,21 @@ function chart(o) {
   const cross = sv('line', { class: 'cross', x1: 0, x2: 0, y1: mt, y2: H - mb, visibility: 'hidden' });
   const hit = sv('rect', { x: ml, y: mt, width: W - ml - mr, height: H - mt - mb, fill: 'transparent' });
   g.append(cross, hit);
+  const idxAt = (ev) => {
+    const r = g.getBoundingClientRect();
+    const es = ((ev.clientX - r.left) / r.width * W - ml) / (W - ml - mr) * xmax;
+    const i = o.x1.findIndex((e1) => es < e1);
+    return i < 0 ? n - 1 : i;          // the actual inference (chunk) under the pointer
+  };
+  if (o.cursor) {   // video cursor: individual rollout charts only (never on outcome means)
+    const vc = sv('line', { class: 'vcur', x1: 0, x2: 0, y1: mt, y2: H - mb, visibility: 'hidden' });
+    g.insertBefore(vc, hit);
+    state.cursors.push((xv) => {
+      if (xv === null) { vc.setAttribute('visibility', 'hidden'); return; }
+      vc.setAttribute('x1', X(xv)); vc.setAttribute('x2', X(xv)); vc.setAttribute('visibility', 'visible');
+    });
+    if (o.onPick) hit.addEventListener('click', (ev) => o.onPick(idxAt(ev)));
+  }
   box.append(g);
   let strip = null;
   if (o.nt) {   // N_t on its own axis (count, not reward): separate strip, same x mapping
@@ -129,9 +144,7 @@ function chart(o) {
   }
   const tip = $('tip');
   hit.addEventListener('mousemove', (ev) => {
-    const r = g.getBoundingClientRect();
-    const es = ((ev.clientX - r.left) / r.width * W - ml) / (W - ml - mr) * xmax;
-    let i = o.x1.findIndex((e1) => es < e1); if (i < 0) i = n - 1;
+    const i = idxAt(ev);
     cross.setAttribute('x1', X(o.x0[i])); cross.setAttribute('x2', X(o.x0[i])); cross.setAttribute('visibility', 'visible');
     tip.replaceChildren(el('div', {}, o.tipHead(i)));
     for (const [k, v] of data) {
@@ -254,16 +267,19 @@ function renderCharts() {
   const tipHead = (i) => `inference step ${c.step[i]} · env step ${c.env_step_start[i]}–${c.env_step_start[i] + c.m[i] - 1} (m=${c.m[i]})${c.final[i] ? ' · terminal' : ''}`;
   const cum = cumOn() ? '누적 합(할인 없음) · ' : 'chunk별 값 · ';
   const xlabel = envX ? 'env step' : 'inference step';
+  state.cursors = [];
+  const vs = { cursor: true, onPick: seekToInference };
   const out = [
     chart({ title: '개별 rollout — basic vs MIX', sub: cum + '칸 = decision 1회(실행 env step 보통 5, 마지막은 m)',
-      keys: ['basic', 'mix'], values: epValues(['basic', 'mix']), x0, x1, xlabel, zero: false, term, termLabel, toggle: false, tipHead }),
+      keys: ['basic', 'mix'], values: epValues(['basic', 'mix']), x0, x1, xlabel, zero: false, term, termLabel, toggle: false, tipHead, ...vs }),
     chart({ title: '개별 rollout — MIX − basic 분해', sub: cum + 'α항과 실제 차감 −βC 분리, Δ = α항 + (−βC) · 버튼으로 보이기/가리기',
-      keys: TOGGLEABLE, values: epValues(TOGGLEABLE), x0, x1, xlabel, zero: true, term, termLabel, toggle: true, tipHead }),
+      keys: TOGGLEABLE, values: epValues(TOGGLEABLE), x0, x1, xlabel, zero: true, term, termLabel, toggle: true, tipHead, ...vs }),
   ];
   if (state.ep.phi) out.push(chart({ title: 'Φ (저장된 fold potential 값)', sub: 'cluster ID 미저장(역추론 안 함) · terminal 행 anchor는 Φ 대신 outcome ±1',
-    keys: ['phi'], values: epValues(['phi']), x0, x1, xlabel, zero: true, term, termLabel, toggle: false, tipHead }));
+    keys: ['phi'], values: epValues(['phi']), x0, x1, xlabel, zero: true, term, termLabel, toggle: false, tipHead, ...vs }));
   else out.push(el('p', { class: 'missing' }, 'Φ 배열 없음 — 표시하지 않음'));
   $('charts').replaceChildren(...out);
+  updateCursor();
 }
 function renderTable() {
   const w = $('table-wrap');
@@ -305,17 +321,61 @@ function goto(fold, ep) {
   }
 }
 function stopVideo() {
-  // stop + unload the previous rollout's video before anything else is shown (no stale playback/frame)
+  // stop + unload the previous rollout's video before anything else is shown (no stale playback/frame/cursor)
+  cancelAnimationFrame(state.raf); state.raf = 0;
   for (const v of $('video').querySelectorAll('video')) { v.pause(); v.removeAttribute('src'); v.load(); }
+  for (const fn of state.cursors) fn(null);
+}
+const curVideo = () => $('video').querySelector('video');
+function videoFrame() {
+  // verified mapping only (probe_video_sync): frame f shown for t in [f/fps, (f+1)/fps); no duration-ratio scaling
+  const v = curVideo(), sy = state.ep && state.ep.video_sync;
+  if (!v || !sy || v.readyState < 1) return null;
+  const f = v.ended ? sy.frames - 1 : Math.min(sy.frames - 1, Math.max(0, Math.floor(v.currentTime * sy.fps + 1e-6)));
+  const e = sy.first_frame_env_step + sy.steps_per_render * f;     // observation right after 0-based env step e
+  const c = state.ep.chunks;
+  let i = 0;
+  while (i + 1 < c.env_step_start.length && c.env_step_start[i + 1] <= e) i++;
+  return { f, e, i };
+}
+function updateCursor() {
+  const p = videoFrame(), c = state.ep && state.ep.chunks, envX = $('sel-x').value === 'env';
+  const lab = $('video').querySelector('.sync-pos');
+  if (!p) { for (const fn of state.cursors) fn(null); if (lab) lab.textContent = ''; return; }
+  const xv = envX ? p.e + 1 : c.step[p.i] + (p.e + 1 - c.env_step_start[p.i]) / c.m[p.i];   // end of env step e
+  for (const fn of state.cursors) fn(xv);
+  if (lab) lab.textContent = `영상 frame ${p.f + 1}/${state.ep.video_sync.frames} = env step ${p.e} 실행 직후 · inference step ${c.step[p.i]}`;
+}
+function tick() {
+  updateCursor();
+  const v = curVideo();
+  state.raf = v && !v.paused && !v.ended ? requestAnimationFrame(tick) : 0;
+}
+function seekToInference(i) {
+  const v = curVideo(), sy = state.ep && state.ep.video_sync;
+  if (!v || !sy) return;                                      // unverified mapping: no seek
+  const c = state.ep.chunks;
+  let f = Math.ceil((c.env_step_start[i] - sy.first_frame_env_step) / sy.steps_per_render);
+  f = Math.min(sy.frames - 1, Math.max(0, f));                // first frame at/after this inference's first env step
+  let t = (f + 0.5) / sy.fps;                                 // middle of that frame's display interval
+  if (Number.isFinite(v.duration)) t = Math.min(t, Math.max(0, v.duration - 0.25 / sy.fps));
+  v.currentTime = t;
+  updateCursor();
 }
 function renderVideo() {
   stopVideo();
   const v = $('video'), e = state.ep;
   v.replaceChildren(el('h2', {}, `rollout 영상 · j${e.j} n${e.n} · ${e.success ? '성공' : '실패'}`));
   if (e.video && e.video_id !== null) {
-    v.append(el('video', { controls: '', preload: 'metadata', playsinline: '', class: 'rollout-video',
-      src: '/video?id=' + e.video_id, 'data-episode': e.episode_id }),
-      el('p', { class: 'sub missing' }, '원본 archive 영상 · 경로·sha256 검증된 파일만 제공 · 영상 시간축은 그래프 x축(inference/env step)과 자동 동기화하지 않음'));
+    const vid = el('video', { controls: '', preload: 'metadata', playsinline: '', class: 'rollout-video',
+      src: '/video?id=' + e.video_id, 'data-episode': e.episode_id });
+    for (const evn of ['loadedmetadata', 'timeupdate', 'seeked', 'pause', 'ended']) vid.addEventListener(evn, updateCursor);
+    vid.addEventListener('play', () => { cancelAnimationFrame(state.raf); state.raf = requestAnimationFrame(tick); });
+    const sy = e.video_sync;
+    v.append(vid, el('p', { class: 'sub missing' }, '원본 archive 영상 · 경로·sha256 검증된 파일만 제공'),
+      sy ? el('p', { class: 'sub sync-ok' }, `동기화 검증됨(probe): ${sy.fps} fps · ${sy.frames} frames · frame f = env step ${sy.first_frame_env_step}+${sy.steps_per_render}·f 실행 직후 · 그래프 클릭 → 해당 inference step으로 seek`)
+         : el('p', { class: 'sub bad' }, `동기화 미검증 — 세로 커서·클릭 seek 비활성 (${e.video_sync_reason || '검증 기록 없음'})`),
+      el('p', { class: 'sub sync-pos' }));
   } else {
     v.append(el('p', { class: 'missing' }, '누락 — 이 rollout의 검증된 영상 없음 (rollout pkl은 열지 않음)'));
   }
