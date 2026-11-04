@@ -76,8 +76,14 @@ def markdown(res):
         z = p['all']['zero_basic']
         L += ['', f"basic=0 행 (비율 제외): {z['rows']}행, ΣΔ={fmt(z['sum_delta'])}, Σ|Δ|={fmt(z['sum_abs_delta'])}, "
                   f"|Δ| p50={fmt(z['abs_delta']['p50'])} p100={fmt(z['abs_delta']['p100'])}"]
+    if res.get('receipts'):
+        L += ['', '## 실행 receipt (fold별)', '', '| fold | host | 스칼라 출처 | peak RSS MiB | 출력 bytes | 임시 peak bytes | 초 |',
+              '|---|---|---|---|---|---|---|']
+        for k, r in sorted(res['receipts'].items()):
+            L.append(f"| {k} | {r['host']} | {r['episode_scalars']} | {fmt(r['peak_rss_mib'])} | "
+                     f"{r['estimated_output_bytes']} | {r['temporary_peak_bytes']} | {fmt(r['seconds'], 3)} |")
     L += ['', '## 계약 실패 / 미집계 (집계 제외)', '']
-    if not res['contract_failure'] and not res['rejected'] and not res['missing']:
+    if not (res['contract_failure'] or res['rejected'] or res['missing'] or res.get('superseded_failed_attempts')):
         L.append('없음')
     for k, v in res['contract_failure'].items():
         L.append(f"- {k}: {v['error'] or ''} gates={v['gates']}")
@@ -112,6 +118,11 @@ def main(argv=None):
            'contract_failure': failures, 'superseded_failed_attempts': superseded, 'rejected': rejected,
            'missing': len(folds) + len(failures) < a.expect_folds,
            'receipts': {k: {'host': v['_receipt'].get('host'), 'sha': v['_receipt']['sha'],
+                            'episode_scalars': v['_receipt'].get('episode_scalars', 'npz'),
+                            'peak_rss_mib': v['_receipt'].get('peak_rss_mib'),
+                            'estimated_output_bytes': v['_receipt'].get('estimated_output_bytes'),
+                            'temporary_peak_bytes': v['_receipt'].get('temporary_peak_bytes'),
+                            'seconds': v['_receipt'].get('seconds'), 'versions': v['_receipt'].get('versions'),
                             'outputs': v['_receipt'].get('outputs')} for k, v in folds.items()}}
     a.out.mkdir(parents=True)
     (a.out / 'analysis.json').write_text(json.dumps(res, indent=1))
