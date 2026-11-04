@@ -1,5 +1,5 @@
 """Viewer tests: data validation, routing/traversal/input validation, payload semantics, video index, HTTP smoke."""
-import hashlib, json, os, sys, threading, urllib.error, urllib.request
+import hashlib, json, os, subprocess, sys, threading, urllib.error, urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -15,7 +15,7 @@ def _sha(p):
     return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 
 
-def make_fold(root, fold, episodes, status='sha_matched', gates_ok=True, corrupt=False):
+def make_fold(root, fold, episodes, status='sha_matched', gates_ok=True, corrupt=False, coef=True):
     """episodes: [(episode_id, success, n_decisions)]"""
     d = root / 'sha_matched' / fold; d.mkdir(parents=True)
     cols = {k: [] for k in ('basic', 'mix', 'alpha_term', 'beta_cost', 'delta', 'phi', 'anchor', 'C', 'episode_index',
@@ -50,6 +50,8 @@ def make_fold(root, fold, episodes, status='sha_matched', gates_ok=True, corrupt
            'sha': {'gates': {'rewards_mix': gates_ok}, 'done_fingerprint': {'rows': cur, 'mix_rewards_sha256': 'a'},
                    'reconstructed': {'rows': cur, 'mix_rewards_sha256': 'a'}},
            'outputs': {'reward_arrays.npz': {'sha256': 'f' * 64 if corrupt else sha}}}
+    if coef:
+        rec['decomposition'] = {'alpha': 0.1, 'beta': 0.0396, 'gamma': 0.99}
     (d / 'receipt.json').write_text(json.dumps(rec))
     return d
 
@@ -164,3 +166,77 @@ def test_http_smoke_with_video_range(tmp_path):
         assert e.value.code == 404
     finally:
         srv.shutdown(); srv.server_close()
+
+
+G5 = -sum(.99 ** k for k in range(5))
+G3 = -sum(.99 ** k for k in range(3))
+
+
+def test_means_unequal_length_known_values(tmp_path):
+    r = tmp_path / 'r'
+    # success: lengths 3 and 1 (m = [5,5,3] and [3]); failure: one rollout of length 2 (m = [5,5])
+    make_fold(r, 'PPCC-jug_s1_j1', [(E1, True, 3), ('p1/kanu/PPCC/jug/s1/j0/n5', True, 1), (E2, False, 2)])
+    app = SV.App([r])
+    g = app.means['PPCC-jug_s1_j1']
+    s, f = g['success'], g['failure']
+    assert s['total_n'] == 2 and s['n_t'] == [2, 1, 1] and s['length'] == {'min': 1, 'max': 3}
+    want = [(G5 + G3) / 2, G5, G3]                       # t>=1 averages ONLY the rollout that exists there
+    assert np.allclose(s['mean']['basic'], want, atol=1e-6)
+    assert np.allclose(s['cum_mean']['basic'], [(G5 + G3) / 2, 2 * G5, 2 * G5 + G3], atol=1e-6)
+    assert f['total_n'] == 1 and f['n_t'] == [1, 1] and np.allclose(f['mean']['basic'], [G5, G5], atol=1e-6)
+    a = app.folds['PPCC-jug_s1_j1']['arrays']
+    assert np.allclose(s['mean']['minus_beta_cost'][1:], -a['beta_cost'][1:3])
+    assert np.allclose(np.add(s['mean']['alpha_term'], s['mean']['minus_beta_cost']), s['mean']['delta'])
+
+
+def test_means_match_independent_existing_only_average(app):
+    a = app.folds['PPCC-jug_s1_j1']['arrays']; st = app.folds['PPCC-jug_s1_j1']['starts']
+    for name, flag in (('success', True), ('failure', False)):
+        rows = [list(a['delta'][st[i]:st[i + 1]]) for i in range(len(st) - 1) if bool(a['ep_success'][i]) == flag]
+        L = max(map(len, rows))
+        ref = [np.mean([r[t] for r in rows if len(r) > t]) for t in range(L)]
+        assert np.allclose(app.means['PPCC-jug_s1_j1'][name]['mean']['delta'], ref)
+
+
+def test_empty_outcome_group(tmp_path):
+    make_fold(tmp_path / 'r', 'PPCC-jug_s1_j1', [(E1, True, 3)])
+    g = SV.App([tmp_path / 'r']).means['PPCC-jug_s1_j1']['failure']
+    assert g == {'total_n': 0, 't': [], 'n_t': [], 'mean': None, 'cum_mean': None}
+
+
+def test_coefficients_from_receipt_or_unconfirmed(tmp_path):
+    make_fold(tmp_path / 'a', 'PPCC-jug_s1_j1', [(E1, True, 3)])
+    make_fold(tmp_path / 'b', 'PPCC-jug_s1_j1', [(E1, True, 3)], coef=False)
+    ca = json.loads(SV.App([tmp_path / 'a']).route('/api/fold_means?fold=PPCC-jug_s1_j1')[2])['coefficients']
+    cb = json.loads(SV.App([tmp_path / 'b']).route('/api/fold_means?fold=PPCC-jug_s1_j1')[2])['coefficients']
+    assert (ca['alpha'], ca['beta']) == (0.1, 0.0396) and ca['source']
+    assert cb['alpha'] is None and cb['beta'] is None and cb['source'] is None
+    assert SV.App([tmp_path / 'a']).route('/api/fold_means?fold=../x')[0] == 404
+
+
+CHROMIUM = Path.home() / '.cache/ms-playwright/chromium_headless_shell-1181/chrome-linux/headless_shell'
+
+
+@pytest.mark.skipif(not CHROMIUM.exists(), reason='headless chromium not available')
+def test_browser_fixture_means_coef_and_toggles(app):
+    srv = SV.ThreadingHTTPServer(('127.0.0.1', 0), SV.make_handler(app))
+    th = threading.Thread(target=srv.serve_forever, daemon=True); th.start()
+    base = 'http://127.0.0.1:%d/' % srv.server_address[1]
+
+    def dom(url):
+        return subprocess.run([str(CHROMIUM), '--headless', '--no-sandbox', '--disable-gpu',
+                               '--virtual-time-budget=6000', '--dump-dom', url],
+                              capture_output=True, timeout=60).stdout.decode('utf-8', 'replace')
+    try:
+        d0, d1 = dom(base), dom(base + '#hide=alpha_term,delta')
+    finally:
+        srv.shutdown(); srv.server_close()
+    for d in (d0, d1):
+        assert 'α = 0.1' in d and 'β = 0.0396' in d and 'receipt' in d
+        assert '성공 평균 · 집단 total N=1' in d and '실패 평균 · 집단 total N=1' in d and 'N_t' in d
+        assert '0 채움' in d and '길이 혼입' in d
+    # 2 decomposition charts (success mean, failure mean) + individual rollout: each key drawn in all of them
+    assert d0.count('data-key="alpha_term" d=') == 3 and d0.count('data-key="delta" d=') == 3
+    assert d1.count('data-key="alpha_term" d=') == 0 and d1.count('data-key="delta" d=') == 0
+    assert d1.count('data-key="minus_beta_cost" d=') == 3
+    assert d1.count('aria-pressed="false"') == 6 and d0.count('aria-pressed="false"') == 0

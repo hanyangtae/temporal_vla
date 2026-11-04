@@ -11,6 +11,7 @@
   <h1>Fold27 rollout별 보상 — basic vs MIX</h1>
   <p class="prov" id="prov">불러오는 중…</p>
   <p class="badge">훈련 fit 데이터 · 평가 rollout 아님 · RoboCasa GR00T Fold27 production 18fold</p>
+  <div id="coef" class="coef">α / β: fold 선택 후 receipt에서 표시</div>
 </header>
 <nav class="filters" aria-label="선택">
   <label>task <select id="sel-task"></select></label>
@@ -25,6 +26,7 @@
   <label class="chk"><input type="checkbox" id="chk-table"> 표 보기</label>
 </nav>
 <main>
+  <section id="means" class="card"></section>
   <section id="ep-head" class="card"></section>
   <section id="charts"></section>
   <section id="table-wrap" class="card" hidden></section>
@@ -40,6 +42,8 @@
       <li>basic = chunk 내 실행 step의 할인 기본보상 R. MIX = R + α·(anchor − Φ) − β·C (α=0.1, β=0.0396).</li>
       <li>α항 = α·(anchor − Φ): Φ 차이에 γ^m·bootstrap 없음. anchor = 다음 decision의 Φ, 마지막(terminal) 행은 outcome anchor(성공 +1 / 실패 −1).</li>
       <li>−βC = 실제 차감량(부호 포함). C = max(0, −Φ)·Σ<sub>i&lt;m</sub> 0.99<sup>i</sup>. Δ = MIX − basic = α항 + (−βC).</li>
+      <li>성공/실패 평균: 같은 inference step t에 실제로 존재하는 rollout만 평균(N_t 표시). 종료 후 0 채움·마지막 값 연장 없음. 누적 옵션은 rollout별 누적 후 존재 표본 평균. 후반 t는 표본이 줄고 긴 rollout만 남는 길이 혼입이 있음.</li>
+      <li>α항·−βC·Δ 버튼은 모든 분해 그래프에 함께 적용되며, 시리즈 색·선 모양은 어디서나 동일.</li>
       <li>Φ는 저장된 배열을 그대로 표시. cluster ID는 미저장이며 Φ로부터 역추론하지 않음.</li>
       <li>같은 rollout은 target j가 다른 여러 fold의 fit 세트에 중복 포함됨: basic은 동일, MIX는 fold별 potential이라 다를 수 있음.</li>
     </ul>

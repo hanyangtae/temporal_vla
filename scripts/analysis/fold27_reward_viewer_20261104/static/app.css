@@ -55,3 +55,13 @@ button.link[disabled] { color: var(--muted); cursor: default; }
 .notes ul { margin: 0; padding-left: 18px; color: var(--ink2); }
 .missing { color: var(--ink2); }
 td.ok, td.bad { white-space: nowrap; }
+.coef { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin: 8px 0 2px; }
+.coef-v { font-size: 18px; font-weight: 700; padding: 2px 10px; border: 2px solid var(--ink); border-radius: 8px;
+  background: #fff; }
+.coef-src { color: var(--ink2); font-size: 12px; }
+button.tog { font: inherit; display: inline-flex; align-items: center; gap: 5px; background: #fff; color: var(--ink);
+  border: 1px solid #cfcec9; border-radius: 6px; padding: 1px 8px; cursor: pointer; }
+button.tog.off { color: var(--muted); background: #f1f0ec; text-decoration: line-through; }
+button.tog.off svg { opacity: .35; }
+svg.plot.strip { height: 64px; }
+svg.plot .nt { stroke-width: 1.5; }

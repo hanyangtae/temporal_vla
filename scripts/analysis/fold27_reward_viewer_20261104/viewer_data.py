@@ -121,7 +121,7 @@ def sha_panel(f):
                       'observations_sha256': r.get('observations_sha256'),
                       'mix_observations_sha256': r.get('mix_observations_sha256')},
             'gates': s.get('gates'), 'episode_scalars': f['receipt'].get('episode_scalars', 'npz'),
-            'host': f['receipt'].get('host'),
+            'host': f['receipt'].get('host'), 'coefficients': coefficients(f),
             'npz_sha256': f['receipt']['outputs']['reward_arrays.npz']['sha256']}
 
 
@@ -199,3 +199,51 @@ def load_video_index(index_path, root):
         except (DataError, KeyError, TypeError, OSError) as e:
             rejected[eid] = str(e)
     return ok, rejected
+
+
+MEAN_KEYS = ('basic', 'mix', 'alpha_term', 'minus_beta_cost', 'delta')
+
+
+def coefficients(f):
+    """alpha/beta exactly as recorded in the reconstruct receipt (reconstruct.py refused to run unless the mix DONE
+    fingerprint had the same alpha/beta). Missing -> None (displayed as unconfirmed, never guessed)."""
+    d = f['receipt'].get('decomposition') or {}
+    a, b = d.get('alpha'), d.get('beta')
+    return {'alpha': a, 'beta': b, 'gamma': d.get('gamma'),
+            'source': 'reconstruct receipt.decomposition (mix DONE fingerprint alpha/beta와 일치 확인 후 실행)'
+            if a is not None and b is not None else None}
+
+
+def outcome_means(f):
+    """Per outcome group (success / failure) and inference index t (stored 0-based step, original time alignment):
+    mean over the rollouts of that group that ACTUALLY HAVE decision t (no zero padding, no last-value extension).
+    n_t = number of such rollouts. 'cum' = each rollout's own cumulative sum up to t, then the same existing-sample
+    mean. Late t are averaged over fewer, longer rollouts (length/outcome confound) -> always shown with n_t."""
+    a, s = f['arrays'], f['starts']
+    series = {'basic': np.asarray(a['basic'], np.float64), 'mix': np.asarray(a['mix'], np.float64),
+              'alpha_term': np.asarray(a['alpha_term'], np.float64),
+              'minus_beta_cost': -np.asarray(a['beta_cost'], np.float64), 'delta': np.asarray(a['delta'], np.float64)}
+    out = {}
+    for name, flag in (('success', True), ('failure', False)):
+        eps = [i for i in range(len(a['episode_id'])) if bool(a['ep_success'][i]) == flag]
+        if not eps:
+            out[name] = {'total_n': 0, 't': [], 'n_t': [], 'mean': None, 'cum_mean': None}
+            continue
+        L = max(int(s[i + 1] - s[i]) for i in eps)
+        n_t = np.zeros(L, np.int64)
+        sums = {k: np.zeros(L) for k in MEAN_KEYS}
+        csums = {k: np.zeros(L) for k in MEAN_KEYS}
+        for i in eps:
+            lo, hi = int(s[i]), int(s[i + 1])
+            if not np.array_equal(a['step'][lo:hi], np.arange(hi - lo)):
+                raise DataError(f['fold'] + ': stored step is not 0..n-1 within an episode')
+            n_t[:hi - lo] += 1
+            for k in MEAN_KEYS:
+                v = series[k][lo:hi]
+                sums[k][:hi - lo] += v
+                csums[k][:hi - lo] += np.cumsum(v)
+        out[name] = {'total_n': len(eps), 't': list(range(L)), 'n_t': [int(x) for x in n_t],
+                     'mean': {k: _f(sums[k] / n_t) for k in MEAN_KEYS},
+                     'cum_mean': {k: _f(csums[k] / n_t) for k in MEAN_KEYS},
+                     'length': {'min': int(min(s[i + 1] - s[i] for i in eps)), 'max': L}}
+    return out

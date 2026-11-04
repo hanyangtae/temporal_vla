@@ -8,6 +8,7 @@ Routes (GET/HEAD only; every user input is matched against an in-memory whitelis
   /static/<name>         whitelisted static files only (app.js, app.css)
   /api/meta              tasks/instructions/folds, provenance, per-fold SHA panel (original record vs reconstructed)
   /api/fold?fold=F       episode list of fold F
+  /api/fold_means?fold=F    success/failure means over rollouts that exist at inference index t (+n_t)
   /api/episode?fold=F&ep=I   per-chunk basic/MIX/alpha/-beta*C/delta (+phi when stored), cross-fold duplicates
   /video?id=K            validated video K (index into the startup-validated list) with Range support
 Port 8782 (existing SIMPLER viewer) is refused. Binding fails loudly if the port is in use (no takeover).
@@ -16,6 +17,7 @@ import argparse
 import json
 import os
 import re
+import signal
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -38,6 +40,7 @@ class App:
     def __init__(self, roots, video_index=None, video_root=None):
         self.folds, self.failures = VD.load_all(roots)
         self.dup = VD.duplicates(self.folds)
+        self.means = {k: VD.outcome_means(v) for k, v in self.folds.items()}
         videos, self.video_rejected = VD.load_video_index(video_index, video_root) if video_index else ({}, {})
         self.video_ids = sorted(videos)                    # K -> episode id
         self.videos = videos
@@ -61,6 +64,11 @@ class App:
             return 200, {'Content-Type': STATIC[name]}, self.static[name]
         if path == '/api/meta':
             return self.json(self.meta)
+        if path == '/api/fold_means':
+            f = self.folds.get(q.get('fold', ''))
+            if f is None:
+                return self.err(404, 'unknown fold')
+            return self.json({'fold': f['fold'], 'coefficients': VD.coefficients(f), 'groups': self.means[f['fold']]})
         if path in ('/api/fold', '/api/episode'):
             f = self.folds.get(q.get('fold', ''))
             if f is None:
@@ -181,6 +189,7 @@ def main(argv=None):
         if a.pid_file.exists():
             sys.exit('pid file exists: %s' % a.pid_file)
         a.pid_file.write_text(str(os.getpid()))
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))      # kill <pid> -> finally removes the pid file
     print('serving http://%s:%d' % (a.host, a.port), flush=True)
     try:
         srv.serve_forever()
