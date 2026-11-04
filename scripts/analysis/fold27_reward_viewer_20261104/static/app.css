@@ -65,3 +65,4 @@ button.tog.off { color: var(--muted); background: #f1f0ec; text-decoration: line
 button.tog.off svg { opacity: .35; }
 svg.plot.strip { height: 64px; }
 svg.plot .nt { stroke-width: 1.5; }
+video.rollout-video { display: block; width: 100%; max-width: 560px; max-height: 420px; background: #000; border-radius: 6px; }

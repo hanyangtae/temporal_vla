@@ -181,9 +181,10 @@ function fillEpisodes(wantEp) {
 }
 async function loadEpisode() {
   const ep = $('sel-ep').value;
-  if (ep === '') { state.ep = null; $('charts').replaceChildren(el('p', { class: 'missing' }, '해당 조건의 rollout 없음')); return; }
+  stopVideo();
+  if (ep === '') { state.ep = null; $('video').replaceChildren(el('p', { class: 'missing' }, '선택된 rollout 없음')); $('charts').replaceChildren(el('p', { class: 'missing' }, '해당 조건의 rollout 없음')); return; }
   state.ep = await getJSON(`/api/episode?fold=${encodeURIComponent(state.fold)}&ep=${encodeURIComponent(ep)}`);
-  renderHead(); renderCharts(); renderTable(); renderDups(); renderVideo();
+  renderHead(); renderVideo(); renderCharts(); renderTable(); renderDups();
 }
 
 // ---------------------------------------------------------------- fold-level panels
@@ -303,14 +304,20 @@ function goto(fold, ep) {
     }
   }
 }
+function stopVideo() {
+  // stop + unload the previous rollout's video before anything else is shown (no stale playback/frame)
+  for (const v of $('video').querySelectorAll('video')) { v.pause(); v.removeAttribute('src'); v.load(); }
+}
 function renderVideo() {
+  stopVideo();
   const v = $('video'), e = state.ep;
-  v.replaceChildren(el('h2', {}, '원본 영상'));
+  v.replaceChildren(el('h2', {}, `rollout 영상 · j${e.j} n${e.n} · ${e.success ? '성공' : '실패'}`));
   if (e.video && e.video_id !== null) {
-    v.append(el('video', { controls: '', preload: 'metadata', width: '100%', src: '/video?id=' + e.video_id }),
-      el('p', { class: 'sub missing' }, '검증된 경로·sha256 일치 파일만 제공'));
+    v.append(el('video', { controls: '', preload: 'metadata', playsinline: '', class: 'rollout-video',
+      src: '/video?id=' + e.video_id, 'data-episode': e.episode_id }),
+      el('p', { class: 'sub missing' }, '원본 archive 영상 · 경로·sha256 검증된 파일만 제공 · 영상 시간축은 그래프 x축(inference/env step)과 자동 동기화하지 않음'));
   } else {
-    v.append(el('p', { class: 'missing' }, '누락 — 검증된 영상 경로 없음 (rollout pkl은 열지 않음)'));
+    v.append(el('p', { class: 'missing' }, '누락 — 이 rollout의 검증된 영상 없음 (rollout pkl은 열지 않음)'));
   }
 }
 function renderSha() {

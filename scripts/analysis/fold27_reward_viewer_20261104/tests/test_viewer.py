@@ -240,3 +240,40 @@ def test_browser_fixture_means_coef_and_toggles(app):
     assert d1.count('data-key="alpha_term" d=') == 0 and d1.count('data-key="delta" d=') == 0
     assert d1.count('data-key="minus_beta_cost" d=') == 3
     assert d1.count('aria-pressed="false"') == 6 and d0.count('aria-pressed="false"') == 0
+
+
+def test_build_video_index_split_and_roundtrip(tmp_path):
+    import build_video_index as BV
+    der = tmp_path / 'der'
+    e3, e4, e5 = 'p1/kanu/PPCC/jug/s1/j0/n7', 'p1/kanu/PPCC/jug/s1/j0/n8', 'p1/kanu/PPCC/jug/s1/j0/n9'
+    make_fold(der, 'PPCC-jug_s1_j1', [(E1, True, 3), (E2, False, 2), (e3, True, 2), (e4, False, 2), (e5, True, 2)])
+    root = tmp_path / 'grid'
+    mp4 = b'\x00\x00\x00\x18ftypisom' + bytes(200)
+
+    def put(eid, data=mp4, meta=None):
+        d = root / eid / 'base'; d.mkdir(parents=True)
+        (d / 'video.mp4').write_bytes(data)
+        if meta is not None:
+            (d / 'meta.json').write_text(json.dumps(meta))
+    put(E1, meta={'success': 1, 'jitter': 0, 'noise': 3})      # ok, identity checked
+    put(e3)                                                    # ok, path only
+    put(e4, meta={'success': 1})                               # arrays say failure -> mismatch
+    put(e5, data=b'not a video at all')                        # no ftyp -> mismatch
+    outside = tmp_path / 'outside.mp4'; outside.write_bytes(mp4)
+    (root / E2 / 'base').mkdir(parents=True); os.symlink(outside, root / E2 / 'base' / 'video.mp4')   # escapes root
+    assert BV.main(['--derived', str(der), '--video-root', str(root), '--out', str(tmp_path / 'vi')]) == 0
+    rec = json.loads((tmp_path / 'vi/video_index_receipt.json').read_text())
+    assert sorted(rec['ok']) == [E1, e3] and rec['ok'][E1]['identity'] == 'meta_checked'
+    assert rec['ok'][e3]['identity'] == 'path_only' and sorted(rec['mismatch']) == sorted([E2, e4, e5])
+    assert rec['missing'] == {} and rec['counts']['ok'] == 2
+    with pytest.raises(SystemExit):     # never overwrites
+        BV.main(['--derived', str(der), '--video-root', str(root), '--out', str(tmp_path / 'vi')])
+    app = SV.App([der], tmp_path / 'vi/video_index.json', root)       # viewer re-verifies sha256 at startup
+    assert sorted(app.videos) == [E1, e3] and app.video_rejected == {}
+    p = json.loads(app.route('/api/episode?fold=PPCC-jug_s1_j1&ep=0')[2])
+    assert p['video'] and p['video_id'] == 0
+    q = json.loads(app.route('/api/episode?fold=PPCC-jug_s1_j1&ep=1')[2])
+    assert not q['video'] and q['video_id'] is None
+    shutil_missing = tmp_path / 'grid2'; shutil_missing.mkdir()
+    assert BV.main(['--derived', str(der), '--video-root', str(shutil_missing), '--out', str(tmp_path / 'vi2')]) == 0
+    assert json.loads((tmp_path / 'vi2/video_index_receipt.json').read_text())['counts']['missing'] == 5
