@@ -133,6 +133,37 @@ def load_potential(fold_dir, eps, instruction):
     return AP.potential_fn(p, instruction), prov
 
 
+def load_fit_episodes_json(FF, fold, episodes_dir, latents_dir):
+    """finetune_fold.load_fit_episodes with the extract-NPZ read replaced by the record JSON scalars (success,
+    env_steps, max_episode_steps, n_inferences). For staging dirs whose extract NPZs were removed after training
+    (srv48 dish-right cleanup 2026-11-03). Same validate_fold, (j,n) order, linkage, latent npz sha, latent
+    provenance, count checks. Actions are not loaded (zeros; rewards/observations do not use them). Exactness of
+    the JSON scalars is then proven only by the rewards_sha256 gate (they are the only non-latent reward inputs)."""
+    FF.validate_fold(fold)
+    FF.check_latent_provenance(episodes_dir, latents_dir)
+    eps = []
+    for r in sorted(fold['fit'], key=lambda r: (r['j'], r['n'])):
+        eid = f'{r["plan_id"]}/{fold["archive_machine"]}/{fold["instruction"]}/s{fold["scene"]}/j{r["j"]}/n{r["n"]}'
+        st = FF.episode_stem(eid)
+        rec = json.loads((episodes_dir / f'{st}.json').read_text())
+        lrec = json.loads((latents_dir / f'{st}.json').read_text())
+        FF.check_linkage(eid, r, rec, lrec)
+        if 'source_npz_sha256' in rec and lrec.get('source_npz_sha256') not in (None, rec['source_npz_sha256']):
+            raise core.ContractError(f'compact/latent source npz mismatch {eid}')
+        if sha(latents_dir / lrec['npz']) != lrec['npz_sha256']:
+            raise core.ContractError(f'latent npz sha {eid}')
+        with np.load(latents_dir / lrec['npz'], allow_pickle=False) as zl:
+            lat = zl['latents'].astype(np.float32)
+        succ = bool(rec['success'])
+        if succ != bool(r['success']) or len(lat) != int(rec['n_inferences']):
+            raise core.ContractError(f'success/length mismatch {eid}')
+        eps.append({'episode_id': eid, 'latents': lat, 'actions': np.zeros((len(lat), 16, 12), np.float32),
+                    'success': succ, 'steps': int(rec['env_steps']), 'max_episode_steps': int(rec['max_episode_steps'])})
+    if len(eps) != 160 or sum(e['success'] for e in eps) != fold['expected']['fit_success']:
+        raise core.ContractError('fit episode count/success differs from fold spec')
+    return eps
+
+
 def build(a, receipt):
     import finetune_fold as FF
     import rewards as RW
@@ -148,7 +179,11 @@ def build(a, receipt):
     receipt['inputs']['spec'] = {'path': rel(a.spec), 'sha256': sha(a.spec)}
     receipt['inputs']['episodes_dir'] = {'path': rel(a.episodes), 'contract_sha256': sha(a.episodes / 'contract.json')}
     receipt['inputs']['latents_dir'] = {'path': rel(a.latents), 'contract_sha256': sha(a.latents / 'contract.json')}
-    eps = FF.load_fit_episodes(fold, a.episodes, a.latents, IdentityCodec())     # linkage + sha + (j,n) order
+    receipt['episode_scalars'] = a.episode_scalars
+    if a.episode_scalars == 'npz':
+        eps = FF.load_fit_episodes(fold, a.episodes, a.latents, IdentityCodec())     # linkage + sha + (j,n) order
+    else:
+        eps = load_fit_episodes_json(FF, fold, a.episodes, a.latents)
     pot, prov = load_potential(fold_dir, eps, fold['instruction'])
     receipt['inputs']['potential'] = prov
 
@@ -232,6 +267,9 @@ def main(argv=None):
     ap.add_argument('--host', default='unknown')
     ap.add_argument('--code-root', type=Path, default=HERE.parents[2],
                     help='checkout with the pinned training code (sha-verified against DONE)')
+    ap.add_argument('--episode-scalars', choices=('npz', 'json'), default='npz',
+                    help='npz = finetune_fold.load_fit_episodes unchanged (default); json = record JSON scalars when '
+                         'the extract NPZs are absent (exactness proven by the rewards_sha256 gate)')
     a = ap.parse_args(argv)
     sys.dont_write_bytecode = True
     configure(a.code_root)

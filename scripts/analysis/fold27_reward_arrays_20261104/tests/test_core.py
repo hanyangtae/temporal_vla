@@ -127,3 +127,13 @@ def test_reconstruct_missing_input_goes_to_contract_failure(tmp_path):
     r = json.loads((tmp_path / 'o/contract_failure/F/receipt.json').read_text())
     assert r['status'] == 'contract_failure' and 'missing input' in r['error']
     assert not (tmp_path / 'o/sha_matched').exists()
+
+
+def test_analyze_supersedes_failed_attempt_from_other_root(tmp_path):
+    r1, r2 = tmp_path / 'r1', tmp_path / 'r2'
+    _fake_fold(r1, 'sha_matched', 'A'); _fake_fold(r1, 'contract_failure', 'B'); _fake_fold(r2, 'sha_matched', 'B')
+    out = tmp_path / 'ana'
+    assert analyze.main(['--derived', str(r1), str(r2), '--out', str(out), '--expect-folds', '2']) == 0
+    res = json.loads((out / 'analysis.json').read_text())
+    assert sorted(res['folds']) == ['A', 'B'] and res['contract_failure'] == {}
+    assert list(res['superseded_failed_attempts']) == ['B'] and not res['missing']

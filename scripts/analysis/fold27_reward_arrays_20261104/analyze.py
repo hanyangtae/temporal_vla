@@ -81,6 +81,8 @@ def markdown(res):
         L.append('없음')
     for k, v in res['contract_failure'].items():
         L.append(f"- {k}: {v['error'] or ''} gates={v['gates']}")
+    for k, v in res.get('superseded_failed_attempts', {}).items():
+        L.append(f"- (이전 시도 실패, 다른 root의 SHA 일치 결과로 대체) {k}: {v['error'] or ''}")
     for k, v in res['rejected'].items():
         L.append(f'- {k}: {v}')
     if res['missing']:
@@ -103,12 +105,11 @@ def main(argv=None):
             if dup:
                 raise SystemExit(f'duplicate fold across derived roots: {sorted(dup)}')
             dst.update(src)
-    both = set(folds) & set(failures)
-    if both:
-        raise SystemExit(f'fold both sha_matched and contract_failure: {sorted(both)}')
+    # an earlier failed attempt superseded by a sha_matched run in another derived root: listed, never pooled
+    superseded = {k: failures.pop(k) for k in sorted(set(folds) & set(failures))}
     res = {'expect_folds': a.expect_folds, 'folds': {k: core.fold_report(v) for k, v in sorted(folds.items())},
            'pooled': core.fold_report(pool(folds)) if folds else None,
-           'contract_failure': failures, 'rejected': rejected,
+           'contract_failure': failures, 'superseded_failed_attempts': superseded, 'rejected': rejected,
            'missing': len(folds) + len(failures) < a.expect_folds,
            'receipts': {k: {'host': v['_receipt'].get('host'), 'sha': v['_receipt']['sha'],
                             'outputs': v['_receipt'].get('outputs')} for k, v in folds.items()}}
