@@ -12,6 +12,10 @@ watch     (long-lived guardian, started once, detached)
              no later than receipt.created + skew), consumer = our training entry (train_queue_v2 / smoke_v2b / finetune)
              below the launcher, owned = launcher descendants by (pid, start ticks), sticky. Unproven -> ALERT +
              ADMISSION_UNSAFE, no signal (v2).
+             Never owned, never signalled (with their subtrees): this actor itself, and THIS launch's watchdog, which
+             launch spawns before exec and is therefore a child of the launcher pid -- proven by uid + argv (watchdog
+             mode, this --config/--state-dir, --launch-pid/--launch-start = owner launcher) + its own armed file naming
+             that exact (pid, start) on this boot (own_watchdog). A look-alike without that proof stays owned.
   stop rules (the ONLY reasons our training is stopped; each must hold confirm_polls consecutive polls):
              own_mem   NVML used by our proven PIDs > min(receipt serves, max_jobs) x per_job_mib
              headroom  GPU free < reserve_mib (with or without a visible foreign process: either way the GPU is short)
@@ -157,8 +161,9 @@ def take_lock(path):
 
 # ====================================================================================================== guardian
 class ExclusiveTrainGuardian(TG3.TrainGuardianV3):
-    def __init__(self, cfg, osi, state_dir, probe=None, observe_only=False, me=None, lock=True):
+    def __init__(self, cfg, osi, state_dir, probe=None, observe_only=False, me=None, lock=True, cfg_path=None):
         validate(cfg)
+        self.cfg_path, self.excluded = cfg_path, set()   # cfg_path: needed to prove our own watchdog (own_watchdog)
         # same attributes as TrainGuardian/V2/V3.__init__ (their contract checks are the only part not applicable)
         self.c, self.o, self.sd = cfg, osi, Path(state_dir)
         self.sd.mkdir(parents=True, exist_ok=True)
@@ -220,19 +225,51 @@ class ExclusiveTrainGuardian(TG3.TrainGuardianV3):
             self.unsafe('receipt released while owned processes still live (they were off the GPU at release)',
                         receipt=prev['receipt'], owned=[[p, s, r] for (p, s), r in self.owned.items() if self.same(p, s)])
 
+    def own_watchdog(self, pid, start):
+        """True only for THIS launch's watchdog, proven by everything at once (never by basename alone):
+        our uid; argv = <SELF> watchdog --config <this guardian's config> --state-dir <this state dir> --launch-pid/
+        --launch-start = the owner's launcher identity; and the armed file armed.<launcher pid>.<start>.json, written
+        by that watchdog itself before the launch exec'd, names exactly this (pid, start) for this launcher on this boot.
+        launch spawns the watchdog BEFORE exec, so it is a child of the pid that becomes the harness launcher (setsid
+        does not change PPid); without this proof it would be adopted as an owned 'desc' and stopped / waited for."""
+        o = self.owner
+        if not o or self.cfg_path is None or start is None:
+            return False
+        lp, ls = o['launcher']
+        a = argv_of(self.o, pid)
+        if not (any(x.endswith(SELF) for x in a) and 'watchdog' in a) or self.o.uid(pid) != self.o.own_uid():
+            return False
+        if real(flag(a, '--config')) != real(self.cfg_path) or real(flag(a, '--state-dir')) != real(self.sd) \
+                or flag(a, '--launch-pid') != str(lp) or flag(a, '--launch-start') != str(ls):
+            return False
+        arm = read_json(self.sd / 'watchdogs' / f'armed.{lp}.{ls}.json') or {}
+        return (arm.get('watchdog') == {'pid': pid, 'start': start} and arm.get('launch') == {'pid': lp, 'start': ls}
+                and arm.get('boot_id') == self.boot0)
+
+    def guard_process(self, pid, start):
+        """This actor itself, or this launch's proven watchdog: never owned, never signalled."""
+        if (pid, start) == (self.me['pid'], self.me['start']) or self.own_watchdog(pid, start):
+            if (pid, start) not in self.excluded:
+                self.excluded.add((pid, start))
+                self.event('own_guard_process_excluded', pid=pid, start=start, cmd=(self.o.cmdline(pid) or '')[:200])
+            return True
+        return False
+
     def _tree(self):
+        """Owned = descendants of the live launcher (v2 rule) or, once the launcher is gone, of still-live proven
+        identities (never walk a dead launcher pid: PID reuse). Our own guard processes and their subtrees are skipped."""
         o = self.owner
         if o and self.same(*o['launcher']):
-            super()._tree()
+            roots = [o['launcher'][0]]
         else:
-            # launcher gone: never walk from its pid again (it may be reused by an unrelated process); adopt only live
-            # descendants of still-live proven identities
+            roots = [p for (p, s) in self.owned if self.same(p, s)]
+        if roots:
             kids = {}
             for p in self.o.pids():
                 pp = self.o.ppid(p)
                 if pp:
                     kids.setdefault(pp, []).append(p)
-            stack, done = [p for (p, s) in self.owned if self.same(p, s)], set()
+            stack, done = list(roots), set()
             while stack:
                 p = stack.pop()
                 if p in done:
@@ -240,14 +277,20 @@ class ExclusiveTrainGuardian(TG3.TrainGuardianV3):
                 done.add(p)
                 for k in kids.get(p, []):
                     st = self.o.start(k)
-                    if st is None:
-                        continue
+                    if st is None or self.guard_process(k, st):
+                        continue                         # guard subtree (e.g. its nvidia-smi / harness calls) skipped
                     self.owned.setdefault((k, st), self.role(k))
                     stack.append(k)
-            self.owned = {k: v for k, v in self.owned.items() if self.same(*k)}
+        self.owned = {k: v for k, v in self.owned.items() if self.same(*k) and not self.guard_process(*k)}
         for k, r in list(self.owned.items()):            # a consumer that exec'd into the trainer keeps its identity
             if r == 'desc' and self.role(k[0]) != 'desc':
                 self.owned[k] = self.role(k[0])
+
+    def sig(self, pid, start, s, why):
+        """v1 sig() (identity re-checked right before os.kill) with one extra refusal: our own guard processes."""
+        if self.guard_process(pid, start):
+            self.event('signal_refused_own_guard_process', pid=pid, start=start, sig=int(s), why=why); return False
+        return super().sig(pid, start, s, why)
 
     def role(self, pid):
         return 'trainer' if self.has(pid, TG1.TRAINER_MARKS) else 'queue' if self.has(pid, TG1.QUEUE_MARKS) else 'desc'
@@ -580,7 +623,8 @@ class Watchdog:
 
     def stop(self, why):
         try:
-            g = ExclusiveTrainGuardian(self.c, self.o, self.sd, probe=self.probe, me=(self.me['pid'], self.me['start']))
+            g = ExclusiveTrainGuardian(self.c, self.o, self.sd, probe=self.probe, me=(self.me['pid'], self.me['start']),
+                                       cfg_path=self.cfg_path)
         except SystemExit as e:                                          # lock busy: a live actor exists
             self.event('stop_deferred_lock_busy', why=why, detail=str(e)); self.lost_n, self.lost_t0 = 0, None; return None
         try:
@@ -638,7 +682,8 @@ def main(argv=None):
         finally:
             w.close()
         return 0
-    g = ExclusiveTrainGuardian(cfg, osi, a.state_dir, observe_only=getattr(a, 'observe_only', False), lock=a.mode == 'watch')
+    g = ExclusiveTrainGuardian(cfg, osi, a.state_dir, observe_only=getattr(a, 'observe_only', False), lock=a.mode == 'watch',
+                               cfg_path=a.config)
     if a.mode == 'snapshot':
         try:
             g.refresh()

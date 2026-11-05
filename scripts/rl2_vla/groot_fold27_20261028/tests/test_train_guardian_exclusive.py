@@ -46,8 +46,20 @@ class ExclusiveTest(TT.TrainGuardianTest):
         super().tearDown()
 
     def gx(self, **kw):
-        g = GX.ExclusiveTrainGuardian({**self.ecfg, **kw}, self.o, self.sd, probe=self.probe, me=(800, 80))
+        g = GX.ExclusiveTrainGuardian({**self.ecfg, **kw}, self.o, self.sd, probe=self.probe, me=(800, 80), cfg_path=self.cfgp)
         self.open.append(g); return g
+
+    def wd_cmd(self, lstart=22, config=None):
+        return (f'python3 /r/{GX.SELF} watchdog --config {GX.real(config or self.cfgp)} --state-dir {GX.real(self.sd)} '
+                f'--launch-pid 220 --launch-start {lstart} --guardian-pid 800 --guardian-start 80')
+
+    def launch_watchdog(self, pid=1135, start=113):
+        """The real launch topology: launch spawned the watchdog BEFORE exec, so it is a child of the pid that became the
+        harness launcher 220 (setsid keeps PPid); it armed itself (armed.220.22.json) and runs an nvidia-smi child."""
+        self.o.add(pid, start, 220, self.wd_cmd(), uid=1000)
+        self.o.add(pid + 1, start + 1, pid, 'nvidia-smi --id=1 --query-compute-apps=pid,used_memory', uid=1000)
+        w = GX.Watchdog(self.cfgp, self.sd, self.o, self.probe, (220, 22), (800, 80), me=(pid, start))
+        self.open.append(w); return w
 
     def foreign(self, pid=900, used=6000):
         self.o.add(pid, 90, 1, 'python other_user_job.py', uid=1019); self.o.gpu.append(pid); self.probe.used[pid] = used
@@ -178,6 +190,45 @@ class ExclusiveTest(TT.TrainGuardianTest):
         for _ in range(4):
             g.poll()
         self.assertFalse(any(p in (220, 960) for p, _ in g.owned)); self.assertEqual(self.o.kills, [])
+
+    # -------- regression: srv50 smoke 2026-11-05 (receipt e35d1faa released by the harness, guardian ADMISSION_UNSAFE
+    # 'receipt released while owned processes still live' owned=[[<watchdog pid>, <start>, 'desc']])
+    def test_launch_child_watchdog_alive_at_release_is_not_owned(self):
+        g = self.gx(); self.launch_watchdog(); g.poll()
+        self.assertEqual(sorted(g.owned.values()), ['queue', 'trainer'])
+        self.assertFalse(any(p in (1135, 1136) for p, _ in g.owned))
+        self.end_launch(keep_receipt=False)                                     # harness released; watchdog lives on
+        self.assertIn(1135, self.o.procs)
+        g.poll()
+        self.assertEqual(self.state(f'COMPLETED.{RID}.json')['result'], 'released_by_harness')
+        self.assertIsNone(self.state('ADMISSION_UNSAFE.json')); self.assertIsNone(self.state('ALERT.json'))
+        self.assertTrue(any(e['kind'] == 'own_guard_process_excluded' and e['pid'] == 1135 for e in self.events()))
+        g.poll(); self.assertTrue(self.state('heartbeat.json')['last_ok'])
+
+    def test_stop_path_never_signals_or_waits_for_launch_watchdog(self):
+        g = self.gx(); self.launch_watchdog(); g.poll()
+        self.foreign(); self.probe.free = 16383
+        g.poll(); r = g.poll(); self.assertEqual(g.act(r), 'released')
+        self.assertIn((240, int(signal.SIGTERM)), self.o.kills)
+        for p in (1135, 1136, 900):
+            self.never(p)
+        self.assertIsNone(self.state('ADMISSION_UNSAFE.json'))
+        self.assertFalse(g.sig(1135, 113, signal.SIGKILL, 'direct'))           # sig() itself refuses the guard process
+        self.assertIn(1135, self.o.procs)
+
+    def test_watchdog_lookalike_without_full_proof_stays_owned(self):
+        g = self.gx(); self.launch_watchdog()
+        fakes = {1140: self.wd_cmd(), 1141: self.wd_cmd(lstart=23), 1142: self.wd_cmd(config=self.t / 'other.json')}
+        for i, (p, c) in enumerate(fakes.items()):                              # no armed proof / other launch / other cfg
+            self.o.add(p, 120 + i, 220, c, uid=1000)
+        g.poll()
+        for i, p in enumerate(fakes):
+            self.assertIn((p, 120 + i), g.owned, p)
+        self.assertNotIn((1135, 113), g.owned)
+        self.tearDown(); self.setUp()
+        g = GX.ExclusiveTrainGuardian(self.ecfg, self.o, self.sd, probe=self.probe, me=(800, 80)); self.open.append(g)
+        self.launch_watchdog(); g.poll()
+        self.assertIn((1135, 113), g.owned)                                     # no config path known -> no exclusion
 
     def test_config_validation(self):
         bad = [{'kind': 'fold27_train_guardian_v3'}, {'foreign_policy': None}, {'persist_approval': ''},
